@@ -1,4 +1,4 @@
-camera.USB:
+camera:
   category:
   - camera
   class:

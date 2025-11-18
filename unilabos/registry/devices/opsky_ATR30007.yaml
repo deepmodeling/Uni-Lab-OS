@@ -1,0 +1,235 @@
+opsky_ATR30007:
+  category:
+  - characterization_optic
+  - opsky_ATR30007
+  class:
+    action_value_mappings:
+      auto-ensure_connected:
+        feedback: {}
+        goal: {}
+        goal_default:
+          client: null
+          ip: null
+          name: null
+          port: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                client:
+                  type: string
+                ip:
+                  type: string
+                name:
+                  type: string
+                port:
+                  type: string
+              required:
+              - client
+              - name
+              - ip
+              - port
+              type: object
+            result: {}
+          required:
+          - goal
+          title: ensure_connected参数
+          type: object
+        type: UniLabJsonCommand
+      auto-run_once:
+        feedback: {}
+        goal: {}
+        goal_default:
+          integration_time: '5000'
+          laser_power: '200'
+          norm_max: '1.0'
+          normalize: 'true'
+          save_csv: 'true'
+          save_plot: 'true'
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 执行一次站控-扫码-拉曼流程的大函数入口，参数以字符串形式传入。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                integration_time:
+                  default: '5000'
+                  type: string
+                laser_power:
+                  default: '200'
+                  type: string
+                norm_max:
+                  default: '1.0'
+                  type: string
+                normalize:
+                  default: 'true'
+                  type: string
+                save_csv:
+                  default: 'true'
+                  type: string
+                save_plot:
+                  default: 'true'
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: run_once参数
+          type: object
+        type: UniLabJsonCommand
+      auto-safe_read:
+        feedback: {}
+        goal: {}
+        goal_default:
+          client: null
+          delay: 0.3
+          func: null
+          name: null
+          retries: 3
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                client:
+                  type: string
+                delay:
+                  default: 0.3
+                  type: string
+                func:
+                  type: string
+                name:
+                  type: string
+                retries:
+                  default: 3
+                  type: string
+              required:
+              - client
+              - name
+              - func
+              type: object
+            result: {}
+          required:
+          - goal
+          title: safe_read参数
+          type: object
+        type: UniLabJsonCommand
+      auto-safe_write:
+        feedback: {}
+        goal: {}
+        goal_default:
+          client: null
+          delay: 0.3
+          func: null
+          name: null
+          retries: 3
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                client:
+                  type: string
+                delay:
+                  default: 0.3
+                  type: string
+                func:
+                  type: string
+                name:
+                  type: string
+                retries:
+                  default: 3
+                  type: string
+              required:
+              - client
+              - name
+              - func
+              type: object
+            result: {}
+          required:
+          - goal
+          title: safe_write参数
+          type: object
+        type: UniLabJsonCommand
+      auto-wait_with_quit_check:
+        feedback: {}
+        goal: {}
+        goal_default:
+          addr_quit: 270
+          robot: null
+          seconds: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                addr_quit:
+                  default: 270
+                  type: string
+                robot:
+                  type: string
+                seconds:
+                  type: string
+              required:
+              - robot
+              - seconds
+              type: object
+            result: {}
+          required:
+          - goal
+          title: wait_with_quit_check参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.opsky_Raman.opsky_ATR30007:opsky_ATR30007
+    status_types: {}
+    type: python
+  config_info: []
+  description: OPSKY ATR30007 光纤拉曼模块，提供单一入口大函数以执行一次完整流程。
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        plc_ip:
+          default: 192.168.1.88
+          type: string
+        plc_port:
+          default: 502
+          type: integer
+        robot_ip:
+          default: 192.168.1.200
+          type: string
+        robot_port:
+          default: 502
+          type: integer
+        scan_csv_file:
+          default: scan_results.csv
+          type: string
+      required: []
+      type: object
+    data:
+      properties: {}
+      required: []
+      type: object
+  version: 1.0.0

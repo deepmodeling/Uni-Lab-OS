@@ -132,15 +132,14 @@ unilab --config path/to/your/config.py
 
 使用 `-c` 传入控制逻辑配置。
 
-不管使用哪一种初始化方式，设备/物料字典均需包含 `class` 属性，用于查找注册表信息。默认查找范围都是 Uni-Lab 内部注册表 `unilabos/registry/{devices,device_comms,resources}`。要添加额外的注册表路径，可以使用 `--registry_path` 加入 `<your-registry-path>/{devices,device_comms,resources}`。
+不管使用哪一种初始化方式，设备/物料字典均需包含 `class` 属性，用于查找注册表信息。默认查找范围都是 Uni-Lab 内部注册表 `unilabos/registry/{devices,device_comms,resources}`。要添加额外的注册表路径，可以使用 `--registry_path` 加入 `<your-registry-path>/{devices,device_comms,resources}`，只输入<your-registry-path>即可，支持多次--registry_path指定多个目录。
 
 ## 通信中间件 `--backend`
 
 目前 Uni-Lab 支持以下通信中间件：
 
 - **ros** (默认)：基于 ROS2 的通信
-- **simple**：简化通信模式
-- **automancer**：Automancer 兼容模式
+- **automancer**：Automancer 兼容模式 (实验性)
 
 ## 端云桥接 `--app_bridges`
 
@@ -169,7 +168,7 @@ unilab --config path/to/your/config.py
 通过 `--visual` 参数选择：
 
 - **rviz**：使用 RViz 进行 3D 可视化
-- **web**：使用 Web 界面进行可视化
+- **web**：使用 Web 界面进行可视化 (基于Pylabrobot)
 - **disable** (默认)：禁用可视化
 
 ## 实验室管理
@@ -245,78 +244,3 @@ unilab --ak your_ak --sk your_sk --port 8080 --disable_browser
 - 检查图谱文件格式是否正确
 - 验证设备连接和端点配置
 - 确保注册表路径正确
-
-## 页面操作
-
-### 1. 启动成功
-当您启动成功后，可以看到物料列表，节点模版和组态图如图展示
-![material.png](image/material.png)
-
-### 2. 根据需求创建设备和物料
-我们可以做一个简单的案例  
-* 在容器1中加入水  
-* 通过传输泵将容器1中的水转移到容器2中
-#### 2.1 添加所需的设备和物料  
-仪器设备work_station中的workstation 数量x1  
-仪器设备virtual_device中的virtual_transfer_pump 数量x1    
-物料耗材container中的container 数量x2  
-
-#### 2.2 将设备和物料根据父子关系进行关联  
-当我们添加设备时，仪器耗材模块的物料列表也会实时更新  
-我们需要将设备和物料拖拽到workstation中并在画布上将它们连接起来，就像真实的设备操作一样  
-![links.png](image/links.png)
-
-### 3. 创建工作流
-进入工作流模块 → 点击"我创建的" → 新建工作流
-![new.png](image/new.png)
-
-#### 3.1 新增工作流节点
-我们可以进入指定工作流，在空白处右键   
-* 选择Laboratory→host_node中的creat_resource
-* 选择Laboratory→workstation中的PumpTransferProtocol
-
-![creatworkfollow.gif](image/creatworkfollow.gif)
-
-#### 3.2 配置节点参数
-根据案例，工作流包含两个步骤：
-1. 使用creat_resource在容器中创建水
-2. 通过泵传输协议将水传输到另一个容器
-
-我们点击creat_resource卡片上的编辑按钮来配置参数⭐️  
-class_name ：container  
-device_id ： workstation  
-liquid_input_slot ： 0或-1均可  
-liquid_type : water  
-liquid_volume ： 根据需求填写即可，默认单位ml，这里举例50    
-parent ： workstation  
-res_id ： containe  
-关联设备名称(原unilabos_device_id) ： 这里就填写host_node  
-**配置完成后点击底部保存按钮**  
-
-我们点击PumpTransferProtocol卡片上的编辑按钮来配置参数⭐️  
-event ： transfer_liquid  
-from_vessel ： water  
-to_vessel ： container1  
-volume ： 根据需求填写即可，默认单位ml，这里举例50  
-关联设备名称(原unilabos_device_id) ： 这里就填写workstation  
-**配置完成后点击底部保存按钮**  
-
-#### 3.3 运行工作流
-1. 连接两个节点卡片
-2. 点击底部保存按钮
-3. 点击运行按钮执行工作流
-
-![linksandrun.png](image/linksandrun.png)
-
-### 运行监控
-* 运行状态和消息实时显示在底部控制台
-* 如有报错，可点击查看详细信息
-
-### 结果验证
-工作流完成后，返回仪器耗材模块：
-* 点击 container1卡片查看详情
-* 确认其中包含参数指定的水和容量
-
-
-
-

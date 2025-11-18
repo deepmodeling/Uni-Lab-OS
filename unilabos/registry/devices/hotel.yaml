@@ -31,5 +31,6 @@ hotel.thermo_orbitor_rs2_hotel:
       type: object
   model:
     mesh: thermo_orbitor_rs2_hotel
+    path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/thermo_orbitor_rs2_hotel/macro_device.xacro
     type: device
   version: 1.0.0

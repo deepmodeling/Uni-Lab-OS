@@ -1,0 +1,25 @@
+dummy2_robot:
+  kinematics:
+    # DH parameters for Dummy2 6-DOF robot arm
+    # [theta, d, a, alpha] for each joint
+    joint_1: [0.0, 0.1, 0.0, 1.5708]      # Base rotation
+    joint_2: [0.0, 0.0, 0.2, 0.0]         # Shoulder
+    joint_3: [0.0, 0.0, 0.15, 0.0]        # Elbow  
+    joint_4: [0.0, 0.1, 0.0, 1.5708]      # Wrist roll
+    joint_5: [0.0, 0.0, 0.0, -1.5708]     # Wrist pitch
+    joint_6: [0.0, 0.06, 0.0, 0.0]        # Wrist yaw
+  
+  # Tool center point offset from last joint
+  tcp_offset:
+    x: 0.0
+    y: 0.0  
+    z: 0.04
+    
+  # Workspace limits
+  workspace:
+    x_min: -0.5
+    x_max: 0.5
+    y_min: -0.5
+    y_max: 0.5
+    z_min: 0.0
+    z_max: 0.6

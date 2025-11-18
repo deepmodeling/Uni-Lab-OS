@@ -1126,11 +1126,12 @@ class HostNode(BaseROS2DeviceNode):
             响应对象，包含查询到的资源
         """
         try:
+            from unilabos.app.web import http_client
             data = json.loads(request.command)
             if "uuid" in data and data["uuid"] is not None:
-                http_req = self.bridges[-1].resource_tree_get([data["uuid"]], data["with_children"])
+                http_req = http_client.resource_tree_get([data["uuid"]], data["with_children"])
             elif "id" in data and data["id"].startswith("/"):
-                http_req = self.bridges[-1].resource_get(data["id"], data["with_children"])
+                http_req = http_client.resource_get(data["id"], data["with_children"])
             else:
                 raise ValueError("没有使用正确的物料 id 或 uuid")
             response.response = json.dumps(http_req["data"])

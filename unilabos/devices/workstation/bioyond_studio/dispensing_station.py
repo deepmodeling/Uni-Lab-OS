@@ -1,9 +1,17 @@
 from datetime import datetime
 import json
+import time
+from typing import Optional, Dict, Any, List
+import requests
+from unilabos.devices.workstation.bioyond_studio.config import API_CONFIG
 
 from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import BioyondException
 from unilabos.devices.workstation.bioyond_studio.station import BioyondWorkstation
-
+from unilabos.ros.nodes.base_device_node import ROS2DeviceNode, BaseROS2DeviceNode
+import json
+import sys
+from pathlib import Path
+import importlib
 
 class BioyondDispensingStation(BioyondWorkstation):
     def __init__(
@@ -22,6 +30,111 @@ class BioyondDispensingStation(BioyondWorkstation):
         # # 使用简单的Logger替代原来的logger
         # self._logger = SimpleLogger()
         # self.is_running = False
+
+        # 用于跟踪任务完成状态的字典: {orderCode: {status, order_id, timestamp}}
+        self.order_completion_status = {}
+
+    def _post_project_api(self, endpoint: str, data: Any) -> Dict[str, Any]:
+        """项目接口通用POST调用
+
+        参数:
+            endpoint: 接口路径（例如 /api/lims/order/brief-step-paramerers）
+            data: 请求体中的 data 字段内容
+
+        返回:
+            dict: 服务端响应，失败时返回 {code:0,message,...}
+        """
+        request_data = {
+            "apiKey": API_CONFIG["api_key"],
+            "requestTime": self.hardware_interface.get_current_time_iso8601(),
+            "data": data
+        }
+        try:
+            response = requests.post(
+                f"{self.hardware_interface.host}{endpoint}",
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
+            result = response.json()
+            return result if isinstance(result, dict) else {"code": 0, "message": "非JSON响应"}
+        except json.JSONDecodeError:
+            return {"code": 0, "message": "非JSON响应"}
+        except requests.exceptions.Timeout:
+            return {"code": 0, "message": "请求超时"}
+        except requests.exceptions.RequestException as e:
+            return {"code": 0, "message": str(e)}
+
+    def _delete_project_api(self, endpoint: str, data: Any) -> Dict[str, Any]:
+        """项目接口通用DELETE调用
+
+        参数:
+            endpoint: 接口路径（例如 /api/lims/order/workflows）
+            data: 请求体中的 data 字段内容
+
+        返回:
+            dict: 服务端响应，失败时返回 {code:0,message,...}
+        """
+        request_data = {
+            "apiKey": API_CONFIG["api_key"],
+            "requestTime": self.hardware_interface.get_current_time_iso8601(),
+            "data": data
+        }
+        try:
+            response = requests.delete(
+                f"{self.hardware_interface.host}{endpoint}",
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
+            result = response.json()
+            return result if isinstance(result, dict) else {"code": 0, "message": "非JSON响应"}
+        except json.JSONDecodeError:
+            return {"code": 0, "message": "非JSON响应"}
+        except requests.exceptions.Timeout:
+            return {"code": 0, "message": "请求超时"}
+        except requests.exceptions.RequestException as e:
+            return {"code": 0, "message": str(e)}
+
+    def compute_experiment_design(
+        self,
+        ratio: dict,
+        wt_percent: str = "0.25",
+        m_tot: str = "70",
+        titration_percent: str = "0.03",
+    ) -> dict:
+        try:
+            if isinstance(ratio, str):
+                try:
+                    ratio = json.loads(ratio)
+                except Exception:
+                    ratio = {}
+            root = str(Path(__file__).resolve().parents[3])
+            if root not in sys.path:
+                sys.path.append(root)
+            try:
+                mod = importlib.import_module("tem.compute")
+            except Exception as e:
+                raise BioyondException(f"无法导入计算模块: {e}")
+            try:
+                wp = float(wt_percent) if isinstance(wt_percent, str) else wt_percent
+                mt = float(m_tot) if isinstance(m_tot, str) else m_tot
+                tp = float(titration_percent) if isinstance(titration_percent, str) else titration_percent
+            except Exception as e:
+                raise BioyondException(f"参数解析失败: {e}")
+            res = mod.generate_experiment_design(ratio=ratio, wt_percent=wp, m_tot=mt, titration_percent=tp)
+            out = {
+                "solutions": res.get("solutions", []),
+                "titration": res.get("titration", {}),
+                "solvents": res.get("solvents", {}),
+                "feeding_order": res.get("feeding_order", []),
+                "return_info": json.dumps(res, ensure_ascii=False)
+            }
+            return out
+        except BioyondException:
+            raise
+        except Exception as e:
+            raise BioyondException(str(e))
 
     # 90%10%小瓶投料任务创建方法
     def create_90_10_vial_feeding_task(self,
@@ -270,7 +383,45 @@ class BioyondDispensingStation(BioyondWorkstation):
             # 7. 调用create_order方法创建任务
             result = self.hardware_interface.create_order(json_str)
             self.hardware_interface._logger.info(f"创建90%10%小瓶投料任务结果: {result}")
-            return json.dumps({"suc": True})
+
+            # 8. 解析结果获取order_id
+            order_id = None
+            if isinstance(result, str):
+                # result 格式: "{'3a1d895c-4d39-d504-1398-18f5a40bac1e': [{'id': '...', ...}]}"
+                # 第一个键就是order_id (UUID)
+                try:
+                    # 尝试解析字符串为字典
+                    import ast
+                    result_dict = ast.literal_eval(result)
+                    # 获取第一个键作为order_id
+                    if result_dict and isinstance(result_dict, dict):
+                        first_key = list(result_dict.keys())[0]
+                        order_id = first_key
+                        self.hardware_interface._logger.info(f"✓ 成功提取order_id: {order_id}")
+                    else:
+                        self.hardware_interface._logger.warning(f"result_dict格式异常: {result_dict}")
+                except Exception as e:
+                    self.hardware_interface._logger.error(f"✗ 无法从结果中提取order_id: {e}, result类型={type(result)}")
+            elif isinstance(result, dict):
+                # 如果已经是字典
+                if result:
+                    first_key = list(result.keys())[0]
+                    order_id = first_key
+                    self.hardware_interface._logger.info(f"✓ 成功提取order_id(dict): {order_id}")
+
+            if not order_id:
+                self.hardware_interface._logger.warning(
+                    f"⚠ 未能提取order_id，result={result[:100] if isinstance(result, str) else result}"
+                )
+
+            # 返回成功结果和构建的JSON数据
+            return json.dumps({
+                "suc": True,
+                "order_code": order_code,
+                "order_id": order_id,
+                "result": result,
+                "order_params": order_data
+            })
 
         except BioyondException:
             # 重新抛出BioyondException
@@ -398,7 +549,37 @@ class BioyondDispensingStation(BioyondWorkstation):
             result = self.hardware_interface.create_order(json_str)
             self.hardware_interface._logger.info(f"创建二胺溶液配置任务结果: {result}")
 
-            return json.dumps({"suc": True})
+            # 8. 解析结果获取order_id
+            order_id = None
+            if isinstance(result, str):
+                try:
+                    import ast
+                    result_dict = ast.literal_eval(result)
+                    if result_dict and isinstance(result_dict, dict):
+                        first_key = list(result_dict.keys())[0]
+                        order_id = first_key
+                        self.hardware_interface._logger.info(f"✓ 成功提取order_id: {order_id}")
+                    else:
+                        self.hardware_interface._logger.warning(f"result_dict格式异常: {result_dict}")
+                except Exception as e:
+                    self.hardware_interface._logger.error(f"✗ 无法从结果中提取order_id: {e}")
+            elif isinstance(result, dict):
+                if result:
+                    first_key = list(result.keys())[0]
+                    order_id = first_key
+                    self.hardware_interface._logger.info(f"✓ 成功提取order_id(dict): {order_id}")
+
+            if not order_id:
+                self.hardware_interface._logger.warning(f"⚠ 未能提取order_id")
+
+            # 返回成功结果和构建的JSON数据
+            return json.dumps({
+                "suc": True,
+                "order_code": order_code,
+                "order_id": order_id,
+                "result": result,
+                "order_params": order_data
+            })
 
         except BioyondException:
             # 重新抛出BioyondException
@@ -499,15 +680,24 @@ class BioyondDispensingStation(BioyondWorkstation):
                         hold_m_name=hold_m_name
                     )
 
+                    # 解析返回结果以获取order_code和order_id
+                    result_data = json.loads(result) if isinstance(result, str) else result
+                    order_code = result_data.get("order_code")
+                    order_id = result_data.get("order_id")
+                    order_params = result_data.get("order_params", {})
+
                     results.append({
                         "index": idx + 1,
                         "name": name,
                         "success": True,
-                        "hold_m_name": hold_m_name
+                        "order_code": order_code,
+                        "order_id": order_id,
+                        "hold_m_name": hold_m_name,
+                        "order_params": order_params
                     })
                     success_count += 1
                     self.hardware_interface._logger.info(
-                        f"成功创建二胺溶液配置任务: {name}"
+                        f"成功创建二胺溶液配置任务: {name}, order_code={order_code}, order_id={order_id}"
                     )
 
                 except BioyondException as e:
@@ -533,11 +723,17 @@ class BioyondDispensingStation(BioyondWorkstation):
                         f"创建第 {idx + 1} 个任务时发生未知错误: {str(e)}"
                     )
 
+            # 提取所有成功任务的order_code和order_id
+            order_codes = [r["order_code"] for r in results if r["success"]]
+            order_ids = [r["order_id"] for r in results if r["success"]]
+
             # 返回汇总结果
             summary = {
                 "total": len(solutions),
                 "success": success_count,
                 "failed": failed_count,
+                "order_codes": order_codes,
+                "order_ids": order_ids,
                 "details": results
             }
 
@@ -546,8 +742,13 @@ class BioyondDispensingStation(BioyondWorkstation):
                 f"成功={success_count}, 失败={failed_count}"
             )
 
-            # 返回JSON字符串格式
-            return json.dumps(summary, ensure_ascii=False)
+            # 构建返回结果
+            summary["return_info"] = {
+                "order_codes": order_codes,
+                "order_ids": order_ids,
+            }
+
+            return summary
 
         except BioyondException:
             raise
@@ -555,6 +756,40 @@ class BioyondDispensingStation(BioyondWorkstation):
             error_msg = f"批量创建二胺溶液配置任务时发生未预期的错误: {str(e)}"
             self.hardware_interface._logger.error(error_msg)
             raise BioyondException(error_msg)
+
+    def brief_step_parameters(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """获取简要步骤参数（站点项目接口）
+
+        参数:
+            data: 查询参数字典
+
+        返回值:
+            dict: 接口返回数据
+        """
+        return self._post_project_api("/api/lims/order/brief-step-paramerers", data)
+
+    def project_order_report(self, order_id: str) -> Dict[str, Any]:
+        """查询项目端订单报告（兼容旧路径）
+
+        参数:
+            order_id: 订单ID
+
+        返回值:
+            dict: 报告数据
+        """
+        return self._post_project_api("/api/lims/order/project-order-report", order_id)
+
+    def workflow_sample_locations(self, workflow_id: str) -> Dict[str, Any]:
+        """查询工作流样品库位（站点项目接口）
+
+        参数:
+            workflow_id: 工作流ID
+
+        返回值:
+            dict: 位置信息数据
+        """
+        return self._post_project_api("/api/lims/storage/workflow-sample-locations", workflow_id)
+
 
     # 批量创建90%10%小瓶投料任务
     def batch_create_90_10_vial_feeding_tasks(self,
@@ -613,22 +848,15 @@ class BioyondDispensingStation(BioyondWorkstation):
             if not all([name, main_portion is not None, titration_portion is not None, titration_solvent is not None]):
                 raise BioyondException("titration 数据缺少必要参数")
 
-            # 将main_portion平均分成3份作为90%物料（3个小瓶）
-            portion_90 = main_portion / 3
-
             # 调用单个任务创建方法
             result = self.create_90_10_vial_feeding_task(
                 order_name=f"90%10%小瓶投料-{name}",
                 speed=speed,
                 temperature=temperature,
                 delay_time=delay_time,
-                # 90%物料 - 主称固体平均分成3份
+                # 90%物料 - 主称固体直接使用main_portion
                 percent_90_1_assign_material_name=name,
-                percent_90_1_target_weigh=str(round(portion_90, 6)),
-                percent_90_2_assign_material_name=name,
-                percent_90_2_target_weigh=str(round(portion_90, 6)),
-                percent_90_3_assign_material_name=name,
-                percent_90_3_target_weigh=str(round(portion_90, 6)),
+                percent_90_1_target_weigh=str(round(main_portion, 6)),
                 # 10%物料 - 滴定固体 + 滴定溶剂（只使用第1个10%小瓶）
                 percent_10_1_assign_material_name=name,
                 percent_10_1_target_weigh=str(round(titration_portion, 6)),
@@ -637,29 +865,54 @@ class BioyondDispensingStation(BioyondWorkstation):
                 hold_m_name=hold_m_name
             )
 
-            summary = {
+            # 解析返回结果以获取order_code和order_id
+            result_data = json.loads(result) if isinstance(result, str) else result
+            order_code = result_data.get("order_code")
+            order_id = result_data.get("order_id")
+            order_params = result_data.get("order_params", {})
+
+            # 构建详细信息（保持原有结构）
+            detail = {
+                "index": 1,
+                "name": name,
                 "success": True,
+                "order_code": order_code,
+                "order_id": order_id,
                 "hold_m_name": hold_m_name,
-                "material_name": name,
                 "90_vials": {
-                    "count": 3,
-                    "weight_per_vial": round(portion_90, 6),
+                    "count": 1,
+                    "weight_per_vial": round(main_portion, 6),
                     "total_weight": round(main_portion, 6)
                 },
                 "10_vials": {
                     "count": 1,
                     "solid_weight": round(titration_portion, 6),
                     "liquid_volume": round(titration_solvent, 6)
-                }
+                },
+                "order_params": order_params
+            }
+
+            # 构建批量结果格式（与diamine_solution_tasks保持一致）
+            summary = {
+                "total": 1,
+                "success": 1,
+                "failed": 0,
+                "order_codes": [order_code],
+                "order_ids": [order_id],
+                "details": [detail]
             }
 
             self.hardware_interface._logger.info(
-                f"成功创建90%10%小瓶投料任务: {hold_m_name}, "
-                f"90%物料={portion_90:.6f}g×3, 10%物料={titration_portion:.6f}g+{titration_solvent:.6f}mL"
+                f"成功创建90%10%小瓶投料任务: {name}, order_code={order_code}, order_id={order_id}"
             )
 
-            # 返回JSON字符串格式
-            return json.dumps(summary, ensure_ascii=False)
+            # 构建返回结果
+            summary["return_info"] = {
+                "order_codes": [order_code],
+                "order_ids": [order_id],
+            }
+
+            return summary
 
         except BioyondException:
             raise
@@ -667,6 +920,571 @@ class BioyondDispensingStation(BioyondWorkstation):
             error_msg = f"批量创建90%10%小瓶投料任务时发生未预期的错误: {str(e)}"
             self.hardware_interface._logger.error(error_msg)
             raise BioyondException(error_msg)
+
+    def _extract_actuals_from_report(self, report) -> Dict[str, Any]:
+        data = report.get('data') if isinstance(report, dict) else None
+        actual_target_weigh = None
+        actual_volume = None
+        if data:
+            extra = data.get('extraProperties') or {}
+            if isinstance(extra, dict):
+                for v in extra.values():
+                    obj = None
+                    try:
+                        obj = json.loads(v) if isinstance(v, str) else v
+                    except Exception:
+                        obj = None
+                    if isinstance(obj, dict):
+                        tw = obj.get('targetWeigh')
+                        vol = obj.get('volume')
+                        if tw is not None:
+                            try:
+                                actual_target_weigh = float(tw)
+                            except Exception:
+                                pass
+                        if vol is not None:
+                            try:
+                                actual_volume = float(vol)
+                            except Exception:
+                                pass
+        return {
+            'actualTargetWeigh': actual_target_weigh,
+            'actualVolume': actual_volume
+        }
+
+    # 等待多个任务完成并获取实验报告
+    def wait_for_multiple_orders_and_get_reports(self,
+                                                  batch_create_result: str = None,
+                                                  timeout: int = 7200,
+                                                  check_interval: int = 10) -> Dict[str, Any]:
+        """
+        同时等待多个任务完成并获取实验报告
+
+        参数说明:
+        - batch_create_result: 批量创建任务的返回结果JSON字符串，包含order_codes和order_ids数组
+        - timeout: 超时时间（秒），默认7200秒（2小时）
+        - check_interval: 检查间隔（秒），默认10秒
+
+        返回: 包含所有任务状态和报告的字典
+        {
+            "total": 2,
+            "completed": 2,
+            "timeout": 0,
+            "elapsed_time": 120.5,
+            "reports": [
+                {
+                    "order_code": "task_vial_1",
+                    "order_id": "uuid1",
+                    "status": "completed",
+                    "completion_status": 30,
+                    "report": {...}
+                },
+                ...
+            ]
+        }
+
+        异常:
+        - BioyondException: 所有任务都超时或发生错误
+        """
+        try:
+            # 参数类型转换
+            timeout = int(timeout) if timeout else 7200
+            check_interval = int(check_interval) if check_interval else 10
+
+            # 验证batch_create_result参数
+            if not batch_create_result or batch_create_result == "":
+                raise BioyondException("batch_create_result参数为空，请确保从batch_create节点正确连接handle")
+
+            # 解析batch_create_result JSON对象
+            try:
+                # 清理可能存在的截断标记 [...]
+                if isinstance(batch_create_result, str) and '[...]' in batch_create_result:
+                    batch_create_result = batch_create_result.replace('[...]', '[]')
+
+                result_obj = json.loads(batch_create_result) if isinstance(batch_create_result, str) else batch_create_result
+
+                # 兼容外层包装格式 {error, suc, return_value}
+                if isinstance(result_obj, dict) and "return_value" in result_obj:
+                    inner = result_obj.get("return_value")
+                    if isinstance(inner, str):
+                        result_obj = json.loads(inner)
+                    elif isinstance(inner, dict):
+                        result_obj = inner
+
+                # 从summary对象中提取order_codes和order_ids
+                order_codes = result_obj.get("order_codes", [])
+                order_ids = result_obj.get("order_ids", [])
+
+            except json.JSONDecodeError as e:
+                raise BioyondException(f"解析batch_create_result失败: {e}")
+            except Exception as e:
+                raise BioyondException(f"处理batch_create_result时出错: {e}")
+
+            # 验证提取的数据
+            if not order_codes:
+                raise BioyondException("batch_create_result中未找到order_codes字段或为空")
+            if not order_ids:
+                raise BioyondException("batch_create_result中未找到order_ids字段或为空")
+
+            # 确保order_codes和order_ids是列表类型
+            if not isinstance(order_codes, list):
+                order_codes = [order_codes] if order_codes else []
+            if not isinstance(order_ids, list):
+                order_ids = [order_ids] if order_ids else []
+
+            codes_list = order_codes
+            ids_list = order_ids
+
+            if len(codes_list) != len(ids_list):
+                raise BioyondException(
+                    f"order_codes数量({len(codes_list)})与order_ids数量({len(ids_list)})不匹配"
+                )
+
+            if not codes_list or not ids_list:
+                raise BioyondException("order_codes和order_ids不能为空")
+
+            # 初始化跟踪变量
+            total = len(codes_list)
+            pending_orders = {code: {"order_id": ids_list[i], "completed": False}
+                            for i, code in enumerate(codes_list)}
+            reports = []
+
+            start_time = time.time()
+            self.hardware_interface._logger.info(
+                f"开始等待 {total} 个任务完成: {', '.join(codes_list)}"
+            )
+
+            # 轮询检查任务状态
+            while pending_orders:
+                elapsed_time = time.time() - start_time
+
+                # 检查超时
+                if elapsed_time > timeout:
+                    # 收集超时任务
+                    timeout_orders = list(pending_orders.keys())
+                    self.hardware_interface._logger.error(
+                        f"等待任务完成超时，剩余未完成任务: {', '.join(timeout_orders)}"
+                    )
+
+                    # 为超时任务添加记录
+                    for order_code in timeout_orders:
+                        reports.append({
+                            "order_code": order_code,
+                            "order_id": pending_orders[order_code]["order_id"],
+                            "status": "timeout",
+                            "completion_status": None,
+                            "report": None,
+                            "extracted": None,
+                            "elapsed_time": elapsed_time
+                        })
+
+                    break
+
+                # 检查每个待完成的任务
+                completed_in_this_round = []
+                for order_code in list(pending_orders.keys()):
+                    order_id = pending_orders[order_code]["order_id"]
+
+                    # 检查任务是否完成
+                    if order_code in self.order_completion_status:
+                        completion_info = self.order_completion_status[order_code]
+                        self.hardware_interface._logger.info(
+                            f"检测到任务 {order_code} 已完成，状态: {completion_info.get('status')}"
+                        )
+
+                        # 获取实验报告
+                        try:
+                            report = self.project_order_report(order_id)
+
+                            if not report:
+                                self.hardware_interface._logger.warning(
+                                    f"任务 {order_code} 已完成但无法获取报告"
+                                )
+                                report = {"error": "无法获取报告"}
+                            else:
+                                self.hardware_interface._logger.info(
+                                    f"成功获取任务 {order_code} 的实验报告"
+                                )
+
+                            reports.append({
+                                "order_code": order_code,
+                                "order_id": order_id,
+                                "status": "completed",
+                                "completion_status": completion_info.get('status'),
+                                "report": report,
+                                "extracted": self._extract_actuals_from_report(report),
+                                "elapsed_time": elapsed_time
+                            })
+
+                            # 标记为已完成
+                            completed_in_this_round.append(order_code)
+
+                            # 清理完成状态记录
+                            del self.order_completion_status[order_code]
+
+                        except Exception as e:
+                            self.hardware_interface._logger.error(
+                                f"查询任务 {order_code} 报告失败: {str(e)}"
+                            )
+                            reports.append({
+                                "order_code": order_code,
+                                "order_id": order_id,
+                                "status": "error",
+                                "completion_status": completion_info.get('status'),
+                                "report": None,
+                                "extracted": None,
+                                "error": str(e),
+                                "elapsed_time": elapsed_time
+                            })
+                            completed_in_this_round.append(order_code)
+
+                # 从待完成列表中移除已完成的任务
+                for order_code in completed_in_this_round:
+                    del pending_orders[order_code]
+
+                # 如果还有待完成的任务，等待后继续
+                if pending_orders:
+                    time.sleep(check_interval)
+
+                    # 每分钟记录一次等待状态
+                    new_elapsed_time = time.time() - start_time
+                    if int(new_elapsed_time) % 60 == 0 and new_elapsed_time > 0:
+                        self.hardware_interface._logger.info(
+                            f"批量等待任务中... 已完成 {len(reports)}/{total}, "
+                            f"待完成: {', '.join(pending_orders.keys())}, "
+                            f"已等待 {int(new_elapsed_time/60)} 分钟"
+                        )
+
+            # 统计结果
+            completed_count = sum(1 for r in reports if r['status'] == 'completed')
+            timeout_count = sum(1 for r in reports if r['status'] == 'timeout')
+            error_count = sum(1 for r in reports if r['status'] == 'error')
+
+            final_elapsed_time = time.time() - start_time
+
+            summary = {
+                "total": total,
+                "completed": completed_count,
+                "timeout": timeout_count,
+                "error": error_count,
+                "elapsed_time": round(final_elapsed_time, 2),
+                "reports": reports
+            }
+
+            self.hardware_interface._logger.info(
+                f"批量等待任务完成: 总数={total}, 成功={completed_count}, "
+                f"超时={timeout_count}, 错误={error_count}, 耗时={final_elapsed_time:.1f}秒"
+            )
+
+            # 返回字典格式，在顶层包含统计信息
+            return {
+                "return_info": json.dumps(summary, ensure_ascii=False)
+            }
+
+        except BioyondException:
+            raise
+        except Exception as e:
+            error_msg = f"批量等待任务完成时发生未预期的错误: {str(e)}"
+            self.hardware_interface._logger.error(error_msg)
+            raise BioyondException(error_msg)
+
+    def process_order_finish_report(self, report_request, used_materials) -> Dict[str, Any]:
+        """
+        重写父类方法，处理任务完成报送并记录到 order_completion_status
+
+        Args:
+            report_request: WorkstationReportRequest 对象，包含任务完成信息
+            used_materials: 物料使用记录列表
+
+        Returns:
+            Dict[str, Any]: 处理结果
+        """
+        try:
+            # 调用父类方法
+            result = super().process_order_finish_report(report_request, used_materials)
+
+            # 记录任务完成状态
+            data = report_request.data
+            order_code = data.get('orderCode')
+
+            if order_code:
+                self.order_completion_status[order_code] = {
+                    'status': data.get('status'),
+                    'order_name': data.get('orderName'),
+                    'timestamp': datetime.now().isoformat(),
+                    'start_time': data.get('startTime'),
+                    'end_time': data.get('endTime')
+                }
+
+                self.hardware_interface._logger.info(
+                    f"已记录任务完成状态: {order_code}, status={data.get('status')}"
+                )
+
+            return result
+
+        except Exception as e:
+            self.hardware_interface._logger.error(f"处理任务完成报送失败: {e}")
+            return {"processed": False, "error": str(e)}
+
+    def transfer_materials_to_reaction_station(
+        self,
+        target_device_id: str,
+        transfer_groups: list
+    ) -> dict:
+        """
+        将配液站完成的物料转移到指定反应站的堆栈库位
+        支持多组转移任务,每组包含物料名称、目标堆栈和目标库位
+
+        Args:
+            target_device_id: 目标反应站设备ID(所有转移组使用同一个设备)
+            transfer_groups: 转移任务组列表,每组包含:
+                - materials: 物料名称(字符串,将通过RPC查询)
+                - target_stack: 目标堆栈名称(如"堆栈1左")
+                - target_sites: 目标库位(如"A01")
+
+        Returns:
+            dict: 转移结果
+                {
+                    "success": bool,
+                    "total_groups": int,
+                    "successful_groups": int,
+                    "failed_groups": int,
+                    "target_device_id": str,
+                    "details": [...]
+                }
+        """
+        try:
+            # 验证参数
+            if not target_device_id:
+                raise ValueError("目标设备ID不能为空")
+
+            if not transfer_groups:
+                raise ValueError("转移任务组列表不能为空")
+
+            if not isinstance(transfer_groups, list):
+                raise ValueError("transfer_groups必须是列表类型")
+
+            # 标准化设备ID格式: 确保以 /devices/ 开头
+            if not target_device_id.startswith("/devices/"):
+                if target_device_id.startswith("/"):
+                    target_device_id = f"/devices{target_device_id}"
+                else:
+                    target_device_id = f"/devices/{target_device_id}"
+
+            self.hardware_interface._logger.info(
+                f"目标设备ID标准化为: {target_device_id}"
+            )
+
+            self.hardware_interface._logger.info(
+                f"开始执行批量物料转移: {len(transfer_groups)}组任务 -> {target_device_id}"
+            )
+
+            from .config import WAREHOUSE_MAPPING
+            results = []
+            successful_count = 0
+            failed_count = 0
+
+            for idx, group in enumerate(transfer_groups, 1):
+                try:
+                    # 提取参数
+                    material_name = group.get("materials", "")
+                    target_stack = group.get("target_stack", "")
+                    target_sites = group.get("target_sites", "")
+
+                    # 验证必填参数
+                    if not material_name:
+                        raise ValueError(f"第{idx}组: 物料名称不能为空")
+                    if not target_stack:
+                        raise ValueError(f"第{idx}组: 目标堆栈不能为空")
+                    if not target_sites:
+                        raise ValueError(f"第{idx}组: 目标库位不能为空")
+
+                    self.hardware_interface._logger.info(
+                        f"处理第{idx}组转移: {material_name} -> "
+                        f"{target_device_id}/{target_stack}/{target_sites}"
+                    )
+
+                    # 通过物料名称从deck获取ResourcePLR对象
+                    try:
+                        material_resource = self.deck.get_resource(material_name)
+                        if not material_resource:
+                            raise ValueError(f"在deck中未找到物料: {material_name}")
+
+                        self.hardware_interface._logger.info(
+                            f"从deck获取到物料 {material_name}: {material_resource}"
+                        )
+                    except Exception as e:
+                        raise ValueError(
+                            f"获取物料 {material_name} 失败: {str(e)}，请确认物料已正确加载到deck中"
+                        )
+
+                    # 验证目标堆栈是否存在
+                    if target_stack not in WAREHOUSE_MAPPING:
+                        raise ValueError(
+                            f"未知的堆栈名称: {target_stack}，"
+                            f"可选值: {list(WAREHOUSE_MAPPING.keys())}"
+                        )
+
+                    # 验证库位是否有效
+                    stack_sites = WAREHOUSE_MAPPING[target_stack].get("site_uuids", {})
+                    if target_sites not in stack_sites:
+                        raise ValueError(
+                            f"库位 {target_sites} 不存在于堆栈 {target_stack} 中，"
+                            f"可选库位: {list(stack_sites.keys())}"
+                        )
+
+                    # 获取目标库位的UUID
+                    target_site_uuid = stack_sites[target_sites]
+                    if not target_site_uuid:
+                        raise ValueError(
+                            f"库位 {target_sites} 的 UUID 未配置，请在 WAREHOUSE_MAPPING 中完善"
+                        )
+
+                    # 目标位点（包含UUID）
+                    future = ROS2DeviceNode.run_async_func(
+                        self._ros_node.get_resource_with_dir,
+                        True,
+                        **{
+                            "resource_id": f"/reaction_station_bioyond/Bioyond_Deck/{target_stack}",
+                            "with_children": True,
+                        },
+                    )
+                    # 等待异步完成后再获取结果
+                    if not future:
+                        raise ValueError(f"获取目标堆栈资源future无效: {target_stack}")
+                    while not future.done():
+                        time.sleep(0.1)
+                    target_site_resource = future.result()
+
+                    # 调用父类的 transfer_resource_to_another 方法
+                    # 传入ResourcePLR对象和目标位点资源
+                    future = self.transfer_resource_to_another(
+                        resource=[material_resource],
+                        mount_resource=[target_site_resource],
+                        sites=[target_sites],
+                        mount_device_id=target_device_id
+                    )
+
+                    # 等待异步任务完成（轮询直到完成，再取结果）
+                    if future:
+                        try:
+                            while not future.done():
+                                time.sleep(0.1)
+                            future.result()
+                            self.hardware_interface._logger.info(
+                                f"异步转移任务已完成: {material_name}"
+                            )
+                        except Exception as e:
+                            raise ValueError(f"转移任务执行失败: {str(e)}")
+
+                    self.hardware_interface._logger.info(
+                        f"第{idx}组转移成功: {material_name} -> "
+                        f"{target_device_id}/{target_stack}/{target_sites}"
+                    )
+
+                    successful_count += 1
+                    results.append({
+                        "group_index": idx,
+                        "success": True,
+                        "material_name": material_name,
+                        "target_stack": target_stack,
+                        "target_site": target_sites,
+                        "message": "转移成功"
+                    })
+
+                except Exception as e:
+                    error_msg = f"第{idx}组转移失败: {str(e)}"
+                    self.hardware_interface._logger.error(error_msg)
+                    failed_count += 1
+                    results.append({
+                        "group_index": idx,
+                        "success": False,
+                        "material_name": group.get("materials", ""),
+                        "error": str(e)
+                    })
+
+            # 返回汇总结果
+            return {
+                "success": failed_count == 0,
+                "total_groups": len(transfer_groups),
+                "successful_groups": successful_count,
+                "failed_groups": failed_count,
+                "target_device_id": target_device_id,
+                "details": results,
+                "message": f"完成 {len(transfer_groups)} 组转移任务到 {target_device_id}: "
+                          f"{successful_count} 成功, {failed_count} 失败"
+            }
+
+        except Exception as e:
+            error_msg = f"批量转移物料失败: {str(e)}"
+            self.hardware_interface._logger.error(error_msg)
+            return {
+                "success": False,
+                "total_groups": len(transfer_groups) if transfer_groups else 0,
+                "successful_groups": 0,
+                "failed_groups": len(transfer_groups) if transfer_groups else 0,
+                "target_device_id": target_device_id if target_device_id else "",
+                "error": error_msg
+            }
+
+    def query_resource_by_name(self, material_name: str):
+        """
+        通过物料名称查询资源对象(适用于Bioyond系统)
+
+        Args:
+            material_name: 物料名称
+
+        Returns:
+            物料ID或None
+        """
+        try:
+            # Bioyond系统使用material_cache存储物料信息
+            if not hasattr(self.hardware_interface, 'material_cache'):
+                self.hardware_interface._logger.error(
+                    "hardware_interface没有material_cache属性"
+                )
+                return None
+
+            material_cache = self.hardware_interface.material_cache
+
+            self.hardware_interface._logger.info(
+                f"查询物料 '{material_name}', 缓存中共有 {len(material_cache)} 个物料"
+            )
+
+            # 调试: 打印前几个物料信息
+            if material_cache:
+                cache_items = list(material_cache.items())[:5]
+                for name, material_id in cache_items:
+                    self.hardware_interface._logger.debug(
+                        f"缓存物料: name={name}, id={material_id}"
+                    )
+
+            # 直接从缓存中查找
+            if material_name in material_cache:
+                material_id = material_cache[material_name]
+                self.hardware_interface._logger.info(
+                    f"找到物料: {material_name} -> ID: {material_id}"
+                )
+                return material_id
+
+            self.hardware_interface._logger.warning(
+                f"未找到物料: {material_name} (缓存中无此物料)"
+            )
+
+            # 打印所有可用物料名称供参考
+            available_materials = list(material_cache.keys())
+            if available_materials:
+                self.hardware_interface._logger.info(
+                    f"可用物料列表(前10个): {available_materials[:10]}"
+                )
+
+            return None
+
+        except Exception as e:
+            self.hardware_interface._logger.error(
+                f"查询物料失败 {material_name}: {str(e)}"
+            )
+            return None
 
 
 if __name__ == "__main__":
@@ -1089,4 +1907,3 @@ if __name__ == "__main__":
 
     # id = "3a1bce3c-4f31-c8f3-5525-f3b273bc34dc"
     # bioyond.sample_waste_removal(id)
-

@@ -9,6 +9,7 @@ from unilabos.ros.msgs.message_converter import convert_from_ros_msg
 
 class RegularContainer(Container):
     def __init__(self, *args, **kwargs):
+        pose = kwargs.pop("pose", None)
         if "size_x" not in kwargs:
             kwargs["size_x"] = 0
         if "size_y" not in kwargs:

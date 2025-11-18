@@ -34,13 +34,13 @@ BIOYOND_PolymerStation_6StockCarrier:
   init_param_schema: {}
   registry_type: resource
   version: 1.0.0
-BIOYOND_PolymerStation_6VialCarrier:
+BIOYOND_PolymerStation_8StockCarrier:
   category:
   - bottle_carriers
   class:
-    module: unilabos.resources.bioyond.bottle_carriers:BIOYOND_PolymerStation_6VialCarrier
+    module: unilabos.resources.bioyond.bottle_carriers:BIOYOND_PolymerStation_8StockCarrier
     type: pylabrobot
-  description: BIOYOND_PolymerStation_6VialCarrier
+  description: BIOYOND_PolymerStation_8StockCarrier (2x4布局，8个位置)
   handles: []
   icon: ''
   init_param_schema: {}

@@ -2,6 +2,7 @@ import asyncio
 import copy
 from pathlib import Path
 import threading
+import uuid
 import rclpy
 import json
 import time
@@ -18,7 +19,7 @@ from rclpy.node import Node
 import re
 
 class LiquidHandlerJointPublisher(BaseROS2DeviceNode):
-    def __init__(self,resources_config:list, resource_tracker, rate=50, device_id:str = "lh_joint_publisher"):
+    def __init__(self,resources_config:list, resource_tracker, rate=50, device_id:str = "lh_joint_publisher", **kwargs):
         super().__init__(
             driver_instance=self,
             device_id=device_id,
@@ -27,6 +28,7 @@ class LiquidHandlerJointPublisher(BaseROS2DeviceNode):
             hardware_interface={},
             print_publish=False,
             resource_tracker=resource_tracker,  
+            device_uuid=kwargs.get("uuid", str(uuid.uuid4())),
         )  
         
         # 初始化参数
@@ -55,8 +57,8 @@ class LiquidHandlerJointPublisher(BaseROS2DeviceNode):
         # 初始化设备ID与config信息
         for resource in resources_config:
             if resource['class'] == 'liquid_handler':
-                deck_id = resource['config']['data']['children'][0]['_resource_child_name']
-                deck_class = resource['config']['data']['children'][0]['_resource_type'].split(':')[-1]
+                deck_id = resource['config']['deck']['_resource_child_name']
+                deck_class = resource['config']['deck']['_resource_type'].split(':')[-1]
                 key = f'{deck_id}'
                 # key = f'{resource["id"]}_{deck_id}'
                 self.lh_devices[key] = {
@@ -208,7 +210,7 @@ class LiquidHandlerJointPublisher(BaseROS2DeviceNode):
         return joint_positions ,z_index
 
 
-    def move_joints(self, resource_names, x, y, z, option, speed = 0.1 ,x_joint=None, y_joint=None, z_joint=None):
+    def move_joints(self, resource_names, x, y, z, option, speed = 0.1 ,x_joint=None, y_joint=None, z_joint=None,channels=[0,1,2,3,4,5,6,7]):
         if isinstance(resource_names, list):
             resource_name_ = resource_names[0]
         else:
@@ -217,9 +219,9 @@ class LiquidHandlerJointPublisher(BaseROS2DeviceNode):
         parent_id = self.find_resource_parent(resource_name_)
 
 
-        print('!'*20)
-        print(parent_id)
-        print('!'*20)
+        # print('!'*20)
+        # print(parent_id)
+        # print('!'*20)
         if x_joint is None:
             xa,xb = next(iter(self.lh_devices[parent_id]['joint_config']['x'].items()))
             x_joint_config = {xa:xb}
@@ -252,11 +254,11 @@ class LiquidHandlerJointPublisher(BaseROS2DeviceNode):
         if option == "pick":
             link_name =  self.lh_devices[parent_id]['joint_config']['link_names'][z_index]
             link_name =  f'{parent_id}_{link_name}'
-            self.resource_move(resource_name_, link_name, [0,1,2,3,4,5,6,7])
+            self.resource_move(resource_name_, link_name, channels)
         elif option == "drop_trash":
-            self.resource_move(resource_name_, "__trash", [0,1,2,3,4,5,6,7])
+            self.resource_move(resource_name_, "__trash", channels)
         elif option == "drop":
-            self.resource_move(resource_name_, "world", [0,1,2,3,4,5,6,7])
+            self.resource_move(resource_name_, "world", channels)
         self.move_to(joint_positions_target_zero, speed, parent_id)
 
 
@@ -325,8 +327,20 @@ class JointStatePublisher(Node):
                 
         return None
     
-    def send_resource_action(self, resource_name, x,y,z,option, speed = 0.1,x_joint=None, y_joint=None, z_joint=None):
+    def send_resource_action(self, resource_name, x,y,z,option, speed = 0.1,x_joint=None, y_joint=None, z_joint=None,channels=[0,1,2,3,4,5,6,7]):
         goal_msg = SendCmd.Goal()
+
+        # Convert numpy arrays or other non-serializable objects to lists
+        def to_serializable(obj):
+            if hasattr(obj, 'tolist'):  # numpy array
+                return obj.tolist()
+            elif isinstance(obj, list):
+                return [to_serializable(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {k: to_serializable(v) for k, v in obj.items()}
+            else:
+                return obj
+
         str_dict = {
             'resource_names':resource_name,
             'x':x,
@@ -334,9 +348,10 @@ class JointStatePublisher(Node):
             'z':z,
             'option':option,
             'speed':speed,
-            'x_joint':x_joint,
-            'y_joint':y_joint,
-            'z_joint':z_joint
+            'x_joint':to_serializable(x_joint),
+            'y_joint':to_serializable(y_joint),
+            'z_joint':to_serializable(z_joint),
+            'channels':to_serializable(channels)
         }
         
 

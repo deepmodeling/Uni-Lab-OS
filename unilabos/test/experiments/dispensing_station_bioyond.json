@@ -1,0 +1,83 @@
+{
+    "nodes": [
+        {
+            "id": "dispensing_station_bioyond",
+            "name": "dispensing_station_bioyond",
+            "children": [
+                "Bioyond_Dispensing_Deck"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "bioyond_dispensing_station",
+            "config": {
+                "config": {
+                    "api_key": "DE9BDDA0",
+                    "api_host": "http://192.168.1.200:44388",
+                    "material_type_mappings": {
+                        "BIOYOND_PolymerStation_1FlaskCarrier": [
+                            "烧杯",
+                            "3a14196b-24f2-ca49-9081-0cab8021bf1a"
+                        ],
+                        "BIOYOND_PolymerStation_1BottleCarrier": [
+                            "试剂瓶",
+                            "3a14196b-8bcf-a460-4f74-23f21ca79e72"
+                        ],
+                        "BIOYOND_PolymerStation_6StockCarrier": [
+                            "分装板",
+                            "3a14196e-5dfe-6e21-0c79-fe2036d052c4"
+                        ],
+                        "BIOYOND_PolymerStation_Liquid_Vial": [
+                            "10%分装小瓶",
+                            "3a14196c-76be-2279-4e22-7310d69aed68"
+                        ],
+                        "BIOYOND_PolymerStation_Solid_Vial": [
+                            "90%分装小瓶",
+                            "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea"
+                        ],
+                        "BIOYOND_PolymerStation_8StockCarrier": [
+                            "样品板",
+                            "3a14196e-b7a0-a5da-1931-35f3000281e9"
+                        ],
+                        "BIOYOND_PolymerStation_Solid_Stock": [
+                            "样品瓶",
+                            "3a14196a-cf7d-8aea-48d8-b9662c7dba94"
+                        ]
+                    }
+                },
+                "deck": {
+                    "data": {
+                        "_resource_child_name": "Bioyond_Dispensing_Deck",
+                        "_resource_type": "unilabos.resources.bioyond.decks:BIOYOND_PolymerPreparationStation_Deck"
+                    }
+                },
+                "protocol_type": []
+            },
+            "data": {}
+        },
+        {
+            "id": "Bioyond_Dispensing_Deck",
+            "name": "Bioyond_Dispensing_Deck",
+            "sample_id": null,
+            "children": [],
+            "parent": "dispensing_station_bioyond",
+            "type": "deck",
+            "class": "BIOYOND_PolymerPreparationStation_Deck",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "type": "BIOYOND_PolymerPreparationStation_Deck",
+                "setup": true,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                }
+            },
+            "data": {}
+        }
+    ]
+}

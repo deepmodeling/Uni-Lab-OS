@@ -1,5 +1,4 @@
-from unilabos.resources.itemized_carrier import Bottle, BottleCarrier
-# 工厂函数
+from unilabos.resources.itemized_carrier import Bottle
 
 
 def BIOYOND_PolymerStation_Solid_Stock(
@@ -176,3 +175,21 @@ def BIOYOND_PolymerStation_TipBox(
             )
 
     return tip_box
+
+
+def BIOYOND_PolymerStation_Flask(
+    name: str,
+    diameter: float = 60.0,
+    height: float = 70.0,
+    max_volume: float = 200000.0,  # 200mL
+    barcode: str = None,
+) -> Bottle:
+    """聚合站-烧杯（统一 Flask 资源到 PolymerStation）"""
+    return Bottle(
+        name=name,
+        diameter=diameter,
+        height=height,
+        max_volume=max_volume,
+        barcode=barcode,
+        model="BIOYOND_PolymerStation_Flask",
+    )

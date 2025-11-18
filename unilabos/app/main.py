@@ -105,7 +105,7 @@ def parse_args():
     parser.add_argument(
         "--port",
         type=int,
-        default=8002,
+        default=None,
         help="Port for web service information page",
     )
     parser.add_argument(
@@ -139,7 +139,7 @@ def parse_args():
     parser.add_argument(
         "--addr",
         type=str,
-        default="https://uni-lab.bohrium.com/api/v1",
+        default=None,
         help="Laboratory backend address",
     )
     parser.add_argument(
@@ -220,17 +220,53 @@ def main():
         logger.info(f"Log level set to '{BasicConfig.log_level}' from config file.")
         configure_logger(loglevel=BasicConfig.log_level)
 
-    if args_dict["addr"] == "test":
+    # 选择地址优先级：命令行 > 配置文件 > 默认线上
+    addr_cli = args_dict.get("addr", None)
+    addr_cfg = getattr(BasicConfig, "addr", None)
+    effective_addr = addr_cli if (addr_cli not in (None, "")) else addr_cfg
+
+    if effective_addr == "test":
         print_status("使用测试环境地址", "info")
         HTTPConfig.remote_addr = "https://uni-lab.test.bohrium.com/api/v1"
-    elif args_dict["addr"] == "uat":
+    elif effective_addr == "uat":
         print_status("使用uat环境地址", "info")
         HTTPConfig.remote_addr = "https://uni-lab.uat.bohrium.com/api/v1"
-    elif args_dict["addr"] == "local":
+    elif effective_addr == "local":
         print_status("使用本地环境地址", "info")
         HTTPConfig.remote_addr = "http://127.0.0.1:48197/api/v1"
+    elif effective_addr:
+        HTTPConfig.remote_addr = effective_addr
+        print_status(f"使用配置/命令行提供的自定义地址: {effective_addr}", "info")
     else:
-        HTTPConfig.remote_addr = args_dict.get("addr", "")
+        # 默认地址
+        HTTPConfig.remote_addr = "https://uni-lab.bohrium.com/api/v1"
+        print_status("未提供地址，使用默认线上地址", "info")
+
+    # 选择端口优先级：命令行 > 配置文件 > 默认 8002
+    port_cli = args_dict.get("port", None)
+    port_cfg = getattr(BasicConfig, "port", None) if hasattr(BasicConfig, "port") else None
+    effective_port = port_cli if (port_cli is not None) else (port_cfg if (port_cfg is not None) else 8002)
+    args_dict["port"] = effective_port
+    if port_cli is not None:
+        print_status(f"使用命令行端口 {effective_port}", "info")
+    elif port_cfg is not None:
+        print_status(f"使用配置文件端口 {effective_port}", "info")
+    else:
+        print_status(f"未提供端口，使用默认端口 {effective_port}", "info")
+
+    # 选择是否打开浏览器：命令行(是否包含 --disable_browser) > 配置文件 > 默认 False
+    disable_browser_cli = "--disable_browser" in sys.argv
+    if disable_browser_cli:
+        args_dict["disable_browser"] = True
+        print_status("使用命令行设置：禁用浏览器", "info")
+    else:
+        disable_cfg = getattr(BasicConfig, "disable_browser", None)
+        if isinstance(disable_cfg, bool):
+            args_dict["disable_browser"] = disable_cfg
+            print_status(f"使用配置文件设置：disable_browser={disable_cfg}", "info")
+        else:
+            args_dict["disable_browser"] = False
+            print_status("未提供 disable_browser，默认开启浏览器", "info")
 
     # 设置BasicConfig参数
     if args_dict.get("ak", ""):
@@ -302,6 +338,11 @@ def main():
         graph, resource_tree_set, resource_links = read_node_link_json(request_startup_json)
     else:
         file_path = args_dict["graph"]
+        if not os.path.isfile(file_path):
+            temp_file_path = os.path.abspath(str(os.path.join(__file__, "..", "..", file_path)))
+            if os.path.isfile(temp_file_path):
+                print_status(f"使用相对路径{temp_file_path}", "info")
+                file_path = temp_file_path
         if file_path.endswith(".json"):
             graph, resource_tree_set, resource_links = read_node_link_json(file_path)
         else:
@@ -419,7 +460,23 @@ def main():
             )
             server_thread.start()
             asyncio.set_event_loop(asyncio.new_event_loop())
-            resource_visualization.start()
+            try:
+                resource_visualization.start()
+            except OSError as e:
+                if "AMENT_PREFIX_PATH" in str(e):
+                    print_status(
+                        f"ROS 2环境未正确设置，跳过3D可视化启动。错误详情: {e}",
+                        "warning"
+                    )
+                    print_status(
+                        "建议解决方案：\n"
+                        "1. 激活Conda环境: conda activate unilab\n"
+                        "2. 或使用 --backend simple 参数\n"
+                        "3. 或使用 --visual disable 参数禁用可视化",
+                        "info"
+                    )
+                else:
+                    raise
             while True:
                 time.sleep(1)
         else:

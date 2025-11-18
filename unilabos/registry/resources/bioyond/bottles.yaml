@@ -1,8 +1,31 @@
+BIOYOND_PolymerStation_Flask:
+  category:
+  - bottles
+  - flasks
+  class:
+    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Flask
+    type: pylabrobot
+  description: 聚合站-烧杯容器
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
 BIOYOND_PolymerStation_Liquid_Vial:
   category:
   - bottles
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Liquid_Vial
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+BIOYOND_PolymerStation_Reactor:
+  category:
+  - bottles
+  - reactors
+  class:
+    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Reactor
     type: pylabrobot
   handles: []
   icon: ''
@@ -54,17 +77,6 @@ BIOYOND_PolymerStation_TipBox:
   - tip_boxes
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_TipBox
-    type: pylabrobot
-  handles: []
-  icon: ''
-  init_param_schema: {}
-  version: 1.0.0
-BIOYOND_PolymerStation_Reactor:
-  category:
-  - bottles
-  - reactors
-  class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Reactor
     type: pylabrobot
   handles: []
   icon: ''

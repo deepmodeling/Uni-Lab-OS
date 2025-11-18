@@ -10,3 +10,16 @@ prcxi_opentrons_96_tiprack_10ul:
   init_param_schema: {}
   registry_type: resource
   version: 1.0.0
+tip_adaptor_1250ul_2:
+  category:
+  - prcxi
+  - tip_racks
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_materials:tip_adaptor_1250ul
+    type: pylabrobot
+  description: Tip头适配器 1250uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

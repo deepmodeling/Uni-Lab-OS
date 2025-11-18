@@ -1,3 +1,4 @@
+recursive-include unilabos/test *
 recursive-include unilabos/registry *.yaml
 recursive-include unilabos/app/web/static *
 recursive-include unilabos/app/web/templates *

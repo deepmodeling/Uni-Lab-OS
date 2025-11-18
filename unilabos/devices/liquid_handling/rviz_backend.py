@@ -1,5 +1,6 @@
-      
+
 import json
+import threading
 from typing import List, Optional, Union
 
 from pylabrobot.liquid_handling.backends.backend import (
@@ -30,7 +31,7 @@ from rclpy.action import ActionClient
 from unilabos_msgs.action import SendCmd
 import re
 
-from unilabos.devices.ros_dev.liquid_handler_joint_publisher import JointStatePublisher
+from unilabos.devices.ros_dev.liquid_handler_joint_publisher_node import LiquidHandlerJointPublisher
 
 
 class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
@@ -48,27 +49,44 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
   _max_volume_length = 16
   _fitting_depth_length = 20
   _tip_length_length = 16
-  # _pickup_method_length = 20
   _filter_length = 10
 
-  def __init__(self, num_channels: int = 8 , tip_length: float = 0 , total_height: float = 310):
+  def __init__(self, num_channels: int = 8 , tip_length: float = 0 , total_height: float = 310, **kwargs):
     """Initialize a chatter box backend."""
     super().__init__()
     self._num_channels = num_channels
     self.tip_length = tip_length
     self.total_height = total_height
-# rclpy.init()
+    self.joint_config = kwargs.get("joint_config", None)
+    self.lh_device_id = kwargs.get("lh_device_id", "lh_joint_publisher")
     if not rclpy.ok():
         rclpy.init()
     self.joint_state_publisher = None
+    self.executor = None
+    self.executor_thread = None
 
   async def setup(self):
-    self.joint_state_publisher = JointStatePublisher()
+    self.joint_state_publisher = LiquidHandlerJointPublisher(
+                                joint_config=self.joint_config,
+                                lh_device_id=self.lh_device_id,
+                                simulate_rviz=True)
+
+    # 启动ROS executor
+    self.executor = rclpy.executors.MultiThreadedExecutor()
+    self.executor.add_node(self.joint_state_publisher)
+    self.executor_thread = threading.Thread(target=self.executor.spin, daemon=True)
+    self.executor_thread.start()
+
     await super().setup()
 
     print("Setting up the liquid handler.")
 
   async def stop(self):
+    # 停止ROS executor
+    if self.executor and self.joint_state_publisher:
+        self.executor.remove_node(self.joint_state_publisher)
+    if self.executor_thread and self.executor_thread.is_alive():
+        self.executor.shutdown()
     print("Stopping the liquid handler.")
 
   def serialize(self) -> dict:
@@ -123,7 +141,7 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
     y = coordinate.y + offset_xyz.y
     z = self.total_height - (coordinate.z + self.tip_length) + offset_xyz.z
     # print("moving")
-    self.joint_state_publisher.send_resource_action(ops[0].resource.name, x, y, z, "pick",channels=use_channels)
+    self.joint_state_publisher.move_joints(ops[0].resource.name, x, y, z, "pick",channels=use_channels)
     #   goback()
 
 
@@ -166,7 +184,7 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
     z = self.total_height - (coordinate.z + self.tip_length) + offset_xyz.z
     # print(x, y, z)
     # print("moving")
-    self.joint_state_publisher.send_resource_action(ops[0].resource.name, x, y, z, "drop_trash",channels=use_channels)
+    self.joint_state_publisher.move_joints(ops[0].resource.name, x, y, z, "drop_trash",channels=use_channels)
     #   goback()
 
   async def aspirate(
@@ -216,7 +234,7 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
     z = self.total_height - (coordinate.z + self.tip_length) + offset_xyz.z
     # print(x, y, z)
     # print("moving")
-    self.joint_state_publisher.send_resource_action(ops[0].resource.name, x, y, z, "",channels=use_channels)
+    self.joint_state_publisher.move_joints(ops[0].resource.name, x, y, z, "",channels=use_channels)
 
 
   async def dispense(
@@ -264,9 +282,8 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
     x = coordinate.x + offset_xyz.x
     y = coordinate.y + offset_xyz.y
     z = self.total_height - (coordinate.z + self.tip_length) + offset_xyz.z
-    # print(x, y, z)
-    # print("moving")
-    self.joint_state_publisher.send_resource_action(ops[0].resource.name, x, y, z, "",channels=use_channels)
+
+    self.joint_state_publisher.move_joints(ops[0].resource.name, x, y, z, "",channels=use_channels)
 
   async def pick_up_tips96(self, pickup: PickupTipRack, **backend_kwargs):
     print(f"Picking up tips from {pickup.resource.name}.")

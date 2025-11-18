@@ -22,7 +22,6 @@ BIOYOND_PolymerReactionStation_Deck:
   init_param_schema: {}
   registry_type: resource
   version: 1.0.0
-
 YB_Deck11:
   category:
   - deck
@@ -35,8 +34,3 @@ YB_Deck11:
   init_param_schema: {}
   registry_type: resource
   version: 1.0.0
-
-
-
-
-

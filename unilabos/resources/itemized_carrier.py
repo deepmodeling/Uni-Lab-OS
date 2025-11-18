@@ -146,7 +146,7 @@ class ItemizedCarrier(ResourcePLR):
         if site_location == location:
           idx = i
           break
-        
+
     if not reassign and self.sites[idx] is not None:
       raise ValueError(f"a site with index {idx} already exists")
     super().assign_child_resource(resource, location=location, reassign=reassign)
@@ -172,18 +172,18 @@ class ItemizedCarrier(ResourcePLR):
 
   def get_child_identifier(self, child: ResourcePLR):
     """Get the identifier information for a given child resource.
-    
+
     Args:
         child: The Resource object to find the identifier for
-        
+
     Returns:
         dict: A dictionary containing:
             - identifier: The string identifier (e.g. "A1", "B2")
             - idx: The integer index in the sites list
             - x: The x index (column index, 0-based)
-            - y: The y index (row index, 0-based)  
+            - y: The y index (row index, 0-based)
             - z: The z index (layer index, 0-based)
-            
+
     Raises:
         ValueError: If the child resource is not found in this carrier
     """
@@ -192,10 +192,10 @@ class ItemizedCarrier(ResourcePLR):
       if resource is child:
         # Get the identifier from ordering keys
         identifier = list(self._ordering.keys())[idx]
-        
+
         # Parse identifier to get x, y, z indices
         x_idx, y_idx, z_idx = self._parse_identifier_to_indices(identifier, idx)
-        
+
         return {
           "identifier": identifier,
           "idx": idx,
@@ -203,17 +203,17 @@ class ItemizedCarrier(ResourcePLR):
           "y": y_idx,
           "z": z_idx
         }
-    
+
     # If not found, raise an error
     raise ValueError(f"Resource {child} is not assigned to this carrier")
 
   def _parse_identifier_to_indices(self, identifier: str, idx: int) -> Tuple[int, int, int]:
     """Parse identifier string to get x, y, z indices.
-    
+
     Args:
         identifier: String identifier like "A1", "B2", etc.
         idx: Linear index as fallback for calculation
-        
+
     Returns:
         Tuple of (x_idx, y_idx, z_idx)
     """
@@ -225,31 +225,31 @@ class ItemizedCarrier(ResourcePLR):
       y_idx = remaining // self.num_items_x
       x_idx = remaining % self.num_items_x
       return x_idx, y_idx, z_idx
-    
+
     # Fallback: parse from Excel-style identifier
     if isinstance(identifier, str) and len(identifier) >= 2:
       # Extract row (letter) and column (number)
       row_letters = ""
       col_numbers = ""
-      
+
       for char in identifier:
         if char.isalpha():
           row_letters += char
         elif char.isdigit():
           col_numbers += char
-      
+
       if row_letters and col_numbers:
         # Convert letter(s) to row index (A=0, B=1, etc.)
         y_idx = 0
         for char in row_letters:
           y_idx = y_idx * 26 + (ord(char.upper()) - ord('A'))
-        
+
         # Convert number to column index (1-based to 0-based)
         x_idx = int(col_numbers) - 1
         z_idx = 0  # Default layer
-        
+
         return x_idx, y_idx, z_idx
-    
+
     # If all else fails, assume linear arrangement
     return idx, 0, 0
 
@@ -413,8 +413,8 @@ class ItemizedCarrier(ResourcePLR):
       "sites": [{
         "label": str(identifier),
         "visible": False if identifier in self.invisible_slots else True,
-        "occupied_by": self[identifier].name 
-                        if isinstance(self[identifier], ResourcePLR) and not isinstance(self[identifier], ResourceHolder) else 
+        "occupied_by": self[identifier].name
+                        if isinstance(self[identifier], ResourcePLR) and not isinstance(self[identifier], ResourceHolder) else
                         self[identifier] if isinstance(self[identifier], str) else None,
         "position": {"x": location.x, "y": location.y, "z": location.z},
         "size": self.child_size[identifier],

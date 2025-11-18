@@ -4,7 +4,7 @@ Workstation HTTP Service Module
 
 统一的工作站报送接收服务，基于LIMS协议规范：
 1. 步骤完成报送 - POST /report/step_finish
-2. 通量完成报送 - POST /report/sample_finish  
+2. 通量完成报送 - POST /report/sample_finish
 3. 任务完成报送 - POST /report/order_finish
 4. 批量更新报送 - POST /report/batch_update
 5. 物料变更报送 - POST /report/material_change
@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 from dataclasses import dataclass, asdict
 from datetime import datetime
+from pathlib import Path
 
 from unilabos.utils.log import logger
 
@@ -54,18 +55,18 @@ class HttpResponse:
 
 class WorkstationHTTPHandler(BaseHTTPRequestHandler):
     """工作站HTTP请求处理器"""
-    
+
     def __init__(self, workstation_instance, *args, **kwargs):
         self.workstation = workstation_instance
         super().__init__(*args, **kwargs)
-    
+
     def do_POST(self):
         """处理POST请求 - 统一的工作站报送接口"""
         try:
             # 解析请求路径
             parsed_path = urlparse(self.path)
             endpoint = parsed_path.path
-            
+
             # 读取请求体
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length > 0:
@@ -73,9 +74,17 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 request_data = json.loads(post_data.decode('utf-8'))
             else:
                 request_data = {}
-            
+
             logger.info(f"收到工作站报送: {endpoint} - {request_data.get('token', 'unknown')}")
-            
+
+            try:
+                payload_for_log = {"method": "POST", **request_data}
+                self._save_raw_request(endpoint, payload_for_log)
+                if hasattr(self.workstation, '_reports_received_count'):
+                    self.workstation._reports_received_count += 1
+            except Exception:
+                pass
+
             # 统一的报送端点路由（基于LIMS协议规范）
             if endpoint == '/report/step_finish':
                 response = self._handle_step_finish_report(request_data)
@@ -90,6 +99,8 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 response = self._handle_material_change_report(request_data)
             elif endpoint == '/report/error_handling':
                 response = self._handle_error_handling_report(request_data)
+            elif endpoint == '/report/temperature-cutoff':
+                response = self._handle_temperature_cutoff_report(request_data)
             # 保留LIMS协议端点以兼容现有系统
             elif endpoint == '/LIMS/step_finish':
                 response = self._handle_step_finish_report(request_data)
@@ -102,18 +113,19 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     success=False,
                     message=f"不支持的报送端点: {endpoint}",
                     data={"supported_endpoints": [
-                        "/report/step_finish", 
-                        "/report/sample_finish", 
+                        "/report/step_finish",
+                        "/report/sample_finish",
                         "/report/order_finish",
                         "/report/batch_update",
                         "/report/material_change",
-                        "/report/error_handling"
+                        "/report/error_handling",
+                        "/report/temperature-cutoff"
                     ]}
                 )
-            
+
             # 发送响应
             self._send_response(response)
-            
+
         except Exception as e:
             logger.error(f"处理工作站报送失败: {e}\\n{traceback.format_exc()}")
             error_response = HttpResponse(
@@ -121,13 +133,18 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 message=f"请求处理失败: {str(e)}"
             )
             self._send_response(error_response)
-    
+
     def do_GET(self):
         """处理GET请求 - 健康检查和状态查询"""
         try:
             parsed_path = urlparse(self.path)
             endpoint = parsed_path.path
-            
+
+            try:
+                self._save_raw_request(endpoint, {"method": "GET"})
+            except Exception:
+                pass
+
             if endpoint == '/status':
                 response = self._handle_status_check()
             elif endpoint == '/health':
@@ -138,9 +155,9 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     message=f"不支持的查询端点: {endpoint}",
                     data={"supported_endpoints": ["/status", "/health"]}
                 )
-            
+
             self._send_response(response)
-            
+
         except Exception as e:
             logger.error(f"GET请求处理失败: {e}")
             error_response = HttpResponse(
@@ -148,7 +165,7 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 message=f"GET请求处理失败: {str(e)}"
             )
             self._send_response(error_response)
-    
+
     def do_OPTIONS(self):
         """处理OPTIONS请求 - CORS预检请求"""
         try:
@@ -159,12 +176,12 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
             self.send_header('Access-Control-Max-Age', '86400')
             self.end_headers()
-            
+
         except Exception as e:
             logger.error(f"OPTIONS请求处理失败: {e}")
             self.send_response(500)
             self.end_headers()
-    
+
     def _handle_step_finish_report(self, request_data: Dict[str, Any]) -> HttpResponse:
         """处理步骤完成报送（统一LIMS协议规范）"""
         try:
@@ -175,7 +192,7 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     success=False,
                     message=f"缺少必要字段: {', '.join(missing_fields)}"
                 )
-            
+
             # 验证data字段内容
             data = request_data['data']
             data_required_fields = ['orderCode', 'orderName', 'stepName', 'stepId', 'sampleId', 'startTime', 'endTime']
@@ -184,31 +201,31 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     success=False,
                     message=f"data字段缺少必要内容: {', '.join(data_missing_fields)}"
                 )
-            
+
             # 创建统一请求对象
             report_request = WorkstationReportRequest(
                 token=request_data['token'],
                 request_time=request_data['request_time'],
                 data=data
             )
-            
+
             # 调用工作站处理方法
             result = self.workstation.process_step_finish_report(report_request)
-            
+
             return HttpResponse(
                 success=True,
                 message=f"步骤完成报送已处理: {data['stepName']} ({data['orderCode']})",
                 acknowledgment_id=f"STEP_{int(time.time() * 1000)}_{data['stepId']}",
                 data=result
             )
-                
+
         except Exception as e:
             logger.error(f"处理步骤完成报送失败: {e}")
             return HttpResponse(
                 success=False,
                 message=f"步骤完成报送处理失败: {str(e)}"
             )
-    
+
     def _handle_sample_finish_report(self, request_data: Dict[str, Any]) -> HttpResponse:
         """处理通量完成报送（统一LIMS协议规范）"""
         try:
@@ -219,7 +236,7 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     success=False,
                     message=f"缺少必要字段: {', '.join(missing_fields)}"
                 )
-            
+
             # 验证data字段内容
             data = request_data['data']
             data_required_fields = ['orderCode', 'orderName', 'sampleId', 'startTime', 'endTime', 'status']
@@ -228,37 +245,37 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     success=False,
                     message=f"data字段缺少必要内容: {', '.join(data_missing_fields)}"
                 )
-            
+
             # 创建统一请求对象
             report_request = WorkstationReportRequest(
                 token=request_data['token'],
                 request_time=request_data['request_time'],
                 data=data
             )
-            
+
             # 调用工作站处理方法
             result = self.workstation.process_sample_finish_report(report_request)
-            
+
             status_names = {
-                "0": "待生产", "2": "进样", "10": "开始", 
+                "0": "待生产", "2": "进样", "10": "开始",
                 "20": "完成", "-2": "异常停止", "-3": "人工停止"
             }
             status_desc = status_names.get(str(data['status']), f"状态{data['status']}")
-            
+
             return HttpResponse(
                 success=True,
                 message=f"通量完成报送已处理: {data['sampleId']} ({data['orderCode']}) - {status_desc}",
                 acknowledgment_id=f"SAMPLE_{int(time.time() * 1000)}_{data['sampleId']}",
                 data=result
             )
-                
+
         except Exception as e:
             logger.error(f"处理通量完成报送失败: {e}")
             return HttpResponse(
                 success=False,
                 message=f"通量完成报送处理失败: {str(e)}"
             )
-    
+
     def _handle_order_finish_report(self, request_data: Dict[str, Any]) -> HttpResponse:
         """处理任务完成报送（统一LIMS协议规范）"""
         try:
@@ -269,7 +286,7 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     success=False,
                     message=f"缺少必要字段: {', '.join(missing_fields)}"
                 )
-            
+
             # 验证data字段内容
             data = request_data['data']
             data_required_fields = ['orderCode', 'orderName', 'startTime', 'endTime', 'status']
@@ -278,7 +295,7 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     success=False,
                     message=f"data字段缺少必要内容: {', '.join(data_missing_fields)}"
                 )
-            
+
             # 处理物料使用记录
             used_materials = []
             if 'usedMaterials' in data:
@@ -290,41 +307,85 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                         usedQuantity=material_data.get('usedQuantity', 0.0)
                     )
                     used_materials.append(material)
-            
+
             # 创建统一请求对象
             report_request = WorkstationReportRequest(
                 token=request_data['token'],
                 request_time=request_data['request_time'],
                 data=data
             )
-            
+
             # 调用工作站处理方法
             result = self.workstation.process_order_finish_report(report_request, used_materials)
-            
+
             status_names = {"30": "完成", "-11": "异常停止", "-12": "人工停止"}
             status_desc = status_names.get(str(data['status']), f"状态{data['status']}")
-            
+
             return HttpResponse(
                 success=True,
                 message=f"任务完成报送已处理: {data['orderName']} ({data['orderCode']}) - {status_desc}",
                 acknowledgment_id=f"ORDER_{int(time.time() * 1000)}_{data['orderCode']}",
                 data=result
             )
-                
+
         except Exception as e:
             logger.error(f"处理任务完成报送失败: {e}")
             return HttpResponse(
                 success=False,
                 message=f"任务完成报送处理失败: {str(e)}"
             )
-    
+
+    def _handle_temperature_cutoff_report(self, request_data: Dict[str, Any]) -> HttpResponse:
+        try:
+            required_fields = ['token', 'request_time', 'data']
+            if missing := [f for f in required_fields if f not in request_data]:
+                return HttpResponse(success=False, message=f"缺少必要字段: {', '.join(missing)}")
+
+            data = request_data['data']
+            metrics = [
+                'frameCode',
+                'generateTime',
+                'targetTemperature',
+                'settingTemperature',
+                'inTemperature',
+                'outTemperature',
+                'pt100Temperature',
+                'sensorAverageTemperature',
+                'speed',
+                'force',
+                'viscosity',
+                'averageViscosity'
+            ]
+            if miss := [f for f in metrics if f not in data]:
+                return HttpResponse(success=False, message=f"data字段缺少必要内容: {', '.join(miss)}")
+
+            report_request = WorkstationReportRequest(
+                token=request_data['token'],
+                request_time=request_data['request_time'],
+                data=data
+            )
+
+            result = {}
+            if hasattr(self.workstation, 'process_temperature_cutoff_report'):
+                result = self.workstation.process_temperature_cutoff_report(report_request)
+
+            return HttpResponse(
+                success=True,
+                message=f"温度/粘度报送已处理: 帧{data['frameCode']}",
+                acknowledgment_id=f"TEMP_CUTOFF_{int(time.time()*1000)}_{data['frameCode']}",
+                data=result
+            )
+        except Exception as e:
+            logger.error(f"处理温度/粘度报送失败: {e}\n{traceback.format_exc()}")
+            return HttpResponse(success=False, message=f"温度/粘度报送处理失败: {str(e)}")
+
     def _handle_batch_update_report(self, request_data: Dict[str, Any]) -> HttpResponse:
         """处理批量报送"""
         try:
             step_updates = request_data.get('step_updates', [])
             sample_updates = request_data.get('sample_updates', [])
             order_updates = request_data.get('order_updates', [])
-            
+
             results = {
                 'step_results': [],
                 'sample_results': [],
@@ -332,7 +393,7 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 'total_processed': 0,
                 'total_failed': 0
             }
-            
+
             # 处理批量步骤更新
             for step_data in step_updates:
                 try:
@@ -347,7 +408,7 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     results['step_results'].append(HttpResponse(success=False, message=str(e)))
                     results['total_failed'] += 1
-            
+
             # 处理批量通量更新
             for sample_data in sample_updates:
                 try:
@@ -362,7 +423,7 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     results['sample_results'].append(HttpResponse(success=False, message=str(e)))
                     results['total_failed'] += 1
-            
+
             # 处理批量任务更新
             for order_data in order_updates:
                 try:
@@ -377,21 +438,21 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     results['order_results'].append(HttpResponse(success=False, message=str(e)))
                     results['total_failed'] += 1
-            
+
             return HttpResponse(
                 success=results['total_failed'] == 0,
                 message=f"批量报送处理完成: {results['total_processed']} 成功, {results['total_failed']} 失败",
                 acknowledgment_id=f"BATCH_{int(time.time() * 1000)}",
                 data=results
             )
-            
+
         except Exception as e:
             logger.error(f"处理批量报送失败: {e}")
             return HttpResponse(
                 success=False,
                 message=f"批量报送处理失败: {str(e)}"
             )
-    
+
     def _handle_material_change_report(self, request_data: Dict[str, Any]) -> HttpResponse:
         """处理物料变更报送"""
         try:
@@ -417,24 +478,24 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                     success=False,
                     message=f"缺少必要字段: {', '.join(missing_fields)}"
                 )
-            
+
             # 调用工作站的处理方法
             result = self.workstation.process_material_change_report(request_data)
-            
+
             return HttpResponse(
                 success=True,
                 message=f"物料变更报送已处理: {request_data['resource_id']} ({request_data['change_type']})",
                 acknowledgment_id=f"MATERIAL_{int(time.time() * 1000)}_{request_data['resource_id']}",
                 data=result
             )
-                
+
         except Exception as e:
             logger.error(f"处理物料变更报送失败: {e}")
             return HttpResponse(
                 success=False,
                 message=f"物料变更报送处理失败: {str(e)}"
             )
-    
+
     def _handle_error_handling_report(self, request_data: Dict[str, Any]) -> HttpResponse:
         """处理错误处理报送"""
         try:
@@ -446,13 +507,13 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                         success=False,
                         message="奔曜格式缺少text字段"
                     )
-                
+
                 error_data = request_data["text"]
                 logger.info(f"收到奔曜错误处理报送: {error_data}")
-                
+
                 # 调用工作站的处理方法
                 result = self.workstation.handle_external_error(error_data)
-                
+
                 return HttpResponse(
                     success=True,
                     message=f"错误处理报送已收到: 任务{error_data.get('task', 'unknown')}, 错误代码{error_data.get('code', 'unknown')}",
@@ -467,42 +528,50 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                         success=False,
                         message=f"缺少必要字段: {', '.join(missing_fields)}"
                     )
-                
+
                 # 调用工作站的处理方法
                 result = self.workstation.handle_external_error(request_data)
-                
+
                 return HttpResponse(
                     success=True,
                     message=f"错误处理报送已处理: {request_data['error_type']} - {request_data['error_message']}",
                     acknowledgment_id=f"ERROR_{int(time.time() * 1000)}_{request_data.get('action_id', 'unknown')}",
                     data=result
                 )
-                
+
         except Exception as e:
             logger.error(f"处理错误处理报送失败: {e}")
             return HttpResponse(
                 success=False,
                 message=f"错误处理报送处理失败: {str(e)}"
             )
-    
+
     def _handle_status_check(self) -> HttpResponse:
         """处理状态查询"""
         try:
+            # 安全地获取 device_id
+            device_id = "unknown"
+            if hasattr(self.workstation, 'device_id'):
+                device_id = self.workstation.device_id
+            elif hasattr(self.workstation, '_ros_node') and hasattr(self.workstation._ros_node, 'device_id'):
+                device_id = self.workstation._ros_node.device_id
+
             return HttpResponse(
                 success=True,
                 message="工作站报送服务正常运行",
                 data={
-                    "workstation_id": self.workstation.device_id,
+                    "workstation_id": device_id,
                     "service_type": "unified_reporting_service",
                     "uptime": time.time() - getattr(self.workstation, '_start_time', time.time()),
                     "reports_received": getattr(self.workstation, '_reports_received_count', 0),
                     "supported_endpoints": [
                         "POST /report/step_finish",
-                        "POST /report/sample_finish", 
+                        "POST /report/sample_finish",
                         "POST /report/order_finish",
                         "POST /report/batch_update",
                         "POST /report/material_change",
                         "POST /report/error_handling",
+                        "POST /report/temperature-cutoff",
                         "GET /status",
                         "GET /health"
                     ]
@@ -514,36 +583,52 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
                 success=False,
                 message=f"状态查询失败: {str(e)}"
             )
-    
+
     def _send_response(self, response: HttpResponse):
         """发送响应"""
         try:
             # 设置响应状态码
             status_code = 200 if response.success else 400
             self.send_response(status_code)
-            
+
             # 设置响应头
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
             self.send_header('Access-Control-Allow-Headers', 'Content-Type')
             self.end_headers()
-            
+
             # 发送响应体
             response_json = json.dumps(asdict(response), ensure_ascii=False, indent=2)
             self.wfile.write(response_json.encode('utf-8'))
-            
+
         except Exception as e:
             logger.error(f"发送响应失败: {e}")
-    
+
     def log_message(self, format, *args):
         """重写日志方法"""
         logger.debug(f"HTTP请求: {format % args}")
 
+    def _save_raw_request(self, endpoint: str, request_data: Dict[str, Any]) -> None:
+        try:
+            base_dir = Path(__file__).resolve().parents[3] / "unilabos_data" / "http_reports"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            log_path = getattr(self.workstation, "_http_log_path", None)
+            log_file = Path(log_path) if log_path else (base_dir / f"http_{int(time.time()*1000)}.log")
+            payload = {
+                "endpoint": endpoint,
+                "received_at": datetime.now().isoformat(),
+                "body": request_data
+            }
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
 
 class WorkstationHTTPService:
     """工作站HTTP服务"""
-    
+
     def __init__(self, workstation_instance, host: str = "127.0.0.1", port: int = 8080):
         self.workstation = workstation_instance
         self.host = host
@@ -551,31 +636,42 @@ class WorkstationHTTPService:
         self.server = None
         self.server_thread = None
         self.running = False
-        
+
         # 初始化统计信息
         self.workstation._start_time = time.time()
         self.workstation._reports_received_count = 0
-    
+
     def start(self):
         """启动HTTP服务"""
         try:
             # 创建处理器工厂函数
             def handler_factory(*args, **kwargs):
                 return WorkstationHTTPHandler(self.workstation, *args, **kwargs)
-            
+
             # 创建HTTP服务器
             self.server = HTTPServer((self.host, self.port), handler_factory)
-            
+            base_dir = Path(__file__).resolve().parents[3] / "unilabos_data" / "http_reports"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            session_log = base_dir / f"http_{int(time.time()*1000)}.log"
+            setattr(self.workstation, "_http_log_path", str(session_log))
+
+            # 安全地获取 device_id 用于线程命名
+            device_id = "unknown"
+            if hasattr(self.workstation, 'device_id'):
+                device_id = self.workstation.device_id
+            elif hasattr(self.workstation, '_ros_node') and hasattr(self.workstation._ros_node, 'device_id'):
+                device_id = self.workstation._ros_node.device_id
+
             # 在单独线程中运行服务器
             self.server_thread = threading.Thread(
                 target=self._run_server,
                 daemon=True,
-                name=f"WorkstationHTTP-{self.workstation.device_id}"
+                name=f"WorkstationHTTP-{device_id}"
             )
-            
+
             self.running = True
             self.server_thread.start()
-            
+
             logger.info(f"工作站HTTP报送服务已启动: http://{self.host}:{self.port}")
             logger.info("统一的报送端点 (基于LIMS协议规范):")
             logger.info("  - POST /report/step_finish    # 步骤完成报送")
@@ -585,6 +681,7 @@ class WorkstationHTTPService:
             logger.info("扩展报送端点:")
             logger.info("  - POST /report/material_change # 物料变更报送")
             logger.info("  - POST /report/error_handling  # 错误处理报送")
+            logger.info("  - POST /report/temperature-cutoff # 温度/粘度报送")
             logger.info("兼容端点:")
             logger.info("  - POST /LIMS/step_finish      # 兼容LIMS步骤完成")
             logger.info("  - POST /LIMS/preintake_finish # 兼容LIMS通量完成")
@@ -592,33 +689,33 @@ class WorkstationHTTPService:
             logger.info("服务端点:")
             logger.info("  - GET  /status                # 服务状态查询")
             logger.info("  - GET  /health                # 健康检查")
-            
+
         except Exception as e:
             logger.error(f"启动HTTP服务失败: {e}")
             raise
-    
+
     def stop(self):
         """停止HTTP服务"""
         try:
             if self.running and self.server:
                 logger.info("正在停止工作站HTTP报送服务...")
                 self.running = False
-                
+
                 # 停止serve_forever循环
                 self.server.shutdown()
-                
+
                 # 等待服务器线程结束
                 if self.server_thread and self.server_thread.is_alive():
                     self.server_thread.join(timeout=5.0)
-                
+
                 # 关闭服务器套接字
                 self.server.server_close()
-                
+
                 logger.info("工作站HTTP报送服务已停止")
-                
+
         except Exception as e:
             logger.error(f"停止HTTP服务失败: {e}")
-    
+
     def _run_server(self):
         """运行HTTP服务器"""
         try:
@@ -629,12 +726,12 @@ class WorkstationHTTPService:
                 logger.error(f"HTTP服务运行错误: {e}")
         finally:
             logger.info("HTTP服务器线程已退出")
-    
+
     @property
     def is_running(self) -> bool:
         """检查服务是否正在运行"""
         return self.running and self.server_thread and self.server_thread.is_alive()
-    
+
     @property
     def service_url(self) -> str:
         """获取服务URL"""
@@ -648,7 +745,7 @@ class MaterialChangeReport:
     pass
 
 
-@dataclass 
+@dataclass
 class TaskExecutionReport:
     """已废弃：任务执行报送，请使用统一的WorkstationReportRequest"""
     pass
@@ -670,38 +767,41 @@ if __name__ == "__main__":
     # 简单测试HTTP服务
     class BioyondWorkstation:
         device_id = "WS-001"
-        
+
         def process_step_finish_report(self, report_request):
             return {"processed": True}
-        
+
         def process_sample_finish_report(self, report_request):
             return {"processed": True}
-        
+
         def process_order_finish_report(self, report_request, used_materials):
             return {"processed": True}
-        
+
         def process_material_change_report(self, report_data):
             return {"processed": True}
-        
+
         def handle_external_error(self, error_data):
             return {"handled": True}
-    
-    workstation = DummyWorkstation()
+
+        def process_temperature_cutoff_report(self, report_request):
+            return {"processed": True, "metrics": report_request.data}
+
+    workstation = BioyondWorkstation()
     http_service = WorkstationHTTPService(workstation)
-    
+
     try:
         http_service.start()
         print(f"测试服务器已启动: {http_service.service_url}")
         print("按 Ctrl+C 停止服务器")
         print("服务将持续运行，等待接收HTTP请求...")
-        
+
         # 保持服务器运行 - 使用更好的等待机制
         try:
             while http_service.is_running:
                 time.sleep(1)
         except KeyboardInterrupt:
             print("\n接收到停止信号...")
-            
+
     except KeyboardInterrupt:
         print("\n正在停止服务器...")
         http_service.stop()
@@ -709,4 +809,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"服务器运行错误: {e}")
         http_service.stop()
-

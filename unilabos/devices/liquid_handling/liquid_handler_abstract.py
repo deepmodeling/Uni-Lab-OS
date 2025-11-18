@@ -7,6 +7,8 @@ from collections import Counter
 from typing import List, Sequence, Optional, Literal, Union, Iterator, Dict, Any, Callable, Set, cast
 
 from pylabrobot.liquid_handling import LiquidHandler, LiquidHandlerBackend, LiquidHandlerChatterboxBackend, Strictness
+from unilabos.devices.liquid_handling.rviz_backend import UniLiquidHandlerRvizBackend
+from unilabos.devices.liquid_handling.laiyu.backend.laiyu_v_backend import UniLiquidHandlerLaiyuBackend
 from pylabrobot.liquid_handling.liquid_handler import TipPresenceProbingMethod
 from pylabrobot.liquid_handling.standard import GripDirection
 from pylabrobot.resources import (
@@ -29,11 +31,16 @@ from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 
 class LiquidHandlerMiddleware(LiquidHandler):
-    def __init__(self, backend: LiquidHandlerBackend, deck: Deck, simulator: bool = False, channel_num: int = 8):
+    def __init__(self, backend: LiquidHandlerBackend, deck: Deck, simulator: bool = False, channel_num: int = 8, **kwargs):
         self._simulator = simulator
         self.channel_num = channel_num
+        joint_config = kwargs.get("joint_config", None)
         if simulator:
-            self._simulate_backend = LiquidHandlerChatterboxBackend(channel_num)
+            if joint_config:
+                self._simulate_backend = UniLiquidHandlerRvizBackend(channel_num, kwargs["total_height"],
+                                                                     joint_config=joint_config, lh_device_id=deck.name)
+            else:
+                self._simulate_backend = LiquidHandlerChatterboxBackend(channel_num)
             self._simulate_handler = LiquidHandlerAbstract(self._simulate_backend, deck, False)
         super().__init__(backend, deck)
 
@@ -217,7 +224,6 @@ class LiquidHandlerMiddleware(LiquidHandler):
             offsets,
             liquid_height,
             blow_out_air_volume,
-            spread,
             **backend_kwargs,
         )
 

@@ -1,3 +1,4 @@
+import uuid
 import rclpy,json
 from rclpy.node import Node
 from sensor_msgs.msg import JointState 
@@ -6,7 +7,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 class JointRepublisher(BaseROS2DeviceNode):
-    def __init__(self,device_id,resource_tracker):
+    def __init__(self,device_id,resource_tracker, **kwargs):
         super().__init__(
             driver_instance=self,
             device_id=device_id,
@@ -15,6 +16,7 @@ class JointRepublisher(BaseROS2DeviceNode):
             hardware_interface={},
             print_publish=False,
             resource_tracker=resource_tracker,  
+            device_uuid=kwargs.get("uuid", str(uuid.uuid4())),
         )  
         
         # print('-'*20,device_id)

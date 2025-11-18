@@ -1,4 +1,4 @@
-robotic_arm.SCARA_with_slider.virtual:
+robotic_arm.SCARA_with_slider.moveit.virtual:
   category:
   - robot_arm
   class:
@@ -354,6 +354,7 @@ robotic_arm.SCARA_with_slider.virtual:
       type: object
   model:
     mesh: arm_slider
+    path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/arm_slider/macro_device.xacro
     type: device
   version: 1.0.0
 robotic_arm.UR:

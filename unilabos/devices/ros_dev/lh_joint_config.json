@@ -34,5 +34,35 @@
             "offset":0.0
             }
         }
+    },
+    "TransformXYZDeck":{
+        "joint_names":[
+            "x_joint",
+            "y_joint",
+            "z_joint"
+        ],
+        "link_names":[
+            "x_link",
+            "y_link",
+            "z_link"
+        ],
+        "x":{
+            "y_joint":{
+            "factor":-0.001,
+            "offset":0.145
+            }
+        },
+        "y":{
+            "x_joint":{
+            "factor":0.001,
+            "offset":-0.21415
+            }
+        },
+        "z":{
+            "z_joint":{
+            "factor":-0.001,
+            "offset":0.0
+            }
+        }
     }
 }

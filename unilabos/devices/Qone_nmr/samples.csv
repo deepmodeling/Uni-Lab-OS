@@ -1,0 +1,4 @@
+﻿USERNAME,SLOT,EXPNAME,FILE,SOLVENT,TEMPLATE,TITLE
+User,SLOT,Name,No.,SOLVENT,Experiment,TITLE
+用户名,进样器孔位,实验任务的名字,保存文件的名字,溶剂（按照实验的要求）,模板（按照实验的要求，指定测试的元素）,标题
+admin,18,11LiDFOB,LiDFOB-11B,DMSO,B11,11LiDFOB_400MHz

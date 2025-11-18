@@ -1,13 +1,49 @@
 import json
+import time
 import requests
 from typing import List, Dict, Any
+from pathlib import Path
+from datetime import datetime
 from unilabos.devices.workstation.bioyond_studio.station import BioyondWorkstation
+from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import MachineState
+from unilabos.ros.msgs.message_converter import convert_to_ros_msg, Float64, String
 from unilabos.devices.workstation.bioyond_studio.config import (
     WORKFLOW_STEP_IDS,
     WORKFLOW_TO_SECTION_MAP,
     ACTION_NAMES
 )
 from unilabos.devices.workstation.bioyond_studio.config import API_CONFIG
+
+
+class BioyondReactor:
+    def __init__(self, config: dict = None, deck=None, protocol_type=None, **kwargs):
+        self.in_temperature = 0.0
+        self.out_temperature = 0.0
+        self.pt100_temperature = 0.0
+        self.sensor_average_temperature = 0.0
+        self.target_temperature = 0.0
+        self.setting_temperature = 0.0
+        self.viscosity = 0.0
+        self.average_viscosity = 0.0
+        self.speed = 0.0
+        self.force = 0.0
+
+    def update_metrics(self, payload: Dict[str, Any]):
+        def _f(v):
+            try:
+                return float(v)
+            except Exception:
+                return 0.0
+        self.target_temperature = _f(payload.get("targetTemperature"))
+        self.setting_temperature = _f(payload.get("settingTemperature"))
+        self.in_temperature = _f(payload.get("inTemperature"))
+        self.out_temperature = _f(payload.get("outTemperature"))
+        self.pt100_temperature = _f(payload.get("pt100Temperature"))
+        self.sensor_average_temperature = _f(payload.get("sensorAverageTemperature"))
+        self.speed = _f(payload.get("speed"))
+        self.force = _f(payload.get("force"))
+        self.viscosity = _f(payload.get("viscosity"))
+        self.average_viscosity = _f(payload.get("averageViscosity"))
 
 
 class BioyondReactionStation(BioyondWorkstation):
@@ -36,6 +72,19 @@ class BioyondReactionStation(BioyondWorkstation):
 
         print(f"BioyondReactionStation初始化完成 - workflow_mappings: {self.workflow_mappings}")
         print(f"workflow_mappings长度: {len(self.workflow_mappings)}")
+
+        self.in_temperature = 0.0
+        self.out_temperature = 0.0
+        self.pt100_temperature = 0.0
+        self.sensor_average_temperature = 0.0
+        self.target_temperature = 0.0
+        self.setting_temperature = 0.0
+        self.viscosity = 0.0
+        self.average_viscosity = 0.0
+        self.speed = 0.0
+        self.force = 0.0
+
+        self._frame_to_reactor_id = {1: "reactor_1", 2: "reactor_2", 3: "reactor_3", 4: "reactor_4", 5: "reactor_5"}
 
     # ==================== 工作流方法 ====================
 
@@ -291,22 +340,39 @@ class BioyondReactionStation(BioyondWorkstation):
 
     def liquid_feeding_titration(
         self,
-        volume_formula: str,
         assign_material_name: str,
-        titration_type: str = "1",
+        volume_formula: str = None,
+        x_value: str = None,
+        feeding_order_data: str = None,
+        extracted_actuals: str = None,
+        titration_type: str = "2",
         time: str = "90",
         torque_variation: int = 2,
         temperature: float = 25.00
     ):
         """液体进料(滴定)
 
+        支持两种模式:
+        1. 直接提供 volume_formula (传统方式)
+        2. 自动计算公式: 提供 x_value, feeding_order_data, extracted_actuals (新方式)
+
         Args:
-            volume_formula: 分液公式(μL)
             assign_material_name: 物料名称
-            titration_type: 是否滴定(1=否, 2=是)
+            volume_formula: 分液公式(μL),如果提供则直接使用,否则自动计算
+            x_value: 手工输入的x值,格式如 "1-2-3"
+            feeding_order_data: feeding_order JSON字符串或对象,用于获取m二酐值
+            extracted_actuals: 从报告提取的实际加料量JSON字符串,包含actualTargetWeigh和actualVolume
+            titration_type: 是否滴定(1=否, 2=是),默认2
             time: 观察时间(分钟)
             torque_variation: 是否观察(int类型, 1=否, 2=是)
             temperature: 温度(°C)
+
+        自动公式模板: 1000*(m二酐-x)*V二酐滴定/m二酐滴定
+        其中:
+        - m二酐滴定 = actualTargetWeigh (从extracted_actuals获取)
+        - V二酐滴定 = actualVolume (从extracted_actuals获取)
+        - x = x_value (手工输入)
+        - m二酐 = feeding_order中type为"main_anhydride"的amount值
         """
         self.append_to_workflow_sequence('{"web_workflow_name": "Liquid_feeding(titration)"}')
         material_id = self.hardware_interface._get_material_id_by_name(assign_material_name)
@@ -315,6 +381,84 @@ class BioyondReactionStation(BioyondWorkstation):
 
         if isinstance(temperature, str):
             temperature = float(temperature)
+
+        # 如果没有直接提供volume_formula,则自动计算
+        if not volume_formula and x_value and feeding_order_data and extracted_actuals:
+            # 1. 解析 feeding_order_data 获取 m二酐
+            if isinstance(feeding_order_data, str):
+                try:
+                    feeding_order_data = json.loads(feeding_order_data)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"feeding_order_data JSON解析失败: {str(e)}")
+
+            # 支持两种格式:
+            # 格式1: 直接是数组 [{...}, {...}]
+            # 格式2: 对象包裹 {"feeding_order": [{...}, {...}]}
+            if isinstance(feeding_order_data, list):
+                feeding_order_list = feeding_order_data
+            elif isinstance(feeding_order_data, dict):
+                feeding_order_list = feeding_order_data.get("feeding_order", [])
+            else:
+                raise ValueError("feeding_order_data 必须是数组或包含feeding_order的字典")
+
+            # 从feeding_order中找到main_anhydride的amount
+            m_anhydride = None
+            for item in feeding_order_list:
+                if item.get("type") == "main_anhydride":
+                    m_anhydride = item.get("amount")
+                    break
+
+            if m_anhydride is None:
+                raise ValueError("在feeding_order中未找到type为'main_anhydride'的条目")
+
+            # 2. 解析 extracted_actuals 获取 actualTargetWeigh 和 actualVolume
+            if isinstance(extracted_actuals, str):
+                try:
+                    extracted_actuals_obj = json.loads(extracted_actuals)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"extracted_actuals JSON解析失败: {str(e)}")
+            else:
+                extracted_actuals_obj = extracted_actuals
+
+            # 获取actuals数组
+            actuals_list = extracted_actuals_obj.get("actuals", [])
+            if not actuals_list:
+                # actuals为空,无法自动生成公式,回退到手动模式
+                print(f"警告: extracted_actuals中actuals数组为空,无法自动生成公式,请手动提供volume_formula")
+                volume_formula = None  # 清空,触发后续的错误检查
+            else:
+                # 根据assign_material_name匹配对应的actual数据
+                # 假设order_code中包含物料名称
+                matched_actual = None
+                for actual in actuals_list:
+                    order_code = actual.get("order_code", "")
+                    # 简单匹配:如果order_code包含物料名称
+                    if assign_material_name in order_code:
+                        matched_actual = actual
+                        break
+
+                # 如果没有匹配到,使用第一个
+                if not matched_actual and actuals_list:
+                    matched_actual = actuals_list[0]
+
+                if not matched_actual:
+                    raise ValueError("无法从extracted_actuals中获取实际加料量数据")
+
+                m_anhydride_titration = matched_actual.get("actualTargetWeigh")  # m二酐滴定
+                v_anhydride_titration = matched_actual.get("actualVolume")       # V二酐滴定
+
+                if m_anhydride_titration is None or v_anhydride_titration is None:
+                    raise ValueError(f"实际加料量数据不完整: actualTargetWeigh={m_anhydride_titration}, actualVolume={v_anhydride_titration}")
+
+                # 3. 构建公式: 1000*(m二酐-x)*V二酐滴定/m二酐滴定
+                # x_value 格式如 "{{1-2-3}}",保留完整格式(包括花括号)直接替换到公式中
+                volume_formula = f"1000*({m_anhydride}-{x_value})*{v_anhydride_titration}/{m_anhydride_titration}"
+
+                print(f"自动生成滴定公式: {volume_formula}")
+                print(f"  m二酐={m_anhydride}, x={x_value}, V二酐滴定={v_anhydride_titration}, m二酐滴定={m_anhydride_titration}")
+
+        elif not volume_formula:
+            raise ValueError("必须提供 volume_formula 或 (x_value + feeding_order_data + extracted_actuals)")
 
         liquid_step_id = WORKFLOW_STEP_IDS["liquid_feeding_titration"]["liquid"]
         observe_step_id = WORKFLOW_STEP_IDS["liquid_feeding_titration"]["observe"]
@@ -343,9 +487,288 @@ class BioyondReactionStation(BioyondWorkstation):
         print(f"当前队列长度: {len(self.pending_task_params)}")
         return json.dumps({"suc": True})
 
+    def _extract_actuals_from_report(self, report) -> Dict[str, Any]:
+        data = report.get('data') if isinstance(report, dict) else None
+        actual_target_weigh = None
+        actual_volume = None
+        if data:
+            extra = data.get('extraProperties') or {}
+            if isinstance(extra, dict):
+                for v in extra.values():
+                    obj = None
+                    try:
+                        obj = json.loads(v) if isinstance(v, str) else v
+                    except Exception:
+                        obj = None
+                    if isinstance(obj, dict):
+                        tw = obj.get('targetWeigh')
+                        vol = obj.get('volume')
+                        if tw is not None:
+                            try:
+                                actual_target_weigh = float(tw)
+                            except Exception:
+                                pass
+                        if vol is not None:
+                            try:
+                                actual_volume = float(vol)
+                            except Exception:
+                                pass
+        return {
+            'actualTargetWeigh': actual_target_weigh,
+            'actualVolume': actual_volume
+        }
+
+    def extract_actuals_from_batch_reports(self, batch_reports_result: str) -> dict:
+        print(f"[DEBUG] extract_actuals 收到原始数据: {batch_reports_result[:500]}...")  # 打印前500字符
+        try:
+            obj = json.loads(batch_reports_result) if isinstance(batch_reports_result, str) else batch_reports_result
+            if isinstance(obj, dict) and "return_info" in obj:
+                inner = obj["return_info"]
+                obj = json.loads(inner) if isinstance(inner, str) else inner
+            reports = obj.get("reports", []) if isinstance(obj, dict) else []
+            print(f"[DEBUG] 解析后的 reports 数组长度: {len(reports)}")
+        except Exception as e:
+            print(f"[DEBUG] 解析异常: {e}")
+            reports = []
+
+        actuals = []
+        for i, r in enumerate(reports):
+            print(f"[DEBUG] 处理 report[{i}]: order_code={r.get('order_code')}, has_extracted={r.get('extracted') is not None}, has_report={r.get('report') is not None}")
+            order_code = r.get("order_code")
+            order_id = r.get("order_id")
+            ex = r.get("extracted")
+            if isinstance(ex, dict) and (ex.get("actualTargetWeigh") is not None or ex.get("actualVolume") is not None):
+                print(f"[DEBUG] 从 extracted 字段提取: actualTargetWeigh={ex.get('actualTargetWeigh')}, actualVolume={ex.get('actualVolume')}")
+                actuals.append({
+                    "order_code": order_code,
+                    "order_id": order_id,
+                    "actualTargetWeigh": ex.get("actualTargetWeigh"),
+                    "actualVolume": ex.get("actualVolume")
+                })
+                continue
+            report = r.get("report")
+            vals = self._extract_actuals_from_report(report) if report else {"actualTargetWeigh": None, "actualVolume": None}
+            print(f"[DEBUG] 从 report 字段提取: {vals}")
+            actuals.append({
+                "order_code": order_code,
+                "order_id": order_id,
+                **vals
+            })
+
+        print(f"[DEBUG] 最终提取的 actuals 数组长度: {len(actuals)}")
+        result = {
+            "return_info": json.dumps({"actuals": actuals}, ensure_ascii=False)
+        }
+        print(f"[DEBUG] 返回结果: {result}")
+        return result
+
+    def process_temperature_cutoff_report(self, report_request) -> Dict[str, Any]:
+        try:
+            data = report_request.data
+            def _f(v):
+                try:
+                    return float(v)
+                except Exception:
+                    return 0.0
+            self.target_temperature = _f(data.get("targetTemperature"))
+            self.setting_temperature = _f(data.get("settingTemperature"))
+            self.in_temperature = _f(data.get("inTemperature"))
+            self.out_temperature = _f(data.get("outTemperature"))
+            self.pt100_temperature = _f(data.get("pt100Temperature"))
+            self.sensor_average_temperature = _f(data.get("sensorAverageTemperature"))
+            self.speed = _f(data.get("speed"))
+            self.force = _f(data.get("force"))
+            self.viscosity = _f(data.get("viscosity"))
+            self.average_viscosity = _f(data.get("averageViscosity"))
+
+            try:
+                if hasattr(self, "_ros_node") and self._ros_node is not None:
+                    props = [
+                        "in_temperature","out_temperature","pt100_temperature","sensor_average_temperature",
+                        "target_temperature","setting_temperature","viscosity","average_viscosity",
+                        "speed","force"
+                    ]
+                    for name in props:
+                        pub = self._ros_node._property_publishers.get(name)
+                        if pub:
+                            pub.publish_property()
+                    frame = data.get("frameCode")
+                    reactor_id = None
+                    try:
+                        reactor_id = self._frame_to_reactor_id.get(int(frame))
+                    except Exception:
+                        reactor_id = None
+                    if reactor_id and hasattr(self._ros_node, "sub_devices"):
+                        child = self._ros_node.sub_devices.get(reactor_id)
+                        if child and hasattr(child, "driver_instance"):
+                            child.driver_instance.update_metrics(data)
+                            pubs = getattr(child.ros_node_instance, "_property_publishers", {})
+                            for name in props:
+                                p = pubs.get(name)
+                                if p:
+                                    p.publish_property()
+            except Exception:
+                pass
+            event = {
+                "frameCode": data.get("frameCode"),
+                "generateTime": data.get("generateTime"),
+                "targetTemperature": data.get("targetTemperature"),
+                "settingTemperature": data.get("settingTemperature"),
+                "inTemperature": data.get("inTemperature"),
+                "outTemperature": data.get("outTemperature"),
+                "pt100Temperature": data.get("pt100Temperature"),
+                "sensorAverageTemperature": data.get("sensorAverageTemperature"),
+                "speed": data.get("speed"),
+                "force": data.get("force"),
+                "viscosity": data.get("viscosity"),
+                "averageViscosity": data.get("averageViscosity"),
+                "request_time": report_request.request_time,
+                "timestamp": datetime.now().isoformat(),
+                "reactor_id": self._frame_to_reactor_id.get(int(data.get("frameCode", 0))) if str(data.get("frameCode", "")).isdigit() else None,
+            }
+
+            base_dir = Path(__file__).resolve().parents[3] / "unilabos_data"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            out_file = base_dir / "temperature_cutoff_events.json"
+            try:
+                existing = json.loads(out_file.read_text(encoding="utf-8")) if out_file.exists() else []
+                if not isinstance(existing, list):
+                    existing = []
+            except Exception:
+                existing = []
+            existing.append(event)
+            out_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            if hasattr(self, "_ros_node") and self._ros_node is not None:
+                ns = self._ros_node.namespace
+                topics = {
+                    "targetTemperature": f"{ns}/metrics/temperature_cutoff/target_temperature",
+                    "settingTemperature": f"{ns}/metrics/temperature_cutoff/setting_temperature",
+                    "inTemperature": f"{ns}/metrics/temperature_cutoff/in_temperature",
+                    "outTemperature": f"{ns}/metrics/temperature_cutoff/out_temperature",
+                    "pt100Temperature": f"{ns}/metrics/temperature_cutoff/pt100_temperature",
+                    "sensorAverageTemperature": f"{ns}/metrics/temperature_cutoff/sensor_average_temperature",
+                    "speed": f"{ns}/metrics/temperature_cutoff/speed",
+                    "force": f"{ns}/metrics/temperature_cutoff/force",
+                    "viscosity": f"{ns}/metrics/temperature_cutoff/viscosity",
+                    "averageViscosity": f"{ns}/metrics/temperature_cutoff/average_viscosity",
+                }
+                for k, t in topics.items():
+                    v = data.get(k)
+                    if v is not None:
+                        pub = self._ros_node.create_publisher(Float64, t, 10)
+                        pub.publish(convert_to_ros_msg(Float64, float(v)))
+
+                evt_pub = self._ros_node.create_publisher(String, f"{ns}/events/temperature_cutoff", 10)
+                evt_pub.publish(convert_to_ros_msg(String, json.dumps(event, ensure_ascii=False)))
+
+            return {"processed": True, "frame": data.get("frameCode")}
+        except Exception as e:
+            return {"processed": False, "error": str(e)}
+
+    def wait_for_multiple_orders_and_get_reports(self, batch_create_result: str = None, timeout: int = 7200, check_interval: int = 10) -> Dict[str, Any]:
+        try:
+            timeout = int(timeout) if timeout else 7200
+            check_interval = int(check_interval) if check_interval else 10
+            if not batch_create_result or batch_create_result == "":
+                raise ValueError("batch_create_result为空")
+            try:
+                if isinstance(batch_create_result, str) and '[...]' in batch_create_result:
+                    batch_create_result = batch_create_result.replace('[...]', '[]')
+                result_obj = json.loads(batch_create_result) if isinstance(batch_create_result, str) else batch_create_result
+                if isinstance(result_obj, dict) and "return_value" in result_obj:
+                    inner = result_obj.get("return_value")
+                    if isinstance(inner, str):
+                        result_obj = json.loads(inner)
+                    elif isinstance(inner, dict):
+                        result_obj = inner
+                order_codes = result_obj.get("order_codes", [])
+                order_ids = result_obj.get("order_ids", [])
+            except Exception as e:
+                raise ValueError(f"解析batch_create_result失败: {e}")
+            if not order_codes or not order_ids:
+                raise ValueError("缺少order_codes或order_ids")
+            if not isinstance(order_codes, list):
+                order_codes = [order_codes]
+            if not isinstance(order_ids, list):
+                order_ids = [order_ids]
+            if len(order_codes) != len(order_ids):
+                raise ValueError("order_codes与order_ids数量不匹配")
+            total = len(order_codes)
+            pending = {c: {"order_id": order_ids[i], "completed": False} for i, c in enumerate(order_codes)}
+            reports = []
+            start_time = time.time()
+            while pending:
+                elapsed_time = time.time() - start_time
+                if elapsed_time > timeout:
+                    for oc in list(pending.keys()):
+                        reports.append({
+                            "order_code": oc,
+                            "order_id": pending[oc]["order_id"],
+                            "status": "timeout",
+                            "completion_status": None,
+                            "report": None,
+                            "extracted": None,
+                            "elapsed_time": elapsed_time
+                        })
+                    break
+                completed_round = []
+                for oc in list(pending.keys()):
+                    oid = pending[oc]["order_id"]
+                    if oc in self.order_completion_status:
+                        info = self.order_completion_status[oc]
+                        try:
+                            rep = self.hardware_interface.order_report(oid)
+                            if not rep:
+                                rep = {"error": "无法获取报告"}
+                            reports.append({
+                                "order_code": oc,
+                                "order_id": oid,
+                                "status": "completed",
+                                "completion_status": info.get('status'),
+                                "report": rep,
+                                "extracted": self._extract_actuals_from_report(rep),
+                                "elapsed_time": elapsed_time
+                            })
+                            completed_round.append(oc)
+                            del self.order_completion_status[oc]
+                        except Exception as e:
+                            reports.append({
+                                "order_code": oc,
+                                "order_id": oid,
+                                "status": "error",
+                                "completion_status": info.get('status') if 'info' in locals() else None,
+                                "report": None,
+                                "extracted": None,
+                                "error": str(e),
+                                "elapsed_time": elapsed_time
+                            })
+                            completed_round.append(oc)
+                for oc in completed_round:
+                    del pending[oc]
+                if pending:
+                    time.sleep(check_interval)
+            completed_count = sum(1 for r in reports if r['status'] == 'completed')
+            timeout_count = sum(1 for r in reports if r['status'] == 'timeout')
+            error_count = sum(1 for r in reports if r['status'] == 'error')
+            final_elapsed_time = time.time() - start_time
+            summary = {
+                "total": total,
+                "completed": completed_count,
+                "timeout": timeout_count,
+                "error": error_count,
+                "elapsed_time": round(final_elapsed_time, 2),
+                "reports": reports
+            }
+            return {
+                "return_info": json.dumps(summary, ensure_ascii=False)
+            }
+        except Exception as e:
+            raise
+
     def liquid_feeding_beaker(
         self,
-        volume: str = "35000",
+        volume: str = "350",
         assign_material_name: str = "BAPP",
         time: str = "0",
         torque_variation: int = 1,
@@ -355,7 +778,7 @@ class BioyondReactionStation(BioyondWorkstation):
         """液体进料烧杯
 
         Args:
-            volume: 分液量(μL)
+            volume: 分液质量(g)
             assign_material_name: 物料名称(试剂瓶位)
             time: 观察时间(分钟)
             torque_variation: 是否观察(int类型, 1=否, 2=是)
@@ -489,6 +912,106 @@ class BioyondReactionStation(BioyondWorkstation):
         """
         return self.hardware_interface.create_order(json_str)
 
+    def hard_delete_merged_workflows(self, workflow_ids: List[str]) -> Dict[str, Any]:
+        """
+        调用新接口：硬删除合并后的工作流
+
+        Args:
+            workflow_ids: 要删除的工作流ID数组
+
+        Returns:
+            删除结果
+        """
+        try:
+            if not isinstance(workflow_ids, list):
+                raise ValueError("workflow_ids必须是字符串数组")
+            return self._delete_project_api("/api/lims/order/workflows", workflow_ids)
+        except Exception as e:
+            print(f"❌ 硬删除异常: {str(e)}")
+            return {"code": 0, "message": str(e), "timestamp": int(time.time())}
+
+    # ==================== 项目接口通用方法 ====================
+
+    def _post_project_api(self, endpoint: str, data: Any) -> Dict[str, Any]:
+        """项目接口通用POST调用
+
+        参数:
+            endpoint: 接口路径（例如 /api/lims/order/skip-titration-steps）
+            data: 请求体中的 data 字段内容
+
+        返回:
+            dict: 服务端响应，失败时返回 {code:0,message,...}
+        """
+        request_data = {
+            "apiKey": API_CONFIG["api_key"],
+            "requestTime": self.hardware_interface.get_current_time_iso8601(),
+            "data": data
+        }
+        print(f"\n📤 项目POST请求: {self.hardware_interface.host}{endpoint}")
+        print(json.dumps(request_data, indent=4, ensure_ascii=False))
+        try:
+            response = requests.post(
+                f"{self.hardware_interface.host}{endpoint}",
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
+            result = response.json()
+            if result.get("code") == 1:
+                print("✅ 请求成功")
+            else:
+                print(f"❌ 请求失败: {result.get('message','未知错误')}")
+            return result
+        except json.JSONDecodeError:
+            print("❌ 非JSON响应")
+            return {"code": 0, "message": "非JSON响应", "timestamp": int(time.time())}
+        except requests.exceptions.Timeout:
+            print("❌ 请求超时")
+            return {"code": 0, "message": "请求超时", "timestamp": int(time.time())}
+        except requests.exceptions.RequestException as e:
+            print(f"❌ 网络异常: {str(e)}")
+            return {"code": 0, "message": str(e), "timestamp": int(time.time())}
+
+    def _delete_project_api(self, endpoint: str, data: Any) -> Dict[str, Any]:
+        """项目接口通用DELETE调用
+
+        参数:
+            endpoint: 接口路径（例如 /api/lims/order/workflows）
+            data: 请求体中的 data 字段内容
+
+        返回:
+            dict: 服务端响应，失败时返回 {code:0,message,...}
+        """
+        request_data = {
+            "apiKey": API_CONFIG["api_key"],
+            "requestTime": self.hardware_interface.get_current_time_iso8601(),
+            "data": data
+        }
+        print(f"\n📤 项目DELETE请求: {self.hardware_interface.host}{endpoint}")
+        print(json.dumps(request_data, indent=4, ensure_ascii=False))
+        try:
+            response = requests.delete(
+                f"{self.hardware_interface.host}{endpoint}",
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
+            result = response.json()
+            if result.get("code") == 1:
+                print("✅ 请求成功")
+            else:
+                print(f"❌ 请求失败: {result.get('message','未知错误')}")
+            return result
+        except json.JSONDecodeError:
+            print("❌ 非JSON响应")
+            return {"code": 0, "message": "非JSON响应", "timestamp": int(time.time())}
+        except requests.exceptions.Timeout:
+            print("❌ 请求超时")
+            return {"code": 0, "message": "请求超时", "timestamp": int(time.time())}
+        except requests.exceptions.RequestException as e:
+            print(f"❌ 网络异常: {str(e)}")
+            return {"code": 0, "message": str(e), "timestamp": int(time.time())}
+
     # ==================== 工作流执行核心方法 ====================
 
     def process_web_workflows(self, web_workflow_json: str) -> List[Dict[str, str]]:
@@ -518,69 +1041,6 @@ class BioyondReactionStation(BioyondWorkstation):
         except Exception as e:
             print(f"错误：处理工作流失败: {e}")
             return []
-
-    def process_and_execute_workflow(self, workflow_name: str, task_name: str) -> dict:
-        """
-        一站式处理工作流程：解析网页工作流列表，合并工作流(带参数)，然后发布任务
-
-        Args:
-            workflow_name: 合并后的工作流名称
-            task_name: 任务名称
-
-        Returns:
-            任务创建结果
-        """
-        web_workflow_list = self.get_workflow_sequence()
-        print(f"\n{'='*60}")
-        print(f"📋 处理网页工作流列表: {web_workflow_list}")
-        print(f"{'='*60}")
-
-        web_workflow_json = json.dumps({"web_workflow_list": web_workflow_list})
-        workflows_result = self.process_web_workflows(web_workflow_json)
-
-        if not workflows_result:
-            return self._create_error_result("处理网页工作流列表失败", "process_web_workflows")
-
-        print(f"workflows_result 类型: {type(workflows_result)}")
-        print(f"workflows_result 内容: {workflows_result}")
-
-        workflows_with_params = self._build_workflows_with_parameters(workflows_result)
-
-        merge_data = {
-            "name": workflow_name,
-            "workflows": workflows_with_params
-        }
-
-        # print(f"\n🔄 合并工作流（带参数），名称: {workflow_name}")
-        merged_workflow = self.merge_workflow_with_parameters(json.dumps(merge_data))
-
-        if not merged_workflow:
-            return self._create_error_result("合并工作流失败", "merge_workflow_with_parameters")
-
-        workflow_id = merged_workflow.get("subWorkflows", [{}])[0].get("id", "")
-        # print(f"\n📤 使用工作流创建任务: {workflow_name} (ID: {workflow_id})")
-
-        order_params = [{
-            "orderCode": f"task_{self.hardware_interface.get_current_time_iso8601()}",
-            "orderName": task_name,
-            "workFlowId": workflow_id,
-            "borderNumber": 1,
-            "paramValues": {}
-        }]
-
-        result = self.create_order(json.dumps(order_params))
-
-        if not result:
-            return self._create_error_result("创建任务失败", "create_order")
-
-        # 清空工作流序列和参数，防止下次执行时累积重复
-        self.pending_task_params = []
-        self.clear_workflows()  # 清空工作流序列，避免重复累积
-
-        # print(f"\n✅ 任务创建成功: {result}")
-        # print(f"\n✅ 任务创建成功")
-        print(f"{'='*60}\n")
-        return json.dumps({"success": True, "result": result})
 
     def _build_workflows_with_parameters(self, workflows_result: list) -> list:
         """
@@ -781,3 +1241,90 @@ class BioyondReactionStation(BioyondWorkstation):
             print(f"   ❌ 工作流ID验证失败: {e}")
             print(f"   💡 将重新合并工作流")
             return False
+
+    def process_and_execute_workflow(self, workflow_name: str, task_name: str) -> dict:
+        """
+        一站式处理工作流程：解析网页工作流列表，合并工作流(带参数)，然后发布任务
+
+        Args:
+            workflow_name: 合并后的工作流名称
+            task_name: 任务名称
+
+        Returns:
+            任务创建结果
+        """
+        web_workflow_list = self.get_workflow_sequence()
+        print(f"\n{'='*60}")
+        print(f"📋 处理网页工作流列表: {web_workflow_list}")
+        print(f"{'='*60}")
+
+        web_workflow_json = json.dumps({"web_workflow_list": web_workflow_list})
+        workflows_result = self.process_web_workflows(web_workflow_json)
+
+        if not workflows_result:
+            return self._create_error_result("处理网页工作流列表失败", "process_web_workflows")
+
+        print(f"workflows_result 类型: {type(workflows_result)}")
+        print(f"workflows_result 内容: {workflows_result}")
+
+        workflows_with_params = self._build_workflows_with_parameters(workflows_result)
+
+        merge_data = {
+            "name": workflow_name,
+            "workflows": workflows_with_params
+        }
+
+        # print(f"\n🔄 合并工作流（带参数），名称: {workflow_name}")
+        merged_workflow = self.merge_workflow_with_parameters(json.dumps(merge_data))
+
+        if not merged_workflow:
+            return self._create_error_result("合并工作流失败", "merge_workflow_with_parameters")
+
+        workflow_id = merged_workflow.get("subWorkflows", [{}])[0].get("id", "")
+        # print(f"\n📤 使用工作流创建任务: {workflow_name} (ID: {workflow_id})")
+
+        order_params = [{
+            "orderCode": f"task_{self.hardware_interface.get_current_time_iso8601()}",
+            "orderName": task_name,
+            "workFlowId": workflow_id,
+            "borderNumber": 1,
+            "paramValues": {}
+        }]
+
+        result = self.create_order(json.dumps(order_params))
+
+        if not result:
+            return self._create_error_result("创建任务失败", "create_order")
+
+        # 清空工作流序列和参数，防止下次执行时累积重复
+        self.pending_task_params = []
+        self.clear_workflows()  # 清空工作流序列，避免重复累积
+
+        # print(f"\n✅ 任务创建成功: {result}")
+        # print(f"\n✅ 任务创建成功")
+        print(f"{'='*60}\n")
+
+        # 返回结果，包含合并后的工作流数据和订单参数
+        return json.dumps({
+            "success": True,
+            "result": result,
+            "merged_workflow": merged_workflow,
+            "order_params": order_params
+        })
+
+    # ==================== 反应器操作接口 ====================
+
+    def skip_titration_steps(self, preintake_id: str) -> Dict[str, Any]:
+        """跳过当前正在进行的滴定步骤
+
+        Args:
+            preintake_id: 通量ID
+
+        Returns:
+            Dict[str, Any]: 服务器响应，包含状态码、消息和时间戳
+        """
+        try:
+            return self._post_project_api("/api/lims/order/skip-titration-steps", preintake_id)
+        except Exception as e:
+            print(f"❌ 跳过滴定异常: {str(e)}")
+            return {"code": 0, "message": str(e), "timestamp": int(time.time())}

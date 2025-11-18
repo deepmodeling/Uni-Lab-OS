@@ -6,12 +6,13 @@ from cv_bridge import CvBridge
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
 
 class VideoPublisher(BaseROS2DeviceNode):
-    def __init__(self, device_id='video_publisher', camera_index=0, period: float = 0.1, resource_tracker: DeviceNodeResourceTracker = None):
+    def __init__(self, device_id='video_publisher', device_uuid='', camera_index=0, period: float = 0.1, resource_tracker: DeviceNodeResourceTracker = None):
         # 初始化BaseROS2DeviceNode，使用自身作为driver_instance
         BaseROS2DeviceNode.__init__(
             self,
             driver_instance=self,
             device_id=device_id,
+            device_uuid=device_uuid,
             status_types={},
             action_value_mappings={},
             hardware_interface="camera",

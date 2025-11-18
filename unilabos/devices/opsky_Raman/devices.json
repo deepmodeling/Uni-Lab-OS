@@ -1,0 +1,20 @@
+{
+    "nodes": [
+        {
+            "id": "opsky_ATR30007",
+            "name": "opsky_ATR30007",
+            "parent": null,
+            "type": "device",
+            "class": "opsky_ATR30007",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": []
+        }
+    ],
+    "links": []
+}

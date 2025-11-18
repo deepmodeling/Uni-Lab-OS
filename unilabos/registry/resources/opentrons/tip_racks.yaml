@@ -73,6 +73,7 @@ opentrons_96_filtertiprack_1000ul:
     - -1.5708
     - 0
     - 1.5708
+    path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tecan_nested_tip_rack/modal.xacro
     type: resource
   registry_type: resource
   version: 1.0.0

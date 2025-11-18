@@ -1,0 +1,35 @@
+dummy2_robot:
+  # Visual appearance settings
+  materials:
+    base_material:
+      color: [0.8, 0.8, 0.8, 1.0]  # Light gray
+      metallic: 0.1
+      roughness: 0.3
+    
+    link_material:
+      color: [0.2, 0.2, 0.8, 1.0]  # Blue
+      metallic: 0.3
+      roughness: 0.2
+    
+    joint_material:
+      color: [0.6, 0.6, 0.6, 1.0]  # Dark gray
+      metallic: 0.5
+      roughness: 0.1
+    
+    camera_material:
+      color: [0.1, 0.1, 0.1, 1.0]  # Black
+      metallic: 0.0
+      roughness: 0.8
+  
+  # Mesh scaling factors
+  mesh_scale: [0.001, 0.001, 0.001]  # Convert mm to m
+  
+  # Collision geometry simplification
+  collision_geometries:
+    base_link: "cylinder"  # radius: 0.08, height: 0.1
+    link_1: "cylinder"     # radius: 0.05, height: 0.15
+    link_2: "box"          # size: [0.2, 0.08, 0.08]
+    link_3: "box"          # size: [0.15, 0.06, 0.06]
+    link_4: "cylinder"     # radius: 0.03, height: 0.1
+    link_5: "cylinder"     # radius: 0.025, height: 0.06
+    link_6: "cylinder"     # radius: 0.02, height: 0.04

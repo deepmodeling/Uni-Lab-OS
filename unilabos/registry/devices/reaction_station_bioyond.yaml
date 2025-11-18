@@ -60,6 +60,56 @@ reaction_station.bioyond:
           title: drip_back参数
           type: object
         type: UniLabJsonCommand
+      extract_actuals_from_batch_reports:
+        feedback: {}
+        goal:
+          batch_reports_result: batch_reports_result
+        goal_default:
+          batch_reports_result: ''
+        handles:
+          input:
+          - data_key: batch_reports_result
+            data_source: handle
+            data_type: string
+            handler_key: BATCH_REPORTS_RESULT
+            io_type: source
+            label: Batch Order Completion Reports
+          output:
+          - data_key: return_info
+            data_source: executor
+            data_type: string
+            handler_key: ACTUALS_EXTRACTED
+            io_type: sink
+            label: Extracted Actuals
+        result:
+          return_info: return_info
+        schema:
+          description: 从批量任务完成报告中提取每个订单的实际加料量，输出extracted列表。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                batch_reports_result:
+                  description: 批量任务完成信息JSON字符串或对象，包含reports数组
+                  type: string
+              required:
+              - batch_reports_result
+              type: object
+            result:
+              properties:
+                return_info:
+                  description: JSON字符串，包含actuals数组，每项含order_code, order_id, actualTargetWeigh,
+                    actualVolume
+                  type: string
+              required:
+              - return_info
+              title: extract_actuals_from_batch_reports结果
+              type: object
+          required:
+          - goal
+          title: extract_actuals_from_batch_reports参数
+          type: object
+        type: UniLabJsonCommand
       liquid_feeding_beaker:
         feedback: {}
         goal:
@@ -187,22 +237,41 @@ reaction_station.bioyond:
         feedback: {}
         goal:
           assign_material_name: assign_material_name
+          extracted_actuals: extracted_actuals
+          feeding_order_data: feeding_order_data
           temperature: temperature
           time: time
           titration_type: titration_type
           torque_variation: torque_variation
           volume_formula: volume_formula
+          x_value: x_value
         goal_default:
           assign_material_name: ''
-          temperature: ''
-          time: ''
-          titration_type: ''
-          torque_variation: ''
+          extracted_actuals: ''
+          feeding_order_data: ''
+          temperature: '25.00'
+          time: '90'
+          titration_type: '2'
+          torque_variation: '2'
           volume_formula: ''
-        handles: {}
+          x_value: ''
+        handles:
+          input:
+          - data_key: extracted_actuals
+            data_source: handle
+            data_type: string
+            handler_key: ACTUALS_EXTRACTED
+            io_type: source
+            label: Extracted Actuals From Reports
+          - data_key: feeding_order_data
+            data_source: handle
+            data_type: object
+            handler_key: feeding_order
+            io_type: source
+            label: Feeding Order Data From Calculation Node
         result: {}
         schema:
-          description: 液体进料(滴定)
+          description: 液体进料(滴定)。支持两种模式:1)直接提供volume_formula;2)自动计算-提供x_value+feeding_order_data+extracted_actuals,系统自动生成公式"1000*(m二酐-x)*V二酐滴定/m二酐滴定"
           properties:
             feedback: {}
             goal:
@@ -210,28 +279,37 @@ reaction_station.bioyond:
                 assign_material_name:
                   description: 物料名称
                   type: string
+                extracted_actuals:
+                  description: 从报告提取的实际加料量JSON字符串,包含actualTargetWeigh(m二酐滴定)和actualVolume(V二酐滴定)
+                  type: string
+                feeding_order_data:
+                  description: 'feeding_order JSON对象,用于获取m二酐值(type为main_anhydride的amount)。示例:
+                    {"feeding_order": [{"type": "main_anhydride", "amount": 1.915}]}'
+                  type: string
                 temperature:
-                  description: 温度设定(°C)
+                  default: '25.00'
+                  description: 温度设定(°C),默认25.00
                   type: string
                 time:
-                  description: 观察时间(分钟)
+                  default: '90'
+                  description: 观察时间(分钟),默认90
                   type: string
                 titration_type:
-                  description: 是否滴定(1=否, 2=是)
+                  default: '2'
+                  description: 是否滴定(1=否, 2=是),默认2
                   type: string
                 torque_variation:
-                  description: 是否观察 (1=否, 2=是)
+                  default: '2'
+                  description: 是否观察 (1=否, 2=是),默认2
                   type: string
                 volume_formula:
-                  description: 分液公式(μL)
+                  description: 分液公式(μL)。可直接提供固定公式,或留空由系统根据x_value、feeding_order_data、extracted_actuals自动生成
+                  type: string
+                x_value:
+                  description: 公式中的x值,手工输入,格式为"{{1-2-3}}"(包含双花括号)。用于自动公式计算
                   type: string
               required:
-              - volume_formula
               - assign_material_name
-              - time
-              - torque_variation
-              - titration_type
-              - temperature
               type: object
             result: {}
           required:
@@ -447,7 +525,17 @@ reaction_station.bioyond:
     protocol_type: []
     status_types:
       all_workflows: dict
+      average_viscosity: float
       bioyond_status: dict
+      force: float
+      in_temperature: float
+      out_temperature: float
+      pt100_temperature: float
+      sensor_average_temperature: float
+      setting_temperature: float
+      speed: float
+      target_temperature: float
+      viscosity: float
       workstation_status: dict
     type: python
   config_info: []
@@ -475,5 +563,60 @@ reaction_station.bioyond:
       - bioyond_status
       - all_workflows
       - workstation_status
+      type: object
+  version: 1.0.0
+reaction_station.reactor:
+  category:
+  - reactor
+  - reaction_station_bioyond
+  class:
+    action_value_mappings: {}
+    module: unilabos.devices.workstation.bioyond_studio.reaction_station:BioyondReactor
+    status_types:
+      average_viscosity: float
+      force: float
+      in_temperature: float
+      out_temperature: float
+      pt100_temperature: float
+      sensor_average_temperature: float
+      setting_temperature: float
+      speed: float
+      target_temperature: float
+      viscosity: float
+    type: python
+  config_info: []
+  description: 反应站子设备-反应器
+  handles: []
+  icon: reaction_station.webp
+  init_param_schema:
+    config:
+      properties:
+        config:
+          type: object
+      required: []
+      type: object
+    data:
+      properties:
+        average_viscosity:
+          type: number
+        force:
+          type: number
+        in_temperature:
+          type: number
+        out_temperature:
+          type: number
+        pt100_temperature:
+          type: number
+        sensor_average_temperature:
+          type: number
+        setting_temperature:
+          type: number
+        speed:
+          type: number
+        target_temperature:
+          type: number
+        viscosity:
+          type: number
+      required: []
       type: object
   version: 1.0.0

@@ -1,5 +1,6 @@
 from pathlib import Path
 import time
+import uuid
 import rclpy,json
 from rclpy.node import Node
 from std_msgs.msg import String,Header
@@ -25,7 +26,7 @@ from unilabos.resources.graphio import initialize_resources
 from unilabos.registry.registry import lab_registry
 
 class ResourceMeshManager(BaseROS2DeviceNode):
-    def __init__(self, resource_model: dict, resource_config: list,resource_tracker, device_id: str = "resource_mesh_manager", rate=50):
+    def __init__(self, resource_model: dict, resource_config: list,resource_tracker, device_id: str = "resource_mesh_manager", rate=50, **kwargs):
         """初始化资源网格管理器节点
         
         Args:
@@ -41,10 +42,11 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             hardware_interface={},
             print_publish=False,
             resource_tracker=resource_tracker, 
+            device_uuid=kwargs.get("uuid", str(uuid.uuid4())),
         ) 
 
         self.resource_model         = resource_model
-        self.resource_config_dict   = {item['id']: item for item in resource_config}
+        self.resource_config_dict   = {item['uuid']: item for item in resource_config}
         self.move_group_ready       = False
         self.resource_tf_dict       = {}
         self.tf_broadcaster         = TransformBroadcaster(self)
@@ -182,14 +184,16 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         self.get_logger().info('开始设置资源网格管理器')
         #遍历resource_config中的资源配置，判断panent是否在resource_model中，
         resource_tf_dict = {}
-        for resource_id, resource_config in resource_config_dict.items():
+        for resource_uuid, resource_config in resource_config_dict.items():
+            parent = None
+            resource_id = resource_config['id']
+            if resource_config['parent_uuid'] is not None and resource_config['parent_uuid'] != "":
+                parent = resource_config_dict[resource_config['parent_uuid']]['id']
 
-            parent = resource_config['parent']
             parent_link = 'world'
             if parent in self.resource_model:
                 parent_link = parent
             elif parent is None and resource_id in self.resource_model:
-
                 pass
             elif parent is not None and resource_id in self.resource_model:
                 # parent_link = f"{self.resource_config_dict[parent]['parent']}_{parent}_device_link".replace("None_","")
@@ -199,9 +203,9 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 continue
             # 提取位置信息并转换单位
             position = {
-                "x": float(resource_config['position']['x'])/1000,
-                "y": float(resource_config['position']['y'])/1000,
-                "z": float(resource_config['position']['z'])/1000
+                "x": float(resource_config['position']['position']['x'])/1000,
+                "y": float(resource_config['position']['position']['y'])/1000,
+                "z": float(resource_config['position']['position']['z'])/1000
             }
             
             rotation_dict = {
@@ -210,8 +214,8 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 "z": 0
             }
 
-            if 'rotation' in resource_config['config']:
-                rotation_dict = resource_config['config']['rotation']   
+            if 'rotation' in resource_config['position']:
+                rotation_dict = resource_config['position']['rotation']   
                 
             # 从欧拉角转换为四元数
             q = quaternion_from_euler(

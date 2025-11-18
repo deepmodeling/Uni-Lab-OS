@@ -1,0 +1,232 @@
+xyz_stepper_controller:
+  category:
+  - laiyu_liquid_test
+  class:
+    action_value_mappings:
+      auto-define_current_as_zero:
+        feedback: {}
+        goal: {}
+        goal_default:
+          save_path: work_origin.json
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                save_path:
+                  default: work_origin.json
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: define_current_as_zero参数
+          type: object
+        type: UniLabJsonCommand
+      auto-enable:
+        feedback: {}
+        goal: {}
+        goal_default:
+          axis: null
+          state: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                axis:
+                  type: string
+                state:
+                  type: boolean
+              required:
+              - axis
+              - state
+              type: object
+            result: {}
+          required:
+          - goal
+          title: enable参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_to:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acc: 500
+          axis: null
+          precision: 50
+          speed: 2000
+          steps: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acc:
+                  default: 500
+                  type: integer
+                axis:
+                  type: string
+                precision:
+                  default: 50
+                  type: integer
+                speed:
+                  default: 2000
+                  type: integer
+                steps:
+                  type: integer
+              required:
+              - axis
+              - steps
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_to参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_xyz_work:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acc: 1500
+          speed: 100
+          x: 0.0
+          y: 0.0
+          z: 0.0
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acc:
+                  default: 1500
+                  type: integer
+                speed:
+                  default: 100
+                  type: integer
+                x:
+                  default: 0.0
+                  type: number
+                y:
+                  default: 0.0
+                  type: number
+                z:
+                  default: 0.0
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_xyz_work参数
+          type: object
+        type: UniLabJsonCommand
+      auto-return_to_work_origin:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acc: 800
+          speed: 200
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acc:
+                  default: 800
+                  type: integer
+                speed:
+                  default: 200
+                  type: integer
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: return_to_work_origin参数
+          type: object
+        type: UniLabJsonCommand
+      auto-wait_complete:
+        feedback: {}
+        goal: {}
+        goal_default:
+          axis: null
+          timeout: 30.0
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                axis:
+                  type: string
+                timeout:
+                  default: 30.0
+                  type: string
+              required:
+              - axis
+              type: object
+            result: {}
+          required:
+          - goal
+          title: wait_complete参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.laiyu_liquid_test.xyz_stepper_driver:XYZStepperController
+    status_types:
+      status: list
+    type: python
+  config_info: []
+  description: 新XYZ控制器
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        baudrate:
+          default: 115200
+          type: string
+        client:
+          type: string
+        origin_path:
+          default: unilabos/devices/laiyu_liquid_test/work_origin.json
+          type: string
+        port:
+          default: /dev/ttyUSB0
+          type: string
+      required: []
+      type: object
+    data:
+      properties:
+        status:
+          type: array
+      required:
+      - status
+      type: object
+  registry_type: device
+  version: 1.0.0

@@ -1,0 +1,601 @@
+xrd_d7mate:
+  category:
+  - xrd_d7mate
+  class:
+    action_value_mappings:
+      auto-close:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 安全关闭与XRD D7-Mate设备的TCP连接，释放网络资源。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: close参数
+          type: object
+        type: UniLabJsonCommand
+      auto-connect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 与XRD D7-Mate设备建立TCP连接，配置超时参数。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: connect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start_from_string:
+        feedback: {}
+        goal: {}
+        goal_default:
+          params: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                params:
+                  type: string
+              required:
+              - params
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start_from_string参数
+          type: object
+        type: UniLabJsonCommand
+      get_current_acquire_data:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: EmptyIn_Feedback
+              type: object
+            goal:
+              properties: {}
+              required: []
+              title: EmptyIn_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: EmptyIn_Result
+              type: object
+          required:
+          - goal
+          title: EmptyIn
+          type: object
+        type: EmptyIn
+      get_sample_down:
+        feedback: {}
+        goal:
+          sample_station: 1
+        goal_default:
+          int_input: 0
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: IntSingleInput_Feedback
+              type: object
+            goal:
+              properties:
+                int_input:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+              required:
+              - int_input
+              title: IntSingleInput_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: IntSingleInput_Result
+              type: object
+          required:
+          - goal
+          title: IntSingleInput
+          type: object
+        type: IntSingleInput
+      get_sample_request:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: EmptyIn_Feedback
+              type: object
+            goal:
+              properties: {}
+              required: []
+              title: EmptyIn_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: EmptyIn_Result
+              type: object
+          required:
+          - goal
+          title: EmptyIn
+          type: object
+        type: EmptyIn
+      get_sample_status:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: EmptyIn_Feedback
+              type: object
+            goal:
+              properties: {}
+              required: []
+              title: EmptyIn_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: EmptyIn_Result
+              type: object
+          required:
+          - goal
+          title: EmptyIn
+          type: object
+        type: EmptyIn
+      send_sample_down_ready:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: EmptyIn_Feedback
+              type: object
+            goal:
+              properties: {}
+              required: []
+              title: EmptyIn_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: EmptyIn_Result
+              type: object
+          required:
+          - goal
+          title: EmptyIn
+          type: object
+        type: EmptyIn
+      send_sample_ready:
+        feedback: {}
+        goal:
+          end_theta: 80.0
+          exp_time: 0.5
+          increment: 0.02
+          sample_id: ''
+          start_theta: 10.0
+        goal_default:
+          end_theta: 80.0
+          exp_time: 0.5
+          increment: 0.02
+          sample_id: Sample001
+          start_theta: 10.0
+        handles: {}
+        result: {}
+        schema:
+          description: 送样完成后，发送样品信息和采集参数
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: SampleReadyInput_Feedback
+              type: object
+            goal:
+              properties:
+                end_theta:
+                  description: 结束角度（≥5.5°，且必须大于start_theta）
+                  minimum: 5.5
+                  type: number
+                exp_time:
+                  description: 曝光时间（0.1-5.0秒）
+                  maximum: 5.0
+                  minimum: 0.1
+                  type: number
+                increment:
+                  description: 角度增量（≥0.005）
+                  minimum: 0.005
+                  type: number
+                sample_id:
+                  description: 样品标识符
+                  type: string
+                start_theta:
+                  description: 起始角度（≥5°）
+                  minimum: 5.0
+                  type: number
+              required:
+              - sample_id
+              - start_theta
+              - end_theta
+              - increment
+              - exp_time
+              title: SampleReadyInput_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: SampleReadyInput_Result
+              type: object
+          required:
+          - goal
+          title: SampleReadyInput
+          type: object
+        type: UniLabJsonCommand
+      set_power_off:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: EmptyIn_Feedback
+              type: object
+            goal:
+              properties: {}
+              required: []
+              title: EmptyIn_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: EmptyIn_Result
+              type: object
+          required:
+          - goal
+          title: EmptyIn
+          type: object
+        type: EmptyIn
+      set_power_on:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: EmptyIn_Feedback
+              type: object
+            goal:
+              properties: {}
+              required: []
+              title: EmptyIn_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: EmptyIn_Result
+              type: object
+          required:
+          - goal
+          title: EmptyIn
+          type: object
+        type: EmptyIn
+      set_voltage_current:
+        feedback: {}
+        goal:
+          current: 30.0
+          voltage: 40.0
+        goal_default:
+          current: 30.0
+          voltage: 40.0
+        handles: {}
+        result: {}
+        schema:
+          description: 设置高压电源电压和电流
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: VoltageCurrentInput_Feedback
+              type: object
+            goal:
+              properties:
+                current:
+                  description: 电流值（mA）
+                  type: number
+                voltage:
+                  description: 电压值（kV）
+                  type: number
+              required:
+              - voltage
+              - current
+              title: VoltageCurrentInput_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: VoltageCurrentInput_Result
+              type: object
+          required:
+          - goal
+          title: VoltageCurrentInput
+          type: object
+        type: UniLabJsonCommand
+      start:
+        feedback: {}
+        goal: {}
+        goal_default:
+          end_theta: 80.0
+          exp_time: 0.1
+          increment: 0.05
+          sample_id: 样品名称
+          start_theta: 10.0
+          string: ''
+          wait_minutes: 3.0
+        handles: {}
+        result: {}
+        schema:
+          description: 启动自动模式→上样→等待→样品准备→监控→检测下样位→执行下样流程。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                end_theta:
+                  description: 结束角度（≥5.5°，且必须大于start_theta）
+                  minimum: 5.5
+                  type: string
+                exp_time:
+                  description: 曝光时间（0.1-5.0秒）
+                  maximum: 5.0
+                  minimum: 0.1
+                  type: string
+                increment:
+                  description: 角度增量（≥0.005）
+                  minimum: 0.005
+                  type: string
+                sample_id:
+                  description: 样品标识符
+                  type: string
+                start_theta:
+                  description: 起始角度（≥5°）
+                  minimum: 5.0
+                  type: string
+                string:
+                  description: 字符串格式的参数输入，如果提供则优先解析使用
+                  type: string
+                wait_minutes:
+                  description: 允许上样后等待分钟数
+                  minimum: 0.0
+                  type: number
+              required:
+              - sample_id
+              - start_theta
+              - end_theta
+              - increment
+              - exp_time
+              title: StartWorkflow_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: StartWorkflow_Result
+              type: object
+          required:
+          - goal
+          title: StartWorkflow
+          type: object
+        type: UniLabJsonCommand
+      start_auto_mode:
+        feedback: {}
+        goal:
+          status: true
+        goal_default:
+          status: true
+        handles: {}
+        result: {}
+        schema:
+          description: 启动或停止自动模式
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: BoolSingleInput_Feedback
+              type: object
+            goal:
+              properties:
+                status:
+                  description: True-启动自动模式，False-停止自动模式
+                  type: boolean
+              required:
+              - status
+              title: BoolSingleInput_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: BoolSingleInput_Result
+              type: object
+          required:
+          - goal
+          title: BoolSingleInput
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.xrd_d7mate.xrd_d7mate:XRDClient
+    status_types:
+      current_acquire_data: dict
+      sample_down: dict
+      sample_request: dict
+      sample_status: dict
+    type: python
+  config_info: []
+  description: XRD D7-Mate X射线衍射分析设备，通过TCP通信实现远程控制与状态监控，支持自动模式控制、上样流程、数据获取、下样流程和高压电源控制等功能。
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        host:
+          default: 127.0.0.1
+          type: string
+        port:
+          default: 6001
+          type: string
+        timeout:
+          default: 10.0
+          type: string
+      required: []
+      type: object
+    data:
+      properties:
+        current_acquire_data:
+          type: object
+        sample_down:
+          type: object
+        sample_request:
+          type: object
+        sample_status:
+          type: object
+      required:
+      - sample_request
+      - current_acquire_data
+      - sample_status
+      - sample_down
+      type: object
+  version: 1.0.0

@@ -14,6 +14,7 @@ from launch_ros.parameter_descriptions import ParameterFile
 from unilabos.registry.registry import lab_registry
 from ament_index_python.packages import get_package_share_directory
 
+
 def get_pattern_matches(folder, pattern):
     """Given all the files in the folder, find those that match the pattern.
 
@@ -51,7 +52,7 @@ class ResourceVisualization:
         self.launch_description = LaunchDescription()
         self.resource_dict = resource
         self.resource_model = {}
-        self.resource_type = ['deck', 'plate', 'container']
+        self.resource_type = ['deck', 'plate', 'container', 'tip_rack']
         self.mesh_path = Path(__file__).parent.absolute()
         self.enable_rviz = enable_rviz
         registry = lab_registry
@@ -128,9 +129,9 @@ class ResourceVisualization:
                         # if node["parent"] is not None:
                         #     new_dev.set("station_name", node["parent"]+'_')
 
-                        new_dev.set("x",str(float(node["position"]["x"])/1000))
-                        new_dev.set("y",str(float(node["position"]["y"])/1000))
-                        new_dev.set("z",str(float(node["position"]["z"])/1000))
+                        new_dev.set("x",str(float(node["position"]["position"]["x"])/1000))
+                        new_dev.set("y",str(float(node["position"]["position"]["y"])/1000))
+                        new_dev.set("z",str(float(node["position"]["position"]["z"])/1000))
                         if "rotation" in node["config"]:
                             new_dev.set("rx",str(float(node["config"]["rotation"]["x"])))
                             new_dev.set("ry",str(float(node["config"]["rotation"]["y"])))
@@ -140,7 +141,7 @@ class ResourceVisualization:
                                 new_dev.set(key, str(value))
 
                         # 添加ros2_controller
-                        if node['class'].startswith('moveit.'):
+                        if node['class'].find('moveit.')!= -1:
                             new_include_controller = etree.SubElement(self.root, f"{{{xacro_uri}}}include")
                             new_include_controller.set("filename", f"{str(self.mesh_path)}/devices/{model_config['mesh']}/config/macro.ros2_control.xacro")
                             new_controller = etree.SubElement(self.root, f"{{{xacro_uri}}}{model_config['mesh']}_ros2_control")
@@ -203,7 +204,24 @@ class ResourceVisualization:
         Returns:
             LaunchDescription: launch描述对象
         """
-        moveit_configs_utils_path = Path(get_package_share_directory("moveit_configs_utils"))
+        # 检查ROS 2环境变量
+        if "AMENT_PREFIX_PATH" not in os.environ:
+            raise OSError(
+                "ROS 2环境未正确设置。需要设置 AMENT_PREFIX_PATH 环境变量。\n"
+                "请确保：\n"
+                "1. 已安装ROS 2 (推荐使用 ros-humble-desktop-full)\n"
+                "2. 已激活Conda环境: conda activate unilab\n"
+                "3. 或手动source ROS 2 setup文件: source /opt/ros/humble/setup.bash\n"
+                "4. 或者使用 --backend simple 参数跳过ROS依赖"
+            )
+
+        try:
+            moveit_configs_utils_path = Path(get_package_share_directory("moveit_configs_utils"))
+        except Exception as e:
+            raise OSError(
+                f"无法找到moveit_configs_utils包。请确保ROS 2和MoveIt 2已正确安装。\n"
+                f"原始错误: {e}"
+            )
         default_folder = moveit_configs_utils_path / "default_configs"
         planning_pattern = re.compile("^(.*)_planning.yaml$")
         pipelines = []
@@ -264,7 +282,8 @@ class ResourceVisualization:
                     parameters=[
                         {"robot_description": robot_description},
                         ros2_controllers,
-                    ]
+                    ],
+                    env=dict(os.environ)
                 )
             )
             for controller in self.moveit_controllers_yaml['moveit_simple_controller_manager']['controller_names']:
@@ -274,6 +293,7 @@ class ResourceVisualization:
                         executable="spawner",
                         arguments=[f"{controller}", "--controller-manager", f"controller_manager"],
                         output="screen",
+                        env=dict(os.environ)
                     )
                 )
             controllers.append(
@@ -282,6 +302,7 @@ class ResourceVisualization:
                         executable="spawner",
                         arguments=["joint_state_broadcaster", "--controller-manager", f"controller_manager"],
                         output="screen",
+                        env=dict(os.environ)
                 )
             )
             for i in controllers:
@@ -300,7 +321,8 @@ class ResourceVisualization:
                 'use_sim_time': False
             },
             # kinematics_dict
-            ]
+            ],
+            env=dict(os.environ)
         )
 
 
@@ -331,7 +353,8 @@ class ResourceVisualization:
             package='moveit_ros_move_group',
             executable='move_group',
             output='screen',
-            parameters=moveit_params
+            parameters=moveit_params,
+            env=dict(os.environ)
         )
 
 
@@ -354,7 +377,8 @@ class ResourceVisualization:
                     robot_description_planning,
                     planning_pipelines,
 
-                ]
+                ],
+                env=dict(os.environ)
             )
             self.launch_description.add_action(rviz_node)
 

@@ -5,6 +5,7 @@ from unilabos.resources.bioyond.warehouses import (
     bioyond_warehouse_1x4x4,
     bioyond_warehouse_1x4x4_right,  # 新增：右侧仓库 (A05～D08)
     bioyond_warehouse_1x4x2,
+    bioyond_warehouse_reagent_stack,  # 新增：试剂堆栈 (A1-B4)
     bioyond_warehouse_liquid_and_lid_handling,
     bioyond_warehouse_1x2x2,
     bioyond_warehouse_1x3x3,
@@ -48,9 +49,9 @@ class BIOYOND_PolymerReactionStation_Deck(Deck):
         self.warehouse_locations = {
             "堆栈1左": Coordinate(0.0, 430.0, 0.0),  # 左侧位置
             "堆栈1右": Coordinate(2500.0, 430.0, 0.0),  # 右侧位置
-            "站内试剂存放堆栈": Coordinate(1100.0, 475.0, 0.0),
-            "移液站内10%分装液体准备仓库": Coordinate(1500.0, 300.0, 0.0),
-            "站内Tip盒堆栈": Coordinate(1800.0, 300.0, 0.0),  # TODO: 根据实际位置调整坐标
+            "站内试剂存放堆栈": Coordinate(640.0, 480.0, 0.0),
+            "移液站内10%分装液体准备仓库": Coordinate(1200.0, 600.0, 0.0),
+            "站内Tip盒堆栈": Coordinate(300.0, 150.0, 0.0),
         }
         self.warehouses["站内试剂存放堆栈"].rotation = Rotation(z=90)
 
@@ -73,18 +74,21 @@ class BIOYOND_PolymerPreparationStation_Deck(Deck):
             self.setup()
 
     def setup(self) -> None:
-        # 添加仓库
+        # 添加仓库 - 配液站的3个堆栈，使用Bioyond系统中的实际名称
+        # 样品类型（typeMode=1）：烧杯、试剂瓶、分装板 → 试剂堆栈、溶液堆栈
+        # 试剂类型（typeMode=2）：样品板 → 粉末堆栈
         self.warehouses = {
-            "io_warehouse_left": bioyond_warehouse_1x4x4("io_warehouse_left"),
-            "io_warehouse_right": bioyond_warehouse_1x4x4("io_warehouse_right"),
-            "solutions": bioyond_warehouse_1x4x2("warehouse_solutions"),
-            "liquid_and_lid_handling": bioyond_warehouse_liquid_and_lid_handling("warehouse_liquid_and_lid_handling"),
+            # 试剂类型 - 样品板
+            "粉末堆栈": bioyond_warehouse_1x4x4("粉末堆栈"),  # 4行×4列 (A01-D04)
+
+            # 样品类型 - 烧杯、试剂瓶、分装板
+            "试剂堆栈": bioyond_warehouse_reagent_stack("试剂堆栈"),  # 2行×4列 (A01-B04)
+            "溶液堆栈": bioyond_warehouse_1x4x4("溶液堆栈"),  # 4行×4列 (A01-D04)
         }
         self.warehouse_locations = {
-            "io_warehouse_left": Coordinate(0.0, 650.0, 0.0),
-            "io_warehouse_right": Coordinate(2550.0, 650.0, 0.0),
-            "solutions": Coordinate(1915.0, 900.0, 0.0),
-            "liquid_and_lid_handling": Coordinate(1330.0, 490.0, 0.0),
+            "粉末堆栈": Coordinate(0.0, 450.0, 0.0),
+            "试剂堆栈": Coordinate(1850.0, 200.0, 0.0),
+            "溶液堆栈": Coordinate(2500.0, 450.0, 0.0),
         }
 
         for warehouse_name, warehouse in self.warehouses.items():

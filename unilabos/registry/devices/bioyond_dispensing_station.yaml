@@ -5,6 +5,35 @@ bioyond_dispensing_station:
   - bioyond_dispensing_station
   class:
     action_value_mappings:
+      auto-process_order_finish_report:
+        feedback: {}
+        goal: {}
+        goal_default:
+          report_request: null
+          used_materials: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                report_request:
+                  type: string
+                used_materials:
+                  type: string
+              required:
+              - report_request
+              - used_materials
+              type: object
+            result: {}
+          required:
+          - goal
+          title: process_order_finish_report参数
+          type: object
+        type: UniLabJsonCommand
       batch_create_90_10_vial_feeding_tasks:
         feedback: {}
         goal:
@@ -29,10 +58,17 @@ bioyond_dispensing_station:
             handler_key: titration
             io_type: source
             label: Titration Data From Calculation Node
+          output:
+          - data_key: return_info
+            data_source: executor
+            data_type: string
+            handler_key: BATCH_CREATE_RESULT
+            io_type: sink
+            label: Complete Batch Create Result JSON (contains order_codes and order_ids)
         result:
           return_info: return_info
         schema:
-          description: 批量创建90%10%小瓶投料任务。从计算节点接收titration数据,包含物料名称、主称固体质量、滴定固体质量和滴定溶剂体积。
+          description: 批量创建90%10%小瓶投料任务。从计算节点接收titration数据,包含物料名称、主称固体质量、滴定固体质量和滴定溶剂体积。返回的return_info中包含order_codes和order_ids列表。
           properties:
             feedback:
               properties: {}
@@ -72,6 +108,7 @@ bioyond_dispensing_station:
             result:
               properties:
                 return_info:
+                  description: 批量任务创建结果汇总JSON字符串，包含total(总数)、success(成功数)、failed(失败数)、order_codes(任务编码数组)、order_ids(任务ID数组)、details(每个任务的详细信息)
                   type: string
               required:
               - return_info
@@ -104,10 +141,17 @@ bioyond_dispensing_station:
             handler_key: solutions
             io_type: source
             label: Solution Data From Python
+          output:
+          - data_key: return_info
+            data_source: executor
+            data_type: string
+            handler_key: BATCH_CREATE_RESULT
+            io_type: sink
+            label: Complete Batch Create Result JSON (contains order_codes and order_ids)
         result:
           return_info: return_info
         schema:
-          description: 批量创建二胺溶液配置任务。自动为多个二胺样品创建溶液配置任务，每个任务包含固体物料称量、溶剂添加、搅拌混合等步骤。
+          description: 批量创建二胺溶液配置任务。自动为多个二胺样品创建溶液配置任务，每个任务包含固体物料称量、溶剂添加、搅拌混合等步骤。返回的return_info中包含order_codes和order_ids列表。
           properties:
             feedback:
               properties: {}
@@ -145,7 +189,7 @@ bioyond_dispensing_station:
             result:
               properties:
                 return_info:
-                  description: 批量任务创建结果汇总，JSON格式包含总数、成功数、失败数及每个任务的详细信息
+                  description: 批量任务创建结果汇总JSON字符串，包含total(总数)、success(成功数)、failed(失败数)、order_codes(任务编码数组)、order_ids(任务ID数组)、details(每个任务的详细信息)
                   type: string
               required:
               - return_info
@@ -382,6 +426,124 @@ bioyond_dispensing_station:
           title: DispenStationSolnPrep
           type: object
         type: DispenStationSolnPrep
+      transfer_materials_to_reaction_station:
+        feedback: {}
+        goal:
+          target_device_id: target_device_id
+          transfer_groups: transfer_groups
+        goal_default:
+          target_device_id: ''
+          transfer_groups: ''
+        handles: {}
+        placeholder_keys:
+          target_device_id: unilabos_devices
+        result: {}
+        schema:
+          description: 将配液站完成的物料（溶液、样品等）转移到指定反应站的堆栈库位。支持配置多组转移任务，每组包含物料名称、目标堆栈和目标库位。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                target_device_id:
+                  description: 目标反应站设备ID（从设备列表中选择，所有转移组都使用同一个目标设备）
+                  type: string
+                transfer_groups:
+                  description: 转移任务组列表，每组包含物料名称、目标堆栈和目标库位，可以添加多组
+                  items:
+                    properties:
+                      materials:
+                        description: 物料名称（手动输入，系统将通过RPC查询验证）
+                        type: string
+                      target_sites:
+                        description: 目标库位（手动输入，如"A01"）
+                        type: string
+                      target_stack:
+                        description: 目标堆栈名称（手动输入，如"堆栈1左"）
+                        type: string
+                    required:
+                    - materials
+                    - target_stack
+                    - target_sites
+                    type: object
+                  type: array
+              required:
+              - target_device_id
+              - transfer_groups
+              type: object
+            result: {}
+          required:
+          - goal
+          title: transfer_materials_to_reaction_station参数
+          type: object
+        type: UniLabJsonCommand
+      wait_for_multiple_orders_and_get_reports:
+        feedback: {}
+        goal:
+          batch_create_result: batch_create_result
+          check_interval: check_interval
+          timeout: timeout
+        goal_default:
+          batch_create_result: ''
+          check_interval: '10'
+          timeout: '7200'
+        handles:
+          input:
+          - data_key: batch_create_result
+            data_source: handle
+            data_type: string
+            handler_key: BATCH_CREATE_RESULT
+            io_type: source
+            label: Batch Task Creation Result From Previous Step
+          output:
+          - data_key: return_info
+            data_source: handle
+            data_type: string
+            handler_key: batch_reports_result
+            io_type: sink
+            label: Batch Order Completion Reports
+        result:
+          return_info: return_info
+        schema:
+          description: 同时等待多个任务完成并获取所有实验报告。从上游batch_create任务接收包含order_codes和order_ids的结果对象，并行监控所有任务状态并返回每个任务的报告。
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: WaitForMultipleOrdersAndGetReports_Feedback
+              type: object
+            goal:
+              properties:
+                batch_create_result:
+                  description: 批量创建任务的返回结果对象，包含order_codes和order_ids数组。从上游batch_create节点通过handle传递
+                  type: string
+                check_interval:
+                  default: '10'
+                  description: 检查任务状态的时间间隔（秒），默认每10秒检查一次所有待完成任务
+                  type: string
+                timeout:
+                  default: '7200'
+                  description: 等待超时时间（秒），默认7200秒（2小时）。超过此时间未完成的任务将标记为timeout
+                  type: string
+              required:
+              - batch_create_result
+              title: WaitForMultipleOrdersAndGetReports_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  description: 'JSON格式的批量任务完成信息，包含: total(总数), completed(成功数), timeout(超时数),
+                    error(错误数), elapsed_time(总耗时), reports(报告数组，每个元素包含order_code,
+                    order_id, status, completion_status, report, elapsed_time)'
+                  type: string
+              required:
+              - return_info
+              title: WaitForMultipleOrdersAndGetReports_Result
+              type: object
+          required:
+          - goal
+          title: WaitForMultipleOrdersAndGetReports
+          type: object
+        type: UniLabJsonCommand
     module: unilabos.devices.workstation.bioyond_studio.dispensing_station:BioyondDispensingStation
     status_types: {}
     type: python
@@ -394,8 +556,11 @@ bioyond_dispensing_station:
       properties:
         config:
           type: string
+        deck:
+          type: string
       required:
       - config
+      - deck
       type: object
     data:
       properties: {}

@@ -23,16 +23,26 @@ def warehouse_factory(
     empty: bool = False,
     category: str = "warehouse",
     model: Optional[str] = None,
-    col_offset: int = 0,  # 新增：列起始偏移量，用于生成A05-D08等命名
+    col_offset: int = 0,  # 列起始偏移量，用于生成A05-D08等命名
+    layout: str = "col-major",  # 新增：排序方式，"col-major"=列优先，"row-major"=行优先
 ):
-    # 创建16个板架位 (4层 x 4位置)
+    # 创建位置坐标
     locations = []
-    for layer in range(num_items_z):  # 4层
-        for row in range(num_items_y):  # 4行
-            for col in range(num_items_x):  # 1列 (每层4x1=4个位置)
+
+    for layer in range(num_items_z):  # 层
+        for row in range(num_items_y):  # 行
+            for col in range(num_items_x):  # 列
                 # 计算位置
                 x = dx + col * item_dx
-                y = dy + (num_items_y - row - 1) * item_dy
+
+                # 根据 layout 决定 y 坐标计算
+                if layout == "row-major":
+                    # 行优先：row=0(A行) 应该显示在上方，需要较小的 y 值
+                    y = dy + row * item_dy
+                else:
+                    # 列优先：保持原逻辑（row=0 对应较大的 y）
+                    y = dy + (num_items_y - row - 1) * item_dy
+
                 z = dz + (num_items_z - layer - 1) * item_dz
                 locations.append(Coordinate(x, y, z))
     if removed_positions:
@@ -45,9 +55,17 @@ def warehouse_factory(
         name_prefix=name,
     )
     len_x, len_y = (num_items_x, num_items_y) if num_items_z == 1 else (num_items_y, num_items_z) if num_items_x == 1 else (num_items_x, num_items_z)
-    # 应用列偏移量，支持A05-D08等命名
-    # 使用列优先顺序生成keys (与Bioyond坐标系统一致): A01,B01,C01,D01, A02,B02,C02,D02, ...
-    keys = [f"{LETTERS[j]}{i + 1 + col_offset:02d}" for i in range(len_x) for j in range(len_y)]
+
+    # 根据 layout 参数生成不同的排序方式
+    # 注意：物理位置的 y 坐标是倒序的 (row=0 时 y 最大，对应前端显示的顶部)
+    if layout == "row-major":
+        # 行优先顺序: A01,A02,A03,A04, B01,B02,B03,B04
+        # locations[0] 对应 row=0, y最大（前端顶部）→ 应该是 A01
+        keys = [f"{LETTERS[j]}{i + 1 + col_offset:02d}" for j in range(len_y) for i in range(len_x)]
+    else:
+        # 列优先顺序: A01,B01,C01,D01, A02,B02,C02,D02
+        keys = [f"{LETTERS[j]}{i + 1 + col_offset:02d}" for i in range(len_x) for j in range(len_y)]
+
     sites = {i: site for i, site in zip(keys, _sites.values())}
 
     return WareHouse(
@@ -58,6 +76,7 @@ def warehouse_factory(
         num_items_x = num_items_x,
         num_items_y = num_items_y,
         num_items_z = num_items_z,
+        ordering_layout=layout,  # 传递排序方式到 ordering_layout
         # ordered_items=ordered_items,
         # ordering=ordering,
         sites=sites,
@@ -81,8 +100,9 @@ class WareHouse(ItemizedCarrier):
         sites: Optional[Dict[Union[int, str], Optional[ResourcePLR]]] = None,
         category: str = "warehouse",
         model: Optional[str] = None,
+        ordering_layout: str = "col-major",
+        **kwargs
     ):
-
         super().__init__(
             name=name,
             size_x=size_x,
@@ -98,6 +118,16 @@ class WareHouse(ItemizedCarrier):
             category=category,
             model=model,
         )
+
+        # 保存排序方式，供graphio.py的坐标映射使用
+        # 使用独立属性避免与父类的layout冲突
+        self.ordering_layout = ordering_layout
+
+    def serialize(self) -> dict:
+        """序列化时保存 ordering_layout 属性"""
+        data = super().serialize()
+        data['ordering_layout'] = self.ordering_layout
+        return data
 
     def get_site_by_layer_position(self, row: int, col: int, layer: int) -> ResourceHolder:
         if not (0 <= layer < 4 and 0 <= row < 4 and 0 <= col < 1):

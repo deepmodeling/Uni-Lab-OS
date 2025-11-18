@@ -1,0 +1,383 @@
+{
+    "nodes": [
+        {
+            "id": "liquid_handler",
+            "name": "liquid_handler",
+            "parent": null,
+            "type": "device",
+            "class": "liquid_handler",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "data": {},
+            "children": [
+                "deck"
+            ],
+            "config": {
+                "deck": {
+                    "_resource_child_name": "deck",
+                    "_resource_type": "unilabos.devices.liquid_handling.laiyu.laiyu:TransformXYZDeck",
+                    "name": "deck"
+                },
+                "backend": {
+                    "type": "UniLiquidHandlerRvizBackend"
+                },
+                "simulator": true,
+                "total_height": 300,
+                "joint_config": "TransformXYZDeck",
+                "simulate_rviz": true
+            }
+        },
+        {
+            "id": "deck",
+            "name": "deck",
+            
+            "children": [
+                "tip_rack",
+                "plate_well",
+                "tube_rack",
+                "bottle_rack"
+            ],
+            "parent": "liquid_handler",
+            "type": "deck",
+            "class": "TransformXYZDeck",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 18
+            },
+            "config": {
+                "type": "TransformXYZDeck",
+                "size_x": 624.3,
+                "size_y": 565.2,
+                "size_z": 900,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                }
+            },
+            "data": {}
+        },
+        {
+            "id": "tip_rack",
+            "name": "tip_rack",
+            
+            "children": [
+                "tip_rack_A1"
+            ],
+            "parent": "deck",
+            "type": "tip_rack",
+            "class": "tiprack_box",
+            "position": {
+                "x": 150,
+                "y": 7,
+                "z": 103
+            },
+            "config": {
+                "type": "TipRack",
+                "size_x": 134,
+                "size_y": 96,
+                "size_z": 7.0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_rack",
+                "model": "tiprack_box",
+                "ordering": [
+                    "A1"
+                ]
+            },
+            "data": {}
+        },
+
+
+
+
+        {
+            "id": "tip_rack_A1",
+            "name": "tip_rack_A1",
+            
+            "children": [],
+            "parent": "tip_rack",
+            "type": "container",
+            "class": "",
+            "position": {
+                "x": 11.12,
+                "y": 75,
+                "z": -91.54
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9,
+                "size_y": 9,
+                "size_z": 95,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 95,
+                    "has_filter": false,
+                    "maximal_volume": 1000.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": null,
+                "tip_state": null,
+                "pending_tip": null
+            }
+        },
+
+
+        {
+            "id": "plate_well",
+            "name": "plate_well",
+            
+            "children": [
+                "plate_well_A1"
+            ],
+            "parent": "deck",
+            "type": "plate",
+            "class": "plate_96",
+            "position": {
+                "x": 161,
+                "y": 116,
+                "z": 48.5
+            },
+            "config": {
+                "type": "Plate",
+                "size_x": 127.76,
+                "size_y": 85.48,
+                "size_z": 45.5,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "plate",
+                "model": "plate_96",
+                "ordering": [
+                    "A1"
+                ]
+            },
+            "data": {}
+        },
+
+
+
+
+
+        {
+            "id": "plate_well_A1",
+            "name": "plate_well_A1",
+            
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.1,
+                "y": 70,
+                "z": 6.1
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 8.2,
+                "size_y": 8.2,
+                "size_z": 38,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 2000,
+                "material_z_thickness": null,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "unknown",
+                "cross_section_type": "rectangle"
+            },
+            "data": {
+                "liquids": [["water", 50.0]],
+                "pending_liquids": [["water", 50.0]],
+                "liquid_history": []
+            }
+        },
+
+
+        {
+            "id": "tube_rack",
+            "name": "tube_rack",
+            
+            "children": [
+                "tube_rack_A1"
+            ],
+            "parent": "deck",
+            "type": "container",
+            "class": "tube_container",
+            "position": {
+                "x": 0,
+                "y": 127,
+                "z": 0
+            },
+            "config": {
+                "type": "Plate",
+                "size_x": 151,
+                "size_y": 75,
+                "size_z": 75,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "model": "tube_container",
+                "ordering": [
+                    "A1"
+                ]
+            },
+            "data": {}
+        },
+
+
+        {
+            "id": "tube_rack_A1",
+            "name": "tube_rack_A1",
+            
+            "children": [],
+            "parent": "tube_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 6,
+                "y": 38,
+                "z": 10
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 34,
+                "size_y": 34,
+                "size_z": 117,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tube",
+                "model": null,
+                "max_volume": 2000,
+                "material_z_thickness": null,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "unknown",
+                "cross_section_type": "rectangle"
+            },
+            "data": {
+                "liquids": [["water", 50.0]],
+                "pending_liquids": [["water", 50.0]],
+                "liquid_history": []
+            }
+        }
+
+
+        ,
+
+
+        {
+            "id": "bottle_rack",
+            "name": "bottle_rack",
+            
+            "children": [
+                "bottle_rack_A1"
+            ],
+            "parent": "deck",
+            "type": "container",
+            "class": "bottle_container",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "type": "Plate",
+                "size_x": 130,
+                "size_y": 117,
+                "size_z": 8,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tube_rack",
+                "model": "bottle_container",
+                "ordering": [
+                    "A1"
+                ]
+            },
+            "data": {}
+        },
+
+
+        {
+            "id": "bottle_rack_A1",
+            "name": "bottle_rack_A1",
+            
+            "children": [],
+            "parent": "bottle_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 25,
+                "y": 18.5,
+                "z": 8
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 80,
+                "size_y": 80,
+                "size_z": 117,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tube",
+                "model": null,
+                "max_volume": 2000,
+                "material_z_thickness": null,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "unknown",
+                "cross_section_type": "rectangle"
+            },
+            "data": {
+                "liquids": [["water", 50.0]],
+                "pending_liquids": [["water", 50.0]],
+                "liquid_history": []
+            }
+        }
+
+
+    ],
+    "links": []
+}

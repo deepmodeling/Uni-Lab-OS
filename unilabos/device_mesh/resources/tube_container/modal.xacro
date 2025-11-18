@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tube_container">
+    <link name='tube_container'>
+        <visual name='visual'>
+            <geometry>
+                <mesh filename="meshes/tube_container.stl"/>
+            </geometry>
+            <material name="clay" />
+        </visual>
+    </link>
+</robot>

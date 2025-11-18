@@ -1,0 +1,223 @@
+Qone_nmr:
+  category:
+  - Qone_nmr
+  class:
+    action_value_mappings:
+      abort:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: EmptyIn_Feedback
+              type: object
+            goal:
+              properties: {}
+              required: []
+              title: EmptyIn_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: EmptyIn_Result
+              type: object
+          required:
+          - goal
+          title: EmptyIn
+          type: object
+        type: EmptyIn
+      auto-monitor_folder_for_new_content:
+        feedback: {}
+        goal: {}
+        goal_default:
+          check_interval: 60
+          expected_count: 1
+          monitor_dir: null
+          stability_checks: 3
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                check_interval:
+                  default: 60
+                  type: string
+                expected_count:
+                  default: 1
+                  type: string
+                monitor_dir:
+                  type: string
+                stability_checks:
+                  default: 3
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: monitor_folder_for_new_content参数
+          type: object
+        type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
+      auto-strings_to_txt:
+        feedback: {}
+        goal: {}
+        goal_default:
+          output_dir: null
+          string_list: null
+          txt_encoding: utf-8
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                output_dir:
+                  type: string
+                string_list:
+                  type: string
+                txt_encoding:
+                  default: utf-8
+                  type: string
+              required:
+              - string_list
+              type: object
+            result: {}
+          required:
+          - goal
+          title: strings_to_txt参数
+          type: object
+        type: UniLabJsonCommand
+      get_status:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: EmptyIn_Feedback
+              type: object
+            goal:
+              properties: {}
+              required: []
+              title: EmptyIn_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: EmptyIn_Result
+              type: object
+          required:
+          - goal
+          title: EmptyIn
+          type: object
+        type: EmptyIn
+      start:
+        feedback: {}
+        goal:
+          string: string
+        goal_default:
+          string: ''
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: StrSingleInput_Feedback
+              type: object
+            goal:
+              properties:
+                string:
+                  type: string
+              required:
+              - string
+              title: StrSingleInput_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: StrSingleInput_Result
+              type: object
+          required:
+          - goal
+          title: StrSingleInput
+          type: object
+        type: StrSingleInput
+    module: unilabos.devices.Qone_nmr.Qone_nmr:Qone_nmr
+    status_types:
+      status: str
+    type: python
+  config_info: []
+  description: Oxford NMR设备驱动，支持CSV字符串到TXT文件的批量转换功能，并监测对应.nmr文件的大小变化以确认结果生成完成
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties: {}
+      required: []
+      type: object
+    data:
+      properties:
+        status:
+          type: string
+      required:
+      - status
+      type: object
+  version: 1.0.0

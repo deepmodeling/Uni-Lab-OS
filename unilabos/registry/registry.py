@@ -577,9 +577,9 @@ class Registry:
                     if "init_param_schema" not in device_config:
                         device_config["init_param_schema"] = {}
                     if "class" in device_config:
-                        if "status_types" not in device_config["class"]:
+                        if "status_types" not in device_config["class"] or device_config["class"]["status_types"] is None:
                             device_config["class"]["status_types"] = {}
-                        if "action_value_mappings" not in device_config["class"]:
+                        if "action_value_mappings" not in device_config["class"] or device_config["class"]["action_value_mappings"] is None:
                             device_config["class"]["action_value_mappings"] = {}
                         enhanced_info = {}
                         if complete_registry:

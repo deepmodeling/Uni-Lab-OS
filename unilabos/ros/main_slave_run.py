@@ -1,7 +1,9 @@
 import json
+# from nt import device_encoding
 import threading
 import time
 from typing import Optional, Dict, Any, List
+import uuid
 
 import rclpy
 from unilabos_msgs.srv._serial_command import SerialCommand_Response
@@ -81,14 +83,15 @@ def main(
             resources_list,
             resource_tracker=host_node.resource_tracker,
             device_id="resource_mesh_manager",
+            device_uuid=str(uuid.uuid4()),
         )
         joint_republisher = JointRepublisher("joint_republisher", host_node.resource_tracker)
-        lh_joint_pub = LiquidHandlerJointPublisher(
-            resources_config=resources_list, resource_tracker=host_node.resource_tracker
-        )
+        # lh_joint_pub = LiquidHandlerJointPublisher(
+        #     resources_config=resources_list, resource_tracker=host_node.resource_tracker
+        # ) 
         executor.add_node(resource_mesh_manager)
         executor.add_node(joint_republisher)
-        executor.add_node(lh_joint_pub)
+        # executor.add_node(lh_joint_pub)
 
     thread = threading.Thread(target=executor.spin, daemon=True, name="host_executor_thread")
     thread.start()

@@ -1,0 +1,2620 @@
+{
+  "name": "LaiYu_Liquid_Deck",
+  "size_x": 340.0,
+  "size_y": 250.0,
+  "size_z": 160.0,
+  "coordinate_system": {
+    "origin": "top_left",
+    "x_axis": "right",
+    "y_axis": "down",
+    "z_axis": "up",
+    "units": "mm"
+  },
+  "children": [
+    {
+      "id": "module_1_8tubes",
+      "name": "8管位置模块",
+      "type": "tube_rack",
+      "position": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "size": {
+        "x": 151.0,
+        "y": 75.0,
+        "z": 75.0
+      },
+      "wells": [
+        {
+          "id": "A1",
+          "position": {
+            "x": 23.0,
+            "y": 20.0,
+            "z": 0.0
+          },
+          "diameter": 29.0,
+          "depth": 117.0,
+          "volume": 77000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A2",
+          "position": {
+            "x": 58.0,
+            "y": 20.0,
+            "z": 0.0
+          },
+          "diameter": 29.0,
+          "depth": 117.0,
+          "volume": 77000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A3",
+          "position": {
+            "x": 93.0,
+            "y": 20.0,
+            "z": 0.0
+          },
+          "diameter": 29.0,
+          "depth": 117.0,
+          "volume": 77000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A4",
+          "position": {
+            "x": 128.0,
+            "y": 20.0,
+            "z": 0.0
+          },
+          "diameter": 29.0,
+          "depth": 117.0,
+          "volume": 77000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B1",
+          "position": {
+            "x": 23.0,
+            "y": 55.0,
+            "z": 0.0
+          },
+          "diameter": 29.0,
+          "depth": 117.0,
+          "volume": 77000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B2",
+          "position": {
+            "x": 58.0,
+            "y": 55.0,
+            "z": 0.0
+          },
+          "diameter": 29.0,
+          "depth": 117.0,
+          "volume": 77000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B3",
+          "position": {
+            "x": 93.0,
+            "y": 55.0,
+            "z": 0.0
+          },
+          "diameter": 29.0,
+          "depth": 117.0,
+          "volume": 77000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B4",
+          "position": {
+            "x": 128.0,
+            "y": 55.0,
+            "z": 0.0
+          },
+          "diameter": 29.0,
+          "depth": 117.0,
+          "volume": 77000.0,
+          "shape": "circular"
+        }
+      ],
+      "well_spacing": {
+        "x": 35.0,
+        "y": 35.0
+      },
+      "grid": {
+        "rows": 2,
+        "columns": 4,
+        "row_labels": ["A", "B"],
+        "column_labels": ["1", "2", "3", "4"]
+      },
+      "metadata": {
+        "description": "8个试管位置，2x4排列",
+        "max_volume_ul": 77000,
+        "well_count": 8,
+        "tube_type": "50ml_falcon"
+      }
+    },
+    {
+      "id": "module_2_96well_deep",
+      "name": "96深孔板",
+      "type": "96_well_plate",
+      "position": {
+        "x": 175.0,
+        "y": 11.0,
+        "z": 48.5
+      },
+      "size": {
+        "x": 127.1,
+        "y": 85.6,
+        "z": 45.5
+      },
+      "wells": [
+        {
+          "id": "A01",
+          "position": {
+            "x": 175.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A02",
+          "position": {
+            "x": 184.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A03",
+          "position": {
+            "x": 193.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A04",
+          "position": {
+            "x": 202.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A05",
+          "position": {
+            "x": 211.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A06",
+          "position": {
+            "x": 220.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A07",
+          "position": {
+            "x": 229.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A08",
+          "position": {
+            "x": 238.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A09",
+          "position": {
+            "x": 247.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A10",
+          "position": {
+            "x": 256.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A11",
+          "position": {
+            "x": 265.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A12",
+          "position": {
+            "x": 274.0,
+            "y": 11.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B01",
+          "position": {
+            "x": 175.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B02",
+          "position": {
+            "x": 184.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B03",
+          "position": {
+            "x": 193.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B04",
+          "position": {
+            "x": 202.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B05",
+          "position": {
+            "x": 211.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B06",
+          "position": {
+            "x": 220.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B07",
+          "position": {
+            "x": 229.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B08",
+          "position": {
+            "x": 238.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B09",
+          "position": {
+            "x": 247.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B10",
+          "position": {
+            "x": 256.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B11",
+          "position": {
+            "x": 265.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B12",
+          "position": {
+            "x": 274.0,
+            "y": 20.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C01",
+          "position": {
+            "x": 175.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C02",
+          "position": {
+            "x": 184.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C03",
+          "position": {
+            "x": 193.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C04",
+          "position": {
+            "x": 202.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C05",
+          "position": {
+            "x": 211.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C06",
+          "position": {
+            "x": 220.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C07",
+          "position": {
+            "x": 229.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C08",
+          "position": {
+            "x": 238.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C09",
+          "position": {
+            "x": 247.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C10",
+          "position": {
+            "x": 256.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C11",
+          "position": {
+            "x": 265.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C12",
+          "position": {
+            "x": 274.0,
+            "y": 29.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D01",
+          "position": {
+            "x": 175.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D02",
+          "position": {
+            "x": 184.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D03",
+          "position": {
+            "x": 193.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D04",
+          "position": {
+            "x": 202.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D05",
+          "position": {
+            "x": 211.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D06",
+          "position": {
+            "x": 220.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D07",
+          "position": {
+            "x": 229.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D08",
+          "position": {
+            "x": 238.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D09",
+          "position": {
+            "x": 247.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D10",
+          "position": {
+            "x": 256.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D11",
+          "position": {
+            "x": 265.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D12",
+          "position": {
+            "x": 274.0,
+            "y": 38.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E01",
+          "position": {
+            "x": 175.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E02",
+          "position": {
+            "x": 184.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E03",
+          "position": {
+            "x": 193.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E04",
+          "position": {
+            "x": 202.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E05",
+          "position": {
+            "x": 211.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E06",
+          "position": {
+            "x": 220.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E07",
+          "position": {
+            "x": 229.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E08",
+          "position": {
+            "x": 238.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E09",
+          "position": {
+            "x": 247.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E10",
+          "position": {
+            "x": 256.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E11",
+          "position": {
+            "x": 265.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E12",
+          "position": {
+            "x": 274.0,
+            "y": 47.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F01",
+          "position": {
+            "x": 175.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F02",
+          "position": {
+            "x": 184.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F03",
+          "position": {
+            "x": 193.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F04",
+          "position": {
+            "x": 202.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F05",
+          "position": {
+            "x": 211.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F06",
+          "position": {
+            "x": 220.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F07",
+          "position": {
+            "x": 229.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F08",
+          "position": {
+            "x": 238.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F09",
+          "position": {
+            "x": 247.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F10",
+          "position": {
+            "x": 256.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F11",
+          "position": {
+            "x": 265.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F12",
+          "position": {
+            "x": 274.0,
+            "y": 56.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G01",
+          "position": {
+            "x": 175.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G02",
+          "position": {
+            "x": 184.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G03",
+          "position": {
+            "x": 193.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G04",
+          "position": {
+            "x": 202.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G05",
+          "position": {
+            "x": 211.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G06",
+          "position": {
+            "x": 220.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G07",
+          "position": {
+            "x": 229.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G08",
+          "position": {
+            "x": 238.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G09",
+          "position": {
+            "x": 247.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G10",
+          "position": {
+            "x": 256.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G11",
+          "position": {
+            "x": 265.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G12",
+          "position": {
+            "x": 274.0,
+            "y": 65.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H01",
+          "position": {
+            "x": 175.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H02",
+          "position": {
+            "x": 184.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H03",
+          "position": {
+            "x": 193.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H04",
+          "position": {
+            "x": 202.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H05",
+          "position": {
+            "x": 211.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H06",
+          "position": {
+            "x": 220.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H07",
+          "position": {
+            "x": 229.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H08",
+          "position": {
+            "x": 238.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H09",
+          "position": {
+            "x": 247.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H10",
+          "position": {
+            "x": 256.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H11",
+          "position": {
+            "x": 265.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H12",
+          "position": {
+            "x": 274.0,
+            "y": 74.0,
+            "z": 48.5
+          },
+          "diameter": 8.2,
+          "depth": 39.4,
+          "volume": 2080.0,
+          "shape": "circular"
+        }
+      ],
+      "well_spacing": {
+        "x": 9.0,
+        "y": 9.0
+      },
+      "grid": {
+        "rows": 8,
+        "columns": 12,
+        "row_labels": ["A", "B", "C", "D", "E", "F", "G", "H"],
+        "column_labels": ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+      },
+      "metadata": {
+        "description": "深孔96孔板",
+        "max_volume_ul": 2080,
+        "well_count": 96,
+        "plate_type": "deep_well_plate"
+      }
+    },
+    {
+      "id": "module_3_beaker",
+      "name": "敞口玻璃瓶",
+      "type": "beaker_holder",
+      "position": {
+        "x": 65.0,
+        "y": 143.5,
+        "z": 0.0
+      },
+      "size": {
+        "x": 130.0,
+        "y": 117.0,
+        "z": 110.0
+      },
+      "wells": [
+        {
+          "id": "A1",
+          "position": {
+            "x": 65.0,
+            "y": 143.5,
+            "z": 0.0
+          },
+          "diameter": 80.0,
+          "depth": 145.0,
+          "volume": 500000.0,
+          "shape": "circular",
+          "container_type": "beaker"
+        }
+      ],
+      "supported_containers": [
+        {
+          "type": "beaker_250ml",
+          "diameter": 70.0,
+          "height": 95.0,
+          "volume": 250000.0
+        },
+        {
+          "type": "beaker_500ml", 
+          "diameter": 85.0,
+          "height": 115.0,
+          "volume": 500000.0
+        },
+        {
+          "type": "beaker_1000ml",
+          "diameter": 105.0,
+          "height": 145.0,
+          "volume": 1000000.0
+        }
+      ],
+      "metadata": {
+        "description": "敞口玻璃瓶固定座，支持250ml-1000ml烧杯",
+        "max_beaker_diameter": 80.0,
+        "max_beaker_height": 145.0,
+        "well_count": 1,
+        "access_from_top": true
+      }
+    },
+    {
+      "id": "module_4_96well_tips",
+      "name": "96枪头盒",
+      "type": "96_tip_rack",
+      "position": {
+        "x": 165.62,
+        "y": 115.5,
+        "z": 103.0
+      },
+      "size": {
+        "x": 134.0,
+        "y": 96.0,
+        "z": 7.0
+      },
+      "wells": [
+        {
+          "id": "A01",
+          "position": {
+            "x": 165.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A02",
+          "position": {
+            "x": 174.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A03",
+          "position": {
+            "x": 183.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A04",
+          "position": {
+            "x": 192.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A05",
+          "position": {
+            "x": 201.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A06",
+          "position": {
+            "x": 210.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A07",
+          "position": {
+            "x": 219.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A08",
+          "position": {
+            "x": 228.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A09",
+          "position": {
+            "x": 237.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A10",
+          "position": {
+            "x": 246.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A11",
+          "position": {
+            "x": 255.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "A12",
+          "position": {
+            "x": 264.62,
+            "y": 115.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B01",
+          "position": {
+            "x": 165.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B02",
+          "position": {
+            "x": 174.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B03",
+          "position": {
+            "x": 183.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B04",
+          "position": {
+            "x": 192.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B05",
+          "position": {
+            "x": 201.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B06",
+          "position": {
+            "x": 210.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B07",
+          "position": {
+            "x": 219.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B08",
+          "position": {
+            "x": 228.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B09",
+          "position": {
+            "x": 237.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B10",
+          "position": {
+            "x": 246.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B11",
+          "position": {
+            "x": 255.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "B12",
+          "position": {
+            "x": 264.62,
+            "y": 124.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C01",
+          "position": {
+            "x": 165.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C02",
+          "position": {
+            "x": 174.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C03",
+          "position": {
+            "x": 183.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C04",
+          "position": {
+            "x": 192.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C05",
+          "position": {
+            "x": 201.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C06",
+          "position": {
+            "x": 210.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C07",
+          "position": {
+            "x": 219.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C08",
+          "position": {
+            "x": 228.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C09",
+          "position": {
+            "x": 237.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C10",
+          "position": {
+            "x": 246.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C11",
+          "position": {
+            "x": 255.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "C12",
+          "position": {
+            "x": 264.62,
+            "y": 133.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D01",
+          "position": {
+            "x": 165.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D02",
+          "position": {
+            "x": 174.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D03",
+          "position": {
+            "x": 183.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D04",
+          "position": {
+            "x": 192.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D05",
+          "position": {
+            "x": 201.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D06",
+          "position": {
+            "x": 210.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D07",
+          "position": {
+            "x": 219.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D08",
+          "position": {
+            "x": 228.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D09",
+          "position": {
+            "x": 237.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D10",
+          "position": {
+            "x": 246.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D11",
+          "position": {
+            "x": 255.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "D12",
+          "position": {
+            "x": 264.62,
+            "y": 142.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E01",
+          "position": {
+            "x": 165.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E02",
+          "position": {
+            "x": 174.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E03",
+          "position": {
+            "x": 183.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E04",
+          "position": {
+            "x": 192.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E05",
+          "position": {
+            "x": 201.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E06",
+          "position": {
+            "x": 210.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E07",
+          "position": {
+            "x": 219.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E08",
+          "position": {
+            "x": 228.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E09",
+          "position": {
+            "x": 237.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E10",
+          "position": {
+            "x": 246.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E11",
+          "position": {
+            "x": 255.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "E12",
+          "position": {
+            "x": 264.62,
+            "y": 151.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F01",
+          "position": {
+            "x": 165.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F02",
+          "position": {
+            "x": 174.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F03",
+          "position": {
+            "x": 183.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F04",
+          "position": {
+            "x": 192.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F05",
+          "position": {
+            "x": 201.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F06",
+          "position": {
+            "x": 210.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F07",
+          "position": {
+            "x": 219.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F08",
+          "position": {
+            "x": 228.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F09",
+          "position": {
+            "x": 237.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F10",
+          "position": {
+            "x": 246.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F11",
+          "position": {
+            "x": 255.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "F12",
+          "position": {
+            "x": 264.62,
+            "y": 160.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G01",
+          "position": {
+            "x": 165.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G02",
+          "position": {
+            "x": 174.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G03",
+          "position": {
+            "x": 183.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G04",
+          "position": {
+            "x": 192.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G05",
+          "position": {
+            "x": 201.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G06",
+          "position": {
+            "x": 210.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G07",
+          "position": {
+            "x": 219.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G08",
+          "position": {
+            "x": 228.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G09",
+          "position": {
+            "x": 237.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G10",
+          "position": {
+            "x": 246.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G11",
+          "position": {
+            "x": 255.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "G12",
+          "position": {
+            "x": 264.62,
+            "y": 169.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H01",
+          "position": {
+            "x": 165.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H02",
+          "position": {
+            "x": 174.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H03",
+          "position": {
+            "x": 183.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H04",
+          "position": {
+            "x": 192.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H05",
+          "position": {
+            "x": 201.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H06",
+          "position": {
+            "x": 210.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H07",
+          "position": {
+            "x": 219.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H08",
+          "position": {
+            "x": 228.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H09",
+          "position": {
+            "x": 237.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H10",
+          "position": {
+            "x": 246.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H11",
+          "position": {
+            "x": 255.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        },
+        {
+          "id": "H12",
+          "position": {
+            "x": 264.62,
+            "y": 178.5,
+            "z": 103.0
+          },
+          "diameter": 9.0,
+          "depth": 95.0,
+          "volume": 6000.0,
+          "shape": "circular"
+        }
+      ],
+      "well_spacing": {
+        "x": 9.0,
+        "y": 9.0
+      },
+      "grid": {
+        "rows": 8,
+        "columns": 12,
+        "row_labels": ["A", "B", "C", "D", "E", "F", "G", "H"],
+        "column_labels": ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+      },
+      "metadata": {
+        "description": "标准96孔枪头盒",
+        "max_volume_ul": 6000,
+        "well_count": 96,
+        "plate_type": "tip_rack"
+      }
+    }
+  ],
+  "deck_metadata": {
+    "total_modules": 4,
+    "total_wells": 201,
+    "deck_area": {
+      "used_x": 299.62,
+      "used_y": 260.5,
+      "used_z": 103.0,
+      "efficiency_x": 88.1,
+      "efficiency_y": 104.2,
+      "efficiency_z": 64.4
+    },
+    "safety_margins": {
+      "x_min": 10.0,
+      "x_max": 10.0,
+      "y_min": 10.0,
+      "y_max": 10.0,
+      "z_clearance": 20.0
+    },
+    "calibration_points": [
+      {
+        "id": "origin",
+        "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "description": "工作台左上角原点"
+      },
+      {
+        "id": "module_1_ref",
+        "position": {"x": 23.0, "y": 20.0, "z": 0.0},
+        "description": "模块1试管架基准孔A1"
+      },
+      {
+        "id": "module_2_ref", 
+        "position": {"x": 175.0, "y": 11.0, "z": 48.5},
+        "description": "模块2深孔板基准孔A01"
+      },
+      {
+        "id": "module_3_ref",
+        "position": {"x": 65.0, "y": 143.5, "z": 0.0},
+        "description": "模块3敞口玻璃瓶中心"
+      },
+      {
+        "id": "module_4_ref",
+        "position": {"x": 165.62, "y": 115.5, "z": 103.0},
+        "description": "模块4枪头盒基准孔A01"
+      }
+    ],
+    "version": "2.0",
+    "created_by": "Doraemon Team",
+    "last_updated": "2025-09-29"
+  }
+}

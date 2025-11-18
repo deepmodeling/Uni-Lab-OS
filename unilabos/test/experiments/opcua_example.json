@@ -1,0 +1,19 @@
+{
+    "nodes": [
+        {
+            "id": "id",
+            "name": "name",
+            "children": [
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "opcua_example",
+            "config": {
+                "url": "url",
+                "config_path": "unilabos/device_comms/opcua_client/opcua_workflow_example.json"
+            },
+            "data": {
+            }
+        }
+    ]
+}

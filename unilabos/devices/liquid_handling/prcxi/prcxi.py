@@ -176,6 +176,23 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         super().post_init(ros_node)
         self._unilabos_backend.post_init(ros_node)
 
+    async def _execute_with_step_mode(self, operation):
+        """辅助函数：根据 step_mode 执行操作并返回一致的结果。
+        
+        Args:
+            operation: 一个异步可调用对象，执行实际的操作
+            
+        Returns:
+            操作的返回值，确保两种模式下的返回值一致
+        """
+        if self.step_mode:
+            await self.create_protocol(f"单点动作{time.time()}")
+            result = await operation()
+            await self.run_protocol()
+            return result
+        else:
+            return await operation()
+
     def set_liquid(self, wells: list[Well], liquid_names: list[str], volumes: list[float]):
         return super().set_liquid(wells, liquid_names, volumes)
 
@@ -339,16 +356,11 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         mix_rate: Optional[float] = None,
         none_keys: List[str] = [],
     ):
-        if self.step_mode:
-            await self.create_protocol(f"单点动作{time.time()}")
-            await self._unilabos_backend.mix(
-                targets, mix_time, mix_vol, height_to_bottom, offsets, mix_rate, none_keys
-            )
-            await self.run_protocol()
-        else:
+        async def _mix_operation():
             return await self._unilabos_backend.mix(
                 targets, mix_time, mix_vol, height_to_bottom, offsets, mix_rate, none_keys
             )
+        return await self._execute_with_step_mode(_mix_operation)
 
     def iter_tips(self, tip_racks: Sequence[TipRack]) -> Iterator[Resource]:
         return super().iter_tips(tip_racks)
@@ -360,12 +372,9 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         offsets: Optional[List[Coordinate]] = None,
         **backend_kwargs,
     ):
-        if self.step_mode:
-            await self.create_protocol(f"单点动作{time.time()}")
-            await super().pick_up_tips(tip_spots, use_channels, offsets, **backend_kwargs)
-            await self.run_protocol()
-        else:
+        async def _pick_up_tips_operation():
             return await super().pick_up_tips(tip_spots, use_channels, offsets, **backend_kwargs)
+        return await self._execute_with_step_mode(_pick_up_tips_operation)
 
     async def aspirate(
         self,
@@ -379,21 +388,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         spread: Literal["wide", "tight", "custom"] = "wide",
         **backend_kwargs,
     ):
-        if self.step_mode:
-            await self.create_protocol(f"单点动作{time.time()}")
-            await super().aspirate(
-                resources,
-                vols,
-                use_channels,
-                flow_rates,
-                offsets,
-                liquid_height,
-                blow_out_air_volume,
-                spread,
-                **backend_kwargs,
-            )
-            await self.run_protocol()
-        else:
+        async def _aspirate_operation():
             return await super().aspirate(
                 resources,
                 vols,
@@ -405,6 +400,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 spread,
                 **backend_kwargs,
             )
+        return await self._execute_with_step_mode(_aspirate_operation)
 
     async def drop_tips(
         self,
@@ -414,12 +410,9 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         allow_nonzero_volume: bool = False,
         **backend_kwargs,
     ):
-        if self.step_mode:
-            await self.create_protocol(f"单点动作{time.time()}")
-            await super().drop_tips(tip_spots, use_channels, offsets, allow_nonzero_volume, **backend_kwargs)
-            await self.run_protocol()
-        else:
+        async def _drop_tips_operation():
             return await super().drop_tips(tip_spots, use_channels, offsets, allow_nonzero_volume, **backend_kwargs)
+        return await self._execute_with_step_mode(_drop_tips_operation)
 
     async def dispense(
         self,
@@ -433,21 +426,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         spread: Literal["wide", "tight", "custom"] = "wide",
         **backend_kwargs,
     ):
-        if self.step_mode:
-            await self.create_protocol(f"单点动作{time.time()}")
-            await super().dispense(
-                resources,
-                vols,
-                use_channels,
-                flow_rates,
-                offsets,
-                liquid_height,
-                blow_out_air_volume,
-                spread,
-                **backend_kwargs,
-            )
-            await self.run_protocol()
-        else:
+        async def _dispense_operation():
             return await super().dispense(
                 resources,
                 vols,
@@ -459,6 +438,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 spread,
                 **backend_kwargs,
             )
+        return await self._execute_with_step_mode(_dispense_operation)
 
     async def discard_tips(
         self,
@@ -467,12 +447,9 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         offsets: Optional[List[Coordinate]] = None,
         **backend_kwargs,
     ):
-        if self.step_mode:
-            await self.create_protocol(f"单点动作{time.time()}")
-            await super().discard_tips(use_channels, allow_nonzero_volume, offsets, **backend_kwargs)
-            await self.run_protocol()
-        else:
+        async def _discard_tips_operation():
             return await super().discard_tips(use_channels, allow_nonzero_volume, offsets, **backend_kwargs)
+        return await self._execute_with_step_mode(_discard_tips_operation)
 
     def set_tiprack(self, tip_racks: Sequence[TipRack]):
         super().set_tiprack(tip_racks)

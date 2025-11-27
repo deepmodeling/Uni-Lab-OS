@@ -9,13 +9,22 @@ import asyncio
 
 import yaml
 
-from unilabos.app.web.controler import devices, job_add, job_info
+from unilabos.app.web.controller import (
+    devices,
+    job_add,
+    job_info,
+    get_online_devices,
+    get_device_actions,
+    get_action_schema,
+    get_all_available_actions,
+)
 from unilabos.app.model import (
     Resp,
     RespCode,
     JobStatusResp,
     JobAddResp,
     JobAddReq,
+    JobData,
 )
 from unilabos.app.web.utils.host_utils import get_host_node_info
 from unilabos.registry.registry import lab_registry
@@ -1234,6 +1243,65 @@ def get_devices():
     return Resp(data=dict(data))
 
 
+@api.get("/online-devices", summary="Online devices list", response_model=Resp)
+def api_get_online_devices():
+    """获取在线设备列表
+
+    返回当前在线的设备列表，包含设备ID、命名空间、机器名等信息
+    """
+    isok, data = get_online_devices()
+    if not isok:
+        return Resp(code=RespCode.ErrorHostNotInit, message=data.get("error", "Unknown error"))
+
+    return Resp(data=data)
+
+
+@api.get("/devices/{device_id}/actions", summary="Device actions list", response_model=Resp)
+def api_get_device_actions(device_id: str):
+    """获取设备可用的动作列表
+
+    Args:
+        device_id: 设备ID
+
+    返回指定设备的所有可用动作，包含动作名称、类型、是否繁忙等信息
+    """
+    isok, data = get_device_actions(device_id)
+    if not isok:
+        return Resp(code=RespCode.ErrorInvalidReq, message=data.get("error", "Unknown error"))
+
+    return Resp(data=data)
+
+
+@api.get("/devices/{device_id}/actions/{action_name}/schema", summary="Action schema", response_model=Resp)
+def api_get_action_schema(device_id: str, action_name: str):
+    """获取动作的Schema详情
+
+    Args:
+        device_id: 设备ID
+        action_name: 动作名称
+
+    返回动作的参数Schema、默认值、类型等详细信息
+    """
+    isok, data = get_action_schema(device_id, action_name)
+    if not isok:
+        return Resp(code=RespCode.ErrorInvalidReq, message=data.get("error", "Unknown error"))
+
+    return Resp(data=data)
+
+
+@api.get("/actions", summary="All available actions", response_model=Resp)
+def api_get_all_actions():
+    """获取所有设备的可用动作
+
+    返回所有已注册设备的动作列表，包含设备信息和各动作的状态
+    """
+    isok, data = get_all_available_actions()
+    if not isok:
+        return Resp(code=RespCode.ErrorHostNotInit, message=data.get("error", "Unknown error"))
+
+    return Resp(data=data)
+
+
 @api.get("/job/{id}/status", summary="Job status", response_model=JobStatusResp)
 def job_status(id: str):
     """获取任务状态"""
@@ -1244,11 +1312,22 @@ def job_status(id: str):
 @api.post("/job/add", summary="Create job", response_model=JobAddResp)
 def post_job_add(req: JobAddReq):
     """创建任务"""
-    device_id = req.device_id
-    if not req.data:
-        return Resp(code=RespCode.ErrorInvalidReq, message="Invalid request data")
+    # 检查必要参数：device_id 和 action
+    if not req.device_id:
+        return JobAddResp(
+            data=JobData(jobId="", status=6),
+            code=RespCode.ErrorInvalidReq,
+            message="device_id is required",
+        )
 
-    req.device_id = device_id
+    action_name = req.data.get("action", req.action) if req.data else req.action
+    if not action_name:
+        return JobAddResp(
+            data=JobData(jobId="", status=6),
+            code=RespCode.ErrorInvalidReq,
+            message="action is required",
+        )
+
     data = job_add(req)
     return JobAddResp(data=data)
 

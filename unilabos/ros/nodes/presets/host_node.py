@@ -791,6 +791,16 @@ class HostNode(BaseROS2DeviceNode):
                 del self._goals[job_id]
                 self.lab_logger().debug(f"[Host Node] Removed goal {job_id[:8]} from _goals")
 
+            # 存储结果供 HTTP API 查询
+            try:
+                from unilabos.app.web.controller import store_job_result
+                if goal_status == GoalStatus.STATUS_CANCELED:
+                    store_job_result(job_id, status, return_info, {})
+                else:
+                    store_job_result(job_id, status, return_info, result_data)
+            except ImportError:
+                pass  # controller 模块可能未加载
+
             # 发布状态到桥接器
             if job_id:
                 for bridge in self.bridges:

@@ -7,3 +7,17 @@ Uni-Lab-OS 是一个开源的实验室自动化操作系统，提供统一的设
 
 intro.md
 ```
+
+## 开发者指南
+
+```{toctree}
+:maxdepth: 2
+
+developer_guide/http_api.md
+developer_guide/networking_overview.md
+developer_guide/add_device.md
+developer_guide/add_action.md
+developer_guide/add_registry.md
+developer_guide/add_yaml.md
+developer_guide/action_includes.md
+```

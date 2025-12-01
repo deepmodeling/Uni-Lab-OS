@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 import uuid
-from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Set, Union
+from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Set, TypedDict, Union
 
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point
@@ -38,6 +38,7 @@ from unilabos.ros.msgs.message_converter import (
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode, DeviceNodeResourceTracker
 from unilabos.ros.nodes.presets.controller_node import ControllerNode
 from unilabos.ros.nodes.resource_tracker import (
+    ResourceDict,
     ResourceDictInstance,
     ResourceTreeSet,
     ResourceTreeInstance,
@@ -48,12 +49,17 @@ from unilabos.utils.type_check import serialize_result_info
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
 
 if TYPE_CHECKING:
-    from unilabos.app.ws_client import QueueItem, WSResourceChatData
+    from unilabos.app.ws_client import QueueItem
 
 
 @dataclass
 class DeviceActionStatus:
     job_ids: Dict[str, float] = field(default_factory=dict)
+
+
+class TestResourceReturn(TypedDict):
+    resources: List[List[ResourceDict]]
+    devices: List[DeviceSlot]
 
 
 class HostNode(BaseROS2DeviceNode):
@@ -752,6 +758,12 @@ class HostNode(BaseROS2DeviceNode):
                 if return_info_str is not None:
                     try:
                         return_info = json.loads(return_info_str)
+                        # 适配后端的一些额外处理
+                        return_value = return_info.get("return_value")
+                        if isinstance(return_value, dict):
+                            unilabos_samples = return_info.get("unilabos_samples")
+                            if isinstance(unilabos_samples, list):
+                                return_info["unilabos_samples"] = unilabos_samples
                         suc = return_info.get("suc", False)
                         if not suc:
                             status = "failed"
@@ -778,6 +790,16 @@ class HostNode(BaseROS2DeviceNode):
             if job_id in self._goals:
                 del self._goals[job_id]
                 self.lab_logger().debug(f"[Host Node] Removed goal {job_id[:8]} from _goals")
+
+            # 存储结果供 HTTP API 查询
+            try:
+                from unilabos.app.web.controller import store_job_result
+                if goal_status == GoalStatus.STATUS_CANCELED:
+                    store_job_result(job_id, status, return_info, {})
+                else:
+                    store_job_result(job_id, status, return_info, result_data)
+            except ImportError:
+                pass  # controller 模块可能未加载
 
             # 发布状态到桥接器
             if job_id:
@@ -1341,7 +1363,7 @@ class HostNode(BaseROS2DeviceNode):
 
     def test_resource(
         self, resource: ResourceSlot, resources: List[ResourceSlot], device: DeviceSlot, devices: List[DeviceSlot]
-    ):
+    ) -> TestResourceReturn:
         return {
             "resources": ResourceTreeSet.from_plr_resources([resource, *resources]).dump(),
             "devices": [device, *devices],

@@ -239,8 +239,12 @@ class ImportManager:
         cls = get_class(class_path)
         class_name = cls.__name__
 
-        result = {"class_name": class_name, "init_params": self._analyze_method_signature(cls.__init__)["args"],
-                  "status_methods": {}, "action_methods": {}}
+        result = {
+            "class_name": class_name,
+            "init_params": self._analyze_method_signature(cls.__init__)["args"],
+            "status_methods": {},
+            "action_methods": {},
+        }
         # 分析类的所有成员
         for name, method in cls.__dict__.items():
             if name.startswith("_"):
@@ -374,6 +378,7 @@ class ImportManager:
             "name": method.__name__,
             "args": args,
             "return_type": self._get_type_string(signature.return_annotation),
+            "return_annotation": signature.return_annotation,  # 保留原始类型注解，用于TypedDict等特殊处理
             "is_async": inspect.iscoroutinefunction(method),
         }
 

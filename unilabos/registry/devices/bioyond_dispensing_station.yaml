@@ -5,6 +5,96 @@ bioyond_dispensing_station:
   - bioyond_dispensing_station
   class:
     action_value_mappings:
+      auto-brief_step_parameters:
+        feedback: {}
+        goal: {}
+        goal_default:
+          data: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                data:
+                  type: object
+              required:
+              - data
+              type: object
+            result: {}
+          required:
+          - goal
+          title: brief_step_parameters参数
+          type: object
+        type: UniLabJsonCommand
+      auto-compute_experiment_design:
+        feedback: {}
+        goal: {}
+        goal_default:
+          m_tot: '70'
+          ratio: null
+          titration_percent: '0.03'
+          wt_percent: '0.25'
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                m_tot:
+                  default: '70'
+                  type: string
+                ratio:
+                  type: object
+                titration_percent:
+                  default: '0.03'
+                  type: string
+                wt_percent:
+                  default: '0.25'
+                  type: string
+              required:
+              - ratio
+              type: object
+            result:
+              properties:
+                feeding_order:
+                  items: {}
+                  title: Feeding Order
+                  type: array
+                return_info:
+                  title: Return Info
+                  type: string
+                solutions:
+                  items: {}
+                  title: Solutions
+                  type: array
+                solvents:
+                  additionalProperties: true
+                  title: Solvents
+                  type: object
+                titration:
+                  additionalProperties: true
+                  title: Titration
+                  type: object
+              required:
+              - solutions
+              - titration
+              - solvents
+              - feeding_order
+              - return_info
+              title: ComputeExperimentDesignReturn
+              type: object
+          required:
+          - goal
+          title: compute_experiment_design参数
+          type: object
+        type: UniLabJsonCommand
       auto-process_order_finish_report:
         feedback: {}
         goal: {}
@@ -32,6 +122,110 @@ bioyond_dispensing_station:
           required:
           - goal
           title: process_order_finish_report参数
+          type: object
+        type: UniLabJsonCommand
+      auto-project_order_report:
+        feedback: {}
+        goal: {}
+        goal_default:
+          order_id: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                order_id:
+                  type: string
+              required:
+              - order_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: project_order_report参数
+          type: object
+        type: UniLabJsonCommand
+      auto-query_resource_by_name:
+        feedback: {}
+        goal: {}
+        goal_default:
+          material_name: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                material_name:
+                  type: string
+              required:
+              - material_name
+              type: object
+            result: {}
+          required:
+          - goal
+          title: query_resource_by_name参数
+          type: object
+        type: UniLabJsonCommand
+      auto-transfer_materials_to_reaction_station:
+        feedback: {}
+        goal: {}
+        goal_default:
+          target_device_id: null
+          transfer_groups: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                target_device_id:
+                  type: string
+                transfer_groups:
+                  type: array
+              required:
+              - target_device_id
+              - transfer_groups
+              type: object
+            result: {}
+          required:
+          - goal
+          title: transfer_materials_to_reaction_station参数
+          type: object
+        type: UniLabJsonCommand
+      auto-workflow_sample_locations:
+        feedback: {}
+        goal: {}
+        goal_default:
+          workflow_id: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                workflow_id:
+                  type: string
+              required:
+              - workflow_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: workflow_sample_locations参数
           type: object
         type: UniLabJsonCommand
       batch_create_90_10_vial_feeding_tasks:

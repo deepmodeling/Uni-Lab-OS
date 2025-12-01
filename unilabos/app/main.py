@@ -139,7 +139,7 @@ def parse_args():
     parser.add_argument(
         "--addr",
         type=str,
-        default=None,
+        default="https://uni-lab.bohrium.com/api/v1",
         help="Laboratory backend address",
     )
     parser.add_argument(
@@ -218,55 +218,19 @@ def main():
 
     if hasattr(BasicConfig, "log_level"):
         logger.info(f"Log level set to '{BasicConfig.log_level}' from config file.")
-        configure_logger(loglevel=BasicConfig.log_level)
+    configure_logger(loglevel=BasicConfig.log_level, working_dir=working_dir)
 
-    # 选择地址优先级：命令行 > 配置文件 > 默认线上
-    addr_cli = args_dict.get("addr", None)
-    addr_cfg = getattr(BasicConfig, "addr", None)
-    effective_addr = addr_cli if (addr_cli not in (None, "")) else addr_cfg
-
-    if effective_addr == "test":
+    if args_dict["addr"] == "test":
         print_status("使用测试环境地址", "info")
         HTTPConfig.remote_addr = "https://uni-lab.test.bohrium.com/api/v1"
-    elif effective_addr == "uat":
+    elif args_dict["addr"] == "uat":
         print_status("使用uat环境地址", "info")
         HTTPConfig.remote_addr = "https://uni-lab.uat.bohrium.com/api/v1"
-    elif effective_addr == "local":
+    elif args_dict["addr"] == "local":
         print_status("使用本地环境地址", "info")
         HTTPConfig.remote_addr = "http://127.0.0.1:48197/api/v1"
-    elif effective_addr:
-        HTTPConfig.remote_addr = effective_addr
-        print_status(f"使用配置/命令行提供的自定义地址: {effective_addr}", "info")
     else:
-        # 默认地址
-        HTTPConfig.remote_addr = "https://uni-lab.bohrium.com/api/v1"
-        print_status("未提供地址，使用默认线上地址", "info")
-
-    # 选择端口优先级：命令行 > 配置文件 > 默认 8002
-    port_cli = args_dict.get("port", None)
-    port_cfg = getattr(BasicConfig, "port", None) if hasattr(BasicConfig, "port") else None
-    effective_port = port_cli if (port_cli is not None) else (port_cfg if (port_cfg is not None) else 8002)
-    args_dict["port"] = effective_port
-    if port_cli is not None:
-        print_status(f"使用命令行端口 {effective_port}", "info")
-    elif port_cfg is not None:
-        print_status(f"使用配置文件端口 {effective_port}", "info")
-    else:
-        print_status(f"未提供端口，使用默认端口 {effective_port}", "info")
-
-    # 选择是否打开浏览器：命令行(是否包含 --disable_browser) > 配置文件 > 默认 False
-    disable_browser_cli = "--disable_browser" in sys.argv
-    if disable_browser_cli:
-        args_dict["disable_browser"] = True
-        print_status("使用命令行设置：禁用浏览器", "info")
-    else:
-        disable_cfg = getattr(BasicConfig, "disable_browser", None)
-        if isinstance(disable_cfg, bool):
-            args_dict["disable_browser"] = disable_cfg
-            print_status(f"使用配置文件设置：disable_browser={disable_cfg}", "info")
-        else:
-            args_dict["disable_browser"] = False
-            print_status("未提供 disable_browser，默认开启浏览器", "info")
+        HTTPConfig.remote_addr = args_dict.get("addr", "")
 
     # 设置BasicConfig参数
     if args_dict.get("ak", ""):
@@ -288,6 +252,8 @@ def main():
         else:
             print_status("远程资源不存在，本地将进行首次上报！", "info")
 
+    BasicConfig.port = args_dict["port"] if args_dict["port"] else BasicConfig.port
+    BasicConfig.disable_browser = args_dict["disable_browser"] or BasicConfig.disable_browser
     BasicConfig.working_dir = working_dir
     BasicConfig.is_host_mode = not args_dict.get("is_slave", False)
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
@@ -327,7 +293,9 @@ def main():
     resource_tree_set: ResourceTreeSet
     resource_links: List[Dict[str, Any]]
     request_startup_json = http_client.request_startup_json()
-    if args_dict["graph"] is None:
+
+    file_path = args_dict.get("graph", BasicConfig.startup_json_path)
+    if file_path is None:
         if not request_startup_json:
             print_status(
                 "未指定设备加载文件路径，尝试从HTTP获取失败，请检查网络或者使用-g参数指定设备加载文件路径", "error"
@@ -337,7 +305,6 @@ def main():
             print_status("联网获取设备加载文件成功", "info")
         graph, resource_tree_set, resource_links = read_node_link_json(request_startup_json)
     else:
-        file_path = args_dict["graph"]
         if not os.path.isfile(file_path):
             temp_file_path = os.path.abspath(str(os.path.join(__file__, "..", "..", file_path)))
             if os.path.isfile(temp_file_path):
@@ -454,8 +421,8 @@ def main():
             server_thread = threading.Thread(
                 target=start_server,
                 kwargs=dict(
-                    open_browser=not args_dict["disable_browser"],
-                    port=args_dict["port"],
+                    open_browser=not BasicConfig.disable_browser,
+                    port=BasicConfig.port,
                 ),
             )
             server_thread.start()
@@ -483,13 +450,13 @@ def main():
             start_backend(**args_dict)
             start_server(
                 open_browser=not args_dict["disable_browser"],
-                port=args_dict["port"],
+                port=BasicConfig.port,
             )
     else:
         start_backend(**args_dict)
         start_server(
             open_browser=not args_dict["disable_browser"],
-            port=args_dict["port"],
+            port=BasicConfig.port,
         )
 
 

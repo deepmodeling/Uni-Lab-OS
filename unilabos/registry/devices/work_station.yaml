@@ -6036,7 +6036,12 @@ workstation:
       properties:
         deck:
           type: string
+        protocol_type:
+          items:
+            type: string
+          type: array
       required:
+      - protocol_type
       - deck
       type: object
     data:

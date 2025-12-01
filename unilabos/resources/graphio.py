@@ -582,11 +582,15 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
             "tip_rack": "tip_rack",
             "warehouse": "warehouse",
             "container": "container",
+            "tube": "tube",
+            "bottle_carrier": "bottle_carrier",
+            "plate_adapter": "plate_adapter",
         }
         if source in replace_info:
             return replace_info[source]
         else:
-            logger.warning(f"转换pylabrobot的时候，出现未知类型: {source}")
+            if source is not None:
+                logger.warning(f"转换pylabrobot的时候，出现未知类型: {source}")
             return source
 
     def resource_plr_to_ulab_inner(d: dict, all_states: dict, child=True) -> dict:

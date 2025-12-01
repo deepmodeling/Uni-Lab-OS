@@ -1144,7 +1144,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             queried_resources = []
                             for resource_data in resource_inputs:
                                 plr_resource = await self.get_resource_with_dir(
-                                    resource_ids=resource_data["id"], with_children=True
+                                    resource_id=resource_data["id"], with_children=True
                                 )
                                 queried_resources.append(plr_resource)
 

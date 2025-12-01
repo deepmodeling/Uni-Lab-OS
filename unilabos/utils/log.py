@@ -124,11 +124,14 @@ class ColoredFormatter(logging.Formatter):
     def _format_basic(self, record):
         """基本格式化，不包含颜色"""
         datetime_str = datetime.fromtimestamp(record.created).strftime("%y-%m-%d [%H:%M:%S,%f")[:-3] + "]"
-        filename = os.path.basename(record.filename).rsplit(".", 1)[0]  # 提取文件名（不含路径和扩展名）
+        filename = record.filename.replace(".py", "").split("\\")[-1]  # 提取文件名（不含路径和扩展名）
+        if "/" in filename:
+            filename = filename.split("/")[-1]
         module_path = f"{record.name}.{filename}"
         func_line = f"{record.funcName}:{record.lineno}"
+        right_info = f" [{func_line}] [{module_path}]"
 
-        formatted_message = f"{datetime_str} [{record.levelname}] [{module_path}] [{func_line}]: {record.getMessage()}"
+        formatted_message = f"{datetime_str} [{record.levelname}] {record.getMessage()}{right_info}"
 
         if record.exc_info:
             exc_text = self.formatException(record.exc_info)
@@ -150,7 +153,7 @@ class ColoredFormatter(logging.Formatter):
 
 
 # 配置日志处理器
-def configure_logger(loglevel=None):
+def configure_logger(loglevel=None, working_dir=None):
     """配置日志记录器
 
     Args:
@@ -191,8 +194,29 @@ def configure_logger(loglevel=None):
 
     # 添加处理器到根日志记录器
     root_logger.addHandler(console_handler)
+
+    # 如果指定了工作目录，添加文件处理器
+    if working_dir is not None:
+        logs_dir = os.path.join(working_dir, "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+
+        # 生成日志文件名：日期 时间.log
+        log_filename = datetime.now().strftime("%Y-%m-%d %H-%M-%S") + ".log"
+        log_filepath = os.path.join(logs_dir, log_filename)
+
+        # 创建文件处理器
+        file_handler = logging.FileHandler(log_filepath, encoding="utf-8")
+        file_handler.setLevel(root_logger.level)
+
+        # 使用不带颜色的格式化器
+        file_formatter = ColoredFormatter(use_colors=False)
+        file_handler.setFormatter(file_formatter)
+
+        root_logger.addHandler(file_handler)
+
     logging.getLogger("asyncio").setLevel(logging.INFO)
     logging.getLogger("urllib3").setLevel(logging.INFO)
+
 
 # 配置日志系统
 configure_logger()

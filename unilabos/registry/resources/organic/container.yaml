@@ -2,7 +2,7 @@ container:
   category:
   - container
   class:
-    module: unilabos.resources.container:RegularContainer
+    module: unilabos.resources.container:get_regular_container
     type: pylabrobot
   description: regular organic container
   handles:

@@ -19,6 +19,9 @@ def warehouse_factory(
     item_dx: float = 10.0,
     item_dy: float = 10.0,
     item_dz: float = 10.0,
+    resource_size_x: float = 127.0,
+    resource_size_y: float = 86.0,
+    resource_size_z: float = 25.0,
     removed_positions: Optional[List[int]] = None,
     empty: bool = False,
     category: str = "warehouse",
@@ -50,8 +53,9 @@ def warehouse_factory(
     _sites = create_homogeneous_resources(
         klass=ResourceHolder,
         locations=locations,
-        resource_size_x=127.0,
-        resource_size_y=86.0,
+        resource_size_x=resource_size_x,
+        resource_size_y=resource_size_y,
+        resource_size_z=resource_size_z,
         name_prefix=name,
     )
     len_x, len_y = (num_items_x, num_items_y) if num_items_z == 1 else (num_items_y, num_items_z) if num_items_x == 1 else (num_items_x, num_items_z)

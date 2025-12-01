@@ -4497,9 +4497,6 @@ liquid_handler:
         simulator:
           default: false
           type: boolean
-        total_height:
-          default: 310
-          type: number
       required:
       - backend
       - deck

@@ -4,7 +4,8 @@
 
 ## 概述
 
-注册表（Registry）是Uni-Lab的设备配置系统，采用YAML格式定义设备的：
+注册表（Registry）是 Uni-Lab 的设备配置系统，采用 YAML 格式定义设备的：
+
 - 可用动作（Actions）
 - 状态类型（Status Types）
 - 初始化参数（Init Parameters）
@@ -32,19 +33,19 @@
 
 ### 核心字段说明
 
-| 字段名            | 类型   | 需要手写 | 说明                                |
-| ----------------- | ------ | -------- | ----------------------------------- |
-| 设备标识符        | string | 是       | 设备的唯一名字，如 `mock_chiller`   |
-| class             | object | 部分     | 设备的核心信息，必须配置            |
-| description       | string | 否       | 设备描述，系统默认给空字符串        |
-| handles           | array  | 否       | 连接关系，默认为空                  |
-| icon              | string | 否       | 图标路径，默认为空                  |
-| init_param_schema | object | 否       | 初始化参数，系统自动分析生成        |
-| version           | string | 否       | 版本号，默认 "1.0.0"                |
-| category          | array  | 否       | 设备分类，默认使用文件名            |
-| config_info       | array  | 否       | 嵌套配置，默认为空                  |
-| file_path         | string | 否       | 文件路径，系统自动设置              |
-| registry_type     | string | 否       | 注册表类型，自动设为 "device"       |
+| 字段名            | 类型   | 需要手写 | 说明                              |
+| ----------------- | ------ | -------- | --------------------------------- |
+| 设备标识符        | string | 是       | 设备的唯一名字，如 `mock_chiller` |
+| class             | object | 部分     | 设备的核心信息，必须配置          |
+| description       | string | 否       | 设备描述，系统默认给空字符串      |
+| handles           | array  | 否       | 连接关系，默认为空                |
+| icon              | string | 否       | 图标路径，默认为空                |
+| init_param_schema | object | 否       | 初始化参数，系统自动分析生成      |
+| version           | string | 否       | 版本号，默认 "1.0.0"              |
+| category          | array  | 否       | 设备分类，默认使用文件名          |
+| config_info       | array  | 否       | 嵌套配置，默认为空                |
+| file_path         | string | 否       | 文件路径，系统自动设置            |
+| registry_type     | string | 否       | 注册表类型，自动设为 "device"     |
 
 ### class 字段详解
 
@@ -71,11 +72,11 @@ my_device:
       # 动作配置（详见后文）
       action_name:
         type: UniLabJsonCommand
-        goal: {...}
-        result: {...}
+        goal: { ... }
+        result: { ... }
 
-  description: "设备描述"
-  version: "1.0.0"
+  description: '设备描述'
+  version: '1.0.0'
   category:
     - device_category
   handles: []
@@ -101,21 +102,22 @@ my_device:
 
 ## 创建注册表的方式
 
-### 方式1: 使用注册表编辑器（推荐）
+### 方式 1: 使用注册表编辑器（推荐）
 
 适合大多数场景，快速高效。
 
 **步骤**：
-1. 启动Uni-Lab
-2. 访问Web界面的"注册表编辑器"
-3. 上传您的Python设备驱动文件
+
+1. 启动 Uni-Lab
+2. 访问 Web 界面的"注册表编辑器"
+3. 上传您的 Python 设备驱动文件
 4. 点击"分析文件"
 5. 填写描述和图标
 6. 点击"生成注册表"
-7. 复制生成的YAML内容
+7. 复制生成的 YAML 内容
 8. 保存到 `unilabos/registry/devices/your_device.yaml`
 
-### 方式2: 使用--complete_registry参数（开发调试）
+### 方式 2: 使用--complete_registry 参数（开发调试）
 
 适合开发阶段，自动补全配置。
 
@@ -125,7 +127,8 @@ unilab -g dev.json --complete_registry --registry_path ./my_registry
 ```
 
 系统会：
-1. 扫描Python类
+
+1. 扫描 Python 类
 2. 分析方法签名和类型
 3. 自动生成缺失的字段
 4. 保存到注册表文件
@@ -137,7 +140,7 @@ unilab -g dev.json --complete_registry --registry_path ./my_registry
 启动系统时用 complete_registry=True 参数，让系统自动补全
 ```
 
-### 方式3: 手动编写（高级）
+### 方式 3: 手动编写（高级）
 
 适合需要精细控制或特殊需求的场景。
 
@@ -186,6 +189,7 @@ my_device:
 | ROS 动作类型           | 标准 ROS 动作        | goal_default 和 schema |
 
 **常用的 ROS 动作类型**：
+
 - `SendCmd`：发送简单命令
 - `NavigateThroughPoses`：导航动作
 - `SingleJointPosition`：单关节位置控制
@@ -251,11 +255,11 @@ heat_chill_start:
 
 ## 特殊类型的自动识别
 
-### ResourceSlot和DeviceSlot识别
+### ResourceSlot 和 DeviceSlot 识别
 
 当您在驱动代码中使用这些特殊类型时，系统会自动识别并生成相应的前端选择器。
 
-**Python驱动代码示例**：
+**Python 驱动代码示例**：
 
 ```python
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
@@ -286,24 +290,24 @@ my_device:
           device: device
           devices: devices
         placeholder_keys:
-          resource: unilabos_resources      # 自动添加！
-          resources: unilabos_resources     # 自动添加！
-          device: unilabos_devices          # 自动添加！
-          devices: unilabos_devices         # 自动添加！
+          resource: unilabos_resources # 自动添加！
+          resources: unilabos_resources # 自动添加！
+          device: unilabos_devices # 自动添加！
+          devices: unilabos_devices # 自动添加！
         result:
           success: success
 ```
 
 ### 识别规则
 
-| Python类型 | placeholder_keys值 | 前端效果 |
-|-----------|-------------------|---------|
-| `ResourceSlot` | `unilabos_resources` | 单选资源下拉框 |
+| Python 类型          | placeholder_keys 值  | 前端效果       |
+| -------------------- | -------------------- | -------------- |
+| `ResourceSlot`       | `unilabos_resources` | 单选资源下拉框 |
 | `List[ResourceSlot]` | `unilabos_resources` | 多选资源下拉框 |
-| `DeviceSlot` | `unilabos_devices` | 单选设备下拉框 |
-| `List[DeviceSlot]` | `unilabos_devices` | 多选设备下拉框 |
+| `DeviceSlot`         | `unilabos_devices`   | 单选设备下拉框 |
+| `List[DeviceSlot]`   | `unilabos_devices`   | 多选设备下拉框 |
 
-### 前端UI效果
+### 前端 UI 效果
 
 #### 单选资源
 
@@ -313,6 +317,7 @@ placeholder_keys:
 ```
 
 **前端渲染**:
+
 ```
 Source: [下拉选择框 ▼]
         ├── plate_1 (96孔板)
@@ -329,6 +334,7 @@ placeholder_keys:
 ```
 
 **前端渲染**:
+
 ```
 Targets: [多选下拉框 ▼]
          ☑ plate_1 (96孔板)
@@ -345,6 +351,7 @@ placeholder_keys:
 ```
 
 **前端渲染**:
+
 ```
 Pump: [下拉选择框 ▼]
       ├── pump_1 (注射泵A)
@@ -360,6 +367,7 @@ placeholder_keys:
 ```
 
 **前端渲染**:
+
 ```
 Sync Devices: [多选下拉框 ▼]
               ☑ heater_1 (加热器A)
@@ -367,11 +375,11 @@ Sync Devices: [多选下拉框 ▼]
               ☐ pump_1 (注射泵)
 ```
 
-### 手动配置placeholder_keys
+### 手动配置 placeholder_keys
 
-如果需要手动添加或覆盖自动生成的placeholder_keys：
+如果需要手动添加或覆盖自动生成的 placeholder_keys：
 
-#### 场景1: 非标准参数名
+#### 场景 1: 非标准参数名
 
 ```yaml
 action_value_mappings:
@@ -384,7 +392,7 @@ action_value_mappings:
       my_device_param: unilabos_devices
 ```
 
-#### 场景2: 混合类型
+#### 场景 2: 混合类型
 
 ```python
 def mixed_params(
@@ -398,32 +406,33 @@ def mixed_params(
 
 ```yaml
 placeholder_keys:
-  resource: unilabos_resources    # 资源选择
-  device: unilabos_devices        # 设备选择
+  resource: unilabos_resources # 资源选择
+  device: unilabos_devices # 设备选择
   # normal_param不需要placeholder_keys
 ```
 
-#### 场景3: 自定义选择器
+#### 场景 3: 自定义选择器
 
 ```yaml
 placeholder_keys:
-  special_param: custom_selector   # 使用自定义选择器
+  special_param: custom_selector # 使用自定义选择器
 ```
 
 ## 系统自动生成的字段
 
 ### status_types
 
-系统会扫描你的 Python 类，从状态方法（property或get_方法）自动生成这部分：
+系统会扫描你的 Python 类，从状态方法（property 或 get\_方法）自动生成这部分：
 
 ```yaml
 status_types:
   current_temperature: float # 从 get_current_temperature() 或 @property current_temperature
-  is_heating: bool           # 从 get_is_heating() 或 @property is_heating
-  status: str               # 从 get_status() 或 @property status
+  is_heating: bool # 从 get_is_heating() 或 @property is_heating
+  status: str # 从 get_status() 或 @property status
 ```
 
 **注意事项**：
+
 - 系统会查找所有 `get_` 开头的方法和 `@property` 装饰的属性
 - 类型会自动转成相应的类型（如 `str`、`float`、`bool`）
 - 如果类型是 `Any`、`None` 或未知的，默认使用 `String`
@@ -459,20 +468,21 @@ init_param_schema:
 ```
 
 **生成规则**：
+
 - `config` 部分：分析 `__init__` 方法的参数、类型和默认值
 - `data` 部分：根据 `status_types` 生成前端显示用的类型定义
 
 ### 其他自动填充的字段
 
 ```yaml
-version: '1.0.0'          # 默认版本
-category: ['文件名']       # 使用 yaml 文件名作为类别
-description: ''           # 默认为空
-icon: ''                  # 默认为空
-handles: []               # 默认空数组
-config_info: []           # 默认空数组
+version: '1.0.0' # 默认版本
+category: ['文件名'] # 使用 yaml 文件名作为类别
+description: '' # 默认为空
+icon: '' # 默认为空
+handles: [] # 默认空数组
+config_info: [] # 默认空数组
 file_path: '/path/to/file' # 系统自动填写
-registry_type: 'device'   # 自动设为设备类型
+registry_type: 'device' # 自动设为设备类型
 ```
 
 ### handles 字段
@@ -510,7 +520,7 @@ config_info: # 嵌套配置，用于包含子设备
 
 ## 完整示例
 
-### Python驱动代码
+### Python 驱动代码
 
 ```python
 # unilabos/devices/my_lab/liquid_handler.py
@@ -520,22 +530,22 @@ from typing import List, Dict, Any, Optional
 
 class AdvancedLiquidHandler:
     """高级液体处理工作站"""
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.simulation = config.get('simulation', False)
         self._status = "idle"
         self._temperature = 25.0
-    
+
     @property
     def status(self) -> str:
         """设备状态"""
         return self._status
-    
+
     @property
     def temperature(self) -> float:
         """当前温度"""
         return self._temperature
-    
+
     def transfer(
         self,
         source: ResourceSlot,
@@ -545,7 +555,7 @@ class AdvancedLiquidHandler:
     ) -> Dict[str, Any]:
         """转移液体"""
         return {"success": True}
-    
+
     def multi_transfer(
         self,
         source: ResourceSlot,
@@ -554,7 +564,7 @@ class AdvancedLiquidHandler:
     ) -> Dict[str, Any]:
         """多目标转移"""
         return {"success": True}
-    
+
     def coordinate_with_heater(
         self,
         plate: ResourceSlot,
@@ -574,12 +584,12 @@ advanced_liquid_handler:
   class:
     module: unilabos.devices.my_lab.liquid_handler:AdvancedLiquidHandler
     type: python
-    
+
     # 自动提取的状态类型
     status_types:
       status: str
       temperature: float
-    
+
     # 自动生成的初始化参数
     init_param_schema:
       config:
@@ -597,7 +607,7 @@ advanced_liquid_handler:
         required:
           - status
         type: object
-    
+
     # 动作映射
     action_value_mappings:
       transfer:
@@ -613,28 +623,28 @@ advanced_liquid_handler:
           volume: 0.0
           tip: null
         placeholder_keys:
-          source: unilabos_resources      # 自动添加
-          target: unilabos_resources      # 自动添加
-          tip: unilabos_resources         # 自动添加
+          source: unilabos_resources # 自动添加
+          target: unilabos_resources # 自动添加
+          tip: unilabos_resources # 自动添加
         result:
           success: success
         schema:
-          description: "转移液体"
+          description: '转移液体'
           properties:
             goal:
               properties:
                 source:
                   type: object
-                  description: "源容器"
+                  description: '源容器'
                 target:
                   type: object
-                  description: "目标容器"
+                  description: '目标容器'
                 volume:
                   type: number
-                  description: "体积(μL)"
+                  description: '体积(μL)'
                 tip:
                   type: object
-                  description: "枪头(可选)"
+                  description: '枪头(可选)'
               required:
                 - source
                 - target
@@ -643,7 +653,7 @@ advanced_liquid_handler:
           required:
             - goal
           type: object
-      
+
       multi_transfer:
         type: UniLabJsonCommand
         goal:
@@ -651,11 +661,11 @@ advanced_liquid_handler:
           targets: targets
           volumes: volumes
         placeholder_keys:
-          source: unilabos_resources      # 单选
-          targets: unilabos_resources     # 多选
+          source: unilabos_resources # 单选
+          targets: unilabos_resources # 多选
         result:
           success: success
-      
+
       coordinate_with_heater:
         type: UniLabJsonCommand
         goal:
@@ -663,17 +673,17 @@ advanced_liquid_handler:
           heater: heater
           temperature: temperature
         placeholder_keys:
-          plate: unilabos_resources       # 资源选择
-          heater: unilabos_devices        # 设备选择
+          plate: unilabos_resources # 资源选择
+          heater: unilabos_devices # 设备选择
         result:
           success: success
-  
-  description: "高级液体处理工作站，支持多目标转移和设备协同"
-  version: "1.0.0"
+
+  description: '高级液体处理工作站，支持多目标转移和设备协同'
+  version: '1.0.0'
   category:
     - liquid_handling
   handles: []
-  icon: ""
+  icon: ''
 ```
 
 ### 另一个完整示例：温度控制器
@@ -892,17 +902,18 @@ unilab -g dev.json --complete_registry
 cat unilabos/registry/devices/my_device.yaml
 ```
 
-### 2. 验证placeholder_keys
+### 2. 验证 placeholder_keys
 
 确认：
-- ResourceSlot参数有 `unilabos_resources`
-- DeviceSlot参数有 `unilabos_devices`
-- List类型被正确识别
+
+- ResourceSlot 参数有 `unilabos_resources`
+- DeviceSlot 参数有 `unilabos_devices`
+- List 类型被正确识别
 
 ### 3. 测试前端效果
 
-1. 启动Uni-Lab
-2. 访问Web界面
+1. 启动 Uni-Lab
+2. 访问 Web 界面
 3. 选择设备
 4. 调用动作
 5. 检查是否显示正确的选择器
@@ -916,18 +927,21 @@ python -c "from unilabos.devices.my_module.my_device import MyDevice"
 
 ## 常见问题
 
-### Q1: placeholder_keys没有自动生成
+### Q1: placeholder_keys 没有自动生成
 
 **检查**:
+
 1. 是否使用了`--complete_registry`参数？
 2. 类型注解是否正确？
+
    ```python
    # ✓ 正确
    def method(self, resource: ResourceSlot):
-   
+
    # ✗ 错误（缺少类型注解）
    def method(self, resource):
    ```
+
 3. 是否正确导入？
    ```python
    from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
@@ -935,9 +949,10 @@ python -c "from unilabos.devices.my_module.my_device import MyDevice"
 
 ### Q2: 前端显示普通输入框而不是选择器
 
-**原因**: placeholder_keys未正确配置
+**原因**: placeholder_keys 未正确配置
 
 **解决**:
+
 ```yaml
 # 检查YAML中是否有
 placeholder_keys:
@@ -947,6 +962,7 @@ placeholder_keys:
 ### Q3: 多选不工作
 
 **检查类型注解**:
+
 ```python
 # ✓ 正确 - 会生成多选
 def method(self, resources: List[ResourceSlot]):
@@ -960,13 +976,15 @@ def method(self, resources: ResourceSlot):
 **说明**: 运行时会自动转换
 
 前端传递：
+
 ```json
 {
-  "resource": "plate_1"  // 字符串ID
+  "resource": "plate_1" // 字符串ID
 }
 ```
 
 运行时收到：
+
 ```python
 resource.id        # "plate_1"
 resource.name      # "96孔板"
@@ -977,6 +995,7 @@ resource.type      # "resource"
 ### Q5: 设备加载不了
 
 **检查**:
+
 1. 确认 `class.module` 路径是否正确
 2. 确认 Python 驱动类能否正常导入
 3. 使用 yaml 验证器检查文件格式
@@ -985,6 +1004,7 @@ resource.type      # "resource"
 ### Q6: 自动生成失败
 
 **检查**:
+
 1. 确认类继承了正确的基类
 2. 确保状态方法的返回类型注解清晰
 3. 检查类能否被动态导入
@@ -993,6 +1013,7 @@ resource.type      # "resource"
 ### Q7: 前端显示问题
 
 **解决步骤**:
+
 1. 删除旧的 yaml 文件，用编辑器重新生成
 2. 清除浏览器缓存，重新加载页面
 3. 确认必需字段（如 `schema`）都存在
@@ -1001,6 +1022,7 @@ resource.type      # "resource"
 ### Q8: 动作执行出错
 
 **检查**:
+
 1. 确认动作方法名符合规范（如 `execute_<action_name>`）
 2. 检查 `goal` 字段的参数映射是否正确
 3. 确认方法返回值格式符合 `result` 映射
@@ -1041,7 +1063,7 @@ def transfer(self, r1: ResourceSlot, r2: ResourceSlot):
     pass
 ```
 
-3. **使用Optional表示可选参数**
+3. **使用 Optional 表示可选参数**
 
 ```python
 from typing import Optional
@@ -1063,11 +1085,11 @@ def method(
     targets: List[ResourceSlot]  # 目标容器列表
 ) -> Dict[str, Any]:
     """方法说明
-    
+
     Args:
         source: 源容器，必须包含足够的液体
         targets: 目标容器列表，每个容器应该为空
-    
+
     Returns:
         包含操作结果的字典
     """
@@ -1075,6 +1097,7 @@ def method(
 ```
 
 5. **方法命名规范**
+
    - 状态方法使用 `@property` 装饰器或 `get_` 前缀
    - 动作方法使用动词开头
    - 保持命名清晰、一致
@@ -1111,8 +1134,6 @@ def method(
 
 - {doc}`add_device` - 设备驱动编写指南
 - {doc}`04_add_device_testing` - 设备测试指南
-- Python [typing模块](https://docs.python.org/3/library/typing.html)
-- [YAML语法](https://yaml.org/)
+- Python [typing 模块](https://docs.python.org/3/library/typing.html)
+- [YAML 语法](https://yaml.org/)
 - [JSON Schema](https://json-schema.org/)
-
-

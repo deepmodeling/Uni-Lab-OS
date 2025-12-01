@@ -22,6 +22,13 @@ class RegularContainer(Container):
 
     def load_state(self, state: Dict[str, Any]):
         self.state = state
+
+
+def get_regular_container(name="container"):
+    r = RegularContainer(name=name)
+    r.category = "container"
+    return RegularContainer(name=name)
+
 #
 # class RegularContainer(object):
 #     # 第一个参数必须是id传入

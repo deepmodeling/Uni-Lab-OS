@@ -61,6 +61,9 @@ camera:
         device_id:
           default: video_publisher
           type: string
+        device_uuid:
+          default: ''
+          type: string
         period:
           default: 0.1
           type: number

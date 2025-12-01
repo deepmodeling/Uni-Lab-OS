@@ -1,4 +1,4 @@
-# 实例：电池装配工站接入（PLC控制）
+# 实例：电池装配工站接入（PLC 控制）
 
 > **文档类型**：实际应用案例  
 > **适用场景**：使用 PLC 控制的电池装配工站接入  
@@ -50,8 +50,6 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         self.client = tcp.register_node_list(self.nodes)
 ```
 
-
-
 ## 2. 编写驱动与寄存器读写
 
 ### 2.1 寄存器示例
@@ -95,9 +93,9 @@ def start_and_read_metrics(self):
 
 完成工站类与驱动后，需要生成（或更新）工站注册表供系统识别。
 
-
 ### 3.1 新增工站设备（或资源）首次生成注册表
-首先通过以下命令启动unilab。进入unilab系统状态检查页面
+
+首先通过以下命令启动 unilab。进入 unilab 系统状态检查页面
 
 ```bash
 python unilabos\app\main.py -g celljson.json --ak <user的AK> --sk <user的SK>
@@ -112,35 +110,32 @@ python unilabos\app\main.py -g celljson.json --ak <user的AK> --sk <user的SK>
 ![注册表生成流程](image_battery_plc/unilab_registry_process.png)
 
 步骤说明：
+
 1. 选择新增的工站`coin_cell_assembly.py`文件
 2. 点击分析按钮，分析`coin_cell_assembly.py`文件
 3. 选择`coin_cell_assembly.py`文件中继承`WorkstationBase`类
-4. 填写新增的工站.py文件与`unilabos`目录的距离。例如，新增的工站文件`coin_cell_assembly.py`路径为`unilabos\devices\workstation\coin_cell_assembly\coin_cell_assembly.py`，则此处填写`unilabos.devices.workstation.coin_cell_assembly`。
+4. 填写新增的工站.py 文件与`unilabos`目录的距离。例如，新增的工站文件`coin_cell_assembly.py`路径为`unilabos\devices\workstation\coin_cell_assembly\coin_cell_assembly.py`，则此处填写`unilabos.devices.workstation.coin_cell_assembly`。
 5. 此处填写新定义工站的类的名字（名称可以自拟）
 6. 填写新的工站注册表备注信息
 7. 生成注册表
 
-以上操作步骤完成，则会生成的新的注册表YAML文件，如下图：
+以上操作步骤完成，则会生成的新的注册表 YAML 文件，如下图：
 
 ![生成的YAML文件](image_battery_plc/unilab_new_yaml.png)
 
-
-
-
-
-
 ### 3.2 添加新生成注册表
-在`unilabos\registry\devices`目录下新建一个yaml文件，此处新建文件命名为`coincellassemblyworkstation_device.yaml`，将上面生成的新的注册表信息粘贴到`coincellassemblyworkstation_device.yaml`文件中。   
+
+在`unilabos\registry\devices`目录下新建一个 yaml 文件，此处新建文件命名为`coincellassemblyworkstation_device.yaml`，将上面生成的新的注册表信息粘贴到`coincellassemblyworkstation_device.yaml`文件中。
 
 在终端输入以下命令进行注册表补全操作。
+
 ```bash
 python unilabos\app\register.py --complete_registry
 ```
 
-
 ### 3.3 启动并上传注册表
 
-新增设备之后，启动unilab需要增加`--upload_registry`参数，来上传注册表信息。
+新增设备之后，启动 unilab 需要增加`--upload_registry`参数，来上传注册表信息。
 
 ```bash
 python unilabos\app\main.py -g celljson.json --ak <user的AK> --sk <user的SK> --upload_registry
@@ -159,6 +154,7 @@ module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinC
 ### 4.2 首次接入流程
 
 首次新增设备（或资源）需要完整流程：
+
 1. ✅ 在网页端生成注册表信息
 2. ✅ 使用 `--complete_registry` 补全注册表
 3. ✅ 使用 `--upload_registry` 上传注册表信息
@@ -166,11 +162,12 @@ module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinC
 ### 4.3 驱动更新流程
 
 如果不是新增设备，仅修改了工站驱动的 `.py` 文件：
+
 1. ✅ 运行 `--complete_registry` 补全注册表
 2. ✅ 运行 `--upload_registry` 上传注册表
 3. ❌ 不需要在网页端重新生成注册表
 
-### 4.4 PLC通信注意事项
+### 4.4 PLC 通信注意事项
 
 - **握手机制**：若需参数下发，建议在 PLC 端设置标志寄存器并完成握手复位，避免粘连与竞争
 - **字节序**：FLOAT32 等多字节数据类型需要正确指定字节序（如 `WorderOrder.LITTLE`）
@@ -203,5 +200,3 @@ module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinC
 5. ✅ 新增设备与更新驱动的区别
 
 这个案例展示了完整的 PLC 设备接入流程，可以作为其他类似设备接入的参考模板。
-
-

@@ -67,14 +67,6 @@ class WSConfig:
     max_reconnect_attempts = 999  # 最大重连次数
     ping_interval = 30  # ping间隔（秒）
 
-# OSS上传配置
-class OSSUploadConfig:
-    api_host = ""  # API主机地址
-    authorization = ""  # 授权信息
-    init_endpoint = ""  # 初始化端点
-    complete_endpoint = ""  # 完成端点
-    max_retries = 3  # 最大重试次数
-
 # HTTP配置
 class HTTPConfig:
     remote_addr = "https://uni-lab.bohrium.com/api/v1"  # 远程服务器地址
@@ -294,19 +286,7 @@ HTTP 客户端配置用于与云端服务通信：
 - UAT 环境：`https://uni-lab.uat.bohrium.com/api/v1`
 - 本地环境：`http://127.0.0.1:48197/api/v1`
 
-### 4. OSSUploadConfig - OSS 上传配置
-
-对象存储服务配置，用于文件上传功能：
-
-| 参数                | 类型 | 默认值 | 说明                 |
-| ------------------- | ---- | ------ | -------------------- |
-| `api_host`          | str  | `""`   | OSS API 主机地址     |
-| `authorization`     | str  | `""`   | 授权认证信息         |
-| `init_endpoint`     | str  | `""`   | 上传初始化端点       |
-| `complete_endpoint` | str  | `""`   | 上传完成端点         |
-| `max_retries`       | int  | `3`    | 上传失败最大重试次数 |
-
-### 5. ROSConfig - ROS 配置
+### 4. ROSConfig - ROS 配置
 
 配置 ROS 消息转换器需要加载的模块：
 

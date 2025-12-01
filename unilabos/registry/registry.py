@@ -453,7 +453,7 @@ class Registry:
         return status_schema
 
     def _generate_unilab_json_command_schema(
-        self, method_args: List[Dict[str, Any]], method_name: str
+        self, method_args: List[Dict[str, Any]], method_name: str, return_annotation: Any = None
     ) -> Dict[str, Any]:
         """
         根据UniLabJsonCommand方法信息生成JSON Schema，暂不支持嵌套类型
@@ -461,6 +461,7 @@ class Registry:
         Args:
             method_args: 方法信息字典，包含args等
             method_name: 方法名称
+            return_annotation: 返回类型注解，用于生成result schema（仅支持TypedDict）
 
         Returns:
             JSON Schema格式的参数schema
@@ -489,13 +490,67 @@ class Registry:
             if param_required:
                 schema["required"].append(param_name)
 
+        # 生成result schema（仅当return_annotation是TypedDict时）
+        result_schema = {}
+        if return_annotation is not None and self._is_typed_dict(return_annotation):
+            result_schema = self._generate_typed_dict_result_schema(return_annotation)
+
         return {
             "title": f"{method_name}参数",
             "description": f"",
             "type": "object",
-            "properties": {"goal": schema, "feedback": {}, "result": {}},
+            "properties": {"goal": schema, "feedback": {}, "result": result_schema},
             "required": ["goal"],
         }
+
+    def _is_typed_dict(self, annotation: Any) -> bool:
+        """
+        检查类型注解是否是TypedDict
+
+        Args:
+            annotation: 类型注解对象
+
+        Returns:
+            是否为TypedDict
+        """
+        if annotation is None or annotation == inspect.Parameter.empty:
+            return False
+
+        # 使用 typing_extensions.is_typeddict 进行检查（Python < 3.12 兼容）
+        try:
+            from typing_extensions import is_typeddict
+
+            return is_typeddict(annotation)
+        except ImportError:
+            # 回退方案：检查 TypedDict 特有的属性
+            if isinstance(annotation, type):
+                return hasattr(annotation, "__required_keys__") and hasattr(annotation, "__optional_keys__")
+            return False
+
+    def _generate_typed_dict_result_schema(self, return_annotation: Any) -> Dict[str, Any]:
+        """
+        根据TypedDict类型生成result的JSON Schema
+
+        Args:
+            return_annotation: TypedDict类型注解
+
+        Returns:
+            JSON Schema格式的result schema
+        """
+        if not self._is_typed_dict(return_annotation):
+            return {}
+
+        try:
+            from msgcenterpy.instances.typed_dict_instance import TypedDictMessageInstance
+
+            result_schema = TypedDictMessageInstance.get_json_schema_from_typed_dict(return_annotation)
+            return result_schema
+        except ImportError:
+            logger.warning("[UniLab Registry] msgcenterpy未安装，无法生成TypedDict的result schema")
+            return {}
+        except Exception as e:
+            logger.warning(f"[UniLab Registry] 生成TypedDict result schema失败: {e}")
+            return {}
 
     def _add_builtin_actions(self, device_config: Dict[str, Any], device_id: str):
         """
@@ -577,9 +632,15 @@ class Registry:
                     if "init_param_schema" not in device_config:
                         device_config["init_param_schema"] = {}
                     if "class" in device_config:
-                        if "status_types" not in device_config["class"] or device_config["class"]["status_types"] is None:
+                        if (
+                            "status_types" not in device_config["class"]
+                            or device_config["class"]["status_types"] is None
+                        ):
                             device_config["class"]["status_types"] = {}
-                        if "action_value_mappings" not in device_config["class"] or device_config["class"]["action_value_mappings"] is None:
+                        if (
+                            "action_value_mappings" not in device_config["class"]
+                            or device_config["class"]["action_value_mappings"] is None
+                        ):
                             device_config["class"]["action_value_mappings"] = {}
                         enhanced_info = {}
                         if complete_registry:
@@ -631,7 +692,9 @@ class Registry:
                                         "goal": {},
                                         "feedback": {},
                                         "result": {},
-                                        "schema": self._generate_unilab_json_command_schema(v["args"], k),
+                                        "schema": self._generate_unilab_json_command_schema(
+                                            v["args"], k, v.get("return_annotation")
+                                        ),
                                         "goal_default": {i["name"]: i["default"] for i in v["args"]},
                                         "handles": [],
                                         "placeholder_keys": {

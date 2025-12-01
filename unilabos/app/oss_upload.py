@@ -1,161 +1,158 @@
 import argparse
 import os
 import time
-from typing import Dict, Optional, Tuple
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Optional, Tuple, Union
 
 import requests
 
-from unilabos.config.config import OSSUploadConfig
+from unilabos.app.web.client import http_client, HTTPClient
+from unilabos.utils import logger
 
 
-def _init_upload(file_path: str, oss_path: str, filename: Optional[str] = None,
-                process_key: str = "file-upload", device_id: str = "default",
-                expires_hours: int = 1) -> Tuple[bool, Dict]:
+def _get_oss_token(
+    filename: str,
+    driver_name: str = "default",
+    exp_type: str = "default",
+    client: Optional[HTTPClient] = None,
+) -> Tuple[bool, Dict]:
     """
-    初始化上传过程
+    获取OSS上传Token
 
     Args:
-        file_path: 本地文件路径
-        oss_path: OSS目标路径
-        filename: 文件名，如果为None则使用file_path的文件名
-        process_key: 处理键
-        device_id: 设备ID
-        expires_hours: 链接过期小时数
+        filename: 文件名
+        driver_name: 驱动名称
+        exp_type: 实验类型
+        client: HTTPClient实例，如果不提供则使用默认的http_client
 
     Returns:
-        (成功标志, 响应数据)
+        (成功标志, Token数据字典包含token/path/host/expires)
     """
-    if filename is None:
-        filename = os.path.basename(file_path)
+    # 使用提供的client或默认的http_client
+    if client is None:
+        client = http_client
 
-    # 构造初始化请求
-    url = f"{OSSUploadConfig.api_host}{OSSUploadConfig.init_endpoint}"
-    headers = {
-        "Authorization": OSSUploadConfig.authorization,
-        "Content-Type": "application/json"
-    }
+    # 构造scene参数: driver_name-exp_type
+    scene = f"{driver_name}-{exp_type}"
 
-    payload = {
-        "device_id": device_id,
-        "process_key": process_key,
-        "filename": filename,
-        "path": oss_path,
-        "expires_hours": expires_hours
-    }
+    # 构造请求URL，使用client的remote_addr（已包含/api/v1/）
+    url = f"{client.remote_addr}/applications/token"
+    params = {"scene": scene, "filename": filename}
 
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        if response.status_code == 201:
-            result = response.json()
-            if result.get("code") == "10000":
-                return True, result.get("data", {})
+        logger.info(f"[OSS] 请求预签名URL: scene={scene}, filename={filename}")
+        response = requests.get(url, params=params, headers={"Authorization": f"Lab {client.auth}"}, timeout=10)
 
-        print(f"初始化上传失败: {response.status_code}, {response.text}")
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("code") == 0:
+                data = result.get("data", {})
+
+                # 转换expires时间戳为可读格式
+                expires_timestamp = data.get("expires", 0)
+                expires_datetime = datetime.fromtimestamp(expires_timestamp)
+                expires_str = expires_datetime.strftime("%Y-%m-%d %H:%M:%S")
+
+                logger.info(f"[OSS] 获取预签名URL成功")
+                logger.info(f"[OSS]   - URL: {data.get('url', 'N/A')}")
+                logger.info(f"[OSS]   - Expires: {expires_str} (timestamp: {expires_timestamp})")
+
+                return True, data
+
+        logger.error(f"[OSS] 获取预签名URL失败: {response.status_code}, {response.text}")
         return False, {}
     except Exception as e:
-        print(f"初始化上传异常: {str(e)}")
+        logger.error(f"[OSS] 获取预签名URL异常: {str(e)}")
         return False, {}
 
 
 def _put_upload(file_path: str, upload_url: str) -> bool:
     """
-    执行PUT上传
+    使用预签名URL上传文件到OSS
 
     Args:
         file_path: 本地文件路径
-        upload_url: 上传URL
+        upload_url: 完整的预签名上传URL
 
     Returns:
         是否成功
     """
     try:
+        logger.info(f"[OSS] 开始上传文件: {file_path}")
+
         with open(file_path, "rb") as f:
-            response = requests.put(upload_url, data=f)
+            # 使用预签名URL上传，不需要额外的认证header
+            response = requests.put(upload_url, data=f, timeout=300)
+
             if response.status_code == 200:
+                logger.info(f"[OSS] 文件上传成功")
                 return True
 
-        print(f"PUT上传失败: {response.status_code}, {response.text}")
+        logger.error(f"[OSS] 上传失败: {response.status_code}")
+        logger.error(f"[OSS] 响应内容: {response.text[:500] if response.text else '无响应内容'}")
         return False
     except Exception as e:
-        print(f"PUT上传异常: {str(e)}")
+        logger.error(f"[OSS] 上传异常: {str(e)}")
         return False
 
 
-def _complete_upload(uuid: str) -> bool:
-    """
-    完成上传过程
-
-    Args:
-        uuid: 上传的UUID
-
-    Returns:
-        是否成功
-    """
-    url = f"{OSSUploadConfig.api_host}{OSSUploadConfig.complete_endpoint}"
-    headers = {
-        "Authorization": OSSUploadConfig.authorization,
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "uuid": uuid
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("code") == "10000":
-                return True
-
-        print(f"完成上传失败: {response.status_code}, {response.text}")
-        return False
-    except Exception as e:
-        print(f"完成上传异常: {str(e)}")
-        return False
-
-
-def oss_upload(file_path: str, oss_path: str, filename: Optional[str] = None,
-              process_key: str = "file-upload", device_id: str = "default") -> bool:
+def oss_upload(
+    file_path: Union[str, Path],
+    filename: Optional[str] = None,
+    driver_name: str = "default",
+    exp_type: str = "default",
+    max_retries: int = 3,
+    client: Optional[HTTPClient] = None,
+) -> Dict:
     """
     文件上传主函数，包含重试机制
 
     Args:
         file_path: 本地文件路径
-        oss_path: OSS目标路径
         filename: 文件名，如果为None则使用file_path的文件名
-        process_key: 处理键
-        device_id: 设备ID
+        driver_name: 驱动名称，用于构造scene
+        exp_type: 实验类型，用于构造scene
+        max_retries: 最大重试次数
+        client: HTTPClient实例，如果不提供则使用默认的http_client
 
     Returns:
-        是否成功上传
+        Dict: {
+            "success": bool,  # 是否上传成功
+            "original_path": str,  # 原始文件路径
+            "oss_path": str  # OSS路径（成功时）或空字符串（失败时）
+        }
     """
-    max_retries = OSSUploadConfig.max_retries
+    file_path = Path(file_path)
+    if filename is None:
+        filename = os.path.basename(file_path)
+
+    if not os.path.exists(file_path):
+        logger.error(f"[OSS] 文件不存在: {file_path}")
+        return {"success": False, "original_path": file_path, "oss_path": ""}
+
     retry_count = 0
+    oss_path = ""
 
     while retry_count < max_retries:
         try:
-            # 步骤1：初始化上传
-            init_success, init_data = _init_upload(
-                file_path=file_path,
-                oss_path=oss_path,
-                filename=filename,
-                process_key=process_key,
-                device_id=device_id
+            # 步骤1：获取预签名URL
+            token_success, token_data = _get_oss_token(
+                filename=filename, driver_name=driver_name, exp_type=exp_type, client=client
             )
 
-            if not init_success:
-                print(f"初始化上传失败，重试 {retry_count + 1}/{max_retries}")
+            if not token_success:
+                logger.warning(f"[OSS] 获取预签名URL失败，重试 {retry_count + 1}/{max_retries}")
                 retry_count += 1
-                time.sleep(1)  # 等待1秒后重试
+                time.sleep(1)
                 continue
 
-            # 获取UUID和上传URL
-            uuid = init_data.get("uuid")
-            upload_url = init_data.get("upload_url")
+            # 获取预签名URL和OSS路径
+            upload_url = token_data.get("url")
+            oss_path = token_data.get("path", "")
 
-            if not uuid or not upload_url:
-                print(f"初始化上传返回数据不完整，重试 {retry_count + 1}/{max_retries}")
+            if not upload_url:
+                logger.warning(f"[OSS] 无法获取上传URL，API未返回url字段")
                 retry_count += 1
                 time.sleep(1)
                 continue
@@ -163,69 +160,82 @@ def oss_upload(file_path: str, oss_path: str, filename: Optional[str] = None,
             # 步骤2：PUT上传文件
             put_success = _put_upload(file_path, upload_url)
             if not put_success:
-                print(f"PUT上传失败，重试 {retry_count + 1}/{max_retries}")
-                retry_count += 1
-                time.sleep(1)
-                continue
-
-            # 步骤3：完成上传
-            complete_success = _complete_upload(uuid)
-            if not complete_success:
-                print(f"完成上传失败，重试 {retry_count + 1}/{max_retries}")
+                logger.warning(f"[OSS] PUT上传失败，重试 {retry_count + 1}/{max_retries}")
                 retry_count += 1
                 time.sleep(1)
                 continue
 
             # 所有步骤都成功
-            print(f"文件 {file_path} 上传成功")
-            return True
+            logger.info(f"[OSS] 文件 {file_path} 上传成功")
+            return {"success": True, "original_path": file_path, "oss_path": oss_path}
 
         except Exception as e:
-            print(f"上传过程异常: {str(e)}，重试 {retry_count + 1}/{max_retries}")
+            logger.error(f"[OSS] 上传过程异常: {str(e)}，重试 {retry_count + 1}/{max_retries}")
             retry_count += 1
             time.sleep(1)
 
-    print(f"文件 {file_path} 上传失败，已达到最大重试次数 {max_retries}")
-    return False
+    logger.error(f"[OSS] 文件 {file_path} 上传失败，已达到最大重试次数 {max_retries}")
+    return {"success": False, "original_path": file_path, "oss_path": oss_path}
 
 
 if __name__ == "__main__":
-    # python -m unilabos.app.oss_upload -f /path/to/your/file.txt
+    # python -m unilabos.app.oss_upload -f /path/to/your/file.txt --driver HPLC --type test
+    # python -m unilabos.app.oss_upload -f /path/to/your/file.txt --driver HPLC --type test \
+    #        --ak xxx --sk yyy --remote-addr http://xxx/api/v1
     # 命令行参数解析
-    parser = argparse.ArgumentParser(description='文件上传测试工具')
-    parser.add_argument('--file', '-f', type=str, required=True, help='要上传的本地文件路径')
-    parser.add_argument('--path', '-p', type=str, default='/HPLC1/Any', help='OSS目标路径')
-    parser.add_argument('--device', '-d', type=str, default='test-device', help='设备ID')
-    parser.add_argument('--process', '-k', type=str, default='HPLC-txt-result', help='处理键')
+    parser = argparse.ArgumentParser(description="文件上传测试工具")
+    parser.add_argument("--file", "-f", type=str, required=True, help="要上传的本地文件路径")
+    parser.add_argument("--driver", "-d", type=str, default="default", help="驱动名称")
+    parser.add_argument("--type", "-t", type=str, default="default", help="实验类型")
+    parser.add_argument("--ak", type=str, help="Access Key，如果提供则覆盖配置")
+    parser.add_argument("--sk", type=str, help="Secret Key，如果提供则覆盖配置")
+    parser.add_argument("--remote-addr", type=str, help="远程服务器地址（包含/api/v1），如果提供则覆盖配置")
 
     args = parser.parse_args()
 
     # 检查文件是否存在
     if not os.path.exists(args.file):
-        print(f"错误：文件 {args.file} 不存在")
+        logger.error(f"错误：文件 {args.file} 不存在")
         exit(1)
 
-    print("=" * 50)
-    print(f"开始上传文件: {args.file}")
-    print(f"目标路径: {args.path}")
-    print(f"设备ID: {args.device}")
-    print(f"处理键: {args.process}")
-    print("=" * 50)
+    # 如果提供了ak/sk/remote_addr，创建临时HTTPClient
+    temp_client = None
+    if args.ak and args.sk:
+        import base64
+
+        auth = base64.b64encode(f"{args.ak}:{args.sk}".encode("utf-8")).decode("utf-8")
+        remote_addr = args.remote_addr if args.remote_addr else http_client.remote_addr
+        temp_client = HTTPClient(remote_addr=remote_addr, auth=auth)
+        logger.info(f"[配置] 使用自定义配置: remote_addr={remote_addr}")
+    elif args.remote_addr:
+        temp_client = HTTPClient(remote_addr=args.remote_addr, auth=http_client.auth)
+        logger.info(f"[配置] 使用自定义remote_addr: {args.remote_addr}")
+    else:
+        logger.info(f"[配置] 使用默认配置: remote_addr={http_client.remote_addr}")
+
+    logger.info("=" * 50)
+    logger.info(f"开始上传文件: {args.file}")
+    logger.info(f"驱动名称: {args.driver}")
+    logger.info(f"实验类型: {args.type}")
+    logger.info(f"Scene: {args.driver}-{args.type}")
+    logger.info("=" * 50)
 
     # 执行上传
-    success = oss_upload(
+    result = oss_upload(
         file_path=args.file,
-        oss_path=args.path,
         filename=None,  # 使用默认文件名
-        process_key=args.process,
-        device_id=args.device
+        driver_name=args.driver,
+        exp_type=args.type,
+        client=temp_client,
     )
 
     # 输出结果
-    if success:
-        print("\n√ 文件上传成功！")
+    if result["success"]:
+        logger.info(f"\n√ 文件上传成功！")
+        logger.info(f"原始路径: {result['original_path']}")
+        logger.info(f"OSS路径: {result['oss_path']}")
         exit(0)
     else:
-        print("\n× 文件上传失败！")
+        logger.error(f"\n× 文件上传失败！")
+        logger.error(f"原始路径: {result['original_path']}")
         exit(1)
-

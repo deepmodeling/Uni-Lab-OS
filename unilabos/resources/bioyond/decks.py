@@ -15,8 +15,9 @@ from unilabos.resources.bioyond.warehouses import (
     bioyond_warehouse_5x1x1,
     bioyond_warehouse_1x8x4,
     bioyond_warehouse_reagent_storage,
-    bioyond_warehouse_liquid_preparation,
+    # bioyond_warehouse_liquid_preparation,
     bioyond_warehouse_tipbox_storage,  # 新增：Tip盒堆栈
+    bioyond_warehouse_density_vial,
 )
 
 
@@ -43,17 +44,20 @@ class BIOYOND_PolymerReactionStation_Deck(Deck):
             "堆栈1左": bioyond_warehouse_1x4x4("堆栈1左"),  # 左侧堆栈: A01～D04
             "堆栈1右": bioyond_warehouse_1x4x4_right("堆栈1右"),  # 右侧堆栈: A05～D08
             "站内试剂存放堆栈": bioyond_warehouse_reagent_storage("站内试剂存放堆栈"),  # A01～A02
-            "移液站内10%分装液体准备仓库": bioyond_warehouse_liquid_preparation("移液站内10%分装液体准备仓库"),  # A01～B04
-            "站内Tip盒堆栈": bioyond_warehouse_tipbox_storage("站内Tip盒堆栈"),  # A01～B03, 存放枪头盒
+            # "移液站内10%分装液体准备仓库": bioyond_warehouse_liquid_preparation("移液站内10%分装液体准备仓库"),  # A01～B04
+            "站内Tip盒堆栈": bioyond_warehouse_tipbox_storage("站内Tip盒堆栈"),  # A01～B03, 存放枪头盒.
+            "测量小瓶仓库(测密度)": bioyond_warehouse_density_vial("测量小瓶仓库(测密度)"),  # A01～B03
         }
         self.warehouse_locations = {
             "堆栈1左": Coordinate(0.0, 430.0, 0.0),  # 左侧位置
             "堆栈1右": Coordinate(2500.0, 430.0, 0.0),  # 右侧位置
             "站内试剂存放堆栈": Coordinate(640.0, 480.0, 0.0),
-            "移液站内10%分装液体准备仓库": Coordinate(1200.0, 600.0, 0.0),
+            # "移液站内10%分装液体准备仓库": Coordinate(1200.0, 600.0, 0.0),
             "站内Tip盒堆栈": Coordinate(300.0, 150.0, 0.0),
+            "测量小瓶仓库(测密度)": Coordinate(922.0, 552.0, 0.0),
         }
         self.warehouses["站内试剂存放堆栈"].rotation = Rotation(z=90)
+        self.warehouses["测量小瓶仓库(测密度)"].rotation = Rotation(z=270)
 
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])

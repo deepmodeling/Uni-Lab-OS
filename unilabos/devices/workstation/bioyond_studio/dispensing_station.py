@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import time
 from typing import Optional, Dict, Any, List
+from typing_extensions import TypedDict
 import requests
 from unilabos.devices.workstation.bioyond_studio.config import API_CONFIG
 
@@ -12,6 +13,14 @@ import json
 import sys
 from pathlib import Path
 import importlib
+
+class ComputeExperimentDesignReturn(TypedDict):
+    solutions: list
+    titration: dict
+    solvents: dict
+    feeding_order: list
+    return_info: str
+
 
 class BioyondDispensingStation(BioyondWorkstation):
     def __init__(
@@ -102,7 +111,7 @@ class BioyondDispensingStation(BioyondWorkstation):
         wt_percent: str = "0.25",
         m_tot: str = "70",
         titration_percent: str = "0.03",
-    ) -> dict:
+    ) -> ComputeExperimentDesignReturn:
         try:
             if isinstance(ratio, str):
                 try:

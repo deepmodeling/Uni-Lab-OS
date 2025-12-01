@@ -18,6 +18,9 @@ class BasicConfig:
     vis_2d_enable = False
     enable_resource_load = True
     communication_protocol = "websocket"
+    startup_json_path = None  # 填写绝对路径
+    disable_browser = False  # 禁止浏览器自动打开
+    port = 8002  # 本地HTTP服务
     log_level: Literal['TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] = "DEBUG"  # 'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
 
     @classmethod
@@ -34,15 +37,6 @@ class WSConfig:
     reconnect_interval = 5  # 重连间隔（秒）
     max_reconnect_attempts = 999  # 最大重连次数
     ping_interval = 30  # ping间隔（秒）
-
-
-# OSS上传配置
-class OSSUploadConfig:
-    api_host = ""
-    authorization = ""
-    init_endpoint = ""
-    complete_endpoint = ""
-    max_retries = 3
 
 
 # HTTP配置

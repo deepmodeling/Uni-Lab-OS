@@ -359,6 +359,7 @@ class MessageProcessor:
         self.device_manager = device_manager
         self.queue_processor = None  # 延迟设置
         self.websocket_client = None  # 延迟设置
+        self.session_id = ""
 
         # WebSocket连接
         self.websocket = None
@@ -427,7 +428,10 @@ class MessageProcessor:
                     ssl=ssl_context,
                     ping_interval=WSConfig.ping_interval,
                     ping_timeout=10,
-                    additional_headers={"Authorization": f"Lab {BasicConfig.auth_secret()}"},
+                    additional_headers={
+                        "Authorization": f"Lab {BasicConfig.auth_secret()}",
+                        "EdgeSession": f"{self.session_id}",
+                    },
                     logger=ws_logger,
                 ) as websocket:
                     self.websocket = websocket
@@ -572,6 +576,9 @@ class MessageProcessor:
                 await self._handle_resource_tree_update(message_data, "update")
             elif message_type == "remove_material":
                 await self._handle_resource_tree_update(message_data, "remove")
+            elif message_type == "session_id":
+                self.session_id = message_data.get("session_id")
+                logger.info(f"[MessageProcessor] Session ID: {self.session_id}")
             else:
                 logger.debug(f"[MessageProcessor] Unknown message type: {message_type}")
 
@@ -1195,6 +1202,18 @@ class WebSocketClient(BaseCommunicationClient):
             return
 
         logger.info("[WebSocketClient] Stopping connection")
+
+        # 发送 normal_exit 消息
+        if self.is_connected():
+            try:
+                session_id = self.message_processor.session_id
+                message = {"action": "normal_exit", "data": {"session_id": session_id}}
+                self.message_processor.send_message(message)
+                logger.info(f"[WebSocketClient] Sent normal_exit message with session_id: {session_id}")
+                # 给一点时间让消息发送出去
+                time.sleep(1)
+            except Exception as e:
+                logger.warning(f"[WebSocketClient] Failed to send normal_exit message: {str(e)}")
 
         # 停止两个核心线程
         self.message_processor.stop()

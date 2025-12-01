@@ -1,6 +1,6 @@
 package:
   name: unilabos
-  version: 0.10.10
+  version: 0.10.11
 
 source:
   path: ../unilabos

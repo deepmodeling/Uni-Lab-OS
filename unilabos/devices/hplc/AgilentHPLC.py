@@ -405,9 +405,19 @@ class RunningResultChecker(DriverChecker):
                 for i in range(self.driver._finished, temp):
                     sample_id = self.driver._get_resource_sample_id(self.driver._wf_name, i)  # 从0开始计数
                     pdf, txt = self.driver.get_data_file(i + 1)
-                    device_id = self.driver.device_id if hasattr(self.driver, "device_id") else "default"
-                    oss_upload(pdf, f"hplc/{sample_id}/{os.path.basename(pdf)}", process_key="example", device_id=device_id)
-                    oss_upload(txt, f"hplc/{sample_id}/{os.path.basename(txt)}", process_key="HPLC-txt-result", device_id=device_id)
+                    # 使用新的OSS上传接口，传入driver_name和exp_type
+                    pdf_result = oss_upload(pdf, filename=os.path.basename(pdf), driver_name="HPLC", exp_type="analysis")
+                    txt_result = oss_upload(txt, filename=os.path.basename(txt), driver_name="HPLC", exp_type="result")
+                    
+                    if pdf_result["success"]:
+                        print(f"PDF上传成功: {pdf_result['oss_path']}")
+                    else:
+                        print(f"PDF上传失败: {pdf_result['original_path']}")
+                    
+                    if txt_result["success"]:
+                        print(f"TXT上传成功: {txt_result['oss_path']}")
+                    else:
+                        print(f"TXT上传失败: {txt_result['original_path']}")
                     # self.driver.extract_data_from_txt()
         except Exception as ex:
             self.driver._finished = 0
@@ -456,8 +466,12 @@ if __name__ == "__main__":
     }
     sample_id = obj._get_resource_sample_id("test", 0)
     pdf, txt = obj.get_data_file("1", after_time=datetime(2024, 11, 6, 19, 3, 6))
-    oss_upload(pdf, f"hplc/{sample_id}/{os.path.basename(pdf)}", process_key="example")
-    oss_upload(txt, f"hplc/{sample_id}/{os.path.basename(txt)}", process_key="HPLC-txt-result")
+    # 使用新的OSS上传接口，传入driver_name和exp_type
+    pdf_result = oss_upload(pdf, filename=os.path.basename(pdf), driver_name="HPLC", exp_type="analysis")
+    txt_result = oss_upload(txt, filename=os.path.basename(txt), driver_name="HPLC", exp_type="result")
+    
+    print(f"PDF上传结果: {pdf_result}")
+    print(f"TXT上传结果: {txt_result}")
     # driver = HPLCDriver()
     # for i in range(10000):
     #     print({k: v for k, v in driver._device_status.items() if isinstance(v, str)})

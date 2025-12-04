@@ -218,7 +218,7 @@ def main():
 
     if hasattr(BasicConfig, "log_level"):
         logger.info(f"Log level set to '{BasicConfig.log_level}' from config file.")
-        configure_logger(loglevel=BasicConfig.log_level)
+    configure_logger(loglevel=BasicConfig.log_level, working_dir=working_dir)
 
     if args_dict["addr"] == "test":
         print_status("使用测试环境地址", "info")

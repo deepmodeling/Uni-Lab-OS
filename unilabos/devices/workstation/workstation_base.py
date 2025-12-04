@@ -147,7 +147,7 @@ class WorkstationBase(ABC):
 
     def __init__(
         self,
-        deck: Deck,
+        deck: Optional[Deck],
         *args,
         **kwargs,  # 必须有kwargs
     ):
@@ -349,5 +349,5 @@ class WorkstationBase(ABC):
 
 
 class ProtocolNode(WorkstationBase):
-    def __init__(self, deck: Optional[PLRResource], *args, **kwargs):
+    def __init__(self, protocol_type: List[str], deck: Optional[PLRResource], *args, **kwargs):
         super().__init__(deck, *args, **kwargs)

@@ -7,7 +7,7 @@ class VirtualMultiwayValve:
     """
     虚拟九通阀门 - 0号位连接transfer pump，1-8号位连接其他设备 🔄
     """
-    def __init__(self, port: str = "VIRTUAL", positions: int = 8):
+    def __init__(self, port: str = "VIRTUAL", positions: int = 8, **kwargs):
         self.port = port
         self.max_positions = positions  # 1-8号位
         self.total_positions = positions + 1  # 0-8号位，共9个位置

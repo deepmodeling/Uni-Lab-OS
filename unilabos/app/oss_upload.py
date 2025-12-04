@@ -34,14 +34,14 @@ def _get_oss_token(
         client = http_client
 
     # 构造scene参数: driver_name-exp_type
-    scene = f"{driver_name}-{exp_type}"
+    sub_path = f"{driver_name}-{exp_type}"
 
     # 构造请求URL，使用client的remote_addr（已包含/api/v1/）
     url = f"{client.remote_addr}/applications/token"
-    params = {"scene": scene, "filename": filename}
+    params = {"sub_path": sub_path, "filename": filename, "scene": "job"}
 
     try:
-        logger.info(f"[OSS] 请求预签名URL: scene={scene}, filename={filename}")
+        logger.info(f"[OSS] 请求预签名URL: sub_path={sub_path}, filename={filename}")
         response = requests.get(url, params=params, headers={"Authorization": f"Lab {client.auth}"}, timeout=10)
 
         if response.status_code == 200:

@@ -48,7 +48,7 @@ from unilabos_msgs.msg import Resource  # type: ignore
 from unilabos.ros.nodes.resource_tracker import (
     DeviceNodeResourceTracker,
     ResourceTreeSet,
-    ResourceTreeInstance,
+    ResourceTreeInstance, ResourceDictInstance,
 )
 from unilabos.ros.x.rclpyx import get_event_loop
 from unilabos.ros.utils.driver_creator import WorkstationNodeCreator, PyLabRobotCreator, DeviceClassCreator
@@ -133,12 +133,11 @@ def init_wrapper(
     device_id: str,
     device_uuid: str,
     driver_class: type[T],
-    device_config: Dict[str, Any],
+    device_config: ResourceTreeInstance,
     status_types: Dict[str, Any],
     action_value_mappings: Dict[str, Any],
     hardware_interface: Dict[str, Any],
     print_publish: bool,
-    children: Optional[list] = None,
     driver_params: Optional[Dict[str, Any]] = None,
     driver_is_ros: bool = False,
     *args,
@@ -147,8 +146,6 @@ def init_wrapper(
     """初始化设备节点的包装函数，和ROS2DeviceNode初始化保持一致"""
     if driver_params is None:
         driver_params = kwargs.copy()
-    if children is None:
-        children = []
     kwargs["device_id"] = device_id
     kwargs["device_uuid"] = device_uuid
     kwargs["driver_class"] = driver_class
@@ -157,7 +154,6 @@ def init_wrapper(
     kwargs["status_types"] = status_types
     kwargs["action_value_mappings"] = action_value_mappings
     kwargs["hardware_interface"] = hardware_interface
-    kwargs["children"] = children
     kwargs["print_publish"] = print_publish
     kwargs["driver_is_ros"] = driver_is_ros
     super(type(self), self).__init__(*args, **kwargs)
@@ -1582,12 +1578,11 @@ class ROS2DeviceNode:
         device_id: str,
         device_uuid: str,
         driver_class: Type[T],
-        device_config: Dict[str, Any],
+        device_config: ResourceDictInstance,
         driver_params: Dict[str, Any],
         status_types: Dict[str, Any],
         action_value_mappings: Dict[str, Any],
         hardware_interface: Dict[str, Any],
-        children: Dict[str, Any],
         print_publish: bool = True,
         driver_is_ros: bool = False,
     ):
@@ -1598,7 +1593,7 @@ class ROS2DeviceNode:
             device_id: 设备标识符
             device_uuid: 设备uuid
             driver_class: 设备类
-            device_config: 原始初始化的json
+            device_config: 原始初始化的ResourceDictInstance
             driver_params: driver初始化的参数
             status_types: 状态类型映射
             action_value_mappings: 动作值映射
@@ -1612,6 +1607,7 @@ class ROS2DeviceNode:
         self._has_async_context = hasattr(driver_class, "__aenter__") and hasattr(driver_class, "__aexit__")
         self._driver_class = driver_class
         self.device_config = device_config
+        children: List[ResourceDictInstance] = device_config.children
         self.driver_is_ros = driver_is_ros
         self.driver_is_workstation = False
         self.resource_tracker = DeviceNodeResourceTracker()

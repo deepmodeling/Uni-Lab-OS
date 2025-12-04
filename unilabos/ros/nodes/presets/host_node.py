@@ -289,6 +289,12 @@ class HostNode(BaseROS2DeviceNode):
         self.lab_logger().info("[Host Node] Host node initialized.")
         HostNode._ready_event.set()
 
+        # 发送host_node ready信号到所有桥接器
+        for bridge in self.bridges:
+            if hasattr(bridge, "publish_host_ready"):
+                bridge.publish_host_ready()
+                self.lab_logger().debug(f"Host ready signal sent via {bridge.__class__.__name__}")
+
     def _send_re_register(self, sclient):
         sclient.wait_for_service()
         request = SerialCommand.Request()
@@ -532,7 +538,7 @@ class HostNode(BaseROS2DeviceNode):
         self.lab_logger().info(f"[Host Node] Initializing device: {device_id}")
 
         try:
-            d = initialize_device_from_dict(device_id, device_config.get_nested_dict())
+            d = initialize_device_from_dict(device_id, device_config)
         except DeviceClassInvalid as e:
             self.lab_logger().error(f"[Host Node] Device class invalid: {e}")
             d = None
@@ -794,6 +800,7 @@ class HostNode(BaseROS2DeviceNode):
             # 存储结果供 HTTP API 查询
             try:
                 from unilabos.app.web.controller import store_job_result
+
                 if goal_status == GoalStatus.STATUS_CANCELED:
                     store_job_result(job_id, status, return_info, {})
                 else:

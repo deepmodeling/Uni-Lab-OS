@@ -5,6 +5,7 @@ from unilabos.ros.msgs.message_converter import (
     get_action_type,
 )
 from unilabos.ros.nodes.base_device_node import init_wrapper, ROS2DeviceNode
+from unilabos.ros.nodes.resource_tracker import ResourceDictInstance
 
 # 定义泛型类型变量
 T = TypeVar("T")
@@ -18,12 +19,11 @@ class ROS2DeviceNodeWrapper(ROS2DeviceNode):
 
 def ros2_device_node(
     cls: Type[T],
-    device_config: Optional[Dict[str, Any]] = None,
+    device_config: Optional[ResourceDictInstance] = None,
     status_types: Optional[Dict[str, Any]] = None,
     action_value_mappings: Optional[Dict[str, Any]] = None,
     hardware_interface: Optional[Dict[str, Any]] = None,
     print_publish: bool = False,
-    children: Optional[Dict[str, Any]] = None,
 ) -> Type[ROS2DeviceNodeWrapper]:
     """Create a ROS2 Node class for a device class with properties and actions.
 
@@ -45,7 +45,7 @@ def ros2_device_node(
     if status_types is None:
         status_types = {}
     if device_config is None:
-        device_config = {}
+        raise ValueError("device_config cannot be None")
     if action_value_mappings is None:
         action_value_mappings = {}
     if hardware_interface is None:
@@ -82,7 +82,6 @@ def ros2_device_node(
                 action_value_mappings=action_value_mappings,
                 hardware_interface=hardware_interface,
                 print_publish=print_publish,
-                children=children,
                 *args,
                 **kwargs,
             ),

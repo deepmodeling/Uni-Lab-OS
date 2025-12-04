@@ -192,7 +192,7 @@ def slave(
     for device_config in devices_config.root_nodes:
         device_id = device_config.res_content.id
         if device_config.res_content.type == "device":
-            d = initialize_device_from_dict(device_id, device_config.get_nested_dict())
+            d = initialize_device_from_dict(device_id, device_config)
             if d is not None:
                 devices_instances[device_id] = d
                 logger.info(f"Device {device_id} initialized.")

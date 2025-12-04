@@ -1314,3 +1314,19 @@ class WebSocketClient(BaseCommunicationClient):
             logger.info(f"[WebSocketClient] Job {job_log} cancelled successfully")
         else:
             logger.warning(f"[WebSocketClient] Failed to cancel job {job_log}")
+
+    def publish_host_ready(self) -> None:
+        """发布host_node ready信号"""
+        if self.is_disabled or not self.is_connected():
+            logger.debug("[WebSocketClient] Not connected, cannot publish host ready signal")
+            return
+
+        message = {
+            "action": "host_node_ready",
+            "data": {
+                "status": "ready",
+                "timestamp": time.time(),
+            },
+        }
+        self.message_processor.send_message(message)
+        logger.info("[WebSocketClient] Host node ready signal published")

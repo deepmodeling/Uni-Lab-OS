@@ -9333,7 +9333,34 @@ liquid_handler.prcxi:
           touch_tip: false
           use_channels:
           - 0
-        handles: {}
+        handles:
+          input:
+          - data_key: liquid
+            data_source: handle
+            data_type: resource
+            handler_key: sources
+            label: sources
+          - data_key: liquid
+            data_source: executor
+            data_type: resource
+            handler_key: targets
+            label: targets
+          - data_key: liquid
+            data_source: executor
+            data_type: resource
+            handler_key: tip_rack
+            label: tip_rack
+          output:
+          - data_key: liquid
+            data_source: handle
+            data_type: resource
+            handler_key: sources_out
+            label: sources
+          - data_key: liquid
+            data_source: executor
+            data_type: resource
+            handler_key: targets_out
+            label: targets
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources

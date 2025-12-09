@@ -222,7 +222,7 @@ class Registry:
         abs_path = Path(path).absolute()
         resource_path = abs_path / "resources"
         files = list(resource_path.glob("*/*.yaml"))
-        logger.debug(f"[UniLab Registry] resources: {resource_path.exists()}, total: {len(files)}")
+        logger.trace(f"[UniLab Registry] load resources? {resource_path.exists()}, total: {len(files)}")
         current_resource_number = len(self.resource_type_registry) + 1
         for i, file in enumerate(files):
             with open(file, encoding="utf-8", mode="r") as f:

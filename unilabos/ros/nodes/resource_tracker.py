@@ -66,8 +66,8 @@ class ResourceDict(BaseModel):
     klass: str = Field(alias="class", description="Resource class name")
     pose: ResourceDictPosition = Field(description="Resource position", default_factory=ResourceDictPosition)
     config: Dict[str, Any] = Field(description="Resource configuration")
-    data: Dict[str, Any] = Field(description="Resource data")
-    extra: Dict[str, Any] = Field(description="Extra data")
+    data: Dict[str, Any] = Field(description="Resource data, eg: container liquid data")
+    extra: Dict[str, Any] = Field(description="Extra data, eg: slot index")
 
     @field_serializer("parent_uuid")
     def _serialize_parent(self, parent_uuid: Optional["ResourceDict"]):
@@ -155,7 +155,7 @@ class ResourceDictInstance(object):
         res_dict = self.res_content.model_dump(by_alias=True)
         res_dict["children"] = {child.res_content.id: child.get_plr_nested_dict() for child in self.children}
         res_dict["parent"] = self.res_content.parent_instance_name
-        res_dict["position"] = self.res_content.position.position.model_dump()
+        res_dict["position"] = self.res_content.pose.position.model_dump()
         del res_dict["pose"]
         return res_dict
 

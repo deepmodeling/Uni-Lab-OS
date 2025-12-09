@@ -718,7 +718,7 @@ class HostNode(BaseROS2DeviceNode):
             feedback_callback=lambda feedback_msg: self.feedback_callback(item, action_id, feedback_msg),
             goal_uuid=goal_uuid_obj,
         )
-        future.add_done_callback(lambda future: self.goal_response_callback(item, action_id, future))
+        future.add_done_callback(lambda f: self.goal_response_callback(item, action_id, f))
 
     def goal_response_callback(self, item: "QueueItem", action_id: str, future) -> None:
         """目标响应回调"""
@@ -729,9 +729,11 @@ class HostNode(BaseROS2DeviceNode):
 
         self.lab_logger().info(f"[Host Node] Goal {action_id} ({item.job_id}) accepted")
         self._goals[item.job_id] = goal_handle
-        goal_handle.get_result_async().add_done_callback(
-            lambda future: self.get_result_callback(item, action_id, future)
+        goal_future = goal_handle.get_result_async()
+        goal_future.add_done_callback(
+            lambda f: self.get_result_callback(item, action_id, f)
         )
+        goal_future.result()
 
     def feedback_callback(self, item: "QueueItem", action_id: str, feedback_msg) -> None:
         """反馈回调"""

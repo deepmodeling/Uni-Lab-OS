@@ -42,7 +42,7 @@ def canonicalize_nodes_data(
     Returns:
         ResourceTreeSet: 标准化后的资源树集合
     """
-    print_status(f"{len(nodes)} Resources loaded:", "info")
+    print_status(f"{len(nodes)} Resources loaded", "info")
 
     # 第一步：基本预处理（处理graphml的label字段）
     outer_host_node_id = None
@@ -97,7 +97,7 @@ def canonicalize_nodes_data(
 
     for node in nodes:
         try:
-            print_status(f"DeviceId: {node['id']}, Class: {node['class']}", "info")
+            # print_status(f"DeviceId: {node['id']}, Class: {node['class']}", "info")
             # 使用标准化方法
             resource_instance = ResourceDictInstance.get_resource_instance_from_dict(node)
             known_nodes[node["id"]] = resource_instance

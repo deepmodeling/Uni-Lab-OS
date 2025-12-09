@@ -162,8 +162,9 @@ def configure_logger(loglevel=None, working_dir=None):
     """
     # 获取根日志记录器
     root_logger = logging.getLogger()
-
+    root_logger.setLevel(TRACE_LEVEL)
     # 设置日志级别
+    numeric_level = logging.DEBUG
     if loglevel is not None:
         if isinstance(loglevel, str):
             # 将字符串转换为logging级别
@@ -173,12 +174,8 @@ def configure_logger(loglevel=None, working_dir=None):
                 numeric_level = getattr(logging, loglevel.upper(), None)
                 if not isinstance(numeric_level, int):
                     print(f"警告: 无效的日志级别 '{loglevel}'，使用默认级别 DEBUG")
-                    numeric_level = logging.DEBUG
         else:
             numeric_level = loglevel
-        root_logger.setLevel(numeric_level)
-    else:
-        root_logger.setLevel(logging.DEBUG)  # 默认级别
 
     # 移除已存在的处理器
     for handler in root_logger.handlers[:]:
@@ -186,7 +183,7 @@ def configure_logger(loglevel=None, working_dir=None):
 
     # 创建控制台处理器
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(root_logger.level)  # 使用与根记录器相同的级别
+    console_handler.setLevel(numeric_level)  # 使用与根记录器相同的级别
 
     # 使用自定义的颜色格式化器
     color_formatter = ColoredFormatter()
@@ -206,7 +203,7 @@ def configure_logger(loglevel=None, working_dir=None):
 
         # 创建文件处理器
         file_handler = logging.FileHandler(log_filepath, encoding="utf-8")
-        file_handler.setLevel(root_logger.level)
+        file_handler.setLevel(TRACE_LEVEL)
 
         # 使用不带颜色的格式化器
         file_formatter = ColoredFormatter(use_colors=False)

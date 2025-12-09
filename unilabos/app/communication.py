@@ -141,7 +141,7 @@ class CommunicationClientFactory:
         """
         if cls._client_cache is None:
             cls._client_cache = cls.create_client(protocol)
-            logger.info(f"[CommunicationFactory] Created {type(cls._client_cache).__name__} client")
+            logger.trace(f"[CommunicationFactory] Created {type(cls._client_cache).__name__} client")
 
         return cls._client_cache
 

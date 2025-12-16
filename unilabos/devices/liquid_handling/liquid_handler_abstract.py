@@ -988,6 +988,18 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 dis_vols = [float(dis_vols)]
             else:
                 dis_vols = [float(v) for v in dis_vols]
+
+        # 统一混合次数为标量，防止数组/列表与 int 比较时报错
+        if mix_times is not None and not isinstance(mix_times, (int, float)):
+            try:
+                mix_times = mix_times[0] if len(mix_times) > 0 else None
+            except Exception:
+                try:
+                    mix_times = next(iter(mix_times))
+                except Exception:
+                    pass
+        if mix_times is not None:
+            mix_times = int(mix_times)
             
             # 识别传输模式
             num_sources = len(sources)

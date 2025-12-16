@@ -174,35 +174,6 @@ bioyond_dispensing_station:
           title: query_resource_by_name参数
           type: object
         type: UniLabJsonCommand
-      auto-transfer_materials_to_reaction_station:
-        feedback: {}
-        goal: {}
-        goal_default:
-          target_device_id: null
-          transfer_groups: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                target_device_id:
-                  type: string
-                transfer_groups:
-                  type: array
-              required:
-              - target_device_id
-              - transfer_groups
-              type: object
-            result: {}
-          required:
-          - goal
-          title: transfer_materials_to_reaction_station参数
-          type: object
-        type: UniLabJsonCommand
       auto-workflow_sample_locations:
         feedback: {}
         goal: {}

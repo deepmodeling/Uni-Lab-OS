@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import time
+import uuid
 from typing import Any, List, Dict, Optional, Tuple, TypedDict, Union, Sequence, Iterator, Literal
 
 from pylabrobot.liquid_handling import (
@@ -856,7 +857,30 @@ class PRCXI9300Api:
 
     def _raw_request(self, payload: str) -> str:
         if self.debug:
-            return " "
+            # 调试/仿真模式下直接返回可解析的模拟 JSON，避免后续 json.loads 报错
+            try:
+                req = json.loads(payload)
+                method = req.get("MethodName")
+            except Exception:
+                method = None
+
+            data: Any = True
+            if method in {"AddSolution"}:
+                data = str(uuid.uuid4())
+            elif method in {"AddWorkTabletMatrix", "AddWorkTabletMatrix2"}:
+                data = {"Success": True, "Message": "debug mock"}
+            elif method in {"GetErrorCode"}:
+                data = ""
+            elif method in {"RemoveErrorCodet", "Reset", "Start", "LoadSolution", "Pause", "Resume", "Stop"}:
+                data = True
+            elif method in {"GetStepStateList", "GetStepStatus", "GetStepState"}:
+                data = []
+            elif method in {"GetLocation"}:
+                data = {"X": 0, "Y": 0, "Z": 0}
+            elif method in {"GetResetStatus"}:
+                data = False
+
+            return json.dumps({"Success": True, "Msg": "debug mock", "Data": data})
         with contextlib.closing(socket.socket()) as sock:
             sock.settimeout(self.timeout)
             sock.connect((self.host, self.port))

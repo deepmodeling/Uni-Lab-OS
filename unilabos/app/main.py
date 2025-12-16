@@ -195,9 +195,10 @@ def parse_args():
 def main():
     """主函数"""
     # 解析命令行参数
-    args = parse_args()
-    convert_argv_dashes_to_underscores(args)
-    args_dict = vars(args.parse_args())
+    parser = parse_args()
+    convert_argv_dashes_to_underscores(parser)
+    args = parser.parse_args()
+    args_dict = vars(args)
 
     # 环境检查 - 检查并自动安装必需的包 (可选)
     if not args_dict.get("skip_env_check", False):
@@ -255,17 +256,18 @@ def main():
         logger.info(f"Log level set to '{BasicConfig.log_level}' from config file.")
     configure_logger(loglevel=BasicConfig.log_level, working_dir=working_dir)
 
-    if args_dict["addr"] == "test":
-        print_status("使用测试环境地址", "info")
-        HTTPConfig.remote_addr = "https://uni-lab.test.bohrium.com/api/v1"
-    elif args_dict["addr"] == "uat":
-        print_status("使用uat环境地址", "info")
-        HTTPConfig.remote_addr = "https://uni-lab.uat.bohrium.com/api/v1"
-    elif args_dict["addr"] == "local":
-        print_status("使用本地环境地址", "info")
-        HTTPConfig.remote_addr = "http://127.0.0.1:48197/api/v1"
-    else:
-        HTTPConfig.remote_addr = args_dict.get("addr", "")
+    if args.addr != parser.get_default("addr"):
+        if args.addr == "test":
+            print_status("使用测试环境地址", "info")
+            HTTPConfig.remote_addr = "https://uni-lab.test.bohrium.com/api/v1"
+        elif args.addr == "uat":
+            print_status("使用uat环境地址", "info")
+            HTTPConfig.remote_addr = "https://uni-lab.uat.bohrium.com/api/v1"
+        elif args.addr == "local":
+            print_status("使用本地环境地址", "info")
+            HTTPConfig.remote_addr = "http://127.0.0.1:48197/api/v1"
+        else:
+            HTTPConfig.remote_addr = args.addr
 
     # 设置BasicConfig参数
     if args_dict.get("ak", ""):

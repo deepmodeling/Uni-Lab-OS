@@ -41,7 +41,9 @@ Uni-Lab-OS 建议使用 `mamba` 管理环境。根据您的操作系统选择适
 
 ```bash
 # 创建新环境
-mamba create -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
+mamba create -n unilab python=3.11.11
+mamba activate unilab
+mamba install -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
 ```
 
 2. 安装开发版 Uni-Lab-OS:

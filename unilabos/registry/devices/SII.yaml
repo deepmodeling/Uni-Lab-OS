@@ -1,3 +1,154 @@
+camera_usb:
+  category:
+  - camera
+  - SII
+  class:
+    action_value_mappings:
+      get_status:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 获取摄像头运行状态（running/websocket_connected/ffmpeg_running 等）
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties: {}
+              required: []
+              type: object
+          required:
+          - goal
+          title: get_status参数
+          type: object
+        type: UniLabJsonCommand
+      start:
+        feedback: {}
+        goal:
+          config: config
+        goal_default:
+          config: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 启动摄像头（内部启动 FFmpeg + WebSocket 信令循环）
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                config:
+                  type: object
+              required:
+              - config
+              type: object
+            result:
+              properties: {}
+              required: []
+              type: object
+          required:
+          - goal
+          title: start参数
+          type: object
+        type: UniLabJsonCommand
+      stop:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 停止摄像头（停止 FFmpeg，关闭 WebSocket，停止事件循环线程）
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties: {}
+              required: []
+              type: object
+          required:
+          - goal
+          title: stop参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.SII.cameraSII.cameraUSB:CameraController
+    status_types:
+      ffmpeg_running: bool
+      running: bool
+      status: dict
+      websocket_connected: bool
+    type: python
+  config_info: []
+  description: Linux USB 摄像头驱动（WebSocket 信令 + FFmpeg 推流 + WebRTC 转发）
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        audio_bitrate:
+          default: 64k
+          type: string
+        audio_device:
+          type: string
+        auto_start:
+          default: false
+          type: boolean
+        fps:
+          default: 30
+          type: integer
+        height:
+          default: 720
+          type: integer
+        host_id:
+          default: demo-host
+          type: string
+        rtmp_url:
+          default: rtmp://srs.sciol.ac.cn:4499/live/camera-01
+          type: string
+        signal_backend_url:
+          default: wss://sciol.ac.cn/api/realtime/signal/host
+          type: string
+        video_bitrate:
+          default: 1500k
+          type: string
+        video_device:
+          default: /dev/video0
+          type: string
+        webrtc_api:
+          default: https://srs.sciol.ac.cn/rtc/v1/play/
+          type: string
+        webrtc_stream_url:
+          default: webrtc://srs.sciol.ac.cn:4500/live/camera-01
+          type: string
+        width:
+          default: 1280
+          type: integer
+      required: []
+      type: object
+    data:
+      properties:
+        ffmpeg_running:
+          type: boolean
+        running:
+          type: boolean
+        status:
+          type: object
+        websocket_connected:
+          type: boolean
+      required:
+      - status
+      - running
+      - websocket_connected
+      - ffmpeg_running
+      type: object
+  version: 1.0.0
 cameracontroller_device:
   category:
   - cameraSII
@@ -308,6 +459,7 @@ xyz_pipette_device:
         goal_default:
           volume_uL: null
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
@@ -331,6 +483,7 @@ xyz_pipette_device:
         goal: {}
         goal_default: {}
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
@@ -351,6 +504,7 @@ xyz_pipette_device:
         goal: {}
         goal_default: {}
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: 以当前 XYZ 位置重置工件软零点
@@ -371,6 +525,7 @@ xyz_pipette_device:
         goal: {}
         goal_default: {}
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
@@ -392,6 +547,7 @@ xyz_pipette_device:
         goal_default:
           volume_uL: null
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
@@ -415,6 +571,7 @@ xyz_pipette_device:
         goal: {}
         goal_default: {}
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
@@ -439,6 +596,7 @@ xyz_pipette_device:
           speed: 50
           z_offset: 0.0
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
@@ -476,6 +634,7 @@ xyz_pipette_device:
           y: null
           z: null
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
@@ -512,6 +671,7 @@ xyz_pipette_device:
         goal_default:
           name: null
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: 使用最近一次目标坐标保存点位
@@ -539,6 +699,7 @@ xyz_pipette_device:
           y: null
           z: null
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: 保存/更新一个点位到 points.json
@@ -580,10 +741,10 @@ xyz_pipette_device:
           default: 115200
           type: integer
         origin_file:
-          default: unilabos/devices/laiyu_xyz_pipette/work_origin.json
+          default: unilabos/devices/SII/laiyu_xyz_pipette/work_origin.json
           type: string
         points_file:
-          default: unilabos/devices/laiyu_xyz_pipette/points.json
+          default: unilabos/devices/SII/laiyu_xyz_pipette/points.json
           type: string
         port:
           default: /dev/ttyUSB0

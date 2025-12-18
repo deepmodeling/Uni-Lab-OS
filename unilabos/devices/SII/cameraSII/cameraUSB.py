@@ -34,6 +34,7 @@ class CameraController:
         video_bitrate: str = "1500k",
         audio_device: Optional[str] = None,  # 比如 "hw:1,0"，没有音频就保持 None
         audio_bitrate: str = "64k",
+        auto_start: bool = False,
     ):
         self.host_id = host_id
 
@@ -57,20 +58,24 @@ class CameraController:
         self.audio_device = audio_device
         self.audio_bitrate = audio_bitrate
 
-        # 运行时状态
+        # 运行时状态（保证所有 status 字段存在）
         self._ws: Optional[object] = None
         self._ffmpeg_process: Optional[subprocess.Popen] = None
-        self._running = False
+
+        self._running: bool = False
+        self._websocket_connected: bool = False
+
         self._loop_task: Optional[asyncio.Future] = None
 
         # 事件循环 & 线程
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
 
-        try:
-            self.start()
-        except Exception as e:
-            print(f"[CameraController] __init__ auto start failed: {e}", file=sys.stderr)
+        if auto_start:
+            try:
+                self.start()
+            except Exception as e:
+                print(f"[CameraController] __init__ auto start failed: {e}", file=sys.stderr)
 
     # ---------------------------------------------------------------------
     # 对外方法
@@ -79,6 +84,10 @@ class CameraController:
     def start(self, config: Optional[Dict[str, Any]] = None):
         if self._running:
             return {"status": "already_running", "host_id": self.host_id}
+
+        # 启动前复位状态（避免上次残留）
+        self._running = True
+        self._websocket_connected = False
 
         # 应用 config 覆盖（如果有）
         if config:
@@ -104,8 +113,6 @@ class CameraController:
             self.video_bitrate = config.get("video_bitrate", self.video_bitrate)
             self.audio_device = config.get("audio_device", self.audio_device)
             self.audio_bitrate = config.get("audio_bitrate", self.audio_bitrate)
-
-        self._running = True
 
         print("[CameraController] start(): starting FFmpeg streaming...", file=sys.stderr)
         self._start_ffmpeg()
@@ -137,10 +144,15 @@ class CameraController:
             "fps": self.fps,
             "video_bitrate": self.video_bitrate,
             "audio_device": self.audio_device,
+            "running": self.running,
+            "websocket_connected": self.websocket_connected,
+            "ffmpeg_running": self.ffmpeg_running,
         }
 
     def stop(self) -> Dict[str, Any]:
+        # 立刻置状态，便于状态发布端读到正确值
         self._running = False
+        self._websocket_connected = False
 
         # 先取消主任务（让 ws connect/sleep 尽快退出）
         if self._loop_task is not None and not self._loop_task.done():
@@ -182,7 +194,13 @@ class CameraController:
         self._loop = None
         self._loop_thread = None
 
-        return {"status": "stopped", "host_id": self.host_id}
+        return {
+            "status": "stopped",
+            "host_id": self.host_id,
+            "running": self.running,
+            "websocket_connected": self.websocket_connected,
+            "ffmpeg_running": self.ffmpeg_running,
+        }
 
     def get_status(self) -> Dict[str, Any]:
         ws_closed = None
@@ -196,9 +214,9 @@ class CameraController:
 
         return {
             "host_id": self.host_id,
-            "running": self._running,
+            "running": self.running,
             "websocket_connected": websocket_connected,
-            "ffmpeg_running": bool(self._ffmpeg_process and self._ffmpeg_process.poll() is None),
+            "ffmpeg_running": self.ffmpeg_running,
             "signal_backend_url": self.signal_backend_url,
             "rtmp_url": self.rtmp_url,
             "video_device": self.video_device,
@@ -219,17 +237,28 @@ class CameraController:
                 try:
                     async with websockets.connect(self.signal_backend_url) as ws:
                         self._ws = ws
+                        self._websocket_connected = True
                         print(f"[CameraController] WebSocket connected: {self.signal_backend_url}", file=sys.stderr)
-                        await self._recv_loop()
+
+                        try:
+                            await self._recv_loop()
+                        finally:
+                            self._websocket_connected = False
+                            self._ws = None
+
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
+                    self._websocket_connected = False
+                    self._ws = None
                     if self._running:
                         print(f"[CameraController] WebSocket connection error: {e}", file=sys.stderr)
                         await asyncio.sleep(3)
         except asyncio.CancelledError:
             pass
         finally:
+            self._websocket_connected = False
+            self._ws = None
             print("[CameraController] main loop exited", file=sys.stderr)
 
     async def _recv_loop(self):
@@ -282,7 +311,6 @@ class CameraController:
         if self._ffmpeg_process and self._ffmpeg_process.poll() is None:
             return
 
-        # 兼容性优先：不强制输入像素格式；失败再通过外部调整 width/height/fps
         video_size = f"{self.width}x{self.height}"
 
         cmd = [
@@ -290,50 +318,67 @@ class CameraController:
             "-hide_banner",
             "-loglevel",
             "warning",
-
-            # video input
-            "-f", "v4l2",
-            "-framerate", str(self.fps),
-            "-video_size", video_size,
-            "-i", self.video_device,
+            "-f",
+            "v4l2",
+            "-framerate",
+            str(self.fps),
+            "-video_size",
+            video_size,
+            "-i",
+            self.video_device,
         ]
 
-        # optional audio input
         if self.audio_device:
             cmd += [
-                "-f", "alsa",
-                "-i", self.audio_device,
-                "-c:a", "aac",
-                "-b:a", self.audio_bitrate,
-                "-ar", "44100",
-                "-ac", "1",
+                "-f",
+                "alsa",
+                "-i",
+                self.audio_device,
+                "-c:a",
+                "aac",
+                "-b:a",
+                self.audio_bitrate,
+                "-ar",
+                "44100",
+                "-ac",
+                "1",
             ]
         else:
             cmd += ["-an"]
 
-        # video encode + rtmp out
         cmd += [
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-tune", "zerolatency",
-            "-profile:v", "baseline",
-            "-pix_fmt", "yuv420p",
-            "-b:v", self.video_bitrate,
-            "-maxrate", self.video_bitrate,
-            "-bufsize", "2M",
-            "-g", str(max(self.fps, 10)),
-            "-keyint_min", str(max(self.fps, 10)),
-            "-sc_threshold", "0",
-            "-x264-params", "bframes=0",
-
-            "-f", "flv",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-tune",
+            "zerolatency",
+            "-profile:v",
+            "baseline",
+            "-pix_fmt",
+            "yuv420p",
+            "-b:v",
+            self.video_bitrate,
+            "-maxrate",
+            self.video_bitrate,
+            "-bufsize",
+            "2M",
+            "-g",
+            str(max(self.fps, 10)),
+            "-keyint_min",
+            str(max(self.fps, 10)),
+            "-sc_threshold",
+            "0",
+            "-x264-params",
+            "bframes=0",
+            "-f",
+            "flv",
             self.rtmp_url,
         ]
 
         print(f"[CameraController] starting FFmpeg: {' '.join(cmd)}", file=sys.stderr)
 
         try:
-            # 不再丢弃日志，至少能看到 ffmpeg 报错（调试很关键）
             self._ffmpeg_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
@@ -382,6 +427,26 @@ class CameraController:
             raise RuntimeError(f"empty SDP from media server: {data}")
         return answer_sdp
 
+    # ---------------------------------------------------------------------
+    # status fields for UniLabOS publisher（关键：这些名字要和 YAML 里的 status_types 对上）
+    # ---------------------------------------------------------------------
+
+    @property
+    def running(self) -> bool:
+        return bool(self._running)
+
+    @property
+    def websocket_connected(self) -> bool:
+        return bool(self._websocket_connected)
+
+    @property
+    def ffmpeg_running(self) -> bool:
+        p = self._ffmpeg_process
+        try:
+            return p is not None and p.poll() is None
+        except Exception:
+            return False
+
 
 if __name__ == "__main__":
     # 直接运行用于手动测试
@@ -393,9 +458,11 @@ if __name__ == "__main__":
         fps=30,
         video_bitrate="1500k",
         audio_device=None,
+        auto_start=False,
     )
     try:
         while True:
-            asyncio.sleep(1)
+            # 这里必须 await，否则啥也不会睡
+            asyncio.run(asyncio.sleep(1))
     except KeyboardInterrupt:
         c.stop()

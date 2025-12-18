@@ -75,7 +75,7 @@ class XYZModbus:
         req = bytes([slave]) + payload
         frame = req + self._crc16(req)
         fn_req = payload[0]
-        logger.debug("TX slave=%d fn=0x%02X frame=%s", slave, fn_req, hx(frame))
+        # logger.debug("TX slave=%d fn=0x%02X frame=%s", slave, fn_req, hx(frame))
 
         last_error: Exception | None = None
 
@@ -95,7 +95,7 @@ class XYZModbus:
                     if not raw:
                         raise ModbusException("No response")
 
-                    logger.debug("RAW RX attempt %d/%d: %s", attempt, retries, hx(raw))
+                    # logger.debug("RAW RX attempt %d/%d: %s", attempt, retries, hx(raw))
 
                     # 在 raw 里搜索对齐的帧头
                     for i in range(0, len(raw) - 4):
@@ -139,12 +139,12 @@ class XYZModbus:
                             logger.warning("Modbus exception frame: %s", hx(frame_candidate))
                             raise ModbusException("Modbus exception response")
 
-                        logger.debug(
-                            "Parsed frame OK attempt %d/%d: %s",
-                            attempt,
-                            retries,
-                            hx(frame_candidate),
-                        )
+                        # logger.debug(
+                        #     "Parsed frame OK attempt %d/%d: %s",
+                        #     attempt,
+                        #     retries,
+                        #     hx(frame_candidate),
+                        # )
                         return frame_candidate
 
                     # 如果这一轮没有找到任何合法帧

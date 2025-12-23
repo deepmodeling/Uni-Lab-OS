@@ -1,10 +1,10 @@
-PRCXI_trash:
+PRCXI_EP_Adapter:
   category: 
   - prcxi
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_trash
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_EP_Adapter
     type: pylabrobot
-  description: '废弃槽 (Code: q1)'
+  description: 'ep适配器 (Code: 1)'
   handles: []
   icon: ''
   init_param_schema: {}

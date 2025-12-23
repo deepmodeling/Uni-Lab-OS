@@ -69,7 +69,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "device",
-            "class": "syringepump.runze",
+            "class": "syringe_pump_with_valve.runze.SY03B-T08",
             "position": {
                 "x": 620.6111111111111,
                 "y": 171,
@@ -93,7 +93,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 430.4087301587302,
                 "y": 428,
@@ -117,7 +117,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 295.36944444444447,
                 "y": 428,
@@ -141,7 +141,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 165.36944444444444,
                 "y": 428,
@@ -165,7 +165,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 165.36944444444444,
                 "y": 428,
@@ -189,7 +189,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 35,
                 "y": 428,
@@ -213,7 +213,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 698.1111111111111,
                 "y": 428,
@@ -255,7 +255,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "device",
-            "class": "syringepump.runze",
+            "class": "syringe_pump_with_valve.runze.SY03B-T08",
             "position": {
                 "x": 1195.611507936508,
                 "y": 686,
@@ -279,7 +279,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 1587.703373015873,
                 "y": 1172.5,
@@ -299,7 +299,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "device",
-            "class": "separator_controller",
+            "class": "separator.homemade",
             "position": {
                 "x": 1624.4027777777778,
                 "y": 665.5,
@@ -320,7 +320,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 1614.404365079365,
                 "y": 948,
@@ -340,7 +340,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 1915.7035714285714,
                 "y": 665.5,
@@ -360,7 +360,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 1785.7035714285714,
                 "y": 665.5,
@@ -384,7 +384,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 2054.0650793650793,
                 "y": 665.5,
@@ -408,7 +408,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "device",
-            "class": "syringepump.runze",
+            "class": "syringe_pump_with_valve.runze.SY03B-T08",
             "position": {
                 "x": 1630.6527777777778,
                 "y": 448.5,
@@ -432,7 +432,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "device",
-            "class": "rotavap",
+            "class": "rotavap.one",
             "position": {
                 "x": 1339.7031746031746,
                 "y": 968.5,
@@ -453,7 +453,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 1339.7031746031746,
                 "y": 1152,
@@ -473,7 +473,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 909.722619047619,
                 "y": 948,
@@ -493,7 +493,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 867.972619047619,
                 "y": 1152,
@@ -513,7 +513,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 742.722619047619,
                 "y": 948,
@@ -533,7 +533,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 1206.722619047619,
                 "y": 948,
@@ -553,7 +553,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "container",
-            "class": null,
+            "class": "container",
             "position": {
                 "x": 1148.222619047619,
                 "y": 1152,
@@ -573,7 +573,7 @@
             "children": [],
             "parent": "YugongStation",
             "type": "device",
-            "class": "syringepump.runze",
+            "class": "syringe_pump_with_valve.runze.SY03B-T08",
             "position": {
                 "x": 1469.7031746031746,
                 "y": 968.5,

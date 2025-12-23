@@ -178,7 +178,7 @@
                 "z": 0
             },
             "config": {
-                "type": "PRCXI9300Container",
+                "type": "PRCXI9300TipRack",
                 "size_x": 50,
                 "size_y": 40,
                 "size_z": 30,
@@ -4248,7 +4248,7 @@
                 "z": 0
             },
             "config": {
-                "type": "PRCXI9300Container",
+                "type": "PRCXI9300Plate",
                 "size_x": 50,
                 "size_y": 40,
                 "size_z": 30,
@@ -9415,7 +9415,7 @@
                 "z": 0
             },
             "config": {
-                "type": "PRCXI9300Container",
+                "type": "PRCXI9300Plate",
                 "size_x": 50,
                 "size_y": 40,
                 "size_z": 30,
@@ -13389,7 +13389,7 @@
                 "z": 0
             },
             "config": {
-                "type": "PRCXI9300Container",
+                "type": "PRCXI9300Plate",
                 "size_x": 50,
                 "size_y": 40,
                 "size_z": 30,
@@ -17363,7 +17363,7 @@
                 "z": 0
             },
             "config": {
-                "type": "PRCXI9300Container",
+                "type": "PRCXI9300Plate",
                 "size_x": 50,
                 "size_y": 40,
                 "size_z": 30,

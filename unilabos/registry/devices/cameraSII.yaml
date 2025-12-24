@@ -1,0 +1,105 @@
+cameracontroller_device:
+  category:
+  - cameraSII
+  class:
+    action_value_mappings:
+      auto-start:
+        feedback: {}
+        goal: {}
+        goal_default:
+          config: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                config:
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stop:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stop参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.cameraSII.cameraUSB:CameraController
+    status_types:
+      status: dict
+    type: python
+  config_info: []
+  description: Uni-Lab-OS 摄像头驱动（Linux USB 摄像头版，无 PTZ）
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        audio_bitrate:
+          default: 64k
+          type: string
+        audio_device:
+          type: string
+        fps:
+          default: 30
+          type: integer
+        height:
+          default: 720
+          type: integer
+        host_id:
+          default: demo-host
+          type: string
+        rtmp_url:
+          default: rtmp://srs.sciol.ac.cn:4499/live/camera-01
+          type: string
+        signal_backend_url:
+          default: wss://sciol.ac.cn/api/realtime/signal/host
+          type: string
+        video_bitrate:
+          default: 1500k
+          type: string
+        video_device:
+          default: /dev/video0
+          type: string
+        webrtc_api:
+          default: https://srs.sciol.ac.cn/rtc/v1/play/
+          type: string
+        webrtc_stream_url:
+          default: webrtc://srs.sciol.ac.cn:4500/live/camera-01
+          type: string
+        width:
+          default: 1280
+          type: integer
+      required: []
+      type: object
+    data:
+      properties:
+        status:
+          type: object
+      required:
+      - status
+      type: object
+  registry_type: device
+  version: 1.0.0

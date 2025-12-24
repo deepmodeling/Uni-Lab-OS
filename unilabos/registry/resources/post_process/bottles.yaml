@@ -1,0 +1,11 @@
+POST_PROCESS_PolymerStation_Reagent_Bottle:
+  category:
+  - bottles
+  class:
+    module: unilabos.devices.workstation.post_process.bottles:POST_PROCESS_PolymerStation_Reagent_Bottle
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+

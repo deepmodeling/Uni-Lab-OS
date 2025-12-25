@@ -156,7 +156,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300TipRack",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -4323,7 +4323,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -8297,7 +8297,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -8425,7 +8425,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -12496,7 +12496,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300TipRack",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -16664,7 +16664,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -20640,7 +20640,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -20671,7 +20671,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -20799,7 +20799,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -24872,7 +24872,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -28848,7 +28848,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -28879,7 +28879,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -29007,7 +29007,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -33080,7 +33080,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -37153,7 +37153,7 @@
             "z": 0
         },
         "config": {
-            "type": "PRCXI9300Container",
+            "type": "PRCXI9300Plate",
             "size_x": 50,
             "size_y": 50,
             "size_z": 10,
@@ -41151,6 +41151,5 @@
                 "uuid": "730067cf07ae43849ddf4034299030e9"
             }
         }
-    ],
-    "links": []
-}
+    }
+]

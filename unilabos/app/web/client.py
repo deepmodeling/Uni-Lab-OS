@@ -300,6 +300,10 @@ class HTTPClient:
         )
         if response.status_code not in [200, 201]:
             logger.error(f"注册资源失败: {response.status_code}, {response.text}")
+        if response.status_code == 200:
+            res = response.json()
+            if "code" in res and res["code"] != 0:
+                logger.error(f"注册资源失败: {response.text}")
         return response
 
     def request_startup_json(self) -> Optional[Dict[str, Any]]:

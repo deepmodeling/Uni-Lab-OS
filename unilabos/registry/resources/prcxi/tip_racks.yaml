@@ -1,23 +1,70 @@
-prcxi_opentrons_96_tiprack_10ul:
-  category:
-  - tip_racks
+PRCXI_1000uL_Tips:
+  category: 
+  - prcxi
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_res:prcxi_opentrons_96_tiprack_10ul
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_1000uL_Tips
     type: pylabrobot
-  description: prcxi_opentrons_96_tiprack_10ul
+  description: '1000μL Tip头 (Code: ZX-001-1000)'
   handles: []
   icon: ''
   init_param_schema: {}
   registry_type: resource
   version: 1.0.0
-tip_adaptor_1250ul_2:
-  category:
+PRCXI_10uL_Tips:
+  category: 
   - prcxi
-  - tip_racks
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_materials:tip_adaptor_1250ul
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_10uL_Tips
     type: pylabrobot
-  description: Tip头适配器 1250uL
+  description: '10μL Tip头 (Code: ZX-001-10)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_10ul_eTips:
+  category: 
+  - prcxi
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_10ul_eTips
+    type: pylabrobot
+  description: '10μL加长 Tip头 (Code: ZX-001-10+)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_1250uL_Tips:
+  category: 
+  - prcxi
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_1250uL_Tips
+    type: pylabrobot
+  description: '1250μL Tip头 (Code: ZX-001-1250)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_200uL_Tips:
+  category: 
+  - prcxi
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_200uL_Tips
+    type: pylabrobot
+  description: '200μL Tip头 (Code: ZX-001-200)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_300ul_Tips:
+  category: 
+  - prcxi
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_300ul_Tips
+    type: pylabrobot
+  description: '300μL Tip头 (Code: ZX-001-300)'
   handles: []
   icon: ''
   init_param_schema: {}

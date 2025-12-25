@@ -284,10 +284,18 @@ def modify_to_backend_format(data: list[dict[str, Any]]) -> list[dict[str, Any]]
             edge["sourceHandle"] = port[source]
         elif "source_port" in edge:
             edge["sourceHandle"] = edge.pop("source_port")
+        else:
+            typ = edge.get("type")
+            if typ == "communication":
+                continue
         if target in port:
             edge["targetHandle"] = port[target]
         elif "target_port" in edge:
             edge["targetHandle"] = edge.pop("target_port")
+        else:
+            typ = edge.get("type")
+            if typ == "communication":
+                continue
         edge["id"] = f"reactflow__edge-{source}-{edge['sourceHandle']}-{target}-{edge['targetHandle']}"
         for key in ["source_port", "target_port"]:
             if key in edge:

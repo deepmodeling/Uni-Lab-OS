@@ -237,6 +237,8 @@ class Registry:
                         resource_info["category"] = [file.stem]
                     elif file.stem not in resource_info["category"]:
                         resource_info["category"].append(file.stem)
+                    elif not isinstance(resource_info.get("category"), list):
+                        resource_info["category"] = [resource_info["category"]]
                     if "config_info" not in resource_info:
                         resource_info["config_info"] = []
                     if "icon" not in resource_info:

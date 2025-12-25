@@ -1,0 +1,25 @@
+POST_PROCESS_Raw_1BottleCarrier:
+  category:
+  - bottle_carriers
+  class:
+    module: unilabos.devices.workstation.post_process.bottle_carriers:POST_PROCESS_Raw_1BottleCarrier
+    type: pylabrobot
+  description: POST_PROCESS_Raw_1BottleCarrier
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+
+POST_PROCESS_Reaction_1BottleCarrier:
+  category:
+  - bottle_carriers
+  class:
+    module: unilabos.devices.workstation.post_process.bottle_carriers:POST_PROCESS_Reaction_1BottleCarrier
+    type: pylabrobot
+  description: POST_PROCESS_Reaction_1BottleCarrier
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

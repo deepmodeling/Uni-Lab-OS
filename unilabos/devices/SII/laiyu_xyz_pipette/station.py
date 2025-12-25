@@ -80,6 +80,7 @@ class Station:
         # 把 origin_file 传进去，这样 XYZStepperController 会用这个路径加载/保存软零点
         self.xyz = XYZStepperController(self.bus, origin_path=self.origin_file)
         self.pip = SOPAPipetteYYQ(self.bus)
+        self.pip.initialize()
         logger.info("Station connected.")
 
     def disconnect(self):

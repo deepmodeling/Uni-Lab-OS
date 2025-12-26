@@ -388,6 +388,10 @@ def main():
     for ind, i in enumerate(resource_edge_info[::-1]):
         source_node: ResourceDict = nodes[i["source"]]
         target_node: ResourceDict = nodes[i["target"]]
+        if "sourceHandle" not in source_node:
+            continue
+        if "targetHandle" not in target_node:
+            continue
         source_handle = i["sourceHandle"]
         target_handle = i["targetHandle"]
         source_handler_keys = [

@@ -1,0 +1,20 @@
+[
+  {
+    "uuid": "4f35adc958c540fcb40d6f9dd51e40fa",
+    "BoardCode": 34,
+    "BoardNum": 1,
+    "BoardLength": 500,
+    "BoardWidth": 400,
+    "BoardColum": 4,
+    "BoardRow": 3,
+    "TotalColum": 4,
+    "TotalRow": 3,
+    "BoardCenterXY": "300",
+    "HoleQty": 96,
+    "Version": 1,
+    "CreateTime": "2021-11-15",
+    "CreateName": "admin",
+    "UpdateTime": "2021-11-15",
+    "UpdateName": "admin"
+  }
+]

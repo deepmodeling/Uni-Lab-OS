@@ -128,6 +128,7 @@ class PipetteController:
             baudrate=115200
         )
         self.pipette = SOPAPipette(self.config)
+        self.pipette_port = port
         self.tip_status = TipStatus.NO_TIP
         self.current_volume = 0.0
         self.max_volume = 1000.0  # 默认1000ul
@@ -154,7 +155,7 @@ class PipetteController:
             logger.info("移液器连接成功")
             
             # 连接XYZ步进电机控制器（如果提供了端口）
-            if self.xyz_port:
+            if self.xyz_port != self.pipette_port:
                 try:
                     self.xyz_controller = XYZController(self.xyz_port)
                     if self.xyz_controller.connect():
@@ -168,7 +169,12 @@ class PipetteController:
                     self.xyz_controller = None
                     self.xyz_connected = False
             else:
-                logger.info("未配置XYZ步进电机端口，跳过运动控制器连接")
+                try:
+                    self.xyz_controller = XYZController(self.xyz_port, auto_connect=False)
+                    self.xyz_controller.serial_conn = self.pipette.serial_port
+                    self.xyz_controller.is_connected = True
+                except Exception as e:
+                    logger.info("未配置XYZ步进电机端口，跳过运动控制器连接")
             
             return True
         except Exception as e:

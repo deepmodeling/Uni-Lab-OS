@@ -1,0 +1,74 @@
+[
+  {
+    "uuid": "9a3007baa748457b8d5162f5c5918553",
+    "ArmCode": "SC10",
+    "ArmName": "单道-10uL",
+    "CmdCode": "SC10",
+    "ChannelNum": 1,
+    "Dosage": 10,
+    "CreateName": "admin",
+    "CreateTime": "2021-11-13 14:04:02.000",
+    "UpdateName": "admin",
+    "UpdateTime": "2021-11-13 14:04:12.000"
+  },
+  {
+    "uuid": "8f57a4cc859d4c02bffbeeadcfb2b661",
+    "ArmCode": "SC300",
+    "ArmName": "单道-300uL",
+    "CmdCode": "SC300",
+    "ChannelNum": 1,
+    "Dosage": 300,
+    "CreateName": "admin",
+    "CreateTime": "2021-11-11 11:11:11.000",
+    "UpdateName": "admin",
+    "UpdateTime": "2021-11-11 11:11:11.000"
+  },
+  {
+    "uuid": "8fe0320823de49a99bfa5060ce1aaa28",
+    "ArmCode": "SC1250",
+    "ArmName": "单道-1250",
+    "CmdCode": "SC1250",
+    "ChannelNum": 1,
+    "Dosage": 1250,
+    "CreateName": "admin",
+    "CreateTime": "2021-11-12 10:10:10.000",
+    "UpdateName": "admin",
+    "UpdateTime": "2021-11-12 11:11:11.000"
+  },
+  {
+    "uuid": "88f22c5384e94dbbad60961d4d2b5e91",
+    "ArmCode": "MC10",
+    "ArmName": "八道-10uL",
+    "CmdCode": "MC10",
+    "ChannelNum": 8,
+    "Dosage": 10,
+    "CreateName": "admin",
+    "CreateTime": "2021-11-12 10:10:10.000",
+    "UpdateName": "admin",
+    "UpdateTime": "2021-11-13 12:12:12.000"
+  },
+  {
+    "uuid": "09206ff90e64466f90ce6a785a24bad8",
+    "ArmCode": "MC300",
+    "ArmName": "八道-300uL",
+    "CmdCode": "MC300",
+    "ChannelNum": 8,
+    "Dosage": 300,
+    "CreateName": "admin",
+    "CreateTime": "2021-11-12 12:12:12.000",
+    "UpdateName": "admin",
+    "UpdateTime": "2021-11-12 10:10:10.000"
+  },
+  {
+    "uuid": "5afcbd7d1d6749079d1c94f8c2e68f06",
+    "ArmCode": "MC1250",
+    "ArmName": "八道-1250uL",
+    "CmdCode": "MC1250",
+    "ChannelNum": 8,
+    "Dosage": 1250,
+    "CreateName": "admin",
+    "CreateTime": "2021-11-12 12:12:10.000",
+    "UpdateName": "admin",
+    "UpdateTime": "2021-11-12 12:11:11.000"
+  }
+]

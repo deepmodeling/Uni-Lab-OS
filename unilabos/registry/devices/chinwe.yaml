@@ -1,0 +1,413 @@
+separator.chinwe:
+  category:
+  - separator
+  - chinwe
+  class:
+    action_value_mappings:
+      auto-connect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: connect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-disconnect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: disconnect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-execute_command_from_outer:
+        feedback: {}
+        goal: {}
+        goal_default:
+          command_dict: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                command_dict:
+                  type: object
+              required:
+              - command_dict
+              type: object
+            result: {}
+          required:
+          - goal
+          title: execute_command_from_outer参数
+          type: object
+        type: UniLabJsonCommand
+      motor_rotate_quarter:
+        goal:
+          direction: 顺时针
+          motor_id: 4
+          speed: 60
+        handles: {}
+        schema:
+          description: 电机旋转 1/4 圈
+          properties:
+            goal:
+              properties:
+                direction:
+                  default: 顺时针
+                  description: 旋转方向
+                  enum:
+                  - 顺时针
+                  - 逆时针
+                  type: string
+                motor_id:
+                  default: '4'
+                  description: 选择电机 (4:搅拌, 5:旋钮)
+                  enum:
+                  - '4'
+                  - '5'
+                  type: string
+                speed:
+                  default: 60
+                  description: 速度 (RPM)
+                  type: integer
+              required:
+              - motor_id
+              - speed
+              type: object
+        type: UniLabJsonCommand
+      motor_run_continuous:
+        goal:
+          direction: 顺时针
+          motor_id: 4
+          speed: 60
+        handles: {}
+        schema:
+          description: 电机一直旋转 (速度模式)
+          properties:
+            goal:
+              properties:
+                direction:
+                  default: 顺时针
+                  description: 旋转方向
+                  enum:
+                  - 顺时针
+                  - 逆时针
+                  type: string
+                motor_id:
+                  default: '4'
+                  description: 选择电机 (4:搅拌, 5:旋钮)
+                  enum:
+                  - '4'
+                  - '5'
+                  type: string
+                speed:
+                  default: 60
+                  description: 速度 (RPM)
+                  type: integer
+              required:
+              - motor_id
+              - speed
+              type: object
+        type: UniLabJsonCommand
+      motor_stop:
+        goal:
+          motor_id: 4
+        handles: {}
+        schema:
+          description: 停止指定步进电机
+          properties:
+            goal:
+              properties:
+                motor_id:
+                  default: '4'
+                  description: 选择电机
+                  enum:
+                  - '4'
+                  - '5'
+                  title: '注: 4=搅拌, 5=旋钮'
+                  type: string
+              required:
+              - motor_id
+              type: object
+        type: UniLabJsonCommand
+      pump_aspirate:
+        goal:
+          pump_id: 1
+          valve_port: 1
+          volume: 1000
+        handles: {}
+        schema:
+          description: 注射泵吸液
+          properties:
+            goal:
+              properties:
+                pump_id:
+                  default: '1'
+                  description: 选择泵
+                  enum:
+                  - '1'
+                  - '2'
+                  - '3'
+                  type: string
+                valve_port:
+                  default: '1'
+                  description: 阀门端口
+                  enum:
+                  - '1'
+                  - '2'
+                  - '3'
+                  - '4'
+                  - '5'
+                  - '6'
+                  - '7'
+                  - '8'
+                  type: string
+                volume:
+                  default: 1000
+                  description: 吸液步数
+                  type: integer
+              required:
+              - pump_id
+              - volume
+              - valve_port
+              type: object
+        type: UniLabJsonCommand
+      pump_dispense:
+        goal:
+          pump_id: 1
+          valve_port: 1
+          volume: 1000
+        handles: {}
+        schema:
+          description: 注射泵排液
+          properties:
+            goal:
+              properties:
+                pump_id:
+                  default: '1'
+                  description: 选择泵
+                  enum:
+                  - '1'
+                  - '2'
+                  - '3'
+                  type: string
+                valve_port:
+                  default: '1'
+                  description: 阀门端口
+                  enum:
+                  - '1'
+                  - '2'
+                  - '3'
+                  - '4'
+                  - '5'
+                  - '6'
+                  - '7'
+                  - '8'
+                  type: string
+                volume:
+                  default: 1000
+                  description: 排液步数
+                  type: integer
+              required:
+              - pump_id
+              - volume
+              - valve_port
+              type: object
+        type: UniLabJsonCommand
+      pump_initialize:
+        goal:
+          drain_port: 0
+          output_port: 0
+          pump_id: 1
+          speed: 10
+        handles: {}
+        schema:
+          description: 初始化指定注射泵
+          properties:
+            goal:
+              properties:
+                drain_port:
+                  default: 0
+                  description: 排液口索引
+                  type: integer
+                output_port:
+                  default: 0
+                  description: 输出口索引
+                  type: integer
+                pump_id:
+                  default: '1'
+                  description: 选择泵
+                  enum:
+                  - '1'
+                  - '2'
+                  - '3'
+                  title: '注: 1号泵, 2号泵, 3号泵'
+                  type: string
+                speed:
+                  default: 10
+                  description: 运动速度
+                  type: integer
+              required:
+              - pump_id
+              type: object
+        type: UniLabJsonCommand
+      pump_valve:
+        goal:
+          port: 1
+          pump_id: 1
+        handles: {}
+        schema:
+          description: 切换指定泵的阀门端口
+          properties:
+            goal:
+              properties:
+                port:
+                  default: '1'
+                  description: 阀门端口号 (1-8)
+                  enum:
+                  - '1'
+                  - '2'
+                  - '3'
+                  - '4'
+                  - '5'
+                  - '6'
+                  - '7'
+                  - '8'
+                  type: string
+                pump_id:
+                  default: '1'
+                  description: 选择泵
+                  enum:
+                  - '1'
+                  - '2'
+                  - '3'
+                  type: string
+              required:
+              - pump_id
+              - port
+              type: object
+        type: UniLabJsonCommand
+      wait_sensor_level:
+        goal:
+          target_state: 有液
+          timeout: 30
+        handles: {}
+        schema:
+          description: 等待传感器液位条件
+          properties:
+            goal:
+              properties:
+                target_state:
+                  default: 有液
+                  description: 目标液位状态
+                  enum:
+                  - 有液
+                  - 无液
+                  type: string
+                timeout:
+                  default: 30
+                  description: 超时时间 (秒)
+                  type: integer
+              required:
+              - target_state
+              type: object
+        type: UniLabJsonCommand
+      wait_time:
+        goal:
+          duration: 10
+        handles: {}
+        schema:
+          description: 等待指定时间
+          properties:
+            goal:
+              properties:
+                duration:
+                  default: 10
+                  description: 等待时间 (秒)
+                  type: integer
+              required:
+              - duration
+              type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.separator.chinwe:ChinweDevice
+    status_types:
+      is_connected: bool
+      sensor_level: bool
+      sensor_rssi: int
+    type: python
+  config_info: []
+  description: ChinWe 简易工作站控制器 (3泵, 2电机, 1传感器)
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        baudrate:
+          default: 9600
+          type: integer
+        motor_ids:
+          items:
+            type: integer
+          type: array
+        port:
+          default: 192.168.1.200:8899
+          type: string
+        pump_ids:
+          items:
+            type: integer
+          type: array
+        sensor_id:
+          default: 6
+          type: integer
+        sensor_threshold:
+          default: 300
+          type: integer
+        timeout:
+          default: 10.0
+          type: number
+      required: []
+      type: object
+    data:
+      properties:
+        is_connected:
+          type: boolean
+        sensor_level:
+          type: boolean
+        sensor_rssi:
+          type: integer
+      required:
+      - sensor_level
+      - sensor_rssi
+      - is_connected
+      type: object
+  version: 2.1.0

@@ -111,7 +111,7 @@ def upload_workflow(
 
     if result.get("code") == 0:
         data = result.get("data", {})
-        print_status("工作流上传成功！", "success")
+        print_status(f"工作流上传成功！{data}", "success")
         print_status(f"  - UUID: {data.get('uuid', 'N/A')}", "info")
         print_status(f"  - 名称: {data.get('name', 'N/A')}", "info")
     else:

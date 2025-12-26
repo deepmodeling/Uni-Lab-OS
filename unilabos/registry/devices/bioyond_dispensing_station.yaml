@@ -174,6 +174,35 @@ bioyond_dispensing_station:
           title: query_resource_by_name参数
           type: object
         type: UniLabJsonCommand
+      auto-transfer_materials_to_reaction_station:
+        feedback: {}
+        goal: {}
+        goal_default:
+          target_device_id: null
+          transfer_groups: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                target_device_id:
+                  type: string
+                transfer_groups:
+                  type: array
+              required:
+              - target_device_id
+              - transfer_groups
+              type: object
+            result: {}
+          required:
+          - goal
+          title: transfer_materials_to_reaction_station参数
+          type: object
+        type: UniLabJsonCommand
       auto-workflow_sample_locations:
         feedback: {}
         goal: {}
@@ -591,56 +620,6 @@ bioyond_dispensing_station:
           title: DispenStationSolnPrep
           type: object
         type: DispenStationSolnPrep
-      transfer_materials_to_reaction_station:
-        feedback: {}
-        goal:
-          target_device_id: target_device_id
-          transfer_groups: transfer_groups
-        goal_default:
-          target_device_id: ''
-          transfer_groups: ''
-        handles: {}
-        placeholder_keys:
-          target_device_id: unilabos_devices
-        result: {}
-        schema:
-          description: 将配液站完成的物料（溶液、样品等）转移到指定反应站的堆栈库位。支持配置多组转移任务，每组包含物料名称、目标堆栈和目标库位。
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                target_device_id:
-                  description: 目标反应站设备ID（从设备列表中选择，所有转移组都使用同一个目标设备）
-                  type: string
-                transfer_groups:
-                  description: 转移任务组列表，每组包含物料名称、目标堆栈和目标库位，可以添加多组
-                  items:
-                    properties:
-                      materials:
-                        description: 物料名称（手动输入，系统将通过RPC查询验证）
-                        type: string
-                      target_sites:
-                        description: 目标库位（手动输入，如"A01"）
-                        type: string
-                      target_stack:
-                        description: 目标堆栈名称（手动输入，如"堆栈1左"）
-                        type: string
-                    required:
-                    - materials
-                    - target_stack
-                    - target_sites
-                    type: object
-                  type: array
-              required:
-              - target_device_id
-              - transfer_groups
-              type: object
-            result: {}
-          required:
-          - goal
-          title: transfer_materials_to_reaction_station参数
-          type: object
-        type: UniLabJsonCommand
       wait_for_multiple_orders_and_get_reports:
         feedback: {}
         goal:

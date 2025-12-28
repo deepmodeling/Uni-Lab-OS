@@ -190,13 +190,31 @@ class PRCXI9300Plate(Plate):
                 # 使用 ordering 参数，只包含位置信息（键）
                 ordering_param = collections.OrderedDict((k, None) for k in ordering.keys())
             else:
-                # ordering 的值已经是对象，可以直接使用
-                items = ordering
-                ordering_param = None
+                # ordering 的值是对象（可能是 Well 对象），检查是否有有效的 location
+                # 如果是反序列化过程，Well 对象可能没有正确的 location，需要让 Plate 重新创建
+                sample_value = next(iter(ordering.values()), None)
+                if sample_value is not None and hasattr(sample_value, 'location'):
+                    # 如果是 Well 对象但 location 为 None，说明是反序列化过程
+                    # 让 Plate 自己创建 Well 对象
+                    if sample_value.location is None:
+                        items = None
+                        ordering_param = collections.OrderedDict((k, None) for k in ordering.keys())
+                    else:
+                        # Well 对象有有效的 location，可以直接使用
+                        items = ordering
+                        ordering_param = None
+                elif sample_value is None:
+                    # ordering 的值都是 None，让 Plate 自己创建 Well 对象
+                    items = None
+                    ordering_param = collections.OrderedDict((k, None) for k in ordering.keys())
+                else:
+                    # 其他情况，直接使用
+                    items = ordering
+                    ordering_param = None
         else:
             items = None
-            ordering_param = None
-        
+            ordering_param = collections.OrderedDict()  # 提供空的 ordering
+
         # 根据情况传递不同的参数
         if items is not None:
             super().__init__(name, size_x, size_y, size_z, 
@@ -345,7 +363,7 @@ class PRCXI9300Trash(Trash):
     """
 
     def __init__(self, name: str, size_x: float, size_y: float, size_z: float, 
-                 category: str = "trash", 
+                 category: str = "plate", 
                  material_info: Optional[Dict[str, Any]] = None,
                  **kwargs):
         
@@ -483,6 +501,81 @@ class PRCXI9300TubeRack(TubeRack):
             
             data.update(safe_state)
         return data
+class PRCXI9300PlateAdapterSite(ItemizedCarrier):
+    def __init__(self, name: str, size_x: float, size_y: float, size_z: float,
+                 material_info: Optional[Dict[str, Any]] = None, **kwargs):
+        # 处理 sites 参数的不同格式
+
+        sites = create_homogeneous_resources(
+        klass=ResourceHolder,
+        locations=[Coordinate(0, 0, 0)],
+        resource_size_x=size_x,
+        resource_size_y=size_y,
+        resource_size_z=size_z,
+        name_prefix=name,
+    )[0]
+        # 确保不传递重复的参数
+        kwargs.pop('layout', None)
+        kwargs.pop('num_items_x', None)
+        kwargs.pop('num_items_y', None)
+        kwargs.pop('num_items_z', None)
+        kwargs.pop('sites', None)
+
+        super().__init__(name, size_x, size_y, size_z,
+        sites={name: sites},
+        num_items_x=1,
+        num_items_y=1,
+        num_items_z=1,
+        **kwargs)
+        self._unilabos_state = {}
+        if material_info:
+            self._unilabos_state["Material"] = material_info
+
+
+    def assign_child_resource(self, resource, location=Coordinate(0, 0, 0), reassign=True, spot=None):
+        """重写 assign_child_resource 方法，对于适配器位置，不使用索引分配"""
+        # 直接调用 Resource 的 assign_child_resource，避免 ItemizedCarrier 的索引逻辑
+        from pylabrobot.resources.resource import Resource
+        Resource.assign_child_resource(self, resource, location=location, reassign=reassign)
+
+    def unassign_child_resource(self, resource):
+        """重写 unassign_child_resource 方法，对于适配器位置，不使用 sites 列表"""
+        # 直接调用 Resource 的 unassign_child_resource，避免 ItemizedCarrier 的 sites 逻辑
+        from pylabrobot.resources.resource import Resource
+        Resource.unassign_child_resource(self, resource)
+
+    def serialize_state(self) -> Dict[str, Dict[str, Any]]:
+        try:
+            data = super().serialize_state()
+        except AttributeError:
+            data = {}
+
+        # 包含 sites 配置信息，但避免序列化 ResourceHolder 对象
+        if hasattr(self, 'sites') and self.sites:
+            # 只保存 sites 的基本信息，不保存 ResourceHolder 对象本身
+            sites_info = []
+            for site in self.sites:
+                if hasattr(site, '__class__') and 'pylabrobot' in str(site.__class__.__module__):
+                    # 对于 pylabrobot 对象，只保存基本信息
+                    sites_info.append({
+                        "__pylabrobot_object__": True,
+                        "class": site.__class__.__name__,
+                        "module": site.__class__.__module__,
+                        "name": getattr(site, 'name', str(site))
+                    })
+                else:
+                    sites_info.append(site)
+            data['sites'] = sites_info
+
+        return data
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """加载状态，包括 sites 配置信息"""
+        super().load_state(state)
+
+        # 从状态中恢复 sites 配置信息
+        if 'sites' in state:
+            self.sites = [state['sites']]
 
 class PRCXI9300PlateAdapter(PlateAdapter):
     """

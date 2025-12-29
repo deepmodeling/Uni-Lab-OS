@@ -266,7 +266,7 @@ class BioyondReactionStation(BioyondWorkstation):
         """液体进料小瓶(非滴定)
 
         Args:
-            volume_formula: 分液公式(μL)
+            volume_formula: 分液公式(mL)
             assign_material_name: 物料名称
             titration_type: 是否滴定(NO=1, YES=2)
             time: 观察时间(分钟)
@@ -311,7 +311,7 @@ class BioyondReactionStation(BioyondWorkstation):
         }
 
         self.pending_task_params.append(params)
-        print(f"成功添加液体进料小瓶(非滴定)参数: volume={volume_formula}μL, material={assign_material_name}->ID:{material_id}")
+        print(f"成功添加液体进料小瓶(非滴定)参数: volume={volume_formula}mL, material={assign_material_name}->ID:{material_id}")
         print(f"当前队列长度: {len(self.pending_task_params)}")
         return json.dumps({"suc": True})
 
@@ -329,13 +329,13 @@ class BioyondReactionStation(BioyondWorkstation):
 
         Args:
             assign_material_name: 物料名称
-            volume: 分液量(μL),直接指定体积(可选,如果提供solvents则自动计算)
+            volume: 分液量(mL),直接指定体积(可选,如果提供solvents则自动计算)
             solvents: 溶剂信息的字典或JSON字符串(可选),格式如下:
               {
                   "additional_solvent": 33.55092503597727,  # 溶剂体积(mL)
                   "total_liquid_volume": 48.00916988195499
               }
-              如果提供solvents,则从中提取additional_solvent并转换为μL
+              如果提供solvents,则从中提取additional_solvent(单位:mL)
             titration_type: 是否滴定(NO=1, YES=2)
             time: 观察时间(分钟)
             torque_variation: 是否观察(NO=1, YES=2)
@@ -366,8 +366,8 @@ class BioyondReactionStation(BioyondWorkstation):
             if additional_solvent is None:
                 raise ValueError("solvents 中没有找到 additional_solvent 字段")
 
-            # 转换为微升(μL) - 从毫升(mL)转换
-            volume = str(float(additional_solvent) * 1000)
+            # 直接使用毫升(mL)
+            volume = str(float(additional_solvent))
         elif volume is None:
             raise ValueError("必须提供 volume 或 solvents 参数之一")
 
@@ -402,7 +402,7 @@ class BioyondReactionStation(BioyondWorkstation):
         }
 
         self.pending_task_params.append(params)
-        print(f"成功添加液体进料溶剂参数: material={assign_material_name}->ID:{material_id}, volume={volume}μL")
+        print(f"成功添加液体进料溶剂参数: material={assign_material_name}->ID:{material_id}, volume={volume}mL")
         print(f"当前队列长度: {len(self.pending_task_params)}")
         return json.dumps({"suc": True})
 
@@ -426,7 +426,7 @@ class BioyondReactionStation(BioyondWorkstation):
 
         Args:
             assign_material_name: 物料名称
-            volume_formula: 分液公式(μL),如果提供则直接使用,否则自动计算
+            volume_formula: 分液公式(mL),如果提供则直接使用,否则自动计算
             x_value: 手工输入的x值,格式如 "1-2-3"
             feeding_order_data: feeding_order JSON字符串或对象,用于获取m二酐值
             extracted_actuals: 从报告提取的实际加料量JSON字符串,包含actualTargetWeigh和actualVolume
@@ -435,7 +435,7 @@ class BioyondReactionStation(BioyondWorkstation):
             torque_variation: 是否观察(NO=1, YES=2)
             temperature: 温度(C)
 
-        自动公式模板: 1000*(m二酐-x)*V二酐滴定/m二酐滴定
+        自动公式模板: (m二酐-x)*V二酐滴定/m二酐滴定
         其中:
         - m二酐滴定 = actualTargetWeigh (从extracted_actuals获取)
         - V二酐滴定 = actualVolume (从extracted_actuals获取)
@@ -525,9 +525,9 @@ class BioyondReactionStation(BioyondWorkstation):
                 if m_anhydride_titration is None or v_anhydride_titration is None:
                     raise ValueError(f"实际加料量数据不完整: actualTargetWeigh={m_anhydride_titration}, actualVolume={v_anhydride_titration}")
 
-                # 3. 构建公式: 1000*(m二酐-x)*V二酐滴定/m二酐滴定
+                # 3. 构建公式: (m二酐-x)*V二酐滴定/m二酐滴定
                 # x_value 格式如 "{{1-2-3}}",保留完整格式(包括花括号)直接替换到公式中
-                volume_formula = f"1000*({m_anhydride}-{x_value})*{v_anhydride_titration}/{m_anhydride_titration}"
+                volume_formula = f"({m_anhydride}-{x_value})*{v_anhydride_titration}/{m_anhydride_titration}"
 
                 print(f"自动生成滴定公式: {volume_formula}")
                 print(f"  m二酐={m_anhydride}, x={x_value}, V二酐滴定={v_anhydride_titration}, m二酐滴定={m_anhydride_titration}")
@@ -558,7 +558,7 @@ class BioyondReactionStation(BioyondWorkstation):
         }
 
         self.pending_task_params.append(params)
-        print(f"成功添加液体进料滴定参数: volume={volume_formula}μL, material={assign_material_name}->ID:{material_id}")
+        print(f"成功添加液体进料滴定参数: volume={volume_formula}mL, material={assign_material_name}->ID:{material_id}")
         print(f"当前队列长度: {len(self.pending_task_params)}")
         return json.dumps({"suc": True})
 
@@ -1032,7 +1032,7 @@ class BioyondReactionStation(BioyondWorkstation):
         }
 
         self.pending_task_params.append(params)
-        print(f"成功添加液体进料烧杯参数: volume={volume}μL, material={assign_material_name}->ID:{material_id}")
+        print(f"成功添加液体进料烧杯参数: volume={volume}mL, material={assign_material_name}->ID:{material_id}")
         print(f"当前队列长度: {len(self.pending_task_params)}")
         return json.dumps({"suc": True})
 
@@ -1049,7 +1049,7 @@ class BioyondReactionStation(BioyondWorkstation):
 
         Args:
             assign_material_name: 物料名称(液体种类)
-            volume: 分液量(μL)
+            volume: 分液量(mL)
             titration_type: 是否滴定(NO=1, YES=2)
             time: 观察时间(分钟)
             torque_variation: 是否观察(NO=1, YES=2)
@@ -1093,7 +1093,7 @@ class BioyondReactionStation(BioyondWorkstation):
         }
 
         self.pending_task_params.append(params)
-        print(f"成功添加滴回去参数: material={assign_material_name}->ID:{material_id}, volume={volume}μL")
+        print(f"成功添加滴回去参数: material={assign_material_name}->ID:{material_id}, volume={volume}mL")
         print(f"当前队列长度: {len(self.pending_task_params)}")
         return json.dumps({"suc": True})
 

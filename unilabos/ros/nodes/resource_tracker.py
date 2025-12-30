@@ -146,8 +146,20 @@ class ResourceDictInstance(object):
             content["data"] = {}
         if not content.get("extra"):  # MagicCode
             content["extra"] = {}
-        if "pose" not in content:
-            content["pose"] = content.pop("position", {})
+        if "position" in content:
+            pose = content.get("pose",{})
+            if "position" not in pose :
+                if "position" in content["position"]:
+                    pose["position"] = content["position"]["position"]
+                else:
+                    pose["position"] = {"x": 0, "y": 0, "z": 0}
+            if "size" not in pose:
+                pose["size"] = {
+                    "width": content["config"].get("size_x", 0), 
+                    "height": content["config"].get("size_y", 0), 
+                    "depth": content["config"].get("size_z", 0)
+                }
+            content["pose"] = pose
         return ResourceDictInstance(ResourceDict.model_validate(content))
 
     def get_plr_nested_dict(self) -> Dict[str, Any]:
@@ -436,7 +448,7 @@ class ResourceTreeSet(object):
         from pylabrobot.utils.object_parsing import find_subclass
 
         # 类型映射
-        TYPE_MAP = {"plate": "Plate", "well": "Well", "deck": "Deck", "container": "RegularContainer"}
+        TYPE_MAP = {"plate": "Plate", "well": "Well", "deck": "Deck", "container": "RegularContainer", "tip_spot": "TipSpot"}
 
         def collect_node_data(node: ResourceDictInstance, name_to_uuid: dict, all_states: dict, name_to_extra: dict):
             """一次遍历收集 name_to_uuid, all_states 和 name_to_extra"""

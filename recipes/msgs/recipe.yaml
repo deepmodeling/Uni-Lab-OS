@@ -1,6 +1,6 @@
 package:
   name: ros-humble-unilabos-msgs
-  version: 0.10.12
+  version: 0.10.13
 source:
   path: ../../unilabos_msgs
   target_directory: src

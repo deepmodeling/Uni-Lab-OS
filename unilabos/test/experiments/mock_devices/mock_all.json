@@ -8,7 +8,7 @@
             ],
             "parent": null,  
             "type": "device",  
-            "class": "mock_chiller",  
+            "class": "virtual_heatchill",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  
@@ -49,7 +49,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_filter",  
+            "class": "virtual_filter",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  
@@ -80,7 +80,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_heater",  
+            "class": "virtual_heatchill",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  
@@ -108,7 +108,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_pump",  
+            "class": "virtual_transfer_pump",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  
@@ -147,7 +147,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_rotavap",  
+            "class": "virtual_rotavap",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  
@@ -175,7 +175,7 @@
             "children": [],
             "parent": null,
             "type": "device",
-            "class": "mock_separator",
+            "class": "virtual_separator",
             "position": {
                 "x": 620.6111111111111,
                 "y": 171,
@@ -213,7 +213,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_solenoid_valve",  
+            "class": "virtual_solenoid_valve",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  
@@ -233,7 +233,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_stirrer_new",  
+            "class": "virtual_stirrer",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  
@@ -261,7 +261,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_stirrer",  
+            "class": "virtual_stirrer",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  
@@ -289,7 +289,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_vacuum",  
+            "class": "virtual_vacuum_pump",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  

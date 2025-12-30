@@ -4497,6 +4497,9 @@ liquid_handler:
         simulator:
           default: false
           type: boolean
+        total_height:
+          default: 310
+          type: number
       required:
       - backend
       - deck
@@ -7547,6 +7550,35 @@ liquid_handler.prcxi:
           title: custom_delay参数
           type: object
         type: UniLabJsonCommandAsync
+      auto-heater_action:
+        feedback: {}
+        goal: {}
+        goal_default:
+          temperature: null
+          time: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                temperature:
+                  type: number
+                time:
+                  type: integer
+              required:
+              - temperature
+              - time
+              type: object
+            result: {}
+          required:
+          - goal
+          title: heater_action参数
+          type: object
+        type: UniLabJsonCommandAsync
       auto-iter_tips:
         feedback: {}
         goal: {}
@@ -7688,6 +7720,43 @@ liquid_handler.prcxi:
           title: set_group参数
           type: object
         type: UniLabJsonCommand
+      auto-shaker_action:
+        feedback: {}
+        goal: {}
+        goal_default:
+          amplitude: null
+          is_wait: null
+          module_no: null
+          time: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                amplitude:
+                  type: integer
+                is_wait:
+                  type: boolean
+                module_no:
+                  type: integer
+                time:
+                  type: integer
+              required:
+              - time
+              - module_no
+              - amplitude
+              - is_wait
+              type: object
+            result: {}
+          required:
+          - goal
+          title: shaker_action参数
+          type: object
+        type: UniLabJsonCommandAsync
       auto-touch_tip:
         feedback: {}
         goal: {}
@@ -8347,6 +8416,341 @@ liquid_handler.prcxi:
           title: LiquidHandlerMix
           type: object
         type: LiquidHandlerMix
+      move_plate:
+        feedback: {}
+        goal:
+          destination_offset: destination_offset
+          drop_direction: drop_direction
+          get_direction: get_direction
+          intermediate_locations: intermediate_locations
+          pickup_direction: pickup_direction
+          pickup_offset: pickup_offset
+          plate: plate
+          put_direction: put_direction
+          resource_offset: resource_offset
+          to: to
+        goal_default:
+          destination_offset:
+            x: 0.0
+            y: 0.0
+            z: 0.0
+          drop_direction: ''
+          get_direction: ''
+          intermediate_locations:
+          - x: 0.0
+            y: 0.0
+            z: 0.0
+          pickup_direction: ''
+          pickup_distance_from_top: 0.0
+          pickup_offset:
+            x: 0.0
+            y: 0.0
+            z: 0.0
+          plate:
+            category: ''
+            children: []
+            config: ''
+            data: ''
+            id: ''
+            name: ''
+            parent: ''
+            pose:
+              orientation:
+                w: 1.0
+                x: 0.0
+                y: 0.0
+                z: 0.0
+              position:
+                x: 0.0
+                y: 0.0
+                z: 0.0
+            sample_id: ''
+            type: ''
+          put_direction: ''
+          resource_offset:
+            x: 0.0
+            y: 0.0
+            z: 0.0
+          to:
+            category: ''
+            children: []
+            config: ''
+            data: ''
+            id: ''
+            name: ''
+            parent: ''
+            pose:
+              orientation:
+                w: 1.0
+                x: 0.0
+                y: 0.0
+                z: 0.0
+              position:
+                x: 0.0
+                y: 0.0
+                z: 0.0
+            sample_id: ''
+            type: ''
+        handles: {}
+        placeholder_keys:
+          plate: unilabos_resources
+          to: unilabos_resources
+        result:
+          name: name
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: LiquidHandlerMovePlate_Feedback
+              type: object
+            goal:
+              properties:
+                destination_offset:
+                  properties:
+                    x:
+                      type: number
+                    y:
+                      type: number
+                    z:
+                      type: number
+                  required:
+                  - x
+                  - y
+                  - z
+                  title: destination_offset
+                  type: object
+                drop_direction:
+                  type: string
+                get_direction:
+                  type: string
+                intermediate_locations:
+                  items:
+                    properties:
+                      x:
+                        type: number
+                      y:
+                        type: number
+                      z:
+                        type: number
+                    required:
+                    - x
+                    - y
+                    - z
+                    title: intermediate_locations
+                    type: object
+                  type: array
+                pickup_direction:
+                  type: string
+                pickup_distance_from_top:
+                  type: number
+                pickup_offset:
+                  properties:
+                    x:
+                      type: number
+                    y:
+                      type: number
+                    z:
+                      type: number
+                  required:
+                  - x
+                  - y
+                  - z
+                  title: pickup_offset
+                  type: object
+                plate:
+                  properties:
+                    category:
+                      type: string
+                    children:
+                      items:
+                        type: string
+                      type: array
+                    config:
+                      type: string
+                    data:
+                      type: string
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    parent:
+                      type: string
+                    pose:
+                      properties:
+                        orientation:
+                          properties:
+                            w:
+                              type: number
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          - w
+                          title: orientation
+                          type: object
+                        position:
+                          properties:
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          title: position
+                          type: object
+                      required:
+                      - position
+                      - orientation
+                      title: pose
+                      type: object
+                    sample_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - id
+                  - name
+                  - sample_id
+                  - children
+                  - parent
+                  - type
+                  - category
+                  - pose
+                  - config
+                  - data
+                  title: plate
+                  type: object
+                put_direction:
+                  type: string
+                resource_offset:
+                  properties:
+                    x:
+                      type: number
+                    y:
+                      type: number
+                    z:
+                      type: number
+                  required:
+                  - x
+                  - y
+                  - z
+                  title: resource_offset
+                  type: object
+                to:
+                  properties:
+                    category:
+                      type: string
+                    children:
+                      items:
+                        type: string
+                      type: array
+                    config:
+                      type: string
+                    data:
+                      type: string
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    parent:
+                      type: string
+                    pose:
+                      properties:
+                        orientation:
+                          properties:
+                            w:
+                              type: number
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          - w
+                          title: orientation
+                          type: object
+                        position:
+                          properties:
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          title: position
+                          type: object
+                      required:
+                      - position
+                      - orientation
+                      title: pose
+                      type: object
+                    sample_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - id
+                  - name
+                  - sample_id
+                  - children
+                  - parent
+                  - type
+                  - category
+                  - pose
+                  - config
+                  - data
+                  title: to
+                  type: object
+              required:
+              - plate
+              - to
+              - intermediate_locations
+              - resource_offset
+              - pickup_offset
+              - destination_offset
+              - pickup_direction
+              - drop_direction
+              - get_direction
+              - put_direction
+              - pickup_distance_from_top
+              title: LiquidHandlerMovePlate_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: LiquidHandlerMovePlate_Result
+              type: object
+          required:
+          - goal
+          title: LiquidHandlerMovePlate
+          type: object
+        type: LiquidHandlerMovePlate
       pick_up_tips:
         feedback: {}
         goal:

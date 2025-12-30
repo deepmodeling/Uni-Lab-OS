@@ -706,7 +706,20 @@ class HostNode(BaseROS2DeviceNode):
             raise ValueError(f"ActionClient {action_id} not found.")
 
         action_client: ActionClient = self._action_clients[action_id]
+        # 遍历action_kwargs下的所有子dict，将"sample_uuid"的值赋给"sample_id"
+        def assign_sample_id(obj):
+            if isinstance(obj, dict):
+                if "sample_uuid" in obj:
+                    obj["sample_id"] = obj["sample_uuid"]
+                    obj.pop("sample_uuid")
+                for k,v in obj.items():
+                    if k != "unilabos_extra":
+                        assign_sample_id(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    assign_sample_id(item)
 
+        assign_sample_id(action_kwargs)
         goal_msg = convert_to_ros_msg(action_client._action_type.Goal(), action_kwargs)
 
         self.lab_logger().info(f"[Host Node] Sending goal for {action_id}: {goal_msg}")
@@ -1146,13 +1159,10 @@ class HostNode(BaseROS2DeviceNode):
     def _resource_get_callback(self, request: SerialCommand.Request, response: SerialCommand.Response):
         """
         获取资源回调
-
         处理获取资源请求，从桥接器或本地查询资源数据
-
         Args:
             request: 包含资源ID的请求对象
             response: 响应对象
-
         Returns:
             响应对象，包含查询到的资源
         """

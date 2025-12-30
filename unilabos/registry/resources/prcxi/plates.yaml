@@ -1,6 +1,7 @@
 PRCXI_48_DeepWell:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_48_DeepWell
     type: pylabrobot
@@ -11,8 +12,9 @@ PRCXI_48_DeepWell:
   registry_type: resource
   version: 1.0.0
 PRCXI_96_DeepWell:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_96_DeepWell
     type: pylabrobot
@@ -23,8 +25,9 @@ PRCXI_96_DeepWell:
   registry_type: resource
   version: 1.0.0
 PRCXI_AGenBio_4_troughplate:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_AGenBio_4_troughplate
     type: pylabrobot
@@ -35,8 +38,9 @@ PRCXI_AGenBio_4_troughplate:
   registry_type: resource
   version: 1.0.0
 PRCXI_BioER_96_wellplate:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_BioER_96_wellplate
     type: pylabrobot
@@ -47,8 +51,9 @@ PRCXI_BioER_96_wellplate:
   registry_type: resource
   version: 1.0.0
 PRCXI_BioRad_384_wellplate:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_BioRad_384_wellplate
     type: pylabrobot
@@ -59,8 +64,9 @@ PRCXI_BioRad_384_wellplate:
   registry_type: resource
   version: 1.0.0
 PRCXI_CellTreat_96_wellplate:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_CellTreat_96_wellplate
     type: pylabrobot
@@ -71,8 +77,9 @@ PRCXI_CellTreat_96_wellplate:
   registry_type: resource
   version: 1.0.0
 PRCXI_PCR_Plate_200uL_nonskirted:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Plate_200uL_nonskirted
     type: pylabrobot
@@ -83,8 +90,9 @@ PRCXI_PCR_Plate_200uL_nonskirted:
   registry_type: resource
   version: 1.0.0
 PRCXI_PCR_Plate_200uL_semiskirted:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Plate_200uL_semiskirted
     type: pylabrobot
@@ -95,8 +103,9 @@ PRCXI_PCR_Plate_200uL_semiskirted:
   registry_type: resource
   version: 1.0.0
 PRCXI_PCR_Plate_200uL_skirted:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Plate_200uL_skirted
     type: pylabrobot
@@ -107,8 +116,9 @@ PRCXI_PCR_Plate_200uL_skirted:
   registry_type: resource
   version: 1.0.0
 PRCXI_nest_12_troughplate:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_nest_12_troughplate
     type: pylabrobot
@@ -119,8 +129,9 @@ PRCXI_nest_12_troughplate:
   registry_type: resource
   version: 1.0.0
 PRCXI_nest_1_troughplate:
-  category: 
+  category:
   - prcxi
+  - plates
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_nest_1_troughplate
     type: pylabrobot

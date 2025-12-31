@@ -187,8 +187,10 @@ def test_transfer_liquid_single_channel_one_to_many(prcxi_simulation: Simulation
         pytest.skip("仅在单通道配置下运行")
 
     handler = prcxi_simulation.handler
-    source = _pick_wells(prcxi_simulation.source_plate, start=20, count=1)[0]
-    targets = _pick_wells(prcxi_simulation.target_plate, start=30, count=3)
+    for well in prcxi_simulation.source_plate.children + prcxi_simulation.target_plate.children:
+        _ensure_unilabos_extra(well)
+    source = prcxi_simulation.source_plate.children[0] 
+    targets = prcxi_simulation.target_plate["A1:E1"]
     _assign_sample_uuid(source, "one_to_many_source")
     offsets = _zero_offsets(max(len(targets), 1))
 
@@ -198,8 +200,8 @@ def test_transfer_liquid_single_channel_one_to_many(prcxi_simulation: Simulation
             targets=targets,
             tip_racks=[prcxi_simulation.tip_rack],
             use_channels=[0],
-            asp_vols=60.0,
-            dis_vols=[15.0, 20.0, 25.0],
+            asp_vols=10.0,
+            dis_vols=[2.0, 2.0, 2.0, 2.0, 2.0],
             offsets=offsets,
             mix_times=0,
         )
@@ -214,8 +216,10 @@ def test_transfer_liquid_single_channel_many_to_one(prcxi_simulation: Simulation
         pytest.skip("仅在单通道配置下运行")
 
     handler = prcxi_simulation.handler
-    sources = _pick_wells(prcxi_simulation.source_plate, start=40, count=3)
-    target = _pick_wells(prcxi_simulation.target_plate, start=50, count=1)[0]
+    for well in prcxi_simulation.source_plate.children + prcxi_simulation.target_plate.children:
+        _ensure_unilabos_extra(well)
+    sources = prcxi_simulation.source_plate[0:3]
+    target = prcxi_simulation.target_plate.children[4]
     for idx, src in enumerate(sources):
         _assign_sample_uuid(src, f"many_to_one_{idx}")
     offsets = _zero_offsets(max(len(sources), len([target])))
@@ -243,8 +247,10 @@ def test_transfer_liquid_eight_channel_batches(prcxi_simulation: SimulationConte
         pytest.skip("仅在八通道配置下运行")
 
     handler = prcxi_simulation.handler
-    sources = _pick_wells(prcxi_simulation.source_plate, start=0, count=8)
-    targets = _pick_wells(prcxi_simulation.target_plate, start=16, count=8)
+    for well in prcxi_simulation.source_plate.children + prcxi_simulation.target_plate.children:
+        _ensure_unilabos_extra(well)
+    sources = prcxi_simulation.source_plate[0:8]
+    targets = prcxi_simulation.target_plate[16:24]
     for idx, src in enumerate(sources):
         _assign_sample_uuid(src, f"batch_{idx}")
     offsets = _zero_offsets(len(targets))
@@ -275,8 +281,10 @@ def test_transfer_liquid_mix_stages(prcxi_simulation: SimulationContext, mix_sta
         pytest.skip("仅在单通道配置下运行")
 
     handler = prcxi_simulation.handler
-    target = _pick_wells(prcxi_simulation.target_plate, start=70, count=1)[0]
-    sources = _pick_wells(prcxi_simulation.source_plate, start=80, count=2)
+    for well in prcxi_simulation.source_plate.children + prcxi_simulation.target_plate.children:
+        _ensure_unilabos_extra(well)
+    target = prcxi_simulation.target_plate[70]
+    sources = prcxi_simulation.source_plate[80:82]
     for idx, src in enumerate(sources):
         _assign_sample_uuid(src, f"mix_stage_{mix_stage}_{idx}")
 
@@ -301,8 +309,8 @@ def test_transfer_liquid_mix_stages(prcxi_simulation: SimulationContext, mix_sta
         pytest.skip("仅在八通道配置下运行")
 
     handler = prcxi_simulation.handler
-    sources = _pick_wells(prcxi_simulation.source_plate, start=0, count=8)
-    targets = _pick_wells(prcxi_simulation.target_plate, start=16, count=8)
+    sources = prcxi_simulation.source_plate[0:8]
+    targets = prcxi_simulation.target_plate[16:24]
     for idx, src in enumerate(sources):
         _assign_sample_uuid(src, f"batch_{idx}")
     offsets = _zero_offsets(len(targets))

@@ -1576,6 +1576,12 @@ class OpcUaClient(BaseClient):
         try:
             logger.info(f"开始从CSV文件加载节点: {csv_path}")
             
+            # 如果是相对路径，转换为相对于 AI4M.py 文件所在目录的绝对路径
+            if not os.path.isabs(csv_path):
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                csv_path = os.path.join(current_dir, csv_path)
+                logger.info(f"相对路径已转换为绝对路径: {csv_path}")
+            
             # 检查文件是否存在
             if not os.path.exists(csv_path):
                 logger.error(f"CSV文件不存在: {csv_path}")

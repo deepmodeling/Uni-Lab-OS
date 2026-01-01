@@ -11,7 +11,7 @@
             "class": "AI4M_station",
             "config": {
                 "url": "opc.tcp://127.0.0.1:49320",
-                "csv_path": "C:\\Users\\Roy\\Desktop\\DPLC\\Uni-Lab-OS\\unilabos\\devices\\workstation\\AI4M\\opcua_nodes_AI4M_sim.csv",
+                "csv_path": "opcua_nodes_AI4M_sim.csv",
                 "deck": {
                     "data": {
                         "_resource_child_name": "AI4M_deck",

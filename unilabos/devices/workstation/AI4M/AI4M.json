@@ -9,6 +9,18 @@
             "parent": null,
             "type": "device",
             "class": "AI4M_station",
+            "position": {
+                "x": 250,
+                "y": 0,
+                "z": 0
+            },
+            "pose": {
+                "size": {
+                    "width": 1217,
+                    "height": 1580,
+                    "depth": 2670
+                }
+            },
             "config": {
                 "url": "opc.tcp://127.0.0.1:49320",
                 "csv_path": "opcua_nodes_AI4M_sim.csv",
@@ -31,7 +43,7 @@
             "type": "deck",
             "class": "AI4M_deck",
             "position": {
-                "x": 0,
+                "x": 250,
                 "y": 0,
                 "z": 0
             },

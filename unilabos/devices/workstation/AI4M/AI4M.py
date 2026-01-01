@@ -1161,7 +1161,18 @@ class OpcUaClient(BaseClient):
         if deck is None:
             self.deck = AI4M_deck(setup=True)
         elif isinstance(deck, dict):
-            self.deck = AI4M_deck(setup=True)
+            # 从 dict 中提取参数创建 deck
+            deck_config = deck.get('config', {})
+            deck_size_x = deck_config.get('size_x', 1217.0)
+            deck_size_y = deck_config.get('size_y', 1580.0)
+            deck_size_z = deck_config.get('size_z', 2670.0)
+            self.deck = AI4M_deck(
+                size_x=deck_size_x,
+                size_y=deck_size_y,
+                size_z=deck_size_z,
+                setup=True
+            )
+            logger.info(f"Deck 尺寸设置: {deck_size_x}x{deck_size_y}x{deck_size_z} mm")
         elif hasattr(deck, 'children'):
             self.deck = deck
         else:

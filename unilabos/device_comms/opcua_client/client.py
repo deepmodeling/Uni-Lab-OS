@@ -5,7 +5,6 @@ from typing import Any, Union, List, Dict, Callable, Optional, Tuple
 from pydantic import BaseModel
 
 from opcua import Client, ua
-from opcua.ua import NodeClass
 import pandas as pd
 import os
 
@@ -13,7 +12,7 @@ from unilabos.device_comms.opcua_client.node.uniopcua import Base as OpcUaNodeBa
 from unilabos.device_comms.opcua_client.node.uniopcua import Variable, Method, NodeType, DataType
 from unilabos.device_comms.universal_driver import UniversalDriver
 from unilabos.utils.log import logger
-
+from unilabos.devices.workstation.post_process.decks import post_process_deck
 
 class OpcUaNode(BaseModel):
     name: str
@@ -117,6 +116,8 @@ class BaseClient(UniversalDriver):
     _variables_to_find: Dict[str, Dict[str, Any]] = {}
     _name_mapping: Dict[str, str] = {}  # 英文名到中文名的映射
     _reverse_mapping: Dict[str, str] = {}  # 中文名到英文名的映射
+    # 直接缓存已找到的 ua.Node 对象，避免因字符串 NodeId 格式导致订阅失败
+    _found_node_objects: Dict[str, Any] = {}
 
     def __init__(self):
         super().__init__()
@@ -125,6 +126,9 @@ class BaseClient(UniversalDriver):
         # 初始化名称映射字典
         self._name_mapping = {}
         self._reverse_mapping = {}
+        # 初始化线程锁（在子类中会被重新创建，这里提供默认实现）
+        import threading
+        self._client_lock = threading.RLock()
 
     def _set_client(self, client: Optional[Client]) -> None:
         if client is None:
@@ -152,14 +156,23 @@ class BaseClient(UniversalDriver):
         if not self.client:
             raise ValueError('client is not connected')
             
-        logger.info('开始查找节点...')
+        logger.info(f'开始查找 {len(self._variables_to_find)} 个节点...')
         try:
             # 获取根节点
             root = self.client.get_root_node()
             objects = root.get_child(["0:Objects"])
             
+            # 记录查找前的状态
+            before_count = len(self._node_registry)
+            
             # 查找节点
             self._find_nodes_recursive(objects)
+            
+            # 记录查找后的状态
+            after_count = len(self._node_registry)
+            newly_found = after_count - before_count
+            
+            logger.info(f"本次查找新增 {newly_found} 个节点，当前共 {after_count} 个")
             
             # 检查是否所有节点都已找到
             not_found = []
@@ -168,9 +181,13 @@ class BaseClient(UniversalDriver):
                     not_found.append(var_name)
             
             if not_found:
-                logger.warning(f"以下节点未找到: {', '.join(not_found)}")
+                logger.warning(f"⚠ 以下 {len(not_found)} 个节点未找到: {', '.join(not_found[:10])}{'...' if len(not_found) > 10 else ''}")
+                logger.warning(f"提示：请检查这些节点名称是否与服务器的 BrowseName 完全匹配（包括大小写、空格等）")
+                # 提供一个示例来帮助调试
+                if not_found:
+                    logger.info(f"尝试在服务器中查找第一个未找到的节点 '{not_found[0]}' 的相似节点...")
             else:
-                logger.info("所有节点均已找到")
+                logger.info(f"✓ 所有 {len(self._variables_to_find)} 个节点均已找到并注册")
                 
         except Exception as e:
             logger.error(f"查找节点失败: {e}")
@@ -188,17 +205,20 @@ class BaseClient(UniversalDriver):
                 var_info = self._variables_to_find[node_name]
                 node_type = var_info.get("node_type")
                 data_type = var_info.get("data_type")
+                node_id_str = str(node.nodeid)
                 
                 # 根据节点类型创建相应的对象
                 if node_type == NodeType.VARIABLE:
-                    self._node_registry[node_name] = Variable(self.client, node_name, str(node.nodeid), data_type)
-                    logger.info(f"找到变量节点: {node_name}")
+                    self._node_registry[node_name] = Variable(self.client, node_name, node_id_str, data_type)
+                    logger.info(f"✓ 找到变量节点: '{node_name}', NodeId: {node_id_str}, DataType: {data_type}")
+                    # 缓存真实的 ua.Node 对象用于订阅
+                    self._found_node_objects[node_name] = node
                 elif node_type == NodeType.METHOD:
                     # 对于方法节点，需要获取父节点ID
                     parent_node = node.get_parent()
                     parent_node_id = str(parent_node.nodeid)
-                    self._node_registry[node_name] = Method(self.client, node_name, str(node.nodeid), parent_node_id, data_type)
-                    logger.info(f"找到方法节点: {node_name}")
+                    self._node_registry[node_name] = Method(self.client, node_name, node_id_str, parent_node_id, data_type)
+                    logger.info(f"✓ 找到方法节点: '{node_name}', NodeId: {node_id_str}, ParentId: {parent_node_id}")
             
             # 递归处理子节点
             for child in node.get_children():
@@ -296,13 +316,17 @@ class BaseClient(UniversalDriver):
         if name in self._name_mapping:
             chinese_name = self._name_mapping[name]
             if chinese_name in self._node_registry:
-                return self._node_registry[chinese_name]
+                node = self._node_registry[chinese_name]
+                logger.debug(f"使用节点: '{name}' -> '{chinese_name}', NodeId: {node.node_id}")
+                return node
             elif chinese_name in self._variables_to_find:
                 logger.warning(f"节点 {chinese_name} (英文名: {name}) 尚未找到，尝试重新查找")
                 if self.client:
                     self._find_nodes()
                     if chinese_name in self._node_registry:
-                        return self._node_registry[chinese_name]
+                        node = self._node_registry[chinese_name]
+                        logger.info(f"重新查找成功: '{chinese_name}', NodeId: {node.node_id}")
+                        return node
                 raise ValueError(f'节点 {chinese_name} (英文名: {name}) 未注册或未找到')
         
         # 直接使用原始名称查找
@@ -312,9 +336,14 @@ class BaseClient(UniversalDriver):
                 if self.client:
                     self._find_nodes()
                     if name in self._node_registry:
-                        return self._node_registry[name]
+                        node = self._node_registry[name]
+                        logger.info(f"重新查找成功: '{name}', NodeId: {node.node_id}")
+                        return node
+            logger.error(f"❌ 节点 '{name}' 未注册或未找到。已注册节点: {list(self._node_registry.keys())[:5]}...")
             raise ValueError(f'节点 {name} 未注册或未找到')
-        return self._node_registry[name]
+        node = self._node_registry[name]
+        logger.debug(f"使用节点: '{name}', NodeId: {node.node_id}")
+        return node
 
     def get_node_registry(self) -> Dict[str, OpcUaNodeBase]:
         return self._node_registry
@@ -335,12 +364,13 @@ class BaseClient(UniversalDriver):
             return self
 
         logger.info(f'开始注册 {len(node_list)} 个节点...')
+        new_nodes_count = 0
         for node in node_list:
             if node is None:
                 continue
                 
             if node.name in self._node_registry:
-                logger.info(f'节点 {node.name} 已存在')
+                logger.debug(f'节点 "{node.name}" 已存在于注册表')
                 exist = self._node_registry[node.name]
                 if exist.type != node.node_type:
                     raise ValueError(f'节点 {node.name} 类型 {node.node_type} 与已存在的类型 {exist.type} 不一致')
@@ -351,9 +381,10 @@ class BaseClient(UniversalDriver):
                 "node_type": node.node_type,
                 "data_type": node.data_type
             }
-            logger.info(f'添加节点 {node.name} 到待查找列表')
+            new_nodes_count += 1
+            logger.debug(f'添加节点 "{node.name}" ({node.node_type}) 到待查找列表')
 
-        logger.info('节点注册完成')
+        logger.info(f'节点注册完成：新增 {new_nodes_count} 个待查找节点，总计 {len(self._variables_to_find)} 个')
         
         # 如果客户端已连接，立即开始查找
         if self.client:
@@ -470,7 +501,7 @@ class BaseClient(UniversalDriver):
                     val = result_dict.get("value")
                     err = result_dict.get("error")
                     
-                    print(f"读取 {node_name} 返回值 = {val} (类型: {type(val).__name__}), 错误 = {err}")
+                    print(f"读取 {node_name} 返回值 = {val} (类型: {type(val).__name__}, 错误 = {err}")
                     return val, err
                 except Exception as e:
                     print(f"解析读取结果失败: {e}, 原始结果: {result_str}")
@@ -516,17 +547,27 @@ class BaseClient(UniversalDriver):
         """
         if write_nodes is None:
             raise ValueError("必须提供write_nodes参数")
-            
+
         def execute_init_function(use_node: Callable[[str], OpcUaNodeBase]) -> bool:
+            """根据 _workflow_params 为各节点写入真实数值。
+
+            约定:
+            - write_nodes 为 list 时: 节点名 == 参数名，从 _workflow_params[node_name] 取值；
+            - write_nodes 为 dict 时:
+                * value 为字符串且在 _workflow_params 中: 当作参数名去取值；
+                * 否则 value 视为常量直接写入。
+            """
+
+            params = getattr(self, "_workflow_params", {}) or {}
+
             if isinstance(write_nodes, list):
-                # 处理节点列表
+                # 节点列表形式: 节点名与参数名一致
                 for node_name in write_nodes:
-                    # 尝试从参数中获取同名参数的值
-                    current_value = True  # 默认值
-                    if hasattr(self, '_workflow_params') and node_name in self._workflow_params:
-                        current_value = self._workflow_params[node_name]
-                        print(f"初始化函数: 从参数获取值 {node_name} = {current_value}")
-                    
+                    if node_name not in params:
+                        print(f"初始化函数: 参数中未找到 {node_name}, 跳过写入")
+                        continue
+
+                    current_value = params[node_name]
                     print(f"初始化函数: 写入节点 {node_name} = {current_value}")
                     input_json = json.dumps({"node_name": node_name, "value": current_value})
                     result_str = self.write_node(input_json)
@@ -538,14 +579,15 @@ class BaseClient(UniversalDriver):
                     except Exception as e:
                         print(f"初始化函数: 解析写入结果失败: {e}, 原始结果: {result_str}")
             elif isinstance(write_nodes, dict):
-                # 处理节点字典，使用指定的值
+                # 映射形式: 节点名 -> 参数名或常量
                 for node_name, node_value in write_nodes.items():
-                    # 检查值是否是字符串类型的参数名
-                    current_value = node_value
-                    if isinstance(node_value, str) and hasattr(self, '_workflow_params') and node_value in self._workflow_params:
-                        current_value = self._workflow_params[node_value]
+                    if isinstance(node_value, str) and node_value in params:
+                        current_value = params[node_value]
                         print(f"初始化函数: 从参数获取值 {node_value} = {current_value}")
-                    
+                    else:
+                        current_value = node_value
+                        print(f"初始化函数: 使用常量值 写入 {node_name} = {current_value}")
+
                     print(f"初始化函数: 写入节点 {node_name} = {current_value}")
                     input_json = json.dumps({"node_name": node_name, "value": current_value})
                     result_str = self.write_node(input_json)
@@ -672,20 +714,20 @@ class BaseClient(UniversalDriver):
             condition_nodes: 条件节点列表 [节点名1, 节点名2]
         """
         def execute_start_function(use_node: Callable[[str], OpcUaNodeBase]) -> bool:
-            # 直接处理写入节点
+            """开始函数: 写入触发节点, 然后轮询条件节点直到满足停止条件。"""
+
+            params = getattr(self, "_workflow_params", {}) or {}
+
+            # 先处理写入节点（触发位等）
             if write_nodes:
                 if isinstance(write_nodes, list):
-                    # 处理节点列表，默认值都是True
-                    for i, node_name in enumerate(write_nodes):
-                        # 尝试获取与节点对应的参数值
-                        param_name = f"write_{i}"
-                        
-                        # 获取参数值（如果有）
-                        current_value = True  # 默认值
-                        if hasattr(self, '_workflow_params') and param_name in self._workflow_params:
-                            current_value = self._workflow_params[param_name]
-                        
-                        # 直接写入节点
+                    # 列表形式: 节点名与参数名一致, 若无参数则直接写 True
+                    for node_name in write_nodes:
+                        if node_name in params:
+                            current_value = params[node_name]
+                        else:
+                            current_value = True
+
                         print(f"直接写入节点 {node_name} = {current_value}")
                         input_json = json.dumps({"node_name": node_name, "value": current_value})
                         result_str = self.write_node(input_json)
@@ -697,14 +739,13 @@ class BaseClient(UniversalDriver):
                         except Exception as e:
                             print(f"解析直接写入结果失败: {e}, 原始结果: {result_str}")
                 elif isinstance(write_nodes, dict):
-                    # 处理节点字典，值是指定的
+                    # 字典形式: 节点名 -> 常量值(如 True/False)
                     for node_name, node_value in write_nodes.items():
-                        # 尝试获取参数值（如果节点名与参数名匹配）
-                        current_value = node_value  # 使用指定的默认值
-                        if hasattr(self, '_workflow_params') and node_name in self._workflow_params:
-                            current_value = self._workflow_params[node_name]
-                        
-                        # 直接写入节点
+                        if node_name in params:
+                            current_value = params[node_name]
+                        else:
+                            current_value = node_value
+
                         print(f"直接写入节点 {node_name} = {current_value}")
                         input_json = json.dumps({"node_name": node_name, "value": current_value})
                         result_str = self.write_node(input_json)
@@ -732,6 +773,7 @@ class BaseClient(UniversalDriver):
                         # 直接读取节点
                         result_str = self.read_node(node_name)
                         try:
+                            time.sleep(1)
                             result_str = result_str.replace("'", '"')
                             result_dict = json.loads(result_str)
                             read_res = result_dict.get("value")
@@ -1035,31 +1077,33 @@ class BaseClient(UniversalDriver):
         读取节点值的便捷方法
         返回包含result字段的字典
         """
-        try:
-            node = self.use_node(node_name)
-            value, error = node.read()
-            
-            # 创建结果字典
-            result = {
-                    "value": value,
-                    "error": error,
-                    "node_name": node_name,
-                    "timestamp": time.time()
-            }
-            
-            # 返回JSON字符串
-            return json.dumps(result)
-        except Exception as e:
-            logger.error(f"读取节点 {node_name} 失败: {e}")
-            # 创建错误结果字典
-            result = {
-                    "value": None,
-                    "error": True,
-                    "node_name": node_name,
-                    "error_message": str(e),
-                    "timestamp": time.time()
-            }
-            return json.dumps(result)
+        # 使用锁保护客户端访问
+        with self._client_lock:
+            try:
+                node = self.use_node(node_name)
+                value, error = node.read()
+                
+                # 创建结果字典
+                result = {
+                        "value": value,
+                        "error": error,
+                        "node_name": node_name,
+                        "timestamp": time.time()
+                }
+                
+                # 返回JSON字符串
+                return json.dumps(result)
+            except Exception as e:
+                logger.error(f"读取节点 {node_name} 失败: {e}")
+                # 创建错误结果字典
+                result = {
+                        "value": None,
+                        "error": True,
+                        "node_name": node_name,
+                        "error_message": str(e),
+                        "timestamp": time.time()
+                }
+                return json.dumps(result)
             
     def write_node(self, json_input: str) -> str:
         """
@@ -1068,47 +1112,49 @@ class BaseClient(UniversalDriver):
         eg:'{\"node_name\":\"反应罐号码\",\"value\":\"2\"}'
         返回JSON格式的字符串，包含操作结果
         """
-        try:
-            # 解析JSON格式的输入
-            if not isinstance(json_input, str):
-                json_input = str(json_input)
-                
+        # 使用锁保护客户端访问
+        with self._client_lock:
             try:
-                input_data = json.loads(json_input)
-                if not isinstance(input_data, dict):
-                    return json.dumps({"error": True, "error_message": "输入必须是包含node_name和value的JSON对象", "success": False})
+                # 解析JSON格式的输入
+                if not isinstance(json_input, str):
+                    json_input = str(json_input)
                     
-                # 从JSON中提取节点名称和值
-                node_name = input_data.get("node_name")
-                value = input_data.get("value")
+                try:
+                    input_data = json.loads(json_input)
+                    if not isinstance(input_data, dict):
+                        return json.dumps({"error": True, "error_message": "输入必须是包含node_name和value的JSON对象", "success": False})
+                        
+                    # 从JSON中提取节点名称和值
+                    node_name = input_data.get("node_name")
+                    value = input_data.get("value")
+                    
+                    if node_name is None:
+                        return json.dumps({"error": True, "error_message": "JSON中缺少node_name字段", "success": False})
+                except json.JSONDecodeError as e:
+                    return json.dumps({"error": True, "error_message": f"JSON解析错误: {str(e)}", "success": False})
                 
-                if node_name is None:
-                    return json.dumps({"error": True, "error_message": "JSON中缺少node_name字段", "success": False})
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": True, "error_message": f"JSON解析错误: {str(e)}", "success": False})
-            
-            node = self.use_node(node_name)
-            error = node.write(value)
-            
-            # 创建结果字典
-            result = {
-                "value": value,
-                "error": error,
-                "node_name": node_name,
-                "timestamp": time.time(),
-                "success": not error
-            }
-            
-            return json.dumps(result)
-        except Exception as e:
-            logger.error(f"写入节点失败: {e}")
-            result = {
-                "error": True,
-                "error_message": str(e),
-                "timestamp": time.time(),
-                "success": False
-            }
-            return json.dumps(result)
+                node = self.use_node(node_name)
+                error = node.write(value)
+                
+                # 创建结果字典
+                result = {
+                    "value": value,
+                    "error": error,
+                    "node_name": node_name,
+                    "timestamp": time.time(),
+                    "success": not error
+                }
+                
+                return json.dumps(result)
+            except Exception as e:
+                logger.error(f"写入节点失败: {e}")
+                result = {
+                    "error": True,
+                    "error_message": str(e),
+                    "timestamp": time.time(),
+                    "success": False
+                }
+                return json.dumps(result)
             
     def call_method(self, node_name: str, *args) -> Tuple[Any, bool]:
         """
@@ -1128,13 +1174,50 @@ class BaseClient(UniversalDriver):
 
 
 class OpcUaClient(BaseClient):
-    def __init__(self, url: str, config_path: str = None, username: str = None, password: str = None, refresh_interval: float = 1.0):
+    def __init__(
+        self, 
+        url: str, 
+        deck: Optional[Union[post_process_deck, Dict[str, Any]]] = None,
+        config_path: str = None, 
+        username: str = None, 
+        password: str = None,
+        use_subscription: bool = True,
+        cache_timeout: float = 5.0,
+        subscription_interval: int = 500,
+        *args,
+        **kwargs,
+    ):
         # 降低OPCUA库的日志级别
         import logging
         logging.getLogger("opcua").setLevel(logging.WARNING)
         
         super().__init__()
+
+        # ===== 关键修改：参照 BioyondWorkstation 处理 deck =====
+
+        super().__init__()
+
+        # 处理 deck 参数
+        if deck is None:
+            self.deck = post_process_deck(setup=True)
+        elif isinstance(deck, dict):
+            self.deck = post_process_deck(setup=True)
+        elif hasattr(deck, 'children'):
+            self.deck = deck
+        else:
+            raise ValueError(f"deck 参数类型不支持: {type(deck)}")
+
+        if self.deck is None:
+            raise ValueError("Deck 配置不能为空")
+
+        # 统计仓库信息
+        warehouse_count = 0
+        if hasattr(self.deck, 'children'):
+            warehouse_count = len(self.deck.children)
+            logger.info(f"Deck 初始化完成，加载 {warehouse_count} 个资源")
         
+        
+        # OPC UA 客户端初始化
         client = Client(url)
         
         if username and password:
@@ -1142,145 +1225,392 @@ class OpcUaClient(BaseClient):
             client.set_password(password)
             
         self._set_client(client)
-        self._connect()
+
+        # 订阅相关属性
+        self._use_subscription = use_subscription
+        self._subscription = None
+        self._subscription_handles = {}
+        self._subscription_interval = subscription_interval
         
-        # 节点值缓存和刷新相关属性
-        self._node_values = {}  # 缓存节点值
-        self._refresh_interval = refresh_interval  # 刷新间隔(秒)
-        self._refresh_running = False
-        self._refresh_thread = None
+        # 缓存相关属性
+        self._node_values = {}  # 修改为支持时间戳的缓存结构
+        self._cache_timeout = cache_timeout
+        
+        # 连接状态监控
+        self._connection_check_interval = 30.0  # 连接检查间隔(秒)
+        self._connection_monitor_running = False
+        self._connection_monitor_thread = None
+        
+        # 添加线程锁，保护OPC UA客户端的并发访问
+        import threading
+        self._client_lock = threading.RLock()
+        
+        # 连接到服务器
+        self._connect()
         
         # 如果提供了配置文件路径，则加载配置并注册工作流
         if config_path:
             self.load_config(config_path)
             
-        # 启动节点值刷新线程
-        self.start_node_refresh()
+        # 启动连接监控
+        self._start_connection_monitor()
         
-    def _register_nodes_as_attributes(self):
-        """将所有节点注册为实例属性，可以通过self.node_name访问"""
-        for node_name, node in self._node_registry.items():
-            # 检查是否有对应的英文名称
-            eng_name = self._reverse_mapping.get(node_name)
-            if eng_name:
-                # 如果有对应的英文名称，使用英文名称作为属性名
-                attr_name = eng_name
-            else:
-                # 如果没有对应的英文名称，使用原始名称，但替换空格和特殊字符
-                attr_name = node_name.replace(' ', '_').replace('-', '_')
-            
-            # 创建获取节点值的属性方法，使用中文名称获取节点值
-            def create_property_getter(node_key):
-                def getter(self):
-                    # 优先从缓存获取值
-                    if node_key in self._node_values:
-                        return self._node_values[node_key]
-                    # 缓存中没有则直接读取
-                    value, _ = self.use_node(node_key).read()
-                    return value
-                return getter
-            
-            # 使用property装饰器将方法注册为类属性
-            setattr(OpcUaClient, attr_name, property(create_property_getter(node_name)))
-            logger.info(f"已注册节点 '{node_name}' 为属性 '{attr_name}'")
-    
-    def refresh_node_values(self):
-        """刷新所有节点的值到缓存"""
-        if not self.client:
-            logger.warning("客户端未初始化，无法刷新节点值")
-            return
-            
-        try:
-            # 简单检查连接状态，如果不连接会抛出异常
-            self.client.get_namespace_array()
-        except Exception as e:
-            logger.warning(f"客户端连接异常，无法刷新节点值: {e}")
-            return
-            
-        for node_name, node in self._node_registry.items():
+
+    def _connect(self) -> None:
+        """连接到OPC UA服务器"""
+        logger.info('尝试连接到 OPC UA 服务器...')
+        if self.client:
             try:
-                if hasattr(node, 'read'):
-                    value, error = node.read()
-                    if not error:
-                        self._node_values[node_name] = value
-                        #logger.debug(f"已刷新节点 '{node_name}' 的值: {value}")
-            except Exception as e:
-                logger.error(f"刷新节点 '{node_name}' 失败: {e}")
+                self.client.connect()
+                logger.info('✓ 客户端已连接!')
                 
-    def get_node_value(self, name):
-        """获取节点值，支持中文名和英文名"""
-        # 如果提供的是英文名，转换为中文名
+                # 连接后开始查找节点
+                if self._variables_to_find:
+                    self._find_nodes()
+                    
+                # 如果启用订阅模式，设置订阅
+                if self._use_subscription:
+                    self._setup_subscriptions()
+                else:
+                    logger.info("订阅模式已禁用，将使用按需读取模式")
+                    
+            except Exception as e:
+                logger.error(f'客户端连接失败: {e}')
+                raise
+        else:
+            raise ValueError('客户端未初始化')
+    
+    class SubscriptionHandler:
+        """freeopcua订阅处理器：必须实现 datachange_notification 方法"""
+        def __init__(self, outer):
+            self.outer = outer
+
+        def datachange_notification(self, node, val, data):
+            # 委托给外层类的处理函数
+            try:
+                self.outer._on_subscription_datachange(node, val, data)
+            except Exception as e:
+                logger.error(f"订阅数据回调处理失败: {e}")
+
+        # 可选：事件通知占位，避免库调用时报缺失
+        def event_notification(self, event):
+            pass
+
+    def _setup_subscriptions(self):
+        """设置 OPC UA 订阅"""
+        if not self.client or not self._use_subscription:
+            return
+            
+        with self._client_lock:
+            try:
+                logger.info(f"开始设置订阅 (发布间隔: {self._subscription_interval}ms)...")
+                
+                # 创建订阅
+                handler = OpcUaClient.SubscriptionHandler(self)
+                self._subscription = self.client.create_subscription(
+                    self._subscription_interval,
+                    handler
+                )
+                
+                # 为所有变量节点创建监控项
+                subscribed_count = 0
+                skipped_count = 0
+                
+                for node_name, node in self._node_registry.items():
+                    # 只为变量节点创建订阅
+                    if node.type == NodeType.VARIABLE and node.node_id:
+                        try:
+                            # 优先使用在查找阶段缓存的真实 ua.Node 对象
+                            ua_node = self._found_node_objects.get(node_name)
+                            if ua_node is None:
+                                ua_node = self.client.get_node(node.node_id)
+                            handle = self._subscription.subscribe_data_change(ua_node)
+                            self._subscription_handles[node_name] = handle
+                            subscribed_count += 1
+                            logger.debug(f"✓ 已订阅节点: {node_name}")
+                        except Exception as e:
+                            skipped_count += 1
+                            logger.warning(f"✗ 订阅节点 {node_name} 失败: {e}")
+                    else:
+                        skipped_count += 1
+                        
+                logger.info(f"订阅设置完成: 成功 {subscribed_count} 个, 跳过 {skipped_count} 个")
+                
+            except Exception as e:
+                logger.error(f"设置订阅失败: {e}")
+                traceback.print_exc()
+                # 订阅失败时回退到按需读取模式
+                self._use_subscription = False
+                logger.warning("订阅模式设置失败，已自动切换到按需读取模式")
+    
+    def _on_subscription_datachange(self, node, val, data):
+        """订阅数据变化处理器（供内部 SubscriptionHandler 调用）"""
+        try:
+            node_id = str(node.nodeid)
+            current_time = time.time()
+            # 查找对应的节点名称
+            for node_name, node_obj in self._node_registry.items():
+                if node_obj.node_id == node_id:
+                    self._node_values[node_name] = {
+                        'value': val,
+                        'timestamp': current_time,
+                        'source': 'subscription'
+                    }
+                    logger.debug(f"订阅更新: {node_name} = {val}")
+                    break
+        except Exception as e:
+            logger.error(f"处理订阅数据失败: {e}")
+    
+    def get_node_value(self, name, use_cache=True, force_read=False):
+        """
+        获取节点值（智能缓存版本）
+        
+        参数:
+            name: 节点名称（支持中文名或英文名）
+            use_cache: 是否使用缓存
+            force_read: 是否强制从服务器读取（忽略缓存）
+        """
+        # 处理名称映射
         if name in self._name_mapping:
             chinese_name = self._name_mapping[name]
-            # 优先从缓存获取值
-            if chinese_name in self._node_values:
-                return self._node_values[chinese_name]
-            # 缓存中没有则直接读取
-            value, _ = self.use_node(chinese_name).read()
-            return value
-        # 如果提供的是中文名，直接使用
         elif name in self._node_registry:
-            # 优先从缓存获取值
-            if name in self._node_values:
-                return self._node_values[name]
-            # 缓存中没有则直接读取
-            value, _ = self.use_node(name).read()
-            return value
+            chinese_name = name
         else:
             raise ValueError(f"未找到名称为 '{name}' 的节点")
+        
+        # 如果强制读取，直接从服务器读取
+        if force_read:
+            with self._client_lock:
+                value, _ = self.use_node(chinese_name).read()
+                # 更新缓存
+                self._node_values[chinese_name] = {
+                    'value': value,
+                    'timestamp': time.time(),
+                    'source': 'forced_read'
+                }
+                return value
+        
+        # 检查缓存
+        if use_cache and chinese_name in self._node_values:
+            cache_entry = self._node_values[chinese_name]
+            cache_age = time.time() - cache_entry['timestamp']
+            
+            # 如果是订阅模式，缓存永久有效（由订阅更新）
+            # 如果是按需读取模式，检查缓存超时
+            if cache_entry.get('source') == 'subscription' or cache_age < self._cache_timeout:
+                logger.debug(f"从缓存读取: {chinese_name} = {cache_entry['value']} (age: {cache_age:.2f}s, source: {cache_entry.get('source', 'unknown')})")
+                return cache_entry['value']
+        
+        # 缓存过期或不存在，从服务器读取
+        with self._client_lock:
+            try:
+                value, error = self.use_node(chinese_name).read()
+                if not error:
+                    # 更新缓存
+                    self._node_values[chinese_name] = {
+                        'value': value,
+                        'timestamp': time.time(),
+                        'source': 'on_demand_read'
+                    }
+                    return value
+                else:
+                    logger.warning(f"读取节点 {chinese_name} 失败")
+                    return None
+            except Exception as e:
+                logger.error(f"读取节点 {chinese_name} 出错: {e}")
+                return None
     
     def set_node_value(self, name, value):
-        """设置节点值，支持中文名和英文名"""
-        # 如果提供的是英文名，转换为中文名
+        """
+        设置节点值
+        写入成功后会立即更新本地缓存
+        """
+        # 处理名称映射
         if name in self._name_mapping:
             chinese_name = self._name_mapping[name]
-            node = self.use_node(chinese_name)
-        # 如果提供的是中文名，直接使用
         elif name in self._node_registry:
-            node = self.use_node(name)
+            chinese_name = name
         else:
             raise ValueError(f"未找到名称为 '{name}' 的节点")
         
-        # 写入值
-        error = node.write(value)
-        if not error:
-            # 更新缓存
-            if hasattr(node, 'name'):
-                self._node_values[node.name] = value
-            return True
+        with self._client_lock:
+            try:
+                node = self.use_node(chinese_name)
+                error = node.write(value)
+                
+                if not error:
+                    # 写入成功，立即更新缓存
+                    self._node_values[chinese_name] = {
+                        'value': value,
+                        'timestamp': time.time(),
+                        'source': 'write'
+                    }
+                    logger.debug(f"写入成功: {chinese_name} = {value}")
+                    return True
+                else:
+                    logger.warning(f"写入节点 {chinese_name} 失败")
+                    return False
+            except Exception as e:
+                logger.error(f"写入节点 {chinese_name} 出错: {e}")
+                return False
+    
+    def _check_connection(self) -> bool:
+        """检查连接状态"""
+        try:
+            with self._client_lock:
+                if self.client:
+                    # 尝试获取命名空间数组来验证连接
+                    self.client.get_namespace_array()
+                    return True
+        except Exception as e:
+            logger.warning(f"连接检查失败: {e}")
+            return False
         return False
     
-    def _refresh_worker(self):
-        """节点值刷新线程的工作函数"""
-        self._refresh_running = True
-        logger.info(f"节点值刷新线程已启动，刷新间隔: {self._refresh_interval}秒")
+    def _connection_monitor_worker(self):
+        """连接监控线程工作函数"""
+        self._connection_monitor_running = True
+        logger.info(f"连接监控线程已启动 (检查间隔: {self._connection_check_interval}秒)")
         
-        while self._refresh_running:
+        reconnect_attempts = 0
+        max_reconnect_attempts = 5
+        
+        while self._connection_monitor_running:
             try:
-                self.refresh_node_values()
+                # 检查连接状态
+                if not self._check_connection():
+                    logger.warning("检测到连接断开，尝试重新连接...")
+                    reconnect_attempts += 1
+                    
+                    if reconnect_attempts <= max_reconnect_attempts:
+                        try:
+                            # 尝试重新连接
+                            with self._client_lock:
+                                if self.client:
+                                    try:
+                                        self.client.disconnect()
+                                    except:
+                                        pass
+                                    
+                                    self.client.connect()
+                                    logger.info("✓ 重新连接成功")
+                                    
+                                    # 重新设置订阅
+                                    if self._use_subscription:
+                                        self._setup_subscriptions()
+                                    
+                                    reconnect_attempts = 0
+                        except Exception as e:
+                            logger.error(f"重新连接失败 (尝试 {reconnect_attempts}/{max_reconnect_attempts}): {e}")
+                            time.sleep(5)  # 重连失败后等待5秒
+                    else:
+                        logger.error(f"达到最大重连次数 ({max_reconnect_attempts})，停止重连")
+                        self._connection_monitor_running = False
+                else:
+                    # 连接正常，重置重连计数
+                    reconnect_attempts = 0
+                
             except Exception as e:
-                logger.error(f"节点值刷新过程出错: {e}")
+                logger.error(f"连接监控出错: {e}")
             
-            # 等待下一次刷新
-            time.sleep(self._refresh_interval)
+            # 等待下次检查
+            time.sleep(self._connection_check_interval)
     
-    def start_node_refresh(self):
-        """启动节点值刷新线程"""
-        if self._refresh_thread is not None and self._refresh_thread.is_alive():
-            logger.warning("节点值刷新线程已在运行")
+    def _start_connection_monitor(self):
+        """启动连接监控线程"""
+        if self._connection_monitor_thread is not None and self._connection_monitor_thread.is_alive():
+            logger.warning("连接监控线程已在运行")
             return
             
         import threading
-        self._refresh_thread = threading.Thread(target=self._refresh_worker, daemon=True)
-        self._refresh_thread.start()
+        self._connection_monitor_thread = threading.Thread(
+            target=self._connection_monitor_worker, 
+            daemon=True,
+            name="OpcUaConnectionMonitor"
+        )
+        self._connection_monitor_thread.start()
+    
+    def _stop_connection_monitor(self):
+        """停止连接监控线程"""
+        self._connection_monitor_running = False
+        if self._connection_monitor_thread and self._connection_monitor_thread.is_alive():
+            self._connection_monitor_thread.join(timeout=2.0)
+            logger.info("连接监控线程已停止")
+    
+    def read_node(self, node_name: str) -> str:
+        """
+        读取节点值的便捷方法（使用缓存）
+        返回JSON格式字符串
+        """
+        try:
+            # 使用get_node_value方法，自动处理缓存
+            value = self.get_node_value(node_name, use_cache=True)
+            
+            # 获取缓存信息
+            chinese_name = self._name_mapping.get(node_name, node_name)
+            cache_info = self._node_values.get(chinese_name, {})
+            
+            result = {
+                "value": value,
+                "error": False,
+                "node_name": node_name,
+                "timestamp": time.time(),
+                "cache_age": time.time() - cache_info.get('timestamp', time.time()),
+                "source": cache_info.get('source', 'unknown')
+            }
+            
+            return json.dumps(result)
+        except Exception as e:
+            logger.error(f"读取节点 {node_name} 失败: {e}")
+            result = {
+                "value": None,
+                "error": True,
+                "node_name": node_name,
+                "error_message": str(e),
+                "timestamp": time.time()
+            }
+            return json.dumps(result)
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        current_time = time.time()
+        stats = {
+            'total_cached_nodes': len(self._node_values),
+            'subscription_nodes': 0,
+            'on_demand_nodes': 0,
+            'expired_nodes': 0,
+            'cache_timeout': self._cache_timeout,
+            'using_subscription': self._use_subscription
+        }
         
-    def stop_node_refresh(self):
-        """停止节点值刷新线程"""
-        self._refresh_running = False
-        if self._refresh_thread and self._refresh_thread.is_alive():
-            self._refresh_thread.join(timeout=2.0)
-            logger.info("节点值刷新线程已停止")
+        for node_name, cache_entry in self._node_values.items():
+            source = cache_entry.get('source', 'unknown')
+            cache_age = current_time - cache_entry['timestamp']
+            
+            if source == 'subscription':
+                stats['subscription_nodes'] += 1
+            elif source in ['on_demand_read', 'forced_read', 'write']:
+                stats['on_demand_nodes'] += 1
+                
+            if cache_age > self._cache_timeout:
+                stats['expired_nodes'] += 1
         
+        return stats
+    
+    def print_cache_stats(self):
+        """打印缓存统计信息"""
+        stats = self.get_cache_stats()
+        print("\n" + "="*80)
+        print("缓存统计信息")
+        print("="*80)
+        print(f"总缓存节点数: {stats['total_cached_nodes']}")
+        print(f"订阅模式: {'启用' if stats['using_subscription'] else '禁用'}")
+        print(f"  - 订阅更新节点: {stats['subscription_nodes']}")
+        print(f"  - 按需读取节点: {stats['on_demand_nodes']}")
+        print(f"  - 已过期节点: {stats['expired_nodes']}")
+        print(f"缓存超时时间: {stats['cache_timeout']}秒")
+        print("="*80 + "\n")
+    
     def load_config(self, config_path: str) -> None:
         """从JSON配置文件加载并注册工作流"""
         try:
@@ -1289,29 +1619,39 @@ class OpcUaClient(BaseClient):
             
             # 处理节点注册
             if "register_node_list_from_csv_path" in config_data:
-                # 获取配置文件所在目录
                 config_dir = os.path.dirname(os.path.abspath(config_path))
                 
-                # 处理CSV路径，如果是相对路径，则相对于配置文件所在目录
                 if "path" in config_data["register_node_list_from_csv_path"]:
                     csv_path = config_data["register_node_list_from_csv_path"]["path"]
                     if not os.path.isabs(csv_path):
-                        # 转换为绝对路径
                         csv_path = os.path.join(config_dir, csv_path)
                         config_data["register_node_list_from_csv_path"]["path"] = csv_path
                 
-                # 直接使用字典
                 self.register_node_list_from_csv_path(**config_data["register_node_list_from_csv_path"])
+                
+                if self.client and self._variables_to_find:
+                    logger.info("CSV加载完成，开始查找服务器节点...")
+                    self._find_nodes()
             
             # 处理工作流创建
             if "create_flow" in config_data:
-                # 直接传递字典列表
                 self.create_workflow_from_json(config_data["create_flow"])
-                # 将工作流注册为实例方法
                 self.register_workflows_as_methods()
                 
             # 将所有节点注册为属性
             self._register_nodes_as_attributes()
+            
+            # 打印统计信息
+            found_count = len(self._node_registry)
+            total_count = len(self._variables_to_find)
+            if found_count < total_count:
+                logger.warning(f"节点查找完成：找到 {found_count}/{total_count} 个节点")
+            else:
+                logger.info(f"✓ 节点查找完成：所有 {found_count} 个节点均已找到")
+            
+            # 如果使用订阅模式，重新设置订阅（确保新节点被订阅）
+            if self._use_subscription and found_count > 0:
+                self._setup_subscriptions()
                 
             logger.info(f"成功从 {config_path} 加载配置")
         except Exception as e:
@@ -1319,12 +1659,71 @@ class OpcUaClient(BaseClient):
             traceback.print_exc()
     
     def disconnect(self):
-        # 停止刷新线程
-        self.stop_node_refresh()
+        """断开连接并清理资源"""
+        logger.info("正在断开连接...")
         
+        # 停止连接监控
+        self._stop_connection_monitor()
+        
+        # 删除订阅
+        if self._subscription:
+            try:
+                with self._client_lock:
+                    self._subscription.delete()
+                    logger.info("订阅已删除")
+            except Exception as e:
+                logger.warning(f"删除订阅失败: {e}")
+        
+        # 断开客户端连接
         if self.client:
-            self.client.disconnect()
-            logger.info("OPC UA client disconnected")
+            try:
+                with self._client_lock:
+                    self.client.disconnect()
+                logger.info("✓ OPC UA 客户端已断开连接")
+            except Exception as e:
+                logger.error(f"断开连接失败: {e}")
+    
+    def _register_nodes_as_attributes(self):
+        """将所有节点注册为实例属性"""
+        for node_name, node in self._node_registry.items():
+            if not node.node_id or node.node_id == "":
+                logger.warning(f"⚠ 节点 '{node_name}' 的 node_id 为空，跳过注册为属性")
+                continue
+                
+            eng_name = self._reverse_mapping.get(node_name)
+            attr_name = eng_name if eng_name else node_name.replace(' ', '_').replace('-', '_')
+            
+            def create_property_getter(node_key):
+                def getter(self):
+                    return self.get_node_value(node_key, use_cache=True)
+                return getter
+            
+            setattr(OpcUaClient, attr_name, property(create_property_getter(node_name)))
+            logger.debug(f"已注册节点 '{node_name}' 为属性 '{attr_name}'")
+
+    def post_init(self, ros_node):
+        """ROS2 节点就绪后的初始化"""
+        if not (hasattr(self, 'deck') and self.deck):
+            return
+            
+        if not (hasattr(ros_node, 'resource_tracker') and ros_node.resource_tracker):
+            logger.warning("resource_tracker 不存在，无法注册 deck")
+            return
+        
+        # 1. 本地注册（必需）
+        ros_node.resource_tracker.add_resource(self.deck)
+        
+        # 2. 上传云端
+        try:
+            from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
+            ROS2DeviceNode.run_async_func(
+                ros_node.update_resource,
+                True,
+                resources=[self.deck]
+            )
+            logger.info("Deck 已上传到云端")
+        except Exception as e:
+            logger.error(f"上传失败: {e}")
 
 
 if __name__ == '__main__':
@@ -1338,8 +1737,8 @@ if __name__ == '__main__':
     # 创建OPC UA客户端并加载配置
     try:
         client = OpcUaClient(
-            url="opc.tcp://localhost:4840/freeopcua/server/",  # 替换为实际的OPC UA服务器地址
-            config_path=config_path  # 传入配置文件路径
+            url="opc.tcp://192.168.1.88:4840/freeopcua/server/",  # 替换为实际的OPC UA服务器地址
+            config_path="D:\\Uni-Lab-OS\\unilabos\\device_comms\\opcua_client\\opcua_huairou.json" # 传入配置文件路径
         )
         
         # 列出所有已注册的工作流
@@ -1349,13 +1748,15 @@ if __name__ == '__main__':
         
         # 测试trigger_grab_action工作流 - 使用英文参数名
         print("\n测试trigger_grab_action工作流 - 使用英文参数名:")
-        client.trigger_grab_action(reaction_tank_number=2, raw_tank_number=3)
+        client.trigger_grab_action(reaction_tank_number=2, raw_tank_number=2)
+        # client.set_node_value("reaction_tank_number", 2)
+
         
         # 读取节点值 - 使用英文节点名
         grab_complete = client.get_node_value("grab_complete")
         reaction_tank = client.get_node_value("reaction_tank_number")
         raw_tank = client.get_node_value("raw_tank_number")
-        
+
         print(f"\n执行后状态检查 (使用英文节点名):")
         print(f" - 抓取完成状态: {grab_complete}")
         print(f" - 当前反应罐号码: {reaction_tank}")
@@ -1376,5 +1777,5 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"错误: {e}")
         traceback.print_exc()
-    
-    
+
+

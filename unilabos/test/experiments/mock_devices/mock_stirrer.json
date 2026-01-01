@@ -6,7 +6,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_stirrer",  
+            "class": "virtual_stirrer",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  

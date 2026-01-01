@@ -1,0 +1,216 @@
+[
+    {
+        "id": "3a1cde21-a4f4-4f95-6221-eaafc2ae6a8d",
+        "typeName": "样品瓶",
+        "code": "0002-00407",
+        "barCode": "",
+        "name": "ODA",
+        "quantity": 25.0,
+        "lockQuantity": 2.0,
+        "unit": "克",
+        "status": 1,
+        "isUse": false,
+        "locations": [],
+        "detail": []
+    },
+    {
+        "id": "3a1cde21-a4f4-7887-9258-e8f8ab7c8a7a",
+        "typeName": "样品板",
+        "code": "0008-00160",
+        "barCode": "",
+        "name": "1010sample",
+        "quantity": 1.0,
+        "lockQuantity": 27.69187,
+        "unit": "块",
+        "status": 1,
+        "isUse": false,
+        "locations": [
+            {
+                "id": "3a14198e-6929-4379-affa-9a2935c17f99",
+                "whid": "3a14198e-6928-121f-7ca6-88ad3ae7e6a0",
+                "whName": "粉末堆栈",
+                "code": "0002-0002",
+                "x": 1,
+                "y": 2,
+                "z": 1,
+                "quantity": 0
+            }
+        ],
+        "detail": [
+            {
+                "id": "3a1cde21-a4f4-0339-f2b6-8e680ad7e8c7",
+                "detailMaterialId": "3a1cde21-a4f4-ab37-f7a2-ecc3bc083e7c",
+                "code": null,
+                "name": "MPDA",
+                "quantity": "10.505",
+                "lockQuantity": "-0.0174",
+                "unit": "克",
+                "x": 2,
+                "y": 1,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cde21-a4f4-a21a-23cf-bb7857b41947",
+                "detailMaterialId": "3a1cde21-a4f4-99c7-55e7-c80c7320e300",
+                "code": null,
+                "name": "ODA",
+                "quantity": "1.795",
+                "lockQuantity": "2.0093",
+                "unit": "克",
+                "x": 1,
+                "y": 1,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cde21-a4f4-af1b-ba0b-2874836800e9",
+                "detailMaterialId": "3a1cde21-a4f4-4f95-6221-eaafc2ae6a8d",
+                "code": null,
+                "name": "ODA",
+                "quantity": "25",
+                "lockQuantity": "2",
+                "unit": "克",
+                "x": 1,
+                "y": 2,
+                "z": 1,
+                "associateId": null
+            }
+        ]
+    },
+    {
+        "id": "3a1cde21-a4f4-99c7-55e7-c80c7320e300",
+        "typeName": "样品瓶",
+        "code": "0002-00406",
+        "barCode": "",
+        "name": "ODA",
+        "quantity": 1.795,
+        "lockQuantity": 2.00927,
+        "unit": "克",
+        "status": 1,
+        "isUse": false,
+        "locations": [],
+        "detail": []
+    },
+    {
+        "id": "3a1cde21-a4f4-ab37-f7a2-ecc3bc083e7c",
+        "typeName": "样品瓶",
+        "code": "0002-00408",
+        "barCode": "",
+        "name": "MPDA",
+        "quantity": 10.505,
+        "lockQuantity": -0.0174,
+        "unit": "克",
+        "status": 1,
+        "isUse": false,
+        "locations": [],
+        "detail": []
+    },
+    {
+        "id": "3a1cdeff-c92a-08f6-c822-732ab734154c",
+        "typeName": "样品板",
+        "code": "0008-00161",
+        "barCode": "",
+        "name": "1010sample2",
+        "quantity": 1.0,
+        "lockQuantity": 3.0,
+        "unit": "块",
+        "status": 1,
+        "isUse": false,
+        "locations": [
+            {
+                "id": "3a14198e-6929-31f0-8a22-0f98f72260df",
+                "whid": "3a14198e-6928-121f-7ca6-88ad3ae7e6a0",
+                "whName": "粉末堆栈",
+                "code": "0002-0001",
+                "x": 1,
+                "y": 1,
+                "z": 1,
+                "quantity": 0
+            }
+        ],
+        "detail": [
+            {
+                "id": "3a1cdeff-c92b-3ace-9623-0bcdef6fa07d",
+                "detailMaterialId": "3a1cdeff-c92b-d084-2a96-5d62746d9321",
+                "code": null,
+                "name": "BTDA1",
+                "quantity": "0.362",
+                "lockQuantity": "14.494",
+                "unit": "克",
+                "x": 1,
+                "y": 1,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cdeff-c92b-856e-f481-792b91b6dbde",
+                "detailMaterialId": "3a1cdeff-c92b-30f2-f907-8f5e2fe0586b",
+                "code": null,
+                "name": "BTDA3",
+                "quantity": "1.935",
+                "lockQuantity": "13.067",
+                "unit": "克",
+                "x": 1,
+                "y": 2,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cdeff-c92b-d144-c5e5-ab9d94e21187",
+                "detailMaterialId": "3a1cdeff-c92b-519f-a70f-0bb71af537a7",
+                "code": null,
+                "name": "BTDA2",
+                "quantity": "1.903",
+                "lockQuantity": "13.035",
+                "unit": "克",
+                "x": 2,
+                "y": 1,
+                "z": 1,
+                "associateId": null
+            }
+        ]
+    },
+    {
+        "id": "3a1cdeff-c92b-30f2-f907-8f5e2fe0586b",
+        "typeName": "样品瓶",
+        "code": "0002-00411",
+        "barCode": "",
+        "name": "BTDA3",
+        "quantity": 1.935,
+        "lockQuantity": 13.067,
+        "unit": "克",
+        "status": 1,
+        "isUse": false,
+        "locations": [],
+        "detail": []
+    },
+    {
+        "id": "3a1cdeff-c92b-519f-a70f-0bb71af537a7",
+        "typeName": "样品瓶",
+        "code": "0002-00410",
+        "barCode": "",
+        "name": "BTDA2",
+        "quantity": 1.903,
+        "lockQuantity": 13.035,
+        "unit": "克",
+        "status": 1,
+        "isUse": false,
+        "locations": [],
+        "detail": []
+    },
+    {
+        "id": "3a1cdeff-c92b-d084-2a96-5d62746d9321",
+        "typeName": "样品瓶",
+        "code": "0002-00409",
+        "barCode": "",
+        "name": "BTDA1",
+        "quantity": 0.362,
+        "lockQuantity": 14.494,
+        "unit": "克",
+        "status": 1,
+        "isUse": false,
+        "locations": [],
+        "detail": []
+    }
+]

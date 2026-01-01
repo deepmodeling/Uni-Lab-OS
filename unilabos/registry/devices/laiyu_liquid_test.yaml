@@ -1,0 +1,585 @@
+xyz_stepper_controller:
+  category:
+  - laiyu_liquid_test
+  class:
+    action_value_mappings:
+      auto-degrees_to_steps:
+        feedback: {}
+        goal: {}
+        goal_default:
+          degrees: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                degrees:
+                  type: number
+              required:
+              - degrees
+              type: object
+            result: {}
+          required:
+          - goal
+          title: degrees_to_steps参数
+          type: object
+        type: UniLabJsonCommand
+      auto-emergency_stop:
+        feedback: {}
+        goal: {}
+        goal_default:
+          axis: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                axis:
+                  type: object
+              required:
+              - axis
+              type: object
+            result: {}
+          required:
+          - goal
+          title: emergency_stop参数
+          type: object
+        type: UniLabJsonCommand
+      auto-enable_all_axes:
+        feedback: {}
+        goal: {}
+        goal_default:
+          enable: true
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                enable:
+                  default: true
+                  type: boolean
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: enable_all_axes参数
+          type: object
+        type: UniLabJsonCommand
+      auto-enable_motor:
+        feedback: {}
+        goal: {}
+        goal_default:
+          axis: null
+          enable: true
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                axis:
+                  type: object
+                enable:
+                  default: true
+                  type: boolean
+              required:
+              - axis
+              type: object
+            result: {}
+          required:
+          - goal
+          title: enable_motor参数
+          type: object
+        type: UniLabJsonCommand
+      auto-home_all_axes:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: home_all_axes参数
+          type: object
+        type: UniLabJsonCommand
+      auto-home_axis:
+        feedback: {}
+        goal: {}
+        goal_default:
+          axis: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                axis:
+                  type: object
+              required:
+              - axis
+              type: object
+            result: {}
+          required:
+          - goal
+          title: home_axis参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_to_position:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acceleration: 1000
+          axis: null
+          position: null
+          precision: 100
+          speed: 5000
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acceleration:
+                  default: 1000
+                  type: integer
+                axis:
+                  type: object
+                position:
+                  type: integer
+                precision:
+                  default: 100
+                  type: integer
+                speed:
+                  default: 5000
+                  type: integer
+              required:
+              - axis
+              - position
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_to_position参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_to_position_degrees:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acceleration: 1000
+          axis: null
+          degrees: null
+          precision: 100
+          speed: 5000
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acceleration:
+                  default: 1000
+                  type: integer
+                axis:
+                  type: object
+                degrees:
+                  type: number
+                precision:
+                  default: 100
+                  type: integer
+                speed:
+                  default: 5000
+                  type: integer
+              required:
+              - axis
+              - degrees
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_to_position_degrees参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_to_position_revolutions:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acceleration: 1000
+          axis: null
+          precision: 100
+          revolutions: null
+          speed: 5000
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acceleration:
+                  default: 1000
+                  type: integer
+                axis:
+                  type: object
+                precision:
+                  default: 100
+                  type: integer
+                revolutions:
+                  type: number
+                speed:
+                  default: 5000
+                  type: integer
+              required:
+              - axis
+              - revolutions
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_to_position_revolutions参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_xyz:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acceleration: 1000
+          speed: 5000
+          x: null
+          y: null
+          z: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acceleration:
+                  default: 1000
+                  type: integer
+                speed:
+                  default: 5000
+                  type: integer
+                x:
+                  type: string
+                y:
+                  type: string
+                z:
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_xyz参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_xyz_degrees:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acceleration: 1000
+          speed: 5000
+          x_deg: null
+          y_deg: null
+          z_deg: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acceleration:
+                  default: 1000
+                  type: integer
+                speed:
+                  default: 5000
+                  type: integer
+                x_deg:
+                  type: string
+                y_deg:
+                  type: string
+                z_deg:
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_xyz_degrees参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_xyz_revolutions:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acceleration: 1000
+          speed: 5000
+          x_rev: null
+          y_rev: null
+          z_rev: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acceleration:
+                  default: 1000
+                  type: integer
+                speed:
+                  default: 5000
+                  type: integer
+                x_rev:
+                  type: string
+                y_rev:
+                  type: string
+                z_rev:
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_xyz_revolutions参数
+          type: object
+        type: UniLabJsonCommand
+      auto-revolutions_to_steps:
+        feedback: {}
+        goal: {}
+        goal_default:
+          revolutions: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                revolutions:
+                  type: number
+              required:
+              - revolutions
+              type: object
+            result: {}
+          required:
+          - goal
+          title: revolutions_to_steps参数
+          type: object
+        type: UniLabJsonCommand
+      auto-set_speed_mode:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acceleration: 1000
+          axis: null
+          speed: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acceleration:
+                  default: 1000
+                  type: integer
+                axis:
+                  type: object
+                speed:
+                  type: integer
+              required:
+              - axis
+              - speed
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_speed_mode参数
+          type: object
+        type: UniLabJsonCommand
+      auto-steps_to_degrees:
+        feedback: {}
+        goal: {}
+        goal_default:
+          steps: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                steps:
+                  type: integer
+              required:
+              - steps
+              type: object
+            result: {}
+          required:
+          - goal
+          title: steps_to_degrees参数
+          type: object
+        type: UniLabJsonCommand
+      auto-steps_to_revolutions:
+        feedback: {}
+        goal: {}
+        goal_default:
+          steps: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                steps:
+                  type: integer
+              required:
+              - steps
+              type: object
+            result: {}
+          required:
+          - goal
+          title: steps_to_revolutions参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stop_all_axes:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stop_all_axes参数
+          type: object
+        type: UniLabJsonCommand
+      auto-wait_for_completion:
+        feedback: {}
+        goal: {}
+        goal_default:
+          axis: null
+          timeout: 30.0
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                axis:
+                  type: object
+                timeout:
+                  default: 30.0
+                  type: number
+              required:
+              - axis
+              type: object
+            result: {}
+          required:
+          - goal
+          title: wait_for_completion参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.liquid_handling.laiyu.drivers.xyz_stepper_driver:XYZStepperController
+    status_types:
+      all_positions: dict
+      motor_status: unilabos.devices.liquid_handling.laiyu.drivers.xyz_stepper_driver:MotorPosition
+    type: python
+  config_info: []
+  description: 新XYZ控制器
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        baudrate:
+          default: 115200
+          type: integer
+        port:
+          type: string
+        timeout:
+          default: 1.0
+          type: number
+      required:
+      - port
+      type: object
+    data:
+      properties:
+        all_positions:
+          type: object
+        motor_status:
+          type: object
+      required:
+      - motor_status
+      - all_positions
+      type: object
+  registry_type: device
+  version: 1.0.0

@@ -1,0 +1,13 @@
+PRCXI_EP_Adapter:
+  category:
+  - prcxi
+  - tube_racks
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_EP_Adapter
+    type: pylabrobot
+  description: 'ep适配器 (Code: 1)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

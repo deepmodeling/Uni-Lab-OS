@@ -389,7 +389,7 @@ class MessageProcessor:
         self.is_running = True
         self.thread = threading.Thread(target=self._run, daemon=True, name="MessageProcessor")
         self.thread.start()
-        logger.info("[MessageProcessor] Started")
+        logger.trace("[MessageProcessor] Started")
 
     def stop(self) -> None:
         """停止消息处理线程"""
@@ -438,7 +438,7 @@ class MessageProcessor:
                     self.connected = True
                     self.reconnect_count = 0
 
-                    logger.info(f"[MessageProcessor] Connected to {self.websocket_url}")
+                    logger.trace(f"[MessageProcessor] Connected to {self.websocket_url}")
 
                     # 启动发送协程
                     send_task = asyncio.create_task(self._send_handler())
@@ -503,7 +503,7 @@ class MessageProcessor:
 
     async def _send_handler(self):
         """处理发送队列中的消息"""
-        logger.debug("[MessageProcessor] Send handler started")
+        logger.trace("[MessageProcessor] Send handler started")
 
         try:
             while self.connected and self.websocket:
@@ -939,7 +939,7 @@ class QueueProcessor:
         # 事件通知机制
         self.queue_update_event = threading.Event()
 
-        logger.info("[QueueProcessor] Initialized")
+        logger.trace("[QueueProcessor] Initialized")
 
     def set_websocket_client(self, websocket_client: "WebSocketClient"):
         """设置WebSocket客户端引用"""
@@ -954,7 +954,7 @@ class QueueProcessor:
         self.is_running = True
         self.thread = threading.Thread(target=self._run, daemon=True, name="QueueProcessor")
         self.thread.start()
-        logger.info("[QueueProcessor] Started")
+        logger.trace("[QueueProcessor] Started")
 
     def stop(self) -> None:
         """停止队列处理线程"""
@@ -965,7 +965,7 @@ class QueueProcessor:
 
     def _run(self):
         """运行队列处理主循环"""
-        logger.debug("[QueueProcessor] Queue processor started")
+        logger.trace("[QueueProcessor] Queue processor started")
 
         while self.is_running:
             try:
@@ -1175,7 +1175,6 @@ class WebSocketClient(BaseCommunicationClient):
         else:
             url = f"{scheme}://{parsed.netloc}/api/v1/ws/schedule"
 
-        logger.debug(f"[WebSocketClient] URL: {url}")
         return url
 
     def start(self) -> None:
@@ -1188,13 +1187,11 @@ class WebSocketClient(BaseCommunicationClient):
             logger.error("[WebSocketClient] WebSocket URL not configured")
             return
 
-        logger.info(f"[WebSocketClient] Starting connection to {self.websocket_url}")
-
         # 启动两个核心线程
         self.message_processor.start()
         self.queue_processor.start()
 
-        logger.info("[WebSocketClient] All threads started")
+        logger.trace("[WebSocketClient] All threads started")
 
     def stop(self) -> None:
         """停止WebSocket客户端"""
@@ -1243,7 +1240,7 @@ class WebSocketClient(BaseCommunicationClient):
             },
         }
         self.message_processor.send_message(message)
-        logger.debug(f"[WebSocketClient] Device status published: {device_id}.{property_name}")
+        logger.trace(f"[WebSocketClient] Device status published: {device_id}.{property_name}")
 
     def publish_job_status(
         self, feedback_data: dict, item: QueueItem, status: str, return_info: Optional[dict] = None
@@ -1314,3 +1311,19 @@ class WebSocketClient(BaseCommunicationClient):
             logger.info(f"[WebSocketClient] Job {job_log} cancelled successfully")
         else:
             logger.warning(f"[WebSocketClient] Failed to cancel job {job_log}")
+
+    def publish_host_ready(self) -> None:
+        """发布host_node ready信号"""
+        if self.is_disabled or not self.is_connected():
+            logger.debug("[WebSocketClient] Not connected, cannot publish host ready signal")
+            return
+
+        message = {
+            "action": "host_node_ready",
+            "data": {
+                "status": "ready",
+                "timestamp": time.time(),
+            },
+        }
+        self.message_processor.send_message(message)
+        logger.info("[WebSocketClient] Host node ready signal published")

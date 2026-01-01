@@ -317,45 +317,6 @@ unilab --help
 
 如果所有命令都正常输出，说明开发环境配置成功！
 
-### 开发工具推荐
-
-#### IDE
-
-- **PyCharm Professional**: 强大的 Python IDE，支持远程调试
-- **VS Code**: 轻量级，配合 Python 扩展使用
-- **Vim/Emacs**: 适合终端开发
-
-#### 推荐的 VS Code 扩展
-
-- Python
-- Pylance
-- ROS
-- URDF
-- YAML
-
-#### 调试工具
-
-```bash
-# 安装调试工具
-pip install ipdb pytest pytest-cov -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-
-# 代码质量检查
-pip install black flake8 mypy -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-```
-
-### 设置 pre-commit 钩子（可选）
-
-```bash
-# 安装 pre-commit
-pip install pre-commit -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-
-# 设置钩子
-pre-commit install
-
-# 手动运行检查
-pre-commit run --all-files
-```
-
 ---
 
 ## 验证安装

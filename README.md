@@ -39,7 +39,9 @@ Uni-Lab-OS recommends using `mamba` for environment management. Choose the appro
 
 ```bash
 # Create new environment
-mamba create -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
+mamba create -n unilab python=3.11.11
+mamba activate unilab
+mamba install -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
 ```
 
 ## Install Dev Uni-Lab-OS

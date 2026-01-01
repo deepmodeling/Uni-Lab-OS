@@ -1,0 +1,181 @@
+[
+    {
+        "id": "3a1c62c4-c3d2-b803-b72d-7f1153ffef3b",
+        "typeName": "试剂瓶",
+        "code": "0004-00050",
+        "barCode": "",
+        "name": "NMP",
+        "quantity": 287.16699029126215,
+        "lockQuantity": 285.16699029126215,
+        "unit": "毫升",
+        "status": 1,
+        "isUse": false,
+        "locations": [
+            {
+                "id": "3a14198c-c2d0-efce-0939-69ca5a7dfd39",
+                "whid": "3a14198c-c2cc-0290-e086-44a428fba248",
+                "whName": "试剂堆栈",
+                "code": "0001-0008",
+                "x": 2,
+                "y": 4,
+                "z": 1,
+                "quantity": 0
+            }
+        ],
+        "detail": []
+    },
+    {
+        "id": "3a1cdefe-0e03-1bc1-1296-dae1905c4108",
+        "typeName": "试剂瓶",
+        "code": "0004-00052",
+        "barCode": "",
+        "name": "NMP",
+        "quantity": 386.8990291262136,
+        "lockQuantity": 45.89902912621359,
+        "unit": "毫升",
+        "status": 1,
+        "isUse": false,
+        "locations": [
+            {
+                "id": "3a14198c-c2d0-f3e7-871a-e470d144296f",
+                "whid": "3a14198c-c2cc-0290-e086-44a428fba248",
+                "whName": "试剂堆栈",
+                "code": "0001-0005",
+                "x": 2,
+                "y": 1,
+                "z": 1,
+                "quantity": 0
+            }
+        ],
+        "detail": []
+    },
+    {
+        "id": "3a1cdefe-0e03-68a4-bcb3-02fc6ba72d1b",
+        "typeName": "试剂瓶",
+        "code": "0004-00053",
+        "barCode": "",
+        "name": "NMP",
+        "quantity": 400.0,
+        "lockQuantity": 0.0,
+        "unit": "",
+        "status": 1,
+        "isUse": false,
+        "locations": [
+            {
+                "id": "3a14198c-c2d0-2070-efc8-44e245f10c6f",
+                "whid": "3a14198c-c2cc-0290-e086-44a428fba248",
+                "whName": "试剂堆栈",
+                "code": "0001-0006",
+                "x": 2,
+                "y": 2,
+                "z": 1,
+                "quantity": 0
+            }
+        ],
+        "detail": []
+    },
+    {
+        "id": "3a1cdefe-d5e0-d850-5439-4499f20f07fe",
+        "typeName": "分装板",
+        "code": "0007-00185",
+        "barCode": "",
+        "name": "1010",
+        "quantity": 1.0,
+        "lockQuantity": 2.0,
+        "unit": "块",
+        "status": 1,
+        "isUse": false,
+        "locations": [
+            {
+                "id": "3a14198e-6929-46fe-841e-03dd753f1e4a",
+                "whid": "3a14198e-6928-121f-7ca6-88ad3ae7e6a0",
+                "whName": "粉末堆栈",
+                "code": "0002-0009",
+                "x": 3,
+                "y": 1,
+                "z": 1,
+                "quantity": 0
+            }
+        ],
+        "detail": [
+            {
+                "id": "3a1cdefe-d5e0-28a4-f5d0-f7e2436c575f",
+                "detailMaterialId": "3a1cdefe-d5e0-94ae-f770-27847e73ad38",
+                "code": null,
+                "name": "90%分装小瓶",
+                "quantity": "1",
+                "lockQuantity": "1",
+                "unit": "个",
+                "x": 2,
+                "y": 3,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cdefe-d5e0-3ed6-3607-133df89baf5b",
+                "detailMaterialId": "3a1cdefe-d5e0-f2fa-66bf-94c565d852fb",
+                "code": null,
+                "name": "10%分装小瓶",
+                "quantity": "1",
+                "lockQuantity": "1",
+                "unit": "个",
+                "x": 1,
+                "y": 3,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cdefe-d5e0-72b6-e015-be7b93cf09eb",
+                "detailMaterialId": "3a1cdefe-d5e0-81cf-7dad-2e51cab9ffd6",
+                "code": null,
+                "name": "90%分装小瓶",
+                "quantity": "1",
+                "lockQuantity": "1",
+                "unit": "个",
+                "x": 2,
+                "y": 1,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cdefe-d5e0-81d3-ad30-48134afc9ce7",
+                "detailMaterialId": "3a1cdefe-d5e0-3fa1-cc72-fda6276ae38d",
+                "code": null,
+                "name": "10%分装小瓶",
+                "quantity": "1",
+                "lockQuantity": "1",
+                "unit": "个",
+                "x": 1,
+                "y": 1,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cdefe-d5e0-dbdf-d966-9a8926fe1e06",
+                "detailMaterialId": "3a1cdefe-d5e0-c632-c7da-02d385b18628",
+                "code": null,
+                "name": "10%分装小瓶",
+                "quantity": "1",
+                "lockQuantity": "1",
+                "unit": "个",
+                "x": 1,
+                "y": 2,
+                "z": 1,
+                "associateId": null
+            },
+            {
+                "id": "3a1cdefe-d5e0-f099-b260-e3089a2d08c3",
+                "detailMaterialId": "3a1cdefe-d5e0-561f-73b6-f8501f814dbb",
+                "code": null,
+                "name": "90%分装小瓶",
+                "quantity": "1",
+                "lockQuantity": "1",
+                "unit": "个",
+                "x": 2,
+                "y": 2,
+                "z": 1,
+                "associateId": null
+            }
+        ]
+    }
+]

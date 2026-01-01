@@ -1,0 +1,193 @@
+[
+        {
+            "id": "3a1c67a9-aed7-b94d-9e24-bfdf10c8baa9",
+            "typeName": "烧杯",
+            "code": "0006-00160",
+            "barCode": "",
+            "name": "ODA",
+            "quantity": 120000.00000000000000000000000,
+            "lockQuantity": 695374.00000000000000000000000,
+            "unit": "微升",
+            "status": 1,
+            "isUse": false,
+            "locations": [
+                {
+                    "id": "3a14aa17-0d49-11d7-a6e1-f236b3e5e5a3",
+                    "whid": "3a14aa17-0d49-dce4-486e-4b5c85c8b366",
+                    "whName": "堆栈1",
+                    "code": "0001-0001",
+                    "x": 1,
+                    "y": 1,
+                    "z": 1,
+                    "quantity": 0
+                }
+            ],
+            "detail": []
+        },
+        {
+            "id": "3a1c67a9-aed9-1ade-5fe1-cc04b24b171c",
+            "typeName": "烧杯",
+            "code": "0006-00161",
+            "barCode": "",
+            "name": "MPDA",
+            "quantity": 120000.00000000000000000000000,
+            "lockQuantity": 681618.00000000000000000000000,
+            "unit": "",
+            "status": 1,
+            "isUse": false,
+            "locations": [
+                {
+                    "id": "3a14aa17-0d49-4bc5-8836-517b75473f5f",
+                    "whid": "3a14aa17-0d49-dce4-486e-4b5c85c8b366",
+                    "whName": "堆栈1",
+                    "code": "0001-0002",
+                    "x": 1,
+                    "y": 2,
+                    "z": 1,
+                    "quantity": 0
+                }
+            ],
+            "detail": []
+        },
+        {
+            "id": "3a1c67a9-aed9-2864-6783-2cee4e701ba6",
+            "typeName": "试剂瓶",
+            "code": "0004-00041",
+            "barCode": "",
+            "name": "NMP",
+            "quantity": 300000.00000000000000000000000,
+            "lockQuantity": 380000.00000000000000000000000,
+            "unit": "微升",
+            "status": 1,
+            "isUse": false,
+            "locations": [
+                {
+                    "id": "3a14aa3b-9fab-adac-7b9c-e1ee446b51d5",
+                    "whid": "3a14aa3b-9fab-9d8e-d1a7-828f01f51f0c",
+                    "whName": "站内试剂存放堆栈",
+                    "code": "0003-0001",
+                    "x": 1,
+                    "y": 1,
+                    "z": 1,
+                    "quantity": 0
+                }
+            ],
+            "detail": []
+        },
+        {
+            "id": "3a1c67a9-aed9-32c7-5809-3ba1b8db1aa1",
+            "typeName": "试剂瓶",
+            "code": "0004-00042",
+            "barCode": "",
+            "name": "PGME",
+            "quantity": 300000.00000000000000000000000,
+            "lockQuantity": 337892.00000000000000000000000,
+            "unit": "",
+            "status": 1,
+            "isUse": false,
+            "locations": [
+                {
+                    "id": "3a14aa3b-9fab-ca72-febc-b7c304476c78",
+                    "whid": "3a14aa3b-9fab-9d8e-d1a7-828f01f51f0c",
+                    "whName": "站内试剂存放堆栈",
+                    "code": "0003-0002",
+                    "x": 1,
+                    "y": 2,
+                    "z": 1,
+                    "quantity": 0
+                }
+            ],
+            "detail": []
+        },
+        {
+            "id": "3a1c68c8-0574-d748-725e-97a2e549f085",
+            "typeName": "样品板",
+            "code": "0001-00004",
+            "barCode": "",
+            "name": "0917",
+            "quantity": 1.0000000000000000000000000000,
+            "lockQuantity": 4.0000000000000000000000000000,
+            "unit": "块",
+            "status": 1,
+            "isUse": false,
+            "locations": [
+                {
+                    "id": "3a14aa17-0d49-f49c-6b66-b27f185a3b32",
+                    "whid": "3a14aa17-0d49-dce4-486e-4b5c85c8b366",
+                    "whName": "堆栈1",
+                    "code": "0001-0009",
+                    "x": 2,
+                    "y": 1,
+                    "z": 1,
+                    "quantity": 0
+                }
+            ],
+            "detail": [
+                {
+                    "id": "3a1c68c8-0574-69a1-9858-4637e0193451",
+                    "detailMaterialId": "3a1c68c8-0574-3630-bd42-bbf3623c5208",
+                    "code": null,
+                    "name": "SIDA",
+                    "quantity": "300000",
+                    "lockQuantity": "4",
+                    "unit": "微升",
+                    "x": 1,
+                    "y": 2,
+                    "z": 1,
+                    "associateId": null
+                },
+                {
+                    "id": "3a1c68c8-0574-8d51-3191-a31f5be421e5",
+                    "detailMaterialId": "3a1c68c8-0574-3b20-9ad7-90755f123d53",
+                    "code": null,
+                    "name": "BTDA-2",
+                    "quantity": "300000",
+                    "lockQuantity": "4",
+                    "unit": "微升",
+                    "x": 2,
+                    "y": 2,
+                    "z": 1,
+                    "associateId": null
+                },
+                {
+                    "id": "3a1c68c8-0574-da80-735b-53ae2197a360",
+                    "detailMaterialId": "3a1c68c8-0574-f2e4-33b3-90d813567939",
+                    "code": null,
+                    "name": "BTDA-DD",
+                    "quantity": "300000",
+                    "lockQuantity": "28",
+                    "unit": "微升",
+                    "x": 1,
+                    "y": 1,
+                    "z": 1,
+                    "associateId": null
+                },
+                {
+                    "id": "3a1c68c8-0574-e717-1b1b-99891f875455",
+                    "detailMaterialId": "3a1c68c8-0574-a0ef-e636-68cdc98960e2",
+                    "code": null,
+                    "name": "BTDA-3",
+                    "quantity": "300000",
+                    "lockQuantity": "4",
+                    "unit": "微升",
+                    "x": 2,
+                    "y": 3,
+                    "z": 1,
+                    "associateId": null
+                },
+                {
+                    "id": "3a1c68c8-0574-e9bd-6cca-5e261b4f89cb",
+                    "detailMaterialId": "3a1c68c8-0574-9d11-5115-283e8e5510b1",
+                    "code": null,
+                    "name": "BTDA-1",
+                    "quantity": "300000",
+                    "lockQuantity": "4",
+                    "unit": "微升",
+                    "x": 2,
+                    "y": 1,
+                    "z": 1,
+                    "associateId": null
+                }
+            ]
+        }
+    ]

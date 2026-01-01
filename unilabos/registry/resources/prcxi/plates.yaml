@@ -1,0 +1,143 @@
+PRCXI_48_DeepWell:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_48_DeepWell
+    type: pylabrobot
+  description: '48孔深孔板 (Code: 22)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_96_DeepWell:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_96_DeepWell
+    type: pylabrobot
+  description: '96深孔板 (Code: q2)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_AGenBio_4_troughplate:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_AGenBio_4_troughplate
+    type: pylabrobot
+  description: '4道储液槽 (Code: sdfrth654)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_BioER_96_wellplate:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_BioER_96_wellplate
+    type: pylabrobot
+  description: '2.2ml 深孔板 (Code: ZX-019-2.2)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_BioRad_384_wellplate:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_BioRad_384_wellplate
+    type: pylabrobot
+  description: '384板 (Code: q3)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_CellTreat_96_wellplate:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_CellTreat_96_wellplate
+    type: pylabrobot
+  description: '细菌培养皿 (Code: ZX-78-096)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_PCR_Plate_200uL_nonskirted:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Plate_200uL_nonskirted
+    type: pylabrobot
+  description: '0.2ml PCR 板 (Code: ZX-023-0.2)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_PCR_Plate_200uL_semiskirted:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Plate_200uL_semiskirted
+    type: pylabrobot
+  description: '0.2ml PCR 板 (Code: ZX-023-0.2)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_PCR_Plate_200uL_skirted:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Plate_200uL_skirted
+    type: pylabrobot
+  description: '0.2ml PCR 板 (Code: ZX-023-0.2)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_nest_12_troughplate:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_nest_12_troughplate
+    type: pylabrobot
+  description: '12道储液槽 (Code: 12道储液槽)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+PRCXI_nest_1_troughplate:
+  category:
+  - prcxi
+  - plates
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_nest_1_troughplate
+    type: pylabrobot
+  description: '储液槽 (Code: ZX-58-10000)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

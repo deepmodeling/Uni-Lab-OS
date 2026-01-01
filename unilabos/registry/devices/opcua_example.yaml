@@ -1,0 +1,196 @@
+opcua_example:
+  category:
+  - opcua_example
+  class:
+    action_value_mappings:
+      auto-disconnect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: disconnect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-load_config:
+        feedback: {}
+        goal: {}
+        goal_default:
+          config_path: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                config_path:
+                  type: string
+              required:
+              - config_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: load_config参数
+          type: object
+        type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
+      auto-print_cache_stats:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: print_cache_stats参数
+          type: object
+        type: UniLabJsonCommand
+      auto-read_node:
+        feedback: {}
+        goal: {}
+        goal_default:
+          node_name: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                node_name:
+                  type: string
+              required:
+              - node_name
+              type: object
+            result: {}
+          required:
+          - goal
+          title: read_node参数
+          type: object
+        type: UniLabJsonCommand
+      auto-set_node_value:
+        feedback: {}
+        goal: {}
+        goal_default:
+          name: null
+          value: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                name:
+                  type: string
+                value:
+                  type: string
+              required:
+              - name
+              - value
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_node_value参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.device_comms.opcua_client.client:OpcUaClient
+    status_types:
+      cache_stats: dict
+      node_value: String
+    type: python
+  config_info: []
+  description: null
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        cache_timeout:
+          default: 5.0
+          type: number
+        config_path:
+          type: string
+        deck:
+          type: string
+        password:
+          type: string
+        subscription_interval:
+          default: 500
+          type: integer
+        url:
+          type: string
+        use_subscription:
+          default: true
+          type: boolean
+        username:
+          type: string
+      required:
+      - url
+      type: object
+    data:
+      properties:
+        cache_stats:
+          type: object
+        node_value:
+          type: string
+      required:
+      - node_value
+      - cache_stats
+      type: object
+  version: 1.0.0

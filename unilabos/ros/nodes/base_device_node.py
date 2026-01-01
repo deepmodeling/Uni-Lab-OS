@@ -21,6 +21,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.service import Service
 from unilabos_msgs.action import SendCmd
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
+from unilabos.utils.decorator import get_topic_config, get_all_subscriptions
 
 from unilabos.resources.container import RegularContainer
 from unilabos.resources.graphio import (
@@ -49,6 +50,7 @@ from unilabos.ros.nodes.resource_tracker import (
     DeviceNodeResourceTracker,
     ResourceTreeSet,
     ResourceTreeInstance,
+    ResourceDictInstance,
 )
 from unilabos.ros.x.rclpyx import get_event_loop
 from unilabos.ros.utils.driver_creator import WorkstationNodeCreator, PyLabRobotCreator, DeviceClassCreator
@@ -133,12 +135,11 @@ def init_wrapper(
     device_id: str,
     device_uuid: str,
     driver_class: type[T],
-    device_config: Dict[str, Any],
+    device_config: ResourceTreeInstance,
     status_types: Dict[str, Any],
     action_value_mappings: Dict[str, Any],
     hardware_interface: Dict[str, Any],
     print_publish: bool,
-    children: Optional[list] = None,
     driver_params: Optional[Dict[str, Any]] = None,
     driver_is_ros: bool = False,
     *args,
@@ -147,8 +148,6 @@ def init_wrapper(
     """初始化设备节点的包装函数，和ROS2DeviceNode初始化保持一致"""
     if driver_params is None:
         driver_params = kwargs.copy()
-    if children is None:
-        children = []
     kwargs["device_id"] = device_id
     kwargs["device_uuid"] = device_uuid
     kwargs["driver_class"] = driver_class
@@ -157,7 +156,6 @@ def init_wrapper(
     kwargs["status_types"] = status_types
     kwargs["action_value_mappings"] = action_value_mappings
     kwargs["hardware_interface"] = hardware_interface
-    kwargs["children"] = children
     kwargs["print_publish"] = print_publish
     kwargs["driver_is_ros"] = driver_is_ros
     super(type(self), self).__init__(*args, **kwargs)
@@ -172,6 +170,7 @@ class PropertyPublisher:
         msg_type,
         initial_period: float = 5.0,
         print_publish=True,
+        qos: int = 10,
     ):
         self.node = node
         self.name = name
@@ -179,10 +178,11 @@ class PropertyPublisher:
         self.get_method = get_method
         self.timer_period = initial_period
         self.print_publish = print_publish
+        self.qos = qos
 
         self._value = None
         try:
-            self.publisher_ = node.create_publisher(msg_type, f"{name}", 10)
+            self.publisher_ = node.create_publisher(msg_type, f"{name}", qos)
         except AttributeError as ex:
             self.node.lab_logger().error(
                 f"创建发布者 {name} 失败，可能由于注册表有误，类型: {msg_type}，错误: {ex}\n{traceback.format_exc()}"
@@ -190,7 +190,7 @@ class PropertyPublisher:
         self.timer = node.create_timer(self.timer_period, self.publish_property)
         self.__loop = get_event_loop()
         str_msg_type = str(msg_type)[8:-2]
-        self.node.lab_logger().trace(f"发布属性: {name}, 类型: {str_msg_type}, 周期: {initial_period}秒")
+        self.node.lab_logger().trace(f"发布属性: {name}, 类型: {str_msg_type}, 周期: {initial_period}秒, QoS: {qos}")
 
     def get_property(self):
         if asyncio.iscoroutinefunction(self.get_method):
@@ -329,6 +329,10 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 ):
                     continue
                 self.create_ros_action_server(action_name, action_value_mapping)
+
+        # 创建订阅者（通过 @subscribe 装饰器）
+        self._topic_subscribers: Dict[str, Any] = {}
+        self._setup_decorated_subscribers()
 
         # 创建线程池执行器
         self._executor = ThreadPoolExecutor(
@@ -586,7 +590,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         except Exception as e:
             self.lab_logger().error(f"更新资源uuid失败: {e}")
             self.lab_logger().error(traceback.format_exc())
-        self.lab_logger().debug(f"资源更新结果: {response}")
+        self.lab_logger().trace(f"资源更新结果: {response}")
 
     async def get_resource(self, resources_uuid: List[str], with_children: bool = True) -> ResourceTreeSet:
         """
@@ -1047,6 +1051,29 @@ class BaseROS2DeviceNode(Node, Generic[T]):
 
     def create_ros_publisher(self, attr_name, msg_type, initial_period=5.0):
         """创建ROS发布者"""
+        # 检测装饰器配置（支持 get_{attr_name} 方法和 @property）
+        topic_config = {}
+
+        # 优先检测 get_{attr_name} 方法
+        if hasattr(self.driver_instance, f"get_{attr_name}"):
+            getter_method = getattr(self.driver_instance, f"get_{attr_name}")
+            topic_config = get_topic_config(getter_method)
+
+        # 如果没有配置，检测 @property 装饰的属性
+        if not topic_config:
+            driver_class = type(self.driver_instance)
+            if hasattr(driver_class, attr_name):
+                class_attr = getattr(driver_class, attr_name)
+                if isinstance(class_attr, property) and class_attr.fget is not None:
+                    topic_config = get_topic_config(class_attr.fget)
+
+        # 使用装饰器配置或默认值
+        cfg_period = topic_config.get("period")
+        cfg_print = topic_config.get("print_publish")
+        cfg_qos = topic_config.get("qos")
+        period: float = cfg_period if cfg_period is not None else initial_period
+        print_publish: bool = cfg_print if cfg_print is not None else self._print_publish
+        qos: int = cfg_qos if cfg_qos is not None else 10
 
         # 获取属性值的方法
         def get_device_attr():
@@ -1067,7 +1094,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     self.lab_logger().error(traceback.format_exc())
 
         self._property_publishers[attr_name] = PropertyPublisher(
-            self, attr_name, get_device_attr, msg_type, initial_period, self._print_publish
+            self, attr_name, get_device_attr, msg_type, period, print_publish, qos
         )
 
     def create_ros_action_server(self, action_name, action_value_mapping):
@@ -1084,6 +1111,76 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         )
 
         self.lab_logger().trace(f"发布动作: {action_name}, 类型: {str_action_type}")
+
+    def _setup_decorated_subscribers(self):
+        """扫描 driver_instance 中带有 @subscribe 装饰器的方法并创建订阅者"""
+        subscriptions = get_all_subscriptions(self.driver_instance)
+
+        for method_name, method, config in subscriptions:
+            topic_template = config.get("topic")
+            msg_type = config.get("msg_type")
+            qos = config.get("qos", 10)
+
+            if not topic_template:
+                self.lab_logger().warning(f"订阅方法 {method_name} 缺少 topic 配置，跳过")
+                continue
+
+            # 如果没有指定 msg_type，尝试从类型注解推断
+            if msg_type is None:
+                try:
+                    hints = get_type_hints(method)
+                    # 第一个参数是 self，第二个是 msg
+                    param_names = list(hints.keys())
+                    if param_names:
+                        msg_type = hints[param_names[0]]
+                except Exception:
+                    pass
+
+            if msg_type is None:
+                self.lab_logger().warning(f"订阅方法 {method_name} 缺少 msg_type 配置且无法从类型注解推断，跳过")
+                continue
+
+            # 替换 topic 模板中的占位符
+            topic = self._resolve_topic_template(topic_template)
+
+            self.create_ros_subscriber(topic, msg_type, method, qos)
+
+    def _resolve_topic_template(self, topic_template: str) -> str:
+        """
+        解析 topic 模板，替换占位符
+
+        支持的占位符:
+            - {device_id}: 设备ID
+            - {namespace}: 完整命名空间
+        """
+        return topic_template.format(
+            device_id=self.device_id,
+            namespace=self.namespace,
+        )
+
+    def create_ros_subscriber(self, topic: str, msg_type, callback, qos: int = 10):
+        """
+        创建ROS订阅者
+
+        Args:
+            topic: Topic 名称
+            msg_type: ROS 消息类型
+            callback: 回调方法（会自动绑定到 driver_instance）
+            qos: QoS 深度配置
+        """
+        try:
+            subscription = self.create_subscription(
+                msg_type,
+                topic,
+                callback,
+                qos,
+                callback_group=self.callback_group,
+            )
+            self._topic_subscribers[topic] = subscription
+            str_msg_type = str(msg_type)[8:-2] if str(msg_type).startswith("<class") else str(msg_type)
+            self.lab_logger().trace(f"订阅Topic: {topic}, 类型: {str_msg_type}, QoS: {qos}")
+        except Exception as ex:
+            self.lab_logger().error(f"创建订阅者 {topic} 失败，类型: {msg_type}，错误: {ex}\n{traceback.format_exc()}")
 
     def get_real_function(self, instance, attr_name):
         if hasattr(instance.__class__, attr_name):
@@ -1146,20 +1243,28 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                                 plr_resource = await self.get_resource_with_dir(
                                     resource_id=resource_data["id"], with_children=True
                                 )
+                                if "sample_id" in resource_data:
+                                    plr_resource.unilabos_extra["sample_uuid"] = resource_data["sample_id"]
                                 queried_resources.append(plr_resource)
 
                             self.lab_logger().debug(f"资源查询结果: 共 {len(queried_resources)} 个资源")
 
                             # 通过资源跟踪器获取本地实例
                             final_resources = queried_resources if is_sequence else queried_resources[0]
-                            final_resources = (
-                                self.resource_tracker.figure_resource({"name": final_resources.name}, try_mode=False)
-                                if not is_sequence
-                                else [
-                                    self.resource_tracker.figure_resource({"name": res.name}, try_mode=False)
-                                    for res in queried_resources
-                                ]
-                            )
+                            if not is_sequence:
+                                plr = self.resource_tracker.figure_resource({"name": final_resources.name}, try_mode=False)
+                                # 保留unilabos_extra
+                                if hasattr(final_resources, "unilabos_extra") and hasattr(plr, "unilabos_extra"):
+                                    plr.unilabos_extra = getattr(final_resources, "unilabos_extra", {}).copy()
+                                final_resources = plr
+                            else:
+                                new_resources = []
+                                for res in queried_resources:
+                                    plr = self.resource_tracker.figure_resource({"name": res.name}, try_mode=False)
+                                    if hasattr(res, "unilabos_extra") and hasattr(plr, "unilabos_extra"):
+                                        plr.unilabos_extra = getattr(res, "unilabos_extra", {}).copy()
+                                    new_resources.append(plr)
+                                final_resources = new_resources
                             action_kwargs[k] = final_resources
 
                         except Exception as e:
@@ -1168,7 +1273,6 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             execution_error = traceback.format_exc()
                             break
 
-            ##### self.lab_logger().info(f"准备执行: {action_kwargs}, 函数: {ACTION.__name__}")
             time_start = time.time()
             time_overall = 100
             future = None
@@ -1176,35 +1280,37 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 # 将阻塞操作放入线程池执行
                 if asyncio.iscoroutinefunction(ACTION):
                     try:
-                        ##### self.lab_logger().info(f"异步执行动作 {ACTION}")
-                        future = ROS2DeviceNode.run_async_func(ACTION, trace_error=False, **action_kwargs)
+                        self.lab_logger().trace(f"异步执行动作 {ACTION}")
 
-                        def _handle_future_exception(fut):
+                        def _handle_future_exception(fut: Future):
                             nonlocal execution_error, execution_success, action_return_value
                             try:
                                 action_return_value = fut.result()
+                                if isinstance(action_return_value, BaseException):
+                                    raise action_return_value
                                 execution_success = True
-                            except Exception as e:
+                            except Exception as _:
                                 execution_error = traceback.format_exc()
                                 error(
                                     f"异步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{action_kwargs}"
                                 )
 
+                        future = ROS2DeviceNode.run_async_func(ACTION, trace_error=False, **action_kwargs)
                         future.add_done_callback(_handle_future_exception)
                     except Exception as e:
                         execution_error = traceback.format_exc()
                         execution_success = False
                         self.lab_logger().error(f"创建异步任务失败: {traceback.format_exc()}")
                 else:
-                    #####    self.lab_logger().info(f"同步执行动作 {ACTION}")
+                    self.lab_logger().trace(f"同步执行动作 {ACTION}")
                     future = self._executor.submit(ACTION, **action_kwargs)
 
-                    def _handle_future_exception(fut):
+                    def _handle_future_exception(fut: Future):
                         nonlocal execution_error, execution_success, action_return_value
                         try:
                             action_return_value = fut.result()
                             execution_success = True
-                        except Exception as e:
+                        except Exception as _:
                             execution_error = traceback.format_exc()
                             error(
                                 f"同步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{action_kwargs}"
@@ -1272,7 +1378,11 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         seen = set()
                         unique_resources = []
                         for rs in akv:  # todo: 这里目前只支持plr的类型
-                            res = self.resource_tracker.parent_resource(rs)  # 获取 resource 对象
+                            if isinstance(rs, list):
+                                for r in rs:
+                                    res = self.resource_tracker.parent_resource(r)  # 获取 resource 对象
+                            else:
+                                res = self.resource_tracker.parent_resource(r)
                             if id(res) not in seen:
                                 seen.add(id(res))
                                 unique_resources.append(res)
@@ -1309,7 +1419,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         get_result_info_str(execution_error, execution_success, action_return_value),
                     )
 
-            ##### self.lab_logger().info(f"动作 {action_name} 完成并返回结果")
+            self.lab_logger().trace(f"动作 {action_name} 完成并返回结果")
             return result_msg
 
         return execute_callback
@@ -1545,16 +1655,31 @@ class ROS2DeviceNode:
     它不继承设备类，而是通过代理模式访问设备类的属性和方法。
     """
 
+    @staticmethod
+    async def safe_task_wrapper(trace_callback, func, **kwargs):
+        try:
+            if callable(trace_callback):
+                trace_callback(await func(**kwargs))
+            return await func(**kwargs)
+        except Exception as e:
+            if callable(trace_callback):
+                trace_callback(e)
+            return e
+
     @classmethod
-    def run_async_func(cls, func, trace_error=True, **kwargs) -> Task:
-        def _handle_future_exception(fut):
+    def run_async_func(cls, func, trace_error=True, inner_trace_callback=None, **kwargs) -> Task:
+        def _handle_future_exception(fut: Future):
             try:
-                fut.result()
+                ret = fut.result()
+                if isinstance(ret, BaseException):
+                    raise ret
             except Exception as e:
-                error(f"异步任务 {func.__name__} 报错了")
+                error(f"异步任务 {func.__name__} 获取结果失败")
                 error(traceback.format_exc())
 
-        future = rclpy.get_global_executor().create_task(func(**kwargs))
+        future = rclpy.get_global_executor().create_task(
+            ROS2DeviceNode.safe_task_wrapper(inner_trace_callback, func, **kwargs)
+        )
         if trace_error:
             future.add_done_callback(_handle_future_exception)
         return future
@@ -1582,12 +1707,11 @@ class ROS2DeviceNode:
         device_id: str,
         device_uuid: str,
         driver_class: Type[T],
-        device_config: Dict[str, Any],
+        device_config: ResourceDictInstance,
         driver_params: Dict[str, Any],
         status_types: Dict[str, Any],
         action_value_mappings: Dict[str, Any],
         hardware_interface: Dict[str, Any],
-        children: Dict[str, Any],
         print_publish: bool = True,
         driver_is_ros: bool = False,
     ):
@@ -1598,7 +1722,7 @@ class ROS2DeviceNode:
             device_id: 设备标识符
             device_uuid: 设备uuid
             driver_class: 设备类
-            device_config: 原始初始化的json
+            device_config: 原始初始化的ResourceDictInstance
             driver_params: driver初始化的参数
             status_types: 状态类型映射
             action_value_mappings: 动作值映射
@@ -1612,6 +1736,7 @@ class ROS2DeviceNode:
         self._has_async_context = hasattr(driver_class, "__aenter__") and hasattr(driver_class, "__aexit__")
         self._driver_class = driver_class
         self.device_config = device_config
+        children: List[ResourceDictInstance] = device_config.children
         self.driver_is_ros = driver_is_ros
         self.driver_is_workstation = False
         self.resource_tracker = DeviceNodeResourceTracker()

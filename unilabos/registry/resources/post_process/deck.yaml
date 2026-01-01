@@ -1,0 +1,13 @@
+post_process_deck:
+  category:
+  - post_process_deck
+  - deck
+  class:
+    module: unilabos.devices.workstation.post_process.decks:post_process_deck
+    type: pylabrobot
+  description: post_process_deck
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

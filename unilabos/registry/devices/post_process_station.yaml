@@ -1,0 +1,747 @@
+post_process_station:
+  category:
+  - post_process_station
+  class:
+    action_value_mappings:
+      auto-load_config:
+        feedback: {}
+        goal: {}
+        goal_default:
+          config_path: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                config_path:
+                  type: string
+              required:
+              - config_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: load_config参数
+          type: object
+        type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
+      auto-print_cache_stats:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: print_cache_stats参数
+          type: object
+        type: UniLabJsonCommand
+      auto-set_node_value:
+        feedback: {}
+        goal: {}
+        goal_default:
+          name: null
+          value: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                name:
+                  type: string
+                value:
+                  type: string
+              required:
+              - name
+              - value
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_node_value参数
+          type: object
+        type: UniLabJsonCommand
+      disconnect:
+        feedback: {}
+        goal:
+          command: {}
+        goal_default:
+          command: ''
+        handles: {}
+        result:
+          success: success
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties:
+                status:
+                  type: string
+              required:
+              - status
+              title: SendCmd_Feedback
+              type: object
+            goal:
+              properties:
+                command:
+                  type: string
+              required:
+              - command
+              title: SendCmd_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: SendCmd_Result
+              type: object
+          required:
+          - goal
+          title: SendCmd
+          type: object
+        type: SendCmd
+      read_node:
+        feedback:
+          result: result
+        goal:
+          command: node_name
+        goal_default:
+          command: ''
+        handles: {}
+        result:
+          success: success
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties:
+                status:
+                  type: string
+              required:
+              - status
+              title: SendCmd_Feedback
+              type: object
+            goal:
+              properties:
+                command:
+                  type: string
+              required:
+              - command
+              title: SendCmd_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: SendCmd_Result
+              type: object
+          required:
+          - goal
+          title: SendCmd
+          type: object
+        type: SendCmd
+      trigger_cleaning_action:
+        feedback: {}
+        goal:
+          acetone_inner_wall_cleaning_count: acetone_inner_wall_cleaning_count
+          acetone_inner_wall_cleaning_injection: acetone_inner_wall_cleaning_injection
+          acetone_inner_wall_cleaning_waste_time: acetone_inner_wall_cleaning_waste_time
+          acetone_outer_wall_cleaning_count: acetone_outer_wall_cleaning_count
+          acetone_outer_wall_cleaning_injection: acetone_outer_wall_cleaning_injection
+          acetone_outer_wall_cleaning_wait_time: acetone_outer_wall_cleaning_wait_time
+          acetone_outer_wall_cleaning_waste_time: acetone_outer_wall_cleaning_waste_time
+          acetone_pump_cleaning_suction_count: acetone_pump_cleaning_suction_count
+          acetone_stirrer_cleaning_count: acetone_stirrer_cleaning_count
+          acetone_stirrer_cleaning_injection: acetone_stirrer_cleaning_injection
+          acetone_stirrer_cleaning_wait_time: acetone_stirrer_cleaning_wait_time
+          acetone_stirrer_cleaning_waste_time: acetone_stirrer_cleaning_waste_time
+          filtration_liquid_selection: filtration_liquid_selection
+          injection_pump_forward_empty_suction_count: injection_pump_forward_empty_suction_count
+          injection_pump_reverse_empty_suction_count: injection_pump_reverse_empty_suction_count
+          nmp_inner_wall_cleaning_count: nmp_inner_wall_cleaning_count
+          nmp_inner_wall_cleaning_injection: nmp_inner_wall_cleaning_injection
+          nmp_inner_wall_cleaning_waste_time: nmp_inner_wall_cleaning_waste_time
+          nmp_outer_wall_cleaning_count: nmp_outer_wall_cleaning_count
+          nmp_outer_wall_cleaning_injection: nmp_outer_wall_cleaning_injection
+          nmp_outer_wall_cleaning_wait_time: nmp_outer_wall_cleaning_wait_time
+          nmp_outer_wall_cleaning_waste_time: nmp_outer_wall_cleaning_waste_time
+          nmp_pump_cleaning_suction_count: nmp_pump_cleaning_suction_count
+          nmp_stirrer_cleaning_count: nmp_stirrer_cleaning_count
+          nmp_stirrer_cleaning_injection: nmp_stirrer_cleaning_injection
+          nmp_stirrer_cleaning_wait_time: nmp_stirrer_cleaning_wait_time
+          nmp_stirrer_cleaning_waste_time: nmp_stirrer_cleaning_waste_time
+          pipe_blowing_time: pipe_blowing_time
+          water_inner_wall_cleaning_count: water_inner_wall_cleaning_count
+          water_inner_wall_cleaning_injection: water_inner_wall_cleaning_injection
+          water_inner_wall_cleaning_waste_time: water_inner_wall_cleaning_waste_time
+          water_outer_wall_cleaning_count: water_outer_wall_cleaning_count
+          water_outer_wall_cleaning_injection: water_outer_wall_cleaning_injection
+          water_outer_wall_cleaning_wait_time: water_outer_wall_cleaning_wait_time
+          water_outer_wall_cleaning_waste_time: water_outer_wall_cleaning_waste_time
+          water_pump_cleaning_suction_count: water_pump_cleaning_suction_count
+          water_stirrer_cleaning_count: water_stirrer_cleaning_count
+          water_stirrer_cleaning_injection: water_stirrer_cleaning_injection
+          water_stirrer_cleaning_wait_time: water_stirrer_cleaning_wait_time
+          water_stirrer_cleaning_waste_time: water_stirrer_cleaning_waste_time
+        goal_default:
+          acetone_inner_wall_cleaning_count: 0
+          acetone_inner_wall_cleaning_injection: 0.0
+          acetone_inner_wall_cleaning_waste_time: 0
+          acetone_outer_wall_cleaning_count: 0
+          acetone_outer_wall_cleaning_injection: 0.0
+          acetone_outer_wall_cleaning_wait_time: 0
+          acetone_outer_wall_cleaning_waste_time: 0
+          acetone_pump_cleaning_suction_count: 0
+          acetone_stirrer_cleaning_count: 0
+          acetone_stirrer_cleaning_injection: 0.0
+          acetone_stirrer_cleaning_wait_time: 0
+          acetone_stirrer_cleaning_waste_time: 0
+          filtration_liquid_selection: 0
+          injection_pump_forward_empty_suction_count: 0
+          injection_pump_reverse_empty_suction_count: 0
+          nmp_inner_wall_cleaning_count: 0
+          nmp_inner_wall_cleaning_injection: 0.0
+          nmp_inner_wall_cleaning_waste_time: 0
+          nmp_outer_wall_cleaning_count: 0
+          nmp_outer_wall_cleaning_injection: 0.0
+          nmp_outer_wall_cleaning_wait_time: 0
+          nmp_outer_wall_cleaning_waste_time: 0
+          nmp_pump_cleaning_suction_count: 0
+          nmp_stirrer_cleaning_count: 0
+          nmp_stirrer_cleaning_injection: 0.0
+          nmp_stirrer_cleaning_wait_time: 0
+          nmp_stirrer_cleaning_waste_time: 0
+          pipe_blowing_time: 0
+          water_inner_wall_cleaning_count: 0
+          water_inner_wall_cleaning_injection: 0.0
+          water_inner_wall_cleaning_waste_time: 0
+          water_outer_wall_cleaning_count: 0
+          water_outer_wall_cleaning_injection: 0.0
+          water_outer_wall_cleaning_wait_time: 0
+          water_outer_wall_cleaning_waste_time: 0
+          water_pump_cleaning_suction_count: 0
+          water_stirrer_cleaning_count: 0
+          water_stirrer_cleaning_injection: 0.0
+          water_stirrer_cleaning_wait_time: 0
+          water_stirrer_cleaning_waste_time: 0
+        handles: {}
+        result:
+          return_info: return_info
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: PostProcessTriggerClean_Feedback
+              type: object
+            goal:
+              properties:
+                acetone_inner_wall_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                acetone_inner_wall_cleaning_injection:
+                  type: number
+                acetone_inner_wall_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                acetone_outer_wall_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                acetone_outer_wall_cleaning_injection:
+                  type: number
+                acetone_outer_wall_cleaning_wait_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                acetone_outer_wall_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                acetone_pump_cleaning_suction_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                acetone_stirrer_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                acetone_stirrer_cleaning_injection:
+                  type: number
+                acetone_stirrer_cleaning_wait_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                acetone_stirrer_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                filtration_liquid_selection:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                injection_pump_forward_empty_suction_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                injection_pump_reverse_empty_suction_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_inner_wall_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_inner_wall_cleaning_injection:
+                  type: number
+                nmp_inner_wall_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_outer_wall_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_outer_wall_cleaning_injection:
+                  type: number
+                nmp_outer_wall_cleaning_wait_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_outer_wall_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_pump_cleaning_suction_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_stirrer_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_stirrer_cleaning_injection:
+                  type: number
+                nmp_stirrer_cleaning_wait_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                nmp_stirrer_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                pipe_blowing_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_inner_wall_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_inner_wall_cleaning_injection:
+                  type: number
+                water_inner_wall_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_outer_wall_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_outer_wall_cleaning_injection:
+                  type: number
+                water_outer_wall_cleaning_wait_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_outer_wall_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_pump_cleaning_suction_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_stirrer_cleaning_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_stirrer_cleaning_injection:
+                  type: number
+                water_stirrer_cleaning_wait_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                water_stirrer_cleaning_waste_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+              required:
+              - nmp_outer_wall_cleaning_injection
+              - nmp_outer_wall_cleaning_count
+              - nmp_outer_wall_cleaning_wait_time
+              - nmp_outer_wall_cleaning_waste_time
+              - nmp_inner_wall_cleaning_injection
+              - nmp_inner_wall_cleaning_count
+              - nmp_pump_cleaning_suction_count
+              - nmp_inner_wall_cleaning_waste_time
+              - nmp_stirrer_cleaning_injection
+              - nmp_stirrer_cleaning_count
+              - nmp_stirrer_cleaning_wait_time
+              - nmp_stirrer_cleaning_waste_time
+              - water_outer_wall_cleaning_injection
+              - water_outer_wall_cleaning_count
+              - water_outer_wall_cleaning_wait_time
+              - water_outer_wall_cleaning_waste_time
+              - water_inner_wall_cleaning_injection
+              - water_inner_wall_cleaning_count
+              - water_pump_cleaning_suction_count
+              - water_inner_wall_cleaning_waste_time
+              - water_stirrer_cleaning_injection
+              - water_stirrer_cleaning_count
+              - water_stirrer_cleaning_wait_time
+              - water_stirrer_cleaning_waste_time
+              - acetone_outer_wall_cleaning_injection
+              - acetone_outer_wall_cleaning_count
+              - acetone_outer_wall_cleaning_wait_time
+              - acetone_outer_wall_cleaning_waste_time
+              - acetone_inner_wall_cleaning_injection
+              - acetone_inner_wall_cleaning_count
+              - acetone_pump_cleaning_suction_count
+              - acetone_inner_wall_cleaning_waste_time
+              - acetone_stirrer_cleaning_injection
+              - acetone_stirrer_cleaning_count
+              - acetone_stirrer_cleaning_wait_time
+              - acetone_stirrer_cleaning_waste_time
+              - pipe_blowing_time
+              - injection_pump_forward_empty_suction_count
+              - injection_pump_reverse_empty_suction_count
+              - filtration_liquid_selection
+              title: PostProcessTriggerClean_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: PostProcessTriggerClean_Result
+              type: object
+          required:
+          - goal
+          title: PostProcessTriggerClean
+          type: object
+        type: PostProcessTriggerClean
+      trigger_grab_action:
+        feedback: {}
+        goal:
+          raw_tank_number: raw_tank_number
+          reaction_tank_number: reaction_tank_number
+        goal_default:
+          raw_tank_number: 0
+          reaction_tank_number: 0
+        handles: {}
+        result:
+          return_info: return_info
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: PostProcessGrab_Feedback
+              type: object
+            goal:
+              properties:
+                raw_tank_number:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                reaction_tank_number:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+              required:
+              - reaction_tank_number
+              - raw_tank_number
+              title: PostProcessGrab_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: PostProcessGrab_Result
+              type: object
+          required:
+          - goal
+          title: PostProcessGrab
+          type: object
+        type: PostProcessGrab
+      trigger_post_processing:
+        feedback: {}
+        goal:
+          atomization_fast_speed: atomization_fast_speed
+          atomization_pressure_kpa: atomization_pressure_kpa
+          first_powder_mixing_tim: first_powder_mixing_tim
+          first_powder_wash_count: first_powder_wash_count
+          first_wash_water_amount: first_wash_water_amount
+          initial_water_amount: initial_water_amount
+          injection_pump_push_speed: injection_pump_push_speed
+          injection_pump_suction_speed: injection_pump_suction_speed
+          pre_filtration_mixing_time: pre_filtration_mixing_time
+          raw_liquid_suction_count: raw_liquid_suction_count
+          second_powder_mixing_time: second_powder_mixing_time
+          second_powder_wash_count: second_powder_wash_count
+          second_wash_water_amount: second_wash_water_amount
+          wash_slow_speed: wash_slow_speed
+        goal_default:
+          atomization_fast_speed: 0.0
+          atomization_pressure_kpa: 0
+          first_powder_mixing_tim: 0
+          first_powder_wash_count: 0
+          first_wash_water_amount: 0.0
+          initial_water_amount: 0.0
+          injection_pump_push_speed: 0
+          injection_pump_suction_speed: 0
+          pre_filtration_mixing_time: 0
+          raw_liquid_suction_count: 0
+          second_powder_mixing_time: 0
+          second_powder_wash_count: 0
+          second_wash_water_amount: 0.0
+          wash_slow_speed: 0.0
+        handles: {}
+        result:
+          return_info: return_info
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: PostProcessTriggerPostPro_Feedback
+              type: object
+            goal:
+              properties:
+                atomization_fast_speed:
+                  type: number
+                atomization_pressure_kpa:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                first_powder_mixing_tim:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                first_powder_wash_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                first_wash_water_amount:
+                  type: number
+                initial_water_amount:
+                  type: number
+                injection_pump_push_speed:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                injection_pump_suction_speed:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                pre_filtration_mixing_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                raw_liquid_suction_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                second_powder_mixing_time:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                second_powder_wash_count:
+                  maximum: 2147483647
+                  minimum: -2147483648
+                  type: integer
+                second_wash_water_amount:
+                  type: number
+                wash_slow_speed:
+                  type: number
+              required:
+              - atomization_fast_speed
+              - wash_slow_speed
+              - injection_pump_suction_speed
+              - injection_pump_push_speed
+              - raw_liquid_suction_count
+              - first_wash_water_amount
+              - second_wash_water_amount
+              - first_powder_mixing_tim
+              - second_powder_mixing_time
+              - first_powder_wash_count
+              - second_powder_wash_count
+              - initial_water_amount
+              - pre_filtration_mixing_time
+              - atomization_pressure_kpa
+              title: PostProcessTriggerPostPro_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+              required:
+              - return_info
+              title: PostProcessTriggerPostPro_Result
+              type: object
+          required:
+          - goal
+          title: PostProcessTriggerPostPro
+          type: object
+        type: PostProcessTriggerPostPro
+      write_node:
+        feedback:
+          result: result
+        goal:
+          command: json_input
+        goal_default:
+          command: ''
+        handles: {}
+        result:
+          success: success
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties:
+                status:
+                  type: string
+              required:
+              - status
+              title: SendCmd_Feedback
+              type: object
+            goal:
+              properties:
+                command:
+                  type: string
+              required:
+              - command
+              title: SendCmd_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: SendCmd_Result
+              type: object
+          required:
+          - goal
+          title: SendCmd
+          type: object
+        type: SendCmd
+    module: unilabos.devices.workstation.post_process.post_process:OpcUaClient
+    status_types:
+      cache_stats: dict
+      node_value: String
+    type: python
+  config_info: []
+  description: 后处理站
+  handles: []
+  icon: post_process_station.webp
+  init_param_schema:
+    config:
+      properties:
+        cache_timeout:
+          default: 5.0
+          type: number
+        config_path:
+          type: string
+        deck:
+          type: string
+        password:
+          type: string
+        subscription_interval:
+          default: 500
+          type: integer
+        url:
+          type: string
+        use_subscription:
+          default: true
+          type: boolean
+        username:
+          type: string
+      required:
+      - url
+      type: object
+    data:
+      properties:
+        cache_stats:
+          type: object
+        node_value:
+          type: string
+      required:
+      - node_value
+      - cache_stats
+      type: object
+  version: 1.0.0

@@ -1,9 +1,11 @@
+import inspect
 import traceback
 import uuid
 from pydantic import BaseModel, field_serializer, field_validator
 from pydantic import Field
 from typing import List, Tuple, Any, Dict, Literal, Optional, cast, TYPE_CHECKING, Union
 
+from unilabos.resources.plr_additional_res_reg import register
 from unilabos.utils.log import logger
 
 if TYPE_CHECKING:
@@ -62,11 +64,10 @@ class ResourceDict(BaseModel):
     parent: Optional["ResourceDict"] = Field(description="Parent resource object", default=None, exclude=True)
     type: Union[Literal["device"], str] = Field(description="Resource type")
     klass: str = Field(alias="class", description="Resource class name")
-    position: ResourceDictPosition = Field(description="Resource position", default_factory=ResourceDictPosition)
     pose: ResourceDictPosition = Field(description="Resource position", default_factory=ResourceDictPosition)
     config: Dict[str, Any] = Field(description="Resource configuration")
-    data: Dict[str, Any] = Field(description="Resource data")
-    extra: Dict[str, Any] = Field(description="Extra data")
+    data: Dict[str, Any] = Field(description="Resource data, eg: container liquid data")
+    extra: Dict[str, Any] = Field(description="Extra data, eg: slot index")
 
     @field_serializer("parent_uuid")
     def _serialize_parent(self, parent_uuid: Optional["ResourceDict"]):
@@ -145,16 +146,29 @@ class ResourceDictInstance(object):
             content["data"] = {}
         if not content.get("extra"):  # MagicCode
             content["extra"] = {}
-        if "pose" not in content:
-            content["pose"] = content.get("position", {})
+        if "position" in content:
+            pose = content.get("pose",{})
+            if "position" not in pose :
+                if "position" in content["position"]:
+                    pose["position"] = content["position"]["position"]
+                else:
+                    pose["position"] = {"x": 0, "y": 0, "z": 0}
+            if "size" not in pose:
+                pose["size"] = {
+                    "width": content["config"].get("size_x", 0), 
+                    "height": content["config"].get("size_y", 0), 
+                    "depth": content["config"].get("size_z", 0)
+                }
+            content["pose"] = pose
         return ResourceDictInstance(ResourceDict.model_validate(content))
 
-    def get_nested_dict(self) -> Dict[str, Any]:
+    def get_plr_nested_dict(self) -> Dict[str, Any]:
         """获取资源实例的嵌套字典表示"""
         res_dict = self.res_content.model_dump(by_alias=True)
-        res_dict["children"] = {child.res_content.id: child.get_nested_dict() for child in self.children}
+        res_dict["children"] = {child.res_content.id: child.get_plr_nested_dict() for child in self.children}
         res_dict["parent"] = self.res_content.parent_instance_name
-        res_dict["position"] = self.res_content.position.position.model_dump()
+        res_dict["position"] = self.res_content.pose.position.model_dump()
+        del res_dict["pose"]
         return res_dict
 
 
@@ -429,12 +443,12 @@ class ResourceTreeSet(object):
         Returns:
             List[PLRResource]: PLR 资源实例列表
         """
+        register()
         from pylabrobot.resources import Resource as PLRResource
         from pylabrobot.utils.object_parsing import find_subclass
-        import inspect
 
         # 类型映射
-        TYPE_MAP = {"plate": "Plate", "well": "Well", "deck": "Deck", "container": "RegularContainer"}
+        TYPE_MAP = {"plate": "Plate", "well": "Well", "deck": "Deck", "container": "RegularContainer", "tip_spot": "TipSpot"}
 
         def collect_node_data(node: ResourceDictInstance, name_to_uuid: dict, all_states: dict, name_to_extra: dict):
             """一次遍历收集 name_to_uuid, all_states 和 name_to_extra"""
@@ -459,9 +473,9 @@ class ResourceTreeSet(object):
                 "size_y": res.config.get("size_y", 0),
                 "size_z": res.config.get("size_z", 0),
                 "location": {
-                    "x": res.position.position.x,
-                    "y": res.position.position.y,
-                    "z": res.position.position.z,
+                    "x": res.pose.position.x,
+                    "y": res.pose.position.y,
+                    "z": res.pose.position.z,
                     "type": "Coordinate",
                 },
                 "rotation": {"x": 0, "y": 0, "z": 0, "type": "Rotation"},

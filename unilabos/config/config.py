@@ -21,7 +21,8 @@ class BasicConfig:
     startup_json_path = None  # 填写绝对路径
     disable_browser = False  # 禁止浏览器自动打开
     port = 8002  # 本地HTTP服务
-    log_level: Literal['TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] = "DEBUG"  # 'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+    # 'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+    log_level: Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
 
     @classmethod
     def auth_secret(cls):
@@ -41,7 +42,7 @@ class WSConfig:
 
 # HTTP配置
 class HTTPConfig:
-    remote_addr = "http://127.0.0.1:48197/api/v1"
+    remote_addr = "https://uni-lab.bohrium.com/api/v1"
 
 
 # ROS配置
@@ -65,13 +66,14 @@ def _update_config_from_module(module):
                     if not attr.startswith("_"):
                         setattr(obj, attr, getattr(getattr(module, name), attr))
 
+
 def _update_config_from_env():
     prefix = "UNILABOS_"
     for env_key, env_value in os.environ.items():
         if not env_key.startswith(prefix):
             continue
         try:
-            key_path = env_key[len(prefix):]  # Remove UNILAB_ prefix
+            key_path = env_key[len(prefix) :]  # Remove UNILAB_ prefix
             class_field = key_path.upper().split("_", 1)
             if len(class_field) != 2:
                 logger.warning(f"[ENV] 环境变量格式不正确：{env_key}")

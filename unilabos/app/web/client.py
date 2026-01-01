@@ -76,7 +76,8 @@ class HTTPClient:
             Dict[str, str]: 旧UUID到新UUID的映射关系 {old_uuid: new_uuid}
         """
         with open(os.path.join(BasicConfig.working_dir, "req_resource_tree_add.json"), "w", encoding="utf-8") as f:
-            f.write(json.dumps({"nodes": [x for xs in resources.dump() for x in xs], "mount_uuid": mount_uuid}, indent=4))
+            payload = {"nodes": [x for xs in resources.dump() for x in xs], "mount_uuid": mount_uuid}
+            f.write(json.dumps(payload, indent=4))
         # 从序列化数据中提取所有节点的UUID（保存旧UUID）
         old_uuids = {n.res_content.uuid: n for n in resources.all_nodes}
         if not self.initialized or first_add:
@@ -299,6 +300,10 @@ class HTTPClient:
         )
         if response.status_code not in [200, 201]:
             logger.error(f"注册资源失败: {response.status_code}, {response.text}")
+        if response.status_code == 200:
+            res = response.json()
+            if "code" in res and res["code"] != 0:
+                logger.error(f"注册资源失败: {response.text}")
         return response
 
     def request_startup_json(self) -> Optional[Dict[str, Any]]:
@@ -330,6 +335,67 @@ class HTTPClient:
                 logger.error(f"解析启动配置JSON失败: {str(e.args)}\n响应内容: {response.text}")
                 logger.error(f"响应内容: {response.text}")
         return None
+
+    def workflow_import(
+        self,
+        name: str,
+        workflow_uuid: str,
+        workflow_name: str,
+        nodes: List[Dict[str, Any]],
+        edges: List[Dict[str, Any]],
+        tags: Optional[List[str]] = None,
+        published: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        导入工作流到服务器
+
+        Args:
+            name: 工作流名称（顶层）
+            workflow_uuid: 工作流UUID
+            workflow_name: 工作流名称（data内部）
+            nodes: 工作流节点列表
+            edges: 工作流边列表
+            tags: 工作流标签列表，默认为空列表
+            published: 是否发布工作流，默认为False
+
+        Returns:
+            Dict: API响应数据，包含 code 和 data (uuid, name)
+        """
+        # target_lab_uuid 暂时使用默认值，后续由后端根据 ak/sk 获取
+        payload = {
+            "target_lab_uuid": "28c38bb0-63f6-4352-b0d8-b5b8eb1766d5",
+            "name": name,
+            "data": {
+                "workflow_uuid": workflow_uuid,
+                "workflow_name": workflow_name,
+                "nodes": nodes,
+                "edges": edges,
+                "tags": tags if tags is not None else [],
+                "published": published,
+            },
+        }
+        # 保存请求到文件
+        with open(os.path.join(BasicConfig.working_dir, "req_workflow_upload.json"), "w", encoding="utf-8") as f:
+            f.write(json.dumps(payload, indent=4, ensure_ascii=False))
+
+        response = requests.post(
+            f"{self.remote_addr}/lab/workflow/owner/import",
+            json=payload,
+            headers={"Authorization": f"Lab {self.auth}"},
+            timeout=60,
+        )
+        # 保存响应到文件
+        with open(os.path.join(BasicConfig.working_dir, "res_workflow_upload.json"), "w", encoding="utf-8") as f:
+            f.write(f"{response.status_code}" + "\n" + response.text)
+
+        if response.status_code == 200:
+            res = response.json()
+            if "code" in res and res["code"] != 0:
+                logger.error(f"导入工作流失败: {response.text}")
+            return res
+        else:
+            logger.error(f"导入工作流失败: {response.status_code}, {response.text}")
+            return {"code": response.status_code, "message": response.text}
 
 
 # 创建默认客户端实例

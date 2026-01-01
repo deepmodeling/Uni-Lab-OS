@@ -1,0 +1,32 @@
+Hydrogel_Powder_Containing_Bottle:
+  category:
+  - bottles
+  class:
+    module: unilabos.devices.workstation.AI4M.bottles:Hydrogel_Powder_Containing_Bottle
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+
+Hydrogel_Clean_Bottle:
+  category:
+  - bottles
+  class:
+    module: unilabos.devices.workstation.AI4M.bottles:Hydrogel_Clean_Bottle
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+
+  Hydrogel_Waste_Bottle:
+  category:
+  - bottles
+  class:
+    module: unilabos.devices.workstation.AI4M.bottles:Hydrogel_Waste_Bottle
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0

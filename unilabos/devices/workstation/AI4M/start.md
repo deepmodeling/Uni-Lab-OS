@@ -1,0 +1,1 @@
+unilab -g C:\Users\Roy\Desktop\DPLC\Uni-Lab-OS\unilabos\devices\workstation\AI4M\AI4M.json --ak e1bcb3fa-575f-45e2-8a16-201c0193a267 --sk 208c9236-cf12-4345-bae1-040a9a24f934 --upload_registry --addr test --disable_browser

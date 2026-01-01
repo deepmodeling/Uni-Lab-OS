@@ -47,14 +47,15 @@ class Bottle(Well):
         )
         self.diameter = diameter
         self.height = height
-        self.barcode = barcode
+        # 存储 barcode 字符串到自定义属性，不覆盖父类的 barcode 对象属性
+        self._barcode_str = barcode if barcode else None
 
     def serialize(self) -> dict:
         return {
             **super().serialize(),
             "diameter": self.diameter,
             "height": self.height,
-            "barcode": self.barcode,
+            "barcode": self._barcode_str,  # 序列化时输出字符串
         }
 
 T = TypeVar("T", bound=ResourceHolder)

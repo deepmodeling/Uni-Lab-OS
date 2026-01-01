@@ -1,0 +1,45 @@
+{
+    "nodes": [
+        {
+            "id": "AI4M_station",
+            "name": "AI4M_station",
+            "children": [
+                "AI4M_deck"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "AI4M_station",
+            "config": {
+                "url": "opc.tcp://127.0.0.1:49320",
+                "csv_path": "C:\\Users\\Roy\\Desktop\\DPLC\\Uni-Lab-OS\\unilabos\\devices\\workstation\\AI4M\\opcua_nodes_AI4M_sim.csv",
+                "deck": {
+                    "data": {
+                        "_resource_child_name": "AI4M_deck",
+                        "_resource_type": "unilabos.devices.workstation.AI4M.decks:AI4M_deck"
+                    }
+                }
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "AI4M_deck",
+            "name": "AI4M_deck",
+            "sample_id": null,
+            "children": [],
+            "parent": "AI4M_station",
+            "type": "deck",
+            "class": "AI4M_deck",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "type": "AI4M_deck",
+                "setup": true
+            },
+            "data": {}
+        }
+    ]
+}

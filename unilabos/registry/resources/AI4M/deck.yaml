@@ -1,0 +1,12 @@
+AI4M_deck:
+  category:
+  - AI4M_deck
+  class:
+    module: unilabos.devices.workstation.AI4M.decks:AI4M_deck
+    type: pylabrobot
+  description: AI4M_deck
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

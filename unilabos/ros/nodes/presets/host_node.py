@@ -45,6 +45,7 @@ from unilabos.ros.nodes.resource_tracker import (
 )
 from unilabos.utils import logger
 from unilabos.utils.exception import DeviceClassInvalid
+from unilabos.utils.log import warning
 from unilabos.utils.type_check import serialize_result_info
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
 
@@ -180,7 +181,7 @@ class HostNode(BaseROS2DeviceNode):
                                 for plr_resource in ResourceTreeSet([tree]).to_plr_resources():
                                     self._resource_tracker.add_resource(plr_resource)
                             except Exception as ex:
-                                self.lab_logger().warning(f"[Host Node-Resource] 根节点物料{tree}序列化失败！")
+                                warning(f"[Host Node-Resource] 根节点物料{tree}序列化失败！")
         except Exception as ex:
             logger.error(f"[Host Node-Resource] 添加物料出错！\n{traceback.format_exc()}")
         # 初始化Node基类，传递空参数覆盖列表
@@ -455,10 +456,10 @@ class HostNode(BaseROS2DeviceNode):
 
     async def create_resource(
         self,
-        device_id: str,
+        device_id: DeviceSlot,
         res_id: str,
         class_name: str,
-        parent: str,
+        parent: ResourceSlot,
         bind_locations: Point,
         liquid_input_slot: list[int] = [],
         liquid_type: list[str] = [],
@@ -805,7 +806,7 @@ class HostNode(BaseROS2DeviceNode):
 
             self.lab_logger().info(f"[Host Node] Result for {action_id} ({job_id[:8]}): {status}")
             if goal_status != GoalStatus.STATUS_CANCELED:
-                self.lab_logger().debug(f"[Host Node] Result data: {result_data}")
+                self.lab_logger().trace(f"[Host Node] Result data: {result_data}")
 
             # 清理 _goals 中的记录
             if job_id in self._goals:

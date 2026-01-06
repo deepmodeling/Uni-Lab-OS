@@ -70,7 +70,16 @@ class PRCXI9300Deck(Deck):
 
     def __init__(self, name: str, size_x: float, size_y: float, size_z: float, **kwargs):
         super().__init__(name, size_x, size_y, size_z)
-        self.slots = [None] * 6  # PRCXI 9300 有 6 个槽位
+        self.slots = [None] * 16  # PRCXI 9300/9320 最大有 16 个槽位
+        self.slot_locations = [Coordinate(0, 0, 0)] * 16
+
+    def assign_child_at_slot(self, resource: Resource, slot: int, reassign: bool = False) -> None:
+        if self.slots[slot - 1] is not None and not reassign:
+            raise ValueError(f"Spot {slot} is already occupied")
+
+        self.slots[slot - 1] = resource
+        super().assign_child_resource(resource, location=self.slot_locations[slot - 1])
+
 class PRCXI9300Container(Plate):
     """PRCXI 9300 的专用 Container 类，继承自 Plate，用于槽位定位和未知模块。
 

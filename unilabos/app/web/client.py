@@ -4,7 +4,6 @@ HTTP客户端模块
 提供与远程服务器通信的客户端功能，只有host需要用
 """
 
-from copy import deepcopy
 import json
 import os
 import time
@@ -76,27 +75,6 @@ class HTTPClient:
         Returns:
             Dict[str, str]: 旧UUID到新UUID的映射关系 {old_uuid: new_uuid}
         """
-        # 遍历 resources 及其所有子节点，将 pose.position.y 全部变为 -y
-        def invert_y_position(resource_instance, size_y: float = 0):
-            # 处理当前节点
-            pose = getattr(resource_instance.res_content, "pose", None)
-            if pose and hasattr(pose, "position"):
-                position = getattr(pose, "position", None)
-                pose_size = getattr(pose, "size", None)
-                if position and hasattr(position, "y") and pose_size and hasattr(pose_size, "height"):
-                    position.y = size_y - position.y - pose_size.height
-            # 递归处理子节点
-            for child in getattr(resource_instance, "children", []):
-                _size_y = 0
-                if pose and hasattr(pose, "size"):
-                    _size_y = pose.size.height
-                invert_y_position(child, _size_y)
-
-        # 处理所有树的所有节点，从树的根节点递归
-        resources_reversed = deepcopy(resources)
-        for tree in getattr(resources_reversed, "trees", []):
-            root_node = getattr(tree, "root_node", tree)
-            invert_y_position(root_node, root_node.res_content.pose.size.height if root_node.res_content.pose.size else 0)
         with open(os.path.join(BasicConfig.working_dir, "req_resource_tree_add.json"), "w", encoding="utf-8") as f:
             payload = {"nodes": [x for xs in resources.dump() for x in xs], "mount_uuid": mount_uuid}
             f.write(json.dumps(payload, indent=4))
@@ -107,14 +85,14 @@ class HTTPClient:
             info(f"首次添加资源，当前远程地址: {self.remote_addr}")
             response = requests.post(
                 f"{self.remote_addr}/edge/material",
-                json={"nodes": [x for xs in resources_reversed.dump() for x in xs], "mount_uuid": mount_uuid},
+                json={"nodes": [x for xs in resources.dump() for x in xs], "mount_uuid": mount_uuid},
                 headers={"Authorization": f"Lab {self.auth}"},
                 timeout=60,
             )
         else:
             response = requests.put(
                 f"{self.remote_addr}/edge/material",
-                json={"nodes": [x for xs in resources_reversed.dump() for x in xs], "mount_uuid": mount_uuid},
+                json={"nodes": [x for xs in resources.dump() for x in xs], "mount_uuid": mount_uuid},
                 headers={"Authorization": f"Lab {self.auth}"},
                 timeout=10,
             )

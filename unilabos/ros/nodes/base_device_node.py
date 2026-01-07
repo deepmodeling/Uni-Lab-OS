@@ -844,6 +844,16 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     and original_parent_resource is not None
                 ):
                     self.transfer_to_new_resource(original_instance, tree, additional_add_params)
+                else:
+                    # 判断是否变更了resource_site
+                    target_site = original_instance.unilabos_extra.get("update_resource_site")
+                    sites = original_instance.parent.sites if original_instance.parent is not None and hasattr(original_instance.parent, "sites") else None
+                    site_names = list(original_instance.parent._ordering.keys()) if original_instance.parent is not None and hasattr(original_instance.parent, "sites") else []
+                    if target_site is not None and sites is not None and site_names is not None:
+                        site_index = sites.index(original_instance)
+                        site_name = site_names[site_index]
+                        if site_name != target_site:
+                            self.transfer_to_new_resource(original_instance, tree, additional_add_params)
 
                 # 加载状态
                 original_instance.load_all_state(states)
@@ -898,7 +908,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                                 plr_resources.append(tree.root_node)
                             else:
                                 plr_resources.append(ResourceTreeSet([tree]).to_plr_resources()[0])
+                        new_tree_set = ResourceTreeSet.from_plr_resources(plr_resources)
                         result = _handle_update(plr_resources, tree_set, additional_add_params)
+                        r = SerialCommand.Request()
+                        r.command = json.dumps(
+                            {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致
+                        response: SerialCommand_Response = await self._resource_clients[
+                            "c2s_update_resource_tree"].call_async(r)  # type: ignore
+                        self.lab_logger().info(f"确认资源云端 Update 结果: {response.response}")
                         results.append(result)
                     elif action == "remove":
                         result = _handle_remove(resources_uuid)

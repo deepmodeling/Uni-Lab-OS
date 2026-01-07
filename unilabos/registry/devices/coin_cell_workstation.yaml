@@ -115,6 +115,117 @@ coincellassemblyworkstation_device:
           title: func_allpack_cmd参数
           type: object
         type: UniLabJsonCommand
+      auto-func_allpack_cmd_simp:
+        feedback: {}
+        goal: {}
+        goal_default:
+          assembly_pressure: 4200
+          assembly_type: 7
+          battery_clean_ignore: false
+          battery_pressure_mode: true
+          dual_drop_first_volume: 25
+          dual_drop_mode: false
+          dual_drop_start_timing: false
+          dual_drop_suction_timing: false
+          elec_num: null
+          elec_use_num: null
+          elec_vol: 50
+          file_path: /Users/sml/work
+          fujipian_juzhendianwei: 0
+          fujipian_panshu: 0
+          gemo_juzhendianwei: 0
+          gemopanshu: 0
+          lvbodian: true
+          qiangtou_juzhendianwei: 0
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 简化版电池组装函数，整合了参数设置和双滴模式
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                assembly_pressure:
+                  default: 4200
+                  description: 电池压制力(N)
+                  type: integer
+                assembly_type:
+                  default: 7
+                  description: 组装类型(7=不用铝箔垫, 8=使用铝箔垫)
+                  type: integer
+                battery_clean_ignore:
+                  default: false
+                  description: 是否忽略电池清洁步骤
+                  type: boolean
+                battery_pressure_mode:
+                  default: true
+                  description: 是否启用压力模式
+                  type: boolean
+                dual_drop_first_volume:
+                  default: 25
+                  description: 二次滴液第一次排液体积(μL)
+                  type: integer
+                dual_drop_mode:
+                  default: false
+                  description: 电解液添加模式(false=单次滴液, true=二次滴液)
+                  type: boolean
+                dual_drop_start_timing:
+                  default: false
+                  description: 二次滴液开始滴液时机(false=正极片前, true=正极片后)
+                  type: boolean
+                dual_drop_suction_timing:
+                  default: false
+                  description: 二次滴液吸液时机(false=正常吸液, true=先吸液)
+                  type: boolean
+                elec_num:
+                  description: 电解液瓶数
+                  type: string
+                elec_use_num:
+                  description: 每瓶电解液组装电池数
+                  type: string
+                elec_vol:
+                  default: 50
+                  description: 电解液吸液量(μL)
+                  type: integer
+                file_path:
+                  default: /Users/sml/work
+                  description: 实验记录保存路径
+                  type: string
+                fujipian_juzhendianwei:
+                  default: 0
+                  description: 负极片矩阵点位
+                  type: integer
+                fujipian_panshu:
+                  default: 0
+                  description: 负极片盘数
+                  type: integer
+                gemo_juzhendianwei:
+                  default: 0
+                  description: 隔膜矩阵点位
+                  type: integer
+                gemopanshu:
+                  default: 0
+                  description: 隔膜盘数
+                  type: integer
+                lvbodian:
+                  default: true
+                  description: 是否使用铝箔垫片
+                  type: boolean
+                qiangtou_juzhendianwei:
+                  default: 0
+                  description: 枪头盒矩阵点位
+                  type: integer
+              required:
+              - elec_num
+              - elec_use_num
+              type: object
+            result: {}
+          required:
+          - goal
+          title: func_allpack_cmd_simp参数
+          type: object
+        type: UniLabJsonCommand
       auto-func_get_csv_export_status:
         feedback: {}
         goal: {}
@@ -176,6 +287,27 @@ coincellassemblyworkstation_device:
           required:
           - goal
           title: func_pack_device_init参数
+          type: object
+        type: UniLabJsonCommand
+      auto-func_pack_device_init_auto_start_combined:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 组合函数:设备初始化 + 切换自动模式 + 启动
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: func_pack_device_init_auto_start_combined参数
           type: object
         type: UniLabJsonCommand
       auto-func_pack_device_start:
@@ -250,7 +382,15 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default:
           bottle_num: null
-        handles: {}
+        handles:
+          input:
+          - data_key: bottle_num
+            data_source: workflow
+            data_type: integer
+            handler_key: bottle_count
+            io_type: source
+            label: 配液瓶数
+            required: true
         placeholder_keys: {}
         result: {}
         schema:
@@ -260,7 +400,7 @@ coincellassemblyworkstation_device:
             goal:
               properties:
                 bottle_num:
-                  type: string
+                  type: integer
               required:
               - bottle_num
               type: object

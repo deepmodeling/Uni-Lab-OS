@@ -1,7 +1,7 @@
 from os import name
 from pylabrobot.resources import Deck, Coordinate, Rotation
 
-from unilabos.resources.bioyond.warehouses import (
+from unilabos.resources.bioyond.YB_warehouses import (
     bioyond_warehouse_1x4x4,
     bioyond_warehouse_1x4x4_right,  # 新增：右侧仓库 (A05～D08)
     bioyond_warehouse_1x4x2,

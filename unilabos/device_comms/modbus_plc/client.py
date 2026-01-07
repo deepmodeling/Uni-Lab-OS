@@ -4,8 +4,7 @@ import traceback
 from typing import Any, Union, List, Dict, Callable, Optional, Tuple
 from pydantic import BaseModel
 
-from pymodbus.client import ModbusSerialClient, ModbusTcpClient
-from pymodbus.framer import FramerType
+from pymodbus.client.sync import ModbusSerialClient, ModbusTcpClient
 from typing import TypedDict
 
 from unilabos.device_comms.modbus_plc.modbus import DeviceType, HoldRegister, Coil, InputRegister, DiscreteInputs, DataType, WorderOrder
@@ -403,7 +402,7 @@ class TCPClient(BaseClient):
 class RTUClient(BaseClient):
     def __init__(self, port: str, baudrate: int, timeout: int):
         super().__init__()
-        self._set_client(ModbusSerialClient(framer=FramerType.RTU, port=port, baudrate=baudrate, timeout=timeout))
+        self._set_client(ModbusSerialClient(method='rtu', port=port, baudrate=baudrate, timeout=timeout))
         self._connect()
 
 if __name__ == '__main__':

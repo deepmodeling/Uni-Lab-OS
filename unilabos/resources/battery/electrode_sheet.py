@@ -16,9 +16,12 @@ electrode_colors = {
 }
 
 class ElectrodeSheetState(TypedDict):
+    diameter: float  # 直径 (mm)
+    thickness: float  # 厚度 (mm)
     mass: float  # 质量 (g)
     material_type: str  # 材料类型（铜、铝、不锈钢、弹簧钢等）
     color: str  # 材料类型对应的颜色
+    info: Optional[str]  # 附加信息
 
 
 class ElectrodeSheet(ResourcePLR):
@@ -27,18 +30,23 @@ class ElectrodeSheet(ResourcePLR):
     def __init__(
         self,
         name: str = "极片",
-        size_x=10,
-        size_y=10,
-        size_z=10,
+        size_x: float = 10,
+        size_y: float = 10,
+        size_z: float = 10,
         category: str = "electrode_sheet",
         model: Optional[str] = None,
+        **kwargs
     ):
         """初始化极片
 
         Args:
             name: 极片名称
+            size_x: 长度 (mm)
+            size_y: 宽度 (mm)
+            size_z: 高度 (mm)
             category: 类别
             model: 型号
+            **kwargs: 其他参数传递给父类
         """
         super().__init__(
             name=name,
@@ -47,12 +55,14 @@ class ElectrodeSheet(ResourcePLR):
             size_z=size_z,
             category=category,
             model=model,
+            **kwargs
         )
         self._unilabos_state: ElectrodeSheetState = ElectrodeSheetState(
             diameter=14,
             thickness=0.1,
             mass=0.5,
             material_type="copper",
+            color="#8b4513",
             info=None
         )
 
@@ -72,7 +82,7 @@ class ElectrodeSheet(ResourcePLR):
 def PositiveCan(name: str) -> ElectrodeSheet:
     """创建正极壳"""
     sheet = ElectrodeSheet(name=name, size_x=12, size_y=12, size_z=3.0, model="PositiveCan")
-    sheet.load_state({"material_type": "aluminum", "color": electrode_colors["PositiveCan"]})
+    sheet.load_state({"diameter": 20.0, "thickness": 0.5, "mass": 0.5, "material_type": "aluminum", "color": electrode_colors["PositiveCan"], "info": None})
     return sheet
 
 
@@ -135,18 +145,23 @@ class Battery(Container):
     def __init__(
         self,
         name: str = "电池",
-        size_x=12,
-        size_y=12,
-        size_z=6,
+        size_x: float = 12,
+        size_y: float = 12,
+        size_z: float = 6,
         category: str = "battery",
         model: Optional[str] = None,
+        **kwargs
     ):
         """初始化电池
 
         Args:
             name: 电池名称
+            size_x: 长度 (mm)
+            size_y: 宽度 (mm)
+            size_z: 高度 (mm)
             category: 类别
             model: 型号
+            **kwargs: 其他参数传递给父类
         """
         super().__init__(
             name=name,
@@ -155,6 +170,7 @@ class Battery(Container):
             size_z=size_z,
             category=category,
             model=model,
+            **kwargs
         )
         self._unilabos_state: BatteryState = BatteryState(
             color=electrode_colors["Battery"],

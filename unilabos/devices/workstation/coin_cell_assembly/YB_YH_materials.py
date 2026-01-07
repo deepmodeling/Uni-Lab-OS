@@ -634,6 +634,12 @@ class CoincellDeck(Deck):
         self.assign_child_resource(waste_tip_box, Coordinate(x=778.0, y=622.0, z=0))
 
 
+def YH_Deck(name=""):
+    cd = CoincellDeck(name=name)
+    cd.setup()
+    return cd
+
+
 if __name__ == "__main__":
     deck = create_coin_cell_deck()
     print(deck)

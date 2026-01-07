@@ -1,0 +1,197 @@
+{
+    "token": "",
+    "request_time": "2025-12-24T15:32:09.2148671+08:00",
+    "data": {
+        "orderId": "3a1e614d-a082-c44a-60be-68647a35e6f1",
+        "orderCode": "BSO2025122400024",
+        "orderName": "DP20251224001",
+        "startTime": "2025-12-24T14:51:50.549848",
+        "endTime": "2025-12-24T15:32:09.000765",
+        "status": "30",
+        "workflowStatus": "completed",
+        "completionTime": "2025-12-24T15:32:09.000765",
+        "usedMaterials": [
+            {
+                "materialId": "3a1e614b-53a6-0ec4-10bd-956b240c0f04",
+                "locationId": "3a19debc-84b5-4c1c-d3a1-26830cf273ff",
+                "typemode": "1",
+                "usedQuantity": 2,
+                "realQuantity": 2
+            },
+            {
+                "materialId": "3a1e614b-4da7-cf62-3a40-7e5879255c0c",
+                "locationId": "3a1a224d-ed49-710c-a9c3-3fc61d479cbb",
+                "typemode": "1",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614b-53a7-2850-42c8-a7a2de8ff4bf",
+                "locationId": "3a19debc-84b5-4c1c-d3a1-26830cf273ff",
+                "typemode": "1",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614b-4da6-ac9d-02be-4b0716796bd2",
+                "locationId": "3a1a224d-ed49-710c-a9c3-3fc61d479cbb",
+                "typemode": "1",
+                "usedQuantity": 2,
+                "realQuantity": 2
+            },
+            {
+                "materialId": "3a1e614d-9c9a-fafa-4757-c7411b03bd9f",
+                "locationId": "3a1abd46-18fe-1f56-6ced-a1f7fe08e36c",
+                "typemode": "0",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614b-6917-b8f9-7987-7a33a3792829",
+                "locationId": "3a19da43-57b5-294f-d663-154a1cc32270",
+                "typemode": "2",
+                "usedQuantity": 3.51,
+                "realQuantity": 3.5155000000000000000000000000
+            },
+            {
+                "materialId": "3a1e614b-6914-d92b-e348-f52e13817a5d",
+                "locationId": "3a19da56-1379-ff7c-1745-07e200b44ce2",
+                "typemode": "2",
+                "usedQuantity": 0.33,
+                "realQuantity": 0.3336000000000000000000000000
+            }
+        ]
+    }
+}
+
+{
+    "token": "",
+    "request_time": "2025-12-24T15:32:09.9999039+08:00",
+    "data": {
+        "orderId": "3a1e614d-a0a2-f7a9-9360-610021c9479d",
+        "orderCode": "BSO2025122400025",
+        "orderName": "DP20251224002",
+        "startTime": "2025-12-24T14:53:03.44259",
+        "endTime": "2025-12-24T15:32:09.828261",
+        "status": "30",
+        "workflowStatus": "completed",
+        "completionTime": "2025-12-24T15:32:09.828261",
+        "usedMaterials": [
+            {
+                "materialId": "3a1e614b-4da7-6527-9f1c-b39e3de8ff2b",
+                "locationId": "3a1a224d-ed49-710c-a9c3-3fc61d479cbb",
+                "typemode": "1",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614b-53a6-0ec4-10bd-956b240c0f04",
+                "locationId": "3a19debc-84b5-4c1c-d3a1-26830cf273ff",
+                "typemode": "1",
+                "usedQuantity": 2,
+                "realQuantity": 2
+            },
+            {
+                "materialId": "3a1e614b-4da6-ac9d-02be-4b0716796bd2",
+                "locationId": "3a1a224d-ed49-710c-a9c3-3fc61d479cbb",
+                "typemode": "1",
+                "usedQuantity": 2,
+                "realQuantity": 2
+            },
+            {
+                "materialId": "3a1e614b-53a8-8474-cac8-0fd7d349e4b2",
+                "locationId": "3a19debc-84b5-4c1c-d3a1-26830cf273ff",
+                "typemode": "1",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614d-9c9a-fafa-4757-c7411b03bd9f",
+                "locationId": null,
+                "typemode": "0",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614b-6917-b8f9-7987-7a33a3792829",
+                "locationId": "3a19da43-57b5-294f-d663-154a1cc32270",
+                "typemode": "2",
+                "usedQuantity": 0.7,
+                "realQuantity": 0
+            },
+            {
+                "materialId": "3a1e614b-6914-d92b-e348-f52e13817a5d",
+                "locationId": "3a19da56-1379-ff7c-1745-07e200b44ce2",
+                "typemode": "2",
+                "usedQuantity": 1.15,
+                "realQuantity": 1.1627000000000000000000000000
+            }
+        ]
+    }
+}
+
+{
+    "token": "",
+    "request_time": "2025-12-24T15:34:00.4139986+08:00",
+    "data": {
+        "orderId": "3a1e614d-a0cd-81ca-9f7f-2f4e93af01cd",
+        "orderCode": "BSO2025122400026",
+        "orderName": "DP20251224003",
+        "startTime": "2025-12-24T14:54:24.443344",
+        "endTime": "2025-12-24T15:34:00.26321",
+        "status": "30",
+        "workflowStatus": "completed",
+        "completionTime": "2025-12-24T15:34:00.26321",
+        "usedMaterials": [
+            {
+                "materialId": "3a1e614b-4da6-ac9d-02be-4b0716796bd2",
+                "locationId": "3a19deae-2c7a-b9eb-f4e3-e308e0cf839a",
+                "typemode": "1",
+                "usedQuantity": 2,
+                "realQuantity": 2
+            },
+            {
+                "materialId": "3a1e614b-4da8-b678-f204-207076f09c83",
+                "locationId": "3a19deae-2c7a-b9eb-f4e3-e308e0cf839a",
+                "typemode": "1",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614b-53a6-0ec4-10bd-956b240c0f04",
+                "locationId": "3a19debc-84b5-4c1c-d3a1-26830cf273ff",
+                "typemode": "1",
+                "usedQuantity": 2,
+                "realQuantity": 2
+            },
+            {
+                "materialId": "3a1e614b-53a8-e3f2-dee0-fa97b600b652",
+                "locationId": "3a19debc-84b5-4c1c-d3a1-26830cf273ff",
+                "typemode": "1",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614d-9c9a-fafa-4757-c7411b03bd9f",
+                "locationId": null,
+                "typemode": "0",
+                "usedQuantity": 1,
+                "realQuantity": 1
+            },
+            {
+                "materialId": "3a1e614b-6917-b8f9-7987-7a33a3792829",
+                "locationId": "3a19da43-57b5-294f-d663-154a1cc32270",
+                "typemode": "2",
+                "usedQuantity": 2.0,
+                "realQuantity": 2.0075000000000000000000000000
+            },
+            {
+                "materialId": "3a1e614b-6914-d92b-e348-f52e13817a5d",
+                "locationId": "3a19da56-1379-ff7c-1745-07e200b44ce2",
+                "typemode": "2",
+                "usedQuantity": 1.2,
+                "realQuantity": 1.2126000000000000000000000000
+            }
+        ]
+    }
+}

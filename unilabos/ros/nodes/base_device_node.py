@@ -790,7 +790,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
 
         def _handle_update(
             plr_resources: List[Union[ResourcePLR, ResourceDictInstance]], tree_set: ResourceTreeSet, additional_add_params: Dict[str, Any]
-        ) -> Dict[str, Any]:
+        ) -> Tuple[Dict[str, Any], List[ResourcePLR]]:
             """
             处理资源更新操作的内部函数
 
@@ -802,6 +802,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             Returns:
                 操作结果字典
             """
+            original_instances = []
             for plr_resource, tree in zip(plr_resources, tree_set.trees):
                 if isinstance(plr_resource, ResourceDictInstance):
                     self._lab_logger.info(f"跳过 非资源{plr_resource.res_content.name} 的更新")
@@ -861,13 +862,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 self.lab_logger().info(
                     f"更新了资源属性 {plr_resource}[{tree.root_node.res_content.uuid}] " f"及其子节点 {child_count} 个"
                 )
+                original_instances.append(original_instance)
 
             # 调用driver的update回调
             func = getattr(self.driver_instance, "resource_tree_update", None)
             if callable(func):
-                func(plr_resources)
+                func(original_instances)
 
-            return {"success": True, "action": "update"}
+            return {"success": True, "action": "update"}, original_instances
 
         try:
             data = json.loads(req.command)
@@ -908,8 +910,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                                 plr_resources.append(tree.root_node)
                             else:
                                 plr_resources.append(ResourceTreeSet([tree]).to_plr_resources()[0])
-                        new_tree_set = ResourceTreeSet.from_plr_resources(plr_resources)
-                        result = _handle_update(plr_resources, tree_set, additional_add_params)
+                        result, original_instances = _handle_update(plr_resources, tree_set, additional_add_params)
+                        new_tree_set = ResourceTreeSet.from_plr_resources(original_instances)
                         r = SerialCommand.Request()
                         r.command = json.dumps(
                             {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致

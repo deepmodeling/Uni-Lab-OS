@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 
 
 class ResourceDictPositionSize(BaseModel):
-    depth: float = Field(description="Depth", default=0.0)
-    width: float = Field(description="Width", default=0.0)
-    height: float = Field(description="Height", default=0.0)
+    depth: float = Field(description="Depth", default=0.0)  # z
+    width: float = Field(description="Width", default=0.0)  # x
+    height: float = Field(description="Height", default=0.0)  # y
 
 
 class ResourceDictPositionScale(BaseModel):
@@ -469,9 +469,9 @@ class ResourceTreeSet(object):
                 **res.config,
                 "name": res.name,
                 "type": res.config.get("type", plr_type),
-                "size_x": res.config.get("size_x", 0),
-                "size_y": res.config.get("size_y", 0),
-                "size_z": res.config.get("size_z", 0),
+                "size_x": res.pose.size.width,
+                "size_y": res.pose.size.height,
+                "size_z": res.pose.size.depth,
                 "location": {
                     "x": res.pose.position.x,
                     "y": res.pose.position.y,

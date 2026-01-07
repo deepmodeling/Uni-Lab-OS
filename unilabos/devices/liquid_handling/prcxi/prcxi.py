@@ -71,7 +71,16 @@ class PRCXI9300Deck(Deck):
 
     def __init__(self, name: str, size_x: float, size_y: float, size_z: float, **kwargs):
         super().__init__(name, size_x, size_y, size_z)
-        self.slots = [None] * 6  # PRCXI 9300 有 6 个槽位
+        self.slots = [None] * 16  # PRCXI 9300/9320 最大有 16 个槽位
+        self.slot_locations = [Coordinate(0, 0, 0)] * 16
+
+    def assign_child_at_slot(self, resource: Resource, slot: int, reassign: bool = False) -> None:
+        if self.slots[slot - 1] is not None and not reassign:
+            raise ValueError(f"Spot {slot} is already occupied")
+
+        self.slots[slot - 1] = resource
+        super().assign_child_resource(resource, location=self.slot_locations[slot - 1])
+
 class PRCXI9300Container(Plate):
     """PRCXI 9300 的专用 Container 类，继承自 Plate，用于槽位定位和未知模块。
 
@@ -87,81 +96,19 @@ class PRCXI9300Container(Plate):
         category: str,
         ordering: collections.OrderedDict,
         model: Optional[str] = None,
-        material_info: Optional[Dict[str, Any]] = None,
-        ordering_layout: str = "col-major",
         **kwargs,
     ):
         super().__init__(name, size_x, size_y, size_z, category=category, ordering=ordering, model=model)
         self._unilabos_state = {}
-        self.sites = kwargs.get("sites", [])
-        self.sites = create_homogeneous_resources(
-            klass=ResourceHolder,
-            locations=[Coordinate(0, 0, 0)],
-            resource_size_x=size_x,
-            resource_size_y=size_y,
-            resource_size_z=size_z,
-            name_prefix=name,
-        )[0]
-        # 为 ItemizedCarrier 添加 _unilabos_state 属性，以便与其他 PRCXI 组件兼容
-        sites_resource = ItemizedCarrier(
-            name=name+"_sites",
-            sites={name: self.sites},
-            size_x=size_x,
-            size_y=size_y,
-            size_z=size_z,
-            category="warehouse",
-            model=model,
-        )
-        sites_resource._unilabos_state = {}  # 添加 _unilabos_state 属性
-        if material_info:
-            sites_resource._unilabos_state["Material"] = material_info
-
-        self.assign_child_resource(sites_resource, location=self.sites.location)
-
-        # 保存排序方式，供graphio.py的坐标映射使用
-        # 使用独立属性避免与父类的layout冲突
-        self.ordering_layout = ordering_layout
-
-    def serialize(self) -> dict:
-        """序列化时保存 ordering_layout 属性"""
-        data = super().serialize()
-        data['ordering_layout'] = self.ordering_layout
-        return data
 
     def load_state(self, state: Dict[str, Any]) -> None:
         """从给定的状态加载工作台信息。"""
         super().load_state(state)
         self._unilabos_state = state
 
-    def get_site(self) -> ResourceHolder:
-        """获取容器的站点"""
-        return self.sites
-
-    def add_resource_to_site(self, resource) -> None:
-        """向站点添加资源"""
-        self.sites.assign_child_resource(resource)
-
-    def get_resource_at_site(self):
-        """获取站点上的资源"""
-        return self.sites.children[0] if self.sites.children else None
-
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         data = super().serialize_state()
         data.update(self._unilabos_state)
-
-        # 避免序列化 ResourceHolder 对象
-        if hasattr(self, 'sites') and self.sites:
-            # 创建 sites 的可序列化版本
-            if hasattr(self.sites, '__class__') and 'pylabrobot' in str(self.sites.__class__.__module__):
-                data['sites'] = {
-                    "__pylabrobot_object__": True,
-                    "class": self.sites.__class__.__name__,
-                    "module": self.sites.__class__.__module__,
-                    "name": getattr(self.sites, 'name', str(self.sites))
-                }
-            else:
-                data['sites'] = self.sites
-
         return data   
 class PRCXI9300Plate(Plate):
     """ 

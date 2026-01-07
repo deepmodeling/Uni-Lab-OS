@@ -17,7 +17,7 @@ build:
     - bash $SRC_DIR/build_ament_cmake.sh
 
 about:
-  repository: https://github.com/dptech-corp/Uni-Lab-OS
+  repository: https://github.com/deepmodeling/Uni-Lab-OS
   license: BSD-3-Clause
   description: "ros-humble-unilabos-msgs is a package that provides message definitions for Uni-Lab-OS."
 

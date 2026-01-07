@@ -857,4 +857,4 @@ class ResourceDictPosition(BaseModel):
 - 在 Web 界面中使用模板创建
 - 参考示例文件：`test/experiments/` 目录
 - 查看 ResourceDict 源码了解完整定义
-- [GitHub 讨论区](https://github.com/dptech-corp/Uni-Lab-OS/discussions)
+- [GitHub 讨论区](https://github.com/deepmodeling/Uni-Lab-OS/discussions)

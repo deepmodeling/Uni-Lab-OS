@@ -8,16 +8,12 @@
 
 **English** | [中文](README_zh.md)
 
-[![GitHub Stars](https://img.shields.io/github/stars/dptech-corp/Uni-Lab-OS.svg)](https://github.com/dptech-corp/Uni-Lab-OS/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/dptech-corp/Uni-Lab-OS.svg)](https://github.com/dptech-corp/Uni-Lab-OS/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/dptech-corp/Uni-Lab-OS.svg)](https://github.com/dptech-corp/Uni-Lab-OS/issues)
-[![GitHub License](https://img.shields.io/github/license/dptech-corp/Uni-Lab-OS.svg)](https://github.com/dptech-corp/Uni-Lab-OS/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/issues)
+[![GitHub License](https://img.shields.io/github/license/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/blob/main/LICENSE)
 
 Uni-Lab-OS is a platform for laboratory automation, designed to connect and control various experimental equipment, enabling automation and standardization of experimental workflows.
-
-## 🏆 Competition
-
-Join the [Intelligent Organic Chemistry Synthesis Competition](https://bohrium.dp.tech/competitions/1451645258) to explore automated synthesis with Uni-Lab-OS!
 
 ## Key Features
 
@@ -31,7 +27,7 @@ Join the [Intelligent Organic Chemistry Synthesis Competition](https://bohrium.d
 
 Detailed documentation can be found at:
 
-- [Online Documentation](https://xuwznln.github.io/Uni-Lab-OS-Doc/)
+- [Online Documentation](https://deepmodeling.github.io/Uni-Lab-OS/)
 
 ## Quick Start
 
@@ -48,7 +44,7 @@ mamba install -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
 
 ```bash
 # Clone the repository
-git clone https://github.com/dptech-corp/Uni-Lab-OS.git
+git clone https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
 
 # Install Uni-Lab-OS
@@ -57,15 +53,37 @@ pip install .
 
 3. Start Uni-Lab System:
 
-Please refer to [Documentation - Boot Examples](https://xuwznln.github.io/Uni-Lab-OS-Doc/boot_examples/index.html)
+Please refer to [Documentation - Boot Examples](https://deepmodeling.github.io/Uni-Lab-OS/boot_examples/index.html)
 
 ## Message Format
 
-Uni-Lab-OS uses pre-built `unilabos_msgs` for system communication. You can find the built versions on the [GitHub Releases](https://github.com/dptech-corp/Uni-Lab-OS/releases) page.
+Uni-Lab-OS uses pre-built `unilabos_msgs` for system communication. You can find the built versions on the [GitHub Releases](https://github.com/deepmodeling/Uni-Lab-OS/releases) page.
+
+## Citation
+
+If you use Uni-Lab-OS in academic research, please cite:
+
+```bibtex
+@article{gao2025unilabos,
+    title = {UniLabOS: An AI-Native Operating System for Autonomous Laboratories},
+    doi = {10.48550/arXiv.2512.21766},
+    publisher = {arXiv},
+    author = {Gao, Jing and Chang, Junhan and Que, Haohui and Xiong, Yanfei and
+              Zhang, Shixiang and Qi, Xianwei and Liu, Zhen and Wang, Jun-Jie and
+              Ding, Qianjun and Li, Xinyu and Pan, Ziwei and Xie, Qiming and
+              Yan, Zhuang and Yan, Junchi and Zhang, Linfeng},
+    year = {2025}
+}
+```
 
 ## License
 
-This project is licensed under GPL-3.0 - see the [LICENSE](LICENSE) file for details.
+This project uses a dual licensing structure:
+
+- **Main Framework**: GPL-3.0 - see [LICENSE](LICENSE)
+- **Device Drivers** (`unilabos/devices/`): DP Technology Proprietary License
+
+See [NOTICE](NOTICE) for complete licensing details.
 
 ## Project Statistics
 
@@ -77,4 +95,4 @@ This project is licensed under GPL-3.0 - see the [LICENSE](LICENSE) file for det
 
 ## Contact Us
 
-- GitHub Issues: [https://github.com/dptech-corp/Uni-Lab-OS/issues](https://github.com/dptech-corp/Uni-Lab-OS/issues)
+- GitHub Issues: [https://github.com/deepmodeling/Uni-Lab-OS/issues](https://github.com/deepmodeling/Uni-Lab-OS/issues)

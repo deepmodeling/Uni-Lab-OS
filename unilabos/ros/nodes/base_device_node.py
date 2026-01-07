@@ -430,7 +430,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 "data": {
                     "data": rts.dump(),
                     "mount_uuid": parent_resource.unilabos_uuid if parent_resource is not None else "",
-                    "first_add": True,
+                    "first_add": False,
                 },
             })
             tree_response: SerialCommand.Response = await client.call_async(request)
@@ -504,11 +504,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         )
                     # 调整了液体以及Deck之后要重新Assign
                     # noinspection PyUnresolvedReferences
+                    rts_with_parent = ResourceTreeSet.from_plr_resources([parent_resource])
+                    if rts_with_parent.root_nodes[0].res_content.uuid_parent is None:
+                        rts_with_parent.root_nodes[0].res_content.parent_uuid = self.uuid
                     request.command = json.dumps({
                         "action": "add",
                         "data": {
-                            "data": ResourceTreeSet.from_plr_resources([parent_resource]).dump(),
-                            "mount_uuid": parent_resource.parent.unilabos_uuid if parent_resource.parent is not None else self.uuid,
+                            "data": rts_with_parent.dump(),
+                            "mount_uuid": rts_with_parent.root_nodes[0].res_content.uuid_parent,
                             "first_add": False,
                         },
                     })

@@ -1,0 +1,766 @@
+AI4M_station:
+  category:
+  - AI4M_station
+  class:
+    action_value_mappings:
+      auto-disconnect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: disconnect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-download_auto_params:
+        feedback: {}
+        goal: {}
+        goal_default:
+          auto_job_stop_delay: null
+          mag_stir_heat_temp: null
+          mag_stir_stir_speed: null
+          mag_stir_time_set: null
+          syringe_pump_abs_position_set: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                auto_job_stop_delay:
+                  type: integer
+                mag_stir_heat_temp:
+                  type: integer
+                mag_stir_stir_speed:
+                  type: integer
+                mag_stir_time_set:
+                  type: integer
+                syringe_pump_abs_position_set:
+                  type: integer
+              required:
+              - mag_stir_stir_speed
+              - mag_stir_heat_temp
+              - mag_stir_time_set
+              - syringe_pump_abs_position_set
+              - auto_job_stop_delay
+              type: object
+            result: {}
+          required:
+          - goal
+          title: download_auto_params参数
+          type: object
+        type: UniLabJsonCommand
+      auto-load_nodes_from_csv:
+        feedback: {}
+        goal: {}
+        goal_default:
+          csv_path: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                csv_path:
+                  type: string
+              required:
+              - csv_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: load_nodes_from_csv参数
+          type: object
+        type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
+      auto-print_cache_stats:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: print_cache_stats参数
+          type: object
+        type: UniLabJsonCommand
+      auto-read_node:
+        feedback: {}
+        goal: {}
+        goal_default:
+          node_name: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                node_name:
+                  type: string
+              required:
+              - node_name
+              type: object
+            result: {}
+          required:
+          - goal
+          title: read_node参数
+          type: object
+        type: UniLabJsonCommand
+      auto-set_node_value:
+        feedback: {}
+        goal: {}
+        goal_default:
+          name: null
+          value: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                name:
+                  type: string
+                value:
+                  type: string
+              required:
+              - name
+              - value
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_node_value参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start_auto_mode:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start_auto_mode参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start_manual_mode:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start_manual_mode参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_init:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: trigger_init参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_robot_pick_beaker:
+        feedback: {}
+        goal: {}
+        goal_default:
+          pick_beaker_id: null
+          place_station_id: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                pick_beaker_id:
+                  type: integer
+                place_station_id:
+                  type: integer
+              required:
+              - pick_beaker_id
+              - place_station_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: trigger_robot_pick_beaker参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_robot_place_beaker:
+        feedback: {}
+        goal: {}
+        goal_default:
+          pick_station_id: null
+          place_beaker_id: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                pick_station_id:
+                  type: integer
+                place_beaker_id:
+                  type: integer
+              required:
+              - place_beaker_id
+              - pick_station_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: trigger_robot_place_beaker参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_station_process:
+        feedback: {}
+        goal: {}
+        goal_default:
+          mag_stir_heat_temp: null
+          mag_stir_stir_speed: null
+          mag_stir_time_set: null
+          station_id: null
+          syringe_pump_abs_position_set: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                mag_stir_heat_temp:
+                  type: integer
+                mag_stir_stir_speed:
+                  type: integer
+                mag_stir_time_set:
+                  type: integer
+                station_id:
+                  type: integer
+                syringe_pump_abs_position_set:
+                  type: integer
+              required:
+              - station_id
+              - mag_stir_stir_speed
+              - mag_stir_heat_temp
+              - mag_stir_time_set
+              - syringe_pump_abs_position_set
+              type: object
+            result: {}
+          required:
+          - goal
+          title: trigger_station_process参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.workstation.AI4M.AI4M:OpcUaClient
+    status_types: {}
+    type: python
+  config_info: []
+  description: ''
+  handles: []
+  icon: Hydrogel module.webp
+  init_param_schema:
+    config:
+      properties:
+        cache_timeout:
+          default: 5.0
+          type: number
+        csv_path:
+          type: string
+        deck:
+          type: string
+        password:
+          type: string
+        subscription_interval:
+          default: 500
+          type: integer
+        url:
+          type: string
+        use_subscription:
+          default: true
+          type: boolean
+        username:
+          type: string
+      required:
+      - url
+      type: object
+    data:
+      properties:
+        auto_job_stop_delay:
+          type: string
+        auto_mode:
+          type: string
+        auto_param_applied:
+          type: string
+        auto_param_downloaded:
+          type: string
+        auto_run_complete:
+          type: string
+        auto_run_start_trigger:
+          type: string
+        cache_stats:
+          type: object
+        init finished:
+          type: string
+        initialize:
+          type: string
+        mag_stirrer_c0_heat_mode:
+          type: string
+        mag_stirrer_c0_heat_mode_set:
+          type: string
+        mag_stirrer_c0_heat_temp:
+          type: string
+        mag_stirrer_c0_instrument_mode:
+          type: string
+        mag_stirrer_c0_return_speed_actual:
+          type: string
+        mag_stirrer_c0_return_speed_setpoint:
+          type: string
+        mag_stirrer_c0_return_temp_actual:
+          type: string
+        mag_stirrer_c0_return_temp_setpoint:
+          type: string
+        mag_stirrer_c0_return_time_actual:
+          type: string
+        mag_stirrer_c0_return_time_setpoint:
+          type: string
+        mag_stirrer_c0_safe_temp:
+          type: string
+        mag_stirrer_c0_stir_speed:
+          type: string
+        mag_stirrer_c0_temp_unit:
+          type: string
+        mag_stirrer_c0_time_set:
+          type: string
+        mag_stirrer_c0_work_mode_set:
+          type: string
+        mag_stirrer_c1_heat_mode:
+          type: string
+        mag_stirrer_c1_heat_mode_set:
+          type: string
+        mag_stirrer_c1_heat_temp:
+          type: string
+        mag_stirrer_c1_instrument_mode:
+          type: string
+        mag_stirrer_c1_return_speed_actual:
+          type: string
+        mag_stirrer_c1_return_speed_setpoint:
+          type: string
+        mag_stirrer_c1_return_temp_actual:
+          type: string
+        mag_stirrer_c1_return_temp_setpoint:
+          type: string
+        mag_stirrer_c1_return_time_actual:
+          type: string
+        mag_stirrer_c1_return_time_setpoint:
+          type: string
+        mag_stirrer_c1_safe_temp:
+          type: string
+        mag_stirrer_c1_stir_speed:
+          type: string
+        mag_stirrer_c1_temp_unit:
+          type: string
+        mag_stirrer_c1_time_set:
+          type: string
+        mag_stirrer_c1_work_mode_set:
+          type: string
+        mag_stirrer_c2_heat_mode:
+          type: string
+        mag_stirrer_c2_heat_mode_set:
+          type: string
+        mag_stirrer_c2_heat_temp:
+          type: string
+        mag_stirrer_c2_instrument_mode:
+          type: string
+        mag_stirrer_c2_return_speed_actual:
+          type: string
+        mag_stirrer_c2_return_speed_setpoint:
+          type: string
+        mag_stirrer_c2_return_temp_actual:
+          type: string
+        mag_stirrer_c2_return_temp_setpoint:
+          type: string
+        mag_stirrer_c2_return_time_actual:
+          type: string
+        mag_stirrer_c2_return_time_setpoint:
+          type: string
+        mag_stirrer_c2_safe_temp:
+          type: string
+        mag_stirrer_c2_stir_speed:
+          type: string
+        mag_stirrer_c2_temp_unit:
+          type: string
+        mag_stirrer_c2_time_set:
+          type: string
+        mag_stirrer_c2_work_mode_set:
+          type: string
+        manual_auto_switch:
+          type: string
+        mode_switch:
+          type: string
+        robot_init:
+          type: string
+        robot_init_complete:
+          type: string
+        robot_pick_beaker_id:
+          type: string
+        robot_pick_station_1_complete:
+          type: string
+        robot_pick_station_1_start:
+          type: string
+        robot_pick_station_2_complete:
+          type: string
+        robot_pick_station_2_start:
+          type: string
+        robot_pick_station_3_complete:
+          type: string
+        robot_pick_station_3_start:
+          type: string
+        robot_pick_station_id:
+          type: string
+        robot_place_beaker_id:
+          type: string
+        robot_place_station_1_complete:
+          type: string
+        robot_place_station_1_start:
+          type: string
+        robot_place_station_2_complete:
+          type: string
+        robot_place_station_2_start:
+          type: string
+        robot_place_station_3_complete:
+          type: string
+        robot_place_station_3_start:
+          type: string
+        robot_place_station_id:
+          type: string
+        robot_rack_pick_beaker_1_complete:
+          type: string
+        robot_rack_pick_beaker_1_start:
+          type: string
+        robot_rack_pick_beaker_2_complete:
+          type: string
+        robot_rack_pick_beaker_2_start:
+          type: string
+        robot_rack_pick_beaker_3_complete:
+          type: string
+        robot_rack_pick_beaker_3_start:
+          type: string
+        robot_rack_pick_beaker_4_complete:
+          type: string
+        robot_rack_pick_beaker_4_start:
+          type: string
+        robot_rack_pick_beaker_5_complete:
+          type: string
+        robot_rack_pick_beaker_5_start:
+          type: string
+        robot_rack_place_beaker_1_complete:
+          type: string
+        robot_rack_place_beaker_1_start:
+          type: string
+        robot_rack_place_beaker_2_complete:
+          type: string
+        robot_rack_place_beaker_2_start:
+          type: string
+        robot_rack_place_beaker_3_complete:
+          type: string
+        robot_rack_place_beaker_3_start:
+          type: string
+        robot_rack_place_beaker_4_complete:
+          type: string
+        robot_rack_place_beaker_4_start:
+          type: string
+        robot_rack_place_beaker_5_complete:
+          type: string
+        robot_rack_place_beaker_5_start:
+          type: string
+        robot_ready:
+          type: string
+        robot_safe_point:
+          type: string
+        robot_safe_zone_1:
+          type: string
+        robot_safe_zone_2:
+          type: string
+        robot_safe_zone_3:
+          type: string
+        station_1_process_complete:
+          type: string
+        station_1_ready:
+          type: string
+        station_1_request_params:
+          type: string
+        station_2_process_complete:
+          type: string
+        station_2_ready:
+          type: string
+        station_2_request_params:
+          type: string
+        station_3_process_complete:
+          type: string
+        station_3_ready:
+          type: string
+        station_3_request_params:
+          type: string
+        syringe_pump_0_abs_position_set:
+          type: string
+        syringe_pump_0_accel_code:
+          type: string
+        syringe_pump_0_aspirate_pos_set:
+          type: string
+        syringe_pump_0_current_position:
+          type: string
+        syringe_pump_0_dispense_pos_set:
+          type: string
+        syringe_pump_0_max_speed:
+          type: string
+        syringe_pump_0_start_speed:
+          type: string
+        syringe_pump_1_abs_position_set:
+          type: string
+        syringe_pump_1_accel_code:
+          type: string
+        syringe_pump_1_aspirate_pos_set:
+          type: string
+        syringe_pump_1_current_position:
+          type: string
+        syringe_pump_1_dispense_pos_set:
+          type: string
+        syringe_pump_1_max_speed:
+          type: string
+        syringe_pump_1_start_speed:
+          type: string
+        syringe_pump_2_abs_position_set:
+          type: string
+        syringe_pump_2_accel_code:
+          type: string
+        syringe_pump_2_aspirate_pos_set:
+          type: string
+        syringe_pump_2_current_position:
+          type: string
+        syringe_pump_2_dispense_pos_set:
+          type: string
+        syringe_pump_2_max_speed:
+          type: string
+        syringe_pump_2_start_speed:
+          type: string
+      required:
+      - cache_stats
+      - mag_stirrer_c0_stir_speed
+      - mag_stirrer_c0_heat_temp
+      - mag_stirrer_c0_time_set
+      - mag_stirrer_c0_return_speed_setpoint
+      - mag_stirrer_c0_return_speed_actual
+      - mag_stirrer_c0_return_temp_setpoint
+      - mag_stirrer_c0_return_temp_actual
+      - mag_stirrer_c0_return_time_setpoint
+      - mag_stirrer_c0_return_time_actual
+      - mag_stirrer_c0_work_mode_set
+      - mag_stirrer_c0_heat_mode_set
+      - mag_stirrer_c0_temp_unit
+      - mag_stirrer_c0_heat_mode
+      - mag_stirrer_c0_instrument_mode
+      - mag_stirrer_c0_safe_temp
+      - mag_stirrer_c1_stir_speed
+      - mag_stirrer_c1_heat_temp
+      - mag_stirrer_c1_time_set
+      - mag_stirrer_c1_return_speed_setpoint
+      - mag_stirrer_c1_return_speed_actual
+      - mag_stirrer_c1_return_temp_setpoint
+      - mag_stirrer_c1_return_temp_actual
+      - mag_stirrer_c1_return_time_setpoint
+      - mag_stirrer_c1_return_time_actual
+      - mag_stirrer_c1_work_mode_set
+      - mag_stirrer_c1_heat_mode_set
+      - mag_stirrer_c1_temp_unit
+      - mag_stirrer_c1_heat_mode
+      - mag_stirrer_c1_instrument_mode
+      - mag_stirrer_c1_safe_temp
+      - mag_stirrer_c2_stir_speed
+      - mag_stirrer_c2_heat_temp
+      - mag_stirrer_c2_time_set
+      - mag_stirrer_c2_return_speed_setpoint
+      - mag_stirrer_c2_return_speed_actual
+      - mag_stirrer_c2_return_temp_setpoint
+      - mag_stirrer_c2_return_temp_actual
+      - mag_stirrer_c2_return_time_setpoint
+      - mag_stirrer_c2_return_time_actual
+      - mag_stirrer_c2_work_mode_set
+      - mag_stirrer_c2_heat_mode_set
+      - mag_stirrer_c2_temp_unit
+      - mag_stirrer_c2_heat_mode
+      - mag_stirrer_c2_instrument_mode
+      - mag_stirrer_c2_safe_temp
+      - syringe_pump_0_current_position
+      - syringe_pump_0_abs_position_set
+      - syringe_pump_0_aspirate_pos_set
+      - syringe_pump_0_dispense_pos_set
+      - syringe_pump_0_start_speed
+      - syringe_pump_0_max_speed
+      - syringe_pump_0_accel_code
+      - syringe_pump_1_current_position
+      - syringe_pump_1_abs_position_set
+      - syringe_pump_1_aspirate_pos_set
+      - syringe_pump_1_dispense_pos_set
+      - syringe_pump_1_start_speed
+      - syringe_pump_1_max_speed
+      - syringe_pump_1_accel_code
+      - syringe_pump_2_current_position
+      - syringe_pump_2_abs_position_set
+      - syringe_pump_2_aspirate_pos_set
+      - syringe_pump_2_dispense_pos_set
+      - syringe_pump_2_start_speed
+      - syringe_pump_2_max_speed
+      - syringe_pump_2_accel_code
+      - robot_pick_beaker_id
+      - robot_place_beaker_id
+      - robot_place_station_id
+      - robot_pick_station_id
+      - robot_init
+      - robot_rack_pick_beaker_1_complete
+      - robot_rack_pick_beaker_2_complete
+      - robot_rack_pick_beaker_3_complete
+      - robot_rack_pick_beaker_4_complete
+      - robot_rack_pick_beaker_5_complete
+      - robot_rack_place_beaker_1_complete
+      - robot_rack_place_beaker_2_complete
+      - robot_rack_place_beaker_3_complete
+      - robot_rack_place_beaker_4_complete
+      - robot_rack_place_beaker_5_complete
+      - robot_place_station_1_complete
+      - robot_place_station_2_complete
+      - robot_place_station_3_complete
+      - robot_pick_station_1_complete
+      - robot_pick_station_2_complete
+      - robot_pick_station_3_complete
+      - robot_init_complete
+      - robot_rack_pick_beaker_1_start
+      - robot_rack_pick_beaker_2_start
+      - robot_rack_pick_beaker_3_start
+      - robot_rack_pick_beaker_4_start
+      - robot_rack_pick_beaker_5_start
+      - robot_rack_place_beaker_1_start
+      - robot_rack_place_beaker_2_start
+      - robot_rack_place_beaker_3_start
+      - robot_rack_place_beaker_4_start
+      - robot_rack_place_beaker_5_start
+      - robot_place_station_1_start
+      - robot_place_station_2_start
+      - robot_place_station_3_start
+      - robot_pick_station_1_start
+      - robot_pick_station_2_start
+      - robot_pick_station_3_start
+      - robot_safe_point
+      - robot_safe_zone_1
+      - robot_safe_zone_2
+      - robot_safe_zone_3
+      - auto_run_start_trigger
+      - auto_run_complete
+      - station_1_request_params
+      - station_2_request_params
+      - station_3_request_params
+      - station_1_ready
+      - station_2_ready
+      - station_3_ready
+      - robot_ready
+      - station_1_process_complete
+      - station_2_process_complete
+      - station_3_process_complete
+      - mode_switch
+      - initialize
+      - init finished
+      - manual_auto_switch
+      - auto_mode
+      - auto_param_downloaded
+      - auto_param_applied
+      - auto_job_stop_delay
+      type: object
+  registry_type: device
+  version: 1.0.0

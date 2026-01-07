@@ -2411,6 +2411,156 @@ virtual_multiway_valve:
       - flow_path
       type: object
   version: 1.0.0
+virtual_printer:
+  category:
+  - virtual_device
+  class:
+    action_value_mappings:
+      auto-cleanup:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: cleanup的参数schema
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: cleanup参数
+          type: object
+        type: UniLabJsonCommandAsync
+      auto-initialize:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: initialize的参数schema
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: initialize参数
+          type: object
+        type: UniLabJsonCommandAsync
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: object
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
+      print_message:
+        feedback: {}
+        goal:
+          content: content
+        goal_default:
+          content: null
+        handles: {}
+        result:
+          return_info: message
+          success: success
+        schema:
+          description: 打印虚拟设备接收到的内容
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: PrintMessage_Feedback
+              type: object
+            goal:
+              properties:
+                content: {}
+              required:
+              - content
+              title: PrintMessage_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - success
+              - return_info
+              title: PrintMessage_Result
+              type: object
+          required:
+          - goal
+          title: PrintMessage
+          type: object
+        type: UniLabJsonCommandAsync
+    module: unilabos.devices.virtual.virtual_printer:VirtualPrinter
+    status_types:
+      last_received: dict
+      message: str
+      received_count: int
+      status: str
+    type: python
+  config_info: []
+  description: Virtual Printer device for debugging (prints received payload)
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        config:
+          type: object
+        device_id:
+          type: string
+      required: []
+      type: object
+    data:
+      properties:
+        last_received:
+          type: object
+        message:
+          type: string
+        received_count:
+          type: integer
+        status:
+          type: string
+      required:
+      - status
+      - message
+      - received_count
+      - last_received
+      type: object
+  version: 1.0.0
 virtual_rotavap:
   category:
   - virtual_device

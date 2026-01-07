@@ -463,7 +463,7 @@ Uni-Lab 使用 `ResourceDictInstance.get_resource_instance_from_dict()` 方法�
 ### 使用示例
 
 ```python
-from unilabos.ros.nodes.resource_tracker import ResourceDictInstance
+from unilabos.resources.resource_tracker import ResourceDictInstance
 
 # 旧格式节点
 old_format_node = {
@@ -477,10 +477,10 @@ old_format_node = {
 instance = ResourceDictInstance.get_resource_instance_from_dict(old_format_node)
 
 # 访问标准化后的数据
-print(instance.res_content.id)      # "pump_1"
-print(instance.res_content.uuid)    # 自动生成的 UUID
+print(instance.res_content.id)  # "pump_1"
+print(instance.res_content.uuid)  # 自动生成的 UUID
 print(instance.res_content.config)  # {}
-print(instance.res_content.data)    # {}
+print(instance.res_content.data)  # {}
 ```
 
 ### 格式迁移建议

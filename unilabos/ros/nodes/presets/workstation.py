@@ -12,11 +12,10 @@ from unilabos_msgs.srv import ResourceUpdate
 from unilabos.messages import *  # type: ignore  # protocol names
 from rclpy.action import ActionServer, ActionClient
 from rclpy.action.server import ServerGoalHandle
-from rclpy.callback_groups import ReentrantCallbackGroup
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 
 from unilabos.compile import action_protocol_generators
-from unilabos.resources.graphio import list_to_nested_dict, nested_dict_to_list
+from unilabos.resources.graphio import nested_dict_to_list
 from unilabos.ros.initialize_device import initialize_device_from_dict
 from unilabos.ros.msgs.message_converter import (
     get_action_type,
@@ -24,7 +23,7 @@ from unilabos.ros.msgs.message_converter import (
     convert_from_ros_msg_with_mapping,
 )
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker, ROS2DeviceNode
-from unilabos.ros.nodes.resource_tracker import ResourceTreeSet, ResourceDictInstance
+from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDictInstance
 from unilabos.utils.type_check import get_result_info_str
 
 if TYPE_CHECKING:

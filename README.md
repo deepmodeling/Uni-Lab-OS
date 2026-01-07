@@ -31,7 +31,9 @@ Detailed documentation can be found at:
 
 ## Quick Start
 
-Uni-Lab-OS recommends using `mamba` for environment management. Choose the appropriate environment file for your operating system:
+1. Setup Conda Environment
+
+Uni-Lab-OS recommends using `mamba` for environment management:
 
 ```bash
 # Create new environment
@@ -40,7 +42,7 @@ mamba activate unilab
 mamba install -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
 ```
 
-## Install Dev Uni-Lab-OS
+2. Install Dev Uni-Lab-OS
 
 ```bash
 # Clone the repository
@@ -51,9 +53,13 @@ cd Uni-Lab-OS
 pip install .
 ```
 
-3. Start Uni-Lab System:
+3. Start Uni-Lab System
 
 Please refer to [Documentation - Boot Examples](https://deepmodeling.github.io/Uni-Lab-OS/boot_examples/index.html)
+
+4. Best Practice
+
+See [Best Practice Guide](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html)
 
 ## Message Format
 
@@ -61,7 +67,7 @@ Uni-Lab-OS uses pre-built `unilabos_msgs` for system communication. You can find
 
 ## Citation
 
-If you use Uni-Lab-OS in academic research, please cite:
+If you use [Uni-Lab-OS](https://arxiv.org/abs/2512.21766) in academic research, please cite:
 
 ```bibtex
 @article{gao2025unilabos,

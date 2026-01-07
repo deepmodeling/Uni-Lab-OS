@@ -53,9 +53,13 @@ cd Uni-Lab-OS
 pip install .
 ```
 
-3. 启动 Uni-Lab 系统:
+3. 启动 Uni-Lab 系统
 
 请见[文档-启动样例](https://deepmodeling.github.io/Uni-Lab-OS/boot_examples/index.html)
+
+4. 最佳实践
+
+请见[最佳实践指南](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html)
 
 ## 消息格式
 
@@ -63,7 +67,7 @@ Uni-Lab-OS 使用预构建的 `unilabos_msgs` 进行系统通信。您可以在 
 
 ## 引用
 
-如果您在学术研究中使用 Uni-Lab-OS，请引用：
+如果您在学术研究中使用 [Uni-Lab-OS](https://arxiv.org/abs/2512.21766)，请引用：
 
 ```bibtex
 @article{gao2025unilabos,

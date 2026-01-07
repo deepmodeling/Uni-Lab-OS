@@ -1,4 +1,3 @@
-import copy
 import inspect
 import io
 import json
@@ -13,7 +12,6 @@ import asyncio
 
 import rclpy
 import yaml
-from msgcenterpy import ROS2MessageInstance
 from rclpy.node import Node
 from rclpy.action import ActionServer, ActionClient
 from rclpy.action.server import ServerGoalHandle
@@ -26,11 +24,7 @@ from unilabos.utils.decorator import get_topic_config, get_all_subscriptions
 
 from unilabos.resources.container import RegularContainer
 from unilabos.resources.graphio import (
-    resource_ulab_to_plr,
     initialize_resources,
-    dict_to_tree,
-    resource_plr_to_ulab,
-    tree_to_list,
 )
 from unilabos.resources.plr_additional_res_reg import register
 from unilabos.ros.msgs.message_converter import (
@@ -47,7 +41,7 @@ from unilabos_msgs.srv import (
 )  # type: ignore
 from unilabos_msgs.msg import Resource  # type: ignore
 
-from unilabos.ros.nodes.resource_tracker import (
+from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
     ResourceTreeSet,
     ResourceTreeInstance,
@@ -363,7 +357,6 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             return res
 
         async def append_resource(req: SerialCommand_Request, res: SerialCommand_Response):
-            from pylabrobot.resources.resource import Resource as ResourcePLR
             from pylabrobot.resources.deck import Deck
             from pylabrobot.resources import Coordinate
             from pylabrobot.resources import Plate

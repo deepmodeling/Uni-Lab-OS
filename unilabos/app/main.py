@@ -315,7 +315,7 @@ def main():
     from unilabos.app.web import start_server
     from unilabos.app.register import register_devices_and_resources
     from unilabos.resources.graphio import modify_to_backend_format
-    from unilabos.ros.nodes.resource_tracker import ResourceTreeSet, ResourceDict
+    from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDict
 
     # 显示启动横幅
     print_unilab_banner(args_dict)

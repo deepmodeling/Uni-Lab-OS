@@ -1218,18 +1218,18 @@ class OpcUaClient(BaseClient):
         self._connection_monitor_thread = None
         
         # # 添加线程锁，保护OPC UA客户端的并发访问
-        # import threading
-        # self._client_lock = threading.RLock()
-        #
-        # # 连接到服务器
-        # self._connect()
-        #
-        # # 如果提供了 CSV 路径，则直接加载节点
-        # if csv_path:
-        #     self.load_nodes_from_csv(csv_path)
-        #
-        # # 启动连接监控
-        # self._start_connection_monitor()
+        import threading
+        self._client_lock = threading.RLock()
+        
+        # 连接到服务器
+        self._connect()
+        
+        # 如果提供了 CSV 路径，则直接加载节点
+        if csv_path:
+            self.load_nodes_from_csv(csv_path)
+        
+        # 启动连接监控
+        self._start_connection_monitor()
         
 
     def _connect(self) -> None:

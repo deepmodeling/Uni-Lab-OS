@@ -911,13 +911,13 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             else:
                                 plr_resources.append(ResourceTreeSet([tree]).to_plr_resources()[0])
                         result, original_instances = _handle_update(plr_resources, tree_set, additional_add_params)
-                        new_tree_set = ResourceTreeSet.from_plr_resources(original_instances)
-                        r = SerialCommand.Request()
-                        r.command = json.dumps(
-                            {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致
-                        response: SerialCommand_Response = await self._resource_clients[
-                            "c2s_update_resource_tree"].call_async(r)  # type: ignore
-                        self.lab_logger().info(f"确认资源云端 Update 结果: {response.response}")
+                        # new_tree_set = ResourceTreeSet.from_plr_resources(original_instances)
+                        # r = SerialCommand.Request()
+                        # r.command = json.dumps(
+                        #     {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致
+                        # response: SerialCommand_Response = await self._resource_clients[
+                        #     "c2s_update_resource_tree"].call_async(r)  # type: ignore
+                        # self.lab_logger().info(f"确认资源云端 Update 结果: {response.response}")
                         results.append(result)
                     elif action == "remove":
                         result = _handle_remove(resources_uuid)

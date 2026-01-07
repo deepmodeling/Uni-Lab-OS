@@ -796,7 +796,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             }
 
         def _handle_update(
-            plr_resources: List[ResourcePLR], tree_set: ResourceTreeSet, additional_add_params: Dict[str, Any]
+            plr_resources: List[Union[ResourcePLR, ResourceDictInstance]], tree_set: ResourceTreeSet, additional_add_params: Dict[str, Any]
         ) -> Dict[str, Any]:
             """
             处理资源更新操作的内部函数
@@ -810,6 +810,9 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 操作结果字典
             """
             for plr_resource, tree in zip(plr_resources, tree_set.trees):
+                if isinstance(plr_resource, ResourceDictInstance):
+                    self._lab_logger.info(f"跳过 非资源{plr_resource.res_content.name} 的更新")
+                    continue
                 states = plr_resource.serialize_all_state()
                 original_instance: ResourcePLR = self.resource_tracker.figure_resource(
                     {"uuid": tree.root_node.res_content.uuid}, try_mode=False
@@ -889,7 +892,12 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     elif action == "update":
                         if tree_set is None:
                             raise ValueError("tree_set不能为None")
-                        plr_resources = tree_set.to_plr_resources()
+                        plr_resources = []
+                        for tree in tree_set.trees:
+                            if tree.root_node.res_content.type == "device":
+                                plr_resources.append(tree.root_node)
+                            else:
+                                plr_resources.append(ResourceTreeSet([tree]).to_plr_resources()[0])
                         result = _handle_update(plr_resources, tree_set, additional_add_params)
                         results.append(result)
                     elif action == "remove":

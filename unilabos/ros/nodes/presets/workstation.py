@@ -244,7 +244,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                                 r
                             )  # type: ignore
                             raw_data = json.loads(response.response)
-                            tree_set = ResourceTreeSet.from_raw_list(raw_data)
+                            tree_set = ResourceTreeSet.from_raw_dict_list(raw_data)
                             target = tree_set.dump()
                             protocol_kwargs[k] = target[0][0] if v == "unilabos_msgs/Resource" else target
                         except Exception as ex:

@@ -134,7 +134,7 @@ def canonicalize_nodes_data(
             parent_instance.children.append(current_instance)
 
     # 第五步：创建 ResourceTreeSet
-    resource_tree_set = ResourceTreeSet.from_nested_list(standardized_instances)
+    resource_tree_set = ResourceTreeSet.from_nested_instance_list(standardized_instances)
     return resource_tree_set
 
 

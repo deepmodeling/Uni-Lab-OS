@@ -881,6 +881,13 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             raise ValueError("tree_set不能为None")
                         plr_resources = tree_set.to_plr_resources()
                         result = _handle_add(plr_resources, tree_set, additional_add_params)
+                        new_tree_set = ResourceTreeSet.from_plr_resources(plr_resources)
+                        r = SerialCommand.Request()
+                        r.command = json.dumps(
+                            {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致
+                        response: SerialCommand_Response = await self._resource_clients[
+                            "c2s_update_resource_tree"].call_async(r)  # type: ignore
+                        self.lab_logger().info(f"确认资源云端 Add 结果: {response.response}")
                         results.append(result)
                     elif action == "update":
                         if tree_set is None:
@@ -1758,6 +1765,7 @@ class ROS2DeviceNode:
             or driver_class.__name__ == "LiquidHandlerBiomek"
             or driver_class.__name__ == "PRCXI9300Handler"
             or driver_class.__name__ == "TransformXYZHandler"
+            or driver_class.__name__ == "OpcUaClient"
         )
 
         # 创建设备类实例

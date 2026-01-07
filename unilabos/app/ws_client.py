@@ -488,7 +488,9 @@ class MessageProcessor:
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
+                    # print("===========preprocessed_data", data)
                     await self._process_message(data)
+                    
                 except json.JSONDecodeError:
                     logger.error(f"[MessageProcessor] Invalid JSON received: {message}")
                 except Exception as e:

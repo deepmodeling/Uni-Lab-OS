@@ -19,7 +19,7 @@ class AI4M_deck(Deck):
         size_z: float = 2670.0,
         origin: Coordinate = Coordinate(0, 35, 0),
         category: str = "deck",
-        setup: bool = True,
+        setup: bool = False,
     ) -> None:
         super().__init__(name=name, size_x=size_x, size_y=size_y, size_z=size_z, origin=origin)
         if setup:

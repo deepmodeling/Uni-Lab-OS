@@ -48,8 +48,7 @@
                 "z": 0
             },
             "config": {
-                "type": "AI4M_deck",
-                "setup": true
+                "type": "AI4M_deck"
             },
             "data": {}
         }

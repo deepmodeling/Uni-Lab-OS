@@ -11,6 +11,7 @@ import os
 from unilabos.device_comms.opcua_client.node.uniopcua import Base as OpcUaNodeBase
 from unilabos.device_comms.opcua_client.node.uniopcua import Variable, Method, NodeType, DataType
 from unilabos.device_comms.universal_driver import UniversalDriver
+from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import logger
 from unilabos.devices.workstation.AI4M.decks import AI4M_deck
 
@@ -1139,7 +1140,7 @@ class OpcUaClient(BaseClient):
     def __init__(
         self, 
         url: str, 
-        deck: Optional[Union[AI4M_deck, Dict[str, Any]]] = None,
+        deck: Optional[AI4M_deck] = None,
         csv_path: str = None, 
         username: str = None, 
         password: str = None,
@@ -1158,25 +1159,29 @@ class OpcUaClient(BaseClient):
         super().__init__()
 
         # 处理 deck 参数
-        if deck is None:
+        if deck is None or isinstance(deck["data"], dict) or len(deck["data"].children) == 0:
             self.deck = AI4M_deck(setup=True)
-        elif isinstance(deck, dict):
-            # 从 dict 中提取参数创建 deck
-            deck_config = deck.get('config', {})
-            deck_size_x = deck_config.get('size_x', 1217.0)
-            deck_size_y = deck_config.get('size_y', 1580.0)
-            deck_size_z = deck_config.get('size_z', 2670.0)
-            self.deck = AI4M_deck(
-                size_x=deck_size_x,
-                size_y=deck_size_y,
-                size_z=deck_size_z,
-                setup=True
-            )
-            logger.info(f"Deck 尺寸设置: {deck_size_x}x{deck_size_y}x{deck_size_z} mm")
-        elif hasattr(deck, 'children'):
-            self.deck = deck
         else:
-            raise ValueError(f"deck 参数类型不支持: {type(deck)}")
+            # self.resource = ResourceTreeSet.from_nested_instance_list([deck["data"]])
+            # self.deck = self.resource.to_plr_resources()
+            self.deck = deck["data"]
+        # elif isinstance(deck, dict):
+        #     # 从 dict 中提取参数创建 deck
+        #     deck_config = deck.get('config', {})
+        #     deck_size_x = deck_config.get('size_x', 1217.0)
+        #     deck_size_y = deck_config.get('size_y', 1580.0)
+        #     deck_size_z = deck_config.get('size_z', 2670.0)
+        #     self.deck = AI4M_deck(
+        #         size_x=deck_size_x,
+        #         size_y=deck_size_y,
+        #         size_z=deck_size_z,
+        #         setup=True
+        #     )
+        #     logger.info(f"Deck 尺寸设置: {deck_size_x}x{deck_size_y}x{deck_size_z} mm")
+        # elif hasattr(deck, 'children'):
+        #     self.deck = deck
+        # else:
+        #     raise ValueError(f"deck 参数类型不支持: {type(deck)}")
 
         if self.deck is None:
             raise ValueError("Deck 配置不能为空")
@@ -1212,19 +1217,19 @@ class OpcUaClient(BaseClient):
         self._connection_monitor_running = False
         self._connection_monitor_thread = None
         
-        # 添加线程锁，保护OPC UA客户端的并发访问
-        import threading
-        self._client_lock = threading.RLock()
-        
-        # 连接到服务器
-        self._connect()
-        
-        # 如果提供了 CSV 路径，则直接加载节点
-        if csv_path:
-            self.load_nodes_from_csv(csv_path)
-            
-        # 启动连接监控
-        self._start_connection_monitor()
+        # # 添加线程锁，保护OPC UA客户端的并发访问
+        # import threading
+        # self._client_lock = threading.RLock()
+        #
+        # # 连接到服务器
+        # self._connect()
+        #
+        # # 如果提供了 CSV 路径，则直接加载节点
+        # if csv_path:
+        #     self.load_nodes_from_csv(csv_path)
+        #
+        # # 启动连接监控
+        # self._start_connection_monitor()
         
 
     def _connect(self) -> None:

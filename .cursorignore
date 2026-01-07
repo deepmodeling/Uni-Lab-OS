@@ -1,0 +1,26 @@
+.conda
+# .github
+.idea
+# .vscode
+output
+pylabrobot_repo
+recipes
+scripts
+service
+temp
+# unilabos/test
+# unilabos/app/web
+unilabos/device_mesh
+unilabos_data
+unilabos_msgs
+unilabos.egg-info
+CONTRIBUTORS
+# LICENSE
+MANIFEST.in
+pyrightconfig.json
+# README.md
+# README_zh.md
+setup.py
+setup.cfg
+.gitattrubutes
+**/__pycache__

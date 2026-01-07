@@ -315,7 +315,7 @@ def main():
     from unilabos.app.web import start_server
     from unilabos.app.register import register_devices_and_resources
     from unilabos.resources.graphio import modify_to_backend_format
-    from unilabos.ros.nodes.resource_tracker import ResourceTreeSet, ResourceDict
+    from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDict
 
     # 显示启动横幅
     print_unilab_banner(args_dict)
@@ -418,7 +418,7 @@ def main():
     # 如果从远端获取了物料信息，则与本地物料进行同步
     if request_startup_json and "nodes" in request_startup_json:
         print_status("开始同步远端物料到本地...", "info")
-        remote_tree_set = ResourceTreeSet.from_raw_list(request_startup_json["nodes"])
+        remote_tree_set = ResourceTreeSet.from_raw_dict_list(request_startup_json["nodes"])
         resource_tree_set.merge_remote_resources(remote_tree_set)
         print_status("远端物料同步完成", "info")
 

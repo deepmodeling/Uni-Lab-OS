@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Set, Type
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point
 from rclpy.action import ActionClient, get_action_server_names_and_types_by_node
-from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.service import Service
 from unilabos_msgs.msg import Resource  # type: ignore
 from unilabos_msgs.srv import (
@@ -19,7 +18,6 @@ from unilabos_msgs.srv import (
     ResourceUpdate,
     ResourceList,
     SerialCommand,
-    ResourceGet,
 )  # type: ignore
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 from unique_identifier_msgs.msg import UUID
@@ -37,7 +35,7 @@ from unilabos.ros.msgs.message_converter import (
 )
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode, DeviceNodeResourceTracker
 from unilabos.ros.nodes.presets.controller_node import ControllerNode
-from unilabos.ros.nodes.resource_tracker import (
+from unilabos.resources.resource_tracker import (
     ResourceDict,
     ResourceDictInstance,
     ResourceTreeSet,
@@ -45,6 +43,7 @@ from unilabos.ros.nodes.resource_tracker import (
 )
 from unilabos.utils import logger
 from unilabos.utils.exception import DeviceClassInvalid
+from unilabos.utils.log import warning
 from unilabos.utils.type_check import serialize_result_info
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
 
@@ -180,7 +179,7 @@ class HostNode(BaseROS2DeviceNode):
                                 for plr_resource in ResourceTreeSet([tree]).to_plr_resources():
                                     self._resource_tracker.add_resource(plr_resource)
                             except Exception as ex:
-                                self.lab_logger().warning(f"[Host Node-Resource] 根节点物料{tree}序列化失败！")
+                                warning(f"[Host Node-Resource] 根节点物料{tree}序列化失败！")
         except Exception as ex:
             logger.error(f"[Host Node-Resource] 添加物料出错！\n{traceback.format_exc()}")
         # 初始化Node基类，传递空参数覆盖列表
@@ -455,10 +454,10 @@ class HostNode(BaseROS2DeviceNode):
 
     async def create_resource(
         self,
-        device_id: str,
+        device_id: DeviceSlot,
         res_id: str,
         class_name: str,
-        parent: str,
+        parent: ResourceSlot,
         bind_locations: Point,
         liquid_input_slot: list[int] = [],
         liquid_type: list[str] = [],
@@ -805,7 +804,7 @@ class HostNode(BaseROS2DeviceNode):
 
             self.lab_logger().info(f"[Host Node] Result for {action_id} ({job_id[:8]}): {status}")
             if goal_status != GoalStatus.STATUS_CANCELED:
-                self.lab_logger().debug(f"[Host Node] Result data: {result_data}")
+                self.lab_logger().trace(f"[Host Node] Result data: {result_data}")
 
             # 清理 _goals 中的记录
             if job_id in self._goals:

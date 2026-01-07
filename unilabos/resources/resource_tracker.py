@@ -523,7 +523,7 @@ class ResourceTreeSet(object):
         return plr_resources
 
     @classmethod
-    def from_raw_list(cls, raw_list: List[Dict[str, Any]]) -> "ResourceTreeSet":
+    def from_raw_dict_list(cls, raw_list: List[Dict[str, Any]]) -> "ResourceTreeSet":
         """
         从原始字典列表创建 ResourceTreeSet，自动建立 parent-children 关系
 
@@ -573,10 +573,10 @@ class ResourceTreeSet(object):
                     parent_instance.children.append(instance)
 
         # 第四步：使用 from_nested_list 创建 ResourceTreeSet
-        return cls.from_nested_list(instances)
+        return cls.from_nested_instance_list(instances)
 
     @classmethod
-    def from_nested_list(cls, nested_list: List[ResourceDictInstance]) -> "ResourceTreeSet":
+    def from_nested_instance_list(cls, nested_list: List[ResourceDictInstance]) -> "ResourceTreeSet":
         """
         从扁平化的资源列表创建ResourceTreeSet，自动按根节点分组
 
@@ -785,7 +785,7 @@ class ResourceTreeSet(object):
         """
         nested_lists = []
         for tree_data in data:
-            nested_lists.extend(ResourceTreeSet.from_raw_list(tree_data).trees)
+            nested_lists.extend(ResourceTreeSet.from_raw_dict_list(tree_data).trees)
         return cls(nested_lists)
 
 
@@ -965,7 +965,7 @@ class DeviceNodeResourceTracker(object):
                     if current_uuid in self.uuid_to_resources:
                         self.uuid_to_resources.pop(current_uuid)
                     self.uuid_to_resources[new_uuid] = res
-                    logger.debug(f"更新uuid: {current_uuid} -> {new_uuid}")
+                    logger.trace(f"更新uuid: {current_uuid} -> {new_uuid}")
                     replaced = 1
             return replaced
 

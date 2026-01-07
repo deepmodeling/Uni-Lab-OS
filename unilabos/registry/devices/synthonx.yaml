@@ -1,0 +1,638 @@
+SynthonXFlowV2:
+  category:
+  - xyzmove
+  - synthonx
+  class:
+    action_value_mappings:
+      auto-stir_connect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stir_connect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stir_for:
+        feedback: {}
+        goal: {}
+        goal_default:
+          seconds: null
+          wait_response: true
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                seconds:
+                  type: number
+                wait_response:
+                  default: true
+                  type: boolean
+              required:
+              - seconds
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stir_for参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stir_off:
+        feedback: {}
+        goal: {}
+        goal_default:
+          wait_response: true
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                wait_response:
+                  default: true
+                  type: boolean
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stir_off参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stir_on:
+        feedback: {}
+        goal: {}
+        goal_default:
+          wait_response: true
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                wait_response:
+                  default: true
+                  type: boolean
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stir_on参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stir_safe_shutdown:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stir_safe_shutdown参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stir_toggle:
+        feedback: {}
+        goal: {}
+        goal_default:
+          wait_response: true
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                wait_response:
+                  default: true
+                  type: boolean
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stir_toggle参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stirring:
+        feedback: {}
+        goal: {}
+        goal_default:
+          wait_response: true
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                wait_response:
+                  default: true
+                  type: boolean
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stirring参数
+          type: object
+        type: UniLabJsonCommand
+      drop_tip:
+        goal_default:
+          down_mm: 60.0
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 移动到计算出的废弃枪头位置，下探，弹出枪头，然后回升。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                down_mm:
+                  default: 60.0
+                  description: 下探距离 (mm)
+                  type: number
+                tip_point:
+                  description: 原始枪头点位名称 (例如 'C1'，将自动映射到废弃位) 或直接指定废弃位 (例如 'D49')
+                  type: string
+              required:
+              - tip_point
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: drop_tip参数
+        type: UniLabJsonCommand
+      filtering:
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 执行过滤操作，使用推杆将液体通过过滤器压出。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                down_filter_mm:
+                  description: 执行过滤时的下压距离 (mm)
+                  type: number
+                down_pick_mm:
+                  description: 拾取推杆时的下探距离 (mm)
+                  type: number
+                filter_name:
+                  description: 过滤器点位名称 (例如 'D1'-'D8')
+                  type: string
+                pusher_name:
+                  description: 推杆点位名称 (例如 'D9'-'D16')
+                  type: string
+              required:
+              - pusher_name
+              - filter_name
+              - down_pick_mm
+              - down_filter_mm
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: filtering参数
+        type: UniLabJsonCommand
+      load_for_nmr:
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 执行装载核磁样品的操作，从D区源孔位转移液体到D区目标孔位（核磁管）。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                dst_d_name:
+                  description: D区目标孔位（核磁管）名称 (例如 'D17')
+                  type: string
+                src_d_name:
+                  description: D区源孔位名称 (例如 'D1')
+                  type: string
+                tip_c_name:
+                  description: 用于此次转移的C区枪头点位名称 (例如 'C4')
+                  type: string
+                total_ul:
+                  description: 总吸液体积 (ul)
+                  type: number
+              required:
+              - src_d_name
+              - dst_d_name
+              - tip_c_name
+              - total_ul
+              - down_src_mm
+              - down_dst_mm
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: load_for_nmr参数
+        type: UniLabJsonCommand
+      pick_tip:
+        goal_default:
+          down_mm: 120.0
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 移动到指定枪头位置，下探并拾取枪头，然后回升。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                down_mm:
+                  default: 120.0
+                  description: 下探距离 (mm)
+                  type: number
+                tip_point:
+                  description: 枪头点位名称 (例如 'C1')
+                  type: string
+              required:
+              - tip_point
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: pick_tip参数
+        type: UniLabJsonCommand
+      pipette_asp_then_dsp:
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 在当前位置连续执行吸液后排液，不移动XYZ，可用于测试活塞。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                asp_ul:
+                  description: 吸液体积 (ul)
+                  type: number
+                dsp_ul:
+                  description: 排液体积 (ul)
+                  type: number
+              required:
+              - asp_ul
+              - dsp_ul
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: pipette_asp_then_dsp参数
+        type: UniLabJsonCommand
+      pipette_aspirate:
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 在当前位置吸取指定体积的液体 (ul)，不进行XYZ移动。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                volume_ul:
+                  description: 要吸取的液体体积 (ul)
+                  type: number
+              required:
+              - volume_ul
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: pipette_aspirate参数
+        type: UniLabJsonCommand
+      pipette_dispense:
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 在当前位置分配指定体积的液体 (ul)，不进行XYZ移动。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                volume_ul:
+                  description: 要分配的液体体积 (ul)
+                  type: number
+              required:
+              - volume_ul
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: pipette_dispense参数
+        type: UniLabJsonCommand
+      pipette_init:
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 初始化移液枪。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: pipette_init参数
+        type: UniLabJsonCommand
+      pushing:
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 在D25点位执行推动操作。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                tip_c_name:
+                  description: 用于推动的C区枪头点位名称 (例如 'C3')
+                  type: string
+                y_forward_mm:
+                  description: 向Y轴正方向推动的距离 (mm)
+                  type: number
+                z_down_mm:
+                  description: 下压距离 (mm)
+                  type: number
+              required:
+              - tip_c_name
+              - z_down_mm
+              - y_forward_mm
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: pushing参数
+        type: UniLabJsonCommand
+      system_init:
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 初始化系统，包括全轴回零并将当前位置设为工作原点。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: system_init参数
+        type: UniLabJsonCommand
+      transfer_A_to_B:
+        goal_default:
+          split_volumes: null
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 从A区源孔位转移液体到一个或多个B区目标孔位。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                a_name:
+                  description: A区源孔位名称 (例如 'A1')
+                  type: string
+                b_names:
+                  description: 一个或多个B区目标孔位名称 (例如 'B1' 或 ['B1', 'B2'])
+                  oneOf:
+                  - type: string
+                  - items:
+                      type: string
+                    type: array
+                split_volumes:
+                  description: (可选) 当有多个目标时，指定分配给每个目标的体积列表，需与目标数量一致。如果为null，则均分总体积。
+                  items:
+                    type: number
+                  nullable: true
+                  type: array
+                tip_c_name:
+                  description: 用于此次转移的C区枪头点位名称 (例如 'C1')
+                  type: string
+                total_ul:
+                  description: 总吸液体积 (ul)
+                  type: number
+              required:
+              - a_name
+              - b_names
+              - tip_c_name
+              - total_ul
+              - down_a_mm
+              - down_b_mm
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: transfer_A_to_B参数
+        type: UniLabJsonCommand
+      transfer_B_to_D:
+        goal_default:
+          split_volumes: null
+        handles: {}
+        placeholder_keys: {}
+        schema:
+          description: 从B区源孔位转移液体到一个或多个D区目标孔位。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                b_name:
+                  description: B区源孔位名称 (例如 'B1')
+                  type: string
+                d_names:
+                  description: 一个或多个D区目标孔位名称 (例如 'D1' 或 ['D1', 'D2'])
+                  oneOf:
+                  - type: string
+                  - items:
+                      type: string
+                    type: array
+                split_volumes:
+                  description: (可选) 当有多个目标时，指定分配给每个目标的体积列表，需与目标数量一致。如果为null，则均分总体积。
+                  items:
+                    type: number
+                  nullable: true
+                  type: array
+                tip_c_name:
+                  description: 用于此次转移的C区枪头点位名称 (例如 'C2')
+                  type: string
+                total_ul:
+                  description: 总吸液体积 (ul)
+                  type: number
+              required:
+              - b_name
+              - d_names
+              - tip_c_name
+              - total_ul
+              - down_b_mm
+              - down_d_mm
+              type: object
+            result:
+              properties:
+                success:
+                  type: boolean
+              required:
+              - success
+              type: object
+          required:
+          - goal
+          title: transfer_B_to_D参数
+        type: UniLabJsonCommand
+    module: unilabos.devices.synthonX.SynthonX_flow_v3:SynthonXFlowV2
+    status_types: {}
+    type: python
+  config_info: []
+  description: SynthonX V2 流程控制器，封装了取放枪头、液体转移、过滤、推动和装载核磁等高级操作。
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        approach_lift:
+          default: 0.0
+          type: number
+        baudrate:
+          default: 115200
+          type: integer
+        delay_after_aspirate:
+          default: 0.35
+          type: number
+        delay_after_dispense:
+          default: 0.35
+          type: number
+        points_file:
+          default: points_gui.json
+          type: string
+        port:
+          default: COM5
+          type: string
+        relay_baudrate:
+          default: 9600
+          type: integer
+        relay_port:
+          default: COM7
+          type: string
+        relay_timeout:
+          default: 1.0
+          type: number
+        settle_s:
+          default: 5
+          type: integer
+      required: []
+      type: object
+    data:
+      properties: {}
+      required: []
+      type: object
+  version: 1.0.0

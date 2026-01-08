@@ -1,0 +1,759 @@
+camera_usb:
+  category:
+  - camera
+  - SII
+  class:
+    action_value_mappings:
+      get_status:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 获取摄像头运行状态（running/websocket_connected/ffmpeg_running 等）
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties: {}
+              required: []
+              type: object
+          required:
+          - goal
+          title: get_status参数
+          type: object
+        type: UniLabJsonCommand
+      start:
+        feedback: {}
+        goal:
+          config: config
+        goal_default:
+          config: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 启动摄像头（内部启动 FFmpeg + WebSocket 信令循环）
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                config:
+                  type: object
+              required:
+              - config
+              type: object
+            result:
+              properties: {}
+              required: []
+              type: object
+          required:
+          - goal
+          title: start参数
+          type: object
+        type: UniLabJsonCommand
+      stop:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 停止摄像头（停止 FFmpeg，关闭 WebSocket，停止事件循环线程）
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties: {}
+              required: []
+              type: object
+          required:
+          - goal
+          title: stop参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.SII.cameraSII.cameraUSB:CameraController
+    status_types:
+      ffmpeg_running: bool
+      running: bool
+      status: dict
+      websocket_connected: bool
+    type: python
+  config_info: []
+  description: Linux USB 摄像头驱动（WebSocket 信令 + FFmpeg 推流 + WebRTC 转发）
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        audio_bitrate:
+          default: 64k
+          type: string
+        audio_device:
+          type: string
+        auto_start:
+          default: false
+          type: boolean
+        fps:
+          default: 30
+          type: integer
+        height:
+          default: 720
+          type: integer
+        host_id:
+          default: demo-host
+          type: string
+        rtmp_url:
+          default: rtmp://srs.sciol.ac.cn:4499/live/camera-01
+          type: string
+        signal_backend_url:
+          default: wss://sciol.ac.cn/api/realtime/signal/host
+          type: string
+        video_bitrate:
+          default: 1500k
+          type: string
+        video_device:
+          default: /dev/video0
+          type: string
+        webrtc_api:
+          default: https://srs.sciol.ac.cn/rtc/v1/play/
+          type: string
+        webrtc_stream_url:
+          default: webrtc://srs.sciol.ac.cn:4500/live/camera-01
+          type: string
+        width:
+          default: 1280
+          type: integer
+      required: []
+      type: object
+    data:
+      properties:
+        ffmpeg_running:
+          type: boolean
+        running:
+          type: boolean
+        status:
+          type: object
+        websocket_connected:
+          type: boolean
+      required:
+      - status
+      - running
+      - websocket_connected
+      - ffmpeg_running
+      type: object
+  version: 1.0.0
+cameracontroller_device:
+  category:
+  - cameraSII
+  - SII
+  class:
+    action_value_mappings:
+      auto-ptz_move_down:
+        feedback: {}
+        goal: {}
+        goal_default:
+          duration: 1.0
+          speed: 0.5
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                duration:
+                  default: 1.0
+                  type: number
+                speed:
+                  default: 0.5
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: ptz_move_down参数
+          type: object
+        type: UniLabJsonCommand
+      auto-ptz_move_left:
+        feedback: {}
+        goal: {}
+        goal_default:
+          duration: 1.0
+          speed: 0.2
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                duration:
+                  default: 1.0
+                  type: number
+                speed:
+                  default: 0.2
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: ptz_move_left参数
+          type: object
+        type: UniLabJsonCommand
+      auto-ptz_move_right:
+        feedback: {}
+        goal: {}
+        goal_default:
+          duration: 1.0
+          speed: 0.2
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                duration:
+                  default: 1.0
+                  type: number
+                speed:
+                  default: 0.2
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: ptz_move_right参数
+          type: object
+        type: UniLabJsonCommand
+      auto-ptz_move_up:
+        feedback: {}
+        goal: {}
+        goal_default:
+          duration: 1.0
+          speed: 0.5
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                duration:
+                  default: 1.0
+                  type: number
+                speed:
+                  default: 0.5
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: ptz_move_up参数
+          type: object
+        type: UniLabJsonCommand
+      auto-ptz_stop:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: ptz_stop参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start:
+        feedback: {}
+        goal: {}
+        goal_default:
+          config: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                config:
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stop:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stop参数
+          type: object
+        type: UniLabJsonCommand
+      auto-zoom_in:
+        feedback: {}
+        goal: {}
+        goal_default:
+          duration: 1.0
+          speed: 0.2
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                duration:
+                  default: 1.0
+                  type: number
+                speed:
+                  default: 0.2
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: zoom_in参数
+          type: object
+        type: UniLabJsonCommand
+      auto-zoom_out:
+        feedback: {}
+        goal: {}
+        goal_default:
+          duration: 1.0
+          speed: 0.2
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                duration:
+                  default: 1.0
+                  type: number
+                speed:
+                  default: 0.2
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: zoom_out参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.SII.cameraSII.cameraWifi:CameraController
+    status_types:
+      status: dict
+    type: python
+  config_info: []
+  description: 'camera driver: display and actions'
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        camera_rtsp_url:
+          default: ''
+          type: string
+        host_id:
+          default: demo-host
+          type: string
+        ptz_host:
+          default: ''
+          type: string
+        ptz_password:
+          default: ''
+          type: string
+        ptz_port:
+          default: 80
+          type: integer
+        ptz_user:
+          default: ''
+          type: string
+        rtmp_url:
+          default: rtmp://srs.sciol.ac.cn:4499/live/camera-01
+          type: string
+        signal_backend_url:
+          default: wss://sciol.ac.cn/api/realtime/signal/host
+          type: string
+        webrtc_api:
+          default: https://srs.sciol.ac.cn/rtc/v1/play/
+          type: string
+        webrtc_stream_url:
+          default: webrtc://srs.sciol.ac.cn:4500/live/camera-01
+          type: string
+      required: []
+      type: object
+    data:
+      properties:
+        status:
+          type: object
+      required:
+      - status
+      type: object
+  registry_type: device
+  version: 1.0.0
+xyz_pipette_device:
+  category:
+  - laiyu_xyz_pipette
+  - SII
+  class:
+    action_value_mappings:
+      auto-aspirate:
+        feedback: {}
+        goal: {}
+        goal_default:
+          volume_uL: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                volume_uL:
+                  type: number
+              required:
+              - volume_uL
+              type: object
+            result: {}
+          required:
+          - goal
+          title: aspirate参数
+          type: object
+        type: UniLabJsonCommand
+      auto-connect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: connect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-define_current_as_zero:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 以当前 XYZ 位置重置工件软零点
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: define_current_as_zero参数
+          type: object
+        type: UniLabJsonCommand
+      auto-disconnect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: disconnect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-dispense:
+        feedback: {}
+        goal: {}
+        goal_default:
+          volume_uL: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                volume_uL:
+                  type: number
+              required:
+              - volume_uL
+              type: object
+            result: {}
+          required:
+          - goal
+          title: dispense参数
+          type: object
+        type: UniLabJsonCommand
+      auto-eject_tip:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: eject_tip参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_to_point:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acc: 60
+          name: null
+          speed: 50
+          z_offset: 0.0
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acc:
+                  default: 60
+                  type: integer
+                name:
+                  type: string
+                speed:
+                  default: 50
+                  type: integer
+                z_offset:
+                  default: 0.0
+                  type: number
+              required:
+              - name
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_to_point参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_xyz:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acc: 60
+          speed: 50
+          x: null
+          y: null
+          z: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acc:
+                  default: 60
+                  type: integer
+                speed:
+                  default: 50
+                  type: integer
+                x:
+                  type: string
+                y:
+                  type: string
+                z:
+                  type: string
+              required:
+              - x
+              - y
+              - z
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_xyz参数
+          type: object
+        type: UniLabJsonCommand
+      auto-save_current_position_as_point:
+        feedback: {}
+        goal: {}
+        goal_default:
+          name: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 使用最近一次目标坐标保存点位
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                name:
+                  type: string
+              required:
+              - name
+              type: object
+            result: {}
+          required:
+          - goal
+          title: save_current_position_as_point参数
+          type: object
+        type: UniLabJsonCommand
+      auto-save_point:
+        feedback: {}
+        goal: {}
+        goal_default:
+          name: null
+          x: null
+          y: null
+          z: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 保存/更新一个点位到 points.json
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                name:
+                  type: string
+                x:
+                  type: number
+                y:
+                  type: number
+                z:
+                  type: number
+              required:
+              - name
+              - x
+              - y
+              - z
+              type: object
+            result: {}
+          required:
+          - goal
+          title: save_point参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.SII.laiyu_xyz_pipette.station:Station
+    status_types: {}
+    type: python
+  config_info: []
+  description: xyz_pipette_device
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        baudrate:
+          default: 115200
+          type: integer
+        origin_file:
+          default: unilabos/devices/SII/laiyu_xyz_pipette/work_origin.json
+          type: string
+        points_file:
+          default: unilabos/devices/SII/laiyu_xyz_pipette/points.json
+          type: string
+        port:
+          default: /dev/ttyUSB0
+          type: string
+      required: []
+      type: object
+    data:
+      properties: {}
+      required: []
+      type: object
+  registry_type: device
+  version: 1.0.0

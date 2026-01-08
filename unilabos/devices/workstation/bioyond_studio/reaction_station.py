@@ -1403,9 +1403,63 @@ class BioyondReactionStation(BioyondWorkstation):
         self.pending_time_constraints = []
         print("已清空工作流序列缓存和时间约束队列")
 
+    def clean_all_server_workflows(self) -> Dict[str, Any]:
+        """
+        清空服务端所有非核心工作流
+        逻辑：
+        1. 利用 3.2 接口查询所有工作流 (includeDetail=False)
+        2. 提取所有 ID
+        3. 利用 3.38 接口 (hard_delete_merged_workflows) 批量删除
+        """
+        print("正在查询服务端工作流列表...")
+        try:
+            # 查询工作流列表
+            # 仅需要ID，所以设置 includeDetail=False
+            query_params = {"includeDetail": False, "type": 0}
+            query_result = self._post_project_api("/api/lims/workflow/work-flow-list", query_params)
+
+            if query_result.get("code") != 1:
+                return query_result
+
+            data_obj = query_result.get("data")
+
+            # 处理返回值可能是列表或者分页对象的不同情况
+            if isinstance(data_obj, list):
+                workflows = data_obj
+            elif isinstance(data_obj, dict):
+                # 尝试从常见分页字段获取列表
+                workflows = data_obj.get("items", data_obj.get("list", []))
+            else:
+                workflows = []
+
+            if not workflows:
+                 print("无需删除: 服务端无工作流")
+                 return {"code": 1, "message": "服务端无工作流", "timestamp": int(time.time())}
+
+            ids_to_delete = []
+            for wf in workflows:
+                if isinstance(wf, dict):
+                    wf_id = wf.get("id")
+                    if wf_id:
+                        ids_to_delete.append(str(wf_id))
+
+            if not ids_to_delete:
+                print("无需删除: 无有效工作流ID")
+                return {"code": 1, "message": "无有效工作流ID", "timestamp": int(time.time())}
+
+            print(f"查询到 {len(ids_to_delete)} 个工作流，准备调用硬删除接口...")
+            # 硬删除
+            return self.hard_delete_merged_workflows(ids_to_delete)
+
+        except Exception as e:
+            print(f"❌ 清空工作流业务异常: {str(e)}")
+            return {"code": 0, "message": str(e), "timestamp": int(time.time())}
+
     def hard_delete_merged_workflows(self, workflow_ids: List[str]) -> Dict[str, Any]:
         """
         调用新接口:硬删除合并后的工作流
+        根据用户反馈，/api/lims/order/workflows 接口存在校验问题
+        改用 /api/data/order/workflows?workFlowGuids=... 接口
 
         Args:
             workflow_ids: 要删除的工作流ID数组
@@ -1416,7 +1470,30 @@ class BioyondReactionStation(BioyondWorkstation):
         try:
             if not isinstance(workflow_ids, list):
                 raise ValueError("workflow_ids必须是字符串数组")
-            return self._delete_project_api("/api/lims/order/workflows", workflow_ids)
+
+            # 使用新 Endpoint: /api/data/order/workflows
+            endpoint = "/api/data/order/workflows"
+            url = f"{self.hardware_interface.host}{endpoint}"
+
+            print(f"\n📤 硬删除请求 (Query Param): {url}")
+            print(f"IDs count: {len(workflow_ids)}")
+
+            # 使用 requests 的 params 传递数组，会生成 workFlowGuids=id1&workFlowGuids=id2 的形式
+            params = {"workFlowGuids": workflow_ids}
+
+            response = requests.delete(
+                url,
+                params=params,
+                timeout=60
+            )
+
+            if response.status_code == 200:
+                print("✅ 删除请求成功")
+                return {"code": 1, "message": "删除成功", "timestamp": int(time.time())}
+            else:
+                print(f"❌ 删除失败: status={response.status_code}, content={response.text}")
+                return {"code": 0, "message": f"HTTP {response.status_code}: {response.text}", "timestamp": int(time.time())}
+
         except Exception as e:
             print(f"❌ 硬删除异常: {str(e)}")
             return {"code": 0, "message": str(e), "timestamp": int(time.time())}
@@ -1481,21 +1558,43 @@ class BioyondReactionStation(BioyondWorkstation):
         print(f"\n📤 项目DELETE请求: {self.hardware_interface.host}{endpoint}")
         print(json.dumps(request_data, indent=4, ensure_ascii=False))
         try:
-            response = requests.delete(
+            # 使用 requests.request 显式发送 Body，避免 requests.delete 可能的兼容性问题
+            response = requests.request(
+                "DELETE",
                 f"{self.hardware_interface.host}{endpoint}",
-                json=request_data,
+                data=json.dumps(request_data),
                 headers={"Content-Type": "application/json"},
                 timeout=30
             )
-            result = response.json()
+
+            try:
+                result = response.json()
+            except json.JSONDecodeError:
+                print(f"❌ 非JSON响应: {response.text}")
+                return {"code": 0, "message": "非JSON响应", "timestamp": int(time.time())}
+
             if result.get("code") == 1:
                 print("✅ 请求成功")
             else:
-                print(f"❌ 请求失败: {result.get('message','未知错误')}")
+                # 尝试提取详细错误信息 (兼容 Abp 等框架的 error 结构)
+                msg = result.get('message')
+                if not msg:
+                    error_obj = result.get('error', {})
+                    if isinstance(error_obj, dict):
+                        msg = error_obj.get('message')
+                        details = error_obj.get('details')
+                        if details:
+                            msg = f"{msg}: {details}"
+
+                if not msg:
+                    msg = f"未知错误 (Status: {response.status_code})"
+
+                print(f"❌ 请求失败: {msg}")
+                # 打印完整返回以供调试
+                print(f"服务端返回: {json.dumps(result, ensure_ascii=False)}")
+
             return result
-        except json.JSONDecodeError:
-            print("❌ 非JSON响应")
-            return {"code": 0, "message": "非JSON响应", "timestamp": int(time.time())}
+
         except requests.exceptions.Timeout:
             print("❌ 请求超时")
             return {"code": 0, "message": "请求超时", "timestamp": int(time.time())}

@@ -58,6 +58,36 @@ reaction_station.bioyond:
           title: add_time_constraint参数
           type: object
         type: UniLabJsonCommand
+      clean_all_server_workflows:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result:
+          code: code
+          message: message
+        schema:
+          description: 清空服务端所有非核心工作流 (保留核心流程)
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties:
+                code:
+                  description: 操作结果代码(1表示成功)
+                  type: integer
+                message:
+                  description: 结果描述
+                  type: string
+              type: object
+          required:
+          - goal
+          title: clean_all_server_workflows参数
+          type: object
+        type: UniLabJsonCommand
       drip_back:
         feedback: {}
         goal:

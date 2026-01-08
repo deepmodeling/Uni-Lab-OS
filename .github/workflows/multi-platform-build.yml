@@ -1,11 +1,16 @@
 name: Multi-Platform Conda Build
 
 on:
+  # 在 CI Check 工作流完成后触发（仅限 main/dev 分支）
+  workflow_run:
+    workflows: ["CI Check"]
+    types:
+      - completed
+    branches: [main, dev]
+  # 支持 tag 推送（不依赖 CI Check）
   push:
-    branches: [main, dev]
     tags: ['v*']
-  pull_request:
-    branches: [main, dev]
+  # 手动触发
   workflow_dispatch:
     inputs:
       platforms:
@@ -17,9 +22,37 @@ on:
         required: false
         default: false
         type: boolean
+      skip_ci_check:
+        description: '跳过等待 CI Check (手动触发时可选)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
+  # 等待 CI Check 完成的 job (仅用于 workflow_run 触发)
+  wait-for-ci:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_run'
+    outputs:
+      should_continue: ${{ steps.check.outputs.should_continue }}
+    steps:
+      - name: Check CI status
+        id: check
+        run: |
+          if [[ "${{ github.event.workflow_run.conclusion }}" == "success" ]]; then
+            echo "should_continue=true" >> $GITHUB_OUTPUT
+            echo "CI Check passed, proceeding with build"
+          else
+            echo "should_continue=false" >> $GITHUB_OUTPUT
+            echo "CI Check did not succeed (status: ${{ github.event.workflow_run.conclusion }}), skipping build"
+          fi
+
   build:
+    needs: [wait-for-ci]
+    # 运行条件：workflow_run 触发且 CI 成功，或者其他触发方式
+    if: |
+      always() &&
+      (needs.wait-for-ci.result == 'skipped' || needs.wait-for-ci.outputs.should_continue == 'true')
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +79,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # 如果是 workflow_run 触发，使用触发 CI Check 的 commit
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
       - name: Check if platform should be built
@@ -69,7 +104,6 @@ jobs:
           channels: conda-forge,robostack-staging,defaults
           channel-priority: strict
           activate-environment: build-env
-          auto-activate-base: false
           auto-update-conda: false
           show-channel-urls: true
 

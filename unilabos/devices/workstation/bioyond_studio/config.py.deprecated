@@ -1,0 +1,329 @@
+# config.py
+"""
+Bioyond工作站配置文件
+包含API配置、工作流映射、物料类型映射、仓库库位映射等所有配置信息
+"""
+
+from unilabos.resources.bioyond.decks import BIOYOND_PolymerReactionStation_Deck
+
+# ============================================================================
+# 基础配置
+# ============================================================================
+
+# API配置
+API_CONFIG = {
+    "api_key": "DE9BDDA0",
+    "api_host": "http://192.168.1.200:44402"
+}
+
+# HTTP 报送服务配置
+HTTP_SERVICE_CONFIG = {
+    "http_service_host": "127.0.0.1",  # 监听地址
+    "http_service_port": 8080,        # 监听端口
+}
+
+# Deck配置 - 反应站工作台配置
+DECK_CONFIG = BIOYOND_PolymerReactionStation_Deck(setup=True)
+
+# ============================================================================
+# 工作流配置
+# ============================================================================
+
+# 工作流ID映射
+WORKFLOW_MAPPINGS = {
+    "reactor_taken_out": "3a16081e-4788-ca37-eff4-ceed8d7019d1",
+    "reactor_taken_in": "3a160df6-76b3-0957-9eb0-cb496d5721c6",
+    "Solid_feeding_vials": "3a160877-87e7-7699-7bc6-ec72b05eb5e6",
+    "Liquid_feeding_vials(non-titration)": "3a167d99-6158-c6f0-15b5-eb030f7d8e47",
+    "Liquid_feeding_solvents": "3a160824-0665-01ed-285a-51ef817a9046",
+    "Liquid_feeding(titration)": "3a16082a-96ac-0449-446a-4ed39f3365b6",
+    "liquid_feeding_beaker": "3a16087e-124f-8ddb-8ec1-c2dff09ca784",
+    "Drip_back": "3a162cf9-6aac-565a-ddd7-682ba1796a4a",
+}
+
+# 工作流名称到显示名称的映射
+WORKFLOW_TO_SECTION_MAP = {
+    'reactor_taken_in': '反应器放入',
+    'reactor_taken_out': '反应器取出',
+    'Solid_feeding_vials': '固体投料-小瓶',
+    'Liquid_feeding_vials(non-titration)': '液体投料-小瓶（非滴定）',
+    'Liquid_feeding_solvents': '液体投料-溶剂',
+    'Liquid_feeding(titration)': '液体投料-滴定',
+    'liquid_feeding_beaker': '液体投料-烧杯',
+    'Drip_back': '液体回滴'
+}
+
+# 工作流步骤ID配置
+WORKFLOW_STEP_IDS = {
+    "reactor_taken_in": {
+        "config": "60a06f85-c5b3-29eb-180f-4f62dd7e2154"
+    },
+    "liquid_feeding_beaker": {
+        "liquid": "6808cda7-fee7-4092-97f0-5f9c2ffa60e3",
+        "observe": "1753c0de-dffc-4ee6-8458-805a2e227362"
+    },
+    "liquid_feeding_vials_non_titration": {
+        "liquid": "62ea6e95-3d5d-43db-bc1e-9a1802673861",
+        "observe": "3a167d99-6172-b67b-5f22-a7892197142e"
+    },
+    "liquid_feeding_solvents": {
+        "liquid": "1fcea355-2545-462b-b727-350b69a313bf",
+        "observe": "0553dfb3-9ac5-4ace-8e00-2f11029919a8"
+    },
+    "solid_feeding_vials": {
+        "feeding": "f7ae7448-4f20-4c1d-8096-df6fbadd787a",
+        "observe": "263c7ed5-7277-426b-bdff-d6fbf77bcc05"
+    },
+    "liquid_feeding_titration": {
+        "liquid": "a00ec41b-e666-4422-9c20-bfcd3cd15c54",
+        "observe": "ac738ff6-4c58-4155-87b1-d6f65a2c9ab5"
+    },
+    "drip_back": {
+        "liquid": "371be86a-ab77-4769-83e5-54580547c48a",
+        "observe": "ce024b9d-bd20-47b8-9f78-ca5ce7f44cf1"
+    }
+}
+
+# 工作流动作名称配置
+ACTION_NAMES = {
+    "reactor_taken_in": {
+        "config": "通量-配置",
+        "stirring": "反应模块-开始搅拌"
+    },
+    "solid_feeding_vials": {
+        "feeding": "粉末加样模块-投料",
+        "observe": "反应模块-观察搅拌结果"
+    },
+    "liquid_feeding_vials_non_titration": {
+        "liquid": "稀释液瓶加液位-液体投料",
+        "observe": "反应模块-滴定结果观察"
+    },
+    "liquid_feeding_solvents": {
+        "liquid": "试剂AB放置位-试剂吸液分液",
+        "observe": "反应模块-观察搅拌结果"
+    },
+    "liquid_feeding_titration": {
+        "liquid": "稀释液瓶加液位-稀释液吸液分液",
+        "observe": "反应模块-滴定结果观察"
+    },
+    "liquid_feeding_beaker": {
+        "liquid": "烧杯溶液放置位-烧杯吸液分液",
+        "observe": "反应模块-观察搅拌结果"
+    },
+    "drip_back": {
+        "liquid": "试剂AB放置位-试剂吸液分液",
+        "observe": "反应模块-向下滴定结果观察"
+    }
+}
+
+# ============================================================================
+# 仓库配置
+# ============================================================================
+# 说明:
+# - 出库和入库操作都需要UUID
+WAREHOUSE_MAPPING = {
+    # ========== 反应站仓库 ==========
+
+    # 堆栈1左 - 反应站左侧堆栈 (4行×4列=16个库位, A01～D04)
+    "堆栈1左": {
+        "uuid": "3a14aa17-0d49-dce4-486e-4b5c85c8b366",
+        "site_uuids": {
+            "A01": "3a14aa17-0d49-11d7-a6e1-f236b3e5e5a3",
+            "A02": "3a14aa17-0d49-4bc5-8836-517b75473f5f",
+            "A03": "3a14aa17-0d49-c2bc-6222-5cee8d2d94f8",
+            "A04": "3a14aa17-0d49-3ce2-8e9a-008c38d116fb",
+            "B01": "3a14aa17-0d49-f49c-6b66-b27f185a3b32",
+            "B02": "3a14aa17-0d49-cf46-df85-a979c9c9920c",
+            "B03": "3a14aa17-0d49-7698-4a23-f7ffb7d48ba3",
+            "B04": "3a14aa17-0d49-1231-99be-d5870e6478e9",
+            "C01": "3a14aa17-0d49-be34-6fae-4aed9d48b70b",
+            "C02": "3a14aa17-0d49-11d7-0897-34921dcf6b7c",
+            "C03": "3a14aa17-0d49-9840-0bd5-9c63c1bb2c29",
+            "C04": "3a14aa17-0d49-8335-3bff-01da69ea4911",
+            "D01": "3a14aa17-0d49-2bea-c8e5-2b32094935d5",
+            "D02": "3a14aa17-0d49-cff4-e9e8-5f5f0bc1ef32",
+            "D03": "3a14aa17-0d49-4948-cb0a-78f30d1ca9b8",
+            "D04": "3a14aa17-0d49-fd2f-9dfb-a29b11e84099",
+        },
+    },
+
+    # 堆栈1右 - 反应站右侧堆栈 (4行×4列=16个库位, A05～D08)
+    "堆栈1右": {
+        "uuid": "3a14aa17-0d49-dce4-486e-4b5c85c8b366",
+        "site_uuids": {
+            "A05": "3a14aa17-0d49-2c61-edc8-72a8ca7192dd",
+            "A06": "3a14aa17-0d49-60c8-2b00-40b17198f397",
+            "A07": "3a14aa17-0d49-ec5b-0b75-634dce8eed25",
+            "A08": "3a14aa17-0d49-3ec9-55b3-f3189c4ec53d",
+            "B05": "3a14aa17-0d49-6a4e-abcf-4c113eaaeaad",
+            "B06": "3a14aa17-0d49-e3f6-2dd6-28c2e8194fbe",
+            "B07": "3a14aa17-0d49-11a6-b861-ee895121bf52",
+            "B08": "3a14aa17-0d49-9c7d-1145-d554a6e482f0",
+            "C05": "3a14aa17-0d49-45c4-7a34-5105bc3e2368",
+            "C06": "3a14aa17-0d49-867e-39ab-31b3fe9014be",
+            "C07": "3a14aa17-0d49-ec56-c4b4-39fd9b2131e7",
+            "C08": "3a14aa17-0d49-1128-d7d9-ffb1231c98c0",
+            "D05": "3a14aa17-0d49-e843-f961-ea173326a14b",
+            "D06": "3a14aa17-0d49-4d26-a985-f188359c4f8b",
+            "D07": "3a14aa17-0d49-223a-b520-bc092bb42fe0",
+            "D08": "3a14aa17-0d49-4fa3-401a-6a444e1cca22",
+        },
+    },
+
+    # 站内试剂存放堆栈
+    "站内试剂存放堆栈": {
+        "uuid": "3a14aa3b-9fab-9d8e-d1a7-828f01f51f0c",
+        "site_uuids": {
+            "A01": "3a14aa3b-9fab-adac-7b9c-e1ee446b51d5",
+            "A02": "3a14aa3b-9fab-ca72-febc-b7c304476c78"
+        }
+    },
+
+
+    # 测量小瓶仓库（测密度）
+    "测量小瓶仓库": {
+        "uuid": "3a15012f-705b-c0de-3f9e-950c205f9921",
+        "site_uuids": {
+            "A01": "3a15012f-705e-0524-3161-c523b5aebc97",
+            "A02": "3a15012f-705e-7cd1-32ab-ad4fd1ab75c8",
+            "A03": "3a15012f-705e-a5d6-edac-bdbfec236260",
+            "B01": "3a15012f-705e-e0ee-80e0-10a6b3fc500d",
+            "B02": "3a15012f-705e-e499-180d-de06d60d0b21",
+            "B03": "3a15012f-705e-eff6-63f1-09f742096b26"
+        }
+    },
+
+    # 站内Tip盒堆栈 - 用于存放枪头盒 (耗材)
+    "站内Tip盒堆栈": {
+        "uuid": "3a14aa3a-2d3c-b5c1-9ddf-7c4a957d459a",
+        "site_uuids": {
+            "A01": "3a14aa3a-2d3d-e700-411a-0ddf85e1f18a",
+            "A02": "3a14aa3a-2d3d-a7ce-099a-d5632fdafa24",
+            "A03": "3a14aa3a-2d3d-bdf6-a702-c60b38b08501",
+            "B01": "3a14aa3a-2d3d-d704-f076-2a8d5bc72cb8",
+            "B02": "3a14aa3a-2d3d-c350-2526-0778d173a5ac",
+            "B03": "3a14aa3a-2d3d-bc38-b356-f0de2e44e0c7"
+        }
+    },
+    # ========== 配液站仓库 ==========
+    "粉末堆栈": {
+        "uuid": "3a14198e-6928-121f-7ca6-88ad3ae7e6a0",
+        "site_uuids": {
+            "A01": "3a14198e-6929-31f0-8a22-0f98f72260df",
+            "A02": "3a14198e-6929-4379-affa-9a2935c17f99",
+            "A03": "3a14198e-6929-56da-9a1c-7f5fbd4ae8af",
+            "A04": "3a14198e-6929-5e99-2b79-80720f7cfb54",
+            "B01": "3a14198e-6929-f525-9a1b-1857552b28ee",
+            "B02": "3a14198e-6929-bf98-0fd5-26e1d68bf62d",
+            "B03": "3a14198e-6929-2d86-a468-602175a2b5aa",
+            "B04": "3a14198e-6929-1a98-ae57-e97660c489ad",
+            "C01": "3a14198e-6929-46fe-841e-03dd753f1e4a",
+            "C02": "3a14198e-6929-72ac-32ce-9b50245682b8",
+            "C03": "3a14198e-6929-8a0b-b686-6f4a2955c4e2",
+            "C04": "3a14198e-6929-a0ec-5f15-c0f9f339f963",
+            "D01": "3a14198e-6929-1bc9-a9bd-3b7ca66e7f95",
+            "D02": "3a14198e-6929-3bd8-e6c7-4a9fd93be118",
+            "D03": "3a14198e-6929-dde1-fc78-34a84b71afdf",
+            "D04": "3a14198e-6929-7ac8-915a-fea51cb2e884"
+        }
+    },
+    "溶液堆栈": {
+        "uuid": "3a14198e-d723-2c13-7d12-50143e190a23",
+        "site_uuids": {
+            "A01": "3a14198e-d724-e036-afdc-2ae39a7f3383",
+            "A02": "3a14198e-d724-d818-6d4f-5725191a24b5",
+            "A03": "3a14198e-d724-b5bb-adf3-4c5a0da6fb31",
+            "A04": "3a14198e-d724-d378-d266-2508a224a19f",
+            "B01": "3a14198e-d724-afa4-fc82-0ac8a9016791",
+            "B02": "3a14198e-d724-be8a-5e0b-012675e195c6",
+            "B03": "3a14198e-d724-ab4e-48cb-817c3c146707",
+            "B04": "3a14198e-d724-f56e-468b-0110a8feb36a",
+            "C01": "3a14198e-d724-ca48-bb9e-7e85751e55b6",
+            "C02": "3a14198e-d724-cc1e-5c2c-228a130f40a8",
+            "C03": "3a14198e-d724-7f18-1853-39d0c62e1d33",
+            "C04": "3a14198e-d724-0cf1-dea9-a1f40fe7e13c",
+            "D01": "3a14198e-d724-df6d-5e32-5483b3cab583",
+            "D02": "3a14198e-d724-1e28-c885-574c3df468d0",
+            "D03": "3a14198e-d724-28a2-a760-baa896f46b66",
+            "D04": "3a14198e-d724-0ddd-9654-f9352a421de9"
+        }
+    },
+    "试剂堆栈": {
+        "uuid": "3a14198c-c2cc-0290-e086-44a428fba248",
+        "site_uuids": {
+            "A01": "3a14198c-c2cf-8b40-af28-b467808f1c36",  # x=1, y=1, code=0001-0001
+            "A02": "3a14198c-c2d0-dc7d-b8d0-e1d88cee3094",  # x=1, y=2, code=0001-0002
+            "A03": "3a14198c-c2d0-354f-39ad-642e1a72fcb8",  # x=1, y=3, code=0001-0003
+            "A04": "3a14198c-c2d0-725e-523d-34c037ac2440",  # x=1, y=4, code=0001-0004
+            "B01": "3a14198c-c2d0-f3e7-871a-e470d144296f",  # x=2, y=1, code=0001-0005
+            "B02": "3a14198c-c2d0-2070-efc8-44e245f10c6f",  # x=2, y=2, code=0001-0006
+            "B03": "3a14198c-c2d0-1559-105d-0ea30682cab4",  # x=2, y=3, code=0001-0007
+            "B04": "3a14198c-c2d0-efce-0939-69ca5a7dfd39"   # x=2, y=4, code=0001-0008
+        }
+    }
+}
+
+# ============================================================================
+# 物料类型配置
+# ============================================================================
+# 说明:
+# - 格式: PyLabRobot资源类型名称 → Bioyond系统typeId的UUID
+# - 这个映射基于 resource.model 属性 (不是显示名称!)
+# - UUID为空表示该类型暂未在Bioyond系统中定义
+MATERIAL_TYPE_MAPPINGS = {
+    # ================================================配液站资源============================================================
+    # ==================================================样品===============================================================
+    "BIOYOND_PolymerStation_1FlaskCarrier": ("烧杯", "3a14196b-24f2-ca49-9081-0cab8021bf1a"),  # 配液站-样品-烧杯
+    "BIOYOND_PolymerStation_1BottleCarrier": ("试剂瓶", "3a14196b-8bcf-a460-4f74-23f21ca79e72"),  # 配液站-样品-试剂瓶
+    "BIOYOND_PolymerStation_6StockCarrier": ("分装板", "3a14196e-5dfe-6e21-0c79-fe2036d052c4"),  # 配液站-样品-分装板
+    "BIOYOND_PolymerStation_Liquid_Vial": ("10%分装小瓶", "3a14196c-76be-2279-4e22-7310d69aed68"),  # 配液站-样品-分装板-第一排小瓶
+    "BIOYOND_PolymerStation_Solid_Vial": ("90%分装小瓶", "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea"),  # 配液站-样品-分装板-第二排小瓶
+    # ==================================================试剂===============================================================
+    "BIOYOND_PolymerStation_8StockCarrier": ("样品板", "3a14196e-b7a0-a5da-1931-35f3000281e9"),  # 配液站-试剂-样品板（8孔）
+    "BIOYOND_PolymerStation_Solid_Stock": ("样品瓶", "3a14196a-cf7d-8aea-48d8-b9662c7dba94"),  # 配液站-试剂-样品板-样品瓶
+
+}
+
+# ============================================================================
+# 动态生成的库位UUID映射（从WAREHOUSE_MAPPING中提取）
+# ============================================================================
+
+LOCATION_MAPPING = {}
+for warehouse_name, warehouse_config in WAREHOUSE_MAPPING.items():
+    if "site_uuids" in warehouse_config:
+        LOCATION_MAPPING.update(warehouse_config["site_uuids"])
+
+# ============================================================================
+# 物料默认参数配置
+# ============================================================================
+# 说明:
+# - 为特定物料名称自动添加默认参数（如密度、分子量、单位等）
+# - 格式: 物料名称 → {参数字典}
+# - 在创建或更新物料时，会自动合并这些参数到 Parameters 字段
+# - unit: 物料的计量单位（会用于 unit 字段）
+# - density/densityUnit: 密度信息（会添加到 Parameters 中）
+
+MATERIAL_DEFAULT_PARAMETERS = {
+    # 溶剂类
+    "NMP": {
+        "unit": "毫升",
+        "density": "1.03",
+        "densityUnit": "g/mL",
+        "description": "N-甲基吡咯烷酮 (N-Methyl-2-pyrrolidone)"
+    },
+    # 可以继续添加其他物料...
+}
+
+# ============================================================================
+# 物料类型默认参数配置
+# ============================================================================
+# 说明:
+# - 为特定物料类型（UUID）自动添加默认参数
+# - 格式: Bioyond类型UUID → {参数字典}
+# - 优先级低于按名称匹配的配置
+MATERIAL_TYPE_PARAMETERS = {
+    # 示例:
+    # "3a14196b-24f2-ca49-9081-0cab8021bf1a": {  # 烧杯
+    #     "unit": "个"
+    # }
+}

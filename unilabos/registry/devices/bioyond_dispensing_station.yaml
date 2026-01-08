@@ -30,71 +30,6 @@ bioyond_dispensing_station:
           title: brief_step_parameters参数
           type: object
         type: UniLabJsonCommand
-      auto-compute_experiment_design:
-        feedback: {}
-        goal: {}
-        goal_default:
-          m_tot: '70'
-          ratio: null
-          titration_percent: '0.03'
-          wt_percent: '0.25'
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                m_tot:
-                  default: '70'
-                  type: string
-                ratio:
-                  type: object
-                titration_percent:
-                  default: '0.03'
-                  type: string
-                wt_percent:
-                  default: '0.25'
-                  type: string
-              required:
-              - ratio
-              type: object
-            result:
-              properties:
-                feeding_order:
-                  items: {}
-                  title: Feeding Order
-                  type: array
-                return_info:
-                  title: Return Info
-                  type: string
-                solutions:
-                  items: {}
-                  title: Solutions
-                  type: array
-                solvents:
-                  additionalProperties: true
-                  title: Solvents
-                  type: object
-                titration:
-                  additionalProperties: true
-                  title: Titration
-                  type: object
-              required:
-              - solutions
-              - titration
-              - solvents
-              - feeding_order
-              - return_info
-              title: ComputeExperimentDesignReturn
-              type: object
-          required:
-          - goal
-          title: compute_experiment_design参数
-          type: object
-        type: UniLabJsonCommand
       auto-process_order_finish_report:
         feedback: {}
         goal: {}
@@ -172,35 +107,6 @@ bioyond_dispensing_station:
           required:
           - goal
           title: query_resource_by_name参数
-          type: object
-        type: UniLabJsonCommand
-      auto-transfer_materials_to_reaction_station:
-        feedback: {}
-        goal: {}
-        goal_default:
-          target_device_id: null
-          transfer_groups: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                target_device_id:
-                  type: string
-                transfer_groups:
-                  type: array
-              required:
-              - target_device_id
-              - transfer_groups
-              type: object
-            result: {}
-          required:
-          - goal
-          title: transfer_materials_to_reaction_station参数
           type: object
         type: UniLabJsonCommand
       auto-workflow_sample_locations:
@@ -392,6 +298,99 @@ bioyond_dispensing_station:
           required:
           - goal
           title: BatchCreateDiamineSolutionTasks
+          type: object
+        type: UniLabJsonCommand
+      compute_experiment_design:
+        feedback: {}
+        goal:
+          m_tot: m_tot
+          ratio: ratio
+          titration_percent: titration_percent
+          wt_percent: wt_percent
+        goal_default:
+          m_tot: '70'
+          ratio: ''
+          titration_percent: '0.03'
+          wt_percent: '0.25'
+        handles:
+          output:
+          - data_key: solutions
+            data_source: executor
+            data_type: array
+            handler_key: solutions
+            io_type: sink
+            label: Solution Data From Python
+          - data_key: titration
+            data_source: executor
+            data_type: object
+            handler_key: titration
+            io_type: sink
+            label: Titration Data From Calculation Node
+          - data_key: solvents
+            data_source: executor
+            data_type: object
+            handler_key: solvents
+            io_type: sink
+            label: Solvents Data From Calculation Node
+          - data_key: feeding_order
+            data_source: executor
+            data_type: array
+            handler_key: feeding_order
+            io_type: sink
+            label: Feeding Order Data From Calculation Node
+        result:
+          feeding_order: feeding_order
+          return_info: return_info
+          solutions: solutions
+          solvents: solvents
+          titration: titration
+        schema:
+          description: 计算实验设计，输出solutions/titration/solvents/feeding_order用于后续节点。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                m_tot:
+                  default: '70'
+                  description: 总质量(g)
+                  type: string
+                ratio:
+                  description: 组分摩尔比的对象，保持输入顺序，如{"MDA":1,"BTDA":1}
+                  type: string
+                titration_percent:
+                  default: '0.03'
+                  description: 滴定比例(10%部分)
+                  type: string
+                wt_percent:
+                  default: '0.25'
+                  description: 目标固含质量分数
+                  type: string
+              required:
+              - ratio
+              type: object
+            result:
+              properties:
+                feeding_order:
+                  type: array
+                return_info:
+                  type: string
+                solutions:
+                  type: array
+                solvents:
+                  type: object
+                titration:
+                  type: object
+              required:
+              - solutions
+              - titration
+              - solvents
+              - feeding_order
+              - return_info
+              title: ComputeExperimentDesign_Result
+              type: object
+          required:
+          - goal
+          title: ComputeExperimentDesign
           type: object
         type: UniLabJsonCommand
       create_90_10_vial_feeding_task:
@@ -620,6 +619,89 @@ bioyond_dispensing_station:
           title: DispenStationSolnPrep
           type: object
         type: DispenStationSolnPrep
+      scheduler_start:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result:
+          return_info: return_info
+        schema:
+          description: 启动调度器 - 启动Bioyond配液站的任务调度器，开始执行队列中的任务
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties:
+                return_info:
+                  description: 调度器启动结果，成功返回1，失败返回0
+                  type: integer
+              required:
+              - return_info
+              title: scheduler_start结果
+              type: object
+          required:
+          - goal
+          title: scheduler_start参数
+          type: object
+        type: UniLabJsonCommand
+      transfer_materials_to_reaction_station:
+        feedback: {}
+        goal:
+          target_device_id: target_device_id
+          transfer_groups: transfer_groups
+        goal_default:
+          target_device_id: ''
+          transfer_groups: ''
+        handles: {}
+        placeholder_keys:
+          target_device_id: unilabos_devices
+        result: {}
+        schema:
+          description: 将配液站完成的物料（溶液、样品等）转移到指定反应站的堆栈库位。支持配置多组转移任务，每组包含物料名称、目标堆栈和目标库位。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                target_device_id:
+                  description: 目标反应站设备ID（从设备列表中选择，所有转移组都使用同一个目标设备）
+                  type: string
+                transfer_groups:
+                  description: 转移任务组列表，每组包含物料名称、目标堆栈和目标库位，可以添加多组
+                  items:
+                    properties:
+                      materials:
+                        description: 物料名称（手动输入，系统将通过RPC查询验证）
+                        type: string
+                      target_sites:
+                        description: 目标库位（手动输入，如"A01"）
+                        type: string
+                      target_stack:
+                        description: 目标堆栈名称（从列表选择）
+                        enum:
+                        - 堆栈1左
+                        - 堆栈1右
+                        - 站内试剂存放堆栈
+                        type: string
+                    required:
+                    - materials
+                    - target_stack
+                    - target_sites
+                    type: object
+                  type: array
+              required:
+              - target_device_id
+              - transfer_groups
+              type: object
+            result: {}
+          required:
+          - goal
+          title: transfer_materials_to_reaction_station参数
+          type: object
+        type: UniLabJsonCommand
       wait_for_multiple_orders_and_get_reports:
         feedback: {}
         goal:
@@ -688,7 +770,7 @@ bioyond_dispensing_station:
           title: WaitForMultipleOrdersAndGetReports
           type: object
         type: UniLabJsonCommand
-    module: unilabos.devices.workstation.bioyond_studio.dispensing_station:BioyondDispensingStation
+    module: unilabos.devices.workstation.bioyond_studio.dispensing_station.dispensing_station:BioyondDispensingStation
     status_types: {}
     type: python
   config_info: []
@@ -699,15 +781,16 @@ bioyond_dispensing_station:
     config:
       properties:
         config:
-          type: string
+          type: object
         deck:
           type: string
-      required:
-      - config
-      - deck
+        protocol_type:
+          type: string
+      required: []
       type: object
     data:
       properties: {}
       required: []
       type: object
+  model: {}
   version: 1.0.0

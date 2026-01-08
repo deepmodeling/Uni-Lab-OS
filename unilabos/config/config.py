@@ -16,12 +16,15 @@ class BasicConfig:
     upload_registry = False
     machine_name = "undefined"
     vis_2d_enable = False
+    no_update_feedback = False
     enable_resource_load = True
     communication_protocol = "websocket"
     startup_json_path = None  # 填写绝对路径
     disable_browser = False  # 禁止浏览器自动打开
     port = 8002  # 本地HTTP服务
-    log_level: Literal['TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] = "DEBUG"  # 'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+    check_mode = False  # CI 检查模式，用于验证 registry 导入和文件一致性
+    # 'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+    log_level: Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
 
     @classmethod
     def auth_secret(cls):
@@ -65,13 +68,14 @@ def _update_config_from_module(module):
                     if not attr.startswith("_"):
                         setattr(obj, attr, getattr(getattr(module, name), attr))
 
+
 def _update_config_from_env():
     prefix = "UNILABOS_"
     for env_key, env_value in os.environ.items():
         if not env_key.startswith(prefix):
             continue
         try:
-            key_path = env_key[len(prefix):]  # Remove UNILAB_ prefix
+            key_path = env_key[len(prefix) :]  # Remove UNILAB_ prefix
             class_field = key_path.upper().split("_", 1)
             if len(class_field) != 2:
                 logger.warning(f"[ENV] 环境变量格式不正确：{env_key}")

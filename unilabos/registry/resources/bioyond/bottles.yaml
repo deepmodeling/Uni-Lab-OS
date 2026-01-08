@@ -20,6 +20,17 @@ BIOYOND_PolymerStation_Liquid_Vial:
   icon: ''
   init_param_schema: {}
   version: 1.0.0
+BIOYOND_PolymerStation_Measurement_Vial:
+  category:
+  - bottles
+  class:
+    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Measurement_Vial
+    type: pylabrobot
+  description: 聚合站-测量小瓶（测密度）
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
 BIOYOND_PolymerStation_Reactor:
   category:
   - bottles

@@ -1,7 +1,11 @@
 import psutil
 import pywinauto
-from pywinauto_recorder import UIApplication
-from pywinauto_recorder.player import UIPath, click, focus_on_application, exists, find, get_wrapper_path
+try:
+    from pywinauto_recorder import UIApplication
+    from pywinauto_recorder.player import UIPath, click, focus_on_application, exists, find, get_wrapper_path
+except ImportError:
+    print("未安装pywinauto_recorder，部分功能无法使用，安装时注意enum")
+    pass
 from pywinauto.controls.uiawrapper import UIAWrapper
 from pywinauto.application import WindowSpecification
 from pywinauto import findbestmatch

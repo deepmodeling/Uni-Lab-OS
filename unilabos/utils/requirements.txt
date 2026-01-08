@@ -1,0 +1,17 @@
+networkx
+typing_extensions
+websockets
+msgcenterpy>=0.1.5
+opentrons_shared_data
+pint
+fastapi
+jinja2
+requests
+uvicorn
+pyautogui
+opcua
+pyserial
+pandas
+crcmod-plus
+pymodbus
+matplotlib

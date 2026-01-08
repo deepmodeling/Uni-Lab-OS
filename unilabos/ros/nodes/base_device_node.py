@@ -1,4 +1,3 @@
-import copy
 import inspect
 import io
 import json
@@ -13,7 +12,6 @@ import asyncio
 
 import rclpy
 import yaml
-from msgcenterpy import ROS2MessageInstance
 from rclpy.node import Node
 from rclpy.action import ActionServer, ActionClient
 from rclpy.action.server import ServerGoalHandle
@@ -26,11 +24,7 @@ from unilabos.utils.decorator import get_topic_config, get_all_subscriptions
 
 from unilabos.resources.container import RegularContainer
 from unilabos.resources.graphio import (
-    resource_ulab_to_plr,
     initialize_resources,
-    dict_to_tree,
-    resource_plr_to_ulab,
-    tree_to_list,
 )
 from unilabos.resources.plr_additional_res_reg import register
 from unilabos.ros.msgs.message_converter import (
@@ -47,7 +41,7 @@ from unilabos_msgs.srv import (
 )  # type: ignore
 from unilabos_msgs.msg import Resource  # type: ignore
 
-from unilabos.ros.nodes.resource_tracker import (
+from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
     ResourceTreeSet,
     ResourceTreeInstance,
@@ -363,7 +357,6 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             return res
 
         async def append_resource(req: SerialCommand_Request, res: SerialCommand_Response):
-            from pylabrobot.resources.resource import Resource as ResourcePLR
             from pylabrobot.resources.deck import Deck
             from pylabrobot.resources import Coordinate
             from pylabrobot.resources import Plate
@@ -430,7 +423,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 "data": {
                     "data": rts.dump(),
                     "mount_uuid": parent_resource.unilabos_uuid if parent_resource is not None else "",
-                    "first_add": True,
+                    "first_add": False,
                 },
             })
             tree_response: SerialCommand.Response = await client.call_async(request)
@@ -504,11 +497,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         )
                     # 调整了液体以及Deck之后要重新Assign
                     # noinspection PyUnresolvedReferences
+                    rts_with_parent = ResourceTreeSet.from_plr_resources([parent_resource])
+                    if rts_with_parent.root_nodes[0].res_content.uuid_parent is None:
+                        rts_with_parent.root_nodes[0].res_content.parent_uuid = self.uuid
                     request.command = json.dumps({
                         "action": "add",
                         "data": {
-                            "data": ResourceTreeSet.from_plr_resources([parent_resource]).dump(),
-                            "mount_uuid": parent_resource.parent.unilabos_uuid if parent_resource.parent is not None else self.uuid,
+                            "data": rts_with_parent.dump(),
+                            "mount_uuid": rts_with_parent.root_nodes[0].res_content.uuid_parent,
                             "first_add": False,
                         },
                     })
@@ -793,7 +789,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             }
 
         def _handle_update(
-            plr_resources: List[ResourcePLR], tree_set: ResourceTreeSet, additional_add_params: Dict[str, Any]
+            plr_resources: List[Union[ResourcePLR, ResourceDictInstance]], tree_set: ResourceTreeSet, additional_add_params: Dict[str, Any]
         ) -> Dict[str, Any]:
             """
             处理资源更新操作的内部函数
@@ -807,6 +803,9 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 操作结果字典
             """
             for plr_resource, tree in zip(plr_resources, tree_set.trees):
+                if isinstance(plr_resource, ResourceDictInstance):
+                    self._lab_logger.info(f"跳过 非资源{plr_resource.res_content.name} 的更新")
+                    continue
                 states = plr_resource.serialize_all_state()
                 original_instance: ResourcePLR = self.resource_tracker.figure_resource(
                     {"uuid": tree.root_node.res_content.uuid}, try_mode=False
@@ -845,6 +844,16 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     and original_parent_resource is not None
                 ):
                     self.transfer_to_new_resource(original_instance, tree, additional_add_params)
+                else:
+                    # 判断是否变更了resource_site
+                    target_site = original_instance.unilabos_extra.get("update_resource_site")
+                    sites = original_instance.parent.sites if original_instance.parent is not None and hasattr(original_instance.parent, "sites") else None
+                    site_names = list(original_instance.parent._ordering.keys()) if original_instance.parent is not None and hasattr(original_instance.parent, "sites") else []
+                    if target_site is not None and sites is not None and site_names is not None:
+                        site_index = sites.index(original_instance)
+                        site_name = site_names[site_index]
+                        if site_name != target_site:
+                            self.transfer_to_new_resource(original_instance, tree, additional_add_params)
 
                 # 加载状态
                 original_instance.load_all_state(states)
@@ -882,12 +891,31 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             raise ValueError("tree_set不能为None")
                         plr_resources = tree_set.to_plr_resources()
                         result = _handle_add(plr_resources, tree_set, additional_add_params)
+                        new_tree_set = ResourceTreeSet.from_plr_resources(plr_resources)
+                        r = SerialCommand.Request()
+                        r.command = json.dumps(
+                            {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致
+                        response: SerialCommand_Response = await self._resource_clients[
+                            "c2s_update_resource_tree"].call_async(r)  # type: ignore
+                        self.lab_logger().info(f"确认资源云端 Add 结果: {response.response}")
                         results.append(result)
                     elif action == "update":
                         if tree_set is None:
                             raise ValueError("tree_set不能为None")
-                        plr_resources = tree_set.to_plr_resources()
+                        plr_resources = []
+                        for tree in tree_set.trees:
+                            if tree.root_node.res_content.type == "device":
+                                plr_resources.append(tree.root_node)
+                            else:
+                                plr_resources.append(ResourceTreeSet([tree]).to_plr_resources()[0])
+                        new_tree_set = ResourceTreeSet.from_plr_resources(plr_resources)
                         result = _handle_update(plr_resources, tree_set, additional_add_params)
+                        r = SerialCommand.Request()
+                        r.command = json.dumps(
+                            {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致
+                        response: SerialCommand_Response = await self._resource_clients[
+                            "c2s_update_resource_tree"].call_async(r)  # type: ignore
+                        self.lab_logger().info(f"确认资源云端 Update 结果: {response.response}")
                         results.append(result)
                     elif action == "remove":
                         result = _handle_remove(resources_uuid)
@@ -1754,6 +1782,7 @@ class ROS2DeviceNode:
             or driver_class.__name__ == "LiquidHandlerBiomek"
             or driver_class.__name__ == "PRCXI9300Handler"
             or driver_class.__name__ == "TransformXYZHandler"
+            or driver_class.__name__ == "OpcUaClient"
         )
 
         # 创建设备类实例

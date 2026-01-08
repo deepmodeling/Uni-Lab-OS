@@ -1807,7 +1807,7 @@ unilab --ak your_ak --sk your_sk -g graph.json \
 
 #### 14.5 社区支持
 
-- **GitHub Issues**：[https://github.com/dptech-corp/Uni-Lab-OS/issues](https://github.com/dptech-corp/Uni-Lab-OS/issues)
+- **GitHub Issues**：[https://github.com/deepmodeling/Uni-Lab-OS/issues](https://github.com/deepmodeling/Uni-Lab-OS/issues)
 - **官方网站**：[https://uni-lab.bohrium.com](https://uni-lab.bohrium.com)
 
 ---

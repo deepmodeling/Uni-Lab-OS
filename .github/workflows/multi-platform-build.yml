@@ -27,7 +27,7 @@ jobs:
           - os: ubuntu-latest
             platform: linux-64
             env_file: unilabos-linux-64.yaml
-          - os: macos-13 # Intel
+          - os: macos-15 # Intel (via Rosetta)
             platform: osx-64
             env_file: unilabos-osx-64.yaml
           - os: macos-latest # ARM64

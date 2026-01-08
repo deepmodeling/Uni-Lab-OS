@@ -11,10 +11,9 @@ import traceback
 from abc import abstractmethod
 from typing import Type, Any, Dict, Optional, TypeVar, Generic, List
 
-from unilabos.resources.graphio import nested_dict_to_list, resource_ulab_to_plr
-from unilabos.ros.nodes.resource_tracker import DeviceNodeResourceTracker, ResourceTreeSet, ResourceDictInstance, \
+from unilabos.resources.resource_tracker import DeviceNodeResourceTracker, ResourceTreeSet, ResourceDictInstance, \
     ResourceTreeInstance
-from unilabos.utils import logger, import_manager
+from unilabos.utils import logger
 from unilabos.utils.cls_creator import create_instance_from_config
 
 # 定义泛型类型变量
@@ -135,7 +134,7 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
         Returns:
             处理后的数据
         """
-        from pylabrobot.resources import Deck, Resource
+        from pylabrobot.resources import Resource
 
         if states is None:
             states = {}

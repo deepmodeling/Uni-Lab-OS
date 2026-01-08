@@ -10,7 +10,7 @@ from unilabos_msgs.srv._serial_command import SerialCommand_Response
 
 from unilabos.app.register import register_devices_and_resources
 from unilabos.ros.nodes.presets.resource_mesh_manager import ResourceMeshManager
-from unilabos.ros.nodes.resource_tracker import DeviceNodeResourceTracker, ResourceTreeSet
+from unilabos.resources.resource_tracker import DeviceNodeResourceTracker, ResourceTreeSet
 from unilabos.devices.ros_dev.liquid_handler_joint_publisher import LiquidHandlerJointPublisher
 from unilabos_msgs.srv import SerialCommand  # type: ignore
 from rclpy.executors import MultiThreadedExecutor

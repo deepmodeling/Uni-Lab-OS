@@ -2,9 +2,8 @@ import pytest
 import json
 import os
 
-from pylabrobot.resources import Resource as ResourcePLR
 from unilabos.resources.graphio import resource_bioyond_to_plr
-from unilabos.ros.nodes.resource_tracker import ResourceTreeSet
+from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.registry.registry import lab_registry
 
 from unilabos.resources.bioyond.decks import BIOYOND_PolymerReactionStation_Deck

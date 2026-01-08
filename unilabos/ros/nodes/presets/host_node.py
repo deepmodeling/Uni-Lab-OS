@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Set, Type
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point
 from rclpy.action import ActionClient, get_action_server_names_and_types_by_node
-from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.service import Service
 from unilabos_msgs.msg import Resource  # type: ignore
 from unilabos_msgs.srv import (
@@ -19,7 +18,6 @@ from unilabos_msgs.srv import (
     ResourceUpdate,
     ResourceList,
     SerialCommand,
-    ResourceGet,
 )  # type: ignore
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 from unique_identifier_msgs.msg import UUID
@@ -37,7 +35,7 @@ from unilabos.ros.msgs.message_converter import (
 )
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode, DeviceNodeResourceTracker
 from unilabos.ros.nodes.presets.controller_node import ControllerNode
-from unilabos.ros.nodes.resource_tracker import (
+from unilabos.resources.resource_tracker import (
     ResourceDict,
     ResourceDictInstance,
     ResourceTreeSet,

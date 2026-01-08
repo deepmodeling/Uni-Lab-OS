@@ -149,6 +149,7 @@ class ItemizedCarrier(ResourcePLR):
 
     if not reassign and self.sites[idx] is not None:
       raise ValueError(f"a site with index {idx} already exists")
+    location = list(self.child_locations.values())[idx]
     super().assign_child_resource(resource, location=location, reassign=reassign)
     self.sites[idx] = resource
 

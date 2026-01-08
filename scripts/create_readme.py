@@ -126,7 +126,7 @@ If installation fails:
 For more help:
   - Documentation: docs/user_guide/installation.md
   - Quick Start: QUICK_START_CONDA_PACK.md
-  - Issues: https://github.com/dptech-corp/Uni-Lab-OS/issues
+  - Issues: https://github.com/deepmodeling/Uni-Lab-OS/issues
 
 License:
 --------
@@ -134,7 +134,7 @@ License:
 UniLabOS is licensed under GPL-3.0-only.
 See LICENSE file for details.
 
-Repository: https://github.com/dptech-corp/Uni-Lab-OS
+Repository: https://github.com/deepmodeling/Uni-Lab-OS
 """
 
     return readme

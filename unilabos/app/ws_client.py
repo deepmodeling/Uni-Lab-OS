@@ -359,7 +359,7 @@ class MessageProcessor:
         self.device_manager = device_manager
         self.queue_processor = None  # 延迟设置
         self.websocket_client = None  # 延迟设置
-        self.session_id = ""
+        self.session_id = str(uuid.uuid4())[:6]  # 产生一个随机的session_id
 
         # WebSocket连接
         self.websocket = None
@@ -576,9 +576,9 @@ class MessageProcessor:
                 await self._handle_resource_tree_update(message_data, "update")
             elif message_type == "remove_material":
                 await self._handle_resource_tree_update(message_data, "remove")
-            elif message_type == "session_id":
-                self.session_id = message_data.get("session_id")
-                logger.info(f"[MessageProcessor] Session ID: {self.session_id}")
+            # elif message_type == "session_id":
+            #     self.session_id = message_data.get("session_id")
+            #     logger.info(f"[MessageProcessor] Session ID: {self.session_id}")
             elif message_type == "request_reload":
                 await self._handle_request_reload(message_data)
             else:

@@ -488,7 +488,11 @@ class MessageProcessor:
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
-                    await self._process_message(data)
+                    if self.session_id and self.session_id == data.get("edge_session"):
+                        await self._process_message(data)
+                    else:
+                        logger.trace(f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}")
+                        logger.debug(f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}")
                 except json.JSONDecodeError:
                     logger.error(f"[MessageProcessor] Invalid JSON received: {message}")
                 except Exception as e:

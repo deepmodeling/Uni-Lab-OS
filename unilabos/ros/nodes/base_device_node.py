@@ -20,6 +20,8 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.service import Service
 from unilabos_msgs.action import SendCmd
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
+
+from unilabos.config.config import BasicConfig
 from unilabos.utils.decorator import get_topic_config, get_all_subscriptions
 
 from unilabos.resources.container import RegularContainer
@@ -911,13 +913,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             else:
                                 plr_resources.append(ResourceTreeSet([tree]).to_plr_resources()[0])
                         result, original_instances = _handle_update(plr_resources, tree_set, additional_add_params)
-                        # new_tree_set = ResourceTreeSet.from_plr_resources(original_instances)
-                        # r = SerialCommand.Request()
-                        # r.command = json.dumps(
-                        #     {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致
-                        # response: SerialCommand_Response = await self._resource_clients[
-                        #     "c2s_update_resource_tree"].call_async(r)  # type: ignore
-                        # self.lab_logger().info(f"确认资源云端 Update 结果: {response.response}")
+                        if not BasicConfig.no_update_feedback:
+                            new_tree_set = ResourceTreeSet.from_plr_resources(original_instances)
+                            r = SerialCommand.Request()
+                            r.command = json.dumps(
+                                {"data": {"data": new_tree_set.dump()}, "action": "update"})  # 和Update Resource一致
+                            response: SerialCommand_Response = await self._resource_clients[
+                                "c2s_update_resource_tree"].call_async(r)  # type: ignore
+                            self.lab_logger().info(f"确认资源云端 Update 结果: {response.response}")
                         results.append(result)
                     elif action == "remove":
                         result = _handle_remove(resources_uuid)

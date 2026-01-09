@@ -156,6 +156,11 @@ def parse_args():
         default=False,
         help="Complete registry information",
     )
+    parser.add_argument(
+        "--no_update_feedback",
+        action="store_true",
+        help="Disable sending update feedback to server",
+    )
     # workflow upload subcommand
     workflow_parser = subparsers.add_parser(
         "workflow_upload",
@@ -297,6 +302,7 @@ def main():
     BasicConfig.is_host_mode = not args_dict.get("is_slave", False)
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
     BasicConfig.upload_registry = args_dict.get("upload_registry", False)
+    BasicConfig.no_update_feedback = args_dict.get("no_update_feedback", False)
     BasicConfig.communication_protocol = "websocket"
     machine_name = os.popen("hostname").read().strip()
     machine_name = "".join([c if c.isalnum() or c == "_" else "_" for c in machine_name])

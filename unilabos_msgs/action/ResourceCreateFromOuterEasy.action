@@ -1,6 +1,6 @@
 string res_id
 string device_id
-string class_name
+string[] class_name
 string parent
 geometry_msgs/Point bind_locations
 int32[] liquid_input_slot

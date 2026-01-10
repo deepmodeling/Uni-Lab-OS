@@ -178,6 +178,38 @@ bioyond_cell:
           title: create_orders参数
           type: object
         type: UniLabJsonCommand
+      auto-create_orders_v2:
+        feedback: {}
+        goal: {}
+        goal_default:
+          xlsx_path: null
+        handles:
+          output:
+          - data_key: total_orders
+            data_source: executor
+            data_type: integer
+            handler_key: bottle_count
+            io_type: sink
+            label: 配液瓶数
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 从Excel解析并创建实验（V2版本）
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                xlsx_path:
+                  type: string
+              required:
+              - xlsx_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_orders_v2参数
+          type: object
+        type: UniLabJsonCommand
       auto-create_sample:
         feedback: {}
         goal: {}
@@ -592,6 +624,47 @@ bioyond_cell:
           required:
           - goal
           title: transfer_1_to_2参数
+          type: object
+        type: UniLabJsonCommand
+      auto-transfer_3_to_2:
+        feedback: {}
+        goal: {}
+        goal_default:
+          source_wh_id: 3a19debc-84b4-0359-e2d4-b3beea49348b
+          source_x: 1
+          source_y: 1
+          source_z: 1
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 3-2 物料转运，从3号位置转运到2号位置
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                source_wh_id:
+                  default: 3a19debc-84b4-0359-e2d4-b3beea49348b
+                  description: 来源仓库ID
+                  type: string
+                source_x:
+                  default: 1
+                  description: 来源位置X坐标
+                  type: integer
+                source_y:
+                  default: 1
+                  description: 来源位置Y坐标
+                  type: integer
+                source_z:
+                  default: 1
+                  description: 来源位置Z坐标
+                  type: integer
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: transfer_3_to_2参数
           type: object
         type: UniLabJsonCommand
       auto-transfer_3_to_2_to_1:

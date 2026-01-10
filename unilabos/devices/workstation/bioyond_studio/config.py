@@ -133,6 +133,46 @@ WAREHOUSE_MAPPING = {
             "J03": "3a19deae-2c7a-f237-89d9-8fe19025dee9"
         }
     },
+    "手动传递窗右": {
+        "uuid": "",
+        "site_uuids": {
+            "A01": "3a19deae-2c7a-36f5-5e41-02c5b66feaea",
+            "A02": "3a19deae-2c7a-dc6d-c41e-ef285d946cfe",
+            "A03": "3a19deae-2c7a-5876-c454-6b7e224ca927",
+            "B01": "3a19deae-2c7a-2426-6d71-e9de3cb158b1",
+            "B02": "3a19deae-2c7a-79b0-5e44-efaafd1e4cf3",
+            "B03": "3a19deae-2c7a-b9eb-f4e3-e308e0cf839a",
+            "C01": "3a19deae-2c7a-32bc-768e-556647e292f3",
+            "C02": "3a19deae-2c7a-e97a-8484-f5a4599447c4",
+            "C03": "3a19deae-2c7a-3056-6504-10dc73fbc276",
+            "D01": "3a19deae-2c7a-ffad-875e-8c4cda61d440",
+            "D02": "3a19deae-2c7a-61be-601c-b6fb5610499a",
+            "D03": "3a19deae-2c7a-c0f7-05a7-e3fe2491e560",
+            "E01": "3a19deae-2c7a-a6f4-edd1-b436a7576363",
+            "E02": "3a19deae-2c7a-4367-96dd-1ca2186f4910",
+            "E03": "3a19deae-2c7a-b163-2219-23df15200311",
+        }
+    },
+    "手动传递窗左": {
+        "uuid": "",
+        "site_uuids": {
+            "F01": "3a19deae-2c7a-d594-fd6a-0d20de3c7c4a",
+            "F02": "3a19deae-2c7a-a194-ea63-8b342b8d8679",
+            "F03": "3a19deae-2c7a-f7c4-12bd-425799425698",
+            "G01": "3a19deae-2c7a-0b56-72f1-8ab86e53b955",
+            "G02": "3a19deae-2c7a-204e-95ed-1f1950f28343",
+            "G03": "3a19deae-2c7a-392b-62f1-4907c66343f8",
+            "H01": "3a19deae-2c7a-5602-e876-d27aca4e3201",
+            "H02": "3a19deae-2c7a-f15c-70e0-25b58a8c9702",
+            "H03": "3a19deae-2c7a-780b-8965-2e1345f7e834",
+            "I01": "3a19deae-2c7a-8849-e172-07de14ede928",
+            "I02": "3a19deae-2c7a-4772-a37f-ff99270bafc0",
+            "I03": "3a19deae-2c7a-cce7-6e4a-25ea4a2068c4",
+            "J01": "3a19deae-2c7a-1848-de92-b5d5ed054cc6",
+            "J02": "3a19deae-2c7a-1d45-b4f8-6f866530e205",
+            "J03": "3a19deae-2c7a-f237-89d9-8fe19025dee9"
+        }
+    },
     "4号手套箱内部堆栈": {
         "uuid": "",
         "site_uuids": {

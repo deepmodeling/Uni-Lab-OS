@@ -20,8 +20,7 @@ from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import CoincellDeck
 from unilabos.resources.graphio import convert_resources_to_type
 from unilabos.utils.log import logger
-from pymodbus.payload import BinaryPayloadDecoder
-from pymodbus.constants import Endian
+import struct
 
 
 def _decode_float32_correct(registers):
@@ -43,13 +42,19 @@ def _decode_float32_correct(registers):
         return 0.0
     
     try:
-        # 使用正确的字节序配置
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            registers,
-            byteorder=Endian.Big,    # 字节序始终为Big
-            wordorder=Endian.Little  # 字序为Little (根据PLC配置)
-        )
-        return decoder.decode_32bit_float()
+        # Word Order: Little - 交换两个寄存器的顺序
+        # Byte Order: Big - 每个寄存器内部使用大端字节序
+        low_word = registers[0]
+        high_word = registers[1]
+        
+        # 将两个16位寄存器组合成一个32位值 (Little Word Order)
+        # 使用大端字节序 ('>') 将每个寄存器转换为字节
+        byte_string = struct.pack('>HH', high_word, low_word)
+        
+        # 将字节字符串解码为浮点数 (大端)
+        value = struct.unpack('>f', byte_string)[0]
+        
+        return value
     except Exception as e:
         logger.error(f"解码FLOAT32失败: {e}, registers: {registers}")
         return 0.0
@@ -632,23 +637,22 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             # 读取 STRING 类型数据
             code_little, read_err = self.client.use_node('REG_DATA_COIN_CELL_CODE').read(10, word_order=WorderOrder.LITTLE)
             
-            # 处理 bytes 或 string 类型
-            if isinstance(code_little, bytes):
-                code_str = code_little.decode('utf-8', errors='ignore')
-            elif isinstance(code_little, str):
-                code_str = code_little
-            else:
-                logger.warning(f"电池二维码返回的类型不支持: {type(code_little)}")
+            # PyModbus 3.x 返回 string 类型
+            if not isinstance(code_little, str):
+                logger.warning(f"电池二维码返回的类型不支持: {type(code_little)}, 值: {repr(code_little)}")
                 return "N/A"
             
-            # 取前8个字符
-            raw_code = code_str[:8]
+            # 从字符串末尾查找连续的字母数字字符（反转字符串）
+            import re
+            reversed_str = code_little[::-1]
+            match = re.match(r'^([A-Za-z0-9]+)', reversed_str)
             
-            # LITTLE字节序需要每2个字符交换位置
-            clean_code = ''.join([raw_code[i+1] + raw_code[i] for i in range(0, len(raw_code), 2)])
+            if not match:
+                logger.warning(f"未找到有效的电池二维码数据，原始字符串: {repr(code_little)}")
+                return "N/A"
             
-            # 去除空字符和空格
-            decoded = clean_code.replace('\x00', '').replace('\r', '').replace('\n', '').strip()
+            # 提取匹配到的字符串（已经是正确顺序）
+            decoded = match.group(1)[:8]  # 只取前8个字符
             
             return decoded if decoded else "N/A"
         except Exception as e:
@@ -663,23 +667,22 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             # 读取 STRING 类型数据
             code_little, read_err = self.client.use_node('REG_DATA_ELECTROLYTE_CODE').read(10, word_order=WorderOrder.LITTLE)
             
-            # 处理 bytes 或 string 类型
-            if isinstance(code_little, bytes):
-                code_str = code_little.decode('utf-8', errors='ignore')
-            elif isinstance(code_little, str):
-                code_str = code_little
-            else:
-                logger.warning(f"电解液二维码返回的类型不支持: {type(code_little)}")
+            # PyModbus 3.x 返回 string 类型
+            if not isinstance(code_little, str):
+                logger.warning(f"电解液二维码返回的类型不支持: {type(code_little)}, 值: {repr(code_little)}")
                 return "N/A"
             
-            # 取前8个字符
-            raw_code = code_str[:8]
+            # 从字符串末尾查找连续的字母数字字符（反转字符串）
+            import re
+            reversed_str = code_little[::-1]
+            match = re.match(r'^([A-Za-z0-9]+)', reversed_str)
             
-            # LITTLE字节序需要每2个字符交换位置
-            clean_code = ''.join([raw_code[i+1] + raw_code[i] for i in range(0, len(raw_code), 2)])
+            if not match:
+                logger.warning(f"未找到有效的电解液二维码数据，原始字符串: {repr(code_little)}")
+                return "N/A"
             
-            # 去除空字符和空格
-            decoded = clean_code.replace('\x00', '').replace('\r', '').replace('\n', '').strip()
+            # 提取匹配到的字符串（已经是正确顺序）
+            decoded = match.group(1)[:8]  # 只取前8个字符
             
             return decoded if decoded else "N/A"
         except Exception as e:
@@ -939,6 +942,111 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         self._unilab_send_electrolyte_bottle_num(False) 
         time.sleep(1) 
         #自动按钮置False
+
+    def func_sendbottle_allpack_multi(
+        self, 
+        elec_num, 
+        elec_use_num, 
+        elec_vol: int = 50,
+        # 电解液双滴模式参数
+        dual_drop_mode: bool = False,
+        dual_drop_first_volume: int = 25,
+        dual_drop_suction_timing: bool = False,
+        dual_drop_start_timing: bool = False,
+        assembly_type: int = 7, 
+        assembly_pressure: int = 4200,
+        # 来自原 qiming_coin_cell_code 的参数
+        fujipian_panshu: int = 0,
+        fujipian_juzhendianwei: int = 0,
+        gemopanshu: int = 0,
+        gemo_juzhendianwei: int = 0,
+        qiangtou_juzhendianwei: int = 0,
+        lvbodian: bool = True,
+        battery_pressure_mode: bool = True,
+        battery_clean_ignore: bool = False,
+        file_path: str = "/Users/sml/work"
+    ) -> Dict[str, Any]:
+        """
+        发送瓶数+简化组装函数（适用于第二批次及后续批次）
+        
+        合并了发送瓶数和简化组装流程，用于连续批次生产。
+        适用场景：设备已完成初始化和启动，仍在自动模式下运行。
+        
+        Args:
+            elec_num: 电解液瓶数
+            elec_use_num: 每瓶电解液组装的电池数
+            elec_vol: 电解液吸液量 (μL)
+            dual_drop_mode: 电解液添加模式 (False=单次滴液, True=二次滴液)
+            dual_drop_first_volume: 二次滴液第一次排液体积 (μL)
+            dual_drop_suction_timing: 二次滴液吸液时机 (False=正常吸液, True=先吸液)
+            dual_drop_start_timing: 二次滴液开始滴液时机 (False=正极片前, True=正极片后)
+            assembly_type: 组装类型 (7=不用铝箔垫, 8=使用铝箔垫)
+            assembly_pressure: 电池压制力 (N)
+            fujipian_panshu: 负极片盘数
+            fujipian_juzhendianwei: 负极片矩阵点位
+            gemopanshu: 隔膜盘数
+            gemo_juzhendianwei: 隔膜矩阵点位
+            qiangtou_juzhendianwei: 枪头盒矩阵点位
+            lvbodian: 是否使用铝箔垫片
+            battery_pressure_mode: 是否启用压力模式
+            battery_clean_ignore: 是否忽略电池清洁
+            file_path: 实验记录保存路径
+            
+        Returns:
+            dict: 包含组装结果的字典
+            
+        注意：
+            - 第一次启动需先调用 func_pack_device_init_auto_start_combined()
+            - 后续批次直接调用此函数即可
+        """
+        logger.info("=" * 60)
+        logger.info("开始发送瓶数+简化组装流程...")
+        logger.info(f"电解液瓶数: {elec_num}, 每瓶电池数: {elec_use_num}")
+        logger.info("=" * 60)
+        
+        # 步骤1: 发送电解液瓶数（触发物料搬运）
+        logger.info("步骤1/2: 发送电解液瓶数，触发物料搬运...")
+        try:
+            self.func_pack_send_bottle_num(elec_num)
+            logger.info("✓ 瓶数发送完成，物料搬运中...")
+        except Exception as e:
+            logger.error(f"发送瓶数失败: {e}")
+            return {
+                "success": False,
+                "error": f"发送瓶数失败: {e}",
+                "total_batteries": 0,
+                "batteries": []
+            }
+        
+        # 步骤2: 执行简化组装流程
+        logger.info("步骤2/2: 开始简化组装流程...")
+        result = self.func_allpack_cmd_simp(
+            elec_num=elec_num,
+            elec_use_num=elec_use_num,
+            elec_vol=elec_vol,
+            dual_drop_mode=dual_drop_mode,
+            dual_drop_first_volume=dual_drop_first_volume,
+            dual_drop_suction_timing=dual_drop_suction_timing,
+            dual_drop_start_timing=dual_drop_start_timing,
+            assembly_type=assembly_type,
+            assembly_pressure=assembly_pressure,
+            fujipian_panshu=fujipian_panshu,
+            fujipian_juzhendianwei=fujipian_juzhendianwei,
+            gemopanshu=gemopanshu,
+            gemo_juzhendianwei=gemo_juzhendianwei,
+            qiangtou_juzhendianwei=qiangtou_juzhendianwei,
+            lvbodian=lvbodian,
+            battery_pressure_mode=battery_pressure_mode,
+            battery_clean_ignore=battery_clean_ignore,
+            file_path=file_path
+        )
+        
+        logger.info("=" * 60)
+        logger.info("发送瓶数+简化组装流程完成")
+        logger.info(f"总组装电池数: {result.get('total_batteries', 0)}")
+        logger.info("=" * 60)
+        
+        return result
 
 
     # 下发参数

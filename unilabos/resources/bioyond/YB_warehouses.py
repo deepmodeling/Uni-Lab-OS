@@ -166,7 +166,14 @@ def bioyond_warehouse_1x4x2(name: str) -> WareHouse:
     )
 
 def bioyond_warehouse_1x2x2(name: str) -> WareHouse:
-    """创建BioYond 1x2x2仓库"""
+    """创建BioYond 1x2x2仓库（1列×2行×2层）- 旧版本，已弃用
+    
+    布局（2层）:
+    层1: A01
+         B01
+    层2: A02
+         B02
+    """
     return warehouse_factory(
         name=name,
         num_items_x=1,
@@ -179,7 +186,31 @@ def bioyond_warehouse_1x2x2(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
+        layout="row-major",  # 使用行优先避免上下颠倒
     )
+
+def bioyond_warehouse_2x2x1(name: str) -> WareHouse:
+    """创建BioYond 2x2x1仓库（2行×2列×1层）
+    
+    布局:
+    A01 | A02
+    B01 | B02
+    """
+    return warehouse_factory(
+        name=name,
+        num_items_x=2,      # 2列
+        num_items_y=2,      # 2行
+        num_items_z=1,      # 1层
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        layout="row-major",  # 使用行优先避免上下颠倒
+    )
+
 
 def bioyond_warehouse_10x1x1(name: str) -> WareHouse:
     """创建BioYond 10x1x1仓库"""
@@ -208,11 +239,61 @@ def bioyond_warehouse_1x3x3(name: str) -> WareHouse:
         dy=10.0,
         dz=10.0,
         item_dx=137.0,
-        item_dy=96.0,
+        item_dy=120.0,  # 增大Y方向间距以避免重叠
         item_dz=120.0,
         category="warehouse",
     )
 
+def bioyond_warehouse_5x3x1(name: str, row_offset: int = 0) -> WareHouse:
+    """创建BioYond 5x3x1仓库（5行×3列×1层）
+    
+    标准布局（row_offset=0）:
+    A01 | A02 | A03
+    B01 | B02 | B03
+    C01 | C02 | C03
+    D01 | D02 | D03
+    E01 | E02 | E03
+    
+    带偏移布局（row_offset=5）:
+    F01 | F02 | F03
+    G01 | G02 | G03
+    H01 | H02 | H03
+    I01 | I02 | I03
+    J01 | J02 | J03
+    """
+    return warehouse_factory(
+        name=name,
+        num_items_x=3,      # 3列
+        num_items_y=5,      # 5行
+        num_items_z=1,      # 1层
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=120.0,
+        item_dz=120.0,
+        category="warehouse",
+        col_offset=0,
+        row_offset=row_offset,  # 支持行偏移
+        layout="row-major",  # 使用行优先避免颠倒
+    )
+
+
+def bioyond_warehouse_3x3x1(name: str) -> WareHouse:
+    """创建BioYond 3x3x1仓库"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=3,
+        num_items_y=3,
+        num_items_z=1,
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+    )
 def bioyond_warehouse_2x1x3(name: str) -> WareHouse:
     """创建BioYond 2x1x3仓库"""
     return warehouse_factory(

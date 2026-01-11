@@ -156,6 +156,11 @@ def parse_args():
         default=False,
         help="Complete registry information",
     )
+    parser.add_argument(
+        "--no_update_feedback",
+        action="store_true",
+        help="Disable sending update feedback to server",
+    )
     # workflow upload subcommand
     workflow_parser = subparsers.add_parser(
         "workflow_upload",
@@ -297,6 +302,7 @@ def main():
     BasicConfig.is_host_mode = not args_dict.get("is_slave", False)
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
     BasicConfig.upload_registry = args_dict.get("upload_registry", False)
+    BasicConfig.no_update_feedback = args_dict.get("no_update_feedback", False)
     BasicConfig.communication_protocol = "websocket"
     machine_name = os.popen("hostname").read().strip()
     machine_name = "".join([c if c.isalnum() or c == "_" else "_" for c in machine_name])
@@ -315,7 +321,7 @@ def main():
     from unilabos.app.web import start_server
     from unilabos.app.register import register_devices_and_resources
     from unilabos.resources.graphio import modify_to_backend_format
-    from unilabos.ros.nodes.resource_tracker import ResourceTreeSet, ResourceDict
+    from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDict
 
     # 显示启动横幅
     print_unilab_banner(args_dict)
@@ -418,7 +424,7 @@ def main():
     # 如果从远端获取了物料信息，则与本地物料进行同步
     if request_startup_json and "nodes" in request_startup_json:
         print_status("开始同步远端物料到本地...", "info")
-        remote_tree_set = ResourceTreeSet.from_raw_list(request_startup_json["nodes"])
+        remote_tree_set = ResourceTreeSet.from_raw_dict_list(request_startup_json["nodes"])
         resource_tree_set.merge_remote_resources(remote_tree_set)
         print_status("远端物料同步完成", "info")
 

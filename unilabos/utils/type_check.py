@@ -78,7 +78,11 @@ def get_result_info_str(error: str, suc: bool, return_value=None) -> str:
     Returns:
         JSON字符串格式的结果信息
     """
-    result_info = {"error": error, "suc": suc, "return_value": return_value}
+    samples = None
+    if isinstance(return_value, dict):
+        if "samples" in return_value:
+            samples = return_value.pop("samples")
+    result_info = {"error": error, "suc": suc, "return_value": return_value, "samples": samples}
 
     return json.dumps(result_info, ensure_ascii=False, cls=ResultInfoEncoder)
 

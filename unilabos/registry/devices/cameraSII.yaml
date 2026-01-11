@@ -9,6 +9,7 @@ cameracontroller_device:
         goal_default:
           config: null
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
@@ -31,6 +32,7 @@ cameracontroller_device:
         goal: {}
         goal_default: {}
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''

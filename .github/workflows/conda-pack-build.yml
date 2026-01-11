@@ -24,7 +24,7 @@ jobs:
             platform: linux-64
             env_file: unilabos-linux-64.yaml
             script_ext: sh
-          - os: macos-13 # Intel
+          - os: macos-15 # Intel (via Rosetta)
             platform: osx-64
             env_file: unilabos-osx-64.yaml
             script_ext: sh

@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 
 
 class ResourceDictPositionSize(BaseModel):
-    depth: float = Field(description="Depth", default=0.0)
-    width: float = Field(description="Width", default=0.0)
-    height: float = Field(description="Height", default=0.0)
+    depth: float = Field(description="Depth", default=0.0)  # z
+    width: float = Field(description="Width", default=0.0)  # x
+    height: float = Field(description="Height", default=0.0)  # y
 
 
 class ResourceDictPositionScale(BaseModel):
@@ -146,8 +146,20 @@ class ResourceDictInstance(object):
             content["data"] = {}
         if not content.get("extra"):  # MagicCode
             content["extra"] = {}
-        if "pose" not in content:
-            content["pose"] = content.pop("position", {})
+        if "position" in content:
+            pose = content.get("pose",{})
+            if "position" not in pose :
+                if "position" in content["position"]:
+                    pose["position"] = content["position"]["position"]
+                else:
+                    pose["position"] = {"x": 0, "y": 0, "z": 0}
+            if "size" not in pose:
+                pose["size"] = {
+                    "width": content["config"].get("size_x", 0), 
+                    "height": content["config"].get("size_y", 0), 
+                    "depth": content["config"].get("size_z", 0)
+                }
+            content["pose"] = pose
         return ResourceDictInstance(ResourceDict.model_validate(content))
 
     def get_plr_nested_dict(self) -> Dict[str, Any]:
@@ -436,7 +448,7 @@ class ResourceTreeSet(object):
         from pylabrobot.utils.object_parsing import find_subclass
 
         # 类型映射
-        TYPE_MAP = {"plate": "Plate", "well": "Well", "deck": "Deck", "container": "RegularContainer"}
+        TYPE_MAP = {"plate": "Plate", "well": "Well", "deck": "Deck", "container": "RegularContainer", "tip_spot": "TipSpot"}
 
         def collect_node_data(node: ResourceDictInstance, name_to_uuid: dict, all_states: dict, name_to_extra: dict):
             """一次遍历收集 name_to_uuid, all_states 和 name_to_extra"""
@@ -457,9 +469,9 @@ class ResourceTreeSet(object):
                 **res.config,
                 "name": res.name,
                 "type": res.config.get("type", plr_type),
-                "size_x": res.config.get("size_x", 0),
-                "size_y": res.config.get("size_y", 0),
-                "size_z": res.config.get("size_z", 0),
+                "size_x": res.pose.size.width,
+                "size_y": res.pose.size.height,
+                "size_z": res.pose.size.depth,
                 "location": {
                     "x": res.pose.position.x,
                     "y": res.pose.position.y,
@@ -511,7 +523,7 @@ class ResourceTreeSet(object):
         return plr_resources
 
     @classmethod
-    def from_raw_list(cls, raw_list: List[Dict[str, Any]]) -> "ResourceTreeSet":
+    def from_raw_dict_list(cls, raw_list: List[Dict[str, Any]]) -> "ResourceTreeSet":
         """
         从原始字典列表创建 ResourceTreeSet，自动建立 parent-children 关系
 
@@ -561,10 +573,10 @@ class ResourceTreeSet(object):
                     parent_instance.children.append(instance)
 
         # 第四步：使用 from_nested_list 创建 ResourceTreeSet
-        return cls.from_nested_list(instances)
+        return cls.from_nested_instance_list(instances)
 
     @classmethod
-    def from_nested_list(cls, nested_list: List[ResourceDictInstance]) -> "ResourceTreeSet":
+    def from_nested_instance_list(cls, nested_list: List[ResourceDictInstance]) -> "ResourceTreeSet":
         """
         从扁平化的资源列表创建ResourceTreeSet，自动按根节点分组
 
@@ -773,7 +785,7 @@ class ResourceTreeSet(object):
         """
         nested_lists = []
         for tree_data in data:
-            nested_lists.extend(ResourceTreeSet.from_raw_list(tree_data).trees)
+            nested_lists.extend(ResourceTreeSet.from_raw_dict_list(tree_data).trees)
         return cls(nested_lists)
 
 
@@ -953,7 +965,7 @@ class DeviceNodeResourceTracker(object):
                     if current_uuid in self.uuid_to_resources:
                         self.uuid_to_resources.pop(current_uuid)
                     self.uuid_to_resources[new_uuid] = res
-                    logger.debug(f"更新uuid: {current_uuid} -> {new_uuid}")
+                    logger.trace(f"更新uuid: {current_uuid} -> {new_uuid}")
                     replaced = 1
             return replaced
 

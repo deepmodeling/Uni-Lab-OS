@@ -37,7 +37,7 @@
 
 #### 第一步：下载预打包环境
 
-1. 访问 [GitHub Actions - Conda Pack Build](https://github.com/dptech-corp/Uni-Lab-OS/actions/workflows/conda-pack-build.yml)
+1. 访问 [GitHub Actions - Conda Pack Build](https://github.com/deepmodeling/Uni-Lab-OS/actions/workflows/conda-pack-build.yml)
 
 2. 选择最新的成功构建记录（绿色勾号 ✓）
 
@@ -189,13 +189,13 @@ conda activate unilab
 ### 第一步：克隆仓库
 
 ```bash
-git clone https://github.com/dptech-corp/Uni-Lab-OS.git
+git clone https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
 ```
 
 如果您需要贡献代码，建议先 Fork 仓库：
 
-1. 访问 https://github.com/dptech-corp/Uni-Lab-OS
+1. 访问 https://github.com/deepmodeling/Uni-Lab-OS
 2. 点击右上角的 "Fork" 按钮
 3. Clone 您的 Fork 版本：
    ```bash
@@ -240,7 +240,7 @@ pip uninstall unilabos -y
 
 # 克隆 dev 分支（如果还未克隆）
 cd /path/to/your/workspace
-git clone -b dev https://github.com/dptech-corp/Uni-Lab-OS.git
+git clone -b dev https://github.com/deepmodeling/Uni-Lab-OS.git
 # 或者如果已经克隆，切换到 dev 分支
 cd Uni-Lab-OS
 git checkout dev
@@ -503,9 +503,9 @@ mamba update ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-f
 ## 需要帮助？
 
 - **故障排查**: 查看更详细的故障排查信息
-- **GitHub Issues**: [报告问题](https://github.com/dptech-corp/Uni-Lab-OS/issues)
+- **GitHub Issues**: [报告问题](https://github.com/deepmodeling/Uni-Lab-OS/issues)
 - **开发者文档**: 查看开发者指南获取更多技术细节
-- **社区讨论**: [GitHub Discussions](https://github.com/dptech-corp/Uni-Lab-OS/discussions)
+- **社区讨论**: [GitHub Discussions](https://github.com/deepmodeling/Uni-Lab-OS/discussions)
 
 ---
 

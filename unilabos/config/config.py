@@ -16,6 +16,7 @@ class BasicConfig:
     upload_registry = False
     machine_name = "undefined"
     vis_2d_enable = False
+    no_update_feedback = False
     enable_resource_load = True
     communication_protocol = "websocket"
     startup_json_path = None  # 填写绝对路径

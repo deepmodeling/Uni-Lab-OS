@@ -1,0 +1,17 @@
+# Uni-Lab-OS Licensing Notice
+
+This project uses a dual licensing structure:
+
+## 1. Main Framework - GPL-3.0
+
+- unilabos/ (except unilabos/devices/)
+- docs/
+- tests/
+
+See [LICENSE](LICENSE) for details.
+
+## 2. Device Drivers - DP Technology Proprietary License
+
+- unilabos/devices/
+
+See [unilabos/devices/LICENSE](unilabos/devices/LICENSE) for details.

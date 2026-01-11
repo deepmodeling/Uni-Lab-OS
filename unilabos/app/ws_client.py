@@ -359,7 +359,7 @@ class MessageProcessor:
         self.device_manager = device_manager
         self.queue_processor = None  # 延迟设置
         self.websocket_client = None  # 延迟设置
-        self.session_id = ""
+        self.session_id = str(uuid.uuid4())[:6]  # 产生一个随机的session_id
 
         # WebSocket连接
         self.websocket = None
@@ -488,7 +488,11 @@ class MessageProcessor:
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
-                    await self._process_message(data)
+                    if self.session_id and self.session_id == data.get("edge_session"):
+                        await self._process_message(data)
+                    else:
+                        logger.trace(f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}")
+                        logger.debug(f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}")
                 except json.JSONDecodeError:
                     logger.error(f"[MessageProcessor] Invalid JSON received: {message}")
                 except Exception as e:
@@ -576,9 +580,11 @@ class MessageProcessor:
                 await self._handle_resource_tree_update(message_data, "update")
             elif message_type == "remove_material":
                 await self._handle_resource_tree_update(message_data, "remove")
-            elif message_type == "session_id":
-                self.session_id = message_data.get("session_id")
-                logger.info(f"[MessageProcessor] Session ID: {self.session_id}")
+            # elif message_type == "session_id":
+            #     self.session_id = message_data.get("session_id")
+            #     logger.info(f"[MessageProcessor] Session ID: {self.session_id}")
+            elif message_type == "request_reload":
+                await self._handle_request_reload(message_data)
             else:
                 logger.debug(f"[MessageProcessor] Unknown message type: {message_type}")
 
@@ -887,6 +893,20 @@ class MessageProcessor:
                 name=f"ResourceTreeUpdate-{actual_action}-{device_id}",
             )
             thread.start()
+
+    async def _handle_request_reload(self, data: Dict[str, Any]):
+        """
+        处理重载请求
+        
+        当LabGo发送request_reload时，重新发送设备注册信息
+        """
+        reason = data.get("reason", "unknown")
+        logger.info(f"[MessageProcessor] Received reload request, reason: {reason}")
+        
+        # 重新发送host_node_ready信息
+        if self.websocket_client:
+            self.websocket_client.publish_host_ready()
+            logger.info("[MessageProcessor] Re-sent host_node_ready after reload request")
 
     async def _send_action_state_response(
         self, device_id: str, action_name: str, task_id: str, job_id: str, typ: str, free: bool, need_more: int
@@ -1240,7 +1260,7 @@ class WebSocketClient(BaseCommunicationClient):
             },
         }
         self.message_processor.send_message(message)
-        logger.debug(f"[WebSocketClient] Device status published: {device_id}.{property_name}")
+        logger.trace(f"[WebSocketClient] Device status published: {device_id}.{property_name}")
 
     def publish_job_status(
         self, feedback_data: dict, item: QueueItem, status: str, return_info: Optional[dict] = None
@@ -1282,7 +1302,7 @@ class WebSocketClient(BaseCommunicationClient):
         self.message_processor.send_message(message)
 
         job_log = format_job_log(item.job_id, item.task_id, item.device_id, item.action_name)
-        logger.debug(f"[WebSocketClient] Job status published: {job_log} - {status}")
+        logger.trace(f"[WebSocketClient] Job status published: {job_log} - {status}")
 
     def send_ping(self, ping_id: str, timestamp: float) -> None:
         """发送ping消息"""
@@ -1313,17 +1333,55 @@ class WebSocketClient(BaseCommunicationClient):
             logger.warning(f"[WebSocketClient] Failed to cancel job {job_log}")
 
     def publish_host_ready(self) -> None:
-        """发布host_node ready信号"""
+        """发布host_node ready信号，包含设备和动作信息"""
         if self.is_disabled or not self.is_connected():
             logger.debug("[WebSocketClient] Not connected, cannot publish host ready signal")
             return
+
+        # 收集设备信息
+        devices = []
+        machine_name = BasicConfig.machine_name
+        
+        try:
+            host_node = HostNode.get_instance(0)
+            if host_node:
+                # 获取设备信息
+                for device_id, namespace in host_node.devices_names.items():
+                    device_key = f"{namespace}/{device_id}" if namespace.startswith("/") else f"/{namespace}/{device_id}"
+                    is_online = device_key in host_node._online_devices
+                    
+                    # 获取设备的动作信息
+                    actions = {}
+                    for action_id, client in host_node._action_clients.items():
+                        # action_id 格式: /namespace/device_id/action_name
+                        if device_id in action_id:
+                            action_name = action_id.split("/")[-1]
+                            actions[action_name] = {
+                                "action_path": action_id,
+                                "action_type": str(type(client).__name__),
+                            }
+                    
+                    devices.append({
+                        "device_id": device_id,
+                        "namespace": namespace,
+                        "device_key": device_key,
+                        "is_online": is_online,
+                        "machine_name": host_node.device_machine_names.get(device_id, machine_name),
+                        "actions": actions,
+                    })
+                
+                logger.info(f"[WebSocketClient] Collected {len(devices)} devices for host_ready")
+        except Exception as e:
+            logger.warning(f"[WebSocketClient] Error collecting device info: {e}")
 
         message = {
             "action": "host_node_ready",
             "data": {
                 "status": "ready",
                 "timestamp": time.time(),
+                "machine_name": machine_name,
+                "devices": devices,
             },
         }
         self.message_processor.send_message(message)
-        logger.info("[WebSocketClient] Host node ready signal published")
+        logger.info(f"[WebSocketClient] Host node ready signal published with {len(devices)} devices")

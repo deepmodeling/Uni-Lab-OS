@@ -431,10 +431,11 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             tree_response: SerialCommand.Response = await client.call_async(request)
             uuid_maps = json.loads(tree_response.response)
             self.resource_tracker.loop_update_uuid(input_resources, uuid_maps)
+            rts: ResourceTreeSet = ResourceTreeSet.from_raw_dict_list(input_resources)
             self.lab_logger().info(f"Resource tree added. UUID mapping: {len(uuid_maps)} nodes")
             final_response = {
-                "created_resources": rts.dump(),
-                "liquid_input_resources": [],
+                "created_resource_tree": rts.dump(),
+                "liquid_input_resource_tree": [],
             }
             res.response = json.dumps(final_response)
             # 如果driver自己就有assign的方法，那就使用driver自己的assign方法
@@ -485,7 +486,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             input_wells = []
                             for r in LIQUID_INPUT_SLOT:
                                 input_wells.append(plr_instance.children[r])
-                        final_response["liquid_input_resources"] = ResourceTreeSet.from_plr_resources(input_wells).dump()
+                        final_response["liquid_input_resource_tree"] = ResourceTreeSet.from_plr_resources(input_wells).dump()
                         res.response = json.dumps(final_response)
                     if issubclass(parent_resource.__class__, Deck) and hasattr(parent_resource, "assign_child_at_slot") and "slot" in other_calling_param:
                         other_calling_param["slot"] = int(other_calling_param["slot"])
@@ -1263,7 +1264,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 ACTION, action_paramtypes = self.get_real_function(self.driver_instance, action_name)
 
             action_kwargs = convert_from_ros_msg_with_mapping(goal, action_value_mapping["goal"])
-            self.lab_logger().debug(f"任务 {ACTION.__name__} 接收到原始目标: {action_kwargs}")
+            self.lab_logger().debug(f"任务 {ACTION.__name__} 接收到原始目标: {str(action_kwargs)[:1000]}")
+            self.lab_logger().trace(f"任务 {ACTION.__name__} 接收到原始目标: {action_kwargs}")
             error_skip = False
             # 向Host查询物料当前状态，如果是host本身的增加物料的请求，则直接跳过
             if action_name not in ["create_resource_detailed", "create_resource"]:
@@ -1330,9 +1332,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                                 execution_success = True
                             except Exception as _:
                                 execution_error = traceback.format_exc()
-                                error(
-                                    f"异步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{action_kwargs}"
-                                )
+                                error(f"异步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{str(action_kwargs)[:1000]}")
+                                trace(f"异步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{action_kwargs}")
 
                         future = ROS2DeviceNode.run_async_func(ACTION, trace_error=False, **action_kwargs)
                         future.add_done_callback(_handle_future_exception)
@@ -1352,8 +1353,9 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         except Exception as _:
                             execution_error = traceback.format_exc()
                             error(
-                                f"同步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{action_kwargs}"
-                            )
+                                f"同步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{str(action_kwargs)[:1000]}")
+                            trace(
+                                f"同步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{action_kwargs}")
 
                     future.add_done_callback(_handle_future_exception)
 
@@ -1497,8 +1499,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     resource_data = function_args[arg_name]
                     if isinstance(resource_data, dict) and "id" in resource_data:
                         try:
-                            converted_resource = self._convert_resource_sync(resource_data)
-                            function_args[arg_name] = converted_resource
+                            function_args[arg_name] = self._convert_resources_sync(resource_data["uuid"])[0]
                         except Exception as e:
                             self.lab_logger().error(
                                 f"转换ResourceSlot参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
@@ -1512,12 +1513,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         resource_list = function_args[arg_name]
                         if isinstance(resource_list, list):
                             try:
-                                converted_resources = []
-                                for resource_data in resource_list:
-                                    if isinstance(resource_data, dict) and "id" in resource_data:
-                                        converted_resource = self._convert_resource_sync(resource_data)
-                                        converted_resources.append(converted_resource)
-                                function_args[arg_name] = converted_resources
+                                uuids = [r["uuid"] for r in resource_list if isinstance(r, dict) and "id" in r]
+                                function_args[arg_name] = self._convert_resources_sync(*uuids) if uuids else []
                             except Exception as e:
                                 self.lab_logger().error(
                                     f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
@@ -1530,20 +1527,27 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 f"执行动作时JSON缺少function_name或function_args: {ex}\n原JSON: {string}\n{traceback.format_exc()}"
             )
 
-    def _convert_resource_sync(self, resource_data: Dict[str, Any]):
-        """同步转换资源数据为实例"""
-        # 创建资源查询请求
-        r = SerialCommand.Request()
-        r.command = json.dumps(
-            {
-                "id": resource_data.get("id", None),
-                "uuid": resource_data.get("uuid", None),
-                "with_children": True,
-            }
-        )
-
-        # 同步调用资源查询服务
-        future = self._resource_clients["resource_get"].call_async(r)
+    def _convert_resources_sync(self, *uuids: str) -> List["ResourcePLR"]:
+        """同步转换资源 UUID 为实例
+        
+        Args:
+            *uuids: 一个或多个资源 UUID
+        
+        Returns:
+            单个 UUID 时返回单个资源实例，多个 UUID 时返回资源实例列表
+        """
+        if not uuids:
+            raise ValueError("至少需要提供一个 UUID")
+        
+        uuids_list = list(uuids)
+        future = self._resource_clients["c2s_update_resource_tree"].call_async(SerialCommand.Request(
+            command=json.dumps(
+                {
+                    "data": {"data": uuids_list, "with_children": True},
+                    "action": "get",
+                }
+            )
+        ))
 
         # 等待结果（使用while循环，每次sleep 0.05秒，最多等待30秒）
         timeout = 30.0
@@ -1553,27 +1557,40 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             elapsed += 0.05
 
         if not future.done():
-            raise Exception(f"资源查询超时: {resource_data}")
+            raise Exception(f"资源查询超时: {uuids_list}")
 
         response = future.result()
         if response is None:
-            raise Exception(f"资源查询返回空结果: {resource_data}")
+            raise Exception(f"资源查询返回空结果: {uuids_list}")
 
         raw_data = json.loads(response.response)
 
         # 转换为 PLR 资源
         tree_set = ResourceTreeSet.from_raw_dict_list(raw_data)
-        plr_resource = tree_set.to_plr_resources()[0]
+        if not len(tree_set.trees):
+            raise Exception(f"资源查询返回空树: {raw_data}")
+        plr_resources = tree_set.to_plr_resources()
 
         # 通过资源跟踪器获取本地实例
-        res = self.resource_tracker.figure_resource(plr_resource, try_mode=True)
-        if len(res) == 0:
-            self.lab_logger().warning(f"资源转换未能索引到实例: {resource_data}，返回新建实例")
-            return plr_resource
-        elif len(res) == 1:
-            return res[0]
-        else:
-            raise ValueError(f"资源转换得到多个实例: {res}")
+        figured_resources: List[ResourcePLR] = []
+        for plr_resource, tree in zip(plr_resources, tree_set.trees):
+            res = self.resource_tracker.figure_resource(plr_resource, try_mode=True)
+            if len(res) == 0:
+                self.lab_logger().warning(f"资源转换未能索引到实例: {tree.root_node.res_content}，返回新建实例")
+                figured_resources.append(plr_resource)
+            elif len(res) == 1:
+                figured_resources.append(res[0])
+            else:
+                raise ValueError(f"资源转换得到多个实例: {res}")
+
+        mapped_plr_resources = []
+        for uuid in uuids_list:
+            for plr_resource in figured_resources:
+                r = self.resource_tracker.loop_find_with_uuid(plr_resource, uuid)
+                mapped_plr_resources.append(r)
+                break
+
+        return mapped_plr_resources
 
     async def _execute_driver_command_async(self, string: str):
         try:

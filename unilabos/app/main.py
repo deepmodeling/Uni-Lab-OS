@@ -19,6 +19,11 @@ if unilabos_dir not in sys.path:
 
 from unilabos.utils.banner_print import print_status, print_unilab_banner
 from unilabos.config.config import load_config, BasicConfig, HTTPConfig
+from unilabos.app.utils import cleanup_for_restart
+
+# Global restart flags (used by ws_client and web/server)
+_restart_requested: bool = False
+_restart_reason: str = ""
 
 
 def load_config_from_file(config_path):
@@ -155,6 +160,11 @@ def parse_args():
         action="store_true",
         default=False,
         help="Complete registry information",
+    )
+    parser.add_argument(
+        "--no_update_feedback",
+        action="store_true",
+        help="Disable sending update feedback to server",
     )
     # workflow upload subcommand
     workflow_parser = subparsers.add_parser(
@@ -297,6 +307,7 @@ def main():
     BasicConfig.is_host_mode = not args_dict.get("is_slave", False)
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
     BasicConfig.upload_registry = args_dict.get("upload_registry", False)
+    BasicConfig.no_update_feedback = args_dict.get("no_update_feedback", False)
     BasicConfig.communication_protocol = "websocket"
     machine_name = os.popen("hostname").read().strip()
     machine_name = "".join([c if c.isalnum() or c == "_" else "_" for c in machine_name])
@@ -497,13 +508,19 @@ def main():
                 time.sleep(1)
         else:
             start_backend(**args_dict)
-            start_server(
+            restart_requested = start_server(
                 open_browser=not args_dict["disable_browser"],
                 port=BasicConfig.port,
             )
+            if restart_requested:
+                print_status("[Main] Restart requested, cleaning up...", "info")
+                cleanup_for_restart()
+                return
     else:
         start_backend(**args_dict)
-        start_server(
+
+        # 启动服务器（默认支持WebSocket触发重启）
+        restart_requested = start_server(
             open_browser=not args_dict["disable_browser"],
             port=BasicConfig.port,
         )

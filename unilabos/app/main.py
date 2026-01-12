@@ -19,6 +19,11 @@ if unilabos_dir not in sys.path:
 
 from unilabos.utils.banner_print import print_status, print_unilab_banner
 from unilabos.config.config import load_config, BasicConfig, HTTPConfig
+from unilabos.app.utils import cleanup_for_restart
+
+# Global restart flags (used by ws_client and web/server)
+_restart_requested: bool = False
+_restart_reason: str = ""
 
 
 def load_config_from_file(config_path):
@@ -503,13 +508,19 @@ def main():
                 time.sleep(1)
         else:
             start_backend(**args_dict)
-            start_server(
+            restart_requested = start_server(
                 open_browser=not args_dict["disable_browser"],
                 port=BasicConfig.port,
             )
+            if restart_requested:
+                print_status("[Main] Restart requested, cleaning up...", "info")
+                cleanup_for_restart()
+                return
     else:
         start_backend(**args_dict)
-        start_server(
+
+        # 启动服务器（默认支持WebSocket触发重启）
+        restart_requested = start_server(
             open_browser=not args_dict["disable_browser"],
             port=BasicConfig.port,
         )

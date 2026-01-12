@@ -70,6 +70,8 @@ class HostNode(BaseROS2DeviceNode):
 
     _instance: ClassVar[Optional["HostNode"]] = None
     _ready_event: ClassVar[threading.Event] = threading.Event()
+    _shutting_down: ClassVar[bool] = False  # Flag to signal shutdown to background threads
+    _background_threads: ClassVar[List[threading.Thread]] = []  # Track all background threads for cleanup
     _device_action_status: ClassVar[collections.defaultdict[str, DeviceActionStatus]] = collections.defaultdict(
         DeviceActionStatus
     )
@@ -80,6 +82,48 @@ class HostNode(BaseROS2DeviceNode):
         if cls._ready_event.wait(timeout):
             return cls._instance
         return None
+
+    @classmethod
+    def shutdown_background_threads(cls, timeout: float = 5.0) -> None:
+        """
+        Gracefully shutdown all background threads for clean exit or restart.
+
+        This method:
+        1. Sets shutdown flag to stop background operations
+        2. Waits for background threads to finish with timeout
+        3. Cleans up finished threads from tracking list
+
+        Args:
+            timeout: Maximum time to wait for each thread (seconds)
+        """
+        cls._shutting_down = True
+
+        # Wait for background threads to finish
+        active_threads = []
+        for t in cls._background_threads:
+            if t.is_alive():
+                t.join(timeout=timeout)
+                if t.is_alive():
+                    active_threads.append(t.name)
+
+        if active_threads:
+            logger.warning(f"[Host Node] Some background threads still running: {active_threads}")
+
+        # Clear the thread list
+        cls._background_threads.clear()
+        logger.info(f"[Host Node] Background threads shutdown complete")
+
+    @classmethod
+    def reset_state(cls) -> None:
+        """
+        Reset the HostNode singleton state for restart or clean exit.
+        Call this after destroying the instance.
+        """
+        cls._instance = None
+        cls._ready_event.clear()
+        cls._shutting_down = False
+        cls._background_threads.clear()
+        logger.info("[Host Node] State reset complete")
 
     def __init__(
         self,
@@ -294,12 +338,37 @@ class HostNode(BaseROS2DeviceNode):
                 bridge.publish_host_ready()
                 self.lab_logger().debug(f"Host ready signal sent via {bridge.__class__.__name__}")
 
-    def _send_re_register(self, sclient):
-        sclient.wait_for_service()
-        request = SerialCommand.Request()
-        request.command = ""
-        future = sclient.call_async(request)
-        response = future.result()
+    def _send_re_register(self, sclient, device_namespace: str):
+        """
+        Send re-register command to a device. This is a one-time operation.
+
+        Args:
+            sclient: The service client
+            device_namespace: The device namespace for logging
+        """
+        try:
+            # Use timeout to prevent indefinite blocking
+            if not sclient.wait_for_service(timeout_sec=10.0):
+                self.lab_logger().debug(f"[Host Node] Re-register timeout for {device_namespace}")
+                return
+
+            # Check shutdown flag after wait
+            if self._shutting_down:
+                self.lab_logger().debug(f"[Host Node] Re-register aborted for {device_namespace} (shutdown)")
+                return
+
+            request = SerialCommand.Request()
+            request.command = ""
+            future = sclient.call_async(request)
+            # Use timeout for result as well
+            future.result(timeout_sec=5.0)
+            self.lab_logger().debug(f"[Host Node] Re-register completed for {device_namespace}")
+        except Exception as e:
+            # Gracefully handle destruction during shutdown
+            if "destruction was requested" in str(e) or self._shutting_down:
+                self.lab_logger().debug(f"[Host Node] Re-register aborted for {device_namespace} (cleanup)")
+            else:
+                self.lab_logger().warning(f"[Host Node] Re-register failed for {device_namespace}: {e}")
 
     def _discover_devices(self) -> None:
         """
@@ -331,23 +400,27 @@ class HostNode(BaseROS2DeviceNode):
                 self._create_action_clients_for_device(device_id, namespace)
                 self._online_devices.add(device_key)
                 sclient = self.create_client(SerialCommand, f"/srv{namespace}/re_register_device")
-                threading.Thread(
+                t = threading.Thread(
                     target=self._send_re_register,
-                    args=(sclient,),
+                    args=(sclient, namespace),
                     daemon=True,
                     name=f"ROSDevice{self.device_id}_re_register_device_{namespace}",
-                ).start()
+                )
+                self._background_threads.append(t)
+                t.start()
             elif device_key not in self._online_devices:
                 # 设备重新上线
                 self.lab_logger().info(f"[Host Node] Device reconnected: {device_key}")
                 self._online_devices.add(device_key)
                 sclient = self.create_client(SerialCommand, f"/srv{namespace}/re_register_device")
-                threading.Thread(
+                t = threading.Thread(
                     target=self._send_re_register,
-                    args=(sclient,),
+                    args=(sclient, namespace),
                     daemon=True,
                     name=f"ROSDevice{self.device_id}_re_register_device_{namespace}",
-                ).start()
+                )
+                self._background_threads.append(t)
+                t.start()
 
         # 检测离线设备
         offline_devices = self._online_devices - current_devices
@@ -705,13 +778,14 @@ class HostNode(BaseROS2DeviceNode):
             raise ValueError(f"ActionClient {action_id} not found.")
 
         action_client: ActionClient = self._action_clients[action_id]
+
         # 遍历action_kwargs下的所有子dict，将"sample_uuid"的值赋给"sample_id"
         def assign_sample_id(obj):
             if isinstance(obj, dict):
                 if "sample_uuid" in obj:
                     obj["sample_id"] = obj["sample_uuid"]
                     obj.pop("sample_uuid")
-                for k,v in obj.items():
+                for k, v in obj.items():
                     if k != "unilabos_extra":
                         assign_sample_id(v)
             elif isinstance(obj, list):
@@ -742,9 +816,7 @@ class HostNode(BaseROS2DeviceNode):
         self.lab_logger().info(f"[Host Node] Goal {action_id} ({item.job_id}) accepted")
         self._goals[item.job_id] = goal_handle
         goal_future = goal_handle.get_result_async()
-        goal_future.add_done_callback(
-            lambda f: self.get_result_callback(item, action_id, f)
-        )
+        goal_future.add_done_callback(lambda f: self.get_result_callback(item, action_id, f))
         goal_future.result()
 
     def feedback_callback(self, item: "QueueItem", action_id: str, feedback_msg) -> None:
@@ -1167,6 +1239,7 @@ class HostNode(BaseROS2DeviceNode):
         """
         try:
             from unilabos.app.web import http_client
+
             data = json.loads(request.command)
             if "uuid" in data and data["uuid"] is not None:
                 http_req = http_client.resource_tree_get([data["uuid"]], data["with_children"])

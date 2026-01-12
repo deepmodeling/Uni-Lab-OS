@@ -488,11 +488,16 @@ class MessageProcessor:
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
+                    message_type = data.get("action", "")
+                    message_data = data.get("data")
                     if self.session_id and self.session_id == data.get("edge_session"):
-                        await self._process_message(data)
+                        await self._process_message(message_type, message_data)
                     else:
-                        logger.trace(f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}")
-                        logger.debug(f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}")
+                        if message_type.endswith("_material"):
+                            logger.trace(f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}")
+                            logger.debug(f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}")
+                        else:
+                            await self._process_message(message_type, message_data)
                 except json.JSONDecodeError:
                     logger.error(f"[MessageProcessor] Invalid JSON received: {message}")
                 except Exception as e:
@@ -558,11 +563,8 @@ class MessageProcessor:
         finally:
             logger.debug("[MessageProcessor] Send handler stopped")
 
-    async def _process_message(self, data: Dict[str, Any]):
+    async def _process_message(self, message_type: str, message_data: Dict[str, Any]):
         """处理收到的消息"""
-        message_type = data.get("action", "")
-        message_data = data.get("data")
-
         logger.debug(f"[MessageProcessor] Processing message: {message_type}")
 
         try:
@@ -575,16 +577,19 @@ class MessageProcessor:
             elif message_type == "cancel_action" or message_type == "cancel_task":
                 await self._handle_cancel_action(message_data)
             elif message_type == "add_material":
+                # noinspection PyTypeChecker
                 await self._handle_resource_tree_update(message_data, "add")
             elif message_type == "update_material":
+                # noinspection PyTypeChecker
                 await self._handle_resource_tree_update(message_data, "update")
             elif message_type == "remove_material":
+                # noinspection PyTypeChecker
                 await self._handle_resource_tree_update(message_data, "remove")
             # elif message_type == "session_id":
             #     self.session_id = message_data.get("session_id")
             #     logger.info(f"[MessageProcessor] Session ID: {self.session_id}")
-            elif message_type == "request_reload":
-                await self._handle_request_reload(message_data)
+            elif message_type == "request_restart":
+                await self._handle_request_restart(message_data)
             else:
                 logger.debug(f"[MessageProcessor] Unknown message type: {message_type}")
 
@@ -894,19 +899,48 @@ class MessageProcessor:
             )
             thread.start()
 
-    async def _handle_request_reload(self, data: Dict[str, Any]):
+    async def _handle_request_restart(self, data: Dict[str, Any]):
         """
-        处理重载请求
+        处理重启请求
         
-        当LabGo发送request_reload时，重新发送设备注册信息
+        当LabGo发送request_restart时，执行清理并触发重启
         """
         reason = data.get("reason", "unknown")
-        logger.info(f"[MessageProcessor] Received reload request, reason: {reason}")
+        delay = data.get("delay", 2)  # 默认延迟2秒
+        logger.info(f"[MessageProcessor] Received restart request, reason: {reason}, delay: {delay}s")
         
-        # 重新发送host_node_ready信息
+        # 发送确认消息
         if self.websocket_client:
-            self.websocket_client.publish_host_ready()
-            logger.info("[MessageProcessor] Re-sent host_node_ready after reload request")
+            await self.websocket_client.send_message({
+                "action": "restart_acknowledged",
+                "data": {"reason": reason, "delay": delay}
+            })
+        
+        # 设置全局重启标志
+        import unilabos.app.main as main_module
+        main_module._restart_requested = True
+        main_module._restart_reason = reason
+        
+        # 延迟后执行清理
+        await asyncio.sleep(delay)
+        
+        # 在新线程中执行清理，避免阻塞当前事件循环
+        def do_cleanup():
+            import time
+            time.sleep(0.5)  # 给当前消息处理完成的时间
+            logger.info(f"[MessageProcessor] Starting cleanup for restart, reason: {reason}")
+            try:
+                from unilabos.app.utils import cleanup_for_restart
+                if cleanup_for_restart():
+                    logger.info("[MessageProcessor] Cleanup successful, main() will restart")
+                else:
+                    logger.error("[MessageProcessor] Cleanup failed")
+            except Exception as e:
+                logger.error(f"[MessageProcessor] Error during cleanup: {e}")
+        
+        cleanup_thread = threading.Thread(target=do_cleanup, name="RestartCleanupThread", daemon=True)
+        cleanup_thread.start()
+        logger.info(f"[MessageProcessor] Restart cleanup scheduled")
 
     async def _send_action_state_response(
         self, device_id: str, action_name: str, task_id: str, job_id: str, typ: str, free: bool, need_more: int

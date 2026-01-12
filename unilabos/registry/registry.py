@@ -127,14 +127,14 @@ class Registry:
                                             "data_type": "resource",
                                             "label": "Labware",
                                             "data_source": "executor",
-                                            "data_key": "created_resource_tree",
+                                            "data_key": "created_resource_tree.@flatten",
                                         },
                                         {
                                             "handler_key": "liquid_slots",
                                             "data_type": "resource",
                                             "label": "LiquidSlots",
                                             "data_source": "executor",
-                                            "data_key": "liquid_input_resource_tree",
+                                            "data_key": "liquid_input_resource_tree.@flatten",
                                         },
                                         {
                                             "handler_key": "materials",

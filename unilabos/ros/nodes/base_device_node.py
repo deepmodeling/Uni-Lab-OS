@@ -430,8 +430,10 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             })
             tree_response: SerialCommand.Response = await client.call_async(request)
             uuid_maps = json.loads(tree_response.response)
-            self.resource_tracker.loop_update_uuid(input_resources, uuid_maps)
-            rts: ResourceTreeSet = ResourceTreeSet.from_raw_dict_list(input_resources)
+            plr_instances = rts.to_plr_resources()
+            for plr_instance in plr_instances:
+                self.resource_tracker.loop_update_uuid(plr_instance, uuid_maps)
+            rts: ResourceTreeSet = ResourceTreeSet.from_plr_resources(plr_instances)
             self.lab_logger().info(f"Resource tree added. UUID mapping: {len(uuid_maps)} nodes")
             final_response = {
                 "created_resource_tree": rts.dump(),
@@ -461,7 +463,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 return res
             try:
                 if len(rts.root_nodes) == 1 and parent_resource is not None:
-                    plr_instance = rts.to_plr_resources()[0]
+                    plr_instance = plr_instances[0]
                     if isinstance(plr_instance, Plate):
                         empty_liquid_info_in: List[Tuple[Optional[str], float]] = [(None, 0)] * plr_instance.num_items
                         if len(ADD_LIQUID_TYPE) == 1 and len(LIQUID_VOLUME) == 1 and len(LIQUID_INPUT_SLOT) > 1:
@@ -1281,9 +1283,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             # 批量查询资源
                             queried_resources = []
                             for resource_data in resource_inputs:
-                                plr_resource = await self.get_resource_with_dir(
-                                    resource_id=resource_data["id"], with_children=True
-                                )
+                                unilabos_uuid = resource_data.get("data", {}).get("unilabos_uuid")
+                                if unilabos_uuid is None:
+                                    plr_resource = await self.get_resource_with_dir(
+                                        resource_id=resource_data["id"], with_children=True
+                                    )
+                                else:
+                                    resource_tree = await self.get_resource([unilabos_uuid])
+                                    plr_resource = resource_tree.to_plr_resources()[0]
                                 if "sample_id" in resource_data:
                                     plr_resource.unilabos_extra["sample_uuid"] = resource_data["sample_id"]
                                 queried_resources.append(plr_resource)
@@ -1423,7 +1430,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                                 for r in rs:
                                     res = self.resource_tracker.parent_resource(r)  # 获取 resource 对象
                             else:
-                                res = self.resource_tracker.parent_resource(r)
+                                res = self.resource_tracker.parent_resource(rs)
                             if id(res) not in seen:
                                 seen.add(id(res))
                                 unique_resources.append(res)

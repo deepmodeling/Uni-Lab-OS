@@ -1244,7 +1244,7 @@ class HostNode(BaseROS2DeviceNode):
             data = json.loads(request.command)
             if "uuid" in data and data["uuid"] is not None:
                 http_req = http_client.resource_tree_get([data["uuid"]], data["with_children"])
-            elif "id" in data and data["id"].startswith("/"):
+            elif "id" in data:
                 http_req = http_client.resource_get(data["id"], data["with_children"])
             else:
                 raise ValueError("没有使用正确的物料 id 或 uuid")
@@ -1463,7 +1463,7 @@ class HostNode(BaseROS2DeviceNode):
         if resource is None:
             resource = RegularContainer("test_resource传入None")
         return {
-            "resources": ResourceTreeSet.from_plr_resources([resource, *resources]).dump(),
+            "resources": ResourceTreeSet.from_plr_resources([resource, *resources], known_newly_created=True).dump(),
             "devices": [device, *devices],
         }
 

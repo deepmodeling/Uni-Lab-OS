@@ -193,6 +193,22 @@ class BioyondV1RPC(BaseRequest):
                 self.material_cache[name] = mat_id
                 print(f"已自动更新缓存: {name} -> {mat_id}")
 
+            # 处理返回数据中的 details (如果有)
+            # 有些 API 返回结构可能直接包含 details，或者在 data 字段中
+            details = data.get("details", []) if isinstance(data, dict) else []
+            if not details and isinstance(data, dict):
+                 details = data.get("detail", [])
+
+            if details:
+                for detail in details:
+                    d_name = detail.get("name")
+                    # 尝试从不同字段获取 ID
+                    d_id = detail.get("id") or detail.get("detailMaterialId")
+
+                    if d_name and d_id:
+                        self.material_cache[d_name] = d_id
+                        print(f"已自动更新 detail 缓存: {d_name} -> {d_id}")
+
         return data
 
     def query_matial_type_id(self, data) -> list:
@@ -1128,6 +1144,10 @@ class BioyondV1RPC(BaseRequest):
                     for detail_material in detail_materials:
                         detail_name = detail_material.get("name")
                         detail_id = detail_material.get("detailMaterialId")
+                        if not detail_id:
+                            # 尝试其他可能的字段
+                            detail_id = detail_material.get("id")
+
                         if detail_name and detail_id:
                             self.material_cache[detail_name] = detail_id
                             print(f"加载detail材料: {detail_name} -> ID: {detail_id}")

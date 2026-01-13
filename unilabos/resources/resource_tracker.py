@@ -609,6 +609,16 @@ class ResourceTreeSet(object):
         return [tree.root_node for tree in self.trees]
 
     @property
+    def root_nodes_uuid(self) -> List[ResourceDictInstance]:
+        """
+        获取所有树的根节点
+
+        Returns:
+            所有根节点的资源实例列表
+        """
+        return [tree.root_node.res_content.uuid for tree in self.trees]
+
+    @property
     def all_nodes(self) -> List[ResourceDictInstance]:
         """
         获取所有树中的所有节点

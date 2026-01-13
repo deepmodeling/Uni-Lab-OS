@@ -864,6 +864,7 @@ class MessageProcessor:
                 device_action_groups[key].append(item["uuid"])
 
         logger.info(f"触发物料更新 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}")
+        logger.trace(f"触发物料更新 {action} 分组数量: {len(device_action_groups)}, {resource_uuid_list}")
 
         # 为每个(device_id, action)创建独立的更新线程
         for (device_id, actual_action), items in device_action_groups.items():

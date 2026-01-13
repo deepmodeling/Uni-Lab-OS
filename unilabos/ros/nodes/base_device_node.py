@@ -619,7 +619,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         )  # type: ignore
         raw_nodes = json.loads(response.response)
         tree_set = ResourceTreeSet.from_raw_dict_list(raw_nodes)
-        self.lab_logger().debug(f"获取资源结果: {len(tree_set.trees)} 个资源树")
+        self.lab_logger().trace(f"获取资源结果: {len(tree_set.trees)} 个资源树 {tree_set.root_nodes}")
         return tree_set
 
     async def get_resource_with_dir(self, resource_id: str, with_children: bool = True) -> "ResourcePLR":

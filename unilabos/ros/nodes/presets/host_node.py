@@ -362,8 +362,7 @@ class HostNode(BaseROS2DeviceNode):
             request.command = ""
             future = sclient.call_async(request)
             # Use timeout for result as well
-            future.result(timeout_sec=5.0)
-            self.lab_logger().debug(f"[Host Node] Re-register completed for {device_namespace}")
+            future.result()
         except Exception as e:
             # Gracefully handle destruction during shutdown
             if "destruction was requested" in str(e) or self._shutting_down:
@@ -1515,7 +1514,7 @@ class HostNode(BaseROS2DeviceNode):
 
             # 构建服务地址
             srv_address = f"/srv{namespace}/s2c_resource_tree"
-            self.lab_logger().info(f"[Host Node-Resource] Notifying {device_id} for resource tree {action} operation")
+            self.lab_logger().trace(f"[Host Node-Resource] Host -> {device_id} ResourceTree {action} operation started -------")
 
             # 创建服务客户端
             sclient = self.create_client(SerialCommand, srv_address)
@@ -1550,9 +1549,7 @@ class HostNode(BaseROS2DeviceNode):
                 time.sleep(0.05)
 
             response = future.result()
-            self.lab_logger().info(
-                f"[Host Node-Resource] Resource tree {action} notification completed for {device_id}"
-            )
+            self.lab_logger().trace(f"[Host Node-Resource] Host -> {device_id} ResourceTree {action} operation completed -------")
             return True
 
         except Exception as e:

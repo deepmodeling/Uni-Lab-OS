@@ -848,7 +848,7 @@ class MessageProcessor:
                     device_action_groups[key_add].append(item["uuid"])
 
                     logger.info(
-                        f"[MessageProcessor] Resource migrated: {item['uuid'][:8]} from {device_old_id} to {device_id}"
+                        f"[资源同步] 跨站Transfer: {item['uuid'][:8]} from {device_old_id} to {device_id}"
                     )
                 else:
                     # 正常update
@@ -863,11 +863,11 @@ class MessageProcessor:
                     device_action_groups[key] = []
                 device_action_groups[key].append(item["uuid"])
 
-        logger.info(f"触发物料更新 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}")
+        logger.trace(f"[资源同步] 动作 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}")
 
         # 为每个(device_id, action)创建独立的更新线程
         for (device_id, actual_action), items in device_action_groups.items():
-            logger.info(f"设备 {device_id} 物料更新 {actual_action} 数量: {len(items)}")
+            logger.trace(f"[资源同步] {device_id} 物料动作 {actual_action} 数量: {len(items)}")
 
             def _notify_resource_tree(dev_id, act, item_list):
                 try:

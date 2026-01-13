@@ -1143,7 +1143,7 @@ class DeviceNodeResourceTracker(object):
         for key in keys_to_remove:
             self.resource2parent_resource.pop(key, None)
 
-        logger.debug(f"成功移除资源: {resource}")
+        logger.trace(f"[ResourceTracker] 成功移除资源: {resource}")
         return True
 
     def clear_resource(self):

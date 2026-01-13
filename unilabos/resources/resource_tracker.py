@@ -1,7 +1,7 @@
 import inspect
 import traceback
 import uuid
-from pydantic import BaseModel, field_serializer, field_validator
+from pydantic import BaseModel, field_serializer, field_validator, ValidationError
 from pydantic import Field
 from typing import List, Tuple, Any, Dict, Literal, Optional, cast, TYPE_CHECKING, Union
 
@@ -160,7 +160,11 @@ class ResourceDictInstance(object):
                     "depth": content["config"].get("size_z", 0),
                 }
             content["pose"] = pose
-        return ResourceDictInstance(ResourceDict.model_validate(content))
+        try:
+            res_dict = ResourceDict.model_validate(content)
+            return ResourceDictInstance(res_dict)
+        except ValidationError as err:
+            raise err
 
     def get_plr_nested_dict(self) -> Dict[str, Any]:
         """获取资源实例的嵌套字典表示"""
@@ -339,6 +343,8 @@ class ResourceTreeSet(object):
             }
             if source in replace_info:
                 return replace_info[source]
+            elif source is None:
+                return ""
             else:
                 print("转换pylabrobot的时候，出现未知类型", source)
                 return source

@@ -23,6 +23,7 @@ from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialComma
 from unique_identifier_msgs.msg import UUID
 
 from unilabos.registry.registry import lab_registry
+from unilabos.resources.container import RegularContainer
 from unilabos.resources.graphio import initialize_resource
 from unilabos.resources.registry import add_schema
 from unilabos.ros.initialize_device import initialize_device_from_dict
@@ -586,11 +587,10 @@ class HostNode(BaseROS2DeviceNode):
         )
 
         try:
-            new_li = []
+            assert len(response) == 1, "Create Resource应当只返回一个结果"
             for i in response:
                 res = json.loads(i)
-                new_li.append(res)
-            return {"resources": new_li, "liquid_input_resources": new_li}
+                return res
         except Exception as ex:
             pass
         _n = "\n"
@@ -795,7 +795,8 @@ class HostNode(BaseROS2DeviceNode):
         assign_sample_id(action_kwargs)
         goal_msg = convert_to_ros_msg(action_client._action_type.Goal(), action_kwargs)
 
-        self.lab_logger().info(f"[Host Node] Sending goal for {action_id}: {goal_msg}")
+        self.lab_logger().info(f"[Host Node] Sending goal for {action_id}: {str(goal_msg)[:1000]}")
+        self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {goal_msg}")
         action_client.wait_for_server()
         goal_uuid_obj = UUID(uuid=list(u.bytes))
 
@@ -1133,11 +1134,11 @@ class HostNode(BaseROS2DeviceNode):
 
         接收序列化的 ResourceTreeSet 数据并进行处理
         """
-        self.lab_logger().info(f"[Host Node-Resource] Resource tree add request received")
         try:
             # 解析请求数据
             data = json.loads(request.command)
             action = data["action"]
+            self.lab_logger().info(f"[Host Node-Resource] Resource tree {action} request received")
             data = data["data"]
             if action == "add":
                 await self._resource_tree_action_add_callback(data, response)
@@ -1243,7 +1244,7 @@ class HostNode(BaseROS2DeviceNode):
             data = json.loads(request.command)
             if "uuid" in data and data["uuid"] is not None:
                 http_req = http_client.resource_tree_get([data["uuid"]], data["with_children"])
-            elif "id" in data and data["id"].startswith("/"):
+            elif "id" in data:
                 http_req = http_client.resource_get(data["id"], data["with_children"])
             else:
                 raise ValueError("没有使用正确的物料 id 或 uuid")
@@ -1453,10 +1454,16 @@ class HostNode(BaseROS2DeviceNode):
         }
 
     def test_resource(
-        self, resource: ResourceSlot, resources: List[ResourceSlot], device: DeviceSlot, devices: List[DeviceSlot]
+        self, resource: ResourceSlot = None, resources: List[ResourceSlot] = None, device: DeviceSlot = None, devices: List[DeviceSlot] = None
     ) -> TestResourceReturn:
+        if resources is None:
+            resources = []
+        if devices is None:
+            devices = []
+        if resource is None:
+            resource = RegularContainer("test_resource传入None")
         return {
-            "resources": ResourceTreeSet.from_plr_resources([resource, *resources]).dump(),
+            "resources": ResourceTreeSet.from_plr_resources([resource, *resources], known_newly_created=True).dump(),
             "devices": [device, *devices],
         }
 

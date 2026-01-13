@@ -9284,13 +9284,7 @@ liquid_handler.prcxi:
                 z: 0.0
             sample_id: ''
             type: ''
-        handles:
-          input:
-          - data_key: wells
-            data_source: handle
-            data_type: resource
-            handler_key: input_wells
-            label: InputWells
+        handles: {}
         placeholder_keys:
           wells: unilabos_resources
         result: {}

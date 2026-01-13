@@ -124,25 +124,11 @@ class Registry:
                                     "output": [
                                         {
                                             "handler_key": "labware",
-                                            "data_type": "resource",
                                             "label": "Labware",
-                                            "data_source": "executor",
-                                            "data_key": "created_resource_tree.@flatten",
-                                        },
-                                        {
-                                            "handler_key": "liquid_slots",
                                             "data_type": "resource",
-                                            "label": "LiquidSlots",
-                                            "data_source": "executor",
-                                            "data_key": "liquid_input_resource_tree.@flatten",
-                                        },
-                                        {
-                                            "handler_key": "materials",
-                                            "data_type": "resource",
-                                            "label": "AllMaterials",
-                                            "data_source": "executor",
-                                            "data_key": "[created_resource_tree,liquid_input_resource_tree].@flatten.@flatten",
-                                        },
+                                            "data_source": "handle",
+                                            "data_key": "liquid",
+                                        }
                                     ]
                                 },
                                 "placeholder_keys": {
@@ -200,17 +186,7 @@ class Registry:
                                     "resources": "unilabos_resources",
                                 },
                                 "goal_default": {},
-                                "handles": {
-                                    "input": [
-                                        {
-                                            "handler_key": "input_resources",
-                                            "data_type": "resource",
-                                            "label": "InputResources",
-                                            "data_source": "handle",
-                                            "data_key": "resources",  # 不为空
-                                        },
-                                    ]
-                                },
+                                "handles": {},
                             },
                         },
                     },

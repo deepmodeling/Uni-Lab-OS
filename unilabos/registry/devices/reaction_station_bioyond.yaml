@@ -671,7 +671,7 @@ reaction_station.bioyond:
           title: solid_feeding_vials参数
           type: object
         type: UniLabJsonCommand
-    module: unilabos.devices.workstation.bioyond_studio.reaction_station:BioyondReactionStation
+    module: unilabos.devices.workstation.bioyond_studio.reaction_station.reaction_station:BioyondReactionStation
     protocol_type: []
     status_types:
       average_viscosity: Float64
@@ -717,7 +717,7 @@ reaction_station.reactor:
   - reaction_station_bioyond
   class:
     action_value_mappings: {}
-    module: unilabos.devices.workstation.bioyond_studio.reaction_station:BioyondReactor
+    module: unilabos.devices.workstation.bioyond_studio.reaction_station.reaction_station:BioyondReactor
     status_types:
       average_viscosity: Float64
       force: Float64

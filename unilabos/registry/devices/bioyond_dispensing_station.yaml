@@ -641,7 +641,7 @@ bioyond_dispensing_station:
           title: WaitForMultipleOrdersAndGetReports
           type: object
         type: UniLabJsonCommand
-    module: unilabos.devices.workstation.bioyond_studio.dispensing_station:BioyondDispensingStation
+    module: unilabos.devices.workstation.bioyond_studio.dispensing_station.dispensing_station:BioyondDispensingStation
     status_types: {}
     type: python
   config_info: []

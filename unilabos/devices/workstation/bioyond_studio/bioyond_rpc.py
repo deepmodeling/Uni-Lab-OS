@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from unilabos.device_comms.rpc import BaseRequest
 from typing import Optional, List, Dict, Any
 import json
-from unilabos.devices.workstation.bioyond_studio.config import LOCATION_MAPPING
+
 
 
 class SimpleLogger:
@@ -277,7 +277,8 @@ class BioyondV1RPC(BaseRequest):
 
     def material_outbound(self, material_id: str, location_name: str, quantity: int) -> dict:
         """指定库位出库物料（通过库位名称）"""
-        location_id = LOCATION_MAPPING.get(location_name, location_name)
+        # location_name 参数实际上应该直接是 location_id (UUID)
+        location_id = location_name
 
         params = {
             "materialId": material_id,

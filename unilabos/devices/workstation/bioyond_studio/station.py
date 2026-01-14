@@ -23,9 +23,7 @@ from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.ros.msgs.message_converter import convert_to_ros_msg, Float64, String
 from pylabrobot.resources.resource import Resource as ResourcePLR
 
-from unilabos.devices.workstation.bioyond_studio.config import (
-    API_CONFIG, WORKFLOW_MAPPINGS, MATERIAL_TYPE_MAPPINGS, WAREHOUSE_MAPPING, HTTP_SERVICE_CONFIG
-)
+
 from unilabos.devices.workstation.workstation_http_service import WorkstationHTTPService
 
 
@@ -627,10 +625,10 @@ class BioyondWorkstation(WorkstationBase):
             self._set_workflow_mappings(bioyond_config["workflow_mappings"])
 
         # 准备 HTTP 报送接收服务配置（延迟到 post_init 启动）
-        # 从 bioyond_config 中获取，如果没有则使用 HTTP_SERVICE_CONFIG 的默认值
+        # 从 bioyond_config 中获取，如果没有则使用默认值
         self._http_service_config = {
-            "host": bioyond_config.get("http_service_host", HTTP_SERVICE_CONFIG["http_service_host"]),
-            "port": bioyond_config.get("http_service_port", HTTP_SERVICE_CONFIG["http_service_port"])
+            "host": bioyond_config.get("http_service_host", bioyond_config.get("HTTP_host", "")),
+            "port": bioyond_config.get("http_service_port", bioyond_config.get("HTTP_port", 0))
         }
         self.http_service = None  # 将在 post_init 中启动
 
@@ -649,7 +647,11 @@ class BioyondWorkstation(WorkstationBase):
         self._ros_node = ros_node
 
         # 启动 HTTP 报送接收服务（现在 device_id 已可用）
-        if hasattr(self, '_http_service_config'):
+        # ⚠️ 检查子类是否已经自己管理 HTTP 服务
+        if self.bioyond_config.get("_disable_auto_http_service"):
+            logger.info("🔧 检测到 _disable_auto_http_service 标志，跳过自动启动 HTTP 服务")
+            logger.info("   子类（BioyondCellWorkstation）已自行管理 HTTP 服务")
+        elif hasattr(self, '_http_service_config'):
             try:
                 self.http_service = WorkstationHTTPService(
                     workstation_instance=self,
@@ -688,19 +690,14 @@ class BioyondWorkstation(WorkstationBase):
 
     def _create_communication_module(self, config: Optional[Dict[str, Any]] = None) -> None:
         """创建Bioyond通信模块"""
-        # 创建默认配置
-        default_config = {
-            **API_CONFIG,
-            "workflow_mappings": WORKFLOW_MAPPINGS,
-            "material_type_mappings": MATERIAL_TYPE_MAPPINGS,
-            "warehouse_mapping": WAREHOUSE_MAPPING
-        }
-
-        # 如果传入了 config，合并配置（config 中的值会覆盖默认值）
+        # 使用传入的 config 参数（来自 bioyond_config）
+        # 不再依赖全局变量 API_CONFIG 等
         if config:
-            self.bioyond_config = {**default_config, **config}
+            self.bioyond_config = config
         else:
-            self.bioyond_config = default_config
+            # 如果没有传入配置，创建空配置（用于测试或兼容性）
+            self.bioyond_config = {}
+
 
         self.hardware_interface = BioyondV1RPC(self.bioyond_config)
 

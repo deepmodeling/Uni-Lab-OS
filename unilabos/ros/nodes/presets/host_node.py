@@ -736,7 +736,7 @@ class HostNode(BaseROS2DeviceNode):
                         if bCreate:
                             self.lab_logger().trace(f"Status created: {device_id}.{property_name} = {msg.data}")
                         else:
-                            self.lab_logger().debug(f"Status updated: {device_id}.{property_name} = {msg.data}")
+                            self.lab_logger().trace(f"Status updated: {device_id}.{property_name} = {msg.data}")
 
     def send_goal(
         self,

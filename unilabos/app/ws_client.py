@@ -848,7 +848,7 @@ class MessageProcessor:
                     device_action_groups[key_add].append(item["uuid"])
 
                     logger.info(
-                        f"[MessageProcessor] Resource migrated: {item['uuid'][:8]} from {device_old_id} to {device_id}"
+                        f"[资源同步] 跨站Transfer: {item['uuid'][:8]} from {device_old_id} to {device_id}"
                     )
                 else:
                     # 正常update
@@ -863,12 +863,11 @@ class MessageProcessor:
                     device_action_groups[key] = []
                 device_action_groups[key].append(item["uuid"])
 
-        logger.info(f"触发物料更新 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}")
-        logger.trace(f"触发物料更新 {action} 分组数量: {len(device_action_groups)}, {resource_uuid_list}")
+        logger.trace(f"[资源同步] 动作 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}")
 
         # 为每个(device_id, action)创建独立的更新线程
         for (device_id, actual_action), items in device_action_groups.items():
-            logger.info(f"设备 {device_id} 物料更新 {actual_action} 数量: {len(items)}")
+            logger.trace(f"[资源同步] {device_id} 物料动作 {actual_action} 数量: {len(items)}")
 
             def _notify_resource_tree(dev_id, act, item_list):
                 try:
@@ -903,28 +902,28 @@ class MessageProcessor:
     async def _handle_request_restart(self, data: Dict[str, Any]):
         """
         处理重启请求
-        
+
         当LabGo发送request_restart时，执行清理并触发重启
         """
         reason = data.get("reason", "unknown")
         delay = data.get("delay", 2)  # 默认延迟2秒
         logger.info(f"[MessageProcessor] Received restart request, reason: {reason}, delay: {delay}s")
-        
+
         # 发送确认消息
         if self.websocket_client:
             await self.websocket_client.send_message({
                 "action": "restart_acknowledged",
                 "data": {"reason": reason, "delay": delay}
             })
-        
+
         # 设置全局重启标志
         import unilabos.app.main as main_module
         main_module._restart_requested = True
         main_module._restart_reason = reason
-        
+
         # 延迟后执行清理
         await asyncio.sleep(delay)
-        
+
         # 在新线程中执行清理，避免阻塞当前事件循环
         def do_cleanup():
             import time
@@ -938,7 +937,7 @@ class MessageProcessor:
                     logger.error("[MessageProcessor] Cleanup failed")
             except Exception as e:
                 logger.error(f"[MessageProcessor] Error during cleanup: {e}")
-        
+
         cleanup_thread = threading.Thread(target=do_cleanup, name="RestartCleanupThread", daemon=True)
         cleanup_thread.start()
         logger.info(f"[MessageProcessor] Restart cleanup scheduled")
@@ -1376,7 +1375,7 @@ class WebSocketClient(BaseCommunicationClient):
         # 收集设备信息
         devices = []
         machine_name = BasicConfig.machine_name
-        
+
         try:
             host_node = HostNode.get_instance(0)
             if host_node:
@@ -1384,7 +1383,7 @@ class WebSocketClient(BaseCommunicationClient):
                 for device_id, namespace in host_node.devices_names.items():
                     device_key = f"{namespace}/{device_id}" if namespace.startswith("/") else f"/{namespace}/{device_id}"
                     is_online = device_key in host_node._online_devices
-                    
+
                     # 获取设备的动作信息
                     actions = {}
                     for action_id, client in host_node._action_clients.items():
@@ -1395,7 +1394,7 @@ class WebSocketClient(BaseCommunicationClient):
                                 "action_path": action_id,
                                 "action_type": str(type(client).__name__),
                             }
-                    
+
                     devices.append({
                         "device_id": device_id,
                         "namespace": namespace,
@@ -1404,7 +1403,7 @@ class WebSocketClient(BaseCommunicationClient):
                         "machine_name": host_node.device_machine_names.get(device_id, machine_name),
                         "actions": actions,
                     })
-                
+
                 logger.info(f"[WebSocketClient] Collected {len(devices)} devices for host_ready")
         except Exception as e:
             logger.warning(f"[WebSocketClient] Error collecting device info: {e}")

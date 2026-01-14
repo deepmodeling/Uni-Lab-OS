@@ -1191,11 +1191,7 @@ def initialize_resource(resource_config: dict, resource_type: Any = None) -> Uni
         if resource_class_config["type"] == "pylabrobot":
             resource_plr = RESOURCE(name=resource_config["name"])
             if resource_type != ResourcePLR:
-                tree_sets = ResourceTreeSet.from_plr_resources([resource_plr])
-                # r = resource_plr_to_ulab(resource_plr=resource_plr, parent_name=resource_config.get("parent", None))
-                # # r = resource_plr_to_ulab(resource_plr=resource_plr)
-                # if resource_config.get("position") is not None:
-                #     r["position"] = resource_config["position"]
+                tree_sets = ResourceTreeSet.from_plr_resources([resource_plr], known_newly_created=True)
                 r = tree_sets.dump()
             else:
                 r = resource_plr

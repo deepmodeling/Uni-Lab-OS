@@ -392,9 +392,12 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 parent_resource = self.resource_tracker.figure_resource(
                     {"name": bind_parent_id}
                 )
-            for r in rts.root_nodes:
-                # noinspection PyUnresolvedReferences
-                r.res_content.parent_uuid = parent_resource.unilabos_uuid
+                for r in rts.root_nodes:
+                    # noinspection PyUnresolvedReferences
+                    r.res_content.parent_uuid = parent_resource.unilabos_uuid
+            else:
+                for r in rts.root_nodes:
+                    r.res_content.parent_uuid = self.uuid
 
             if len(LIQUID_INPUT_SLOT) and LIQUID_INPUT_SLOT[0] == -1 and len(rts.root_nodes) == 1 and isinstance(rts.root_nodes[0], RegularContainer):
                 # noinspection PyTypeChecker

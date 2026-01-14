@@ -920,7 +920,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         plr_resources = tree_set.to_plr_resources()
                         result, parents = _handle_add(plr_resources, tree_set, additional_add_params)
                         parents: List[Optional["ResourcePLR"]] = [i for i in parents if i is not None]
-                        de_dupe_parents = list(set(parents))
+                        # de_dupe_parents = list(set(parents))
+                        # Fix unhashable type error for WareHouse
+                        de_dupe_parents = []
+                        _seen_ids = set()
+                        for p in parents:
+                            if id(p) not in _seen_ids:
+                                _seen_ids.add(id(p))
+                                de_dupe_parents.append(p)
                         new_tree_set = ResourceTreeSet.from_plr_resources(de_dupe_parents)  # 去重
                         for tree in new_tree_set.trees:
                             if tree.root_node.res_content.uuid_parent is None and self.node_name != "host_node":
@@ -1565,16 +1572,16 @@ class BaseROS2DeviceNode(Node, Generic[T]):
 
     def _convert_resources_sync(self, *uuids: str) -> List["ResourcePLR"]:
         """同步转换资源 UUID 为实例
-        
+
         Args:
             *uuids: 一个或多个资源 UUID
-        
+
         Returns:
             单个 UUID 时返回单个资源实例，多个 UUID 时返回资源实例列表
         """
         if not uuids:
             raise ValueError("至少需要提供一个 UUID")
-        
+
         uuids_list = list(uuids)
         future = self._resource_clients["c2s_update_resource_tree"].call_async(SerialCommand.Request(
             command=json.dumps(

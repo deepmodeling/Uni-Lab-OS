@@ -333,6 +333,7 @@ class ResourceTreeSet(object):
                 "well": "well",
                 "deck": "deck",
                 "tip_rack": "tip_rack",
+                "tube_rack": "tube_rack",
                 "tip_spot": "tip_spot",
                 "tube": "tube",
                 "bottle_carrier": "bottle_carrier",
@@ -379,33 +380,36 @@ class ResourceTreeSet(object):
             }
 
             # 先构建当前节点的字典（不包含children）
+            # 获取category：优先从顶层获取，如果不存在则从config中获取
+            category = d.get("category") or d.get("config", {}).get("category", "")
+            config_dict = {
+                k: v
+                for k, v in d.items()
+                if k
+                not in [
+                    "name",
+                    "children",
+                    "parent_name",
+                    "location",
+                    "rotation",
+                    "size_x",
+                    "size_y",
+                    "size_z",
+                    "cross_section_type",
+                    "bottom_type",
+                ]
+            }
             r_dict = {
                 "id": d["name"],
                 "uuid": current_uuid,
                 "name": d["name"],
                 "parent": parent_resource,  # 直接传入 ResourceDict 对象
                 "parent_uuid": parent_uuid,  # 使用 parent_uuid 而不是 parent 对象
-                "type": replace_plr_type(d.get("category", "")),
+                "type": replace_plr_type(category),
                 "class": d.get("class", ""),
                 "position": pos,
                 "pose": pos,
-                "config": {
-                    k: v
-                    for k, v in d.items()
-                    if k
-                    not in [
-                        "name",
-                        "children",
-                        "parent_name",
-                        "location",
-                        "rotation",
-                        "size_x",
-                        "size_y",
-                        "size_z",
-                        "cross_section_type",
-                        "bottom_type",
-                    ]
-                },
+                "config": config_dict,
                 "data": states[d["name"]],
                 "extra": extra,
             }

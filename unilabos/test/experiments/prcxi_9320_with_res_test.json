@@ -6719,9 +6719,9 @@
       },
       "data": {
         "Material": {
-          "uuid": "b05b3b2aafd94ec38ea0cd3215ecea8f",
-          "Code": "ZX-78-096",
-          "Name": "细菌培养皿"
+          "uuid": "73bb9b10bc394978b70e027bf45ce2d3",
+          "Code": "ZX-023-0.2",
+          "Name": "0.2ml PCR板"
         }
       }
     },
@@ -16495,11 +16495,9 @@
       },
       "data": {
         "Material": {
-          "uuid": "e146697c395e4eabb3d6b74f0dd6aaf7",
-          "Code": "1",
-          "SupplyType": 1,
-          "Name": "ep适配器",
-          "SummaryName": "ep适配器"
+          "uuid": "73bb9b10bc394978b70e027bf45ce2d3",
+          "Code": "ZX-023-0.2",
+          "Name": "0.2ml PCR板"
         }
       }
     },

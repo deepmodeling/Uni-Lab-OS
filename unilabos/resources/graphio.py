@@ -592,6 +592,7 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
             "trash": "trash",
             "deck": "deck",
             "tip_rack": "tip_rack",
+            "tube_rack": "tube_rack",
             "warehouse": "warehouse",
             "container": "container",
             "tube": "tube",

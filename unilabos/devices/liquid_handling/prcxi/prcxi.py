@@ -405,16 +405,19 @@ class PRCXI9300TubeRack(TubeRack):
         if items_to_pass is not None:
             super().__init__(name, size_x, size_y, size_z, 
                              ordered_items=items_to_pass, 
+                             category=category,
                              model=model, 
                              **kwargs)
         elif ordering_param is not None:
             # 传递 ordering 参数，让 TubeRack 自己创建 Tube 对象
             super().__init__(name, size_x, size_y, size_z, 
                              ordering=ordering_param,
+                             category=category,
                              model=model, 
                              **kwargs)
         else:
             super().__init__(name, size_x, size_y, size_z, 
+                             category=category,
                              model=model, 
                              **kwargs)
         
@@ -1273,7 +1276,7 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         PlateNo = plate_indexes[0] + 1
         hole_col = tip_columns[0] + 1
         hole_row = 1
-        if self.num_channels == 1:
+        if self.num_channels == 1 or self.num_channels == 2:
             hole_row = tipspot_index % 8 + 1
 
         assert mix_time > 0
@@ -1330,7 +1333,7 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         PlateNo = plate_indexes[0] + 1
         hole_col = tip_columns[0] + 1
         hole_row = 1
-        if self.num_channels == 1:
+        if self.num_channels == 1 or self.num_channels == 2:
             hole_row = tipspot_index % 8 + 1
 
         step = self.api_client.Imbibing(
@@ -1388,7 +1391,7 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         hole_col = tip_columns[0] + 1
 
         hole_row = 1
-        if self.num_channels == 1:
+        if self.num_channels == 1 or self.num_channels == 2:
             hole_row = tipspot_index % 8 + 1
 
         step = self.api_client.Tapping(

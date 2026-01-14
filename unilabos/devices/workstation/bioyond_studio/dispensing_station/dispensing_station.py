@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, List
 from typing_extensions import TypedDict
 import requests
 import pint
-from unilabos.devices.workstation.bioyond_studio.config import API_CONFIG
+
 
 from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import BioyondException
 from unilabos.devices.workstation.bioyond_studio.station import BioyondWorkstation
@@ -26,13 +26,89 @@ class ComputeExperimentDesignReturn(TypedDict):
 class BioyondDispensingStation(BioyondWorkstation):
     def __init__(
         self,
-        config,
-            # 桌子
-        deck,
-        *args,
+        config: dict = None,
+        deck=None,
+        protocol_type=None,
         **kwargs,
-        ):
-        super().__init__(config, deck, *args, **kwargs)
+    ):
+        """初始化配液站
+
+        Args:
+            config: 配置字典,应包含material_type_mappings等配置
+            deck: Deck对象
+            protocol_type: 协议类型(由ROS系统传递,此处忽略)
+            **kwargs: 其他可能的参数
+        """
+        if config is None:
+            config = {}
+
+        # 将 kwargs 合并到 config 中 (处理扁平化配置如 api_key)
+        config.update(kwargs)
+
+        if deck is None and config:
+            deck = config.get('deck')
+
+        # 🔧 修复: 确保 Deck 上的 warehouses 具有正确的 UUID (必须在 super().__init__ 之前执行，因为父类会触发同步)
+        # 从配置中读取 warehouse_mapping，并应用到实际的 deck 资源上
+        if config and "warehouse_mapping" in config and deck:
+            warehouse_mapping = config["warehouse_mapping"]
+            print(f"正在根据配置更新 Deck warehouse UUIDs... (共有 {len(warehouse_mapping)} 个配置)")
+
+            user_deck = deck
+            # 初始化 warehouses 字典
+            if not hasattr(user_deck, "warehouses") or user_deck.warehouses is None:
+                user_deck.warehouses = {}
+
+            # 1. 尝试从 children 中查找匹配的资源
+            for child in user_deck.children:
+                # 简单判断: 如果名字在 mapping 中，就认为是 warehouse
+                if child.name in warehouse_mapping:
+                    user_deck.warehouses[child.name] = child
+                    print(f"  - 从子资源中找到 warehouse: {child.name}")
+
+            # 2. 如果还是没找到，且 Deck 类有 setup 方法，尝试调用 setup (针对 Deck 对象正确但未初始化的情况)
+            if not user_deck.warehouses and hasattr(user_deck, "setup"):
+                print("  - 尝试调用 deck.setup() 初始化仓库...")
+                try:
+                    user_deck.setup()
+                    # setup 后重新检查
+                    if hasattr(user_deck, "warehouses") and user_deck.warehouses:
+                            print(f"  - setup() 成功，找到 {len(user_deck.warehouses)} 个仓库")
+                except Exception as e:
+                    print(f"  - 调用 setup() 失败: {e}")
+
+            # 3. 如果仍然为空，可能需要手动创建 (仅针对特定已知的 Deck 类型进行补救，这里暂时只打印警告)
+            if not user_deck.warehouses:
+                    print("  - ⚠️ 仍然无法找到任何 warehouse 资源！")
+
+            for wh_name, wh_config in warehouse_mapping.items():
+                target_uuid = wh_config.get("uuid")
+
+                # 尝试在 deck.warehouses 中查找
+                wh_resource = None
+                if hasattr(user_deck, "warehouses") and wh_name in user_deck.warehouses:
+                    wh_resource = user_deck.warehouses[wh_name]
+
+                # 如果没找到，尝试在所有子资源中查找
+                if not wh_resource:
+                    wh_resource = user_deck.get_resource(wh_name)
+
+                if wh_resource:
+                    if target_uuid:
+                        current_uuid = getattr(wh_resource, "uuid", None)
+                        print(f"✅ 更新仓库 '{wh_name}' UUID: {current_uuid} -> {target_uuid}")
+
+                        # 动态添加 uuid 属性
+                        wh_resource.uuid = target_uuid
+                        # 同时也确保 category 正确，避免 graphio 识别错误
+                        # wh_resource.category = "warehouse"
+                    else:
+                            print(f"⚠️ 仓库 '{wh_name}' 在配置中没有 UUID")
+                else:
+                    print(f"❌ 在 Deck 中未找到配置的仓库: '{wh_name}'")
+
+        super().__init__(bioyond_config=config, deck=deck)
+
         # self.config = config
         # self.api_key = config["api_key"]
         # self.host = config["api_host"]
@@ -90,7 +166,7 @@ class BioyondDispensingStation(BioyondWorkstation):
             dict: 服务端响应，失败时返回 {code:0,message,...}
         """
         request_data = {
-            "apiKey": API_CONFIG["api_key"],
+            "apiKey": self.bioyond_config["api_key"],
             "requestTime": self.hardware_interface.get_current_time_iso8601(),
             "data": data
         }
@@ -121,7 +197,7 @@ class BioyondDispensingStation(BioyondWorkstation):
             dict: 服务端响应，失败时返回 {code:0,message,...}
         """
         request_data = {
-            "apiKey": API_CONFIG["api_key"],
+            "apiKey": self.bioyond_config["api_key"],
             "requestTime": self.hardware_interface.get_current_time_iso8601(),
             "data": data
         }
@@ -1682,7 +1758,7 @@ class BioyondDispensingStation(BioyondWorkstation):
                 f"开始执行批量物料转移: {len(transfer_groups)}组任务 -> {target_device_id}"
             )
 
-            from .config import WAREHOUSE_MAPPING
+            warehouse_mapping = self.bioyond_config.get("warehouse_mapping", {})
             results = []
             successful_count = 0
             failed_count = 0

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from unilabos.device_comms.rpc import BaseRequest
 from typing import Optional, List, Dict, Any
 import json
-from unilabos.devices.workstation.bioyond_studio.config import LOCATION_MAPPING
+
 
 
 class SimpleLogger:
@@ -49,6 +49,14 @@ class BioyondV1RPC(BaseRequest):
         self.config = config
         self.api_key = config["api_key"]
         self.host = config["api_host"]
+
+        # 初始化 location_mapping
+        # 直接从 warehouse_mapping 构建，确保数据源所谓的单一和结构化
+        self.location_mapping = {}
+        warehouse_mapping = self.config.get("warehouse_mapping", {})
+        for warehouse_name, warehouse_config in warehouse_mapping.items():
+            if "site_uuids" in warehouse_config:
+                self.location_mapping.update(warehouse_config["site_uuids"])
         self._logger = SimpleLogger()
         self.material_cache = {}
         self._load_material_cache()
@@ -318,7 +326,7 @@ class BioyondV1RPC(BaseRequest):
 
     def material_outbound(self, material_id: str, location_name: str, quantity: int) -> dict:
         """指定库位出库物料（通过库位名称）"""
-        location_id = LOCATION_MAPPING.get(location_name, location_name)
+        location_id = self.location_mapping.get(location_name, location_name)
 
         params = {
             "materialId": material_id,

@@ -24,9 +24,7 @@ from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.ros.msgs.message_converter import convert_to_ros_msg, Float64, String
 from pylabrobot.resources.resource import Resource as ResourcePLR
 
-from unilabos.devices.workstation.bioyond_studio.config import (
-    API_CONFIG, WORKFLOW_MAPPINGS, MATERIAL_TYPE_MAPPINGS, WAREHOUSE_MAPPING, HTTP_SERVICE_CONFIG
-)
+
 from unilabos.devices.workstation.workstation_http_service import WorkstationHTTPService
 
 
@@ -259,9 +257,8 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
             else:
                 logger.info(f"[同步→Bioyond] ➕ 物料不存在于 Bioyond，将创建新物料并入库")
 
-            # 第1步：获取仓库配置
-            from .config import WAREHOUSE_MAPPING
-            warehouse_mapping = WAREHOUSE_MAPPING
+            # 第1步：从配置中获取仓库配置
+            warehouse_mapping = self.bioyond_config.get("warehouse_mapping", {})
 
             # 确定目标仓库名称
             parent_name = None
@@ -323,12 +320,13 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
             # 第2步：转换为 Bioyond 格式
             logger.info(f"[同步→Bioyond] 🔄 转换物料为 Bioyond 格式...")
 
-            # 导入物料默认参数配置
-            from .config import MATERIAL_DEFAULT_PARAMETERS, MATERIAL_TYPE_PARAMETERS
+            # 从配置中获取物料默认参数
+            material_default_params = self.workstation.bioyond_config.get("material_default_parameters", {})
+            material_type_params = self.workstation.bioyond_config.get("material_type_parameters", {})
 
             # 合并参数配置：物料名称参数 + typeId参数（转换为 type:<uuid> 格式）
-            merged_params = MATERIAL_DEFAULT_PARAMETERS.copy()
-            for type_id, params in MATERIAL_TYPE_PARAMETERS.items():
+            merged_params = material_default_params.copy()
+            for type_id, params in material_type_params.items():
                 merged_params[f"type:{type_id}"] = params
 
             bioyond_material = resource_plr_to_bioyond(
@@ -558,11 +556,13 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
                 return material_bioyond_id
 
             # 转换为 Bioyond 格式
-            from .config import MATERIAL_DEFAULT_PARAMETERS, MATERIAL_TYPE_PARAMETERS
+            # 从配置中获取物料默认参数
+            material_default_params = self.workstation.bioyond_config.get("material_default_parameters", {})
+            material_type_params = self.workstation.bioyond_config.get("material_type_parameters", {})
 
             # 合并参数配置：物料名称参数 + typeId参数（转换为 type:<uuid> 格式）
-            merged_params = MATERIAL_DEFAULT_PARAMETERS.copy()
-            for type_id, params in MATERIAL_TYPE_PARAMETERS.items():
+            merged_params = material_default_params.copy()
+            for type_id, params in material_type_params.items():
                 merged_params[f"type:{type_id}"] = params
 
             bioyond_material = resource_plr_to_bioyond(
@@ -623,8 +623,7 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
             logger.info(f"[物料入库] 目标库位: {update_site}")
 
             # 获取仓库配置和目标库位 UUID
-            from .config import WAREHOUSE_MAPPING
-            warehouse_mapping = WAREHOUSE_MAPPING
+            warehouse_mapping = self.workstation.bioyond_config.get("warehouse_mapping", {})
 
             parent_name = None
             target_location_uuid = None
@@ -738,10 +737,28 @@ class BioyondWorkstation(WorkstationBase):
             raise ValueError("Deck 配置不能为空，请在配置文件中添加正确的 deck 配置")
 
         # 初始化 warehouses 属性
-        self.deck.warehouses = {}
-        for resource in self.deck.children:
-            if isinstance(resource, WareHouse):
-                self.deck.warehouses[resource.name] = resource
+        if not hasattr(self.deck, "warehouses") or self.deck.warehouses is None:
+            self.deck.warehouses = {}
+
+        # 仅当 warehouses 为空时尝试重新扫描（避免覆盖子类的修复）
+        if not self.deck.warehouses:
+            for resource in self.deck.children:
+                # 兼容性增强: 只要是仓库类别或者是 WareHouse 实例均可
+                is_warehouse = isinstance(resource, WareHouse) or getattr(resource, "category", "") == "warehouse"
+
+                # 如果配置中有定义，也可以认定为 warehouse
+                if not is_warehouse and "warehouse_mapping" in bioyond_config:
+                    if resource.name in bioyond_config["warehouse_mapping"]:
+                        is_warehouse = True
+
+                if is_warehouse:
+                    self.deck.warehouses[resource.name] = resource
+                    # 确保 category 被正确设置，方便后续使用
+                    if getattr(resource, "category", "") != "warehouse":
+                        try:
+                            resource.category = "warehouse"
+                        except:
+                            pass
 
         # 创建通信模块
         self._create_communication_module(bioyond_config)
@@ -760,10 +777,11 @@ class BioyondWorkstation(WorkstationBase):
             self._set_workflow_mappings(bioyond_config["workflow_mappings"])
 
         # 准备 HTTP 报送接收服务配置（延迟到 post_init 启动）
-        # 从 bioyond_config 中获取，如果没有则使用 HTTP_SERVICE_CONFIG 的默认值
+        # 从 bioyond_config 中的 http_service_config 获取
+        http_service_cfg = bioyond_config.get("http_service_config", {})
         self._http_service_config = {
-            "host": bioyond_config.get("http_service_host", HTTP_SERVICE_CONFIG["http_service_host"]),
-            "port": bioyond_config.get("http_service_port", HTTP_SERVICE_CONFIG["http_service_port"])
+            "host": http_service_cfg.get("http_service_host", "127.0.0.1"),
+            "port": http_service_cfg.get("http_service_port", 8080)
         }
         self.http_service = None  # 将在 post_init 启动
         self.connection_monitor = None # 将在 post_init 启动
@@ -831,19 +849,14 @@ class BioyondWorkstation(WorkstationBase):
 
     def _create_communication_module(self, config: Optional[Dict[str, Any]] = None) -> None:
         """创建Bioyond通信模块"""
-        # 创建默认配置
-        default_config = {
-            **API_CONFIG,
-            "workflow_mappings": WORKFLOW_MAPPINGS,
-            "material_type_mappings": MATERIAL_TYPE_MAPPINGS,
-            "warehouse_mapping": WAREHOUSE_MAPPING
-        }
-
-        # 如果传入了 config，合并配置（config 中的值会覆盖默认值）
+        # 直接使用传入的配置，不再使用默认值
+        # 所有配置必须从 JSON 文件中提供
         if config:
-            self.bioyond_config = {**default_config, **config}
+            self.bioyond_config = config
         else:
-            self.bioyond_config = default_config
+            # 如果没有配置，使用空字典（会导致后续错误，但这是预期的）
+            self.bioyond_config = {}
+            print("警告: 未提供 bioyond_config，请确保在 JSON 配置文件中提供完整配置")
 
         self.hardware_interface = BioyondV1RPC(self.bioyond_config)
 

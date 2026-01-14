@@ -652,15 +652,16 @@ bioyond_dispensing_station:
     config:
       properties:
         config:
-          type: string
+          type: object
         deck:
           type: string
-      required:
-      - config
-      - deck
+        protocol_type:
+          type: string
+      required: []
       type: object
     data:
       properties: {}
       required: []
       type: object
+  model: {}
   version: 1.0.0

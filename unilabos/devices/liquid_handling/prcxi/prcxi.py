@@ -442,6 +442,11 @@ class PRCXI9300TubeRack(TubeRack):
 
         # 清理临时数据
         del self._temp_ordering
+        
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """从给定的状态加载工作台信息。"""
+        # super().load_state(state)
+        self._unilabos_state = state
 
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         try:
@@ -677,26 +682,18 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         self.y_offset = y_offset
         self.xy_coupling = xy_coupling
 
-        tablets_info = []
+        tablets_info = {}
         plate_positions = []
         for child in deck.children:
             number = int(child.name.replace("T", ""))
 
             if child.children:
                 if "Material" in child.children[0]._unilabos_state:
-                    tablets_info.append(
-                        {
-                            "Number": number,
-                            "Material": child.children[0]._unilabos_state["Material"]
-                        }
-                    )
+                    tablets_info[number] = child.children[0]._unilabos_state["Material"].get("uuid", "730067cf07ae43849ddf4034299030e9")
+                else:
+                    tablets_info[number] = "730067cf07ae43849ddf4034299030e9"
             else:
-                tablets_info.append(
-                    {
-                        "Number": number,
-                        "Material": {"uuid": "730067cf07ae43849ddf4034299030e9"}
-                    }
-                )
+                tablets_info[number] = "730067cf07ae43849ddf4034299030e9"
             pos = self.plr_pos_to_prcxi(child)
             plate_positions.append(
                 {
@@ -1167,12 +1164,22 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         
         if not len(self.matrix_id):
             self.matrix_id = str(uuid.uuid4())
+            
+            material_list = self.api_client.get_all_materials()
+            material_dict = {material["uuid"]: material for material in material_list}
+            
+            work_tablets = []
+            for num, material_id in self.tablets_info.items():
+                work_tablets.append({
+                    "Number": num,
+                    "Material": material_dict[material_id]
+                })
+
             self.matrix_info = {
                 "MatrixId": self.matrix_id,
                 "MatrixName": self.matrix_id,
-                "WorkTablets": [{"Number": i, "Material": {"uuid": "068b3815e36b4a72a59bae017011b29f"}} for i in range(1, 16)]+
-                               [{"Number": 16, "Material": {'uuid': '730067cf07ae43849ddf4034299030e9', 'Code': 'q1', 'SupplyType': 1, 'Name': '废弃槽', 'SummaryName': None, 'Factory': None, 'LengthNum': None, 'WidthNum': None, 'HeightNum': 0.0, 'DepthNum': 0.0, 'PipetteHeight': None, 'HoleDiameter': None, 'Margins_X': None, 'Margins_Y': None, 'HoleColum': 1, 'HoleRow': 1, 'Volume': 1250, 'ImagePath': 'C:\\Program Files (x86)\\Pipetting workstation chip', 'CreateTime': None, 'UpdateTime': None, 'XSpacing': 1.0, 'YSpacing': 1.0, 'materialEnum': 0}}]
-            }
+                "WorkTablets": work_tablets,
+                }
             # print(json.dumps(self.matrix_info, indent=2))
             res = self.api_client.add_WorkTablet_Matrix(self.matrix_info)
             if not res["Success"]:
@@ -1217,17 +1224,17 @@ class PRCXI9300Backend(LiquidHandlerBackend):
                 print("PRCXI9300 error code cleared.")
                 self.api_client.call("IAutomation", "Stop")
                 # 执行重置
-                print("Starting PRCXI9300 reset...")
-                self.api_client.call("IAutomation", "Reset")
+                # print("Starting PRCXI9300 reset...")
+                # self.api_client.call("IAutomation", "Reset")
                 
-                # 检查重置状态并等待完成
-                while not self.is_reset_ok:
-                    print("Waiting for PRCXI9300 to reset...")
-                    if hasattr(self, '_ros_node') and self._ros_node is not None:
-                        await self._ros_node.sleep(1)
-                    else:
-                        await asyncio.sleep(1)
-                print("PRCXI9300 reset successfully.")
+                # # 检查重置状态并等待完成
+                # while not self.is_reset_ok:
+                #     print("Waiting for PRCXI9300 to reset...")
+                #     if hasattr(self, '_ros_node') and self._ros_node is not None:
+                #         await self._ros_node.sleep(1)
+                #     else:
+                #         await asyncio.sleep(1)
+                # print("PRCXI9300 reset successfully.")
                 
                 self.api_client.update_clamp_jaw_position(self.matrix_id, self.plate_positions)
 

@@ -152,11 +152,11 @@ class BioyondReactionStation(BioyondWorkstation):
         # 用于缓存待处理的时间约束
         self.pending_time_constraints = []
 
-        # 动态获取工作流步骤ID
-        self.workflow_step_ids = self._fetch_workflow_step_ids()
-
         # 从配置中获取 action_names
         self.action_names = self.bioyond_config.get("action_names", {})
+
+        # 动态获取工作流步骤ID
+        self.workflow_step_ids = self._fetch_workflow_step_ids()
 
     def _fetch_workflow_step_ids(self) -> Dict[str, Dict[str, str]]:
         """动态获取工作流步骤ID"""
@@ -245,16 +245,16 @@ class BioyondReactionStation(BioyondWorkstation):
             target_key = internal_name
             normalized_key = internal_name.lower().replace('(', '_').replace(')', '').replace('-', '_')
 
-            if internal_name in ACTION_NAMES:
+            if internal_name in self.action_names:
                 target_key = internal_name
-            elif normalized_key in ACTION_NAMES:
+            elif normalized_key in self.action_names:
                 target_key = normalized_key
-            elif internal_name.lower() in ACTION_NAMES:
+            elif internal_name.lower() in self.action_names:
                 target_key = internal_name.lower()
 
-            if target_key in ACTION_NAMES:
+            if target_key in self.action_names:
                 new_ids[target_key] = {}
-                for key, action_display_name in ACTION_NAMES[target_key].items():
+                for key, action_display_name in self.action_names[target_key].items():
                     step_id = step_name_to_id.get(action_display_name)
                     if step_id:
                         new_ids[target_key][key] = step_id
@@ -263,7 +263,7 @@ class BioyondReactionStation(BioyondWorkstation):
 
         if not new_ids:
             print("未能获取任何新的步骤ID，使用默认配置")
-            return WORKFLOW_STEP_IDS
+            return self.bioyond_config.get("workflow_step_ids", {})
 
         print("成功更新工作流步骤ID")
         return new_ids
@@ -359,11 +359,11 @@ class BioyondReactionStation(BioyondWorkstation):
         reactor_taken_in_params = {
             "param_values": {
                 step_id: {
-                    ACTION_NAMES["reactor_taken_in"]["config"]: [
+                    self.action_names["reactor_taken_in"]["config"]: [
                         {"m": 0, "n": 3, "Key": "cutoff", "Value": cutoff},
                         {"m": 0, "n": 3, "Key": "assignMaterialName", "Value": material_id}
                     ],
-                    ACTION_NAMES["reactor_taken_in"]["stirring"]: [
+                    self.action_names["reactor_taken_in"]["stirring"]: [
                         {"m": 0, "n": 3, "Key": "temperature", "Value": f"{temperature:.2f}"}
                     ]
                 }
@@ -411,13 +411,13 @@ class BioyondReactionStation(BioyondWorkstation):
         solid_feeding_vials_params = {
             "param_values": {
                 feeding_step_id: {
-                    ACTION_NAMES["solid_feeding_vials"]["feeding"]: [
+                    self.action_names["solid_feeding_vials"]["feeding"]: [
                         {"m": 0, "n": 3, "Key": "materialId", "Value": mapped_material_id},
                         {"m": 0, "n": 3, "Key": "assignMaterialName", "Value": material_id_m} if material_id_m else {}
                     ]
                 },
                 observe_step_id: {
-                    ACTION_NAMES["solid_feeding_vials"]["observe"]: [
+                    self.action_names["solid_feeding_vials"]["observe"]: [
                         {"m": 1, "n": 0, "Key": "time", "Value": time},
                         {"m": 1, "n": 0, "Key": "torqueVariation", "Value": str(mapped_torque_variation)},
                         {"m": 1, "n": 0, "Key": "temperature", "Value": f"{temperature:.2f}"}
@@ -471,14 +471,14 @@ class BioyondReactionStation(BioyondWorkstation):
         params = {
             "param_values": {
                 liquid_step_id: {
-                    ACTION_NAMES["liquid_feeding_vials_non_titration"]["liquid"]: [
+                    self.action_names["liquid_feeding_vials_non_titration"]["liquid"]: [
                         {"m": 0, "n": 3, "Key": "volumeFormula", "Value": volume_formula},
                         {"m": 0, "n": 3, "Key": "assignMaterialName", "Value": material_id},
                         {"m": 0, "n": 3, "Key": "titrationType", "Value": mapped_titration_type}
                     ]
                 },
                 observe_step_id: {
-                    ACTION_NAMES["liquid_feeding_vials_non_titration"]["observe"]: [
+                    self.action_names["liquid_feeding_vials_non_titration"]["observe"]: [
                         {"m": 1, "n": 0, "Key": "time", "Value": time},
                         {"m": 1, "n": 0, "Key": "torqueVariation", "Value": str(mapped_torque_variation)},
                         {"m": 1, "n": 0, "Key": "temperature", "Value": f"{temperature:.2f}"}
@@ -562,14 +562,14 @@ class BioyondReactionStation(BioyondWorkstation):
         params = {
             "param_values": {
                 liquid_step_id: {
-                    ACTION_NAMES["liquid_feeding_solvents"]["liquid"]: [
+                    self.action_names["liquid_feeding_solvents"]["liquid"]: [
                         {"m": 0, "n": 1, "Key": "titrationType", "Value": mapped_titration_type},
                         {"m": 0, "n": 1, "Key": "volume", "Value": volume},
                         {"m": 0, "n": 1, "Key": "assignMaterialName", "Value": material_id}
                     ]
                 },
                 observe_step_id: {
-                    ACTION_NAMES["liquid_feeding_solvents"]["observe"]: [
+                    self.action_names["liquid_feeding_solvents"]["observe"]: [
                         {"m": 1, "n": 0, "Key": "time", "Value": time},
                         {"m": 1, "n": 0, "Key": "torqueVariation", "Value": str(mapped_torque_variation)},
                         {"m": 1, "n": 0, "Key": "temperature", "Value": f"{temperature:.2f}"}
@@ -718,14 +718,14 @@ class BioyondReactionStation(BioyondWorkstation):
         params = {
             "param_values": {
                 liquid_step_id: {
-                    ACTION_NAMES["liquid_feeding_titration"]["liquid"]: [
+                    self.action_names["liquid_feeding_titration"]["liquid"]: [
                         {"m": 0, "n": 3, "Key": "volumeFormula", "Value": volume_formula},
                         {"m": 0, "n": 3, "Key": "titrationType", "Value": mapped_titration_type},
                         {"m": 0, "n": 3, "Key": "assignMaterialName", "Value": material_id}
                     ]
                 },
                 observe_step_id: {
-                    ACTION_NAMES["liquid_feeding_titration"]["observe"]: [
+                    self.action_names["liquid_feeding_titration"]["observe"]: [
                         {"m": 1, "n": 0, "Key": "time", "Value": time},
                         {"m": 1, "n": 0, "Key": "torqueVariation", "Value": str(mapped_torque_variation)},
                         {"m": 1, "n": 0, "Key": "temperature", "Value": f"{temperature:.2f}"}
@@ -1192,14 +1192,14 @@ class BioyondReactionStation(BioyondWorkstation):
         params = {
             "param_values": {
                 liquid_step_id: {
-                    ACTION_NAMES["liquid_feeding_beaker"]["liquid"]: [
+                    self.action_names["liquid_feeding_beaker"]["liquid"]: [
                         {"m": 0, "n": 2, "Key": "volume", "Value": volume},
                         {"m": 0, "n": 2, "Key": "assignMaterialName", "Value": material_id},
                         {"m": 0, "n": 2, "Key": "titrationType", "Value": mapped_titration_type}
                     ]
                 },
                 observe_step_id: {
-                    ACTION_NAMES["liquid_feeding_beaker"]["observe"]: [
+                    self.action_names["liquid_feeding_beaker"]["observe"]: [
                         {"m": 1, "n": 0, "Key": "time", "Value": time},
                         {"m": 1, "n": 0, "Key": "torqueVariation", "Value": str(mapped_torque_variation)},
                         {"m": 1, "n": 0, "Key": "temperature", "Value": f"{temperature:.2f}"}
@@ -1253,14 +1253,14 @@ class BioyondReactionStation(BioyondWorkstation):
         params = {
             "param_values": {
                 liquid_step_id: {
-                    ACTION_NAMES["drip_back"]["liquid"]: [
+                    self.action_names["drip_back"]["liquid"]: [
                         {"m": 0, "n": 1, "Key": "titrationType", "Value": mapped_titration_type},
                         {"m": 0, "n": 1, "Key": "assignMaterialName", "Value": material_id},
                         {"m": 0, "n": 1, "Key": "volume", "Value": volume}
                     ]
                 },
                 observe_step_id: {
-                    ACTION_NAMES["drip_back"]["observe"]: [
+                    self.action_names["drip_back"]["observe"]: [
                         {"m": 1, "n": 0, "Key": "time", "Value": time},
                         {"m": 1, "n": 0, "Key": "torqueVariation", "Value": str(mapped_torque_variation)},
                         {"m": 1, "n": 0, "Key": "temperature", "Value": f"{temperature:.2f}"}
@@ -1959,7 +1959,7 @@ class BioyondReactionStation(BioyondWorkstation):
                     # 辅助函数:根据名称查找 config 中的 key
                     def find_config_key(name):
                         # 1. 直接匹配
-                        if name in WORKFLOW_STEP_IDS:
+                        if name in self.workflow_step_ids:
                             return name
                         # 2. 尝试反向查找 WORKFLOW_TO_SECTION_MAP (如果需要)
                         # 3. 尝试查找 WORKFLOW_MAPPINGS 的 key (忽略大小写匹配或特定映射)
@@ -1978,10 +1978,10 @@ class BioyondReactionStation(BioyondWorkstation):
                     end_config_key = find_config_key(end_wf_name)
 
                     # 查找 UUID
-                    if start_config_key not in WORKFLOW_STEP_IDS:
+                    if start_config_key not in self.workflow_step_ids:
                         print(f"   ❌ 找不到工作流 {start_wf_name} (Key: {start_config_key}) 的步骤配置")
                         continue
-                    if end_config_key not in WORKFLOW_STEP_IDS:
+                    if end_config_key not in self.workflow_step_ids:
                         print(f"   ❌ 找不到工作流 {end_wf_name} (Key: {end_config_key}) 的步骤配置")
                         continue
 
@@ -2000,8 +2000,8 @@ class BioyondReactionStation(BioyondWorkstation):
                             print(f"   ❌ 未指定终点步骤Key且无默认值: {end_wf_name}")
                             continue
 
-                    start_step_id = WORKFLOW_STEP_IDS[start_config_key].get(start_key)
-                    end_step_id = WORKFLOW_STEP_IDS[end_config_key].get(end_key)
+                    start_step_id = self.workflow_step_ids[start_config_key].get(start_key)
+                    end_step_id = self.workflow_step_ids[end_config_key].get(end_key)
 
                     if not start_step_id or not end_step_id:
                         print(f"   ❌ 无法解析步骤ID: {start_config_key}.{start_key} -> {end_config_key}.{end_key}")

@@ -8,8 +8,8 @@
       "parent": "",
       "pose": {
         "size": {
-          "width": 542,
-          "height": 374,
+          "width": 550,
+          "height": 400,
           "depth": 0
         }
       },
@@ -56,9 +56,9 @@
       },
       "config": {
         "type": "PRCXI9300Deck",
-        "size_x": 542,
-        "size_y": 374,
-        "size_z": 0,
+        "size_x": 550,
+        "size_y": 400,
+        "size_z": 17,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -78,15 +78,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 0,
-        "y": 288,
+        "x": 5,
+        "y": 301,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -123,15 +123,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 138,
-        "y": 288,
+        "x": 142.5,
+        "y": 301,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -168,15 +168,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 276,
-        "y": 288,
+        "x": 280,
+        "y": 301,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -213,15 +213,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 414,
-        "y": 288,
+        "x": 417.5,
+        "y": 301,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 97,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -258,15 +258,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 0,
-        "y": 192,
+        "x": 5,
+        "y": 205,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -303,15 +303,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 138,
-        "y": 192,
+        "x": 142.5,
+        "y": 205,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -348,15 +348,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 276,
-        "y": 192,
+        "x": 280,
+        "y": 205,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -393,15 +393,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 414,
-        "y": 192,
+        "x": 417.5,
+        "y": 205,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -438,15 +438,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 0,
-        "y": 96,
+        "x": 5,
+        "y": 109,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -483,15 +483,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 138,
-        "y": 96,
+        "x": 142.5,
+        "y": 109,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -528,15 +528,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 276,
-        "y": 96,
+        "x": 280,
+        "y": 109,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -573,15 +573,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 414,
-        "y": 96,
+        "x": 417.5,
+        "y": 109,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -618,15 +618,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 0,
-        "y": 0,
+        "x": 5,
+        "y": 13,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -663,15 +663,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 138,
-        "y": 0,
+        "x": 142.5,
+        "y": 13,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -708,15 +708,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 276,
-        "y": 0,
+        "x": 280,
+        "y": 13,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -753,15 +753,15 @@
       "type": "plate",
       "class": "",
       "position": {
-        "x": 414,
-        "y": 0,
+        "x": 417.5,
+        "y": 13,
         "z": 0
       },
       "config": {
         "type": "PRCXI9300PlateAdapterSite",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
+        "size_x": 127.5,
+        "size_y": 86,
+        "size_z": 28,
         "rotation": {
           "x": 0,
           "y": 0,
@@ -903,8 +903,8 @@
       },
       "config": {
         "type": "PRCXI9300TipRack",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,
@@ -6606,8 +6606,8 @@
       },
       "config": {
         "type": "PRCXI9300Plate",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,
@@ -10678,8 +10678,8 @@
       },
       "config": {
         "type": "PRCXI9300TipRack",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,
@@ -16273,4077 +16273,1597 @@
     {
       "id": "PlateT6",
       "name": "PlateT6",
-
-      "children": [
-        "PlateT6_A1",
-        "PlateT6_B1",
-        "PlateT6_C1",
-        "PlateT6_D1",
-        "PlateT6_E1",
-        "PlateT6_F1",
-        "PlateT6_G1",
-        "PlateT6_H1",
-        "PlateT6_A2",
-        "PlateT6_B2",
-        "PlateT6_C2",
-        "PlateT6_D2",
-        "PlateT6_E2",
-        "PlateT6_F2",
-        "PlateT6_G2",
-        "PlateT6_H2",
-        "PlateT6_A3",
-        "PlateT6_B3",
-        "PlateT6_C3",
-        "PlateT6_D3",
-        "PlateT6_E3",
-        "PlateT6_F3",
-        "PlateT6_G3",
-        "PlateT6_H3",
-        "PlateT6_A4",
-        "PlateT6_B4",
-        "PlateT6_C4",
-        "PlateT6_D4",
-        "PlateT6_E4",
-        "PlateT6_F4",
-        "PlateT6_G4",
-        "PlateT6_H4",
-        "PlateT6_A5",
-        "PlateT6_B5",
-        "PlateT6_C5",
-        "PlateT6_D5",
-        "PlateT6_E5",
-        "PlateT6_F5",
-        "PlateT6_G5",
-        "PlateT6_H5",
-        "PlateT6_A6",
-        "PlateT6_B6",
-        "PlateT6_C6",
-        "PlateT6_D6",
-        "PlateT6_E6",
-        "PlateT6_F6",
-        "PlateT6_G6",
-        "PlateT6_H6",
-        "PlateT6_A7",
-        "PlateT6_B7",
-        "PlateT6_C7",
-        "PlateT6_D7",
-        "PlateT6_E7",
-        "PlateT6_F7",
-        "PlateT6_G7",
-        "PlateT6_H7",
-        "PlateT6_A8",
-        "PlateT6_B8",
-        "PlateT6_C8",
-        "PlateT6_D8",
-        "PlateT6_E8",
-        "PlateT6_F8",
-        "PlateT6_G8",
-        "PlateT6_H8",
-        "PlateT6_A9",
-        "PlateT6_B9",
-        "PlateT6_C9",
-        "PlateT6_D9",
-        "PlateT6_E9",
-        "PlateT6_F9",
-        "PlateT6_G9",
-        "PlateT6_H9",
-        "PlateT6_A10",
-        "PlateT6_B10",
-        "PlateT6_C10",
-        "PlateT6_D10",
-        "PlateT6_E10",
-        "PlateT6_F10",
-        "PlateT6_G10",
-        "PlateT6_H10",
-        "PlateT6_A11",
-        "PlateT6_B11",
-        "PlateT6_C11",
-        "PlateT6_D11",
-        "PlateT6_E11",
-        "PlateT6_F11",
-        "PlateT6_G11",
-        "PlateT6_H11",
-        "PlateT6_A12",
-        "PlateT6_B12",
-        "PlateT6_C12",
-        "PlateT6_D12",
-        "PlateT6_E12",
-        "PlateT6_F12",
-        "PlateT6_G12",
-        "PlateT6_H12"
-      ],
+      "type": "tube_rack",
+      "class": "",
       "parent": "T6",
-      "type": "plate",
-      "class": "",
-      "position": {
-        "x": 0,
-        "y": 0,
-        "z": 0
-      },
-      "config": {
-        "type": "PRCXI9300Plate",
-        "size_x": 127,
-        "size_y": 85.5,
-        "size_z": 10,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "plate",
-        "model": null,
-        "barcode": null,
-        "ordering": {
-          "A1": "PlateT6_A1",
-          "B1": "PlateT6_B1",
-          "C1": "PlateT6_C1",
-          "D1": "PlateT6_D1",
-          "E1": "PlateT6_E1",
-          "F1": "PlateT6_F1",
-          "G1": "PlateT6_G1",
-          "H1": "PlateT6_H1",
-          "A2": "PlateT6_A2",
-          "B2": "PlateT6_B2",
-          "C2": "PlateT6_C2",
-          "D2": "PlateT6_D2",
-          "E2": "PlateT6_E2",
-          "F2": "PlateT6_F2",
-          "G2": "PlateT6_G2",
-          "H2": "PlateT6_H2",
-          "A3": "PlateT6_A3",
-          "B3": "PlateT6_B3",
-          "C3": "PlateT6_C3",
-          "D3": "PlateT6_D3",
-          "E3": "PlateT6_E3",
-          "F3": "PlateT6_F3",
-          "G3": "PlateT6_G3",
-          "H3": "PlateT6_H3",
-          "A4": "PlateT6_A4",
-          "B4": "PlateT6_B4",
-          "C4": "PlateT6_C4",
-          "D4": "PlateT6_D4",
-          "E4": "PlateT6_E4",
-          "F4": "PlateT6_F4",
-          "G4": "PlateT6_G4",
-          "H4": "PlateT6_H4",
-          "A5": "PlateT6_A5",
-          "B5": "PlateT6_B5",
-          "C5": "PlateT6_C5",
-          "D5": "PlateT6_D5",
-          "E5": "PlateT6_E5",
-          "F5": "PlateT6_F5",
-          "G5": "PlateT6_G5",
-          "H5": "PlateT6_H5",
-          "A6": "PlateT6_A6",
-          "B6": "PlateT6_B6",
-          "C6": "PlateT6_C6",
-          "D6": "PlateT6_D6",
-          "E6": "PlateT6_E6",
-          "F6": "PlateT6_F6",
-          "G6": "PlateT6_G6",
-          "H6": "PlateT6_H6",
-          "A7": "PlateT6_A7",
-          "B7": "PlateT6_B7",
-          "C7": "PlateT6_C7",
-          "D7": "PlateT6_D7",
-          "E7": "PlateT6_E7",
-          "F7": "PlateT6_F7",
-          "G7": "PlateT6_G7",
-          "H7": "PlateT6_H7",
-          "A8": "PlateT6_A8",
-          "B8": "PlateT6_B8",
-          "C8": "PlateT6_C8",
-          "D8": "PlateT6_D8",
-          "E8": "PlateT6_E8",
-          "F8": "PlateT6_F8",
-          "G8": "PlateT6_G8",
-          "H8": "PlateT6_H8",
-          "A9": "PlateT6_A9",
-          "B9": "PlateT6_B9",
-          "C9": "PlateT6_C9",
-          "D9": "PlateT6_D9",
-          "E9": "PlateT6_E9",
-          "F9": "PlateT6_F9",
-          "G9": "PlateT6_G9",
-          "H9": "PlateT6_H9",
-          "A10": "PlateT6_A10",
-          "B10": "PlateT6_B10",
-          "C10": "PlateT6_C10",
-          "D10": "PlateT6_D10",
-          "E10": "PlateT6_E10",
-          "F10": "PlateT6_F10",
-          "G10": "PlateT6_G10",
-          "H10": "PlateT6_H10",
-          "A11": "PlateT6_A11",
-          "B11": "PlateT6_B11",
-          "C11": "PlateT6_C11",
-          "D11": "PlateT6_D11",
-          "E11": "PlateT6_E11",
-          "F11": "PlateT6_F11",
-          "G11": "PlateT6_G11",
-          "H11": "PlateT6_H11",
-          "A12": "PlateT6_A12",
-          "B12": "PlateT6_B12",
-          "C12": "PlateT6_C12",
-          "D12": "PlateT6_D12",
-          "E12": "PlateT6_E12",
-          "F12": "PlateT6_F12",
-          "G12": "PlateT6_G12",
-          "H12": "PlateT6_H12"
-        }
-      },
-      "data": {
-        "Material": {
-          "uuid": "e146697c395e4eabb3d6b74f0dd6aaf7",
-          "Code": "1",
-          "SupplyType": 1,
-          "Name": "ep适配器",
-          "SummaryName": "ep适配器"
-        }
-      }
-    },
-    {
-      "id": "PlateT6_A1",
-      "name": "PlateT6_A1",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 11.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B1",
-      "name": "PlateT6_B1",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 11.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C1",
-      "name": "PlateT6_C1",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 11.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D1",
-      "name": "PlateT6_D1",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 11.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E1",
-      "name": "PlateT6_E1",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 11.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F1",
-      "name": "PlateT6_F1",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 11.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G1",
-      "name": "PlateT6_G1",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 11.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H1",
-      "name": "PlateT6_H1",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 11.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A2",
-      "name": "PlateT6_A2",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 20.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B2",
-      "name": "PlateT6_B2",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 20.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C2",
-      "name": "PlateT6_C2",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 20.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D2",
-      "name": "PlateT6_D2",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 20.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E2",
-      "name": "PlateT6_E2",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 20.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F2",
-      "name": "PlateT6_F2",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 20.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G2",
-      "name": "PlateT6_G2",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 20.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H2",
-      "name": "PlateT6_H2",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 20.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A3",
-      "name": "PlateT6_A3",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 29.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B3",
-      "name": "PlateT6_B3",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 29.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C3",
-      "name": "PlateT6_C3",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 29.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D3",
-      "name": "PlateT6_D3",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 29.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E3",
-      "name": "PlateT6_E3",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 29.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F3",
-      "name": "PlateT6_F3",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 29.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G3",
-      "name": "PlateT6_G3",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 29.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H3",
-      "name": "PlateT6_H3",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 29.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A4",
-      "name": "PlateT6_A4",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 38.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B4",
-      "name": "PlateT6_B4",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 38.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C4",
-      "name": "PlateT6_C4",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 38.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D4",
-      "name": "PlateT6_D4",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 38.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E4",
-      "name": "PlateT6_E4",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 38.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F4",
-      "name": "PlateT6_F4",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 38.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G4",
-      "name": "PlateT6_G4",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 38.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H4",
-      "name": "PlateT6_H4",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 38.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A5",
-      "name": "PlateT6_A5",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 47.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B5",
-      "name": "PlateT6_B5",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 47.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C5",
-      "name": "PlateT6_C5",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 47.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D5",
-      "name": "PlateT6_D5",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 47.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E5",
-      "name": "PlateT6_E5",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 47.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F5",
-      "name": "PlateT6_F5",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 47.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G5",
-      "name": "PlateT6_G5",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 47.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H5",
-      "name": "PlateT6_H5",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 47.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A6",
-      "name": "PlateT6_A6",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 56.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B6",
-      "name": "PlateT6_B6",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 56.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C6",
-      "name": "PlateT6_C6",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 56.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D6",
-      "name": "PlateT6_D6",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 56.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E6",
-      "name": "PlateT6_E6",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 56.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F6",
-      "name": "PlateT6_F6",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 56.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G6",
-      "name": "PlateT6_G6",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 56.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H6",
-      "name": "PlateT6_H6",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 56.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A7",
-      "name": "PlateT6_A7",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 65.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B7",
-      "name": "PlateT6_B7",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 65.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C7",
-      "name": "PlateT6_C7",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 65.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D7",
-      "name": "PlateT6_D7",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 65.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E7",
-      "name": "PlateT6_E7",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 65.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F7",
-      "name": "PlateT6_F7",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 65.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G7",
-      "name": "PlateT6_G7",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 65.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H7",
-      "name": "PlateT6_H7",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 65.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A8",
-      "name": "PlateT6_A8",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 74.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B8",
-      "name": "PlateT6_B8",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 74.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C8",
-      "name": "PlateT6_C8",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 74.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D8",
-      "name": "PlateT6_D8",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 74.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E8",
-      "name": "PlateT6_E8",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 74.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F8",
-      "name": "PlateT6_F8",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 74.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G8",
-      "name": "PlateT6_G8",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 74.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H8",
-      "name": "PlateT6_H8",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 74.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A9",
-      "name": "PlateT6_A9",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 83.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B9",
-      "name": "PlateT6_B9",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 83.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C9",
-      "name": "PlateT6_C9",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 83.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D9",
-      "name": "PlateT6_D9",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 83.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E9",
-      "name": "PlateT6_E9",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 83.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F9",
-      "name": "PlateT6_F9",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 83.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G9",
-      "name": "PlateT6_G9",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 83.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H9",
-      "name": "PlateT6_H9",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 83.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A10",
-      "name": "PlateT6_A10",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 92.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B10",
-      "name": "PlateT6_B10",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 92.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C10",
-      "name": "PlateT6_C10",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 92.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D10",
-      "name": "PlateT6_D10",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 92.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E10",
-      "name": "PlateT6_E10",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 92.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F10",
-      "name": "PlateT6_F10",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 92.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G10",
-      "name": "PlateT6_G10",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 92.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H10",
-      "name": "PlateT6_H10",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 92.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A11",
-      "name": "PlateT6_A11",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 101.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B11",
-      "name": "PlateT6_B11",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 101.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C11",
-      "name": "PlateT6_C11",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 101.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D11",
-      "name": "PlateT6_D11",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 101.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E11",
-      "name": "PlateT6_E11",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 101.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F11",
-      "name": "PlateT6_F11",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 101.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G11",
-      "name": "PlateT6_G11",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 101.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H11",
-      "name": "PlateT6_H11",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 101.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_A12",
-      "name": "PlateT6_A12",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 110.9545,
-        "y": 71.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_B12",
-      "name": "PlateT6_B12",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 110.9545,
-        "y": 62.8145,
-        "z": 3.55
-      },
       "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_C12",
-      "name": "PlateT6_C12",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 110.9545,
-        "y": 53.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_D12",
-      "name": "PlateT6_D12",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 110.9545,
-        "y": 44.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_E12",
-      "name": "PlateT6_E12",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 110.9545,
-        "y": 35.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_F12",
-      "name": "PlateT6_F12",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 110.9545,
-        "y": 26.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_G12",
-      "name": "PlateT6_G12",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 110.9545,
-        "y": 17.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-    {
-      "id": "PlateT6_H12",
-      "name": "PlateT6_H12",
-
-      "children": [],
-      "parent": "PlateT6",
-      "type": "well",
-      "class": "",
-      "position": {
-        "x": 110.9545,
-        "y": 8.8145,
-        "z": 3.55
-      },
-      "config": {
-        "type": "Well",
-        "size_x": 4.851,
-        "size_y": 4.851,
-        "size_z": 10.67,
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "type": "Rotation"
-        },
-        "category": "well",
-        "model": null,
-        "barcode": null,
-        "max_volume": 360,
-        "material_z_thickness": null,
-        "compute_volume_from_height": null,
-        "compute_height_from_volume": null,
-        "bottom_type": "unknown",
-        "cross_section_type": "circle"
-      },
-      "data": {
-        "liquids": [],
-        "pending_liquids": [],
-        "liquid_history": []
-      }
-    },
-
+          "type": "PRCXI9300TubeRack",
+          "model": "PlateT6",
+          "size_x": 128.04,
+          "size_y": 85.8,
+          "size_z": 42.66,
+          "barcode": null,
+          "category": null,
+          "ordering": {
+              "A1": "PlateT6_0_0",
+              "A2": "PlateT6_1_0",
+              "A3": "PlateT6_2_0",
+              "A4": "PlateT6_3_0",
+              "A5": "PlateT6_4_0",
+              "A6": "PlateT6_5_0",
+              "B1": "PlateT6_0_1",
+              "B2": "PlateT6_1_1",
+              "B3": "PlateT6_2_1",
+              "B4": "PlateT6_3_1",
+              "B5": "PlateT6_4_1",
+              "B6": "PlateT6_5_1",
+              "C1": "PlateT6_0_2",
+              "C2": "PlateT6_1_2",
+              "C3": "PlateT6_2_2",
+              "C4": "PlateT6_3_2",
+              "C5": "PlateT6_4_2",
+              "C6": "PlateT6_5_2",
+              "D1": "PlateT6_0_3",
+              "D2": "PlateT6_1_3",
+              "D3": "PlateT6_2_3",
+              "D4": "PlateT6_3_3",
+              "D5": "PlateT6_4_3",
+              "D6": "PlateT6_5_3"
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          }
+      },
+      "data": {
+          "Material": {
+              "Code": "1",
+              "Name": "ep适配器",
+              "uuid": "e146697c395e4eabb3d6b74f0dd6aaf7",
+              "SupplyType": 1,
+              "materialEnum": 0
+          }
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+      }
+  },
+  {
+      "id": "PlateT6_0_0",
+      "name": "PlateT6_0_0",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 3.54,
+              "y": 64.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 3.54,
+          "y": 64.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_0_1",
+      "name": "PlateT6_0_1",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 3.54,
+              "y": 46.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 3.54,
+          "y": 46.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_0_2",
+      "name": "PlateT6_0_2",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 3.54,
+              "y": 28.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 3.54,
+          "y": 28.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_0_3",
+      "name": "PlateT6_0_3",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 3.54,
+              "y": 10.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 3.54,
+          "y": 10.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_1_0",
+      "name": "PlateT6_1_0",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 24.54,
+              "y": 64.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 24.54,
+          "y": 64.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_1_1",
+      "name": "PlateT6_1_1",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 24.54,
+              "y": 46.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 24.54,
+          "y": 46.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_1_2",
+      "name": "PlateT6_1_2",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 24.54,
+              "y": 28.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 24.54,
+          "y": 28.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_1_3",
+      "name": "PlateT6_1_3",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 24.54,
+              "y": 10.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 24.54,
+          "y": 10.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_2_0",
+      "name": "PlateT6_2_0",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 45.54,
+              "y": 64.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 45.54,
+          "y": 64.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_2_1",
+      "name": "PlateT6_2_1",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 45.54,
+              "y": 46.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 45.54,
+          "y": 46.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_2_2",
+      "name": "PlateT6_2_2",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 45.54,
+              "y": 28.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 45.54,
+          "y": 28.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_2_3",
+      "name": "PlateT6_2_3",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 45.54,
+              "y": 10.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 45.54,
+          "y": 10.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_3_0",
+      "name": "PlateT6_3_0",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 66.54,
+              "y": 64.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 66.54,
+          "y": 64.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_3_1",
+      "name": "PlateT6_3_1",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 66.54,
+              "y": 46.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 66.54,
+          "y": 46.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_3_2",
+      "name": "PlateT6_3_2",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 66.54,
+              "y": 28.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 66.54,
+          "y": 28.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_3_3",
+      "name": "PlateT6_3_3",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 66.54,
+              "y": 10.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 66.54,
+          "y": 10.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_4_0",
+      "name": "PlateT6_4_0",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 87.54,
+              "y": 64.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 87.54,
+          "y": 64.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_4_1",
+      "name": "PlateT6_4_1",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 87.54,
+              "y": 46.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 87.54,
+          "y": 46.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_4_2",
+      "name": "PlateT6_4_2",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 87.54,
+              "y": 28.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 87.54,
+          "y": 28.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_4_3",
+      "name": "PlateT6_4_3",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 87.54,
+              "y": 10.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 87.54,
+          "y": 10.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_5_0",
+      "name": "PlateT6_5_0",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 108.54,
+              "y": 64.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 108.54,
+          "y": 64.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_5_1",
+      "name": "PlateT6_5_1",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 108.54,
+              "y": 46.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 108.54,
+          "y": 46.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_5_2",
+      "name": "PlateT6_5_2",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "pose": {
+          "layout": "2d",
+          "position": {
+              "x": 108.54,
+              "y": 28.7,
+              "z": 4.58
+          },
+          "position_3d": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "size": {
+              "width": 11,
+              "height": 11,
+              "depth": 0
+          },
+          "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+          },
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+          },
+          "extra": null,
+          "cross_section_type": "rectangle"
+      },
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 108.54,
+          "y": 28.7,
+          "z": 4.58
+      }
+  },
+  {
+      "id": "PlateT6_5_3",
+      "name": "PlateT6_5_3",
+      "type": "tube",
+      "class": "",
+      "parent": "PlateT6",
+      "config": {
+          "type": "Tube",
+          "model": null,
+          "size_x": 10.6,
+          "size_y": 10.6,
+          "size_z": 40,
+          "barcode": null,
+          "category": "tube",
+          "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0,
+              "type": "Rotation"
+          },
+          "max_volume": 1500
+      },
+      "data": {
+          "liquids": [],
+          "liquid_history": [],
+          "pending_liquids": []
+      },
+      "schema": null,
+      "model": null,
+      "position": {
+          "x": 108.54,
+          "y": 10.7,
+          "z": 4.58
+      }
+  },
     {
       "id": "PlateT9",
       "name": "PlateT9",
@@ -20456,8 +17976,8 @@
       },
       "config": {
         "type": "PRCXI9300Plate",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,
@@ -24529,8 +22049,8 @@
       },
       "config": {
         "type": "PRCXI9300Plate",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,
@@ -28603,8 +26123,8 @@
       },
       "config": {
         "type": "PRCXI9300Plate",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,
@@ -32676,8 +30196,8 @@
       },
       "config": {
         "type": "PRCXI9300Plate",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,
@@ -36749,8 +34269,8 @@
       },
       "config": {
         "type": "PRCXI9300Plate",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,
@@ -40721,8 +38241,8 @@
       },
       "config": {
         "type": "PRCXI9300Trash",
-        "size_x": 127,
-        "size_y": 85.5,
+        "size_x": 127.5,
+        "size_y": 86,
         "size_z": 10,
         "rotation": {
           "x": 0,

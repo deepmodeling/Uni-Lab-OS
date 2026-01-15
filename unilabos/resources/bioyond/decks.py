@@ -18,9 +18,11 @@ from unilabos.resources.bioyond.YB_warehouses import (
     bioyond_warehouse_1x8x4,
     bioyond_warehouse_reagent_storage,
     # bioyond_warehouse_liquid_preparation,
+    bioyond_warehouse_density_vial,
+)
+from unilabos.resources.bioyond.warehouses import (
     bioyond_warehouse_tipbox_storage_left,   # 新增：Tip盒堆栈(左)
     bioyond_warehouse_tipbox_storage_right,  # 新增：Tip盒堆栈(右)
-    bioyond_warehouse_density_vial,
 )
 
 

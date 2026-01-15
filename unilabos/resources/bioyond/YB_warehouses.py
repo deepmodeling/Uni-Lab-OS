@@ -83,11 +83,11 @@ def bioyond_warehouse_reagent_storage(name: str) -> WareHouse:
         category="warehouse",
     )
 
-def bioyond_warehouse_tipbox_storage(name: str) -> WareHouse:
-    """创建BioYond站内Tip盒堆栈（A01～B03），用于存放枪头盒"""
+def bioyond_warehouse_tipbox_storage_left(name: str) -> WareHouse:
+    """创建BioYond站内Tip盒堆栈左侧部分（A02～B03），2列2行"""
     return warehouse_factory(
         name=name,
-        num_items_x=3,  # 3列（01-03）
+        num_items_x=2,  # 2列
         num_items_y=2,  # 2行（A-B）
         num_items_z=1,  # 1层
         dx=10.0,
@@ -97,7 +97,25 @@ def bioyond_warehouse_tipbox_storage(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        col_offset=0,
+        col_offset=1,   # 从02开始: A02, A03
+        layout="row-major",
+    )
+
+def bioyond_warehouse_tipbox_storage_right(name: str) -> WareHouse:
+    """创建BioYond站内Tip盒堆栈右侧部分（A01～B01），1列2行"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=1,  # 1列
+        num_items_y=2,  # 2行（A-B）
+        num_items_z=1,  # 1层
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        col_offset=0,   # 从01开始: A01
         layout="row-major",
     )
 
@@ -167,7 +185,7 @@ def bioyond_warehouse_1x4x2(name: str) -> WareHouse:
 
 def bioyond_warehouse_1x2x2(name: str) -> WareHouse:
     """创建BioYond 1x2x2仓库（1列×2行×2层）- 旧版本，已弃用
-    
+
     布局（2层）:
     层1: A01
          B01
@@ -191,7 +209,7 @@ def bioyond_warehouse_1x2x2(name: str) -> WareHouse:
 
 def bioyond_warehouse_2x2x1(name: str) -> WareHouse:
     """创建BioYond 2x2x1仓库（2行×2列×1层）
-    
+
     布局:
     A01 | A02
     B01 | B02
@@ -246,14 +264,14 @@ def bioyond_warehouse_1x3x3(name: str) -> WareHouse:
 
 def bioyond_warehouse_5x3x1(name: str, row_offset: int = 0) -> WareHouse:
     """创建BioYond 5x3x1仓库（5行×3列×1层）
-    
+
     标准布局（row_offset=0）:
     A01 | A02 | A03
     B01 | B02 | B03
     C01 | C02 | C03
     D01 | D02 | D03
     E01 | E02 | E03
-    
+
     带偏移布局（row_offset=5）:
     F01 | F02 | F03
     G01 | G02 | G03
@@ -281,7 +299,7 @@ def bioyond_warehouse_5x3x1(name: str, row_offset: int = 0) -> WareHouse:
 
 def bioyond_warehouse_3x3x1(name: str) -> WareHouse:
     """创建BioYond 3x3x1仓库（3行×3列×1层）
-    
+
     布局:
     A01 | A02 | A03
     B01 | B02 | B03

@@ -97,11 +97,11 @@ def bioyond_warehouse_reagent_storage(name: str) -> WareHouse:
         layout="vertical-col-major",  # ⭐ 竖向warehouse专用布局
     )
 
-def bioyond_warehouse_tipbox_storage(name: str) -> WareHouse:
-    """创建BioYond站内Tip盒堆栈（A01～B03），用于存放枪头盒"""
+def bioyond_warehouse_tipbox_storage_left(name: str) -> WareHouse:
+    """创建BioYond站内Tip盒堆栈左侧部分（A02～B03），2列2行"""
     return warehouse_factory(
         name=name,
-        num_items_x=3,  # 3列（01-03）
+        num_items_x=2,  # 2列
         num_items_y=2,  # 2行（A-B）
         num_items_z=1,  # 1层
         dx=10.0,
@@ -111,7 +111,25 @@ def bioyond_warehouse_tipbox_storage(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        col_offset=0,
+        col_offset=1,   # 从02开始: A02, A03
+        layout="row-major",
+    )
+
+def bioyond_warehouse_tipbox_storage_right(name: str) -> WareHouse:
+    """创建BioYond站内Tip盒堆栈右侧部分（A01～B01），1列2行"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=1,  # 1列
+        num_items_y=2,  # 2行（A-B）
+        num_items_z=1,  # 1层
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        col_offset=0,   # 从01开始: A01
         layout="row-major",
     )
 

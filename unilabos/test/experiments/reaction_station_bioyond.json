@@ -20,65 +20,194 @@
                 "z": 0
             },
             "config": {
-                "config": {
-                    "api_key": "DE9BDDA0",
-                    "api_host": "http://192.168.1.200:44402",
-                    "workflow_mappings": {
-                        "reactor_taken_out": "3a16081e-4788-ca37-eff4-ceed8d7019d1",
-                        "reactor_taken_in": "3a160df6-76b3-0957-9eb0-cb496d5721c6",
-                        "Solid_feeding_vials": "3a160877-87e7-7699-7bc6-ec72b05eb5e6",
-                        "Liquid_feeding_vials(non-titration)": "3a167d99-6158-c6f0-15b5-eb030f7d8e47",
-                        "Liquid_feeding_solvents": "3a160824-0665-01ed-285a-51ef817a9046",
-                        "Liquid_feeding(titration)": "3a16082a-96ac-0449-446a-4ed39f3365b6",
-                        "liquid_feeding_beaker": "3a16087e-124f-8ddb-8ec1-c2dff09ca784",
-                        "Drip_back": "3a162cf9-6aac-565a-ddd7-682ba1796a4a"
+                "api_key": "YOUR_API_KEY",
+                "api_host": "http://your-api-host:port",
+                "workflow_mappings": {
+                    "reactor_taken_out": "workflow-uuid-reactor-out",
+                    "reactor_taken_in": "workflow-uuid-reactor-in",
+                    "Solid_feeding_vials": "workflow-uuid-solid-vials",
+                    "Liquid_feeding_vials(non-titration)": "workflow-uuid-liquid-vials",
+                    "Liquid_feeding_solvents": "workflow-uuid-solvents",
+                    "Liquid_feeding(titration)": "workflow-uuid-titration",
+                    "liquid_feeding_beaker": "workflow-uuid-beaker",
+                    "Drip_back": "workflow-uuid-drip-back"
+                },
+                "material_type_mappings": {
+                    "BIOYOND_PolymerStation_Reactor": [
+                        "反应器",
+                        "uuid-placeholder-reactor"
+                    ],
+                    "BIOYOND_PolymerStation_1BottleCarrier": [
+                        "试剂瓶",
+                        "uuid-placeholder-bottle"
+                    ],
+                    "BIOYOND_PolymerStation_1FlaskCarrier": [
+                        "烧杯",
+                        "uuid-placeholder-beaker"
+                    ],
+                    "BIOYOND_PolymerStation_6StockCarrier": [
+                        "样品板",
+                        "uuid-placeholder-sample-plate"
+                    ],
+                    "BIOYOND_PolymerStation_Solid_Vial": [
+                        "90%分装小瓶",
+                        "uuid-placeholder-solid-vial"
+                    ],
+                    "BIOYOND_PolymerStation_Liquid_Vial": [
+                        "10%分装小瓶",
+                        "uuid-placeholder-liquid-vial"
+                    ],
+                    "BIOYOND_PolymerStation_TipBox": [
+                        "枪头盒",
+                        "uuid-placeholder-tipbox"
+                    ],
+                    "BIOYOND_PolymerStation_Measurement_Vial": [
+                        "测量小瓶",
+                        "uuid-placeholder-measure-vial"
+                    ]
+                },
+                "warehouse_mapping": {
+                    "堆栈1左": {
+                        "uuid": "uuid-placeholder-stack1-left",
+                        "site_uuids": {
+                            "A01": "uuid-placeholder-site-A01",
+                            "A02": "uuid-placeholder-site-A02",
+                            "A03": "uuid-placeholder-site-A03",
+                            "A04": "uuid-placeholder-site-A04",
+                            "B01": "uuid-placeholder-site-B01",
+                            "B02": "uuid-placeholder-site-B02",
+                            "B03": "uuid-placeholder-site-B03",
+                            "B04": "uuid-placeholder-site-B04",
+                            "C01": "uuid-placeholder-site-C01",
+                            "C02": "uuid-placeholder-site-C02",
+                            "C03": "uuid-placeholder-site-C03",
+                            "C04": "uuid-placeholder-site-C04",
+                            "D01": "uuid-placeholder-site-D01",
+                            "D02": "uuid-placeholder-site-D02",
+                            "D03": "uuid-placeholder-site-D03",
+                            "D04": "uuid-placeholder-site-D04"
+                        }
                     },
-                    "material_type_mappings": {
-                        "BIOYOND_PolymerStation_Reactor": [
-                            "反应器",
-                            "3a14233b-902d-0d7b-4533-3f60f1c41c1b"
-                        ],
-                        "BIOYOND_PolymerStation_1BottleCarrier": [
-                            "试剂瓶",
-                            "3a14233b-56e3-6c53-a8ab-fcaac163a9ba"
-                        ],
-                        "BIOYOND_PolymerStation_1FlaskCarrier": [
-                            "烧杯",
-                            "3a14233b-f0a9-ba84-eaa9-0d4718b361b6"
-                        ],
-                        "BIOYOND_PolymerStation_6StockCarrier": [
-                            "样品板",
-                            "3a142339-80de-8f25-6093-1b1b1b6c322e"
-                        ],
-                        "BIOYOND_PolymerStation_Solid_Vial": [
-                            "90%分装小瓶",
-                            "3a14233a-26e1-28f8-af6a-60ca06ba0165"
-                        ],
-                        "BIOYOND_PolymerStation_Liquid_Vial": [
-                            "10%分装小瓶",
-                            "3a14233a-84a3-088d-6676-7cb4acd57c64"
-                        ],
-                        "BIOYOND_PolymerStation_TipBox": [
-                            "枪头盒",
-                            "3a143890-9d51-60ac-6d6f-6edb43c12041"
-                        ],
-                        "BIOYOND_PolymerStation_Measurement_Vial": [
-                            "测量小瓶",
-                            "b1fc79c9-5864-4f05-8052-6ed3abc18a97"
-                        ]
+                    "堆栈1右": {
+                        "uuid": "uuid-placeholder-stack1-right",
+                        "site_uuids": {
+                            "A05": "uuid-placeholder-site-A05",
+                            "A06": "uuid-placeholder-site-A06",
+                            "A07": "uuid-placeholder-site-A07",
+                            "A08": "uuid-placeholder-site-A08",
+                            "B05": "uuid-placeholder-site-B05",
+                            "B06": "uuid-placeholder-site-B06",
+                            "B07": "uuid-placeholder-site-B07",
+                            "B08": "uuid-placeholder-site-B08",
+                            "C05": "uuid-placeholder-site-C05",
+                            "C06": "uuid-placeholder-site-C06",
+                            "C07": "uuid-placeholder-site-C07",
+                            "C08": "uuid-placeholder-site-C08",
+                            "D05": "uuid-placeholder-site-D05",
+                            "D06": "uuid-placeholder-site-D06",
+                            "D07": "uuid-placeholder-site-D07",
+                            "D08": "uuid-placeholder-site-D08"
+                        }
+                    },
+                    "站内试剂存放堆栈": {
+                        "uuid": "uuid-placeholder-reagent-stack",
+                        "site_uuids": {
+                            "A01": "uuid-placeholder-reagent-A01",
+                            "A02": "uuid-placeholder-reagent-A02"
+                        }
+                    },
+                    "测量小瓶仓库(测密度)": {
+                        "uuid": "uuid-placeholder-density-stack",
+                        "site_uuids": {
+                            "A01": "uuid-placeholder-density-A01",
+                            "A02": "uuid-placeholder-density-A02",
+                            "A03": "uuid-placeholder-density-A03",
+                            "B01": "uuid-placeholder-density-B01",
+                            "B02": "uuid-placeholder-density-B02",
+                            "B03": "uuid-placeholder-density-B03"
+                        }
+                    },
+                    "站内Tip盒堆栈(左)": {
+                        "uuid": "uuid-placeholder-tipstack-left",
+                        "site_uuids": {
+                            "A02": "uuid-placeholder-tip-A02",
+                            "A03": "uuid-placeholder-tip-A03",
+                            "B02": "uuid-placeholder-tip-B02",
+                            "B03": "uuid-placeholder-tip-B03"
+                        }
+                    },
+                    "站内Tip盒堆栈(右)": {
+                        "uuid": "uuid-placeholder-tipstack-right",
+                        "site_uuids": {
+                            "A01": "uuid-placeholder-tip-A01",
+                            "B01": "uuid-placeholder-tip-B01"
+                        }
                     }
                 },
-                "deck": {
-                    "data": {
-                        "_resource_child_name": "Bioyond_Deck",
-                        "_resource_type": "unilabos.resources.bioyond.decks:BIOYOND_PolymerReactionStation_Deck"
+                "workflow_to_section_map": {
+                    "reactor_taken_in": "反应器放入",
+                    "reactor_taken_out": "反应器取出",
+                    "Solid_feeding_vials": "固体投料-小瓶",
+                    "Liquid_feeding_vials(non-titration)": "液体投料-小瓶（非滴定）",
+                    "Liquid_feeding_solvents": "液体投料-溶剂",
+                    "Liquid_feeding(titration)": "液体投料-滴定",
+                    "liquid_feeding_beaker": "液体投料-烧杯",
+                    "Drip_back": "液体回滴"
+                },
+                "action_names": {
+                    "reactor_taken_in": {
+                        "config": "通量-配置",
+                        "stirring": "反应模块-开始搅拌"
+                    },
+                    "solid_feeding_vials": {
+                        "feeding": "粉末加样模块-投料",
+                        "observe": "反应模块-观察搅拌结果"
+                    },
+                    "liquid_feeding_vials_non_titration": {
+                        "liquid": "稀释液瓶加液位-液体投料",
+                        "observe": "反应模块-滴定结果观察"
+                    },
+                    "liquid_feeding_solvents": {
+                        "liquid": "试剂AB放置位-试剂吸液分液",
+                        "observe": "反应模块-观察搅拌结果"
+                    },
+                    "liquid_feeding_titration": {
+                        "liquid": "稀释液瓶加液位-稀释液吸液分液",
+                        "observe": "反应模块-滴定结果观察"
+                    },
+                    "liquid_feeding_beaker": {
+                        "liquid": "烧杯溶液放置位-烧杯吸液分液",
+                        "observe": "反应模块-观察搅拌结果"
+                    },
+                    "drip_back": {
+                        "liquid": "试剂AB放置位-试剂吸液分液",
+                        "observe": "反应模块-向下滴定结果观察"
                     }
                 },
-                "size_x": 2700.0,
-                "size_y": 1080.0,
-                "size_z": 2000.0,
-                "protocol_type": []
+                "http_service_config": {
+                    "http_service_host": "127.0.0.1",
+                    "http_service_port": 8080
+                },
+                "material_default_parameters": {
+                    "NMP": {
+                        "unit": "毫升",
+                        "density": "1.03",
+                        "densityUnit": "g/mL",
+                        "description": "N-甲基吡咯烷酮 (N-Methyl-2-pyrrolidone)"
+                    }
+                },
+                "material_type_parameters": {}
             },
+            "deck": {
+                "data": {
+                    "_resource_child_name": "Bioyond_Deck",
+                    "_resource_type": "unilabos.resources.bioyond.decks:BIOYOND_PolymerReactionStation_Deck"
+                }
+            },
+            "size_x": 2700.0,
+            "size_y": 1080.0,
+            "size_z": 2500.0,
+            "protocol_type": [],
             "data": {}
         },
         {
@@ -90,7 +219,7 @@
             "class": "reaction_station.reactor",
             "position": {
                 "x": 1150,
-                "y": 380,
+                "y": 300,
                 "z": 0
             },
             "config": {},
@@ -105,7 +234,7 @@
             "class": "reaction_station.reactor",
             "position": {
                 "x": 1365,
-                "y": 380,
+                "y": 300,
                 "z": 0
             },
             "config": {},
@@ -120,7 +249,7 @@
             "class": "reaction_station.reactor",
             "position": {
                 "x": 1580,
-                "y": 380,
+                "y": 300,
                 "z": 0
             },
             "config": {},
@@ -135,7 +264,7 @@
             "class": "reaction_station.reactor",
             "position": {
                 "x": 1790,
-                "y": 380,
+                "y": 300,
                 "z": 0
             },
             "config": {},
@@ -150,7 +279,7 @@
             "class": "reaction_station.reactor",
             "position": {
                 "x": 2010,
-                "y": 380,
+                "y": 300,
                 "z": 0
             },
             "config": {},

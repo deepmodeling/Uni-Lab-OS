@@ -811,6 +811,15 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                         logger.warning(f"物料 {material['name']} 的列号 x={x_val} 超出范围，无法映射到堆栈1左或堆栈1右")
                         continue
 
+                # 特殊处理: Bioyond的"站内Tip盒堆栈"也需要进行拆分映射
+                if wh_name == "站内Tip盒堆栈":
+                    y_val = loc.get("y", 1)
+                    if y_val == 1:
+                        wh_name = "站内Tip盒堆栈(右)"
+                    elif y_val in [2, 3]:
+                        wh_name = "站内Tip盒堆栈(左)"
+                        y = y - 1  # 调整列号，因为左侧仓库对应的 Bioyond y=2 实际上是它的第1列
+
                 if hasattr(deck, "warehouses") and wh_name in deck.warehouses:
                     warehouse = deck.warehouses[wh_name]
                     logger.debug(f"[Warehouse匹配] 找到warehouse: {wh_name} (容量: {warehouse.capacity}, 行×列: {warehouse.num_items_x}×{warehouse.num_items_y})")
@@ -837,7 +846,7 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                         row_idx = y - 1  # Bioyond的y(01,02,03) → row索引(0,1,2)
                         layer_idx = z - 1
 
-                        idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + row_idx * warehouse.num_items_x + col_idx
+                        idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + row_idx * warehouse.num_items_y + col_idx
                         logger.debug(f"🔍 竖向warehouse {wh_name}: Bioyond(x={x},y={y},z={z}) → warehouse(col={col_idx},row={row_idx},layer={layer_idx}) → idx={idx}, capacity={warehouse.capacity}")
 
                     # 普通横向warehouse的处理

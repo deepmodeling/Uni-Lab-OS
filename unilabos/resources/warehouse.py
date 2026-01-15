@@ -43,6 +43,10 @@ def warehouse_factory(
                 if layout == "row-major":
                     # 行优先：row=0(A行) 应该显示在上方，需要较小的 y 值
                     y = dy + row * item_dy
+                elif layout == "vertical-col-major":
+                    # 竖向warehouse: row=0 对应顶部（y小），row=n-1 对应底部（y大）
+                    # 但标签 01 应该在底部，所以使用反向映射
+                    y = dy + (num_items_y - row - 1) * item_dy
                 else:
                     # 列优先：保持原逻辑（row=0 对应较大的 y）
                     y = dy + (num_items_y - row - 1) * item_dy

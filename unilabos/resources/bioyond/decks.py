@@ -51,19 +51,16 @@ class BIOYOND_PolymerReactionStation_Deck(Deck):
             "测量小瓶仓库(测密度)": bioyond_warehouse_density_vial("测量小瓶仓库(测密度)"),  # A01～B03
         }
         self.warehouse_locations = {
-            "堆栈1左": Coordinate(0.0, 430.0, 0.0),  # 左侧位置
-            "堆栈1右": Coordinate(2500.0, 430.0, 0.0),  # 右侧位置
-            "站内试剂存放堆栈": Coordinate(640.0, 480.0, 0.0),
+            "堆栈1左": Coordinate(-200.0, 450.0, 0.0),  # 左侧位置
+            "堆栈1右": Coordinate(2350.0, 450.0, 0.0),  # 右侧位置
+            "站内试剂存放堆栈": Coordinate(730.0, 390.0, 0.0),
             # "移液站内10%分装液体准备仓库": Coordinate(1200.0, 600.0, 0.0),
             "站内Tip盒堆栈": Coordinate(300.0, 150.0, 0.0),
-            "测量小瓶仓库(测密度)": Coordinate(922.0, 552.0, 0.0),
+            "测量小瓶仓库(测密度)": Coordinate(940.0, 530.0, 0.0),
         }
-        self.warehouses["站内试剂存放堆栈"].rotation = Rotation(z=90)
-        self.warehouses["测量小瓶仓库(测密度)"].rotation = Rotation(z=270)
 
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
-
 
 class BIOYOND_PolymerPreparationStation_Deck(Deck):
     def __init__(
@@ -148,6 +145,7 @@ class BIOYOND_YB_Deck(Deck):
 
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
+
 def YB_Deck(name: str) -> Deck:
     by=BIOYOND_YB_Deck(name=name)
     by.setup()

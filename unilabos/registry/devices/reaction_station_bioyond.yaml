@@ -4,213 +4,88 @@ reaction_station.bioyond:
   - reaction_station_bioyond
   class:
     action_value_mappings:
-      auto-create_order:
+      add_time_constraint:
         feedback: {}
-        goal: {}
+        goal:
+          duration: duration
+          end_point: end_point
+          end_step_key: end_step_key
+          start_point: start_point
+          start_step_key: start_step_key
         goal_default:
-          json_str: null
+          duration: 0
+          end_point: 0
+          end_step_key: ''
+          start_point: 0
+          start_step_key: ''
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 添加时间约束 - 在两个工作流之间添加时间约束
           properties:
             feedback: {}
             goal:
               properties:
-                json_str:
-                  type: string
-              required:
-              - json_str
-              type: object
-            result: {}
-          required:
-          - goal
-          title: create_order参数
-          type: object
-        type: UniLabJsonCommand
-      auto-hard_delete_merged_workflows:
-        feedback: {}
-        goal: {}
-        goal_default:
-          workflow_ids: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                workflow_ids:
-                  items:
-                    type: string
-                  type: array
-              required:
-              - workflow_ids
-              type: object
-            result: {}
-          required:
-          - goal
-          title: hard_delete_merged_workflows参数
-          type: object
-        type: UniLabJsonCommand
-      auto-merge_workflow_with_parameters:
-        feedback: {}
-        goal: {}
-        goal_default:
-          json_str: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                json_str:
-                  type: string
-              required:
-              - json_str
-              type: object
-            result: {}
-          required:
-          - goal
-          title: merge_workflow_with_parameters参数
-          type: object
-        type: UniLabJsonCommand
-      auto-process_temperature_cutoff_report:
-        feedback: {}
-        goal: {}
-        goal_default:
-          report_request: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                report_request:
-                  type: string
-              required:
-              - report_request
-              type: object
-            result: {}
-          required:
-          - goal
-          title: process_temperature_cutoff_report参数
-          type: object
-        type: UniLabJsonCommand
-      auto-process_web_workflows:
-        feedback: {}
-        goal: {}
-        goal_default:
-          web_workflow_json: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                web_workflow_json:
-                  type: string
-              required:
-              - web_workflow_json
-              type: object
-            result: {}
-          required:
-          - goal
-          title: process_web_workflows参数
-          type: object
-        type: UniLabJsonCommand
-      auto-skip_titration_steps:
-        feedback: {}
-        goal: {}
-        goal_default:
-          preintake_id: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                preintake_id:
-                  type: string
-              required:
-              - preintake_id
-              type: object
-            result: {}
-          required:
-          - goal
-          title: skip_titration_steps参数
-          type: object
-        type: UniLabJsonCommand
-      auto-wait_for_multiple_orders_and_get_reports:
-        feedback: {}
-        goal: {}
-        goal_default:
-          batch_create_result: null
-          check_interval: 10
-          timeout: 7200
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                batch_create_result:
-                  type: string
-                check_interval:
-                  default: 10
+                duration:
+                  description: 时间(秒)
                   type: integer
-                timeout:
-                  default: 7200
-                  type: integer
+                end_point:
+                  default: Start
+                  description: 终点计时点 (Start=开始前, End=结束后)
+                  enum:
+                  - Start
+                  - End
+                  type: string
+                end_step_key:
+                  description: 终点步骤Key (可选, 默认为空则自动选择)
+                  type: string
+                start_point:
+                  default: Start
+                  description: 起点计时点 (Start=开始前, End=结束后)
+                  enum:
+                  - Start
+                  - End
+                  type: string
+                start_step_key:
+                  description: 起点步骤Key (例如 "feeding", "liquid", 可选, 默认为空则自动选择)
+                  type: string
+              required:
+              - duration
+              type: object
+            result: {}
+          required:
+          - goal
+          title: add_time_constraint参数
+          type: object
+        type: UniLabJsonCommand
+      clean_all_server_workflows:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result:
+          code: code
+          message: message
+        schema:
+          description: 清空服务端所有非核心工作流 (保留核心流程)
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
               required: []
               type: object
-            result: {}
-          required:
-          - goal
-          title: wait_for_multiple_orders_and_get_reports参数
-          type: object
-        type: UniLabJsonCommand
-      auto-workflow_step_query:
-        feedback: {}
-        goal: {}
-        goal_default:
-          workflow_id: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
+            result:
               properties:
-                workflow_id:
+                code:
+                  description: 操作结果代码(1表示成功)
+                  type: integer
+                message:
+                  description: 结果描述
                   type: string
-              required:
-              - workflow_id
               type: object
-            result: {}
           required:
           - goal
-          title: workflow_step_query参数
+          title: clean_all_server_workflows参数
           type: object
         type: UniLabJsonCommand
       drip_back:
@@ -247,13 +122,19 @@ reaction_station.bioyond:
                   description: 观察时间(分钟)
                   type: string
                 titration_type:
-                  description: 是否滴定(1=否, 2=是)
+                  description: 是否滴定(NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  description: 是否观察 (1=否, 2=是)
+                  description: 是否观察 (NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 volume:
-                  description: 分液公式(μL)
+                  description: 分液公式(mL)
                   type: string
               required:
               - volume
@@ -353,13 +234,19 @@ reaction_station.bioyond:
                   description: 观察时间(分钟)
                   type: string
                 titration_type:
-                  description: 是否滴定(1=否, 2=是)
+                  description: 是否滴定(NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  description: 是否观察 (1=否, 2=是)
+                  description: 是否观察 (NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 volume:
-                  description: 分液公式(μL)
+                  description: 分液公式(mL)
                   type: string
               required:
               - volume
@@ -403,7 +290,7 @@ reaction_station.bioyond:
             label: Solvents Data From Calculation Node
         result: {}
         schema:
-          description: 液体投料-溶剂。可以直接提供volume(μL),或通过solvents对象自动从additional_solvent(mL)计算volume。
+          description: 液体投料-溶剂。可以直接提供volume(mL),或通过solvents对象自动从additional_solvent(mL)计算volume。
           properties:
             feedback: {}
             goal:
@@ -423,15 +310,21 @@ reaction_station.bioyond:
                   description: 观察时间(分钟),默认360
                   type: string
                 titration_type:
-                  default: '1'
-                  description: 是否滴定(1=否, 2=是),默认1
+                  default: 'NO'
+                  description: 是否滴定(NO=否, YES=是),默认NO
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  default: '2'
-                  description: 是否观察 (1=否, 2=是),默认2
+                  default: 'YES'
+                  description: 是否观察 (NO=否, YES=是),默认YES
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 volume:
-                  description: 分液量(μL)。可直接提供,或通过solvents参数自动计算
+                  description: 分液量(mL)。可直接提供,或通过solvents参数自动计算
                   type: string
               required:
               - assign_material_name
@@ -504,15 +397,21 @@ reaction_station.bioyond:
                   description: 观察时间(分钟),默认90
                   type: string
                 titration_type:
-                  default: '2'
-                  description: 是否滴定(1=否, 2=是),默认2
+                  default: 'YES'
+                  description: 是否滴定(NO=否, YES=是),默认YES
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  default: '2'
-                  description: 是否观察 (1=否, 2=是),默认2
+                  default: 'YES'
+                  description: 是否观察 (NO=否, YES=是),默认YES
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 volume_formula:
-                  description: 分液公式(μL)。可直接提供固定公式,或留空由系统根据x_value、feeding_order_data、extracted_actuals自动生成
+                  description: 分液公式(mL)。可直接提供固定公式,或留空由系统根据x_value、feeding_order_data、extracted_actuals自动生成
                   type: string
                 x_value:
                   description: 公式中的x值,手工输入,格式为"{{1-2-3}}"(包含双花括号)。用于自动公式计算
@@ -560,13 +459,19 @@ reaction_station.bioyond:
                   description: 观察时间(分钟)
                   type: string
                 titration_type:
-                  description: 是否滴定(1=否, 2=是)
+                  description: 是否滴定(NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  description: 是否观察 (1=否, 2=是)
+                  description: 是否观察 (NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 volume_formula:
-                  description: 分液公式(μL)
+                  description: 分液公式(mL)
                   type: string
               required:
               - volume_formula
@@ -680,6 +585,35 @@ reaction_station.bioyond:
           title: reactor_taken_out参数
           type: object
         type: UniLabJsonCommand
+      scheduler_start:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result:
+          return_info: return_info
+        schema:
+          description: 启动调度器 - 启动Bioyond工作站的任务调度器，开始执行队列中的任务
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties:
+                return_info:
+                  description: 调度器启动结果，成功返回1，失败返回0
+                  type: integer
+              required:
+              - return_info
+              title: scheduler_start结果
+              type: object
+          required:
+          - goal
+          title: scheduler_start参数
+          type: object
+        type: UniLabJsonCommand
       solid_feeding_vials:
         feedback: {}
         goal:
@@ -706,7 +640,11 @@ reaction_station.bioyond:
                   description: 物料名称(用于获取试剂瓶位ID)
                   type: string
                 material_id:
-                  description: 粉末类型ID，1=盐（21分钟），2=面粉（27分钟），3=BTDA（38分钟）
+                  description: 粉末类型ID，Salt=盐（21分钟），Flour=面粉（27分钟），BTDA=BTDA（38分钟）
+                  enum:
+                  - Salt
+                  - Flour
+                  - BTDA
                   type: string
                 temperature:
                   description: 温度设定(°C)
@@ -715,7 +653,10 @@ reaction_station.bioyond:
                   description: 观察时间(分钟)
                   type: string
                 torque_variation:
-                  description: 是否观察 (1=否, 2=是)
+                  description: 是否观察 (NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
               required:
               - assign_material_name
@@ -730,9 +671,19 @@ reaction_station.bioyond:
           title: solid_feeding_vials参数
           type: object
         type: UniLabJsonCommand
-    module: unilabos.devices.workstation.bioyond_studio.reaction_station:BioyondReactionStation
+    module: unilabos.devices.workstation.bioyond_studio.reaction_station.reaction_station:BioyondReactionStation
     protocol_type: []
     status_types:
+      average_viscosity: Float64
+      force: Float64
+      in_temperature: Float64
+      out_temperature: Float64
+      pt100_temperature: Float64
+      sensor_average_temperature: Float64
+      setting_temperature: Float64
+      speed: Float64
+      target_temperature: Float64
+      viscosity: Float64
       workflow_sequence: String
     type: python
   config_info: []
@@ -765,34 +716,19 @@ reaction_station.reactor:
   - reactor
   - reaction_station_bioyond
   class:
-    action_value_mappings:
-      auto-update_metrics:
-        feedback: {}
-        goal: {}
-        goal_default:
-          payload: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                payload:
-                  type: object
-              required:
-              - payload
-              type: object
-            result: {}
-          required:
-          - goal
-          title: update_metrics参数
-          type: object
-        type: UniLabJsonCommand
-    module: unilabos.devices.workstation.bioyond_studio.reaction_station:BioyondReactor
-    status_types: {}
+    action_value_mappings: {}
+    module: unilabos.devices.workstation.bioyond_studio.reaction_station.reaction_station:BioyondReactor
+    status_types:
+      average_viscosity: Float64
+      force: Float64
+      in_temperature: Float64
+      out_temperature: Float64
+      pt100_temperature: Float64
+      sensor_average_temperature: Float64
+      setting_temperature: Float64
+      speed: Float64
+      target_temperature: Float64
+      viscosity: Float64
     type: python
   config_info: []
   description: 反应站子设备-反应器

@@ -50,11 +50,44 @@ class Bottle(Well):
         self.barcode = barcode
 
     def serialize(self) -> dict:
+        # Pylabrobot expects barcode to be an object with serialize(), but here it is a str.
+        # We temporarily unset it to avoid AttributeError in super().serialize().
+        _barcode = self.barcode
+        self.barcode = None
+        try:
+            data = super().serialize()
+        finally:
+            self.barcode = _barcode
+
         return {
-            **super().serialize(),
+            **data,
             "diameter": self.diameter,
             "height": self.height,
         }
+
+    @classmethod
+    def deserialize(cls, data: dict, allow_marshal: bool = False):
+        # Extract barcode before calling parent deserialize to avoid type error
+        barcode_data = data.pop("barcode", None)
+
+        # Call parent deserialize
+        instance = super(Bottle, cls).deserialize(data, allow_marshal=allow_marshal)
+
+        # Set barcode as string (not as Barcode object)
+        if barcode_data:
+            if isinstance(barcode_data, str):
+                instance.barcode = barcode_data
+            elif isinstance(barcode_data, dict):
+                # If it's a dict (Barcode serialized format), extract the data field
+                instance.barcode = barcode_data.get("data", "")
+        else:
+            instance.barcode = ""
+
+        # Set additional attributes
+        instance.diameter = data.get("diameter", instance._size_x)
+        instance.height = data.get("height", instance._size_z)
+
+        return instance
 
 T = TypeVar("T", bound=ResourceHolder)
 

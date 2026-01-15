@@ -124,17 +124,32 @@ class Registry:
                                     "output": [
                                         {
                                             "handler_key": "labware",
-                                            "label": "Labware",
                                             "data_type": "resource",
-                                            "data_source": "handle",
-                                            "data_key": "liquid",
-                                        }
+                                            "label": "Labware",
+                                            "data_source": "executor",
+                                            "data_key": "created_resource_tree.@flatten",
+                                        },
+                                        {
+                                            "handler_key": "liquid_slots",
+                                            "data_type": "resource",
+                                            "label": "LiquidSlots",
+                                            "data_source": "executor",
+                                            "data_key": "liquid_input_resource_tree.@flatten",
+                                        },
+                                        {
+                                            "handler_key": "materials",
+                                            "data_type": "resource",
+                                            "label": "AllMaterials",
+                                            "data_source": "executor",
+                                            "data_key": "[created_resource_tree,liquid_input_resource_tree].@flatten.@flatten",
+                                        },
                                     ]
                                 },
                                 "placeholder_keys": {
                                     "res_id": "unilabos_resources",  # 将当前实验室的全部物料id作为下拉框可选择
                                     "device_id": "unilabos_devices",  # 将当前实验室的全部设备id作为下拉框可选择
                                     "parent": "unilabos_nodes",  # 将当前实验室的设备/物料作为下拉框可选择
+                                    "class_name": "unilabos_class",
                                 },
                             },
                             "test_latency": {
@@ -186,7 +201,17 @@ class Registry:
                                     "resources": "unilabos_resources",
                                 },
                                 "goal_default": {},
-                                "handles": {},
+                                "handles": {
+                                    "input": [
+                                        {
+                                            "handler_key": "input_resources",
+                                            "data_type": "resource",
+                                            "label": "InputResources",
+                                            "data_source": "handle",
+                                            "data_key": "resources",  # 不为空
+                                        },
+                                    ]
+                                },
                             },
                         },
                     },

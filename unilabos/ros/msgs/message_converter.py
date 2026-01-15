@@ -159,10 +159,14 @@ _msg_converter: Dict[Type, Any] = {
             else Pose()
         ),
         config=json.dumps(x.get("config", {})),
-        data=json.dumps(x.get("data", {})),
+        data=json.dumps(obtain_data_with_uuid(x)),
     ),
 }
 
+def obtain_data_with_uuid(x: dict):
+    data = x.get("data", {})
+    data["unilabos_uuid"] = x.get("uuid", None)
+    return data
 
 def json_or_yaml_loads(data: str) -> Any:
     try:

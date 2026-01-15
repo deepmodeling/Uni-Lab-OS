@@ -1119,14 +1119,17 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         self.steps_todo_list.append(step)
         return step
 
+
     async def pick_up_resource(self, pickup: ResourcePickup, **backend_kwargs):
         
         resource=pickup.resource
+        offset=pickup.offset
+        pickup_distance_from_top=pickup.pickup_distance_from_top
+        direction=pickup.direction
 
         plate_number = int(resource.parent.name.replace("T", ""))
         is_whole_plate = True
-        balance_height = 20
-        
+        balance_height = 0
         step = self.api_client.clamp_jaw_pick_up(plate_number, is_whole_plate, balance_height)
         
         self.steps_todo_list.append(step)
@@ -1143,7 +1146,6 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         balance_height = 0
         if plate_number is None:
             raise ValueError("target_plate_number is required when dropping a resource")
-
         step = self.api_client.clamp_jaw_drop(plate_number, is_whole_plate, balance_height)
         self.steps_todo_list.append(step)
         return step

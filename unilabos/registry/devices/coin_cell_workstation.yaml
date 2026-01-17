@@ -405,7 +405,7 @@ coincellassemblyworkstation_device:
             goal:
               properties:
                 bottle_num:
-                  type: integer
+                  type: string
               required:
               - bottle_num
               type: object

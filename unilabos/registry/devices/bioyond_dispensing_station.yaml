@@ -5,6 +5,135 @@ bioyond_dispensing_station:
   - bioyond_dispensing_station
   class:
     action_value_mappings:
+      auto-brief_step_parameters:
+        feedback: {}
+        goal: {}
+        goal_default:
+          data: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                data:
+                  type: object
+              required:
+              - data
+              type: object
+            result: {}
+          required:
+          - goal
+          title: brief_step_parameters参数
+          type: object
+        type: UniLabJsonCommand
+      auto-process_order_finish_report:
+        feedback: {}
+        goal: {}
+        goal_default:
+          report_request: null
+          used_materials: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                report_request:
+                  type: string
+                used_materials:
+                  type: string
+              required:
+              - report_request
+              - used_materials
+              type: object
+            result: {}
+          required:
+          - goal
+          title: process_order_finish_report参数
+          type: object
+        type: UniLabJsonCommand
+      auto-project_order_report:
+        feedback: {}
+        goal: {}
+        goal_default:
+          order_id: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                order_id:
+                  type: string
+              required:
+              - order_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: project_order_report参数
+          type: object
+        type: UniLabJsonCommand
+      auto-query_resource_by_name:
+        feedback: {}
+        goal: {}
+        goal_default:
+          material_name: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                material_name:
+                  type: string
+              required:
+              - material_name
+              type: object
+            result: {}
+          required:
+          - goal
+          title: query_resource_by_name参数
+          type: object
+        type: UniLabJsonCommand
+      auto-workflow_sample_locations:
+        feedback: {}
+        goal: {}
+        goal_default:
+          workflow_id: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                workflow_id:
+                  type: string
+              required:
+              - workflow_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: workflow_sample_locations参数
+          type: object
+        type: UniLabJsonCommand
       batch_create_90_10_vial_feeding_tasks:
         feedback: {}
         goal:

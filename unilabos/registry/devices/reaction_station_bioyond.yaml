@@ -58,6 +58,313 @@ reaction_station.bioyond:
           title: add_time_constraint参数
           type: object
         type: UniLabJsonCommand
+      auto-clear_workflows:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: clear_workflows参数
+          type: object
+        type: UniLabJsonCommand
+      auto-create_order:
+        feedback: {}
+        goal: {}
+        goal_default:
+          json_str: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                json_str:
+                  type: string
+              required:
+              - json_str
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_order参数
+          type: object
+        type: UniLabJsonCommand
+      auto-hard_delete_merged_workflows:
+        feedback: {}
+        goal: {}
+        goal_default:
+          workflow_ids: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                workflow_ids:
+                  items:
+                    type: string
+                  type: array
+              required:
+              - workflow_ids
+              type: object
+            result: {}
+          required:
+          - goal
+          title: hard_delete_merged_workflows参数
+          type: object
+        type: UniLabJsonCommand
+      auto-merge_workflow_with_parameters:
+        feedback: {}
+        goal: {}
+        goal_default:
+          json_str: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                json_str:
+                  type: string
+              required:
+              - json_str
+              type: object
+            result: {}
+          required:
+          - goal
+          title: merge_workflow_with_parameters参数
+          type: object
+        type: UniLabJsonCommand
+      auto-process_temperature_cutoff_report:
+        feedback: {}
+        goal: {}
+        goal_default:
+          report_request: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                report_request:
+                  type: string
+              required:
+              - report_request
+              type: object
+            result: {}
+          required:
+          - goal
+          title: process_temperature_cutoff_report参数
+          type: object
+        type: UniLabJsonCommand
+      auto-process_web_workflows:
+        feedback: {}
+        goal: {}
+        goal_default:
+          web_workflow_json: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                web_workflow_json:
+                  type: string
+              required:
+              - web_workflow_json
+              type: object
+            result: {}
+          required:
+          - goal
+          title: process_web_workflows参数
+          type: object
+        type: UniLabJsonCommand
+      auto-set_reactor_temperature:
+        feedback: {}
+        goal: {}
+        goal_default:
+          reactor_id: null
+          temperature: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                reactor_id:
+                  type: integer
+                temperature:
+                  type: number
+              required:
+              - reactor_id
+              - temperature
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_reactor_temperature参数
+          type: object
+        type: UniLabJsonCommand
+      auto-skip_titration_steps:
+        feedback: {}
+        goal: {}
+        goal_default:
+          preintake_id: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                preintake_id:
+                  type: string
+              required:
+              - preintake_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: skip_titration_steps参数
+          type: object
+        type: UniLabJsonCommand
+      auto-sync_workflow_sequence_from_bioyond:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: sync_workflow_sequence_from_bioyond参数
+          type: object
+        type: UniLabJsonCommand
+      auto-wait_for_multiple_orders_and_get_reports:
+        feedback: {}
+        goal: {}
+        goal_default:
+          batch_create_result: null
+          check_interval: 10
+          timeout: 7200
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                batch_create_result:
+                  type: string
+                check_interval:
+                  default: 10
+                  type: integer
+                timeout:
+                  default: 7200
+                  type: integer
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: wait_for_multiple_orders_and_get_reports参数
+          type: object
+        type: UniLabJsonCommand
+      auto-workflow_sequence:
+        feedback: {}
+        goal: {}
+        goal_default:
+          value: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                value:
+                  items:
+                    type: string
+                  type: array
+              required:
+              - value
+              type: object
+            result: {}
+          required:
+          - goal
+          title: workflow_sequence参数
+          type: object
+        type: UniLabJsonCommand
+      auto-workflow_step_query:
+        feedback: {}
+        goal: {}
+        goal_default:
+          workflow_id: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                workflow_id:
+                  type: string
+              required:
+              - workflow_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: workflow_step_query参数
+          type: object
+        type: UniLabJsonCommand
       clean_all_server_workflows:
         feedback: {}
         goal: {}
@@ -674,17 +981,7 @@ reaction_station.bioyond:
     module: unilabos.devices.workstation.bioyond_studio.reaction_station.reaction_station:BioyondReactionStation
     protocol_type: []
     status_types:
-      average_viscosity: Float64
-      force: Float64
-      in_temperature: Float64
-      out_temperature: Float64
-      pt100_temperature: Float64
-      sensor_average_temperature: Float64
-      setting_temperature: Float64
-      speed: Float64
-      target_temperature: Float64
-      viscosity: Float64
-      workflow_sequence: String
+      workflow_sequence: str
     type: python
   config_info: []
   description: Bioyond反应站
@@ -704,9 +1001,7 @@ reaction_station.bioyond:
     data:
       properties:
         workflow_sequence:
-          items:
-            type: string
-          type: array
+          type: string
       required:
       - workflow_sequence
       type: object
@@ -716,19 +1011,34 @@ reaction_station.reactor:
   - reactor
   - reaction_station_bioyond
   class:
-    action_value_mappings: {}
+    action_value_mappings:
+      auto-update_metrics:
+        feedback: {}
+        goal: {}
+        goal_default:
+          payload: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                payload:
+                  type: object
+              required:
+              - payload
+              type: object
+            result: {}
+          required:
+          - goal
+          title: update_metrics参数
+          type: object
+        type: UniLabJsonCommand
     module: unilabos.devices.workstation.bioyond_studio.reaction_station.reaction_station:BioyondReactor
-    status_types:
-      average_viscosity: Float64
-      force: Float64
-      in_temperature: Float64
-      out_temperature: Float64
-      pt100_temperature: Float64
-      sensor_average_temperature: Float64
-      setting_temperature: Float64
-      speed: Float64
-      target_temperature: Float64
-      viscosity: Float64
+    status_types: {}
     type: python
   config_info: []
   description: 反应站子设备-反应器

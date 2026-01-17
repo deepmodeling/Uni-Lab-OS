@@ -479,7 +479,11 @@ class Registry:
         return status_schema
 
     def _generate_unilab_json_command_schema(
-        self, method_args: List[Dict[str, Any]], method_name: str, return_annotation: Any = None
+        self,
+        method_args: List[Dict[str, Any]],
+        method_name: str,
+        return_annotation: Any = None,
+        previous_schema: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """
         根据UniLabJsonCommand方法信息生成JSON Schema，暂不支持嵌套类型
@@ -488,6 +492,7 @@ class Registry:
             method_args: 方法信息字典，包含args等
             method_name: 方法名称
             return_annotation: 返回类型注解，用于生成result schema（仅支持TypedDict）
+            previous_schema: 之前的 schema，用于保留 goal/feedback/result 下一级字段的 description
 
         Returns:
             JSON Schema格式的参数schema
@@ -521,13 +526,46 @@ class Registry:
         if return_annotation is not None and self._is_typed_dict(return_annotation):
             result_schema = self._generate_typed_dict_result_schema(return_annotation)
 
-        return {
+        final_schema = {
             "title": f"{method_name}参数",
             "description": f"",
             "type": "object",
             "properties": {"goal": schema, "feedback": {}, "result": result_schema},
             "required": ["goal"],
         }
+
+        # 保留之前 schema 中 goal/feedback/result 下一级字段的 description
+        if previous_schema:
+            self._preserve_field_descriptions(final_schema, previous_schema)
+
+        return final_schema
+
+    def _preserve_field_descriptions(
+        self, new_schema: Dict[str, Any], previous_schema: Dict[str, Any]
+    ) -> None:
+        """
+        保留之前 schema 中 goal/feedback/result 下一级字段的 description
+
+        Args:
+            new_schema: 新生成的 schema（会被修改）
+            previous_schema: 之前的 schema
+        """
+        for section in ["goal", "feedback", "result"]:
+            new_section = new_schema.get("properties", {}).get(section, {})
+            prev_section = previous_schema.get("properties", {}).get(section, {})
+
+            if not new_section or not prev_section:
+                continue
+
+            new_props = new_section.get("properties", {})
+            prev_props = prev_section.get("properties", {})
+
+            for field_name, field_schema in new_props.items():
+                if field_name in prev_props:
+                    prev_field = prev_props[field_name]
+                    # 保留字段的 description
+                    if "description" in prev_field and prev_field["description"]:
+                        field_schema["description"] = prev_field["description"]
 
     def _is_typed_dict(self, annotation: Any) -> bool:
         """
@@ -697,13 +735,10 @@ class Registry:
                             sorted(device_config["class"]["status_types"].items())
                         )
                         if complete_registry:
-                            # 保存原有的description信息
-                            old_descriptions = {}
+                            # 保存原有的 action 配置（用于保留 schema 的 description 和 handles 等）
+                            old_action_configs = {}
                             for action_name, action_config in device_config["class"]["action_value_mappings"].items():
-                                if "description" in action_config.get("schema", {}):
-                                    description = action_config["schema"]["description"]
-                                    if len(description):
-                                        old_descriptions[action_name] = action_config["schema"]["description"]
+                                old_action_configs[action_name] = action_config
 
                             device_config["class"]["action_value_mappings"] = {
                                 k: v
@@ -719,10 +754,15 @@ class Registry:
                                         "feedback": {},
                                         "result": {},
                                         "schema": self._generate_unilab_json_command_schema(
-                                            v["args"], k, v.get("return_annotation")
+                                            v["args"],
+                                            k,
+                                            v.get("return_annotation"),
+                                            # 传入旧的 schema 以保留字段 description
+                                            old_action_configs.get(f"auto-{k}", {}).get("schema"),
                                         ),
                                         "goal_default": {i["name"]: i["default"] for i in v["args"]},
-                                        "handles": [],
+                                        # 保留原有的 handles 配置
+                                        "handles": old_action_configs.get(f"auto-{k}", {}).get("handles", []),
                                         "placeholder_keys": {
                                             i["name"]: (
                                                 "unilabos_resources"
@@ -746,12 +786,14 @@ class Registry:
                                     if k not in device_config["class"]["action_value_mappings"]
                                 }
                             )
-                            # 恢复原有的description信息（auto开头的不修改）
-                            for action_name, description in old_descriptions.items():
+                            # 恢复原有的 description 信息（非 auto- 开头的动作）
+                            for action_name, old_config in old_action_configs.items():
                                 if action_name in device_config["class"]["action_value_mappings"]:  # 有一些会被删除
-                                    device_config["class"]["action_value_mappings"][action_name]["schema"][
-                                        "description"
-                                    ] = description
+                                    old_schema = old_config.get("schema", {})
+                                    if "description" in old_schema and old_schema["description"]:
+                                        device_config["class"]["action_value_mappings"][action_name]["schema"][
+                                            "description"
+                                        ] = old_schema["description"]
                             device_config["init_param_schema"] = {}
                             device_config["init_param_schema"]["config"] = self._generate_unilab_json_command_schema(
                                 enhanced_info["init_params"], "__init__"

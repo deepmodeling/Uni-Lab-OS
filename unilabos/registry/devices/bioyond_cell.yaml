@@ -1,0 +1,847 @@
+bioyond_cell:
+  category:
+  - bioyond_cell
+  class:
+    action_value_mappings:
+      auto-auto_batch_outbound_from_xlsx:
+        feedback: {}
+        goal: {}
+        goal_default:
+          xlsx_path: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                xlsx_path:
+                  type: string
+              required:
+              - xlsx_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: auto_batch_outbound_from_xlsx参数
+          type: object
+        type: UniLabJsonCommand
+      auto-auto_feeding4to3:
+        feedback: {}
+        goal: {}
+        goal_default:
+          xlsx_path: D:/UniLab/Uni-Lab-OS/unilabos/devices/workstation/bioyond_studio/bioyond_cell/material_template.xlsx
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                xlsx_path:
+                  default: D:/UniLab/Uni-Lab-OS/unilabos/devices/workstation/bioyond_studio/bioyond_cell/2025122301.xlsx
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: auto_feeding4to3参数
+          type: object
+        type: UniLabJsonCommand
+      auto-create_and_inbound_materials:
+        feedback: {}
+        goal: {}
+        goal_default:
+          material_names: null
+          type_id: 3a190ca0-b2f6-9aeb-8067-547e72c11469
+          warehouse_name: 粉末加样头堆栈
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                material_names:
+                  type: string
+                type_id:
+                  default: 3a190ca0-b2f6-9aeb-8067-547e72c11469
+                  type: string
+                warehouse_name:
+                  default: 粉末加样头堆栈
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_and_inbound_materials参数
+          type: object
+        type: UniLabJsonCommand
+      auto-create_material:
+        feedback: {}
+        goal: {}
+        goal_default:
+          location_name_or_id: null
+          material_name: null
+          type_id: null
+          warehouse_name: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                location_name_or_id:
+                  type: string
+                material_name:
+                  type: string
+                type_id:
+                  type: string
+                warehouse_name:
+                  type: string
+              required:
+              - material_name
+              - type_id
+              - warehouse_name
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_material参数
+          type: object
+        type: UniLabJsonCommand
+      auto-create_materials:
+        feedback: {}
+        goal: {}
+        goal_default:
+          mappings: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                mappings:
+                  type: object
+              required:
+              - mappings
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_materials参数
+          type: object
+        type: UniLabJsonCommand
+      auto-create_orders:
+        feedback: {}
+        goal: {}
+        goal_default:
+          xlsx_path: null
+        handles:
+          output:
+          - data_key: total_orders
+            data_source: executor
+            data_type: integer
+            handler_key: bottle_count
+            io_type: sink
+            label: 配液瓶数
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                xlsx_path:
+                  type: string
+              required:
+              - xlsx_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_orders参数
+          type: object
+        type: UniLabJsonCommand
+      auto-create_orders_v2:
+        feedback: {}
+        goal: {}
+        goal_default:
+          xlsx_path: null
+        handles:
+          output:
+          - data_key: total_orders
+            data_source: executor
+            data_type: integer
+            handler_key: bottle_count
+            io_type: sink
+            label: 配液瓶数
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 从Excel解析并创建实验（V2版本）
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                xlsx_path:
+                  type: string
+              required:
+              - xlsx_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_orders_v2参数
+          type: object
+        type: UniLabJsonCommand
+      auto-create_sample:
+        feedback: {}
+        goal: {}
+        goal_default:
+          board_type: null
+          bottle_type: null
+          location_code: null
+          name: null
+          warehouse_name: 手动堆栈
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                board_type:
+                  type: string
+                bottle_type:
+                  type: string
+                location_code:
+                  type: string
+                name:
+                  type: string
+                warehouse_name:
+                  default: 手动堆栈
+                  type: string
+              required:
+              - name
+              - board_type
+              - bottle_type
+              - location_code
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_sample参数
+          type: object
+        type: UniLabJsonCommand
+      auto-order_list_v2:
+        feedback: {}
+        goal: {}
+        goal_default:
+          beginTime: ''
+          endTime: ''
+          filter: ''
+          pageCount: 1
+          skipCount: 0
+          sorting: ''
+          status: ''
+          timeType: ''
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                beginTime:
+                  default: ''
+                  type: string
+                endTime:
+                  default: ''
+                  type: string
+                filter:
+                  default: ''
+                  type: string
+                pageCount:
+                  default: 1
+                  type: integer
+                skipCount:
+                  default: 0
+                  type: integer
+                sorting:
+                  default: ''
+                  type: string
+                status:
+                  default: ''
+                  type: string
+                timeType:
+                  default: ''
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: order_list_v2参数
+          type: object
+        type: UniLabJsonCommand
+      auto-process_order_finish_report:
+        feedback: {}
+        goal: {}
+        goal_default:
+          report_request: null
+          used_materials: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                report_request:
+                  type: string
+                used_materials:
+                  type: string
+              required:
+              - report_request
+              type: object
+            result: {}
+          required:
+          - goal
+          title: process_order_finish_report参数
+          type: object
+        type: UniLabJsonCommand
+      auto-process_sample_finish_report:
+        feedback: {}
+        goal: {}
+        goal_default:
+          report_request: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                report_request:
+                  type: string
+              required:
+              - report_request
+              type: object
+            result: {}
+          required:
+          - goal
+          title: process_sample_finish_report参数
+          type: object
+        type: UniLabJsonCommand
+      auto-process_step_finish_report:
+        feedback: {}
+        goal: {}
+        goal_default:
+          report_request: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                report_request:
+                  type: string
+              required:
+              - report_request
+              type: object
+            result: {}
+          required:
+          - goal
+          title: process_step_finish_report参数
+          type: object
+        type: UniLabJsonCommand
+      auto-report_material_change:
+        feedback: {}
+        goal: {}
+        goal_default:
+          material_obj: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                material_obj:
+                  type: object
+              required:
+              - material_obj
+              type: object
+            result: {}
+          required:
+          - goal
+          title: report_material_change参数
+          type: object
+        type: UniLabJsonCommand
+      auto-resource_tree_transfer:
+        feedback: {}
+        goal: {}
+        goal_default:
+          old_parent: null
+          parent_resource: null
+          plr_resource: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                old_parent:
+                  type: object
+                parent_resource:
+                  type: object
+                plr_resource:
+                  type: object
+              required:
+              - old_parent
+              - plr_resource
+              - parent_resource
+              type: object
+            result: {}
+          required:
+          - goal
+          title: resource_tree_transfer参数
+          type: object
+        type: UniLabJsonCommand
+      auto-scheduler_continue:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: scheduler_continue参数
+          type: object
+        type: UniLabJsonCommand
+      auto-scheduler_reset:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: scheduler_reset参数
+          type: object
+        type: UniLabJsonCommand
+      auto-scheduler_start:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: scheduler_start参数
+          type: object
+        type: UniLabJsonCommand
+      auto-scheduler_start_and_auto_feeding:
+        feedback: {}
+        goal: {}
+        goal_default:
+          xlsx_path: D:/UniLab/Uni-Lab-OS/unilabos/devices/workstation/bioyond_studio/bioyond_cell/material_template.xlsx
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 组合函数:先启动调度,然后执行自动化上料
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                xlsx_path:
+                  default: D:/UniLab/Uni-Lab-OS/unilabos/devices/workstation/bioyond_studio/bioyond_cell/material_template.xlsx
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: scheduler_start_and_auto_feeding参数
+          type: object
+        type: UniLabJsonCommand
+      auto-scheduler_start_and_auto_feeding_v2:
+        feedback: {}
+        goal: {}
+        goal_default:
+          xlsx_path: D:/UniLab/Uni-Lab-OS/unilabos/devices/workstation/bioyond_studio/bioyond_cell/material_template.xlsx
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 组合函数V2版本(测试):先启动调度,然后执行自动化上料(使用非阻塞轮询等待)
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                xlsx_path:
+                  default: D:/UniLab/Uni-Lab-OS/unilabos/devices/workstation/bioyond_studio/bioyond_cell/material_template.xlsx
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: scheduler_start_and_auto_feeding_v2参数
+          type: object
+        type: UniLabJsonCommand
+      auto-scheduler_stop:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: scheduler_stop参数
+          type: object
+        type: UniLabJsonCommand
+      auto-storage_batch_inbound:
+        feedback: {}
+        goal: {}
+        goal_default:
+          items: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                items:
+                  items:
+                    type: object
+                  type: array
+              required:
+              - items
+              type: object
+            result: {}
+          required:
+          - goal
+          title: storage_batch_inbound参数
+          type: object
+        type: UniLabJsonCommand
+      auto-storage_inbound:
+        feedback: {}
+        goal: {}
+        goal_default:
+          location_id: null
+          material_id: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                location_id:
+                  type: string
+                material_id:
+                  type: string
+              required:
+              - material_id
+              - location_id
+              type: object
+            result: {}
+          required:
+          - goal
+          title: storage_inbound参数
+          type: object
+        type: UniLabJsonCommand
+      auto-transfer_1_to_2:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: transfer_1_to_2参数
+          type: object
+        type: UniLabJsonCommand
+      auto-transfer_3_to_2:
+        feedback: {}
+        goal: {}
+        goal_default:
+          source_wh_id: 3a19debc-84b4-0359-e2d4-b3beea49348b
+          source_x: 1
+          source_y: 1
+          source_z: 1
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 3-2 物料转运，从3号位置转运到2号位置
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                source_wh_id:
+                  default: 3a19debc-84b4-0359-e2d4-b3beea49348b
+                  description: 来源仓库ID
+                  type: string
+                source_x:
+                  default: 1
+                  description: 来源位置X坐标
+                  type: integer
+                source_y:
+                  default: 1
+                  description: 来源位置Y坐标
+                  type: integer
+                source_z:
+                  default: 1
+                  description: 来源位置Z坐标
+                  type: integer
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: transfer_3_to_2参数
+          type: object
+        type: UniLabJsonCommand
+      auto-transfer_3_to_2_to_1:
+        feedback: {}
+        goal: {}
+        goal_default:
+          source_wh_id: 3a19debc-84b4-0359-e2d4-b3beea49348b
+          source_x: 1
+          source_y: 1
+          source_z: 1
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                source_wh_id:
+                  default: 3a19debc-84b4-0359-e2d4-b3beea49348b
+                  type: string
+                source_x:
+                  default: 1
+                  type: integer
+                source_y:
+                  default: 1
+                  type: integer
+                source_z:
+                  default: 1
+                  type: integer
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: transfer_3_to_2_to_1参数
+          type: object
+        type: UniLabJsonCommand
+      auto-update_push_ip:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ip: null
+          port: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ip:
+                  type: string
+                port:
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: update_push_ip参数
+          type: object
+        type: UniLabJsonCommand
+      auto-wait_for_order_finish:
+        feedback: {}
+        goal: {}
+        goal_default:
+          order_code: null
+          timeout: 36000
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                order_code:
+                  type: string
+                timeout:
+                  default: 36000
+                  type: integer
+              required:
+              - order_code
+              type: object
+            result: {}
+          required:
+          - goal
+          title: wait_for_order_finish参数
+          type: object
+        type: UniLabJsonCommand
+      auto-wait_for_transfer_task:
+        feedback: {}
+        goal: {}
+        goal_default:
+          filter_text: null
+          interval: 5
+          timeout: 3000
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                filter_text:
+                  type: string
+                interval:
+                  default: 5
+                  type: integer
+                timeout:
+                  default: 3000
+                  type: integer
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: wait_for_transfer_task参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.workstation.bioyond_studio.bioyond_cell.bioyond_cell_workstation:BioyondCellWorkstation
+    status_types:
+      device_id: String
+    type: python
+  config_info: []
+  description: ''
+  handles: []
+  icon: benyao2.webp
+  init_param_schema:
+    config:
+      properties:
+        config:
+          type: object
+        deck:
+          type: string
+        protocol_type:
+          type: string
+      required: []
+      type: object
+    data:
+      properties:
+        device_id:
+          type: string
+      required:
+      - device_id
+      type: object
+  registry_type: device
+  version: 1.0.0

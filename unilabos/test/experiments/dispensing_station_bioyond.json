@@ -9,49 +9,125 @@
             "parent": null,
             "type": "device",
             "class": "bioyond_dispensing_station",
-            "config": {
-                "config": {
-                    "api_key": "DE9BDDA0",
-                    "api_host": "http://192.168.1.200:44388",
-                    "material_type_mappings": {
-                        "BIOYOND_PolymerStation_1FlaskCarrier": [
-                            "烧杯",
-                            "3a14196b-24f2-ca49-9081-0cab8021bf1a"
-                        ],
-                        "BIOYOND_PolymerStation_1BottleCarrier": [
-                            "试剂瓶",
-                            "3a14196b-8bcf-a460-4f74-23f21ca79e72"
-                        ],
-                        "BIOYOND_PolymerStation_6StockCarrier": [
-                            "分装板",
-                            "3a14196e-5dfe-6e21-0c79-fe2036d052c4"
-                        ],
-                        "BIOYOND_PolymerStation_Liquid_Vial": [
-                            "10%分装小瓶",
-                            "3a14196c-76be-2279-4e22-7310d69aed68"
-                        ],
-                        "BIOYOND_PolymerStation_Solid_Vial": [
-                            "90%分装小瓶",
-                            "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea"
-                        ],
-                        "BIOYOND_PolymerStation_8StockCarrier": [
-                            "样品板",
-                            "3a14196e-b7a0-a5da-1931-35f3000281e9"
-                        ],
-                        "BIOYOND_PolymerStation_Solid_Stock": [
-                            "样品瓶",
-                            "3a14196a-cf7d-8aea-48d8-b9662c7dba94"
-                        ]
-                    }
-                },
-                "deck": {
-                    "data": {
-                        "_resource_child_name": "Bioyond_Dispensing_Deck",
-                        "_resource_type": "unilabos.resources.bioyond.decks:BIOYOND_PolymerPreparationStation_Deck"
-                    }
-                },
-                "protocol_type": []
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
             },
+            "config": {
+                "api_key": "YOUR_API_KEY",
+                "api_host": "http://your-api-host:port",
+                "material_type_mappings": {
+                    "BIOYOND_PolymerStation_1FlaskCarrier": [
+                        "烧杯",
+                        "uuid-placeholder-flask"
+                    ],
+                    "BIOYOND_PolymerStation_1BottleCarrier": [
+                        "试剂瓶",
+                        "uuid-placeholder-bottle"
+                    ],
+                    "BIOYOND_PolymerStation_6StockCarrier": [
+                        "分装板",
+                        "uuid-placeholder-stock-6"
+                    ],
+                    "BIOYOND_PolymerStation_Liquid_Vial": [
+                        "10%分装小瓶",
+                        "uuid-placeholder-liquid-vial"
+                    ],
+                    "BIOYOND_PolymerStation_Solid_Vial": [
+                        "90%分装小瓶",
+                        "uuid-placeholder-solid-vial"
+                    ],
+                    "BIOYOND_PolymerStation_8StockCarrier": [
+                        "样品板",
+                        "uuid-placeholder-stock-8"
+                    ],
+                    "BIOYOND_PolymerStation_Solid_Stock": [
+                        "样品瓶",
+                        "uuid-placeholder-solid-stock"
+                    ]
+                },
+                "warehouse_mapping": {
+                    "粉末堆栈": {
+                        "uuid": "uuid-placeholder-powder-stack",
+                        "site_uuids": {
+                            "A01": "uuid-placeholder-powder-A01",
+                            "A02": "uuid-placeholder-powder-A02",
+                            "A03": "uuid-placeholder-powder-A03",
+                            "A04": "uuid-placeholder-powder-A04",
+                            "B01": "uuid-placeholder-powder-B01",
+                            "B02": "uuid-placeholder-powder-B02",
+                            "B03": "uuid-placeholder-powder-B03",
+                            "B04": "uuid-placeholder-powder-B04",
+                            "C01": "uuid-placeholder-powder-C01",
+                            "C02": "uuid-placeholder-powder-C02",
+                            "C03": "uuid-placeholder-powder-C03",
+                            "C04": "uuid-placeholder-powder-C04",
+                            "D01": "uuid-placeholder-powder-D01",
+                            "D02": "uuid-placeholder-powder-D02",
+                            "D03": "uuid-placeholder-powder-D03",
+                            "D04": "uuid-placeholder-powder-D04"
+                        }
+                    },
+                    "溶液堆栈": {
+                        "uuid": "uuid-placeholder-liquid-stack",
+                        "site_uuids": {
+                            "A01": "uuid-placeholder-liquid-A01",
+                            "A02": "uuid-placeholder-liquid-A02",
+                            "A03": "uuid-placeholder-liquid-A03",
+                            "A04": "uuid-placeholder-liquid-A04",
+                            "B01": "uuid-placeholder-liquid-B01",
+                            "B02": "uuid-placeholder-liquid-B02",
+                            "B03": "uuid-placeholder-liquid-B03",
+                            "B04": "uuid-placeholder-liquid-B04",
+                            "C01": "uuid-placeholder-liquid-C01",
+                            "C02": "uuid-placeholder-liquid-C02",
+                            "C03": "uuid-placeholder-liquid-C03",
+                            "C04": "uuid-placeholder-liquid-C04",
+                            "D01": "uuid-placeholder-liquid-D01",
+                            "D02": "uuid-placeholder-liquid-D02",
+                            "D03": "uuid-placeholder-liquid-D03",
+                            "D04": "uuid-placeholder-liquid-D04"
+                        }
+                    },
+                    "试剂堆栈": {
+                        "uuid": "uuid-placeholder-reagent-stack",
+                        "site_uuids": {
+                            "A01": "uuid-placeholder-reagent-A01",
+                            "A02": "uuid-placeholder-reagent-A02",
+                            "A03": "uuid-placeholder-reagent-A03",
+                            "A04": "uuid-placeholder-reagent-A04",
+                            "B01": "uuid-placeholder-reagent-B01",
+                            "B02": "uuid-placeholder-reagent-B02",
+                            "B03": "uuid-placeholder-reagent-B03",
+                            "B04": "uuid-placeholder-reagent-B04"
+                        }
+                    }
+                },
+                "http_service_config": {
+                    "http_service_host": "127.0.0.1",
+                    "http_service_port": 8080
+                },
+                "material_default_parameters": {
+                    "NMP": {
+                        "unit": "毫升",
+                        "density": "1.03",
+                        "densityUnit": "g/mL",
+                        "description": "N-甲基吡咯烷酮 (N-Methyl-2-pyrrolidone)"
+                    }
+                },
+                "material_type_parameters": {}
+            },
+            "deck": {
+                "data": {
+                    "_resource_child_name": "Bioyond_Dispensing_Deck",
+                    "_resource_type": "unilabos.resources.bioyond.decks:BIOYOND_PolymerPreparationStation_Deck"
+                }
+            },
+            "size_x": 2700.0,
+            "size_y": 1080.0,
+            "size_z": 1500.0,
+            "protocol_type": [],
             "data": {}
         },
         {

@@ -374,9 +374,35 @@ def convert_to_ros_msg(ros_msg_type: Union[Type, Any], obj: Any) -> Any:
                     setattr(ros_msg, key, [])  # FIXME
             elif "array.array" in str(type(attr)):
                 if attr.typecode == "f" or attr.typecode == "d":
+                    # 如果是单个值，转换为列表
+                    if value is None:
+                        value = []
+                    elif not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
+                        value = [value]
                     setattr(ros_msg, key, [float(i) for i in value])
                 else:
-                    setattr(ros_msg, key, value)
+                    # 对于整数数组，需要确保是序列且每个值在有效范围内
+                    if value is None:
+                        value = []
+                    elif not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
+                        # 如果是单个值，转换为列表
+                        value = [value]
+                    # 确保每个整数值在有效范围内（-2147483648 到 2147483647）
+                    converted_value = []
+                    for i in value:
+                        if i is None:
+                            continue  # 跳过 None 值
+                        if isinstance(i, (int, float)):
+                            int_val = int(i)
+                            # 确保在 int32 范围内
+                            if int_val < -2147483648:
+                                int_val = -2147483648
+                            elif int_val > 2147483647:
+                                int_val = 2147483647
+                            converted_value.append(int_val)
+                        else:
+                            converted_value.append(i)
+                    setattr(ros_msg, key, converted_value)
             else:
                 nested_ros_msg = convert_to_ros_msg(type(attr)(), value)
                 setattr(ros_msg, key, nested_ros_msg)

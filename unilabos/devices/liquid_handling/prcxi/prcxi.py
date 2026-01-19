@@ -442,7 +442,7 @@ class PRCXI9300TubeRack(TubeRack):
 
         # 清理临时数据
         del self._temp_ordering
-        
+
     def load_state(self, state: Dict[str, Any]) -> None:
         """从给定的状态加载工作台信息。"""
         # super().load_state(state)
@@ -1160,8 +1160,7 @@ class PRCXI9300Backend(LiquidHandlerBackend):
             protocol_name = f"protocol_{time.time()}"
         self.protocol_name = protocol_name
         self.steps_todo_list = []
-        matrices = self.api_client.matrix_by_id("5de524d0-3f95-406c-86dd-f83626ebc7cb")["WorkTablets"]
-        
+
         if not len(self.matrix_id):
             self.matrix_id = str(uuid.uuid4())
             
@@ -1224,17 +1223,17 @@ class PRCXI9300Backend(LiquidHandlerBackend):
                 print("PRCXI9300 error code cleared.")
                 self.api_client.call("IAutomation", "Stop")
                 # 执行重置
-                # print("Starting PRCXI9300 reset...")
-                # self.api_client.call("IAutomation", "Reset")
+                print("Starting PRCXI9300 reset...")
+                self.api_client.call("IAutomation", "Reset")
                 
-                # # 检查重置状态并等待完成
-                # while not self.is_reset_ok:
-                #     print("Waiting for PRCXI9300 to reset...")
-                #     if hasattr(self, '_ros_node') and self._ros_node is not None:
-                #         await self._ros_node.sleep(1)
-                #     else:
-                #         await asyncio.sleep(1)
-                # print("PRCXI9300 reset successfully.")
+                # 检查重置状态并等待完成
+                while not self.is_reset_ok:
+                    print("Waiting for PRCXI9300 to reset...")
+                    if hasattr(self, '_ros_node') and self._ros_node is not None:
+                        await self._ros_node.sleep(1)
+                    else:
+                        await asyncio.sleep(1)
+                print("PRCXI9300 reset successfully.")
                 
                 self.api_client.update_clamp_jaw_position(self.matrix_id, self.plate_positions)
 

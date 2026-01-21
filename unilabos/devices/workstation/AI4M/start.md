@@ -4,3 +4,6 @@ python unilabos\app\main.py -g unilabos\devices\workstation\AI4M\AI4M.json --ak 
 
 
 python unilabos\app\main.py -g unilabos\devices\workstation\AI4M\AI4M.json --ak 6c67a368-8002-4a38-8af8-f165db1c1fe3 --sk 85645cbd-2920-48e0-864f-7ed83b05521a   --upload_registry --addr test
+
+python unilabos\app\main.py -g unilabos\devices\workstation\AI4M\AI4M.json --ak 5308c0c3-d01a-424b-8e53-4144a708fe56 --sk 525d9466-aca4-4c6f-8b63-b90edcb54047   --upload_registry --disable_browser
+ --addr test

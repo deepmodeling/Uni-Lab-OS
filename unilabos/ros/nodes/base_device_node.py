@@ -1468,6 +1468,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             if isinstance(rs, list):
                                 for r in rs:
                                     res = self.resource_tracker.parent_resource(r)  # 获取 resource 对象
+                            elif type(rs).__name__ == "ResourceHolder":
+                                pass
                             else:
                                 res = self.resource_tracker.parent_resource(rs)
                             if id(res) not in seen:

@@ -364,8 +364,8 @@ class PRCXI9300TubeRack(TubeRack):
     def __init__(self, name: str, size_x: float, size_y: float, size_z: float, 
                  category: str = "tube_rack", 
                  items: Optional[Dict[str, Any]] = None,
-                 ordered_items: Optional[OrderedDict] = None,
-                 ordering: Optional[OrderedDict] = None,
+                 ordered_items: collections.OrderedDict = None, 
+                 ordering: Optional[collections.OrderedDict] = None,
                  model: Optional[str] = None,
                  material_info: Optional[Dict[str, Any]] = None, 
                  **kwargs):
@@ -380,7 +380,7 @@ class PRCXI9300TubeRack(TubeRack):
                 # ordering 的值是字符串，这种情况下我们让 TubeRack 使用默认行为
                 # 不在初始化时创建 items，而是在 deserialize 后处理
                 items_to_pass = None
-                ordering_param = collections.OrderedDict()  # 提供空的 ordering 来满足要求
+                ordering_param = collections.OrderedDict((k, None) for k in ordering.keys())  # 提供空的 ordering 来满足要求
                 # 保存 ordering 信息以便后续处理
                 self._temp_ordering = ordering
             else:

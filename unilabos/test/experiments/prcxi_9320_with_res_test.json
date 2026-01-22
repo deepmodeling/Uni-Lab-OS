@@ -16283,7 +16283,7 @@
           "size_y": 85.8,
           "size_z": 42.66,
           "barcode": null,
-          "category": null,
+          "category": "tube_rack",
           "ordering": {
               "A1": "PlateT6_0_0",
               "A2": "PlateT6_1_0",

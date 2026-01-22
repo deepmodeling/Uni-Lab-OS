@@ -1,0 +1,286 @@
+motor.zdt_x42:
+  category:
+  - motor
+  class:
+    action_value_mappings:
+      auto-enable:
+        feedback: {}
+        goal: {}
+        goal_default:
+          'on': true
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 使能或禁用电机。使能后电机进入锁轴状态，可接收运动指令；禁用后电机进入松轴状态。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                'on':
+                  default: true
+                  type: boolean
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: enable参数
+          type: object
+        type: UniLabJsonCommand
+      auto-get_position:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 获取当前电机脉冲位置。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              properties:
+                position:
+                  type: integer
+              type: object
+          required:
+          - goal
+          title: get_position参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_position:
+        feedback: {}
+        goal: {}
+        goal_default:
+          absolute: false
+          acceleration: 10
+          direction: CW
+          pulses: 1000
+          speed_rpm: 60
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 位置模式运行。控制电机移动到指定脉冲位置或相对于当前位置移动指定脉冲数。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                absolute:
+                  default: false
+                  type: boolean
+                acceleration:
+                  default: 10
+                  maximum: 255
+                  minimum: 0
+                  type: integer
+                direction:
+                  default: CW
+                  enum:
+                  - CW
+                  - CCW
+                  type: string
+                pulses:
+                  default: 1000
+                  type: integer
+                speed_rpm:
+                  default: 60
+                  minimum: 0
+                  type: integer
+              required:
+              - pulses
+              - speed_rpm
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_position参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_speed:
+        feedback: {}
+        goal: {}
+        goal_default:
+          acceleration: 10
+          direction: CW
+          speed_rpm: 60
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 速度模式运行。控制电机以指定转速和方向持续转动。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                acceleration:
+                  default: 10
+                  maximum: 255
+                  minimum: 0
+                  type: integer
+                direction:
+                  default: CW
+                  enum:
+                  - CW
+                  - CCW
+                  type: string
+                speed_rpm:
+                  default: 60
+                  minimum: 0
+                  type: integer
+              required:
+              - speed_rpm
+              type: object
+            result: {}
+          required:
+          - goal
+          title: move_speed参数
+          type: object
+        type: UniLabJsonCommand
+      auto-rotate_quarter:
+        feedback: {}
+        goal: {}
+        goal_default:
+          direction: CW
+          speed_rpm: 60
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 电机旋转 1/4 圈 (阻塞式)。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                direction:
+                  default: CW
+                  enum:
+                  - CW
+                  - CCW
+                  type: string
+                speed_rpm:
+                  default: 60
+                  minimum: 1
+                  type: integer
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: rotate_quarter参数
+          type: object
+        type: UniLabJsonCommand
+      auto-set_zero:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 将当前电机位置设为零点。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_zero参数
+          type: object
+        type: UniLabJsonCommand
+      auto-stop:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 立即停止电机运动。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: stop参数
+          type: object
+        type: UniLabJsonCommand
+      auto-wait_time:
+        feedback: {}
+        goal: {}
+        goal_default:
+          duration_s: 1.0
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 等待指定时间 (秒)。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                duration_s:
+                  default: 1.0
+                  minimum: 0
+                  type: number
+              required:
+              - duration_s
+              type: object
+            result: {}
+          required:
+          - goal
+          title: wait_time参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.motor.ZDT_X42:ZDTX42Driver
+    status_types:
+      position: int
+      status: str
+    type: python
+  config_info: []
+  description: ZDT X42 闭环步进电机驱动。支持速度运行、精确位置控制、位置查询和清零功能。适用于各种需要精确运动控制的实验室自动化场景。
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        baudrate:
+          default: 115200
+          type: integer
+        debug:
+          default: false
+          type: boolean
+        device_id:
+          default: 1
+          type: integer
+        port:
+          type: string
+        timeout:
+          default: 0.5
+          type: number
+      required:
+      - port
+      type: object
+    data:
+      properties:
+        position:
+          type: integer
+        status:
+          type: string
+      required:
+      - status
+      - position
+      type: object
+  version: 1.0.0

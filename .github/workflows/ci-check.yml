@@ -30,7 +30,7 @@ jobs:
 
       - name: Install minimal ROS dependencies
         run: |
-          conda install ros-humble-ros-core ros-humble-std-msgs ros-humble-geometry-msgs ros-humble-control-msgs -c robostack-staging -c conda-forge
+          conda install robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs -c robostack-staging -c conda-forge
 
       - name: Install unilabos-msgs and project
         run: |

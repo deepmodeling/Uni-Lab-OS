@@ -162,6 +162,12 @@ def parse_args():
         help="Complete registry information",
     )
     parser.add_argument(
+        "--check_mode",
+        action="store_true",
+        default=False,
+        help="Run in check mode for CI: validates registry imports and ensures no file changes",
+    )
+    parser.add_argument(
         "--no_update_feedback",
         action="store_true",
         help="Disable sending update feedback to server",
@@ -314,6 +320,12 @@ def main():
     BasicConfig.machine_name = machine_name
     BasicConfig.vis_2d_enable = args_dict["2d_vis"]
 
+    # Check mode 处理
+    check_mode = args_dict.get("check_mode", False)
+    BasicConfig.check_mode = check_mode
+    if check_mode:
+        print_status("Check mode 启用，将进行 complete_registry 检查", "info")
+
     from unilabos.resources.graphio import (
         read_node_link_json,
         read_graphml,
@@ -331,10 +343,14 @@ def main():
     # 显示启动横幅
     print_unilab_banner(args_dict)
 
-    # 注册表
-    lab_registry = build_registry(
-        args_dict["registry_path"], args_dict.get("complete_registry", False), BasicConfig.upload_registry
-    )
+    # 注册表 - check_mode 时强制启用 complete_registry
+    complete_registry = args_dict.get("complete_registry", False) or check_mode
+    lab_registry = build_registry(args_dict["registry_path"], complete_registry, BasicConfig.upload_registry)
+
+    # Check mode: complete_registry 完成后直接退出，git diff 检测由 CI workflow 执行
+    if check_mode:
+        print_status("Check mode: complete_registry 完成，退出", "info")
+        os._exit(0)
 
     if BasicConfig.upload_registry:
         # 设备注册到服务端 - 需要 ak 和 sk

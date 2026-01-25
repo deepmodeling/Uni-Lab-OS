@@ -1,0 +1,52 @@
+name: CI Check
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  registry-check:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniconda-version: 'latest'
+          channels: conda-forge,robostack-staging,uni-lab,defaults
+          channel-priority: strict
+          activate-environment: check-env
+          auto-activate-base: false
+          auto-update-conda: false
+          show-channel-urls: true
+
+      - name: Install minimal ROS dependencies
+        run: |
+          conda install ros-humble-ros-core ros-humble-std-msgs ros-humble-geometry-msgs ros-humble-control-msgs -c robostack-staging -c conda-forge
+
+      - name: Install unilabos-msgs and project
+        run: |
+          conda install ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge
+          pip install -e .
+
+      - name: Run check mode (complete_registry)
+        run: |
+          python -m unilabos --check_mode --skip_env_check
+
+      - name: Check for uncommitted changes
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::检测到文件变化！请先在本地运行 'python -m unilabos --complete_registry' 并提交变更"
+            echo "变化的文件:"
+            git diff --name-only
+            exit 1
+          fi
+          echo "检查通过：无文件变化"

@@ -71,6 +71,20 @@ class Registry:
 
         from unilabos.app.web.utils.action_utils import get_yaml_from_goal_type
 
+        # 获取 HostNode 类的增强信息，用于自动生成 action schema
+        host_node_enhanced_info = get_enhanced_class_info(
+            "unilabos.ros.nodes.presets.host_node:HostNode", use_dynamic=True
+        )
+
+        # 为 test_latency 生成 schema，保留原有 description
+        test_latency_method_info = host_node_enhanced_info.get("action_methods", {}).get("test_latency", {})
+        test_latency_schema = self._generate_unilab_json_command_schema(
+            test_latency_method_info.get("args", []),
+            "test_latency",
+            test_latency_method_info.get("return_annotation"),
+        )
+        test_latency_schema["description"] = "用于测试延迟的动作，返回延迟时间和时间差。"
+
         self.device_type_registry.update(
             {
                 "host_node": {
@@ -152,14 +166,19 @@ class Registry:
                                 },
                             },
                             "test_latency": {
-                                "type": self.EmptyIn,
+                                "type": (
+                                    "UniLabJsonCommandAsync"
+                                    if test_latency_method_info.get("is_async", False)
+                                    else "UniLabJsonCommand"
+                                ),
                                 "goal": {},
                                 "feedback": {},
                                 "result": {},
-                                "schema": ros_action_to_json_schema(
-                                    self.EmptyIn, "用于测试延迟的动作，返回延迟时间和时间差。"
-                                ),
-                                "goal_default": {},
+                                "schema": test_latency_schema,
+                                "goal_default": {
+                                    arg["name"]: arg["default"]
+                                    for arg in test_latency_method_info.get("args", [])
+                                },
                                 "handles": {},
                             },
                             "auto-test_resource": {
@@ -540,11 +559,9 @@ class Registry:
 
         return final_schema
 
-    def _preserve_field_descriptions(
-        self, new_schema: Dict[str, Any], previous_schema: Dict[str, Any]
-    ) -> None:
+    def _preserve_field_descriptions(self, new_schema: Dict[str, Any], previous_schema: Dict[str, Any]) -> None:
         """
-        保留之前 schema 中 goal/feedback/result 下一级字段的 description
+        保留之前 schema 中 goal/feedback/result 下一级字段的 description 和 title
 
         Args:
             new_schema: 新生成的 schema（会被修改）
@@ -566,6 +583,9 @@ class Registry:
                     # 保留字段的 description
                     if "description" in prev_field and prev_field["description"]:
                         field_schema["description"] = prev_field["description"]
+                    # 保留字段的 title（用户自定义的中文名）
+                    if "title" in prev_field and prev_field["title"]:
+                        field_schema["title"] = prev_field["title"]
 
     def _is_typed_dict(self, annotation: Any) -> bool:
         """

@@ -154,7 +154,7 @@ class DeviceActionManager:
             job_info.set_ready_timeout(10)  # 设置10秒超时
             self.active_jobs[device_key] = job_info
             job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-            logger.info(f"[DeviceActionManager] Job {job_log} can start immediately for {device_key}")
+            logger.trace(f"[DeviceActionManager] Job {job_log} can start immediately for {device_key}")
             return True
 
     def start_job(self, job_id: str) -> bool:
@@ -210,8 +210,9 @@ class DeviceActionManager:
                 job_info.update_timestamp()
                 # 从all_jobs中移除已结束的job
                 del self.all_jobs[job_id]
-                job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-                logger.info(f"[DeviceActionManager] Job {job_log} ended for {device_key}")
+                # job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
+                # logger.debug(f"[DeviceActionManager] Job {job_log} ended for {device_key}")
+                pass
             else:
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
                 logger.warning(f"[DeviceActionManager] Job {job_log} was not active for {device_key}")
@@ -227,7 +228,7 @@ class DeviceActionManager:
                 next_job_log = format_job_log(
                     next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
                 )
-                logger.info(f"[DeviceActionManager] Next job {next_job_log} can start for {device_key}")
+                logger.trace(f"[DeviceActionManager] Next job {next_job_log} can start for {device_key}")
                 return next_job
 
             return None
@@ -268,7 +269,7 @@ class DeviceActionManager:
                 # 从all_jobs中移除
                 del self.all_jobs[job_id]
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-                logger.info(f"[DeviceActionManager] Active job {job_log} cancelled for {device_key}")
+                logger.trace(f"[DeviceActionManager] Active job {job_log} cancelled for {device_key}")
 
                 # 启动下一个任务
                 if device_key in self.device_queues and self.device_queues[device_key]:
@@ -281,7 +282,7 @@ class DeviceActionManager:
                     next_job_log = format_job_log(
                         next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
                     )
-                    logger.info(f"[DeviceActionManager] Next job {next_job_log} can start after cancel")
+                    logger.trace(f"[DeviceActionManager] Next job {next_job_log} can start after cancel")
                 return True
 
             # 如果是排队中的任务
@@ -295,7 +296,7 @@ class DeviceActionManager:
                     job_log = format_job_log(
                         job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name
                     )
-                    logger.info(f"[DeviceActionManager] Queued job {job_log} cancelled for {device_key}")
+                    logger.trace(f"[DeviceActionManager] Queued job {job_log} cancelled for {device_key}")
                     return True
 
             job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
@@ -565,7 +566,7 @@ class MessageProcessor:
 
     async def _process_message(self, message_type: str, message_data: Dict[str, Any]):
         """处理收到的消息"""
-        logger.debug(f"[MessageProcessor] Processing message: {message_type}")
+        logger.trace(f"[MessageProcessor] Processing message: {message_type}")
 
         try:
             if message_type == "pong":
@@ -637,13 +638,13 @@ class MessageProcessor:
             await self._send_action_state_response(
                 device_id, action_name, task_id, job_id, "query_action_status", True, 0
             )
-            logger.info(f"[MessageProcessor] Job {job_log} can start immediately")
+            logger.trace(f"[MessageProcessor] Job {job_log} can start immediately")
         else:
             # 需要排队
             await self._send_action_state_response(
                 device_id, action_name, task_id, job_id, "query_action_status", False, 10
             )
-            logger.info(f"[MessageProcessor] Job {job_log} queued")
+            logger.trace(f"[MessageProcessor] Job {job_log} queued")
 
             # 通知QueueProcessor有新的队列更新
             if self.queue_processor:
@@ -1128,7 +1129,7 @@ class QueueProcessor:
             success = self.message_processor.send_message(message)
             job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
             if success:
-                logger.debug(f"[QueueProcessor] Sent busy/need_more for queued job {job_log}")
+                logger.trace(f"[QueueProcessor] Sent busy/need_more for queued job {job_log}")
             else:
                 logger.warning(f"[QueueProcessor] Failed to send busy status for job {job_log}")
 
@@ -1151,7 +1152,7 @@ class QueueProcessor:
             job_info.action_name,
         )
 
-        logger.info(f"[QueueProcessor] Job {job_log} completed with status: {status}")
+        logger.trace(f"[QueueProcessor] Job {job_log} completed with status: {status}")
 
         # 结束任务，获取下一个可执行的任务
         next_job = self.device_manager.end_job(job_id)
@@ -1171,8 +1172,8 @@ class QueueProcessor:
                 },
             }
             self.message_processor.send_message(message)
-            next_job_log = format_job_log(next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name)
-            logger.info(f"[QueueProcessor] Notified next job {next_job_log} can start")
+            # next_job_log = format_job_log(next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name)
+            # logger.debug(f"[QueueProcessor] Notified next job {next_job_log} can start")
 
             # 立即触发下一轮状态检查
             self.notify_queue_update()
@@ -1314,7 +1315,7 @@ class WebSocketClient(BaseCommunicationClient):
                 except (KeyError, AttributeError):
                     logger.warning(f"[WebSocketClient] Failed to remove job {item.job_id} from HostNode status")
 
-            logger.info(f"[WebSocketClient] Intercepting final status for job_id: {item.job_id} - {status}")
+            # logger.debug(f"[WebSocketClient] Intercepting final status for job_id: {item.job_id} - {status}")
 
             # 通知队列处理器job完成（包括timeout的job）
             self.queue_processor.handle_job_completed(item.job_id, status)

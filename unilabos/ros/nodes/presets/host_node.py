@@ -65,6 +65,7 @@ class TestResourceReturn(TypedDict):
 
 class TestLatencyReturn(TypedDict):
     """test_latency方法的返回值类型"""
+
     avg_rtt_ms: float
     avg_time_diff_ms: float
     max_time_error_ms: float
@@ -898,7 +899,7 @@ class HostNode(BaseROS2DeviceNode):
             # 清理 _goals 中的记录
             if job_id in self._goals:
                 del self._goals[job_id]
-                self.lab_logger().debug(f"[Host Node] Removed goal {job_id[:8]} from _goals")
+                self.lab_logger().trace(f"[Host Node] Removed goal {job_id[:8]} from _goals")
 
             # 存储结果供 HTTP API 查询
             try:

@@ -58,14 +58,14 @@ class JobResultStore:
                 feedback=feedback or {},
                 timestamp=time.time(),
             )
-            logger.debug(f"[JobResultStore] Stored result for job {job_id[:8]}, status={status}")
+            logger.trace(f"[JobResultStore] Stored result for job {job_id[:8]}, status={status}")
 
     def get_and_remove(self, job_id: str) -> Optional[JobResult]:
         """获取并删除任务结果"""
         with self._results_lock:
             result = self._results.pop(job_id, None)
             if result:
-                logger.debug(f"[JobResultStore] Retrieved and removed result for job {job_id[:8]}")
+                logger.trace(f"[JobResultStore] Retrieved and removed result for job {job_id[:8]}")
             return result
 
     def get_result(self, job_id: str) -> Optional[JobResult]:

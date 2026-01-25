@@ -770,13 +770,16 @@ def ros_message_to_json_schema(msg_class: Any, field_name: str) -> Dict[str, Any
     return schema
 
 
-def ros_action_to_json_schema(action_class: Any, description="") -> Dict[str, Any]:
+def ros_action_to_json_schema(
+    action_class: Any, description="", previous_schema: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     将 ROS Action 类转换为 JSON Schema
 
     Args:
         action_class: ROS Action 类
         description: 描述
+        previous_schema: 之前的 schema，用于保留 goal/feedback/result 下一级字段的 description
 
     Returns:
         完整的 JSON Schema 定义
@@ -810,7 +813,42 @@ def ros_action_to_json_schema(action_class: Any, description="") -> Dict[str, An
         "required": ["goal"],
     }
 
+    # 保留之前 schema 中 goal/feedback/result 下一级字段的 description
+    if previous_schema:
+        _preserve_field_descriptions(schema, previous_schema)
+
     return schema
+
+
+def _preserve_field_descriptions(
+    new_schema: Dict[str, Any], previous_schema: Dict[str, Any]
+) -> None:
+    """
+    保留之前 schema 中 goal/feedback/result 下一级字段的 description 和 title
+
+    Args:
+        new_schema: 新生成的 schema（会被修改）
+        previous_schema: 之前的 schema
+    """
+    for section in ["goal", "feedback", "result"]:
+        new_section = new_schema.get("properties", {}).get(section, {})
+        prev_section = previous_schema.get("properties", {}).get(section, {})
+
+        if not new_section or not prev_section:
+            continue
+
+        new_props = new_section.get("properties", {})
+        prev_props = prev_section.get("properties", {})
+
+        for field_name, field_schema in new_props.items():
+            if field_name in prev_props:
+                prev_field = prev_props[field_name]
+                # 保留字段的 description
+                if "description" in prev_field and prev_field["description"]:
+                    field_schema["description"] = prev_field["description"]
+                # 保留字段的 title（用户自定义的中文名）
+                if "title" in prev_field and prev_field["title"]:
+                    field_schema["title"] = prev_field["title"]
 
 
 def convert_ros_action_to_jsonschema(

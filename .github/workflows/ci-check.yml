@@ -19,11 +19,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Miniconda
+      - name: Setup Miniforge
         uses: conda-incubator/setup-miniconda@v3
         with:
-          miniconda-version: 'latest'
-          channels: robostack-staging,conda-forge,uni-lab,defaults
+          miniforge-version: latest
+          use-mamba: true
+          channels: robostack-staging,conda-forge,uni-lab
           channel-priority: flexible
           activate-environment: check-env
           auto-activate-base: false
@@ -33,7 +34,9 @@ jobs:
       - name: Install ROS dependencies and unilabos-msgs
         run: |
           # Install all packages together for proper dependency resolution
-          conda install -n check-env \
+          # Use mamba for faster and more reliable solving
+          mamba install -n check-env \
+            python=3.11.11 \
             robostack-staging::ros-humble-ros-core \
             robostack-staging::ros-humble-action-msgs \
             robostack-staging::ros-humble-std-msgs \

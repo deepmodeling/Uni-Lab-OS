@@ -49,7 +49,6 @@ from unilabos.resources.resource_tracker import (
     ResourceTreeInstance,
     ResourceDictInstance,
 )
-from unilabos.ros.x.rclpyx import get_event_loop
 from unilabos.ros.utils.driver_creator import WorkstationNodeCreator, PyLabRobotCreator, DeviceClassCreator
 from rclpy.task import Task, Future
 from unilabos.utils.import_manager import default_manager
@@ -185,7 +184,7 @@ class PropertyPublisher:
                 f"创建发布者 {name} 失败，可能由于注册表有误，类型: {msg_type}，错误: {ex}\n{traceback.format_exc()}"
             )
         self.timer = node.create_timer(self.timer_period, self.publish_property)
-        self.__loop = get_event_loop()
+        self.__loop = ROS2DeviceNode.get_asyncio_loop()
         str_msg_type = str(msg_type)[8:-2]
         self.node.lab_logger().trace(f"发布属性: {name}, 类型: {str_msg_type}, 周期: {initial_period}秒, QoS: {qos}")
 
@@ -1757,6 +1756,15 @@ class ROS2DeviceNode:
     它不继承设备类，而是通过代理模式访问设备类的属性和方法。
     """
 
+    # 类变量，用于循环管理
+    _asyncio_loop = None
+    _asyncio_loop_running = False
+    _asyncio_loop_thread = None
+
+    @classmethod
+    def get_asyncio_loop(cls):
+        return cls._asyncio_loop
+
     @staticmethod
     async def safe_task_wrapper(trace_callback, func, **kwargs):
         try:
@@ -1833,6 +1841,11 @@ class ROS2DeviceNode:
             print_publish: 是否打印发布信息
             driver_is_ros:
         """
+        # 在初始化时检查循环状态
+        if ROS2DeviceNode._asyncio_loop_running and ROS2DeviceNode._asyncio_loop_thread is not None:
+            pass
+        elif ROS2DeviceNode._asyncio_loop_thread is None:
+            self._start_loop()
 
         # 保存设备类是否支持异步上下文
         self._has_async_context = hasattr(driver_class, "__aenter__") and hasattr(driver_class, "__aexit__")
@@ -1923,6 +1936,17 @@ class ROS2DeviceNode:
                 self.driver_instance.post_init(self._ros_node)  # type: ignore
             except Exception as e:
                 self._ros_node.lab_logger().error(f"设备后初始化失败: {e}")
+
+    def _start_loop(self):
+        def run_event_loop():
+            loop = asyncio.new_event_loop()
+            ROS2DeviceNode._asyncio_loop = loop
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+
+        ROS2DeviceNode._asyncio_loop_thread = threading.Thread(target=run_event_loop, daemon=True, name="ROS2DeviceNode")
+        ROS2DeviceNode._asyncio_loop_thread.start()
+        logger.info(f"循环线程已启动")
 
 
 class DeviceInfoType(TypedDict):

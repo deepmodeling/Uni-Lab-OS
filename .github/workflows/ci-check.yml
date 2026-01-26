@@ -36,21 +36,61 @@ jobs:
           # Install all packages together for proper dependency resolution
           # Use mamba for faster and more reliable solving
           mamba install -n check-env \
-            python=3.11.11 \
+            python=3.11.14 \
             robostack-staging::ros-humble-ros-core \
             robostack-staging::ros-humble-action-msgs \
             robostack-staging::ros-humble-std-msgs \
             robostack-staging::ros-humble-geometry-msgs \
             robostack-staging::ros-humble-control-msgs \
+            robostack-staging::ros-humble-nav2-msgs \
             uni-lab::ros-humble-unilabos-msgs \
+            robostack-staging::ros-humble-cv-bridge \
+            robostack-staging::ros-humble-vision-opencv \
+            robostack-staging::ros-humble-tf-transformations \
+            robostack-staging::ros-humble-moveit-msgs \
+            robostack-staging::ros-humble-tf2-ros \
+            robostack-staging::ros-humble-tf2-ros-py \
+            conda-forge::transforms3d \
             -c robostack-staging -c conda-forge -c uni-lab -y
 
-      - name: Install unilabos project
+      - name: Install pip dependencies and unilabos
         run: |
+          # Activate the environment
+          conda activate check-env
+          
+          # Core dependencies for devices
+          pip install uv
+          uv pip install networkx \
+            typing_extensions \
+            websockets \
+            msgcenterpy \
+            opentrons_shared_data \
+            pint \
+            fastapi \
+            jinja2 \
+            requests \
+            uvicorn \
+            git+https://github.com/Xuwznln/pylabrobot.git \
+            opencv-python \
+            pyautogui \
+            opcua \
+            pyserial \
+            pandas \
+            crcmod-plus \
+            pymodbus \
+            pywinauto_recorder \
+            matplotlib \
+
+
+          # PyLabRobot (custom fork)
+          pip install 
+          
+          # Install unilabos in editable mode
           pip install -e .
 
       - name: Run check mode (complete_registry)
         run: |
+          conda activate check-env
           python -m unilabos --check_mode --skip_env_check
 
       - name: Check for uncommitted changes

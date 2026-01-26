@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse
 from enum import Enum
 
-from jedi.inference.gradual.typing import TypedDict
+from typing_extensions import TypedDict
 
 from unilabos.app.model import JobAddReq
 from unilabos.ros.nodes.presets.host_node import HostNode
@@ -495,8 +495,12 @@ class MessageProcessor:
                         await self._process_message(message_type, message_data)
                     else:
                         if message_type.endswith("_material"):
-                            logger.trace(f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}")
-                            logger.debug(f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}")
+                            logger.trace(
+                                f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}"
+                            )
+                            logger.debug(
+                                f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}"
+                            )
                         else:
                             await self._process_message(message_type, message_data)
                 except json.JSONDecodeError:
@@ -848,9 +852,7 @@ class MessageProcessor:
                         device_action_groups[key_add] = []
                     device_action_groups[key_add].append(item["uuid"])
 
-                    logger.info(
-                        f"[资源同步] 跨站Transfer: {item['uuid'][:8]} from {device_old_id} to {device_id}"
-                    )
+                    logger.info(f"[资源同步] 跨站Transfer: {item['uuid'][:8]} from {device_old_id} to {device_id}")
                 else:
                     # 正常update
                     key = (device_id, "update")
@@ -864,7 +866,9 @@ class MessageProcessor:
                     device_action_groups[key] = []
                 device_action_groups[key].append(item["uuid"])
 
-        logger.trace(f"[资源同步] 动作 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}")
+        logger.trace(
+            f"[资源同步] 动作 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}"
+        )
 
         # 为每个(device_id, action)创建独立的更新线程
         for (device_id, actual_action), items in device_action_groups.items():
@@ -912,13 +916,13 @@ class MessageProcessor:
 
         # 发送确认消息
         if self.websocket_client:
-            await self.websocket_client.send_message({
-                "action": "restart_acknowledged",
-                "data": {"reason": reason, "delay": delay}
-            })
+            await self.websocket_client.send_message(
+                {"action": "restart_acknowledged", "data": {"reason": reason, "delay": delay}}
+            )
 
         # 设置全局重启标志
         import unilabos.app.main as main_module
+
         main_module._restart_requested = True
         main_module._restart_reason = reason
 
@@ -928,10 +932,12 @@ class MessageProcessor:
         # 在新线程中执行清理，避免阻塞当前事件循环
         def do_cleanup():
             import time
+
             time.sleep(0.5)  # 给当前消息处理完成的时间
             logger.info(f"[MessageProcessor] Starting cleanup for restart, reason: {reason}")
             try:
                 from unilabos.app.utils import cleanup_for_restart
+
                 if cleanup_for_restart():
                     logger.info("[MessageProcessor] Cleanup successful, main() will restart")
                 else:
@@ -1382,7 +1388,9 @@ class WebSocketClient(BaseCommunicationClient):
             if host_node:
                 # 获取设备信息
                 for device_id, namespace in host_node.devices_names.items():
-                    device_key = f"{namespace}/{device_id}" if namespace.startswith("/") else f"/{namespace}/{device_id}"
+                    device_key = (
+                        f"{namespace}/{device_id}" if namespace.startswith("/") else f"/{namespace}/{device_id}"
+                    )
                     is_online = device_key in host_node._online_devices
 
                     # 获取设备的动作信息
@@ -1396,14 +1404,16 @@ class WebSocketClient(BaseCommunicationClient):
                                 "action_type": str(type(client).__name__),
                             }
 
-                    devices.append({
-                        "device_id": device_id,
-                        "namespace": namespace,
-                        "device_key": device_key,
-                        "is_online": is_online,
-                        "machine_name": host_node.device_machine_names.get(device_id, machine_name),
-                        "actions": actions,
-                    })
+                    devices.append(
+                        {
+                            "device_id": device_id,
+                            "namespace": namespace,
+                            "device_key": device_key,
+                            "is_online": is_online,
+                            "machine_name": host_node.device_machine_names.get(device_id, machine_name),
+                            "actions": actions,
+                        }
+                    )
 
                 logger.info(f"[WebSocketClient] Collected {len(devices)} devices for host_ready")
         except Exception as e:

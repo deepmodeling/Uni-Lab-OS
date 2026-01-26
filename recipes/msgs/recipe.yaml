@@ -1,6 +1,6 @@
 package:
   name: ros-humble-unilabos-msgs
-  version: 0.10.15
+  version: 0.10.16
 source:
   path: ../../unilabos_msgs
   target_directory: src
@@ -25,7 +25,7 @@ requirements:
   build:
   - ${{ compiler('cxx') }}
   - ${{ compiler('c') }}
-  - python ==3.11.11
+  - python ==3.11.14
   - numpy
   - if: build_platform != target_platform
     then:
@@ -63,14 +63,14 @@ requirements:
   - robostack-staging::ros-humble-rosidl-default-generators
   - robostack-staging::ros-humble-std-msgs
   - robostack-staging::ros-humble-geometry-msgs
-  - robostack-staging::ros2-distro-mutex=0.6
+  - robostack-staging::ros2-distro-mutex=0.7
   run:
   - robostack-staging::ros-humble-action-msgs
   - robostack-staging::ros-humble-ros-workspace
   - robostack-staging::ros-humble-rosidl-default-runtime
   - robostack-staging::ros-humble-std-msgs
   - robostack-staging::ros-humble-geometry-msgs
-  - robostack-staging::ros2-distro-mutex=0.6
+  - robostack-staging::ros2-distro-mutex=0.7
   - if: osx and x86_64
     then:
     - __osx >=${{ MACOSX_DEPLOYMENT_TARGET|default('10.14') }}

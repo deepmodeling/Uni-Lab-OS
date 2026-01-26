@@ -23,20 +23,27 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           miniconda-version: 'latest'
-          channels: conda-forge,robostack-staging,uni-lab,defaults
-          channel-priority: strict
+          channels: robostack-staging,conda-forge,uni-lab,defaults
+          channel-priority: flexible
           activate-environment: check-env
           auto-activate-base: false
           auto-update-conda: false
           show-channel-urls: true
 
-      - name: Install minimal ROS dependencies
+      - name: Install ROS dependencies and unilabos-msgs
         run: |
-          conda install -n check-env robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs -c robostack-staging -c conda-forge -y
+          # Install all packages together for proper dependency resolution
+          conda install -n check-env \
+            robostack-staging::ros-humble-ros-core \
+            robostack-staging::ros-humble-action-msgs \
+            robostack-staging::ros-humble-std-msgs \
+            robostack-staging::ros-humble-geometry-msgs \
+            robostack-staging::ros-humble-control-msgs \
+            uni-lab::ros-humble-unilabos-msgs \
+            -c robostack-staging -c conda-forge -c uni-lab -y
 
-      - name: Install unilabos-msgs and project
+      - name: Install unilabos project
         run: |
-          conda install -n check-env ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge -y
           pip install -e .
 
       - name: Run check mode (complete_registry)

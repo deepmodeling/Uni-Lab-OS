@@ -32,11 +32,11 @@ jobs:
 
       - name: Install minimal ROS dependencies
         run: |
-          conda install robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs -c robostack-staging -c conda-forge
+          conda install -n check-env robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs -c robostack-staging -c conda-forge -y
 
       - name: Install unilabos-msgs and project
         run: |
-          conda install ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge
+          conda install -n check-env ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge -y
           pip install -e .
 
       - name: Run check mode (complete_registry)

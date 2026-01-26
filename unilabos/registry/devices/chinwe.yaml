@@ -317,6 +317,47 @@ separator.chinwe:
               - port
               type: object
         type: UniLabJsonCommand
+      separation_step:
+        goal:
+          max_cycles: 0
+          motor_id: 5
+          pulses: 700
+          speed: 60
+          timeout: 300
+        handles: {}
+        schema:
+          description: 分液步骤 - 液位传感器与电机联动 (有液→顺时针, 无液→逆时针)
+          properties:
+            goal:
+              properties:
+                max_cycles:
+                  default: 0
+                  description: 最大循环次数 (0=无限制)
+                  type: integer
+                motor_id:
+                  default: '5'
+                  description: 选择电机
+                  enum:
+                  - '4'
+                  - '5'
+                  title: '注: 4=搅拌, 5=旋钮'
+                  type: string
+                pulses:
+                  default: 700
+                  description: 每次旋转脉冲数 (约1/4圈)
+                  type: integer
+                speed:
+                  default: 60
+                  description: 电机转速 (RPM)
+                  type: integer
+                timeout:
+                  default: 300
+                  description: 超时时间 (秒)
+                  type: integer
+              required:
+              - motor_id
+              type: object
+        type: UniLabJsonCommand
       wait_sensor_level:
         goal:
           target_state: 有液

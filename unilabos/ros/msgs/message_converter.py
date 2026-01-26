@@ -361,7 +361,14 @@ def convert_to_ros_msg(ros_msg_type: Union[Type, Any], obj: Any) -> Any:
         if hasattr(ros_msg, key):
             attr = getattr(ros_msg, key)
             if isinstance(attr, (float, int, str, bool)):
-                setattr(ros_msg, key, type(attr)(value))
+                # 处理list类型的值，取第一个元素或抛出错误
+                if isinstance(value, list):
+                    if len(value) > 0:
+                        setattr(ros_msg, key, type(attr)(value[0]))
+                    else:
+                        setattr(ros_msg, key, type(attr)())  # 使用默认值
+                else:
+                    setattr(ros_msg, key, type(attr)(value))
             elif isinstance(attr, (list, tuple)) and isinstance(value, Iterable):
                 td = ros_msg.SLOT_TYPES[ind].value_type
                 if isinstance(td, NamespacedType):

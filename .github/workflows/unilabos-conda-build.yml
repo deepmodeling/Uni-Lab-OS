@@ -77,7 +77,7 @@ jobs:
         shell: bash -l {0}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # 如果是 workflow_run 触发，使用触发 CI Check 的 commit
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
@@ -131,13 +131,30 @@ jobs:
         if: steps.should_build.outputs.should_build == 'true'
         run: |
           echo "Building unilabos-env (conda environment dependencies)..."
-          rattler-build build -r .conda/env/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge
+          rattler-build build -r .conda/environment/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge
+
+      - name: Upload unilabos-env to Anaconda.org (if enabled)
+        if: steps.should_build.outputs.should_build == 'true' && github.event.inputs.upload_to_anaconda == 'true'
+        run: |
+          echo "Uploading unilabos-env to uni-lab organization..."
+          for package in $(find ./output -name "unilabos-env*.conda"); do
+            anaconda -t ${{ secrets.ANACONDA_API_TOKEN }} upload --user uni-lab --force "$package"
+          done
 
       - name: Build unilabos (with pip package)
         if: steps.should_build.outputs.should_build == 'true'
         run: |
           echo "Building unilabos package..."
+          # 如果已上传到 Anaconda，从 uni-lab channel 获取 unilabos-env；否则从本地 output 获取
           rattler-build build -r .conda/base/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge --channel ./output
+
+      - name: Upload unilabos to Anaconda.org (if enabled)
+        if: steps.should_build.outputs.should_build == 'true' && github.event.inputs.upload_to_anaconda == 'true'
+        run: |
+          echo "Uploading unilabos to uni-lab organization..."
+          for package in $(find ./output -name "unilabos-0*.conda" -o -name "unilabos-[0-9]*.conda"); do
+            anaconda -t ${{ secrets.ANACONDA_API_TOKEN }} upload --user uni-lab --force "$package"
+          done
 
       - name: Build unilabos-full - Only when explicitly requested
         if: |
@@ -146,6 +163,17 @@ jobs:
         run: |
           echo "Building unilabos-full package on ${{ matrix.platform }}..."
           rattler-build build -r .conda/full/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge --channel ./output
+
+      - name: Upload unilabos-full to Anaconda.org (if enabled)
+        if: |
+          steps.should_build.outputs.should_build == 'true' && 
+          github.event.inputs.build_full == 'true' &&
+          github.event.inputs.upload_to_anaconda == 'true'
+        run: |
+          echo "Uploading unilabos-full to uni-lab organization..."
+          for package in $(find ./output -name "unilabos-full*.conda"); do
+            anaconda -t ${{ secrets.ANACONDA_API_TOKEN }} upload --user uni-lab --force "$package"
+          done
 
       - name: List built packages
         if: steps.should_build.outputs.should_build == 'true'
@@ -167,17 +195,9 @@ jobs:
 
       - name: Upload conda package artifacts
         if: steps.should_build.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: conda-package-unilabos-${{ matrix.platform }}
           path: conda-packages-temp
           if-no-files-found: warn
           retention-days: 30
-
-      - name: Upload to Anaconda.org (uni-lab organization)
-        if: github.event.inputs.upload_to_anaconda == 'true'
-        run: |
-          for package in $(find ./output -name "*.conda"); do
-            echo "Uploading $package to uni-lab organization..."
-            anaconda -t ${{ secrets.ANACONDA_API_TOKEN }} upload --user uni-lab --force "$package"
-          done

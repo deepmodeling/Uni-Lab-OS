@@ -26,7 +26,7 @@ build:
     - cp $RECIPE_DIR/../../MANIFEST.in $SRC_DIR
     - cp $RECIPE_DIR/../../setup.cfg $SRC_DIR
     - cp $RECIPE_DIR/../../setup.py $SRC_DIR
-    - uv pip install $SRC_DIR
+    - pip install $SRC_DIR
 
 requirements:
   host:
@@ -52,6 +52,7 @@ requirements:
   - pandas
   - pymodbus
   - matplotlib
+  - pylibftdi
   - uni-lab::unilabos-env ==0.10.16
 
 about:

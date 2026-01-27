@@ -583,15 +583,27 @@ class BaseROS2DeviceNode(Node, Generic[T]):
     async def create_task(cls, func, trace_error=True, **kwargs) -> Task:
         return ROS2DeviceNode.run_async_func(func, trace_error, **kwargs)
 
-    async def update_resource(self, resources: List["ResourcePLR"]):
+    async def update_resource(
+        self,
+        resources: List["ResourcePLR"],
+        resource_tree_dump: Optional[List[List[Dict[str, Any]]]] = None,
+    ):
         r = SerialCommand.Request()
-        tree_set = ResourceTreeSet.from_plr_resources(resources)
-        for tree in tree_set.trees:
-            root_node = tree.root_node
-            if not root_node.res_content.uuid_parent:
-                logger.warning(f"更新无父节点物料{root_node}，自动以当前设备作为根节点")
-                root_node.res_content.parent_uuid = self.uuid
-        r.command = json.dumps({"data": {"data": tree_set.dump()}, "action": "update"})
+        if resource_tree_dump is None:
+            tree_set = ResourceTreeSet.from_plr_resources(resources)
+            for tree in tree_set.trees:
+                root_node = tree.root_node
+                if not root_node.res_content.uuid_parent:
+                    logger.warning(f"更新无父节点物料{root_node}，自动以当前设备作为根节点")
+                    root_node.res_content.parent_uuid = self.uuid
+            tree_dump = tree_set.dump()
+        else:
+            tree_dump = resource_tree_dump
+            for tree_nodes in tree_dump:
+                for node in tree_nodes:
+                    if not node.get("parent_uuid"):
+                        node["parent_uuid"] = self.uuid
+        r.command = json.dumps({"data": {"data": tree_dump}, "action": "update"})
         response: SerialCommand_Response = await self._resource_clients["c2s_update_resource_tree"].call_async(r)  # type: ignore
         try:
             uuid_maps = json.loads(response.response)

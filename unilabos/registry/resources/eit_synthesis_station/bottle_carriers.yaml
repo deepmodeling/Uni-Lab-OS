@@ -1,0 +1,169 @@
+2mL试剂瓶托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_REAGENT_BOTTLE_TRAY_2ML
+    type: pylabrobot
+  description: EIT_REAGENT_BOTTLE_TRAY_2ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+8mL试剂瓶托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_REAGENT_BOTTLE_TRAY_8ML
+    type: pylabrobot
+  description: EIT_REAGENT_BOTTLE_TRAY_8ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+40mL试剂瓶托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_REAGENT_BOTTLE_TRAY_40ML
+    type: pylabrobot
+  description: EIT_REAGENT_BOTTLE_TRAY_40ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+125mL试剂瓶托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_REAGENT_BOTTLE_TRAY_125ML
+    type: pylabrobot
+  description: EIT_REAGENT_BOTTLE_TRAY_125ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+30mL粉末桶托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_POWDER_BUCKET_TRAY_30ML
+    type: pylabrobot
+  description: EIT_POWDER_BUCKET_TRAY_30ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+1mLTip头托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_TIP_TRAY_1ML
+    type: pylabrobot
+  description: EIT_TIP_TRAY_1ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+5mLTip头托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_TIP_TRAY_5ML
+    type: pylabrobot
+  description: EIT_TIP_TRAY_5ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+50μLTip头托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_TIP_TRAY_50UL
+    type: pylabrobot
+  description: EIT_TIP_TRAY_50UL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+2mL反应试管托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_REACTION_TUBE_TRAY_2ML
+    type: pylabrobot
+  description: EIT_REACTION_TUBE_TRAY_2ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+2mL试管磁子托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_TEST_TUBE_MAGNET_TRAY_2ML
+    type: pylabrobot
+  description: EIT_TEST_TUBE_MAGNET_TRAY_2ML
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+反应密封盖托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_REACTION_SEAL_CAP_TRAY
+    type: pylabrobot
+  description: EIT_REACTION_SEAL_CAP_TRAY
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+闪滤瓶内瓶托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_FLASH_FILTER_INNER_BOTTLE_TRAY
+    type: pylabrobot
+  description: EIT_FLASH_FILTER_INNER_BOTTLE_TRAY
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+闪滤瓶外瓶托盘:
+  category:
+  - bottle_carriers
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.bottle_carriers:EIT_FLASH_FILTER_OUTER_BOTTLE_TRAY
+    type: pylabrobot
+  description: EIT_FLASH_FILTER_OUTER_BOTTLE_TRAY
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

@@ -1,0 +1,425 @@
+eit_synthesis_station:
+  category:
+  - eit_synthesis_station
+  class:
+    action_value_mappings:
+      align_chemicals_with_file:
+        feedback: {}
+        goal: {}
+        goal_default:
+          auto_delete: true
+          file_path: unilabos/devices/eit_synthesis_station/sheet/chemical_list.xlsx
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                auto_delete:
+                  default: true
+                  type: boolean
+                file_path:
+                  type: string
+              required:
+              - file_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: align_chemicals_with_file参数
+          type: object
+        type: UniLabJsonCommand
+      batch_in_tray_by_file:
+        feedback: {}
+        goal: {}
+        goal_default:
+          file_path: unilabos/devices/eit_synthesis_station/sheet/batch_in_tray.xlsx
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                file_path:
+                  type: string
+              required:
+              - file_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: batch_in_tray_by_file参数
+          type: object
+        type: UniLabJsonCommand
+      batch_out_empty_trays:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ignore_missing: true
+          move_type: main_out
+          poll_interval_s: 1.0
+          timeout_s: 900.0
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ignore_missing:
+                  default: true
+                  type: boolean
+                move_type:
+                  default: main_out
+                  type: string
+                poll_interval_s:
+                  default: 1.0
+                  type: number
+                timeout_s:
+                  default: 900.0
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: batch_out_empty_trays参数
+          type: object
+        type: UniLabJsonCommand
+      batch_out_task_and_empty_trays:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ignore_missing: true
+          move_type: main_out
+          poll_interval_s: 1.0
+          task_id: null
+          timeout_s: 900.0
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ignore_missing:
+                  default: true
+                  type: boolean
+                move_type:
+                  default: main_out
+                  type: string
+                poll_interval_s:
+                  default: 1.0
+                  type: number
+                task_id:
+                  type: string
+                timeout_s:
+                  default: 900.0
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: batch_out_task_and_empty_trays参数
+          type: object
+        type: UniLabJsonCommand
+      batch_out_task_trays:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ignore_missing: true
+          move_type: main_out
+          poll_interval_s: 1.0
+          task_id: null
+          timeout_s: 900.0
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ignore_missing:
+                  default: true
+                  type: boolean
+                move_type:
+                  default: main_out
+                  type: string
+                poll_interval_s:
+                  default: 1.0
+                  type: number
+                task_id:
+                  type: string
+                timeout_s:
+                  default: 900.0
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: batch_out_task_trays参数
+          type: object
+        type: UniLabJsonCommand
+      batch_out_tray:
+        feedback: {}
+        goal: {}
+        goal_default:
+          layout_list: null
+          move_type: main_out
+          poll_interval_s: 1.0
+          task_id: null
+          timeout_s: 900.0
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                layout_list:
+                  items:
+                    type: object
+                  type: array
+                move_type:
+                  default: main_out
+                  type: string
+                poll_interval_s:
+                  default: 1.0
+                  type: number
+                task_id:
+                  type: integer
+                timeout_s:
+                  default: 900.0
+                  type: number
+              required:
+              - layout_list
+              type: object
+            result: {}
+          required:
+          - goal
+          title: batch_out_tray参数
+          type: object
+        type: UniLabJsonCommand
+      check_resource_for_task:
+        feedback: {}
+        goal: {}
+        goal_default:
+          chemical_db_path: unilabos/devices/eit_synthesis_station/sheet/chemical_list.xlsx
+          template_path: unilabos/devices/eit_synthesis_station/sheet/reaction_template.xlsx
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                chemical_db_path:
+                  type: string
+                template_path:
+                  type: string
+              required:
+              - template_path
+              - chemical_db_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: check_resource_for_task参数
+          type: object
+        type: UniLabJsonCommand
+      create_task_by_file:
+        feedback: {}
+        goal: {}
+        goal_default:
+          chemical_db_path: unilabos/devices/eit_synthesis_station/sheet/chemical_list.xlsx
+          template_path: unilabos/devices/eit_synthesis_station/sheet/reaction_template.xlsx
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                chemical_db_path:
+                  type: string
+                template_path:
+                  type: string
+              required:
+              - template_path
+              - chemical_db_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: create_task_by_file参数
+          type: object
+        type: UniLabJsonCommand
+      device_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          device_id: null
+          poll_interval_s: 1.0
+          timeout_s: 600.0
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                device_id:
+                  type: string
+                poll_interval_s:
+                  default: 1.0
+                  type: number
+                timeout_s:
+                  default: 600.0
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: device_init参数
+          type: object
+        type: UniLabJsonCommand
+      start_task:
+        feedback: {}
+        goal: {}
+        goal_default:
+          check_glovebox_env: true
+          oxygen_limit_ppm: 10.0
+          task_id: null
+          water_limit_ppm: 10.0
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                check_glovebox_env:
+                  default: true
+                  type: boolean
+                oxygen_limit_ppm:
+                  default: 10.0
+                  type: number
+                task_id:
+                  type: string
+                water_limit_ppm:
+                  default: 10.0
+                  type: number
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start_task参数
+          type: object
+        type: UniLabJsonCommand
+      submit_experiment_task:
+        feedback: {}
+        goal: {}
+        goal_default:
+          auto_magnet: true
+          chemical_db_path: null
+          diluent_name: ''
+          duration: '8'
+          fixed_order: false
+          internal_std_name: ''
+          reaction_type: heat
+          rows: null
+          stir_speed: '500'
+          stir_time_after_std: ''
+          target_temp: '30'
+          task_name: Unilab_Auto_Job
+          temperature: '40'
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                auto_magnet:
+                  default: true
+                  type: boolean
+                chemical_db_path:
+                  type: string
+                diluent_name:
+                  default: ''
+                  type: string
+                duration:
+                  default: '8'
+                  type: string
+                fixed_order:
+                  default: false
+                  type: boolean
+                internal_std_name:
+                  default: ''
+                  type: string
+                reaction_type:
+                  default: heat
+                  type: string
+                rows:
+                  type: array
+                stir_speed:
+                  default: '500'
+                  type: string
+                stir_time_after_std:
+                  default: ''
+                  type: string
+                target_temp:
+                  default: '30'
+                  type: string
+                task_name:
+                  default: Unilab_Auto_Job
+                  type: string
+                temperature:
+                  default: '40'
+                  type: string
+              required:
+              - chemical_db_path
+              type: object
+            result: {}
+          required:
+          - goal
+          title: submit_experiment_task参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.eit_synthesis_station.manager.station_manager:SynthesisStationManager
+    status_types: {}
+    type: python
+  config_info: []
+  description: ''
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        settings:
+          type: string
+      required: []
+      type: object
+    data:
+      properties: {}
+      required: []
+      type: object
+  registry_type: device
+  version: 1.0.0

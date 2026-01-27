@@ -1,7 +1,7 @@
 from typing import Dict, Optional, List, Union
 from pylabrobot.resources import Coordinate
 from pylabrobot.resources.carrier import ResourceHolder, create_homogeneous_resources
-
+import uuid
 from unilabos.resources.itemized_carrier import ItemizedCarrier, ResourcePLR
 
 
@@ -13,14 +13,14 @@ def warehouse_factory(
     num_items_x: int = 1,
     num_items_y: int = 4,
     num_items_z: int = 4,
-    dx: float = 137.0,
-    dy: float = 96.0,
+    dx: float = 350.0,
+    dy: float = 160.0,
     dz: float = 120.0,
     item_dx: float = 10.0,
     item_dy: float = 10.0,
     item_dz: float = 10.0,
-    resource_size_x: float = 127.0,
-    resource_size_y: float = 86.0,
+    resource_size_x: float = 340.0,
+    resource_size_y: float = 150.0,
     resource_size_z: float = 25.0,
     removed_positions: Optional[List[int]] = None,
     empty: bool = False,
@@ -29,6 +29,7 @@ def warehouse_factory(
     col_offset: int = 0,  # 列起始偏移量，用于生成A05-D08等命名
     row_offset: int = 0,  # 行起始偏移量，用于生成F01-J03等命名
     layout: str = "col-major",  # 新增：排序方式，"col-major"=列优先，"row-major"=行优先
+    name_by_layout_code: bool = False,
 ):
     # 创建位置坐标
     locations = []
@@ -63,6 +64,12 @@ def warehouse_factory(
         resource_size_z=resource_size_z,
         name_prefix=name,
     )
+
+    for site in _sites.values():
+        if not hasattr(site, "unilabos_uuid") or not site.unilabos_uuid:
+            # 建议使用基于名字的确定性 UUID (uuid5)，或者直接用 uuid4
+            site.unilabos_uuid = str(uuid.uuid4())
+
     len_x, len_y = (num_items_x, num_items_y) if num_items_z == 1 else (num_items_y, num_items_z) if num_items_x == 1 else (num_items_x, num_items_z)
 
     # 根据 layout 参数生成不同的排序方式
@@ -74,6 +81,29 @@ def warehouse_factory(
     else:
         # 列优先顺序: A01,B01,C01,D01, A02,B02,C02,D02
         keys = [f"{LETTERS[j + row_offset]}{i + 1 + col_offset:02d}" for i in range(len_x) for j in range(len_y)]
+
+    if name_by_layout_code:
+        def _layout_code_from_key(key: str) -> str:
+            if "-" in key:
+                return key
+            row_letter = key[:1]
+            col_str = key[1:]
+            try:
+                row = LETTERS.index(row_letter) + 1
+            except ValueError:
+                row = 1
+            try:
+                col = int(col_str)
+            except ValueError:
+                col = 1
+            if num_items_y == 1:
+                return f"{name}-{col}"
+            return f"{name}-{row}-{col}"
+
+        layout_keys = [_layout_code_from_key(key) for key in keys]
+        for key, site in zip(layout_keys, _sites.values()):
+            site.name = key
+        keys = layout_keys
 
     sites = {i: site for i, site in zip(keys, _sites.values())}
 
@@ -91,6 +121,7 @@ def warehouse_factory(
         sites=sites,
         category=category,
         model=model,
+        name_by_layout_code=name_by_layout_code,
     )
 
 
@@ -110,6 +141,7 @@ class WareHouse(ItemizedCarrier):
         category: str = "warehouse",
         model: Optional[str] = None,
         ordering_layout: str = "col-major",
+        name_by_layout_code: bool = False,
         **kwargs
     ):
         super().__init__(
@@ -131,20 +163,46 @@ class WareHouse(ItemizedCarrier):
         # 保存排序方式，供graphio.py的坐标映射使用
         # 使用独立属性避免与父类的layout冲突
         self.ordering_layout = ordering_layout
+        self.name_by_layout_code = name_by_layout_code
+
+    def _layout_code_from_key(self, key: str) -> str:
+        if "-" in key:
+            return key
+        row_letter = key[:1]
+        col_str = key[1:]
+        try:
+            row = LETTERS.index(row_letter) + 1
+        except ValueError:
+            row = 1
+        try:
+            col = int(col_str)
+        except ValueError:
+            col = 1
+        if self.num_items_y == 1:
+            return f"{self.name}-{col}"
+        return f"{self.name}-{row}-{col}"
 
     def serialize(self) -> dict:
         """序列化时保存 ordering_layout 属性"""
         data = super().serialize()
         data['ordering_layout'] = self.ordering_layout
+        if self.name_by_layout_code:
+            for site in data.get("sites", []):
+                site["label"] = self._layout_code_from_key(site.get("label", ""))
         return data
 
     def get_site_by_layer_position(self, row: int, col: int, layer: int) -> ResourceHolder:
-        if not (0 <= layer < 4 and 0 <= row < 4 and 0 <= col < 1):
-            raise ValueError("无效的位置: layer={}, row={}, col={}".format(layer, row, col))
+        if not (0 <= layer < self.num_items_z and 0 <= row < self.num_items_y and 0 <= col < self.num_items_x):
+            raise ValueError(f"无效的位置: layer={layer}, row={row}, col={col}")
+        
+        row_str = LETTERS[row]
+        col_str = f"{col + 1:02d}"
+        target_key = f"{row_str}{col_str}"
+        if self.name_by_layout_code:
+            target_key = self._layout_code_from_key(target_key)
 
-        site_index = layer * 4 + row * 1 + col
-        return self.sites[site_index]
-
+        return self.get_item(target_key)
+    
     def add_rack_to_position(self, row: int, col: int, layer: int, rack) -> None:
         site = self.get_site_by_layer_position(row, col, layer)
         site.assign_child_resource(rack)

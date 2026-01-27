@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # workflow_run 时使用触发工作流的分支，手动触发时使用输入的分支
           ref: ${{ github.event.workflow_run.head_branch || github.event.inputs.branch || github.ref }}

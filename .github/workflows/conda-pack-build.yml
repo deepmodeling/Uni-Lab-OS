@@ -62,7 +62,7 @@ jobs:
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.should_build.outputs.should_build == 'true'
         with:
           ref: ${{ github.event.inputs.branch }}

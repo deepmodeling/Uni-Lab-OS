@@ -52,6 +52,7 @@ requirements:
   - pandas
   - pymodbus
   - matplotlib
+  - pylibftdi
   - uni-lab::unilabos-env ==0.10.16
 
 about:

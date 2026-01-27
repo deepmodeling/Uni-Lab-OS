@@ -15,3 +15,4 @@ pandas
 crcmod-plus
 pymodbus
 matplotlib
+pylibftdi

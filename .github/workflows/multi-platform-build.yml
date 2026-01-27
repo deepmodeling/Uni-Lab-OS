@@ -1,11 +1,16 @@
 name: Multi-Platform Conda Build
 
 on:
+  # 在 CI Check 工作流完成后触发（仅限 main/dev 分支）
+  workflow_run:
+    workflows: ["CI Check"]
+    types:
+      - completed
+    branches: [main, dev]
+  # 支持 tag 推送（不依赖 CI Check）
   push:
-    branches: [main, dev]
     tags: ['v*']
-  pull_request:
-    branches: [main, dev]
+  # 手动触发
   workflow_dispatch:
     inputs:
       platforms:
@@ -20,6 +25,10 @@ on:
 
 jobs:
   build:
+    # 只有当不是 workflow_run 触发，或者 CI Check 成功时才执行
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +55,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # 如果是 workflow_run 触发，使用触发 CI Check 的 commit
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
       - name: Check if platform should be built

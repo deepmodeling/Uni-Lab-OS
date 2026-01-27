@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+import shutil
 import signal
 import sys
 import threading
@@ -215,7 +216,8 @@ def main():
     args_dict = vars(args)
 
     # 环境检查 - 检查并自动安装必需的包 (可选)
-    if not args_dict.get("skip_env_check", False):
+    skip_env_check = args_dict.get("skip_env_check", False)
+    if not skip_env_check:
         from unilabos.utils.environment_check import check_environment
 
         if not check_environment(auto_install=True):
@@ -226,7 +228,19 @@ def main():
 
     # 加载配置文件，优先加载config，然后从env读取
     config_path = args_dict.get("config")
-    if os.getcwd().endswith("unilabos_data"):
+
+    # 当 skip_env_check 时，默认使用当前目录作为 working_dir
+    if skip_env_check and not args_dict.get("working_dir") and not config_path:
+        working_dir = os.path.abspath(os.getcwd())
+        print_status(f"跳过环境检查模式：使用当前目录作为工作目录 {working_dir}", "info")
+        # 检查当前目录是否有 local_config.py
+        local_config_in_cwd = os.path.join(working_dir, "local_config.py")
+        if os.path.exists(local_config_in_cwd):
+            config_path = local_config_in_cwd
+            print_status(f"发现本地配置文件: {config_path}", "info")
+        else:
+            print_status(f"未指定config路径，可通过 --config 传入 local_config.py 文件路径", "info")
+    elif os.getcwd().endswith("unilabos_data"):
         working_dir = os.path.abspath(os.getcwd())
     else:
         working_dir = os.path.abspath(os.path.join(os.getcwd(), "unilabos_data"))
@@ -245,7 +259,7 @@ def main():
         working_dir = os.path.dirname(config_path)
     elif os.path.exists(working_dir) and os.path.exists(os.path.join(working_dir, "local_config.py")):
         config_path = os.path.join(working_dir, "local_config.py")
-    elif not config_path and (
+    elif not skip_env_check and not config_path and (
         not os.path.exists(working_dir) or not os.path.exists(os.path.join(working_dir, "local_config.py"))
     ):
         print_status(f"未指定config路径，可通过 --config 传入 local_config.py 文件路径", "info")

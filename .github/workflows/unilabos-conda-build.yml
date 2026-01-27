@@ -131,7 +131,7 @@ jobs:
         if: steps.should_build.outputs.should_build == 'true'
         run: |
           echo "Building unilabos-env (conda environment dependencies)..."
-          rattler-build build -r .conda/env/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge
+          rattler-build build -r .conda/environment/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge
 
       - name: Build unilabos (with pip package)
         if: steps.should_build.outputs.should_build == 'true'

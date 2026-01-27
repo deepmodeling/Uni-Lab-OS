@@ -1,0 +1,39 @@
+# unilabos-env: conda environment dependencies (ROS2 + conda packages)
+
+package:
+  name: unilabos-env
+  version: 0.10.16
+
+build:
+  noarch: generic
+
+requirements:
+  run:
+  # Python
+  - zstd
+  - zstandard
+  - conda-forge::python ==3.11.14
+  - conda-forge::opencv
+  # ROS2 dependencies (from ci-check.yml)
+  - robostack-staging::ros-humble-ros-core
+  - robostack-staging::ros-humble-action-msgs
+  - robostack-staging::ros-humble-std-msgs
+  - robostack-staging::ros-humble-geometry-msgs
+  - robostack-staging::ros-humble-control-msgs
+  - robostack-staging::ros-humble-nav2-msgs
+  - robostack-staging::ros-humble-cv-bridge
+  - robostack-staging::ros-humble-vision-opencv
+  - robostack-staging::ros-humble-tf-transformations
+  - robostack-staging::ros-humble-moveit-msgs
+  - robostack-staging::ros-humble-tf2-ros
+  - robostack-staging::ros-humble-tf2-ros-py
+  - conda-forge::transforms3d
+  - conda-forge::uv
+
+  # UniLabOS custom messages
+  - uni-lab::ros-humble-unilabos-msgs
+
+about:
+  repository: https://github.com/deepmodeling/Uni-Lab-OS
+  license: GPL-3.0-only
+  description: "UniLabOS Environment - ROS2 and conda dependencies (for developers: pip install -e .)"

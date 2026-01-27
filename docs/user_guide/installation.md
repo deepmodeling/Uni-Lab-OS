@@ -13,15 +13,26 @@
   - 开发者需要 Git 和基本的 Python 开发知识
   - 自定义 msgs 需要 GitHub 账号
 
+## 安装包选择
+
+Uni-Lab-OS 提供三个安装包版本，根据您的需求选择：
+
+| 安装包 | 适用场景 | 包含组件 | 磁盘占用 |
+|--------|----------|----------|----------|
+| **unilabos** | **推荐大多数用户**，生产部署 | 完整安装包，开箱即用 | ~2-3 GB |
+| **unilabos-env** | 开发者环境（可编辑安装） | 仅环境依赖，通过 pip 安装 unilabos | ~2 GB |
+| **unilabos-full** | 仿真可视化、完整功能体验 | unilabos + 完整 ROS2 桌面版 + Gazebo + MoveIt | ~8-10 GB |
+
 ## 安装方式选择
 
 根据您的使用场景，选择合适的安装方式：
 
-| 安装方式               | 适用人群             | 特点                           | 安装时间                     |
-| ---------------------- | -------------------- | ------------------------------ | ---------------------------- |
-| **方式一：一键安装**   | 实验室用户、快速体验 | 预打包环境，离线可用，无需配置 | 5-10 分钟 (网络良好的情况下) |
-| **方式二：手动安装**   | 标准用户、生产环境   | 灵活配置，版本可控             | 10-20 分钟                   |
-| **方式三：开发者安装** | 开发者、需要修改源码 | 可编辑模式，支持自定义 msgs    | 20-30 分钟                   |
+| 安装方式               | 适用人群             | 推荐安装包        | 特点                           | 安装时间                     |
+| ---------------------- | -------------------- | ----------------- | ------------------------------ | ---------------------------- |
+| **方式一：一键安装**   | 快速体验、演示       | 预打包环境        | 离线可用，无需配置             | 5-10 分钟 (网络良好的情况下) |
+| **方式二：手动安装**   | **大多数用户**       | `unilabos`        | 完整功能，开箱即用             | 10-20 分钟                   |
+| **方式三：开发者安装** | 开发者、需要修改源码 | `unilabos-env`    | 可编辑模式，支持自定义开发     | 20-30 分钟                   |
+| **仿真/可视化**        | 仿真测试、可视化调试 | `unilabos-full`   | 含 Gazebo、rviz2、MoveIt       | 30-60 分钟                   |
 
 ---
 
@@ -144,16 +155,37 @@ bash Miniforge3-$(uname)-$(uname -m).sh
 使用以下命令创建 Uni-Lab 专用环境：
 
 ```bash
-mamba create -n unilab python=3.11.11  # 目前ros2组件依赖版本大多为3.11.11
+mamba create -n unilab python=3.11.14  # 目前ros2组件依赖版本大多为3.11.14
 mamba activate unilab
-mamba install -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
+
+# 选择安装包（三选一）：
+
+# 方案 A：标准安装（推荐大多数用户）
+mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
+
+# 方案 B：开发者环境（可编辑模式开发）
+mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+# 然后安装 unilabos 和 pip 依赖：
+git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
+pip install -e .
+uv pip install -r unilabos/utils/requirements.txt
+
+# 方案 C：完整版（含仿真和可视化工具）
+mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
 ```
 
 **参数说明**:
 
 - `-n unilab`: 创建名为 "unilab" 的环境
-- `uni-lab::unilabos`: 从 uni-lab channel 安装 unilabos 包
+- `uni-lab::unilabos`: 安装 unilabos 完整包，开箱即用（推荐）
+- `uni-lab::unilabos-env`: 仅安装环境依赖，适合开发者使用 `pip install -e .`
+- `uni-lab::unilabos-full`: 安装完整包（含 ROS2 Desktop、Gazebo、MoveIt 等）
 - `-c robostack-staging -c conda-forge`: 添加额外的软件源
+
+**包选择建议**：
+- **日常使用/生产部署**：安装 `unilabos`（推荐，完整功能，开箱即用）
+- **开发者**：安装 `unilabos-env`，然后使用 `uv pip install -r unilabos/utils/requirements.txt` 安装依赖，再 `pip install -e .` 进行可编辑安装
+- **仿真/可视化**：安装 `unilabos-full`（Gazebo、rviz2、MoveIt）
 
 **如果遇到网络问题**，可以使用清华镜像源加速下载：
 
@@ -163,8 +195,14 @@ mamba config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/m
 mamba config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
 mamba config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
 
-# 然后重新执行安装命令
+# 然后重新执行安装命令（推荐标准安装）
 mamba create -n unilab uni-lab::unilabos -c robostack-staging
+
+# 或完整版（仿真/可视化）
+mamba create -n unilab uni-lab::unilabos-full -c robostack-staging
+
+# pip 安装时使用清华镜像（开发者安装时使用）
+uv pip install -r unilabos/utils/requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 ```
 
 ### 第三步：激活环境
@@ -203,58 +241,87 @@ cd Uni-Lab-OS
    cd Uni-Lab-OS
    ```
 
-### 第二步：安装基础环境
+### 第二步：安装开发环境（unilabos-env）
 
-**推荐方式**：先通过**方式一（一键安装）**或**方式二（手动安装）**完成基础环境的安装，这将包含所有必需的依赖项（ROS2、msgs 等）。
-
-#### 选项 A：通过一键安装（推荐）
-
-参考上文"方式一：一键安装"，完成基础环境的安装后，激活环境：
-
-```bash
-conda activate unilab
-```
-
-#### 选项 B：通过手动安装
-
-参考上文"方式二：手动安装"，创建并安装环境：
+**重要**：开发者请使用 `unilabos-env` 包，它专为开发者设计：
+- 包含 ROS2 核心组件和消息包（ros-humble-ros-core、std-msgs、geometry-msgs 等）
+- 包含 transforms3d、cv-bridge、tf2 等 conda 依赖
+- 包含 `uv` 工具，用于快速安装 pip 依赖
+- **不包含** pip 依赖和 unilabos 包（由 `pip install -e .` 和 `uv pip install` 安装）
 
 ```bash
-mamba create -n unilab python=3.11.11
+# 创建并激活环境
+mamba create -n unilab python=3.11.14
 conda activate unilab
-mamba install -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
+
+# 安装开发者环境包（ROS2 + conda 依赖 + uv）
+mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
 ```
 
-**说明**：这会安装包括 Python 3.11.11、ROS2 Humble、ros-humble-unilabos-msgs 和所有必需依赖
+### 第三步：安装 pip 依赖和可编辑模式安装
 
-### 第三步：切换到开发版本
-
-现在你已经有了一个完整可用的 Uni-Lab 环境，接下来将 unilabos 包切换为开发版本：
+克隆代码并安装依赖：
 
 ```bash
 # 确保环境已激活
 conda activate unilab
 
-# 卸载 pip 安装的 unilabos（保留所有 conda 依赖）
-pip uninstall unilabos -y
-
-# 克隆 dev 分支（如果还未克隆）
-cd /path/to/your/workspace
-git clone -b dev https://github.com/deepmodeling/Uni-Lab-OS.git
-# 或者如果已经克隆，切换到 dev 分支
+# 克隆仓库（如果还未克隆）
+git clone https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
+
+# 切换到 dev 分支（可选）
 git checkout dev
 git pull
-
-# 以可编辑模式安装开发版 unilabos
-pip install -e . -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 ```
 
-**参数说明**：
+**推荐：使用安装脚本**（自动检测中文环境，使用 uv 加速）：
 
-- `-e`: editable mode（可编辑模式），代码修改立即生效，无需重新安装
-- `-i`: 使用清华镜像源加速下载
-- `pip uninstall unilabos`: 只卸载 pip 安装的 unilabos 包，不影响 conda 安装的其他依赖（如 ROS2、msgs 等）
+```bash
+# 自动检测中文环境，如果是中文系统则使用清华镜像
+python scripts/dev_install.py
+
+# 或者手动指定：
+python scripts/dev_install.py --china     # 强制使用清华镜像
+python scripts/dev_install.py --no-mirror # 强制使用 PyPI
+python scripts/dev_install.py --skip-deps # 跳过 pip 依赖安装
+python scripts/dev_install.py --use-pip   # 使用 pip 而非 uv
+```
+
+**手动安装**（如果脚本安装失败或速度太慢）：
+
+```bash
+# 1. 安装 unilabos（可编辑模式）
+pip install -e .
+
+# 2. 使用 uv 安装 pip 依赖（推荐，速度更快）
+uv pip install -r unilabos/utils/requirements.txt
+
+# 国内用户使用清华镜像：
+pip install -e . -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+uv pip install -r unilabos/utils/requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+```
+
+**注意**：
+- `uv` 已包含在 `unilabos-env` 中，无需单独安装
+- `unilabos/utils/requirements.txt` 包含运行 unilabos 所需的所有 pip 依赖
+- 部分特殊包（如 pylabrobot）会在运行时由 unilabos 自动检测并安装
+
+**为什么使用可编辑模式？**
+
+- `-e` (editable mode)：代码修改**立即生效**，无需重新安装
+- 适合开发调试：修改代码后直接运行测试
+- 与 `unilabos-env` 配合：环境依赖由 conda 管理，unilabos 代码由 pip 管理
+
+**验证安装**：
+
+```bash
+# 检查 unilabos 版本
+python -c "import unilabos; print(unilabos.__version__)"
+
+# 检查安装位置（应该指向你的代码目录）
+pip show unilabos | grep Location
+```
 
 ### 第四步：安装或自定义 ros-humble-unilabos-msgs（可选）
 
@@ -464,7 +531,45 @@ cd $CONDA_PREFIX/envs/unilab
 
 ### 问题 8: 环境很大，有办法减小吗？
 
-**解决方案**: 预打包的环境包含所有依赖，通常较大（压缩后 2-5GB）。这是为了确保离线安装和完整功能。如果空间有限，考虑使用方式二手动安装，只安装需要的组件。
+**解决方案**: 
+
+1. **使用 `unilabos` 标准版**（推荐大多数用户）：
+   ```bash
+   mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
+   ```
+   标准版包含完整功能，环境大小约 2-3GB（相比完整版的 8-10GB）。
+
+2. **使用 `unilabos-env` 开发者版**（最小化）：
+   ```bash
+   mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+   # 然后手动安装依赖
+   pip install -e .
+   uv pip install -r unilabos/utils/requirements.txt
+   ```
+   开发者版只包含环境依赖，体积最小约 2GB。
+
+3. **按需安装额外组件**：
+   如果后续需要特定功能，可以单独安装：
+   ```bash
+   # 需要 Jupyter
+   mamba install jupyter jupyros
+   
+   # 需要可视化
+   mamba install matplotlib opencv
+   
+   # 需要仿真（注意：这会安装大量依赖）
+   mamba install ros-humble-gazebo-ros
+   ```
+
+4. **预打包环境问题**：
+   预打包环境（方式一）包含所有依赖，通常较大（压缩后 2-5GB）。这是为了确保离线安装和完整功能。
+
+**包选择建议**：
+| 需求 | 推荐包 | 预估大小 |
+|------|--------|----------|
+| 日常使用/生产部署 | `unilabos` | ~2-3 GB |
+| 开发调试（可编辑模式） | `unilabos-env` | ~2 GB |
+| 仿真/可视化 | `unilabos-full` | ~8-10 GB |
 
 ### 问题 9: 如何更新到最新版本？
 
@@ -511,6 +616,7 @@ mamba update ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-f
 
 **提示**:
 
-- 生产环境推荐使用方式二（手动安装）的稳定版本
-- 开发和测试推荐使用方式三（开发者安装）
-- 快速体验和演示推荐使用方式一（一键安装）
+- **大多数用户**推荐使用方式二（手动安装）的 `unilabos` 标准版
+- **开发者**推荐使用方式三（开发者安装），安装 `unilabos-env` 后使用 `uv pip install -r unilabos/utils/requirements.txt` 安装依赖
+- **仿真/可视化**推荐安装 `unilabos-full` 完整版
+- **快速体验和演示**推荐使用方式一（一键安装）

@@ -1,0 +1,60 @@
+# unilabos: Production package (depends on unilabos-env + pip unilabos)
+# For production deployment
+
+package:
+  name: unilabos
+  version: 0.10.16
+
+source:
+  path: ../../unilabos
+  target_directory: unilabos
+
+build:
+  python:
+    entry_points:
+    - unilab = unilabos.app.main:main
+  script:
+  - set PIP_NO_INDEX=
+  - if: win
+    then:
+    - copy %RECIPE_DIR%\..\..\MANIFEST.in %SRC_DIR%
+    - copy %RECIPE_DIR%\..\..\setup.cfg %SRC_DIR%
+    - copy %RECIPE_DIR%\..\..\setup.py %SRC_DIR%
+    - pip install %SRC_DIR%
+  - if: unix
+    then:
+    - cp $RECIPE_DIR/../../MANIFEST.in $SRC_DIR
+    - cp $RECIPE_DIR/../../setup.cfg $SRC_DIR
+    - cp $RECIPE_DIR/../../setup.py $SRC_DIR
+    - uv pip install $SRC_DIR
+
+requirements:
+  host:
+  - python ==3.11.14
+  - pip
+  - setuptools
+  - zstd
+  - zstandard
+  run:
+  - zstd
+  - zstandard
+  - networkx
+  - typing_extensions
+  - websockets
+  - opentrons_shared_data
+  - pint
+  - fastapi
+  - jinja2
+  - requests
+  - uvicorn
+  - opcua
+  - pyserial
+  - pandas
+  - pymodbus
+  - matplotlib
+  - uni-lab::unilabos-env ==0.10.16
+
+about:
+  repository: https://github.com/deepmodeling/Uni-Lab-OS
+  license: GPL-3.0-only
+  description: "UniLabOS - Production package with minimal ROS2 dependencies"

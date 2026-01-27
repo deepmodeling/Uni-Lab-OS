@@ -1,17 +1,26 @@
 name: UniLabOS Conda Build
 
 on:
+  # 在 CI Check 成功后自动触发
+  workflow_run:
+    workflows: ["CI Check"]
+    types: [completed]
+    branches: [main, dev]
+  # 标签推送时直接触发（发布版本）
   push:
-    branches: [main, dev]
     tags: ['v*']
-  pull_request:
-    branches: [main, dev]
+  # 手动触发
   workflow_dispatch:
     inputs:
       platforms:
         description: '选择构建平台 (逗号分隔): linux-64, osx-64, osx-arm64, win-64'
         required: false
         default: 'linux-64'
+      build_full:
+        description: '是否构建 unilabos-full 完整包 (默认只构建 unilabos 基础包)'
+        required: false
+        default: false
+        type: boolean
       upload_to_anaconda:
         description: '是否上传到Anaconda.org'
         required: false
@@ -20,6 +29,14 @@ on:
 
 jobs:
   build:
+    # 只在以下情况运行：
+    # 1. workflow_run 触发且 CI Check 成功
+    # 2. 标签推送（发布版本）
+    # 3. 手动触发
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -81,12 +98,33 @@ jobs:
           conda list | grep -E "(rattler-build|anaconda-client)"
           echo "Platform: ${{ matrix.platform }}"
           echo "OS: ${{ matrix.os }}"
-          echo "Building UniLabOS package"
+          echo "Build full package: ${{ github.event.inputs.build_full || 'false' }}"
+          echo "Building packages:"
+          echo "  - unilabos-env (environment dependencies)"
+          echo "  - unilabos (with pip package)"
+          if [[ "${{ github.event.inputs.build_full }}" == "true" ]]; then
+            echo "  - unilabos-full (complete package)"
+          fi
 
-      - name: Build conda package
+      - name: Build unilabos-env (conda environment only, noarch)
         if: steps.should_build.outputs.should_build == 'true'
         run: |
-          rattler-build build -r .conda/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge
+          echo "Building unilabos-env (conda environment dependencies)..."
+          rattler-build build -r .conda/env/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge
+
+      - name: Build unilabos (with pip package)
+        if: steps.should_build.outputs.should_build == 'true'
+        run: |
+          echo "Building unilabos package..."
+          rattler-build build -r .conda/base/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge --channel ./output
+
+      - name: Build unilabos-full - Only when explicitly requested
+        if: |
+          steps.should_build.outputs.should_build == 'true' && 
+          github.event.inputs.build_full == 'true'
+        run: |
+          echo "Building unilabos-full package on ${{ matrix.platform }}..."
+          rattler-build build -r .conda/full/recipe.yaml -c uni-lab -c robostack-staging -c conda-forge --channel ./output
 
       - name: List built packages
         if: steps.should_build.outputs.should_build == 'true'

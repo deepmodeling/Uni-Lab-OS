@@ -31,12 +31,14 @@ jobs:
           auto-update-conda: false
           show-channel-urls: true
 
-      - name: Install ROS dependencies and unilabos-msgs
+      - name: Install ROS dependencies, uv and unilabos-msgs
         run: |
           # Install all packages together for proper dependency resolution
           # Use mamba for faster and more reliable solving
           mamba install -n check-env \
             python=3.11.14 \
+            conda-forge::uv \
+            conda-forge::opencv \
             robostack-staging::ros-humble-ros-core \
             robostack-staging::ros-humble-action-msgs \
             robostack-staging::ros-humble-std-msgs \
@@ -57,36 +59,14 @@ jobs:
         run: |
           # Activate the environment
           conda activate check-env
-          
-          # Core dependencies for devices
-          pip install uv
-          uv pip install networkx \
-            typing_extensions \
-            websockets \
-            msgcenterpy \
-            opentrons_shared_data \
-            pint \
-            fastapi \
-            jinja2 \
-            requests \
-            uvicorn \
-            git+https://github.com/Xuwznln/pylabrobot.git \
-            opencv-python \
-            pyautogui \
-            opcua \
-            pyserial \
-            pandas \
-            crcmod-plus \
-            pymodbus \
-            pywinauto_recorder \
-            matplotlib \
-
-
-          # PyLabRobot (custom fork)
-          pip install 
-          
+          # Install pip dependencies from requirements.txt (uv already installed via conda)
+          uv pip install -r unilabos/utils/requirements.txt
+          # Install special packages (git-based)
+          uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git
+          # Remove conflicting package
+          uv pip uninstall enum34 || true
           # Install unilabos in editable mode
-          pip install -e .
+          uv pip install -e .
 
       - name: Run check mode (complete_registry)
         run: |

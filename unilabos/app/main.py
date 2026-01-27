@@ -1,13 +1,11 @@
 import argparse
 import asyncio
 import os
-import shutil
 import signal
 import sys
 import threading
 import time
 from typing import Dict, Any, List
-
 import networkx as nx
 import yaml
 
@@ -17,9 +15,9 @@ unilabos_dir = os.path.dirname(os.path.dirname(current_dir))
 if unilabos_dir not in sys.path:
     sys.path.append(unilabos_dir)
 
+from unilabos.app.utils import cleanup_for_restart
 from unilabos.utils.banner_print import print_status, print_unilab_banner
 from unilabos.config.config import load_config, BasicConfig, HTTPConfig
-from unilabos.app.utils import cleanup_for_restart
 
 # Global restart flags (used by ws_client and web/server)
 _restart_requested: bool = False

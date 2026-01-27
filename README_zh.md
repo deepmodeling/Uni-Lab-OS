@@ -31,26 +31,46 @@ Uni-Lab-OS 是一个用于实验室自动化的综合平台，旨在连接和控
 
 ## 快速开始
 
-1. 配置 Conda 环境
+### 1. 配置 Conda 环境
 
-Uni-Lab-OS 建议使用 `mamba` 管理环境。根据您的操作系统选择适当的环境文件:
+Uni-Lab-OS 建议使用 `mamba` 管理环境。根据您的需求选择合适的安装包：
+
+| 安装包 | 适用场景 | 包含内容 |
+|--------|----------|----------|
+| `unilabos` | **推荐大多数用户** | 完整安装包，开箱即用 |
+| `unilabos-env` | 开发者（可编辑安装） | 仅环境依赖，通过 pip 安装 unilabos |
+| `unilabos-full` | 仿真/可视化 | unilabos + ROS2 桌面版 + Gazebo + MoveIt |
 
 ```bash
 # 创建新环境
-mamba create -n unilab python=3.11.11
+mamba create -n unilab python=3.11.14
 mamba activate unilab
-mamba install -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
+
+# 方案 A：标准安装（推荐大多数用户）
+mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
+
+# 方案 B：开发者环境（可编辑模式开发）
+mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+# 然后安装 unilabos 和依赖：
+git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
+pip install -e .
+uv pip install -r unilabos/utils/requirements.txt
+
+# 方案 C：完整安装（仿真/可视化）
+mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
 ```
 
-2. 安装开发版 Uni-Lab-OS:
+**如何选择？**
+- **unilabos**：标准安装，适用于生产部署和日常使用（推荐）
+- **unilabos-env**：开发者使用，支持 `pip install -e .` 可编辑模式，可修改源代码
+- **unilabos-full**：需要仿真（Gazebo）、可视化（rviz2）或 Jupyter Notebook
+
+### 2. 克隆仓库（可选，供开发者使用）
 
 ```bash
-# 克隆仓库
+# 克隆仓库（仅开发或查看示例时需要）
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
-
-# 安装 Uni-Lab-OS
-pip install .
 ```
 
 3. 启动 Uni-Lab 系统

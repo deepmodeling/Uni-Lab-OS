@@ -13,6 +13,11 @@ on:
         required: false
         default: 'win-64'
         type: string
+      build_full:
+        description: '是否构建完整版 unilabos-full (默认构建轻量版 unilabos)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-conda-pack:
@@ -69,7 +74,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.11'
+          python-version: '3.11.14'
           channels: conda-forge,robostack-staging,uni-lab,defaults
           channel-priority: flexible
           activate-environment: unilab
@@ -81,7 +86,14 @@ jobs:
         run: |
           echo Installing unilabos and dependencies to unilab environment...
           echo Using mamba for faster and more reliable dependency resolution...
-          mamba install -n unilab uni-lab::unilabos conda-pack -c uni-lab -c robostack-staging -c conda-forge -y
+          echo Build full: ${{ github.event.inputs.build_full }}
+          if "${{ github.event.inputs.build_full }}"=="true" (
+            echo Installing unilabos-full ^(complete package^)...
+            mamba install -n unilab uni-lab::unilabos-full conda-pack -c uni-lab -c robostack-staging -c conda-forge -y
+          ) else (
+            echo Installing unilabos ^(minimal package^)...
+            mamba install -n unilab uni-lab::unilabos conda-pack -c uni-lab -c robostack-staging -c conda-forge -y
+          )
 
       - name: Install conda-pack, unilabos and dependencies (Unix)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
@@ -89,7 +101,14 @@ jobs:
         run: |
           echo "Installing unilabos and dependencies to unilab environment..."
           echo "Using mamba for faster and more reliable dependency resolution..."
-          mamba install -n unilab uni-lab::unilabos conda-pack -c uni-lab -c robostack-staging -c conda-forge -y
+          echo "Build full: ${{ github.event.inputs.build_full }}"
+          if [[ "${{ github.event.inputs.build_full }}" == "true" ]]; then
+            echo "Installing unilabos-full (complete package)..."
+            mamba install -n unilab uni-lab::unilabos-full conda-pack -c uni-lab -c robostack-staging -c conda-forge -y
+          else
+            echo "Installing unilabos (minimal package)..."
+            mamba install -n unilab uni-lab::unilabos conda-pack -c uni-lab -c robostack-staging -c conda-forge -y
+          fi
 
       - name: Get latest ros-humble-unilabos-msgs version (Windows)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
@@ -308,7 +327,12 @@ jobs:
           echo ==========================================
           echo Platform: ${{ matrix.platform }}
           echo Branch: ${{ github.event.inputs.branch }}
-          echo Python version: 3.11.11
+          echo Python version: 3.11.14
+          if "${{ github.event.inputs.build_full }}"=="true" (
+            echo Package: unilabos-full ^(complete^)
+          ) else (
+            echo Package: unilabos ^(minimal^)
+          )
           echo.
           echo Distribution package contents:
           dir dist-package
@@ -328,7 +352,12 @@ jobs:
           echo "=========================================="
           echo "Platform: ${{ matrix.platform }}"
           echo "Branch: ${{ github.event.inputs.branch }}"
-          echo "Python version: 3.11.11"
+          echo "Python version: 3.11.14"
+          if [[ "${{ github.event.inputs.build_full }}" == "true" ]]; then
+            echo "Package: unilabos-full (complete)"
+          else
+            echo "Package: unilabos (minimal)"
+          fi
           echo ""
           echo "Distribution package contents:"
           ls -lh dist-package/

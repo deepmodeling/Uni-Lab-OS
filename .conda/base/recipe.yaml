@@ -29,6 +29,8 @@ build:
     - uv pip install $SRC_DIR
 
 requirements:
+  build:
+  - conda-forge::uv
   host:
   - python ==3.11.14
   - pip

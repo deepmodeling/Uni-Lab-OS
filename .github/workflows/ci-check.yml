@@ -8,7 +8,7 @@ on:
 
 jobs:
   registry-check:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     defaults:
       run:
@@ -33,8 +33,6 @@ jobs:
 
       - name: Install ROS dependencies, uv and unilabos-msgs
         run: |
-          # Install all packages together for proper dependency resolution
-          # Use mamba for faster and more reliable solving
           mamba install -n check-env \
             python=3.11.14 \
             conda-forge::uv \
@@ -57,20 +55,13 @@ jobs:
 
       - name: Install pip dependencies and unilabos
         run: |
-          # Activate the environment
-          conda activate check-env
-          # Install pip dependencies from requirements.txt (uv already installed via conda)
           uv pip install -r unilabos/utils/requirements.txt
-          # Install special packages (git-based)
           uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git
-          # Remove conflicting package
           uv pip uninstall enum34 || true
-          # Install unilabos in editable mode
           uv pip install -e .
 
       - name: Run check mode (complete_registry)
         run: |
-          conda activate check-env
           python -m unilabos --check_mode --skip_env_check
 
       - name: Check for uncommitted changes

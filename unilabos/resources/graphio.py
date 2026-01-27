@@ -597,6 +597,7 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
             "tube": "tube",
             "bottle_carrier": "bottle_carrier",
             "plate_adapter": "plate_adapter",
+            "resource_holder": "resource_holder",
         }
         if source in replace_info:
             return replace_info[source]

@@ -1,0 +1,28 @@
+{
+  "start_time": "2026-01-21T18:05:58.009159",
+  "end_time": "2026-01-21T18:07:29.271930",
+  "resources": [
+    {
+      "layout_code": "W-2-5",
+      "count": 22,
+      "resource_type": 201000726,
+      "resource_type_name": "2 mL反应试管托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "cur_volume": "0.1mL",
+          "cur_weight": "0"
+        },
+        {
+          "slot": 1,
+          "well": "A2",
+          "cur_volume": "0.1mL",
+          "cur_weight": "0"
+        }
+      ],
+      "task_id": 676,
+      "dst_layout_code": "TB-2-1"
+    }
+  ]
+}

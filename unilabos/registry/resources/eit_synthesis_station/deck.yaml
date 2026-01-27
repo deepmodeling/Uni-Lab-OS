@@ -1,0 +1,13 @@
+EIT_Synthesis_Station_Deck:
+  category:
+  - deck
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.decks:EIT_Synthesis_Station_Deck
+    type: pylabrobot
+  description: EIT Synthesis Station Deck
+  handles: []
+  icon: 
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

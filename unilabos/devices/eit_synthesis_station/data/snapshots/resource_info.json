@@ -1,0 +1,223 @@
+{
+  "timestamp": "2026-01-27T12:00:11.852680",
+  "resources": [
+    {
+      "layout_code": "N-1",
+      "count": 1,
+      "resource_type": 201000712,
+      "resource_type_name": "反应密封盖托盘",
+      "substance_details": []
+    },
+    {
+      "layout_code": "N-3",
+      "count": 48,
+      "resource_type": 201000727,
+      "resource_type_name": "闪滤瓶内瓶托盘",
+      "substance_details": []
+    },
+    {
+      "layout_code": "N-5",
+      "count": 24,
+      "resource_type": 201000711,
+      "resource_type_name": "2 mL试管磁子托盘",
+      "substance_details": []
+    },
+    {
+      "layout_code": "T-1-2",
+      "count": 96,
+      "resource_type": 201000731,
+      "resource_type_name": "1 mL Tip 头托盘",
+      "substance_details": []
+    },
+    {
+      "layout_code": "T-1-3",
+      "count": 24,
+      "resource_type": 201000512,
+      "resource_type_name": "5 mL Tip 头托盘",
+      "substance_details": []
+    },
+    {
+      "layout_code": "T-2-1",
+      "count": 96,
+      "resource_type": 201000815,
+      "resource_type_name": "50 μL Tip 头托盘",
+      "substance_details": []
+    },
+    {
+      "layout_code": "T-2-3",
+      "count": 0,
+      "resource_type": 201000731,
+      "resource_type_name": "1 mL Tip 头托盘",
+      "substance_details": []
+    },
+    {
+      "layout_code": "W-1-1",
+      "count": 2,
+      "resource_type": 220000023,
+      "resource_type_name": "125 mL试剂瓶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "1,3,5-三异丙基苯(溶液,1mol/L in MeCN)",
+          "value": "42.8mL"
+        },
+        {
+          "slot": 1,
+          "well": "A2",
+          "substance": "乙腈",
+          "value": "120mL"
+        }
+      ]
+    },
+    {
+      "layout_code": "W-1-2",
+      "count": 2,
+      "resource_type": 220000023,
+      "resource_type_name": "125 mL试剂瓶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "N,N-二甲基乙酰胺",
+          "value": "120mL"
+        },
+        {
+          "slot": 1,
+          "well": "A2",
+          "substance": "N,N-二甲基甲酰胺-d7",
+          "value": "1mL"
+        }
+      ]
+    },
+    {
+      "layout_code": "W-1-4",
+      "count": 1,
+      "resource_type": 220000023,
+      "resource_type_name": "125 mL试剂瓶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "Ethanethiol",
+          "value": "30mL"
+        }
+      ]
+    },
+    {
+      "layout_code": "W-2-3",
+      "count": 1,
+      "resource_type": 201000502,
+      "resource_type_name": "8 mL试剂瓶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "2-溴吡啶",
+          "value": "5.288mL"
+        }
+      ]
+    },
+    {
+      "layout_code": "W-2-5",
+      "count": 24,
+      "resource_type": 201000726,
+      "resource_type_name": "2 mL反应试管托盘",
+      "substance_details": []
+    },
+    {
+      "layout_code": "W-2-7",
+      "count": 1,
+      "resource_type": 201000730,
+      "resource_type_name": "2 mL试剂瓶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "2-环己酮甲酸乙酯",
+          "value": "1.982mL"
+        }
+      ]
+    },
+    {
+      "layout_code": "W-3-1",
+      "count": 2,
+      "resource_type": 201000600,
+      "resource_type_name": "30 mL粉桶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "维生素C钠",
+          "value": "1431.2mg"
+        },
+        {
+          "slot": 1,
+          "well": "B1",
+          "substance": "2-溴代萘",
+          "value": "1006.4mg"
+        }
+      ]
+    },
+    {
+      "layout_code": "W-4-1",
+      "count": 2,
+      "resource_type": 201000600,
+      "resource_type_name": "30 mL粉桶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "N-乙基-2,3-二酮哌嗪",
+          "value": "1984.7mg"
+        },
+        {
+          "slot": 1,
+          "well": "B1",
+          "substance": "氯化亚铜",
+          "value": "1928mg"
+        }
+      ]
+    },
+    {
+      "layout_code": "W-4-2",
+      "count": 2,
+      "resource_type": 201000600,
+      "resource_type_name": "30 mL粉桶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "六氟磷酸四乙氰铜",
+          "value": "988mg"
+        },
+        {
+          "slot": 1,
+          "well": "B1",
+          "substance": "噻吩-2-甲酸铜(I)",
+          "value": "988mg"
+        }
+      ]
+    },
+    {
+      "layout_code": "W-4-4",
+      "count": 2,
+      "resource_type": 201000600,
+      "resource_type_name": "30 mL粉桶托盘",
+      "substance_details": [
+        {
+          "slot": 0,
+          "well": "A1",
+          "substance": "碳酸铯",
+          "value": "1872.8mg"
+        },
+        {
+          "slot": 1,
+          "well": "B1",
+          "substance": "N1,N2-双(2-噻吩甲基)-乙二酰胺",
+          "value": "1949mg"
+        }
+      ]
+    }
+  ]
+}

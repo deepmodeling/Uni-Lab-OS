@@ -1,0 +1,122 @@
+{
+  "task_id": 0,
+  "task_name": "test_20260120",
+  "layout_list": [
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 0,
+      "unit_row": 0,
+      "unit_id": "unit-f35f2d5f",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 0,
+      "unit_row": 1,
+      "unit_id": "unit-82ddff0f",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "1,4-二氧六环",
+        "chemical_id": 2967.0,
+        "add_volume": 0.1
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 0,
+      "unit_row": 3,
+      "unit_id": "unit-82ccbd67",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 40.0,
+        "is_heating": true,
+        "target_temperature": 30.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 0,
+      "unit_row": 4,
+      "unit_id": "unit-60b3870e",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "µL",
+            "L"
+          ]
+        },
+        "substance": "水",
+        "chemical_id": 2966.0,
+        "add_volume": 0.1
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_filtering_sample",
+      "unit_column": 0,
+      "unit_row": 6,
+      "unit_id": "unit-50cf71f0",
+      "process_json": {
+        "single_press_num": 6,
+        "substance": "水",
+        "chemical_id": 2966.0,
+        "add_volume": 0.5,
+        "sampling_volume": 0.002
+      }
+    }
+  ],
+  "task_setup": {
+    "subtype": null,
+    "experiment_num": 1,
+    "vessel": "551000502",
+    "added_slots": ""
+  },
+  "is_audit_log": 1,
+  "is_copy": false
+}

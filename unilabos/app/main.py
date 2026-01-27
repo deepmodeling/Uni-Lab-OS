@@ -217,6 +217,8 @@ def main():
 
     # 环境检查 - 检查并自动安装必需的包 (可选)
     skip_env_check = args_dict.get("skip_env_check", False)
+    check_mode = args_dict.get("check_mode", False)
+
     if not skip_env_check:
         from unilabos.utils.environment_check import check_environment
 
@@ -229,6 +231,8 @@ def main():
     # 加载配置文件，优先加载config，然后从env读取
     config_path = args_dict.get("config")
 
+    if check_mode:
+        args_dict["working_dir"] = os.path.abspath(os.getcwd())
     # 当 skip_env_check 时，默认使用当前目录作为 working_dir
     if skip_env_check and not args_dict.get("working_dir") and not config_path:
         working_dir = os.path.abspath(os.getcwd())
@@ -273,9 +277,11 @@ def main():
             print_status(f"已创建 local_config.py 路径： {config_path}", "info")
         else:
             os._exit(1)
-    # 加载配置文件
+
+    # 加载配置文件 (check_mode 跳过)
     print_status(f"当前工作目录为 {working_dir}", "info")
-    load_config_from_file(config_path)
+    if not check_mode:
+        load_config_from_file(config_path)
 
     # 根据配置重新设置日志级别
     from unilabos.utils.log import configure_logger, logger
@@ -331,12 +337,7 @@ def main():
     machine_name = "".join([c if c.isalnum() or c == "_" else "_" for c in machine_name])
     BasicConfig.machine_name = machine_name
     BasicConfig.vis_2d_enable = args_dict["2d_vis"]
-
-    # Check mode 处理
-    check_mode = args_dict.get("check_mode", False)
     BasicConfig.check_mode = check_mode
-    if check_mode:
-        print_status("Check mode 启用，将进行 complete_registry 检查", "info")
 
     from unilabos.resources.graphio import (
         read_node_link_json,

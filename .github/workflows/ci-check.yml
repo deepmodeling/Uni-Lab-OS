@@ -10,6 +10,11 @@ jobs:
   registry-check:
     runs-on: windows-latest
 
+    env:
+      # Fix Unicode encoding issue on Windows runner (cp1252 -> utf-8)
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: 1
+
     defaults:
       run:
         shell: cmd

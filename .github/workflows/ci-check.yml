@@ -37,6 +37,7 @@ jobs:
 
       - name: Install pip dependencies and unilabos
         run: |
+          call conda activate check-env
           echo Installing pip dependencies...
           uv pip install -r unilabos/utils/requirements.txt
           uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git
@@ -45,6 +46,7 @@ jobs:
 
       - name: Run check mode (complete_registry)
         run: |
+          call conda activate check-env
           echo Running check mode...
           python -m unilabos --check_mode --skip_env_check
 

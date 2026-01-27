@@ -12,7 +12,7 @@ jobs:
 
     defaults:
       run:
-        shell: bash -l {0}
+        shell: cmd
 
     steps:
       - uses: actions/checkout@v4
@@ -27,44 +27,29 @@ jobs:
           channels: robostack-staging,conda-forge,uni-lab
           channel-priority: flexible
           activate-environment: check-env
-          auto-activate-base: false
           auto-update-conda: false
           show-channel-urls: true
 
       - name: Install ROS dependencies, uv and unilabos-msgs
         run: |
-          mamba install -n check-env \
-            python=3.11.14 \
-            conda-forge::uv \
-            conda-forge::opencv \
-            robostack-staging::ros-humble-ros-core \
-            robostack-staging::ros-humble-action-msgs \
-            robostack-staging::ros-humble-std-msgs \
-            robostack-staging::ros-humble-geometry-msgs \
-            robostack-staging::ros-humble-control-msgs \
-            robostack-staging::ros-humble-nav2-msgs \
-            uni-lab::ros-humble-unilabos-msgs \
-            robostack-staging::ros-humble-cv-bridge \
-            robostack-staging::ros-humble-vision-opencv \
-            robostack-staging::ros-humble-tf-transformations \
-            robostack-staging::ros-humble-moveit-msgs \
-            robostack-staging::ros-humble-tf2-ros \
-            robostack-staging::ros-humble-tf2-ros-py \
-            conda-forge::transforms3d \
-            -c robostack-staging -c conda-forge -c uni-lab -y
+          echo Installing ROS dependencies...
+          mamba install -n check-env conda-forge::uv conda-forge::opencv robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs robostack-staging::ros-humble-nav2-msgs uni-lab::ros-humble-unilabos-msgs robostack-staging::ros-humble-cv-bridge robostack-staging::ros-humble-vision-opencv robostack-staging::ros-humble-tf-transformations robostack-staging::ros-humble-moveit-msgs robostack-staging::ros-humble-tf2-ros robostack-staging::ros-humble-tf2-ros-py conda-forge::transforms3d -c robostack-staging -c conda-forge -c uni-lab -y
 
       - name: Install pip dependencies and unilabos
         run: |
+          echo Installing pip dependencies...
           uv pip install -r unilabos/utils/requirements.txt
           uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git
-          uv pip uninstall enum34 || true
+          uv pip uninstall enum34 || echo enum34 not installed, skipping
           uv pip install -e .
 
       - name: Run check mode (complete_registry)
         run: |
+          echo Running check mode...
           python -m unilabos --check_mode --skip_env_check
 
       - name: Check for uncommitted changes
+        shell: bash
         run: |
           if ! git diff --exit-code; then
             echo "::error::检测到文件变化！请先在本地运行 'python -m unilabos --complete_registry' 并提交变更"

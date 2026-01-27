@@ -36,4 +36,4 @@ requirements:
 about:
   repository: https://github.com/deepmodeling/Uni-Lab-OS
   license: GPL-3.0-only
-  description: "UniLabOS Environment - ROS2 and conda dependencies (for developers: pip install -e .)"
+  description: "UniLabOS Environment - ROS2 and conda dependencies"

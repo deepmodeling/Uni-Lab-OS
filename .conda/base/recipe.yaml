@@ -41,7 +41,6 @@ requirements:
   - networkx
   - typing_extensions
   - websockets
-  - opentrons_shared_data
   - pint
   - fastapi
   - jinja2

@@ -2,7 +2,7 @@
 
 package:
   name: unilabos-env
-  version: 0.10.16
+  version: 0.10.17
 
 build:
   noarch: generic

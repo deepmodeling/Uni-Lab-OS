@@ -312,7 +312,7 @@ jobs:
 
       - name: Upload distribution package
         if: steps.should_build.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: unilab-pack-${{ matrix.platform }}-${{ github.event.inputs.branch }}
           path: dist-package/

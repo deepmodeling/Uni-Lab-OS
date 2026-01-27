@@ -3,7 +3,7 @@
 
 package:
   name: unilabos
-  version: 0.10.16
+  version: 0.10.17
 
 source:
   path: ../../unilabos
@@ -53,7 +53,7 @@ requirements:
   - pymodbus
   - matplotlib
   - pylibftdi
-  - uni-lab::unilabos-env ==0.10.16
+  - uni-lab::unilabos-env ==0.10.17
 
 about:
   repository: https://github.com/deepmodeling/Uni-Lab-OS

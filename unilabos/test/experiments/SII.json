@@ -1,0 +1,68 @@
+{
+    "nodes": [
+        {
+            "id": "xyz_and_pipette",
+            "name": "laiyu_liquid xyz and pipette",
+            "children": [],
+            "parent": "",
+            "type": "device",
+            "class": "xyz_pipette_device",
+            "position": {
+                "x": 450,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "port": "/dev/ttyUSB0"
+            }
+        },
+        {
+            "id": "cameracontroller_device",
+            "name": "laiyu_liquid 摄像头驱动",
+            "children": [],
+            "parent": "",
+            "type": "device",
+            "class": "cameracontroller_device",
+            "position": {
+                "x": 600,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "host_id": "demo-host",
+                "signal_backend_url": "wss://sciol.ac.cn/api/realtime/signal/host",
+                "rtmp_url": "rtmp://srs.sciol.ac.cn:4499/live/camera-01",
+                "webrtc_api": "https://srs.sciol.ac.cn/rtc/v1/play/",
+                "webrtc_stream_url": "webrtc://srs.sciol.ac.cn:4500/live/camera-01"
+            }
+        },
+        {
+            "id": "camerausb_device",
+            "name": "USB 摄像头驱动（cameraUSB）",
+            "children": [],
+            "parent": "",
+            "type": "device",
+            "class": "camera_usb",
+            "position": {
+                "x": 750,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "host_id": "demo-host",
+                "signal_backend_url": "wss://sciol.ac.cn/api/realtime/signal/host",
+                "rtmp_url": "rtmp://srs.sciol.ac.cn:4499/live/camera-usb-01",
+                "webrtc_api": "https://srs.sciol.ac.cn/rtc/v1/play/",
+                "webrtc_stream_url": "webrtc://srs.sciol.ac.cn:4500/live/camera-usb-01",
+                "video_device": "/dev/video0",
+                "width": 1280,
+                "height": 720,
+                "fps": 30,
+                "video_bitrate": "1500k",
+                "audio_device": null,
+                "audio_bitrate": "64k"
+            }
+        }
+    ],
+    "links": []
+}

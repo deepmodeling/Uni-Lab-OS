@@ -1,0 +1,29 @@
+{
+    "nodes": [
+        {
+            "id": "Liquid_Sensor_1",
+            "name": "XKC Sensor",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "sensor.xkc_rs485",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "port": "/dev/tty.usbserial-3110",
+                "baudrate": 9600,
+                "device_id": 1,
+                "threshold": 300,
+                "timeout": 3.0
+            },
+            "data": {
+                "level": false,
+                "rssi": 0
+            }
+        }
+    ],
+    "links": []
+}

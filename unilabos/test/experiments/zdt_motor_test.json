@@ -1,0 +1,28 @@
+{
+    "nodes": [
+        {
+            "id": "ZDT_Motor",
+            "name": "ZDT Motor",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "motor.zdt_x42",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "port": "/dev/tty.usbserial-3110",
+                "baudrate": 115200,
+                "device_id": 1,
+                "debug": true
+            },
+            "data": {
+                "position": 0,
+                "status": "idle"
+            }
+        }
+    ],
+    "links": []
+}

@@ -4,8 +4,7 @@ import time
 from typing import Optional, Dict, Any, List
 from typing_extensions import TypedDict
 import requests
-import pint
-
+from unilabos.devices.workstation.bioyond_studio.config import API_CONFIG
 
 from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import BioyondException
 from unilabos.devices.workstation.bioyond_studio.station import BioyondWorkstation
@@ -26,89 +25,13 @@ class ComputeExperimentDesignReturn(TypedDict):
 class BioyondDispensingStation(BioyondWorkstation):
     def __init__(
         self,
-        config: dict = None,
-        deck=None,
-        protocol_type=None,
+        config,
+            # 桌子
+        deck,
+        *args,
         **kwargs,
-    ):
-        """初始化配液站
-
-        Args:
-            config: 配置字典,应包含material_type_mappings等配置
-            deck: Deck对象
-            protocol_type: 协议类型(由ROS系统传递,此处忽略)
-            **kwargs: 其他可能的参数
-        """
-        if config is None:
-            config = {}
-
-        # 将 kwargs 合并到 config 中 (处理扁平化配置如 api_key)
-        config.update(kwargs)
-
-        if deck is None and config:
-            deck = config.get('deck')
-
-        # 🔧 修复: 确保 Deck 上的 warehouses 具有正确的 UUID (必须在 super().__init__ 之前执行，因为父类会触发同步)
-        # 从配置中读取 warehouse_mapping，并应用到实际的 deck 资源上
-        if config and "warehouse_mapping" in config and deck:
-            warehouse_mapping = config["warehouse_mapping"]
-            print(f"正在根据配置更新 Deck warehouse UUIDs... (共有 {len(warehouse_mapping)} 个配置)")
-
-            user_deck = deck
-            # 初始化 warehouses 字典
-            if not hasattr(user_deck, "warehouses") or user_deck.warehouses is None:
-                user_deck.warehouses = {}
-
-            # 1. 尝试从 children 中查找匹配的资源
-            for child in user_deck.children:
-                # 简单判断: 如果名字在 mapping 中，就认为是 warehouse
-                if child.name in warehouse_mapping:
-                    user_deck.warehouses[child.name] = child
-                    print(f"  - 从子资源中找到 warehouse: {child.name}")
-
-            # 2. 如果还是没找到，且 Deck 类有 setup 方法，尝试调用 setup (针对 Deck 对象正确但未初始化的情况)
-            if not user_deck.warehouses and hasattr(user_deck, "setup"):
-                print("  - 尝试调用 deck.setup() 初始化仓库...")
-                try:
-                    user_deck.setup()
-                    # setup 后重新检查
-                    if hasattr(user_deck, "warehouses") and user_deck.warehouses:
-                            print(f"  - setup() 成功，找到 {len(user_deck.warehouses)} 个仓库")
-                except Exception as e:
-                    print(f"  - 调用 setup() 失败: {e}")
-
-            # 3. 如果仍然为空，可能需要手动创建 (仅针对特定已知的 Deck 类型进行补救，这里暂时只打印警告)
-            if not user_deck.warehouses:
-                    print("  - ⚠️ 仍然无法找到任何 warehouse 资源！")
-
-            for wh_name, wh_config in warehouse_mapping.items():
-                target_uuid = wh_config.get("uuid")
-
-                # 尝试在 deck.warehouses 中查找
-                wh_resource = None
-                if hasattr(user_deck, "warehouses") and wh_name in user_deck.warehouses:
-                    wh_resource = user_deck.warehouses[wh_name]
-
-                # 如果没找到，尝试在所有子资源中查找
-                if not wh_resource:
-                    wh_resource = user_deck.get_resource(wh_name)
-
-                if wh_resource:
-                    if target_uuid:
-                        current_uuid = getattr(wh_resource, "uuid", None)
-                        print(f"✅ 更新仓库 '{wh_name}' UUID: {current_uuid} -> {target_uuid}")
-
-                        # 动态添加 uuid 属性
-                        wh_resource.uuid = target_uuid
-                        # 同时也确保 category 正确，避免 graphio 识别错误
-                        # wh_resource.category = "warehouse"
-                    else:
-                            print(f"⚠️ 仓库 '{wh_name}' 在配置中没有 UUID")
-                else:
-                    print(f"❌ 在 Deck 中未找到配置的仓库: '{wh_name}'")
-
-        super().__init__(bioyond_config=config, deck=deck)
-
+        ):
+        super().__init__(config, deck, *args, **kwargs)
         # self.config = config
         # self.api_key = config["api_key"]
         # self.host = config["api_host"]
@@ -119,41 +42,6 @@ class BioyondDispensingStation(BioyondWorkstation):
 
         # 用于跟踪任务完成状态的字典: {orderCode: {status, order_id, timestamp}}
         self.order_completion_status = {}
-
-        # 初始化 pint 单位注册表
-        self.ureg = pint.UnitRegistry()
-
-        # 化合物信息
-        self.compound_info = {
-            "MolWt": {
-                "MDA": 108.14 * self.ureg.g / self.ureg.mol,
-                "TDA": 122.16 * self.ureg.g / self.ureg.mol,
-                "PAPP": 521.62 * self.ureg.g / self.ureg.mol,
-                "BTDA": 322.23 * self.ureg.g / self.ureg.mol,
-                "BPDA": 294.22 * self.ureg.g / self.ureg.mol,
-                "6FAP": 366.26 * self.ureg.g / self.ureg.mol,
-                "PMDA": 218.12 * self.ureg.g / self.ureg.mol,
-                "MPDA": 108.14 * self.ureg.g / self.ureg.mol,
-                "SIDA": 248.51 * self.ureg.g / self.ureg.mol,
-                "ODA": 200.236 * self.ureg.g / self.ureg.mol,
-                "4,4'-ODA": 200.236 * self.ureg.g / self.ureg.mol,
-                "134": 292.34 * self.ureg.g / self.ureg.mol,
-            },
-            "FuncGroup": {
-                "MDA": "Amine",
-                "TDA": "Amine",
-                "PAPP": "Amine",
-                "BTDA": "Anhydride",
-                "BPDA": "Anhydride",
-                "6FAP": "Amine",
-                "MPDA": "Amine",
-                "SIDA": "Amine",
-                "PMDA": "Anhydride",
-                "ODA": "Amine",
-                "4,4'-ODA": "Amine",
-                "134": "Amine",
-            }
-        }
 
     def _post_project_api(self, endpoint: str, data: Any) -> Dict[str, Any]:
         """项目接口通用POST调用
@@ -166,7 +54,7 @@ class BioyondDispensingStation(BioyondWorkstation):
             dict: 服务端响应，失败时返回 {code:0,message,...}
         """
         request_data = {
-            "apiKey": self.bioyond_config["api_key"],
+            "apiKey": API_CONFIG["api_key"],
             "requestTime": self.hardware_interface.get_current_time_iso8601(),
             "data": data
         }
@@ -197,7 +85,7 @@ class BioyondDispensingStation(BioyondWorkstation):
             dict: 服务端响应，失败时返回 {code:0,message,...}
         """
         request_data = {
-            "apiKey": self.bioyond_config["api_key"],
+            "apiKey": API_CONFIG["api_key"],
             "requestTime": self.hardware_interface.get_current_time_iso8601(),
             "data": data
         }
@@ -230,22 +118,20 @@ class BioyondDispensingStation(BioyondWorkstation):
                     ratio = json.loads(ratio)
                 except Exception:
                     ratio = {}
+            root = str(Path(__file__).resolve().parents[3])
+            if root not in sys.path:
+                sys.path.append(root)
+            try:
+                mod = importlib.import_module("tem.compute")
+            except Exception as e:
+                raise BioyondException(f"无法导入计算模块: {e}")
             try:
                 wp = float(wt_percent) if isinstance(wt_percent, str) else wt_percent
                 mt = float(m_tot) if isinstance(m_tot, str) else m_tot
                 tp = float(titration_percent) if isinstance(titration_percent, str) else titration_percent
             except Exception as e:
                 raise BioyondException(f"参数解析失败: {e}")
-
-            # 2. 调用内部计算方法
-            res = self._generate_experiment_design(
-                ratio=ratio,
-                wt_percent=wp,
-                m_tot=mt,
-                titration_percent=tp
-            )
-
-            # 3. 构造返回结果
+            res = mod.generate_experiment_design(ratio=ratio, wt_percent=wp, m_tot=mt, titration_percent=tp)
             out = {
                 "solutions": res.get("solutions", []),
                 "titration": res.get("titration", {}),
@@ -254,247 +140,10 @@ class BioyondDispensingStation(BioyondWorkstation):
                 "return_info": json.dumps(res, ensure_ascii=False)
             }
             return out
-
         except BioyondException:
             raise
         except Exception as e:
             raise BioyondException(str(e))
-
-    def _generate_experiment_design(
-        self,
-        ratio: dict,
-        wt_percent: float = 0.25,
-        m_tot: float = 70,
-        titration_percent: float = 0.03,
-    ) -> dict:
-        """内部方法：生成实验设计
-
-        根据FuncGroup自动区分二胺和二酐，每种二胺单独配溶液，严格按照ratio顺序投料。
-
-        参数:
-            ratio: 化合物配比字典，格式: {"compound_name": ratio_value}
-            wt_percent: 固体重量百分比
-            m_tot: 反应混合物总质量(g)
-            titration_percent: 滴定溶液百分比
-
-        返回:
-            包含实验设计详细参数的字典
-        """
-        # 溶剂密度
-        ρ_solvent = 1.03 * self.ureg.g / self.ureg.ml
-        # 二酐溶解度
-        solubility = 0.02 * self.ureg.g / self.ureg.ml
-        # 投入固体时最小溶剂体积
-        V_min = 30 * self.ureg.ml
-        m_tot = m_tot * self.ureg.g
-
-        # 保持ratio中的顺序
-        compound_names = list(ratio.keys())
-        compound_ratios = list(ratio.values())
-
-        # 验证所有化合物是否在 compound_info 中定义
-        undefined_compounds = [name for name in compound_names if name not in self.compound_info["MolWt"]]
-        if undefined_compounds:
-            available = list(self.compound_info["MolWt"].keys())
-            raise ValueError(
-                f"以下化合物未在 compound_info 中定义: {undefined_compounds}。"
-                f"可用的化合物: {available}"
-            )
-
-        # 获取各化合物的分子量和官能团类型
-        molecular_weights = [self.compound_info["MolWt"][name] for name in compound_names]
-        func_groups = [self.compound_info["FuncGroup"][name] for name in compound_names]
-
-        # 记录化合物信息用于调试
-        self.hardware_interface._logger.info(f"化合物名称: {compound_names}")
-        self.hardware_interface._logger.info(f"官能团类型: {func_groups}")
-
-        # 按原始顺序分离二胺和二酐
-        ordered_compounds = list(zip(compound_names, compound_ratios, molecular_weights, func_groups))
-        diamine_compounds = [(name, ratio_val, mw, i) for i, (name, ratio_val, mw, fg) in enumerate(ordered_compounds) if fg == "Amine"]
-        anhydride_compounds = [(name, ratio_val, mw, i) for i, (name, ratio_val, mw, fg) in enumerate(ordered_compounds) if fg == "Anhydride"]
-
-        if not diamine_compounds or not anhydride_compounds:
-            raise ValueError(
-                f"需要同时包含二胺(Amine)和二酐(Anhydride)化合物。"
-                f"当前二胺: {[c[0] for c in diamine_compounds]}, "
-                f"当前二酐: {[c[0] for c in anhydride_compounds]}"
-            )
-
-        # 计算加权平均分子量 (基于摩尔比)
-        total_molar_ratio = sum(compound_ratios)
-        weighted_molecular_weight = sum(ratio_val * mw for ratio_val, mw in zip(compound_ratios, molecular_weights))
-
-        # 取最后一个二酐用于滴定
-        titration_anhydride = anhydride_compounds[-1]
-        solid_anhydrides = anhydride_compounds[:-1] if len(anhydride_compounds) > 1 else []
-
-        # 二胺溶液配制参数 - 每种二胺单独配制
-        diamine_solutions = []
-        total_diamine_volume = 0 * self.ureg.ml
-
-        # 计算反应物的总摩尔量
-        n_reactant = m_tot * wt_percent / weighted_molecular_weight
-
-        for name, ratio_val, mw, order_index in diamine_compounds:
-            # 跳过 SIDA
-            if name == "SIDA":
-                continue
-
-            # 计算该二胺需要的摩尔数
-            n_diamine_needed = n_reactant * ratio_val
-
-            # 二胺溶液配制参数 (每种二胺固定配制参数)
-            m_diamine_solid = 5.0 * self.ureg.g  # 每种二胺固体质量
-            V_solvent_for_this = 20 * self.ureg.ml  # 每种二胺溶剂体积
-            m_solvent_for_this = ρ_solvent * V_solvent_for_this
-
-            # 计算该二胺溶液的浓度
-            c_diamine = (m_diamine_solid / mw) / V_solvent_for_this
-
-            # 计算需要移取的溶液体积
-            V_diamine_needed = n_diamine_needed / c_diamine
-
-            diamine_solutions.append({
-                "name": name,
-                "order": order_index,
-                "solid_mass": m_diamine_solid.magnitude,
-                "solvent_volume": V_solvent_for_this.magnitude,
-                "concentration": c_diamine.magnitude,
-                "volume_needed": V_diamine_needed.magnitude,
-                "molar_ratio": ratio_val
-            })
-
-            total_diamine_volume += V_diamine_needed
-
-        # 按原始顺序排序
-        diamine_solutions.sort(key=lambda x: x["order"])
-
-        # 计算滴定二酐的质量
-        titration_name, titration_ratio, titration_mw, _ = titration_anhydride
-        m_titration_anhydride = n_reactant * titration_ratio * titration_mw
-        m_titration_90 = m_titration_anhydride * (1 - titration_percent)
-        m_titration_10 = m_titration_anhydride * titration_percent
-
-        # 计算其他固体二酐的质量 (按顺序)
-        solid_anhydride_masses = []
-        for name, ratio_val, mw, order_index in solid_anhydrides:
-            mass = n_reactant * ratio_val * mw
-            solid_anhydride_masses.append({
-                "name": name,
-                "order": order_index,
-                "mass": mass.magnitude,
-                "molar_ratio": ratio_val
-            })
-
-        # 按原始顺序排序
-        solid_anhydride_masses.sort(key=lambda x: x["order"])
-
-        # 计算溶剂用量
-        total_diamine_solution_mass = sum(
-            sol["volume_needed"] * ρ_solvent for sol in diamine_solutions
-        ) * self.ureg.ml
-
-        # 预估滴定溶剂量、计算补加溶剂量
-        m_solvent_titration = m_titration_10 / solubility * ρ_solvent
-        m_solvent_add = m_tot * (1 - wt_percent) - total_diamine_solution_mass - m_solvent_titration
-
-        # 检查最小溶剂体积要求
-        total_liquid_volume = (total_diamine_solution_mass + m_solvent_add) / ρ_solvent
-        m_tot_min = V_min / total_liquid_volume * m_tot
-
-        # 如果需要，按比例放大
-        scale_factor = 1.0
-        if m_tot_min > m_tot:
-            scale_factor = (m_tot_min / m_tot).magnitude
-            m_titration_90 *= scale_factor
-            m_titration_10 *= scale_factor
-            m_solvent_add *= scale_factor
-            m_solvent_titration *= scale_factor
-
-            # 更新二胺溶液用量
-            for sol in diamine_solutions:
-                sol["volume_needed"] *= scale_factor
-
-            # 更新固体二酐用量
-            for anhydride in solid_anhydride_masses:
-                anhydride["mass"] *= scale_factor
-
-            m_tot = m_tot_min
-
-        # 生成投料顺序
-        feeding_order = []
-
-        # 1. 固体二酐 (按顺序)
-        for anhydride in solid_anhydride_masses:
-            feeding_order.append({
-                "step": len(feeding_order) + 1,
-                "type": "solid_anhydride",
-                "name": anhydride["name"],
-                "amount": anhydride["mass"],
-                "order": anhydride["order"]
-            })
-
-        # 2. 二胺溶液 (按顺序)
-        for sol in diamine_solutions:
-            feeding_order.append({
-                "step": len(feeding_order) + 1,
-                "type": "diamine_solution",
-                "name": sol["name"],
-                "amount": sol["volume_needed"],
-                "order": sol["order"]
-            })
-
-        # 3. 主要二酐粉末
-        feeding_order.append({
-            "step": len(feeding_order) + 1,
-            "type": "main_anhydride",
-            "name": titration_name,
-            "amount": m_titration_90.magnitude,
-            "order": titration_anhydride[3]
-        })
-
-        # 4. 补加溶剂
-        if m_solvent_add > 0:
-            feeding_order.append({
-                "step": len(feeding_order) + 1,
-                "type": "additional_solvent",
-                "name": "溶剂",
-                "amount": m_solvent_add.magnitude,
-                "order": 999
-            })
-
-        # 5. 滴定二酐溶液
-        feeding_order.append({
-            "step": len(feeding_order) + 1,
-            "type": "titration_anhydride",
-            "name": f"{titration_name} 滴定液",
-            "amount": m_titration_10.magnitude,
-            "titration_solvent": m_solvent_titration.magnitude,
-            "order": titration_anhydride[3]
-        })
-
-        # 返回实验设计结果
-        results = {
-            "total_mass": m_tot.magnitude,
-            "scale_factor": scale_factor,
-            "solutions": diamine_solutions,
-            "solids": solid_anhydride_masses,
-            "titration": {
-                "name": titration_name,
-                "main_portion": m_titration_90.magnitude,
-                "titration_portion": m_titration_10.magnitude,
-                "titration_solvent": m_solvent_titration.magnitude,
-            },
-            "solvents": {
-                "additional_solvent": m_solvent_add.magnitude,
-                "total_liquid_volume": total_liquid_volume.magnitude
-            },
-            "feeding_order": feeding_order,
-            "minimum_required_mass": m_tot_min.magnitude
-        }
-
-        return results
 
     # 90%10%小瓶投料任务创建方法
     def create_90_10_vial_feeding_task(self,
@@ -1312,108 +961,6 @@ class BioyondDispensingStation(BioyondWorkstation):
             'actualVolume': actual_volume
         }
 
-    def _simplify_report(self, report) -> Dict[str, Any]:
-        """简化实验报告，只保留关键信息，去除冗余的工作流参数"""
-        if not isinstance(report, dict):
-            return report
-
-        data = report.get('data', {})
-        if not isinstance(data, dict):
-            return report
-
-        # 提取关键信息
-        simplified = {
-            'name': data.get('name'),
-            'code': data.get('code'),
-            'requester': data.get('requester'),
-            'workflowName': data.get('workflowName'),
-            'workflowStep': data.get('workflowStep'),
-            'requestTime': data.get('requestTime'),
-            'startPreparationTime': data.get('startPreparationTime'),
-            'completeTime': data.get('completeTime'),
-            'useTime': data.get('useTime'),
-            'status': data.get('status'),
-            'statusName': data.get('statusName'),
-        }
-
-        # 提取物料信息（简化版）
-        pre_intakes = data.get('preIntakes', [])
-        if pre_intakes and isinstance(pre_intakes, list):
-            first_intake = pre_intakes[0]
-            sample_materials = first_intake.get('sampleMaterials', [])
-
-            # 简化物料信息
-            simplified_materials = []
-            for material in sample_materials:
-                if isinstance(material, dict):
-                    mat_info = {
-                        'materialName': material.get('materialName'),
-                        'materialTypeName': material.get('materialTypeName'),
-                        'materialCode': material.get('materialCode'),
-                        'materialLocation': material.get('materialLocation'),
-                    }
-
-                    # 解析parameters中的关键信息（如密度、加料历史等）
-                    params_str = material.get('parameters', '{}')
-                    try:
-                        params = json.loads(params_str) if isinstance(params_str, str) else params_str
-                        if isinstance(params, dict):
-                            # 只保留关键参数
-                            if 'density' in params:
-                                mat_info['density'] = params['density']
-                            if 'feedingHistory' in params:
-                                mat_info['feedingHistory'] = params['feedingHistory']
-                            if 'liquidVolume' in params:
-                                mat_info['liquidVolume'] = params['liquidVolume']
-                            if 'm_diamine_tot' in params:
-                                mat_info['m_diamine_tot'] = params['m_diamine_tot']
-                            if 'wt_diamine' in params:
-                                mat_info['wt_diamine'] = params['wt_diamine']
-                    except:
-                        pass
-
-                    simplified_materials.append(mat_info)
-
-            simplified['sampleMaterials'] = simplified_materials
-
-            # 提取extraProperties中的实际值
-            extra_props = first_intake.get('extraProperties', {})
-            if isinstance(extra_props, dict):
-                simplified_extra = {}
-                for key, value in extra_props.items():
-                    try:
-                        parsed_value = json.loads(value) if isinstance(value, str) else value
-                        simplified_extra[key] = parsed_value
-                    except:
-                        simplified_extra[key] = value
-                simplified['extraProperties'] = simplified_extra
-
-        return {
-            'data': simplified,
-            'code': report.get('code'),
-            'message': report.get('message'),
-            'timestamp': report.get('timestamp')
-        }
-
-    def scheduler_start(self) -> dict:
-        """启动调度器 - 启动Bioyond工作站的任务调度器，开始执行队列中的任务
-
-        Returns:
-            dict: 包含return_info的字典，return_info为整型(1=成功)
-
-        Raises:
-            BioyondException: 调度器启动失败时抛出异常
-        """
-        result = self.hardware_interface.scheduler_start()
-        self.hardware_interface._logger.info(f"调度器启动结果: {result}")
-
-        if result != 1:
-            error_msg = "启动调度器失败: 有未处理错误，调度无法启动。请检查Bioyond系统状态。"
-            self.hardware_interface._logger.error(error_msg)
-            raise BioyondException(error_msg)
-
-        return {"return_info": result}
-
     # 等待多个任务完成并获取实验报告
     def wait_for_multiple_orders_and_get_reports(self,
                                                   batch_create_result: str = None,
@@ -1455,12 +1002,7 @@ class BioyondDispensingStation(BioyondWorkstation):
 
             # 验证batch_create_result参数
             if not batch_create_result or batch_create_result == "":
-                raise BioyondException(
-                    "batch_create_result参数为空，请确保:\n"
-                    "1. batch_create节点与wait节点之间正确连接了handle\n"
-                    "2. batch_create节点成功执行并返回了结果\n"
-                    "3. 检查上游batch_create任务是否成功创建了订单"
-                )
+                raise BioyondException("batch_create_result参数为空，请确保从batch_create节点正确连接handle")
 
             # 解析batch_create_result JSON对象
             try:
@@ -1489,17 +1031,7 @@ class BioyondDispensingStation(BioyondWorkstation):
 
             # 验证提取的数据
             if not order_codes:
-                self.hardware_interface._logger.error(
-                    f"batch_create任务未生成任何订单。batch_create_result内容: {batch_create_result}"
-                )
-                raise BioyondException(
-                    "batch_create_result中未找到order_codes或为空。\n"
-                    "可能的原因:\n"
-                    "1. batch_create任务执行失败（检查任务是否报错）\n"
-                    "2. 物料配置问题（如'物料样品板分配失败'）\n"
-                    "3. Bioyond系统状态异常\n"
-                    f"请检查batch_create任务的执行结果"
-                )
+                raise BioyondException("batch_create_result中未找到order_codes字段或为空")
             if not order_ids:
                 raise BioyondException("batch_create_result中未找到order_ids字段或为空")
 
@@ -1582,8 +1114,6 @@ class BioyondDispensingStation(BioyondWorkstation):
                                 self.hardware_interface._logger.info(
                                     f"成功获取任务 {order_code} 的实验报告"
                                 )
-                                # 简化报告，去除冗余信息
-                                report = self._simplify_report(report)
 
                             reports.append({
                                 "order_code": order_code,
@@ -1758,7 +1288,7 @@ class BioyondDispensingStation(BioyondWorkstation):
                 f"开始执行批量物料转移: {len(transfer_groups)}组任务 -> {target_device_id}"
             )
 
-            warehouse_mapping = self.bioyond_config.get("warehouse_mapping", {})
+            from .config import WAREHOUSE_MAPPING
             results = []
             successful_count = 0
             failed_count = 0

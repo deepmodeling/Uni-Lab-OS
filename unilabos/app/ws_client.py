@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse
 from enum import Enum
 
-from typing_extensions import TypedDict
+from jedi.inference.gradual.typing import TypedDict
 
 from unilabos.app.model import JobAddReq
 from unilabos.ros.nodes.presets.host_node import HostNode
@@ -154,7 +154,7 @@ class DeviceActionManager:
             job_info.set_ready_timeout(10)  # 设置10秒超时
             self.active_jobs[device_key] = job_info
             job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-            logger.trace(f"[DeviceActionManager] Job {job_log} can start immediately for {device_key}")
+            logger.info(f"[DeviceActionManager] Job {job_log} can start immediately for {device_key}")
             return True
 
     def start_job(self, job_id: str) -> bool:
@@ -210,9 +210,8 @@ class DeviceActionManager:
                 job_info.update_timestamp()
                 # 从all_jobs中移除已结束的job
                 del self.all_jobs[job_id]
-                # job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-                # logger.debug(f"[DeviceActionManager] Job {job_log} ended for {device_key}")
-                pass
+                job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
+                logger.info(f"[DeviceActionManager] Job {job_log} ended for {device_key}")
             else:
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
                 logger.warning(f"[DeviceActionManager] Job {job_log} was not active for {device_key}")
@@ -228,7 +227,7 @@ class DeviceActionManager:
                 next_job_log = format_job_log(
                     next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
                 )
-                logger.trace(f"[DeviceActionManager] Next job {next_job_log} can start for {device_key}")
+                logger.info(f"[DeviceActionManager] Next job {next_job_log} can start for {device_key}")
                 return next_job
 
             return None
@@ -269,7 +268,7 @@ class DeviceActionManager:
                 # 从all_jobs中移除
                 del self.all_jobs[job_id]
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-                logger.trace(f"[DeviceActionManager] Active job {job_log} cancelled for {device_key}")
+                logger.info(f"[DeviceActionManager] Active job {job_log} cancelled for {device_key}")
 
                 # 启动下一个任务
                 if device_key in self.device_queues and self.device_queues[device_key]:
@@ -282,7 +281,7 @@ class DeviceActionManager:
                     next_job_log = format_job_log(
                         next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
                     )
-                    logger.trace(f"[DeviceActionManager] Next job {next_job_log} can start after cancel")
+                    logger.info(f"[DeviceActionManager] Next job {next_job_log} can start after cancel")
                 return True
 
             # 如果是排队中的任务
@@ -296,7 +295,7 @@ class DeviceActionManager:
                     job_log = format_job_log(
                         job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name
                     )
-                    logger.trace(f"[DeviceActionManager] Queued job {job_log} cancelled for {device_key}")
+                    logger.info(f"[DeviceActionManager] Queued job {job_log} cancelled for {device_key}")
                     return True
 
             job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
@@ -495,12 +494,8 @@ class MessageProcessor:
                         await self._process_message(message_type, message_data)
                     else:
                         if message_type.endswith("_material"):
-                            logger.trace(
-                                f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}"
-                            )
-                            logger.debug(
-                                f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}"
-                            )
+                            logger.trace(f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}")
+                            logger.debug(f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}")
                         else:
                             await self._process_message(message_type, message_data)
                 except json.JSONDecodeError:
@@ -570,7 +565,7 @@ class MessageProcessor:
 
     async def _process_message(self, message_type: str, message_data: Dict[str, Any]):
         """处理收到的消息"""
-        logger.trace(f"[MessageProcessor] Processing message: {message_type}")
+        logger.debug(f"[MessageProcessor] Processing message: {message_type}")
 
         try:
             if message_type == "pong":
@@ -642,13 +637,13 @@ class MessageProcessor:
             await self._send_action_state_response(
                 device_id, action_name, task_id, job_id, "query_action_status", True, 0
             )
-            logger.trace(f"[MessageProcessor] Job {job_log} can start immediately")
+            logger.info(f"[MessageProcessor] Job {job_log} can start immediately")
         else:
             # 需要排队
             await self._send_action_state_response(
                 device_id, action_name, task_id, job_id, "query_action_status", False, 10
             )
-            logger.trace(f"[MessageProcessor] Job {job_log} queued")
+            logger.info(f"[MessageProcessor] Job {job_log} queued")
 
             # 通知QueueProcessor有新的队列更新
             if self.queue_processor:
@@ -852,7 +847,9 @@ class MessageProcessor:
                         device_action_groups[key_add] = []
                     device_action_groups[key_add].append(item["uuid"])
 
-                    logger.info(f"[资源同步] 跨站Transfer: {item['uuid'][:8]} from {device_old_id} to {device_id}")
+                    logger.info(
+                        f"[资源同步] 跨站Transfer: {item['uuid'][:8]} from {device_old_id} to {device_id}"
+                    )
                 else:
                     # 正常update
                     key = (device_id, "update")
@@ -866,9 +863,7 @@ class MessageProcessor:
                     device_action_groups[key] = []
                 device_action_groups[key].append(item["uuid"])
 
-        logger.trace(
-            f"[资源同步] 动作 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}"
-        )
+        logger.trace(f"[资源同步] 动作 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}")
 
         # 为每个(device_id, action)创建独立的更新线程
         for (device_id, actual_action), items in device_action_groups.items():
@@ -907,44 +902,42 @@ class MessageProcessor:
     async def _handle_request_restart(self, data: Dict[str, Any]):
         """
         处理重启请求
-
+        
         当LabGo发送request_restart时，执行清理并触发重启
         """
         reason = data.get("reason", "unknown")
         delay = data.get("delay", 2)  # 默认延迟2秒
         logger.info(f"[MessageProcessor] Received restart request, reason: {reason}, delay: {delay}s")
-
+        
         # 发送确认消息
         if self.websocket_client:
-            await self.websocket_client.send_message(
-                {"action": "restart_acknowledged", "data": {"reason": reason, "delay": delay}}
-            )
-
+            await self.websocket_client.send_message({
+                "action": "restart_acknowledged",
+                "data": {"reason": reason, "delay": delay}
+            })
+        
         # 设置全局重启标志
         import unilabos.app.main as main_module
-
         main_module._restart_requested = True
         main_module._restart_reason = reason
-
+        
         # 延迟后执行清理
         await asyncio.sleep(delay)
-
+        
         # 在新线程中执行清理，避免阻塞当前事件循环
         def do_cleanup():
             import time
-
             time.sleep(0.5)  # 给当前消息处理完成的时间
             logger.info(f"[MessageProcessor] Starting cleanup for restart, reason: {reason}")
             try:
                 from unilabos.app.utils import cleanup_for_restart
-
                 if cleanup_for_restart():
                     logger.info("[MessageProcessor] Cleanup successful, main() will restart")
                 else:
                     logger.error("[MessageProcessor] Cleanup failed")
             except Exception as e:
                 logger.error(f"[MessageProcessor] Error during cleanup: {e}")
-
+        
         cleanup_thread = threading.Thread(target=do_cleanup, name="RestartCleanupThread", daemon=True)
         cleanup_thread.start()
         logger.info(f"[MessageProcessor] Restart cleanup scheduled")
@@ -1135,7 +1128,7 @@ class QueueProcessor:
             success = self.message_processor.send_message(message)
             job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
             if success:
-                logger.trace(f"[QueueProcessor] Sent busy/need_more for queued job {job_log}")
+                logger.debug(f"[QueueProcessor] Sent busy/need_more for queued job {job_log}")
             else:
                 logger.warning(f"[QueueProcessor] Failed to send busy status for job {job_log}")
 
@@ -1158,7 +1151,7 @@ class QueueProcessor:
             job_info.action_name,
         )
 
-        logger.trace(f"[QueueProcessor] Job {job_log} completed with status: {status}")
+        logger.info(f"[QueueProcessor] Job {job_log} completed with status: {status}")
 
         # 结束任务，获取下一个可执行的任务
         next_job = self.device_manager.end_job(job_id)
@@ -1178,8 +1171,8 @@ class QueueProcessor:
                 },
             }
             self.message_processor.send_message(message)
-            # next_job_log = format_job_log(next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name)
-            # logger.debug(f"[QueueProcessor] Notified next job {next_job_log} can start")
+            next_job_log = format_job_log(next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name)
+            logger.info(f"[QueueProcessor] Notified next job {next_job_log} can start")
 
             # 立即触发下一轮状态检查
             self.notify_queue_update()
@@ -1321,7 +1314,7 @@ class WebSocketClient(BaseCommunicationClient):
                 except (KeyError, AttributeError):
                     logger.warning(f"[WebSocketClient] Failed to remove job {item.job_id} from HostNode status")
 
-            # logger.debug(f"[WebSocketClient] Intercepting final status for job_id: {item.job_id} - {status}")
+            logger.info(f"[WebSocketClient] Intercepting final status for job_id: {item.job_id} - {status}")
 
             # 通知队列处理器job完成（包括timeout的job）
             self.queue_processor.handle_job_completed(item.job_id, status)
@@ -1382,17 +1375,15 @@ class WebSocketClient(BaseCommunicationClient):
         # 收集设备信息
         devices = []
         machine_name = BasicConfig.machine_name
-
+        
         try:
             host_node = HostNode.get_instance(0)
             if host_node:
                 # 获取设备信息
                 for device_id, namespace in host_node.devices_names.items():
-                    device_key = (
-                        f"{namespace}/{device_id}" if namespace.startswith("/") else f"/{namespace}/{device_id}"
-                    )
+                    device_key = f"{namespace}/{device_id}" if namespace.startswith("/") else f"/{namespace}/{device_id}"
                     is_online = device_key in host_node._online_devices
-
+                    
                     # 获取设备的动作信息
                     actions = {}
                     for action_id, client in host_node._action_clients.items():
@@ -1403,18 +1394,16 @@ class WebSocketClient(BaseCommunicationClient):
                                 "action_path": action_id,
                                 "action_type": str(type(client).__name__),
                             }
-
-                    devices.append(
-                        {
-                            "device_id": device_id,
-                            "namespace": namespace,
-                            "device_key": device_key,
-                            "is_online": is_online,
-                            "machine_name": host_node.device_machine_names.get(device_id, machine_name),
-                            "actions": actions,
-                        }
-                    )
-
+                    
+                    devices.append({
+                        "device_id": device_id,
+                        "namespace": namespace,
+                        "device_key": device_key,
+                        "is_online": is_online,
+                        "machine_name": host_node.device_machine_names.get(device_id, machine_name),
+                        "actions": actions,
+                    })
+                
                 logger.info(f"[WebSocketClient] Collected {len(devices)} devices for host_ready")
         except Exception as e:
             logger.warning(f"[WebSocketClient] Error collecting device info: {e}")

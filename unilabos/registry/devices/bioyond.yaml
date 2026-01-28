@@ -1,10 +1,88 @@
-bioyond_dispensing_station:
+workstation.bioyond_dispensing_station:
   category:
   - workstation
   - bioyond
-  - bioyond_dispensing_station
   class:
     action_value_mappings:
+      auto-batch_create_90_10_vial_feeding_tasks:
+        feedback: {}
+        goal: {}
+        goal_default:
+          delay_time: null
+          hold_m_name: null
+          liquid_material_name: NMP
+          speed: null
+          temperature: null
+          titration: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                delay_time:
+                  type: string
+                hold_m_name:
+                  type: string
+                liquid_material_name:
+                  default: NMP
+                  type: string
+                speed:
+                  type: string
+                temperature:
+                  type: string
+                titration:
+                  type: string
+              required:
+              - titration
+              type: object
+            result: {}
+          required:
+          - goal
+          title: batch_create_90_10_vial_feeding_tasks参数
+          type: object
+        type: UniLabJsonCommand
+      auto-batch_create_diamine_solution_tasks:
+        feedback: {}
+        goal: {}
+        goal_default:
+          delay_time: null
+          liquid_material_name: NMP
+          solutions: null
+          speed: null
+          temperature: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                delay_time:
+                  type: string
+                liquid_material_name:
+                  default: NMP
+                  type: string
+                solutions:
+                  type: string
+                speed:
+                  type: string
+                temperature:
+                  type: string
+              required:
+              - solutions
+              type: object
+            result: {}
+          required:
+          - goal
+          title: batch_create_diamine_solution_tasks参数
+          type: object
+        type: UniLabJsonCommand
       auto-brief_step_parameters:
         feedback: {}
         goal: {}
@@ -203,6 +281,38 @@ bioyond_dispensing_station:
           title: transfer_materials_to_reaction_station参数
           type: object
         type: UniLabJsonCommand
+      auto-wait_for_multiple_orders_and_get_reports:
+        feedback: {}
+        goal: {}
+        goal_default:
+          batch_create_result: null
+          check_interval: 10
+          timeout: 7200
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                batch_create_result:
+                  type: string
+                check_interval:
+                  default: 10
+                  type: integer
+                timeout:
+                  default: 7200
+                  type: integer
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: wait_for_multiple_orders_and_get_reports参数
+          type: object
+        type: UniLabJsonCommand
       auto-workflow_sample_locations:
         feedback: {}
         goal: {}
@@ -226,172 +336,6 @@ bioyond_dispensing_station:
           required:
           - goal
           title: workflow_sample_locations参数
-          type: object
-        type: UniLabJsonCommand
-      batch_create_90_10_vial_feeding_tasks:
-        feedback: {}
-        goal:
-          delay_time: delay_time
-          hold_m_name: hold_m_name
-          liquid_material_name: liquid_material_name
-          speed: speed
-          temperature: temperature
-          titration: titration
-        goal_default:
-          delay_time: '600'
-          hold_m_name: ''
-          liquid_material_name: NMP
-          speed: '400'
-          temperature: '40'
-          titration: ''
-        handles:
-          input:
-          - data_key: titration
-            data_source: handle
-            data_type: object
-            handler_key: titration
-            io_type: source
-            label: Titration Data From Calculation Node
-          output:
-          - data_key: return_info
-            data_source: executor
-            data_type: string
-            handler_key: BATCH_CREATE_RESULT
-            io_type: sink
-            label: Complete Batch Create Result JSON (contains order_codes and order_ids)
-        result:
-          return_info: return_info
-        schema:
-          description: 批量创建90%10%小瓶投料任务。从计算节点接收titration数据,包含物料名称、主称固体质量、滴定固体质量和滴定溶剂体积。返回的return_info中包含order_codes和order_ids列表。
-          properties:
-            feedback:
-              properties: {}
-              required: []
-              title: BatchCreate9010VialFeedingTasks_Feedback
-              type: object
-            goal:
-              properties:
-                delay_time:
-                  default: '600'
-                  description: 延迟时间(秒),默认600
-                  type: string
-                hold_m_name:
-                  description: 库位名称,如"C01",必填参数
-                  type: string
-                liquid_material_name:
-                  default: NMP
-                  description: 10%物料的液体物料名称,默认为"NMP"
-                  type: string
-                speed:
-                  default: '400'
-                  description: 搅拌速度,默认400
-                  type: string
-                temperature:
-                  default: '40'
-                  description: 温度(℃),默认40
-                  type: string
-                titration:
-                  description: '滴定信息对象,包含: name(物料名称), main_portion(主称固体质量g), titration_portion(滴定固体质量g),
-                    titration_solvent(滴定溶液体积mL)'
-                  type: string
-              required:
-              - titration
-              - hold_m_name
-              title: BatchCreate9010VialFeedingTasks_Goal
-              type: object
-            result:
-              properties:
-                return_info:
-                  description: 批量任务创建结果汇总JSON字符串，包含total(总数)、success(成功数)、failed(失败数)、order_codes(任务编码数组)、order_ids(任务ID数组)、details(每个任务的详细信息)
-                  type: string
-              required:
-              - return_info
-              title: BatchCreate9010VialFeedingTasks_Result
-              type: object
-          required:
-          - goal
-          title: BatchCreate9010VialFeedingTasks
-          type: object
-        type: UniLabJsonCommand
-      batch_create_diamine_solution_tasks:
-        feedback: {}
-        goal:
-          delay_time: delay_time
-          liquid_material_name: liquid_material_name
-          solutions: solutions
-          speed: speed
-          temperature: temperature
-        goal_default:
-          delay_time: '600'
-          liquid_material_name: NMP
-          solutions: ''
-          speed: '400'
-          temperature: '20'
-        handles:
-          input:
-          - data_key: solutions
-            data_source: handle
-            data_type: array
-            handler_key: solutions
-            io_type: source
-            label: Solution Data From Python
-          output:
-          - data_key: return_info
-            data_source: executor
-            data_type: string
-            handler_key: BATCH_CREATE_RESULT
-            io_type: sink
-            label: Complete Batch Create Result JSON (contains order_codes and order_ids)
-        result:
-          return_info: return_info
-        schema:
-          description: 批量创建二胺溶液配置任务。自动为多个二胺样品创建溶液配置任务，每个任务包含固体物料称量、溶剂添加、搅拌混合等步骤。返回的return_info中包含order_codes和order_ids列表。
-          properties:
-            feedback:
-              properties: {}
-              required: []
-              title: BatchCreateDiamineSolutionTasks_Feedback
-              type: object
-            goal:
-              properties:
-                delay_time:
-                  default: '600'
-                  description: 溶液配置完成后的延迟时间（秒），用于充分混合和溶解，默认600秒
-                  type: string
-                liquid_material_name:
-                  default: NMP
-                  description: 液体溶剂名称，用于溶解固体物料，默认为NMP（N-甲基吡咯烷酮）
-                  type: string
-                solutions:
-                  description: '溶液列表，JSON数组格式，每个元素包含: name(物料名称), order(序号), solid_mass(固体质量g),
-                    solvent_volume(溶剂体积mL)。示例: [{"name": "MDA", "order": 0, "solid_mass":
-                    5.0, "solvent_volume": 20}, {"name": "MPDA", "order": 1, "solid_mass":
-                    4.5, "solvent_volume": 18}]'
-                  type: string
-                speed:
-                  default: '400'
-                  description: 搅拌速度（rpm），用于混合溶液，默认400转/分钟
-                  type: string
-                temperature:
-                  default: '20'
-                  description: 配置温度（℃），溶液配置过程的目标温度，默认20℃（室温）
-                  type: string
-              required:
-              - solutions
-              title: BatchCreateDiamineSolutionTasks_Goal
-              type: object
-            result:
-              properties:
-                return_info:
-                  description: 批量任务创建结果汇总JSON字符串，包含total(总数)、success(成功数)、failed(失败数)、order_codes(任务编码数组)、order_ids(任务ID数组)、details(每个任务的详细信息)
-                  type: string
-              required:
-              - return_info
-              title: BatchCreateDiamineSolutionTasks_Result
-              type: object
-          required:
-          - goal
-          title: BatchCreateDiamineSolutionTasks
           type: object
         type: UniLabJsonCommand
       create_90_10_vial_feeding_task:
@@ -620,81 +564,13 @@ bioyond_dispensing_station:
           title: DispenStationSolnPrep
           type: object
         type: DispenStationSolnPrep
-      wait_for_multiple_orders_and_get_reports:
-        feedback: {}
-        goal:
-          batch_create_result: batch_create_result
-          check_interval: check_interval
-          timeout: timeout
-        goal_default:
-          batch_create_result: ''
-          check_interval: '10'
-          timeout: '7200'
-        handles:
-          input:
-          - data_key: batch_create_result
-            data_source: handle
-            data_type: string
-            handler_key: BATCH_CREATE_RESULT
-            io_type: source
-            label: Batch Task Creation Result From Previous Step
-          output:
-          - data_key: return_info
-            data_source: handle
-            data_type: string
-            handler_key: batch_reports_result
-            io_type: sink
-            label: Batch Order Completion Reports
-        result:
-          return_info: return_info
-        schema:
-          description: 同时等待多个任务完成并获取所有实验报告。从上游batch_create任务接收包含order_codes和order_ids的结果对象，并行监控所有任务状态并返回每个任务的报告。
-          properties:
-            feedback:
-              properties: {}
-              required: []
-              title: WaitForMultipleOrdersAndGetReports_Feedback
-              type: object
-            goal:
-              properties:
-                batch_create_result:
-                  description: 批量创建任务的返回结果对象，包含order_codes和order_ids数组。从上游batch_create节点通过handle传递
-                  type: string
-                check_interval:
-                  default: '10'
-                  description: 检查任务状态的时间间隔（秒），默认每10秒检查一次所有待完成任务
-                  type: string
-                timeout:
-                  default: '7200'
-                  description: 等待超时时间（秒），默认7200秒（2小时）。超过此时间未完成的任务将标记为timeout
-                  type: string
-              required:
-              - batch_create_result
-              title: WaitForMultipleOrdersAndGetReports_Goal
-              type: object
-            result:
-              properties:
-                return_info:
-                  description: 'JSON格式的批量任务完成信息，包含: total(总数), completed(成功数), timeout(超时数),
-                    error(错误数), elapsed_time(总耗时), reports(报告数组，每个元素包含order_code,
-                    order_id, status, completion_status, report, elapsed_time)'
-                  type: string
-              required:
-              - return_info
-              title: WaitForMultipleOrdersAndGetReports_Result
-              type: object
-          required:
-          - goal
-          title: WaitForMultipleOrdersAndGetReports
-          type: object
-        type: UniLabJsonCommand
     module: unilabos.devices.workstation.bioyond_studio.dispensing_station:BioyondDispensingStation
     status_types: {}
     type: python
   config_info: []
   description: ''
   handles: []
-  icon: preparation_station.webp
+  icon: ''
   init_param_schema:
     config:
       properties:

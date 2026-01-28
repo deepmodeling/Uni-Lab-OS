@@ -207,7 +207,14 @@ class LiquidHandlerMiddleware(LiquidHandler):
 
         res_samples = []
         res_volumes = []
-        for resource, volume, channel in zip(resources, vols, use_channels):
+        # 处理 use_channels 为 None 的情况（通常用于单通道操作）
+        if use_channels is None:
+            # 对于单通道操作，推断通道为 [0]
+            channels_to_use = [0] * len(resources)
+        else:
+            channels_to_use = use_channels
+
+        for resource, volume, channel in zip(resources, vols, channels_to_use):
             res_samples.append({"name": resource.name, "sample_uuid": resource.unilabos_extra.get("sample_uuid", None)})
             res_volumes.append(volume)
             self.pending_liquids_dict[channel] = {
@@ -920,6 +927,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                                 offsets=offsets if offsets else None,
                                 height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                                 mix_rate=mix_rate if mix_rate else None,
+                                use_channels=use_channels,
                             )
                         if delays is not None and len(delays) > 1:
                             await self.custom_delay(seconds=delays[1])
@@ -983,6 +991,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                                 offsets=offsets if offsets else None,
                                 height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                                 mix_rate=mix_rate if mix_rate else None,
+                                use_channels=use_channels,
                             )
                         if delays is not None and len(delays) > 1:
                             await self.custom_delay(seconds=delays[1])
@@ -1165,6 +1174,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         offsets=offsets if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
+                        use_channels=use_channels,
                     )
 
                 await self.aspirate(
@@ -1199,6 +1209,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         offsets=offsets if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
+                        use_channels=use_channels,
                     )
                 if delays is not None and len(delays) > 1:
                     await self.custom_delay(seconds=delays[1])
@@ -1235,6 +1246,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         offsets=offsets if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
+                        use_channels=use_channels,
                     )
 
                 await self.aspirate(
@@ -1271,6 +1283,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         offsets=offsets if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
+                        use_channels=use_channels,
                     )
                 if delays is not None and len(delays) > 1:
                     await self.custom_delay(seconds=delays[1])
@@ -1327,6 +1340,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         offsets=offsets[idx:idx + 1] if offsets and len(offsets) > idx else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
+                        use_channels=use_channels,
                     )
 
             # 从源容器吸液（总体积）
@@ -1366,6 +1380,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         offsets=offsets[idx:idx+1] if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
+                        use_channels=use_channels,
                     )
                 if touch_tip:
                     await self.touch_tip([target])
@@ -1401,6 +1416,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         offsets=offsets[i:i + 8] if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
+                        use_channels=use_channels,
                     )
                 
                 # 从源容器吸液（8个通道都从同一个源，但每个通道的吸液体积不同）
@@ -1446,6 +1462,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         offsets=offsets if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
+                        use_channels=use_channels,
                     )
                 
                 if touch_tip:
@@ -1497,10 +1514,19 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 f"(matching `asp_vols`). Got length {len(dis_vols)}."
             )
 
+        need_mix_after = mix_stage in ["after", "both"] and mix_times is not None and mix_times > 0
+        defer_final_discard = need_mix_after or touch_tip
+
         if len(use_channels) == 1:
             # 单通道模式：多次吸液，一次分液
-            # 先混合前（如果需要）
+
+            # 如果需要 before mix，先 pick up tip 并执行 mix
             if mix_stage in ["before", "both"] and mix_times is not None and mix_times > 0:
+                tip = []
+                for _ in range(len(use_channels)):
+                    tip.extend(next(self.current_tip))
+                await self.pick_up_tips(tip)
+
                 await self.mix(
                     targets=[target],
                     mix_time=mix_times,
@@ -1508,8 +1534,11 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     offsets=offsets[0:1] if offsets else None,
                     height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                     mix_rate=mix_rate if mix_rate else None,
+                    use_channels=use_channels,
                 )
-            
+
+                await self.discard_tips(use_channels=use_channels)
+
             # 从每个源容器吸液并分液到目标容器
             for idx, source in enumerate(sources):
                 tip = []
@@ -1527,10 +1556,10 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     blow_out_air_volume=[blow_out_air_volume[idx]] if blow_out_air_volume and len(blow_out_air_volume) > idx else None,
                     spread=spread,
                 )
-                
+
                 if delays is not None:
                     await self.custom_delay(seconds=delays[0])
-                
+
                 # 分液到目标容器
                 if use_proportional_mixing:
                     # 按不同比例混合：使用对应的 dis_vols
@@ -1546,7 +1575,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     dis_offset = offsets[0] if offsets and len(offsets) > 0 else None
                     dis_liquid_height = liquid_height[0] if liquid_height and len(liquid_height) > 0 else None
                     dis_blow_out = blow_out_air_volume[0] if blow_out_air_volume and len(blow_out_air_volume) > 0 else None
-                
+
                 await self.dispense(
                     resources=[target],
                     vols=[dis_vol],
@@ -1557,14 +1586,15 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     liquid_height=[dis_liquid_height] if dis_liquid_height is not None else None,
                     spread=spread,
                 )
-                
+
                 if delays is not None and len(delays) > 1:
                     await self.custom_delay(seconds=delays[1])
-                
-                await self.discard_tips(use_channels=use_channels)
-            
+
+                if not (defer_final_discard and idx == len(sources) - 1):
+                    await self.discard_tips(use_channels=use_channels)
+
             # 最后在目标容器中混合（如果需要）
-            if mix_stage in ["after", "both"] and mix_times is not None and mix_times > 0:
+            if need_mix_after:
                 await self.mix(
                     targets=[target],
                     mix_time=mix_times,
@@ -1572,18 +1602,27 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     offsets=offsets[0:1] if offsets else None,
                     height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                     mix_rate=mix_rate if mix_rate else None,
+                    use_channels=use_channels,
                 )
             
             if touch_tip:
                 await self.touch_tip([target])
+
+            if defer_final_discard:
+                await self.discard_tips(use_channels=use_channels)
         
         elif len(use_channels) == 8:
             # 8通道模式：需要确保源数量是8的倍数
             if len(sources) % 8 != 0:
                 raise ValueError(f"For 8-channel mode, number of sources {len(sources)} must be a multiple of 8.")
-            
-            # 每次处理8个源
+
+            # 如果需要 before mix，先 pick up tips 并执行 mix
             if mix_stage in ["before", "both"] and mix_times is not None and mix_times > 0:
+                tip = []
+                for _ in range(len(use_channels)):
+                    tip.extend(next(self.current_tip))
+                await self.pick_up_tips(tip)
+
                 await self.mix(
                     targets=[target],
                     mix_time=mix_times,
@@ -1591,7 +1630,10 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     offsets=offsets[0:1] if offsets else None,
                     height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                     mix_rate=mix_rate if mix_rate else None,
+                    use_channels=use_channels,
                 )
+
+                await self.discard_tips([0,1,2,3,4,5,6,7])
 
             for i in range(0, len(sources), 8):
                 tip = []
@@ -1650,11 +1692,12 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 
                 if delays is not None and len(delays) > 1:
                     await self.custom_delay(seconds=delays[1])
-                
-                await self.discard_tips([0,1,2,3,4,5,6,7])
-            
+
+                if not (defer_final_discard and i + 8 >= len(sources)):
+                    await self.discard_tips([0,1,2,3,4,5,6,7])
+
             # 最后在目标容器中混合（如果需要）
-            if mix_stage in ["after", "both"] and mix_times is not None and mix_times > 0:
+            if need_mix_after:
                 await self.mix(
                     targets=[target],
                     mix_time=mix_times,
@@ -1662,10 +1705,14 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     offsets=offsets[0:1] if offsets else None,
                     height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                     mix_rate=mix_rate if mix_rate else None,
+                    use_channels=use_channels,
                 )
             
             if touch_tip:
                 await self.touch_tip([target])
+
+            if defer_final_discard:
+                await self.discard_tips([0,1,2,3,4,5,6,7])
 
     # except Exception as e:
     #     traceback.print_exc()
@@ -1686,7 +1733,12 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 print(f"Waiting time: {msg}")
                 print(f"Current time: {time.strftime('%H:%M:%S')}")
                 print(f"Time to finish: {time.strftime('%H:%M:%S', time.localtime(time.time() + seconds))}")
-            await self._ros_node.sleep(seconds)
+            # Use ROS node sleep if available, otherwise use asyncio.sleep
+            if hasattr(self, '_ros_node') and self._ros_node is not None:
+                await self._ros_node.sleep(seconds)
+            else:
+                import asyncio
+                await asyncio.sleep(seconds)
             if msg:
                 print(f"Done: {msg}")
                 print(f"Current time: {time.strftime('%H:%M:%S')}")
@@ -1725,27 +1777,59 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         height_to_bottom: Optional[float] = None,
         offsets: Optional[Coordinate] = None,
         mix_rate: Optional[float] = None,
+        use_channels: Optional[List[int]] = None,
         none_keys: List[str] = [],
     ):
-        if mix_time is None:  # No mixing required
+        if mix_time is None or mix_time <= 0:  # No mixing required
             return
         """Mix the liquid in the target wells."""
+        if mix_vol is None:
+            raise ValueError("`mix_vol` must be provided when `mix_time` is set.")
+
+        targets_list: List[Container] = list(targets)
+        if len(targets_list) == 0:
+            return
+
+        def _expand(value, count: int):
+            if value is None:
+                return [None] * count
+            if isinstance(value, (list, tuple)):
+                if len(value) != count:
+                    raise ValueError("Length of per-target parameters must match targets.")
+                return list(value)
+            return [value] * count
+
+        offsets_list = _expand(offsets, len(targets_list))
+        heights_list = _expand(height_to_bottom, len(targets_list))
+        rates_list = _expand(mix_rate, len(targets_list))
+
         for _ in range(mix_time):
-            await self.aspirate(
-                resources=[targets],
-                vols=[mix_vol],
-                flow_rates=[mix_rate] if mix_rate else None,
-                offsets=[offsets] if offsets else None,
-                liquid_height=[height_to_bottom] if height_to_bottom else None,
-            )
-            await self.custom_delay(seconds=1)
-            await self.dispense(
-                resources=[targets],
-                vols=[mix_vol],
-                flow_rates=[mix_rate] if mix_rate else None,
-                offsets=[offsets] if offsets else None,
-                liquid_height=[height_to_bottom] if height_to_bottom else None,
-            )
+            for idx, target in enumerate(targets_list):
+                offset_arg = (
+                    [offsets_list[idx]] if offsets_list[idx] is not None else None
+                )
+                height_arg = (
+                    [heights_list[idx]] if heights_list[idx] is not None else None
+                )
+                rate_arg = [rates_list[idx]] if rates_list[idx] is not None else None
+
+                await self.aspirate(
+                    resources=[target],
+                    vols=[mix_vol],
+                    use_channels=use_channels,
+                    flow_rates=rate_arg,
+                    offsets=offset_arg,
+                    liquid_height=height_arg,
+                )
+                await self.custom_delay(seconds=1)
+                await self.dispense(
+                    resources=[target],
+                    vols=[mix_vol],
+                    use_channels=use_channels,
+                    flow_rates=rate_arg,
+                    offsets=offset_arg,
+                    liquid_height=height_arg,
+                )
 
     def iter_tips(self, tip_racks: Sequence[TipRack]) -> Iterator[Resource]:
         """Yield tips from a list of TipRacks one-by-one until depleted."""

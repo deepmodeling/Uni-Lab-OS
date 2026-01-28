@@ -4,7 +4,6 @@ temp/
 output/
 unilabos_data/
 pyrightconfig.json
-.cursorignore
 ## Python
 
 # Byte-compiled / optimized / DLL files

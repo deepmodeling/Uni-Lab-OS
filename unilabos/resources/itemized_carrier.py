@@ -29,7 +29,7 @@ class Bottle(Well):
         size_x: float = 0.0,
         size_y: float = 0.0,
         size_z: float = 0.0,
-        barcode: Optional[str] = None,
+        barcode: Optional[str] = "",
         category: str = "container",
         model: Optional[str] = None,
         **kwargs,
@@ -50,44 +50,12 @@ class Bottle(Well):
         self.barcode = barcode
 
     def serialize(self) -> dict:
-        # Pylabrobot expects barcode to be an object with serialize(), but here it is a str.
-        # We temporarily unset it to avoid AttributeError in super().serialize().
-        _barcode = self.barcode
-        self.barcode = None
-        try:
-            data = super().serialize()
-        finally:
-            self.barcode = _barcode
-
         return {
-            **data,
+            **super().serialize(),
             "diameter": self.diameter,
             "height": self.height,
+            "barcode": self.barcode,
         }
-
-    @classmethod
-    def deserialize(cls, data: dict, allow_marshal: bool = False):
-        # Extract barcode before calling parent deserialize to avoid type error
-        barcode_data = data.pop("barcode", None)
-
-        # Call parent deserialize
-        instance = super(Bottle, cls).deserialize(data, allow_marshal=allow_marshal)
-
-        # Set barcode as string (not as Barcode object)
-        if barcode_data:
-            if isinstance(barcode_data, str):
-                instance.barcode = barcode_data
-            elif isinstance(barcode_data, dict):
-                # If it's a dict (Barcode serialized format), extract the data field
-                instance.barcode = barcode_data.get("data", "")
-        else:
-            instance.barcode = ""
-
-        # Set additional attributes
-        instance.diameter = data.get("diameter", instance._size_x)
-        instance.height = data.get("height", instance._size_z)
-
-        return instance
 
 T = TypeVar("T", bound=ResourceHolder)
 
@@ -111,6 +79,7 @@ class ItemizedCarrier(ResourcePLR):
     category: Optional[str] = "carrier",
     model: Optional[str] = None,
     invisible_slots: Optional[str] = None,
+    content_type: Optional[List[str]] = ["bottle", "container", "tube", "bottle_carrier", "tip_rack"],
   ):
     super().__init__(
       name=name,
@@ -124,6 +93,7 @@ class ItemizedCarrier(ResourcePLR):
     self.num_items_x, self.num_items_y, self.num_items_z = num_items_x, num_items_y, num_items_z
     self.invisible_slots = [] if invisible_slots is None else invisible_slots
     self.layout = "z-y" if self.num_items_z > 1 and self.num_items_x == 1 else "x-z" if self.num_items_z > 1 and self.num_items_y == 1 else "x-y"
+    self.content_type = content_type
 
     if isinstance(sites, dict):
       sites = sites or {}
@@ -451,7 +421,7 @@ class ItemizedCarrier(ResourcePLR):
                         self[identifier] if isinstance(self[identifier], str) else None,
         "position": {"x": location.x, "y": location.y, "z": location.z},
         "size": self.child_size[identifier],
-        "content_type": ["bottle", "container", "tube", "bottle_carrier", "tip_rack"]
+        "content_type": self.content_type
       } for identifier, location in self.child_locations.items()]
     }
 

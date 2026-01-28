@@ -22,7 +22,7 @@
         "host": "10.20.30.184",
         "port": 9999,
         "debug": false,
-        "setup": true,
+        "setup": false,
         "is_9320": true,
         "timeout": 10,
         "matrix_id": "5de524d0-3f95-406c-86dd-f83626ebc7cb",
@@ -221,7 +221,7 @@
         "type": "PRCXI9300PlateAdapterSite",
         "size_x": 127.5,
         "size_y": 86,
-        "size_z": 97,
+        "size_z": 94,
         "rotation": {
           "x": 0,
           "y": 0,

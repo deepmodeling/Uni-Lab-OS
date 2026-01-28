@@ -1652,10 +1652,10 @@ class PRCXI9300Api:
         start = False
         while not success:
             status = self.step_state_list()
-            if len(status) == 1:
-                start = True
             if status is None:
                 break
+            if len(status) == 1:
+                start = True
             if len(status) == 0:
                 break
             if status[-1]["State"] == 2 and start:

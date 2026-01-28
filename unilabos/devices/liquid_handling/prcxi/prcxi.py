@@ -701,9 +701,16 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         mix_rate: Optional[float] = None,
         none_keys: List[str] = [],
     ):
-        return await self._unilabos_backend.mix(
-            targets, mix_time, mix_vol, height_to_bottom, offsets, mix_rate, none_keys
-        )
+        if self.step_mode:
+            await self.create_protocol(f"单点动作{time.time()}")
+            await self._unilabos_backend.mix(
+                targets, mix_time, mix_vol, height_to_bottom, offsets, mix_rate, none_keys
+            )
+            await self.run_protocol()
+        else:
+            return await self._unilabos_backend.mix(
+                targets, mix_time, mix_vol, height_to_bottom, offsets, mix_rate, none_keys
+            )
 
     def iter_tips(self, tip_racks: Sequence[TipRack]) -> Iterator[Resource]:
         return super().iter_tips(tip_racks)
@@ -719,7 +726,8 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
             await self.create_protocol(f"单点动作{time.time()}")
             await super().pick_up_tips(tip_spots, use_channels, offsets, **backend_kwargs)
             await self.run_protocol()
-        return await super().pick_up_tips(tip_spots, use_channels, offsets, **backend_kwargs)
+        else:
+            return await super().pick_up_tips(tip_spots, use_channels, offsets, **backend_kwargs)
 
     async def aspirate(
         self,
@@ -733,18 +741,32 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         spread: Literal["wide", "tight", "custom"] = "wide",
         **backend_kwargs,
     ):
-
-        return await super().aspirate(
-            resources,
-            vols,
-            use_channels,
-            flow_rates,
-            offsets,
-            liquid_height,
-            blow_out_air_volume,
-            spread,
-            **backend_kwargs,
-        )
+        if self.step_mode:
+            await self.create_protocol(f"单点动作{time.time()}")
+            await super().aspirate(
+                resources,
+                vols,
+                use_channels,
+                flow_rates,
+                offsets,
+                liquid_height,
+                blow_out_air_volume,
+                spread,
+                **backend_kwargs,
+            )
+            await self.run_protocol()
+        else:
+            return await super().aspirate(
+                resources,
+                vols,
+                use_channels,
+                flow_rates,
+                offsets,
+                liquid_height,
+                blow_out_air_volume,
+                spread,
+                **backend_kwargs,
+            )
 
     async def drop_tips(
         self,
@@ -754,7 +776,12 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         allow_nonzero_volume: bool = False,
         **backend_kwargs,
     ):
-        return await super().drop_tips(tip_spots, use_channels, offsets, allow_nonzero_volume, **backend_kwargs)
+        if self.step_mode:
+            await self.create_protocol(f"单点动作{time.time()}")
+            await super().drop_tips(tip_spots, use_channels, offsets, allow_nonzero_volume, **backend_kwargs)
+            await self.run_protocol()
+        else:
+            return await super().drop_tips(tip_spots, use_channels, offsets, allow_nonzero_volume, **backend_kwargs)
 
     async def dispense(
         self,
@@ -768,17 +795,32 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         spread: Literal["wide", "tight", "custom"] = "wide",
         **backend_kwargs,
     ):
-        return await super().dispense(
-            resources,
-            vols,
-            use_channels,
-            flow_rates,
-            offsets,
-            liquid_height,
-            blow_out_air_volume,
-            spread,
-            **backend_kwargs,
-        )
+        if self.step_mode:
+            await self.create_protocol(f"单点动作{time.time()}")
+            await super().dispense(
+                resources,
+                vols,
+                use_channels,
+                flow_rates,
+                offsets,
+                liquid_height,
+                blow_out_air_volume,
+                spread,
+                **backend_kwargs,
+            )
+            await self.run_protocol()
+        else:
+            return await super().dispense(
+                resources,
+                vols,
+                use_channels,
+                flow_rates,
+                offsets,
+                liquid_height,
+                blow_out_air_volume,
+                spread,
+                **backend_kwargs,
+            )
 
     async def discard_tips(
         self,
@@ -787,7 +829,12 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         offsets: Optional[List[Coordinate]] = None,
         **backend_kwargs,
     ):
-        return await super().discard_tips(use_channels, allow_nonzero_volume, offsets, **backend_kwargs)
+        if self.step_mode:
+            await self.create_protocol(f"单点动作{time.time()}")
+            await super().discard_tips(use_channels, allow_nonzero_volume, offsets, **backend_kwargs)
+            await self.run_protocol()
+        else:
+            return await super().discard_tips(use_channels, allow_nonzero_volume, offsets, **backend_kwargs)
 
     def set_tiprack(self, tip_racks: Sequence[TipRack]):
         super().set_tiprack(tip_racks)
@@ -1898,6 +1945,188 @@ class DefaultLayout:
 
 
 if __name__ == "__main__":
+
+    FETCH_LAYOUT_AND_MATERIALS_ONLY = True
+    
+    if FETCH_LAYOUT_AND_MATERIALS_ONLY:
+        # 获取布局和物料列表并保存为JSON
+        prcxi_api = PRCXI9300Api(host="192.168.1.201", port=9999)
+        matrices = prcxi_api.list_matrices()
+        materials = prcxi_api.get_all_materials()
+        
+        # 保存为格式规整的JSON文件
+        output_data = {
+            "matrices": matrices,
+            "materials": materials
+        }
+        
+        with open("prcxi_layout_and_materials.json", "w", encoding="utf-8") as f:
+            json.dump(output_data, f, indent=4, ensure_ascii=False)
+        
+        print("布局和物料列表已保存到 prcxi_layout_and_materials.json")
+        exit(0)
+
+    # ============================================================================
+    # step_mode 使用示例
+    # ============================================================================
+    # step_mode 是 PRCXI9320 设备支持的单点动作模式
+    # 在 step_mode=True 时，每个操作会立即创建协议并执行，适合调试和单步测试
+    # 在 step_mode=False 时，所有操作会先添加到协议中，最后统一执行，适合生产流程
+    
+    # 示例1: 使用 step_mode=True 进行单点动作调试（仅 PRCXI9320 支持）
+    async def example_step_mode():
+        """单点动作模式示例 - 每个操作立即执行"""
+        from pylabrobot.resources.opentrons.tip_racks import opentrons_96_tiprack_300ul
+        from pylabrobot.resources.opentrons.plates import corning_96_wellplate_360ul_flat
+        
+        # 创建 deck
+        deck = PRCXI9300Deck(name="PRCXI_Deck_9320", size_x=100, size_y=100, size_z=100)
+        
+        # 创建资源
+        tip_rack = opentrons_96_tiprack_300ul("RackT1")
+        plate = corning_96_wellplate_360ul_flat("PlateT2")
+        
+        # 设置物料信息
+        tip_rack.load_state({
+            "Material": {
+                "uuid": "076250742950465b9d6ea29a225dfb00",
+                "Code": "ZX-001-300",
+                "Name": "300μL Tip头"
+            }
+        })
+        plate.load_state({
+            "Material": {
+                "uuid": "57b1e4711e9e4a32b529f3132fc5931f",
+                "Code": "ZX-019-2.2",
+                "Name": "96深孔板"
+            }
+        })
+        
+        deck.assign_child_resource(tip_rack, location=Coordinate(0, 0, 0))
+        deck.assign_child_resource(plate, location=Coordinate(50, 0, 0))
+        
+        # 创建 handler，启用 step_mode（仅 PRCXI9320 支持）
+        handler = PRCXI9300Handler(
+            deck=deck,
+            host="192.168.1.201",
+            port=9999,
+            timeout=10.0,
+            step_mode=True,  # 启用单点动作模式
+            is_9320=True,    # 必须是 9320 设备
+            setup=True
+        )
+        
+        await handler.setup()
+        handler.set_tiprack([tip_rack])
+        
+        # 在 step_mode 下，每个操作会立即执行
+        print("=== 单点动作模式示例 ===")
+        print("1. 拾取枪头（立即执行）")
+        await handler.pick_up_tips([tip_rack.get_item("A1")], [0])
+        
+        print("2. 吸取液体（立即执行）")
+        await handler.aspirate([plate.get_item("A1")], [50], [0])
+        
+        print("3. 分液（立即执行）")
+        await handler.dispense([plate.get_item("B1")], [50], [0])
+        
+        print("4. 混合（立即执行）")
+        await handler.mix([plate.get_item("B1")], mix_time=3, mix_vol=20)
+        
+        print("5. 丢弃枪头（立即执行）")
+        await handler.discard_tips([0])
+        
+        print("单点动作模式示例完成")
+    
+    # 示例2: 使用 step_mode=False 进行批量操作（默认模式）
+    async def example_normal_mode():
+        """正常模式示例 - 批量执行所有操作"""
+        from pylabrobot.resources.opentrons.tip_racks import opentrons_96_tiprack_300ul
+        from pylabrobot.resources.opentrons.plates import corning_96_wellplate_360ul_flat
+        
+        # 创建 deck
+        deck = PRCXI9300Deck(name="PRCXI_Deck_9320", size_x=100, size_y=100, size_z=100)
+        
+        # 创建资源
+        tip_rack = opentrons_96_tiprack_300ul("RackT1")
+        source_plate = corning_96_wellplate_360ul_flat("PlateT2")
+        dest_plate = corning_96_wellplate_360ul_flat("PlateT3")
+        
+        # 设置物料信息
+        tip_rack.load_state({
+            "Material": {
+                "uuid": "076250742950465b9d6ea29a225dfb00",
+                "Code": "ZX-001-300",
+                "Name": "300μL Tip头"
+            }
+        })
+        source_plate.load_state({
+            "Material": {
+                "uuid": "57b1e4711e9e4a32b529f3132fc5931f",
+                "Code": "ZX-019-2.2",
+                "Name": "96深孔板"
+            }
+        })
+        dest_plate.load_state({
+            "Material": {
+                "uuid": "57b1e4711e9e4a32b529f3132fc5931f",
+                "Code": "ZX-019-2.2",
+                "Name": "96深孔板"
+            }
+        })
+        
+        deck.assign_child_resource(tip_rack, location=Coordinate(0, 0, 0))
+        deck.assign_child_resource(source_plate, location=Coordinate(50, 0, 0))
+        deck.assign_child_resource(dest_plate, location=Coordinate(100, 0, 0))
+        
+        # 创建 handler，使用默认的 step_mode=False
+        handler = PRCXI9300Handler(
+            deck=deck,
+            host="192.168.1.201",
+            port=9999,
+            timeout=10.0,
+            step_mode=False,  # 正常模式（默认）
+            is_9320=True,
+            setup=True
+        )
+        
+        await handler.setup()
+        handler.set_tiprack([tip_rack])
+        
+        # 创建协议
+        await handler.create_protocol("批量转移示例")
+        
+        # 在正常模式下，所有操作先添加到协议中
+        print("=== 正常模式示例 ===")
+        print("添加操作到协议中...")
+        
+        # 批量转移：从 A1-A8 转移到 B1-B8
+        for i in range(8):
+            well_name = f"{chr(65+i)}1"  # A1, B1, C1, ...
+            await handler.pick_up_tips([tip_rack.get_item(well_name)], [0])
+            await handler.aspirate([source_plate.get_item(well_name)], [100], [0])
+            await handler.dispense([dest_plate.get_item(well_name)], [100], [0])
+            await handler.discard_tips([0])
+        
+        print("执行协议...")
+        # 最后统一执行所有操作
+        await handler.run_protocol()
+        
+        print("正常模式示例完成")
+    
+    # 示例3: 混合使用 - 部分操作使用 step_mode，部分使用正常模式
+    async def example_mixed_usage():
+        """混合使用示例 - 演示如何在不同场景下切换模式"""
+        print("=== 混合使用示例 ===")
+        print("注意：step_mode 是在创建 handler 时设置的，不能动态切换")
+        print("如果需要混合使用，需要创建两个 handler 实例，或者")
+        print("在代码中根据需求选择使用哪个 handler")
+    
+    # 取消注释下面的代码来运行示例：
+    # asyncio.run(example_step_mode())      # 运行单点动作模式示例
+    # asyncio.run(example_normal_mode())    # 运行正常模式示例
+    # asyncio.run(example_mixed_usage())    # 运行混合使用说明
+
     # Example usage
     # 1. 用导出的json，给每个T1 T2板子设定相应的物料，如果是孔板和枪头盒，要对应区分
     # 2. backend需要支持num channel为1的情况
@@ -2315,7 +2544,7 @@ if __name__ == "__main__":
                     "_resource_child_name": "PRCXI_Deck",
                     "_resource_type": "unilabos.devices.liquid_handling.prcxi.prcxi:PRCXI9300Deck"
                 },
-                "host": "192.168.0.121",
+                "host": "192.168.1.201",
                 "port": 9999,
                 "timeout": 10.0,
                 "axis": "Right",

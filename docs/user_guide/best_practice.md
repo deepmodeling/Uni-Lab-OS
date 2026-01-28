@@ -31,6 +31,14 @@
 
 详细的安装步骤请参考 [安装指南](installation.md)。
 
+**选择合适的安装包：**
+
+| 安装包 | 适用场景 | 包含组件 |
+|--------|----------|----------|
+| `unilabos` | **推荐大多数用户**，生产部署 | 完整安装包，开箱即用 |
+| `unilabos-env` | 开发者（可编辑安装） | 仅环境依赖，通过 pip 安装 unilabos |
+| `unilabos-full` | 仿真/可视化 | unilabos + 完整 ROS2 桌面版 + Gazebo + MoveIt |
+
 **关键步骤：**
 
 ```bash
@@ -38,14 +46,29 @@
 # 下载 Miniforge: https://github.com/conda-forge/miniforge/releases
 
 # 2. 创建 Conda 环境
-mamba create -n unilab python=3.11.11
+mamba create -n unilab python=3.11.14
 
 # 3. 激活环境
 mamba activate unilab
 
-# 4. 安装 Uni-Lab-OS
+# 4. 安装 Uni-Lab-OS（选择其一）
+
+# 方案 A：标准安装（推荐大多数用户）
 mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
+
+# 方案 B：开发者环境（可编辑模式开发）
+mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+pip install -e /path/to/Uni-Lab-OS  # 可编辑安装
+uv pip install -r unilabos/utils/requirements.txt  # 安装 pip 依赖
+
+# 方案 C：完整版（仿真/可视化）
+mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
 ```
+
+**选择建议：**
+- **日常使用/生产部署**：使用 `unilabos`（推荐），完整功能，开箱即用
+- **开发者**：使用 `unilabos-env` + `pip install -e .` + `uv pip install -r unilabos/utils/requirements.txt`，代码修改立即生效
+- **仿真/可视化**：使用 `unilabos-full`，含 Gazebo、rviz2、MoveIt
 
 #### 1.2 验证安装
 
@@ -768,7 +791,43 @@ Waiting for host service...
 
 详细的设备驱动编写指南请参考 [添加设备驱动](../developer_guide/add_device.md)。
 
-#### 9.1 为什么需要自定义设备？
+#### 9.1 开发环境准备
+
+**推荐使用 `unilabos-env` + `pip install -e .` + `uv pip install`** 进行设备开发：
+
+```bash
+# 1. 创建环境并安装 unilabos-env（ROS2 + conda 依赖 + uv）
+mamba create -n unilab python=3.11.14
+conda activate unilab
+mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+
+# 2. 克隆代码
+git clone https://github.com/deepmodeling/Uni-Lab-OS.git
+cd Uni-Lab-OS
+
+# 3. 以可编辑模式安装（推荐使用脚本，自动检测中文环境）
+python scripts/dev_install.py
+
+# 或手动安装：
+pip install -e .
+uv pip install -r unilabos/utils/requirements.txt
+```
+
+**为什么使用这种方式？**
+- `unilabos-env` 提供 ROS2 核心组件和 uv（通过 conda 安装，避免编译）
+- `unilabos/utils/requirements.txt` 包含所有运行时需要的 pip 依赖
+- `dev_install.py` 自动检测中文环境，中文系统自动使用清华镜像
+- 使用 `uv` 替代 `pip`，安装速度更快
+- 可编辑模式：代码修改**立即生效**，无需重新安装
+
+**如果安装失败或速度太慢**，可以手动执行（使用清华镜像）：
+
+```bash
+pip install -e . -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+uv pip install -r unilabos/utils/requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+```
+
+#### 9.2 为什么需要自定义设备？
 
 Uni-Lab-OS 内置了常见设备，但您的实验室可能有特殊设备需要集成：
 
@@ -777,7 +836,7 @@ Uni-Lab-OS 内置了常见设备，但您的实验室可能有特殊设备需要
 - 特殊的实验流程
 - 第三方设备集成
 
-#### 9.2 创建 Python 包
+#### 9.3 创建 Python 包
 
 为了方便开发和管理，建议为您的实验室创建独立的 Python 包。
 
@@ -814,7 +873,7 @@ touch my_lab_devices/my_lab_devices/__init__.py
 touch my_lab_devices/my_lab_devices/devices/__init__.py
 ```
 
-#### 9.3 创建 setup.py
+#### 9.4 创建 setup.py
 
 ```python
 # my_lab_devices/setup.py
@@ -845,7 +904,7 @@ setup(
 )
 ```
 
-#### 9.4 开发安装
+#### 9.5 开发安装
 
 使用 `-e` 参数进行可编辑安装，这样代码修改后立即生效：
 
@@ -860,7 +919,7 @@ pip install -e . -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 - 方便调试和测试
 - 支持版本控制（git）
 
-#### 9.5 编写设备驱动
+#### 9.6 编写设备驱动
 
 创建设备驱动文件：
 
@@ -1001,7 +1060,7 @@ class MyPump:
 - **返回 Dict**：所有动作方法返回字典类型
 - **文档字符串**：详细说明参数和功能
 
-#### 9.6 测试设备驱动
+#### 9.7 测试设备驱动
 
 创建简单的测试脚本：
 

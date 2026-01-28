@@ -9752,21 +9752,21 @@ liquid_handler.prcxi:
           - 0
         handles:
           input:
-          - data_key: liquid
+          - data_key: sources
             data_source: handle
             data_type: resource
-            handler_key: sources
-            label: sources
-          - data_key: liquid
-            data_source: executor
+            handler_key: sources_identifier
+            label: 待移动液体
+          - data_key: targets
+            data_source: handle
             data_type: resource
-            handler_key: targets
-            label: targets
-          - data_key: liquid
-            data_source: executor
+            handler_key: targets_identifier
+            label: 转移目标
+          - data_key: tip_rack
+            data_source: handle
             data_type: resource
-            handler_key: tip_rack
-            label: tip_rack
+            handler_key: tip_rack_identifier
+            label: 墙头盒
           output:
           - data_key: liquid
             data_source: handle

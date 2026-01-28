@@ -5792,3 +5792,381 @@ virtual_vacuum_pump:
       - status
       type: object
   version: 1.0.0
+virtual_workbench:
+  category:
+  - virtual_device
+  class:
+    action_value_mappings:
+      auto-move_to_heating_station:
+        feedback: {}
+        goal: {}
+        goal_default:
+          material_number: null
+        handles:
+          input:
+          - data_key: material_number
+            data_source: handle
+            data_type: workbench_material
+            handler_key: material_input
+            label: 物料编号
+          output:
+          - data_key: station_id
+            data_source: executor
+            data_type: workbench_station
+            handler_key: heating_station_output
+            label: 加热台ID
+          - data_key: material_number
+            data_source: executor
+            data_type: workbench_material
+            handler_key: material_number_output
+            label: 物料编号
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 将物料从An位置移动到空闲加热台，返回分配的加热台ID
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                material_number:
+                  description: 物料编号，1-5，物料ID自动生成为A{n}
+                  type: integer
+              required:
+              - material_number
+              type: object
+            result:
+              description: move_to_heating_station 返回类型
+              properties:
+                material_id:
+                  title: Material Id
+                  type: string
+                material_number:
+                  title: Material Number
+                  type: integer
+                message:
+                  title: Message
+                  type: string
+                station_id:
+                  description: 分配的加热台ID
+                  title: Station Id
+                  type: integer
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - station_id
+              - material_id
+              - material_number
+              - message
+              title: MoveToHeatingStationResult
+              type: object
+          required:
+          - goal
+          title: move_to_heating_station参数
+          type: object
+        type: UniLabJsonCommand
+      auto-move_to_output:
+        feedback: {}
+        goal: {}
+        goal_default:
+          material_number: null
+          station_id: null
+        handles:
+          input:
+          - data_key: station_id
+            data_source: handle
+            data_type: workbench_station
+            handler_key: output_station_input
+            label: 加热台ID
+          - data_key: material_number
+            data_source: handle
+            data_type: workbench_material
+            handler_key: output_material_input
+            label: 物料编号
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 将物料从加热台移动到输出位置Cn
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                material_number:
+                  description: 物料编号，用于确定输出位置Cn
+                  type: integer
+                station_id:
+                  description: 加热台ID，1-3，从上一节点传入
+                  type: integer
+              required:
+              - station_id
+              - material_number
+              type: object
+            result:
+              description: move_to_output 返回类型
+              properties:
+                material_id:
+                  title: Material Id
+                  type: string
+                station_id:
+                  title: Station Id
+                  type: integer
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - station_id
+              - material_id
+              title: MoveToOutputResult
+              type: object
+          required:
+          - goal
+          title: move_to_output参数
+          type: object
+        type: UniLabJsonCommand
+      auto-prepare_materials:
+        feedback: {}
+        goal: {}
+        goal_default:
+          count: 5
+        handles:
+          output:
+          - data_key: material_1
+            data_source: executor
+            data_type: workbench_material
+            handler_key: channel_1
+            label: 实验1
+          - data_key: material_2
+            data_source: executor
+            data_type: workbench_material
+            handler_key: channel_2
+            label: 实验2
+          - data_key: material_3
+            data_source: executor
+            data_type: workbench_material
+            handler_key: channel_3
+            label: 实验3
+          - data_key: material_4
+            data_source: executor
+            data_type: workbench_material
+            handler_key: channel_4
+            label: 实验4
+          - data_key: material_5
+            data_source: executor
+            data_type: workbench_material
+            handler_key: channel_5
+            label: 实验5
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 批量准备物料 - 虚拟起始节点，生成A1-A5物料，输出5个handle供后续节点使用
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                count:
+                  default: 5
+                  description: 待生成的物料数量，默认5 (生成 A1-A5)
+                  type: integer
+              required: []
+              type: object
+            result:
+              description: prepare_materials 返回类型 - 批量准备物料
+              properties:
+                count:
+                  title: Count
+                  type: integer
+                material_1:
+                  title: Material 1
+                  type: integer
+                material_2:
+                  title: Material 2
+                  type: integer
+                material_3:
+                  title: Material 3
+                  type: integer
+                material_4:
+                  title: Material 4
+                  type: integer
+                material_5:
+                  title: Material 5
+                  type: integer
+                message:
+                  title: Message
+                  type: string
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - count
+              - material_1
+              - material_2
+              - material_3
+              - material_4
+              - material_5
+              - message
+              title: PrepareMaterialsResult
+              type: object
+          required:
+          - goal
+          title: prepare_materials参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start_heating:
+        feedback: {}
+        goal: {}
+        goal_default:
+          material_number: null
+          station_id: null
+        handles:
+          input:
+          - data_key: station_id
+            data_source: handle
+            data_type: workbench_station
+            handler_key: station_id_input
+            label: 加热台ID
+          - data_key: material_number
+            data_source: handle
+            data_type: workbench_material
+            handler_key: material_number_input
+            label: 物料编号
+          output:
+          - data_key: station_id
+            data_source: executor
+            data_type: workbench_station
+            handler_key: heating_done_station
+            label: 加热完成-加热台ID
+          - data_key: material_number
+            data_source: executor
+            data_type: workbench_material
+            handler_key: heating_done_material
+            label: 加热完成-物料编号
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 启动指定加热台的加热程序
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                material_number:
+                  description: 物料编号，从上一节点传入
+                  type: integer
+                station_id:
+                  description: 加热台ID，1-3，从上一节点传入
+                  type: integer
+              required:
+              - station_id
+              - material_number
+              type: object
+            result:
+              description: start_heating 返回类型
+              properties:
+                material_id:
+                  title: Material Id
+                  type: string
+                material_number:
+                  title: Material Number
+                  type: integer
+                message:
+                  title: Message
+                  type: string
+                station_id:
+                  title: Station Id
+                  type: integer
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - station_id
+              - material_id
+              - material_number
+              - message
+              title: StartHeatingResult
+              type: object
+          required:
+          - goal
+          title: start_heating参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.virtual.workbench:VirtualWorkbench
+    status_types:
+      active_tasks_count: int
+      arm_current_task: str
+      arm_state: str
+      heating_station_1_material: str
+      heating_station_1_progress: float
+      heating_station_1_state: str
+      heating_station_2_material: str
+      heating_station_2_progress: float
+      heating_station_2_state: str
+      heating_station_3_material: str
+      heating_station_3_progress: float
+      heating_station_3_state: str
+      message: str
+      status: str
+    type: python
+  config_info: []
+  description: Virtual Workbench with 1 robotic arm and 3 heating stations for concurrent
+    material processing
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        config:
+          type: string
+        device_id:
+          type: string
+      required: []
+      type: object
+    data:
+      properties:
+        active_tasks_count:
+          type: integer
+        arm_current_task:
+          type: string
+        arm_state:
+          type: string
+        heating_station_1_material:
+          type: string
+        heating_station_1_progress:
+          type: number
+        heating_station_1_state:
+          type: string
+        heating_station_2_material:
+          type: string
+        heating_station_2_progress:
+          type: number
+        heating_station_2_state:
+          type: string
+        heating_station_3_material:
+          type: string
+        heating_station_3_progress:
+          type: number
+        heating_station_3_state:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+      required:
+      - status
+      - arm_state
+      - arm_current_task
+      - heating_station_1_state
+      - heating_station_1_material
+      - heating_station_1_progress
+      - heating_station_2_state
+      - heating_station_2_material
+      - heating_station_2_progress
+      - heating_station_3_state
+      - heating_station_3_material
+      - heating_station_3_progress
+      - active_tasks_count
+      - message
+      type: object
+  version: 1.0.0

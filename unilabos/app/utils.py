@@ -4,8 +4,40 @@ UniLabOS 应用工具函数
 提供清理、重启等工具函数
 """
 
-import gc
+import glob
 import os
+import shutil
+import sys
+
+
+def patch_rclpy_dll_windows():
+    """在 Windows + conda 环境下为 rclpy 打 DLL 加载补丁"""
+    if sys.platform != "win32" or not os.environ.get("CONDA_PREFIX"):
+        return
+    try:
+        import rclpy
+
+        return
+    except ImportError as e:
+        if not str(e).startswith("DLL load failed"):
+            return
+    cp = os.environ["CONDA_PREFIX"]
+    impl = os.path.join(cp, "Lib", "site-packages", "rclpy", "impl", "implementation_singleton.py")
+    pyd = glob.glob(os.path.join(cp, "Lib", "site-packages", "rclpy", "_rclpy_pybind11*.pyd"))
+    if not os.path.exists(impl) or not pyd:
+        return
+    with open(impl, "r", encoding="utf-8") as f:
+        content = f.read()
+    lib_bin = os.path.join(cp, "Library", "bin").replace("\\", "/")
+    patch = f'# UniLabOS DLL Patch\nimport os,ctypes\nos.add_dll_directory("{lib_bin}") if hasattr(os,"add_dll_directory") else None\ntry: ctypes.CDLL("{pyd[0].replace(chr(92),"/")}")\nexcept: pass\n# End Patch\n'
+    shutil.copy2(impl, impl + ".bak")
+    with open(impl, "w", encoding="utf-8") as f:
+        f.write(patch + content)
+
+
+patch_rclpy_dll_windows()
+
+import gc
 import threading
 import time
 

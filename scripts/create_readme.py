@@ -85,7 +85,7 @@ Verification:
 -------------
 
 The verify_installation.py script will check:
-  - Python version (3.11.11)
+  - Python version (3.11.14)
   - ROS2 rclpy installation
   - UniLabOS installation and dependencies
 
@@ -104,7 +104,7 @@ Build Information:
 
   Branch:   {branch}
   Platform: {platform}
-  Python:   3.11.11
+  Python:   3.11.14
   Date:     {build_date}
 
 Troubleshooting:

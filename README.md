@@ -31,26 +31,46 @@ Detailed documentation can be found at:
 
 ## Quick Start
 
-1. Setup Conda Environment
+### 1. Setup Conda Environment
 
-Uni-Lab-OS recommends using `mamba` for environment management:
+Uni-Lab-OS recommends using `mamba` for environment management. Choose the package that fits your needs:
+
+| Package | Use Case | Contents |
+|---------|----------|----------|
+| `unilabos` | **Recommended for most users** | Complete package, ready to use |
+| `unilabos-env` | Developers (editable install) | Environment only, install unilabos via pip |
+| `unilabos-full` | Simulation/Visualization | unilabos + ROS2 Desktop + Gazebo + MoveIt |
 
 ```bash
 # Create new environment
-mamba create -n unilab python=3.11.11
+mamba create -n unilab python=3.11.14
 mamba activate unilab
-mamba install -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
+
+# Option A: Standard installation (recommended for most users)
+mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
+
+# Option B: For developers (editable mode development)
+mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+# Then install unilabos and dependencies:
+git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
+pip install -e .
+uv pip install -r unilabos/utils/requirements.txt
+
+# Option C: Full installation (simulation/visualization)
+mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
 ```
 
-2. Install Dev Uni-Lab-OS
+**When to use which?**
+- **unilabos**: Standard installation for production deployment and general usage (recommended)
+- **unilabos-env**: For developers who need `pip install -e .` editable mode, modify source code
+- **unilabos-full**: For simulation (Gazebo), visualization (rviz2), and Jupyter notebooks
+
+### 2. Clone Repository (Optional, for developers)
 
 ```bash
-# Clone the repository
+# Clone the repository (only needed for development or examples)
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
-
-# Install Uni-Lab-OS
-pip install .
 ```
 
 3. Start Uni-Lab System

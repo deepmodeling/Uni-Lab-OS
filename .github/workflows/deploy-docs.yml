@@ -1,10 +1,12 @@
 name: Deploy Docs
 
 on:
-  push:
+  # 在 CI Check 成功后自动触发（仅 main 分支）
+  workflow_run:
+    workflows: ["CI Check"]
+    types: [completed]
     branches: [main]
-  pull_request:
-    branches: [main]
+  # 手动触发
   workflow_dispatch:
     inputs:
       branch:
@@ -33,12 +35,19 @@ concurrency:
 jobs:
   # Build documentation
   build:
+    # 只在以下情况运行：
+    # 1. workflow_run 触发且 CI Check 成功
+    # 2. 手动触发
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
+          # workflow_run 时使用触发工作流的分支，手动触发时使用输入的分支
+          ref: ${{ github.event.workflow_run.head_branch || github.event.inputs.branch || github.ref }}
           fetch-depth: 0
 
       - name: Setup Miniforge (with mamba)
@@ -46,7 +55,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.11'
+          python-version: '3.11.14'
           channels: conda-forge,robostack-staging,uni-lab,defaults
           channel-priority: flexible
           activate-environment: unilab
@@ -75,8 +84,10 @@ jobs:
 
       - name: Setup Pages
         id: pages
-        uses: actions/configure-pages@v4
-        if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_pages == 'true')
+        uses: actions/configure-pages@v5
+        if: |
+          github.event.workflow_run.head_branch == 'main' ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_pages == 'true')
 
       - name: Build Sphinx documentation
         run: |
@@ -94,14 +105,18 @@ jobs:
           test -f docs/_build/html/index.html && echo "✓ index.html exists" || echo "✗ index.html missing"
 
       - name: Upload build artifacts
-        uses: actions/upload-pages-artifact@v3
-        if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_pages == 'true')
+        uses: actions/upload-pages-artifact@v4
+        if: |
+          github.event.workflow_run.head_branch == 'main' ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_pages == 'true')
         with:
           path: docs/_build/html
 
   # Deploy to GitHub Pages
   deploy:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_pages == 'true')
+    if: |
+      github.event.workflow_run.head_branch == 'main' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_pages == 'true')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

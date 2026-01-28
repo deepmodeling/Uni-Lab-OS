@@ -1319,19 +1319,32 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             resource_inputs = action_kwargs[k] if is_sequence else [action_kwargs[k]]
 
                             # 批量查询资源
-                            queried_resources = []
-                            for resource_data in resource_inputs:
+                            queried_resources: list = [None] * len(resource_inputs)
+                            uuid_indices: list[tuple[int, str, dict]] = []  # (index, uuid, resource_data)
+
+                            # 第一遍：处理没有uuid的资源，收集有uuid的资源信息
+                            for idx, resource_data in enumerate(resource_inputs):
                                 unilabos_uuid = resource_data.get("data", {}).get("unilabos_uuid")
                                 if unilabos_uuid is None:
                                     plr_resource = await self.get_resource_with_dir(
                                         resource_id=resource_data["id"], with_children=True
                                     )
+                                    if "sample_id" in resource_data:
+                                        plr_resource.unilabos_extra["sample_uuid"] = resource_data["sample_id"]
+                                    queried_resources[idx] = plr_resource
                                 else:
-                                    resource_tree = await self.get_resource([unilabos_uuid])
-                                    plr_resource = resource_tree.to_plr_resources()[0]
-                                if "sample_id" in resource_data:
-                                    plr_resource.unilabos_extra["sample_uuid"] = resource_data["sample_id"]
-                                queried_resources.append(plr_resource)
+                                    uuid_indices.append((idx, unilabos_uuid, resource_data))
+
+                            # 第二遍：批量查询有uuid的资源
+                            if uuid_indices:
+                                uuids = [item[1] for item in uuid_indices]
+                                resource_tree = await self.get_resource(uuids)
+                                plr_resources = resource_tree.to_plr_resources()
+                                for i, (idx, _, resource_data) in enumerate(uuid_indices):
+                                    plr_resource = plr_resources[i]
+                                    if "sample_id" in resource_data:
+                                        plr_resource.unilabos_extra["sample_uuid"] = resource_data["sample_id"]
+                                    queried_resources[idx] = plr_resource
 
                             self.lab_logger().debug(f"资源查询结果: 共 {len(queried_resources)} 个资源")
 

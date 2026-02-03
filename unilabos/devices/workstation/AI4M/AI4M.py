@@ -387,13 +387,13 @@ class AI4MDevice(OpcUaClientWithSubscription):
                 logger.warning(f"前端资源更新失败: {e}")
 
         # 序列化 carrier 对象
-        carrier_serialized = carrier.serialize() if hasattr(carrier, 'serialize') else {"name": carrier.name}
+        # carrier_serialized = carrier.serialize() if hasattr(carrier, 'serialize') else {"name": carrier.name}
 
         return {
             "success": True,
             "place_beaker_id": place_beaker_id,
             "pick_station_id": pick_station_id,
-            "carrier": carrier_serialized,
+            # "carrier": carrier_serialized,
             "message": f"机器人从检测站{pick_station_id}取烧杯并放回位置{place_beaker_id}完成",
         }
 

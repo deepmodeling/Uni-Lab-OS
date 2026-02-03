@@ -268,23 +268,18 @@ AI4M_station:
             result:
               description: trigger_robot_place_beaker 返回类型
               properties:
-                carrier:
-                  description: 载具序列化后的字典，包含 name、size_x、size_y、size_z、location、sites
-                    等信息
-                  title: Carrier
-                  type: object
-                message:
-                  title: Message
-                  type: string
-                pick_station_id:
-                  title: Pick Station Id
-                  type: integer
-                place_beaker_id:
-                  title: Place Beaker Id
-                  type: integer
                 success:
                   title: Success
                   type: boolean
+                place_beaker_id:
+                  title: Place Beaker Id
+                  type: integer
+                pick_station_id:
+                  title: Pick Station Id
+                  type: integer
+                message:
+                  title: Message
+                  type: string
               required:
               - success
               - place_beaker_id

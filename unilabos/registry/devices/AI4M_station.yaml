@@ -13,22 +13,28 @@ AI4M_station:
           mag_stir_time_set: null
           syringe_pump_abs_position_set: null
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 自动模式参数下发，将搅拌仪和注射泵参数下发给3个检测站，等待参数执行完成
           properties:
             feedback: {}
             goal:
               properties:
                 auto_job_stop_delay:
+                  description: 自动作业等待停止时间
                   type: integer
                 mag_stir_heat_temp:
+                  description: 磁力搅拌仪加热温度
                   type: integer
                 mag_stir_stir_speed:
+                  description: 磁力搅拌仪搅拌速度
                   type: integer
                 mag_stir_time_set:
+                  description: 磁力搅拌仪时间设置
                   type: integer
                 syringe_pump_abs_position_set:
+                  description: 注射泵绝对位置设置
                   type: integer
               required:
               - mag_stir_stir_speed
@@ -37,34 +43,23 @@ AI4M_station:
               - syringe_pump_abs_position_set
               - auto_job_stop_delay
               type: object
-            result: {}
+            result:
+              description: download_auto_params 返回类型
+              properties:
+                message:
+                  title: Message
+                  type: string
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - message
+              title: DownloadAutoParamsResult
+              type: object
           required:
           - goal
           title: download_auto_params参数
-          type: object
-        type: UniLabJsonCommand
-      auto-post_init:
-        feedback: {}
-        goal: {}
-        goal_default:
-          ros_node: null
-        handles: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                ros_node:
-                  type: string
-              required:
-              - ros_node
-              type: object
-            result: {}
-          required:
-          - goal
-          title: post_init参数
           type: object
         type: UniLabJsonCommand
       auto-start_auto_mode:
@@ -72,16 +67,30 @@ AI4M_station:
         goal: {}
         goal_default: {}
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 启动自动作业模式，将模式切换为自动，触发自动作业开始，等待自动作业完成
           properties:
             feedback: {}
             goal:
               properties: {}
               required: []
               type: object
-            result: {}
+            result:
+              description: start_auto_mode 返回类型
+              properties:
+                message:
+                  title: Message
+                  type: string
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - message
+              title: StartAutoModeResult
+              type: object
           required:
           - goal
           title: start_auto_mode参数
@@ -92,16 +101,30 @@ AI4M_station:
         goal: {}
         goal_default: {}
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 启动指令作业模式，将模式切换设为手动模式
           properties:
             feedback: {}
             goal:
               properties: {}
               required: []
               type: object
-            result: {}
+            result:
+              description: start_manual_mode 返回类型
+              properties:
+                message:
+                  title: Message
+                  type: string
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - message
+              title: StartManualModeResult
+              type: object
           required:
           - goal
           title: start_manual_mode参数
@@ -112,16 +135,30 @@ AI4M_station:
         goal: {}
         goal_default: {}
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 设备初始化，将手自动切换写false，等待自动模式为false，执行初始化并等待完成
           properties:
             feedback: {}
             goal:
               properties: {}
               required: []
               type: object
-            result: {}
+            result:
+              description: trigger_init 返回类型
+              properties:
+                message:
+                  title: Message
+                  type: string
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - message
+              title: TriggerInitResult
+              type: object
           required:
           - goal
           title: trigger_init参数
@@ -133,23 +170,59 @@ AI4M_station:
         goal_default:
           pick_beaker_id: null
           place_station_id: null
-        handles: {}
+        handles:
+          input:
+          - data_key: pick_beaker_id
+            data_source: handle
+            data_type: ai4m_beaker
+            handler_key: beaker_input
+            label: 取烧杯编号
+          output:
+          - data_key: place_station_id
+            data_source: executor
+            data_type: ai4m_station
+            handler_key: station_output
+            label: 放置检测站编号
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 机器人取烧杯并放到检测位，先写入取烧杯编号等待完成，再写入放检测编号等待完成
           properties:
             feedback: {}
             goal:
               properties:
                 pick_beaker_id:
+                  description: 取烧杯编号，1-5
                   type: integer
                 place_station_id:
+                  description: 放检测编号，1-3
                   type: integer
               required:
               - pick_beaker_id
               - place_station_id
               type: object
-            result: {}
+            result:
+              description: trigger_robot_pick_beaker 返回类型
+              properties:
+                message:
+                  title: Message
+                  type: string
+                pick_beaker_id:
+                  title: Pick Beaker Id
+                  type: integer
+                place_station_id:
+                  title: Place Station Id
+                  type: integer
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - pick_beaker_id
+              - place_station_id
+              - message
+              title: TriggerRobotPickBeakerResult
+              type: object
           required:
           - goal
           title: trigger_robot_pick_beaker参数
@@ -161,23 +234,59 @@ AI4M_station:
         goal_default:
           pick_station_id: null
           place_beaker_id: null
-        handles: {}
+        handles:
+          input:
+          - data_key: pick_station_id
+            data_source: handle
+            data_type: ai4m_station
+            handler_key: station_input
+            label: 取检测站编号
+          output:
+          - data_key: place_beaker_id
+            data_source: executor
+            data_type: ai4m_beaker
+            handler_key: beaker_output
+            label: 放烧杯编号
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 机器人从检测位取烧杯并放回，先写入取检测编号等待完成，再写入放烧杯编号等待完成
           properties:
             feedback: {}
             goal:
               properties:
                 pick_station_id:
+                  description: 取检测编号，1-3
                   type: integer
                 place_beaker_id:
+                  description: 放烧杯编号，1-5
                   type: integer
               required:
               - place_beaker_id
               - pick_station_id
               type: object
-            result: {}
+            result:
+              description: trigger_robot_place_beaker 返回类型
+              properties:
+                message:
+                  title: Message
+                  type: string
+                pick_station_id:
+                  title: Pick Station Id
+                  type: integer
+                place_beaker_id:
+                  title: Place Beaker Id
+                  type: integer
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - place_beaker_id
+              - pick_station_id
+              - message
+              title: TriggerRobotPlaceBeakerResult
+              type: object
           required:
           - goal
           title: trigger_robot_place_beaker参数
@@ -192,23 +301,41 @@ AI4M_station:
           mag_stir_time_set: null
           station_id: null
           syringe_pump_abs_position_set: null
-        handles: {}
+        handles:
+          input:
+          - data_key: station_id
+            data_source: handle
+            data_type: ai4m_station
+            handler_key: process_station_input
+            label: 检测站编号
+          output:
+          - data_key: station_id
+            data_source: executor
+            data_type: ai4m_station
+            handler_key: process_station_output
+            label: 完成的检测站编号
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 执行检测工艺流程，等待检测站请求参数，下发搅拌仪和注射泵参数，等待工艺完成
           properties:
             feedback: {}
             goal:
               properties:
                 mag_stir_heat_temp:
+                  description: 磁力搅拌仪加热温度
                   type: integer
                 mag_stir_stir_speed:
+                  description: 磁力搅拌仪搅拌速度
                   type: integer
                 mag_stir_time_set:
+                  description: 磁力搅拌仪时间设置
                   type: integer
                 station_id:
+                  description: 检测编号，1-3
                   type: integer
                 syringe_pump_abs_position_set:
+                  description: 注射泵绝对位置设置
                   type: integer
               required:
               - station_id
@@ -217,7 +344,24 @@ AI4M_station:
               - mag_stir_time_set
               - syringe_pump_abs_position_set
               type: object
-            result: {}
+            result:
+              description: trigger_station_process 返回类型
+              properties:
+                message:
+                  title: Message
+                  type: string
+                station_id:
+                  title: Station Id
+                  type: integer
+                success:
+                  title: Success
+                  type: boolean
+              required:
+              - success
+              - station_id
+              - message
+              title: TriggerStationProcessResult
+              type: object
           required:
           - goal
           title: trigger_station_process参数
@@ -227,7 +371,7 @@ AI4M_station:
     status_types: {}
     type: python
   config_info: []
-  description: ''
+  description: AI4M 水凝胶检测工作站，包含机器人、3个检测站、磁力搅拌仪和注射泵，支持手动指令模式和自动作业模式
   handles: []
   icon: Hydrogel module.webp
   init_param_schema:
@@ -235,29 +379,43 @@ AI4M_station:
       properties:
         cache_timeout:
           default: 5.0
+          description: 缓存超时时间（秒）
           type: number
         csv_path:
+          description: 节点配置 CSV 文件路径
           type: string
         deck:
+          description: AI4M 资源树配置
           type: string
         password:
+          description: OPC UA 密码
           type: string
         subscription_interval:
           default: 500
+          description: 订阅发布间隔（毫秒）
           type: integer
         url:
+          description: OPC UA 服务器地址
           type: string
         use_subscription:
           default: true
+          description: 是否启用订阅模式
           type: boolean
         username:
+          description: OPC UA 用户名
           type: string
       required:
       - url
       type: object
     data:
-      properties: {}
-      required: []
+      properties:
+        message:
+          type: string
+        status:
+          type: string
+      required:
+      - status
+      - message
       type: object
   registry_type: device
   version: 1.0.0

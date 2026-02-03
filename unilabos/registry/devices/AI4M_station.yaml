@@ -55,7 +55,7 @@ AI4M_station:
               required:
               - success
               - message
-              title: DownloadAutoParamsResult
+              title: download_auto_params返回结果
               type: object
           required:
           - goal
@@ -89,7 +89,7 @@ AI4M_station:
               required:
               - success
               - message
-              title: StartAutoModeResult
+              title: start_auto_mode返回结果
               type: object
           required:
           - goal
@@ -123,7 +123,7 @@ AI4M_station:
               required:
               - success
               - message
-              title: StartManualModeResult
+              title: start_manual_mode返回结果
               type: object
           required:
           - goal
@@ -157,7 +157,7 @@ AI4M_station:
               required:
               - success
               - message
-              title: TriggerInitResult
+              title: trigger_init返回结果
               type: object
           required:
           - goal
@@ -221,7 +221,7 @@ AI4M_station:
               - pick_beaker_id
               - place_station_id
               - message
-              title: TriggerRobotPickBeakerResult
+              title: trigger_robot_pick_beaker返回结果
               type: object
           required:
           - goal
@@ -250,7 +250,7 @@ AI4M_station:
         placeholder_keys: {}
         result: {}
         schema:
-          description: 机器人从检测位取烧杯并放回，先写入取检测编号等待完成，再写入放烧杯编号等待完成
+          description: 机器人从检测位取烧杯并放回：先写入取检测编号，等待取检测完成；取完成后再写入放烧杯编号，等待对应的放烧杯完成信号
           properties:
             feedback: {}
             goal:
@@ -268,6 +268,11 @@ AI4M_station:
             result:
               description: trigger_robot_place_beaker 返回类型
               properties:
+                carrier:
+                  description: 载具序列化后的字典，包含 name、size_x、size_y、size_z、location、sites
+                    等信息
+                  title: Carrier
+                  type: object
                 message:
                   title: Message
                   type: string
@@ -285,7 +290,7 @@ AI4M_station:
               - place_beaker_id
               - pick_station_id
               - message
-              title: TriggerRobotPlaceBeakerResult
+              title: trigger_robot_place_beaker返回结果
               type: object
           required:
           - goal
@@ -360,7 +365,7 @@ AI4M_station:
               - success
               - station_id
               - message
-              title: TriggerStationProcessResult
+              title: trigger_station_process返回结果
               type: object
           required:
           - goal

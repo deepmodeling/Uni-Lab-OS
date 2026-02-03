@@ -9,8 +9,6 @@ import traceback
 from typing import Optional
 import os
 
-from typing_extensions import TypedDict
-
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import logger
 from unilabos.utils.decorator import not_action
@@ -19,55 +17,6 @@ from unilabos.devices.workstation.AI4M.bottle_carriers import Hydrogel_Clean_1Bo
 
 # 导入通讯基类
 from unilabos.devices.workstation.AI4M.base_opcua_client import OpcUaClientWithSubscription
-
-
-# ============ TypedDict 返回类型定义 ============
-
-class StartManualModeResult(TypedDict):
-    """start_manual_mode 返回类型"""
-    success: bool
-    message: str
-
-
-class TriggerInitResult(TypedDict):
-    """trigger_init 返回类型"""
-    success: bool
-    message: str
-
-
-class TriggerRobotPickBeakerResult(TypedDict):
-    """trigger_robot_pick_beaker 返回类型"""
-    success: bool
-    pick_beaker_id: int
-    place_station_id: int
-    message: str
-
-
-class TriggerRobotPlaceBeakerResult(TypedDict):
-    """trigger_robot_place_beaker 返回类型"""
-    success: bool
-    place_beaker_id: int
-    pick_station_id: int
-    message: str
-
-
-class TriggerStationProcessResult(TypedDict):
-    """trigger_station_process 返回类型"""
-    success: bool
-    station_id: int
-    message: str
-
-
-class DownloadAutoParamsResult(TypedDict):
-    """download_auto_params 返回类型"""
-    success: bool
-    message: str
-
-
-class StartAutoModeResult(TypedDict):
-    """start_auto_mode 返回类型"""
-    success: bool
-    message: str
 
 
 class AI4MDevice(OpcUaClientWithSubscription):
@@ -163,7 +112,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
    
     # ==================== 设备动作函数 ====================
     
-    def start_manual_mode(self) -> StartManualModeResult:
+    def start_manual_mode(self) -> dict:
         """
         指令作业模式函数：
         - 将模式切换、手自动切换写false
@@ -171,7 +120,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         - 将模式切换写true
 
         Returns:
-            StartManualModeResult: 包含 success 和 message
+            dict: 包含 success 和 message
         """
         logger.info("启动指令作业模式...")
 
@@ -198,7 +147,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         self,
         pick_beaker_id: int,
         place_station_id: int,
-    ) -> TriggerRobotPickBeakerResult:
+    ) -> dict:
         """
         机器人取烧杯并放到检测位：
         - 先写入取烧杯编号，等待取烧杯完成
@@ -209,7 +158,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
             place_station_id: 放检测编号（1-3）
             
         Returns:
-            TriggerRobotPickBeakerResult: 包含 success, pick_beaker_id, place_station_id, message
+            dict: 包含 success, pick_beaker_id, place_station_id, message
         """
         # 校验输入范围
         if pick_beaker_id not in (1, 2, 3, 4, 5):
@@ -316,7 +265,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         self,
         place_beaker_id: int,
         pick_station_id: int,
-    ) -> TriggerRobotPlaceBeakerResult:
+    ) -> dict:
         """
         机器人从检测位取烧杯并放回：
         - 先写入取检测编号，等待取检测完成
@@ -327,7 +276,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
             pick_station_id: 取检测编号（1-3）
             
         Returns:
-            TriggerRobotPlaceBeakerResult: 包含 success, place_beaker_id, pick_station_id, message
+            dict: 包含 success, place_beaker_id, pick_station_id, message
         """
         # 校验输入范围
         if place_beaker_id not in (1, 2, 3, 4, 5):
@@ -437,10 +386,14 @@ class AI4MDevice(OpcUaClientWithSubscription):
             except Exception as e:
                 logger.warning(f"前端资源更新失败: {e}")
 
+        # 序列化 carrier 对象
+        carrier_serialized = carrier.serialize() if hasattr(carrier, 'serialize') else {"name": carrier.name}
+
         return {
             "success": True,
             "place_beaker_id": place_beaker_id,
             "pick_station_id": pick_station_id,
+            "carrier": carrier_serialized,
             "message": f"机器人从检测站{pick_station_id}取烧杯并放回位置{place_beaker_id}完成",
         }
 
@@ -451,7 +404,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         mag_stir_heat_temp: int,
         mag_stir_time_set: int,
         syringe_pump_abs_position_set: int,
-    ) -> TriggerStationProcessResult:
+    ) -> dict:
         """
         执行检测工艺流程：
         1. 等待检测站请求参数
@@ -468,7 +421,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
             syringe_pump_abs_position_set: 注射泵绝对位置设置
             
         Returns:
-            TriggerStationProcessResult: 包含 success, station_id, message
+            dict: 包含 success, station_id, message
         """
         # 校验输入范围
         if station_id not in (1, 2, 3):
@@ -541,7 +494,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
             "message": f"检测站{station_id}工艺执行完成",
         }
 
-    def trigger_init(self) -> TriggerInitResult:
+    def trigger_init(self) -> dict:
         """
         初始化函数：
         - 将手自动切换写false
@@ -552,7 +505,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         - 返回成功
 
         Returns:
-            TriggerInitResult: 包含 success 和 message
+            dict: 包含 success 和 message
         """
         logger.info("开始初始化...")
         
@@ -599,7 +552,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         mag_stir_time_set: int,
         syringe_pump_abs_position_set: int,
         auto_job_stop_delay: int
-    ) -> DownloadAutoParamsResult:
+    ) -> dict:
         """
         自动模式参数下发函数：
         - 将搅拌仪的搅拌速度、加热温度、时间设置、泵的绝对位置设置和自动作业停止等待时间作为传入参数
@@ -617,7 +570,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
             auto_job_stop_delay: 自动作业等待停止时间
 
         Returns:
-            DownloadAutoParamsResult: 包含 success 和 message
+            dict: 包含 success 和 message
         """
         logger.info("开始下发自动模式参数...")
         self.set_node_value("auto_param_applied", False)
@@ -661,7 +614,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
             "message": "自动模式参数下发完成",
         }
 
-    def start_auto_mode(self) -> StartAutoModeResult:
+    def start_auto_mode(self) -> dict:
         """
         自动作业模式函数：
         - 将模式切换、手自动切换写true
@@ -671,7 +624,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         - 返回成功
 
         Returns:
-            StartAutoModeResult: 包含 success 和 message
+            dict: 包含 success 和 message
         """
         logger.info("启动自动作业模式...")
 

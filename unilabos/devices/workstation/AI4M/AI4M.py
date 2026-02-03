@@ -9,7 +9,6 @@ import traceback
 from typing import Optional
 import os
 
-from opcua import Client
 from typing_extensions import TypedDict
 
 from unilabos.resources.resource_tracker import ResourceTreeSet

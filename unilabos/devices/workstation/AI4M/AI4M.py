@@ -16,6 +16,7 @@ from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import logger
 from unilabos.utils.decorator import not_action
 from unilabos.devices.workstation.AI4M.decks import AI4M_deck
+from unilabos.devices.workstation.AI4M.bottle_carriers import Hydrogel_Clean_1BottleCarrier
 
 # 导入通讯基类
 from unilabos.devices.workstation.AI4M.base_opcua_client import OpcUaClientWithSubscription
@@ -718,28 +719,34 @@ OpcUaClient = AI4MDevice
     
 
 if __name__ == '__main__':
-    # 示例用法
-    try:
-        client = AI4MDevice(
-            url="opc.tcp://127.0.0.1:49320",
-            csv_path="opcua_nodes_AI4M.csv"
-        )
-        
-        # 测试初始化函数
-        print("\n" + "="*80)
-        print("测试: 初始化函数")
-        print("="*80)
-        
-        result = client.trigger_init()
-        print(f"初始化结果: {'成功' if result else '失败'}")
-        
-        print("\n" + "="*80)
-        print("测试完成")
-        print("="*80)
-        
-        # 断开连接
-        client.disconnect()
-        
-    except Exception as e:
-        print(f"错误: {e}")
-        traceback.print_exc()
+    # 调试用法
+    A4 = AI4MDevice(
+        url="opc.tcp://127.0.0.1:49320",
+        csv_path="opcua_nodes_AI4M_sim.csv"
+    )
+    
+    
+    A4.trigger_init()
+    print("初始化完成")
+    
+    # 给水凝胶堆栈A1位置添加clean物料
+    rack_warehouse = A4.deck.warehouses["水凝胶烧杯堆栈"]
+    clean_carrier = Hydrogel_Clean_1BottleCarrier("烧杯")
+    
+    # 获取A1位置的索引和位置信息
+    rack_site_key = "A1"
+    rack_site_idx = list(rack_warehouse._ordering.keys()).index(rack_site_key)
+    rack_location = rack_warehouse.child_locations[rack_site_key]
+    
+    # 将载具分配到A1位置
+    rack_warehouse.assign_child_resource(clean_carrier, location=rack_location, spot=rack_site_idx)
+    print(f"✓ 已添加clean物料到A1位置: {clean_carrier.name}")
+    
+    pick_result = A4.trigger_robot_pick_beaker(1, 1)
+    print("取烧杯完成")
+    
+    A4.trigger_robot_place_beaker(pick_result['pick_beaker_id'], pick_result['place_station_id'])
+    print("放烧杯完成")
+    
+    # while True:
+    #     time.sleep(1)

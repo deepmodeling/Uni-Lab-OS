@@ -43,7 +43,7 @@ class Base(ABC):
         self._type = typ
         self._data_type = data_type
         self._node: Optional[Node] = None
-
+        
     def _get_node(self) -> Node:
         if self._node is None:
             try:
@@ -66,7 +66,7 @@ class Base(ABC):
                 # 直接以字符串形式处理
                 if isinstance(nid, str):
                     nid = nid.strip()
-
+                    
                     # 处理包含类名的格式，如 'StringNodeId(ns=4;s=...)' 或 'NumericNodeId(ns=2;i=...)'
                     # 提取括号内的内容
                     match_wrapped = re.match(r'(String|Numeric|Byte|Guid|TwoByteNode|FourByteNode)NodeId\((.*)\)', nid)
@@ -116,16 +116,16 @@ class Base(ABC):
     def read(self) -> Tuple[Any, bool]:
         """读取节点值，返回(值, 是否出错)"""
         pass
-
+    
     @abstractmethod
     def write(self, value: Any) -> bool:
         """写入节点值，返回是否出错"""
         pass
-
+    
     @property
     def type(self) -> NodeType:
         return self._type
-
+    
     @property
     def node_id(self) -> str:
         return self._node_id
@@ -149,56 +149,54 @@ class Variable(Base):
 
     def write(self, value: Any) -> bool:
         try:
-            # 如果声明了数据类型，则尝试转换并使用对应的 Variant 写入
+            # 只写入值，不写入时间戳和状态码
+            # 使用底层 write 服务，构建 WriteValue 请求
             coerced = value
-            try:
-                if self._data_type is not None:
-                    # 基于声明的数据类型做简单类型转换
-                    dt = self._data_type
-                    if dt in (DataType.SBYTE, DataType.BYTE, DataType.INT16, DataType.UINT16,
-                              DataType.INT32, DataType.UINT32, DataType.INT64, DataType.UINT64):
-                        # 数值类型 -> int
-                        if isinstance(value, str):
-                            coerced = int(value)
-                        else:
-                            coerced = int(value)
-                    elif dt in (DataType.FLOAT, DataType.DOUBLE):
-                        if isinstance(value, str):
-                            coerced = float(value)
-                        else:
-                            coerced = float(value)
-                    elif dt == DataType.BOOLEAN:
-                        if isinstance(value, str):
-                            v = value.strip().lower()
-                            if v in ("true", "1", "yes", "on"):
-                                coerced = True
-                            elif v in ("false", "0", "no", "off"):
-                                coerced = False
-                            else:
-                                coerced = bool(value)
+            
+            if self._data_type is not None:
+                # 基于声明的数据类型做简单类型转换
+                dt = self._data_type
+                if dt in (DataType.SBYTE, DataType.BYTE, DataType.INT16, DataType.UINT16,
+                          DataType.INT32, DataType.UINT32, DataType.INT64, DataType.UINT64):
+                    # 数值类型 -> int
+                    if isinstance(value, str):
+                        coerced = int(value)
+                    else:
+                        coerced = int(value)
+                elif dt in (DataType.FLOAT, DataType.DOUBLE):
+                    if isinstance(value, str):
+                        coerced = float(value)
+                    else:
+                        coerced = float(value)
+                elif dt == DataType.BOOLEAN:
+                    if isinstance(value, str):
+                        v = value.strip().lower()
+                        if v in ("true", "1", "yes", "on"):
+                            coerced = True
+                        elif v in ("false", "0", "no", "off"):
+                            coerced = False
                         else:
                             coerced = bool(value)
-                    elif dt == DataType.STRING or dt == DataType.BYTESTRING or dt == DataType.DATETIME:
-                        coerced = str(value)
-
-                    # 使用 ua.Variant 明确指定 VariantType
-                    try:
-                        variant = ua.Variant(coerced, dt.value)
-                        self._get_node().set_value(variant)
-                    except Exception:
-                        # 回退：有些 set_value 实现接受 (value, variant_type)
-                        try:
-                            self._get_node().set_value(coerced, dt.value)
-                        except Exception:
-                            # 最后回退到直接写入（保持兼容性）
-                            self._get_node().set_value(coerced)
-                else:
-                    # 未声明数据类型，直接写入
-                    self._get_node().set_value(value)
-            except Exception:
-                # 若在转换或按数据类型写入失败，尝试直接写入原始值并让上层捕获错误
-                self._get_node().set_value(value)
-
+                    else:
+                        coerced = bool(value)
+                elif dt == DataType.STRING or dt == DataType.BYTESTRING or dt == DataType.DATETIME:
+                    coerced = str(value)
+            
+            # 创建带有明确类型的 Variant，然后包装成 DataValue
+            # 这样可以确保类型匹配，同时不包含时间戳和状态码
+            if self._data_type is not None:
+                # 明确指定数据类型
+                variant = ua.Variant(coerced, self._data_type.value)
+            else:
+                # 未声明数据类型，让 OPC UA 自动推断
+                variant = ua.Variant(coerced)
+            
+            # 创建 DataValue（只包含值，不包含时间戳）
+            dv = ua.DataValue(variant)
+            
+            # 使用 set_value 方法写入
+            self._get_node().set_value(dv)
+            
             return False
         except Exception as e:
             print(f"写入变量 {self._name} 失败: {e}")
@@ -210,15 +208,15 @@ class Method(Base):
         super().__init__(client, name, node_id, NodeType.METHOD, data_type)
         self._parent_node_id = parent_node_id
         self._parent_node = None
-
+        
     def _get_parent_node(self) -> Node:
         if self._parent_node is None:
             try:
                 # 处理父节点ID，使用与_get_node相同的解析逻辑
                 import re
-
+                
                 nid = self._parent_node_id
-
+                
                 # 如果已经是 NodeId 对象，直接使用
                 try:
                     from opcua.ua import NodeId as UaNodeId
@@ -227,16 +225,16 @@ class Method(Base):
                         return self._parent_node
                 except Exception:
                     pass
-
+                
                 # 字符串处理
                 if isinstance(nid, str):
                     nid = nid.strip()
-
+                    
                     # 处理包含类名的格式
                     match_wrapped = re.match(r'(String|Numeric|Byte|Guid|TwoByteNode|FourByteNode)NodeId\((.*)\)', nid)
                     if match_wrapped:
                         nid = match_wrapped.group(2).strip()
-
+                    
                     # 常见短格式
                     if re.match(r'^ns=\d+;[is]=', nid):
                         self._parent_node = self._client.get_node(nid)
@@ -271,7 +269,7 @@ class Method(Base):
     def write(self, value: Any) -> bool:
         """方法节点不支持写入操作"""
         return True
-
+        
     def call(self, *args) -> Tuple[Any, bool]:
         """调用方法，返回(返回值, 是否出错)"""
         try:
@@ -285,7 +283,7 @@ class Method(Base):
 class Object(Base):
     def __init__(self, client: Client, name: str, node_id: str):
         super().__init__(client, name, node_id, NodeType.OBJECT, None)
-
+        
     def read(self) -> Tuple[Any, bool]:
         """对象节点不支持直接读取操作"""
         return None, True
@@ -293,7 +291,7 @@ class Object(Base):
     def write(self, value: Any) -> bool:
         """对象节点不支持直接写入操作"""
         return True
-
+    
     def get_children(self) -> Tuple[List[Node], bool]:
         """获取子节点列表，返回(子节点列表, 是否出错)"""
         try:
@@ -301,4 +299,4 @@ class Object(Base):
             return children, False
         except Exception as e:
             print(f"获取对象 {self._name} 的子节点失败: {e}")
-            return [], True
+            return [], True 

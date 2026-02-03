@@ -12,3 +12,7 @@ sphinx-copybutton>=0.5.0
 
 # 用于自动摘要生成
 sphinx-autobuild>=2024.2.4
+
+# 用于PDF导出 (rinohtype方案，纯Python无需LaTeX)
+rinohtype>=0.5.4
+sphinx-simplepdf>=1.6.0

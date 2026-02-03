@@ -182,3 +182,49 @@ def get_all_subscriptions(instance) -> list:
         except Exception:
             pass
     return subscriptions
+
+
+def not_action(func: F) -> F:
+    """
+    标记方法为非动作的装饰器
+
+    用于装饰 driver 类中的方法，使其在 complete_registry 时不被识别为动作。
+    适用于辅助方法、内部工具方法等不应暴露为设备动作的公共方法。
+
+    Example:
+        class MyDriver:
+            @not_action
+            def helper_method(self):
+                # 这个方法不会被注册为动作
+                pass
+
+            def actual_action(self, param: str):
+                # 这个方法会被注册为动作
+                self.helper_method()
+
+    Note:
+        - 可以与其他装饰器组合使用，@not_action 应放在最外层
+        - 仅影响 complete_registry 的动作识别，不影响方法的正常调用
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    # 在函数上附加标记
+    wrapper._is_not_action = True  # type: ignore[attr-defined]
+
+    return wrapper  # type: ignore[return-value]
+
+
+def is_not_action(func) -> bool:
+    """
+    检查函数是否被标记为非动作
+
+    Args:
+        func: 被检查的函数
+
+    Returns:
+        如果函数被 @not_action 装饰则返回 True，否则返回 False
+    """
+    return getattr(func, "_is_not_action", False)

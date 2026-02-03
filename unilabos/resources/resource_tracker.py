@@ -1,7 +1,7 @@
 import inspect
 import traceback
 import uuid
-from pydantic import BaseModel, field_serializer, field_validator
+from pydantic import BaseModel, field_serializer, field_validator, ValidationError
 from pydantic import Field
 from typing import List, Tuple, Any, Dict, Literal, Optional, cast, TYPE_CHECKING, Union
 
@@ -11,6 +11,9 @@ from unilabos.utils.log import logger
 if TYPE_CHECKING:
     from unilabos.devices.workstation.workstation_base import WorkstationBase
     from pylabrobot.resources import Resource as PLRResource
+
+
+EXTRA_CLASS = "unilabos_resource_class"
 
 
 class ResourceDictPositionSize(BaseModel):
@@ -147,20 +150,24 @@ class ResourceDictInstance(object):
         if not content.get("extra"):  # MagicCode
             content["extra"] = {}
         if "position" in content:
-            pose = content.get("pose",{})
-            if "position" not in pose :
+            pose = content.get("pose", {})
+            if "position" not in pose:
                 if "position" in content["position"]:
                     pose["position"] = content["position"]["position"]
                 else:
                     pose["position"] = {"x": 0, "y": 0, "z": 0}
             if "size" not in pose:
                 pose["size"] = {
-                    "width": content["config"].get("size_x", 0), 
-                    "height": content["config"].get("size_y", 0), 
-                    "depth": content["config"].get("size_z", 0)
+                    "width": content["config"].get("size_x", 0),
+                    "height": content["config"].get("size_y", 0),
+                    "depth": content["config"].get("size_z", 0),
                 }
             content["pose"] = pose
-        return ResourceDictInstance(ResourceDict.model_validate(content))
+        try:
+            res_dict = ResourceDict.model_validate(content)
+            return ResourceDictInstance(res_dict)
+        except ValidationError as err:
+            raise err
 
     def get_plr_nested_dict(self) -> Dict[str, Any]:
         """获取资源实例的嵌套字典表示"""
@@ -322,7 +329,7 @@ class ResourceTreeSet(object):
             )
 
     @classmethod
-    def from_plr_resources(cls, resources: List["PLRResource"]) -> "ResourceTreeSet":
+    def from_plr_resources(cls, resources: List["PLRResource"], known_newly_created=False) -> "ResourceTreeSet":
         """
         从plr资源创建ResourceTreeSet
         """
@@ -339,6 +346,8 @@ class ResourceTreeSet(object):
             }
             if source in replace_info:
                 return replace_info[source]
+            elif source is None:
+                return ""
             else:
                 print("转换pylabrobot的时候，出现未知类型", source)
                 return source
@@ -349,7 +358,8 @@ class ResourceTreeSet(object):
             if not uid:
                 uid = str(uuid.uuid4())
                 res.unilabos_uuid = uid
-                logger.warning(f"{res}没有uuid，请设置后再传入，默认填充{uid}！\n{traceback.format_exc()}")
+                if not known_newly_created:
+                    logger.warning(f"{res}没有uuid，请设置后再传入，默认填充{uid}！\n{traceback.format_exc()}")
 
             # 获取unilabos_extra，默认为空字典
             extra = getattr(res, "unilabos_extra", {})
@@ -386,7 +396,7 @@ class ResourceTreeSet(object):
                 "parent": parent_resource,  # 直接传入 ResourceDict 对象
                 "parent_uuid": parent_uuid,  # 使用 parent_uuid 而不是 parent 对象
                 "type": replace_plr_type(d.get("category", "")),
-                "class": d.get("class", ""),
+                "class": extra.get(EXTRA_CLASS, ""),
                 "position": pos,
                 "pose": pos,
                 "config": {
@@ -436,7 +446,7 @@ class ResourceTreeSet(object):
             trees.append(tree_instance)
         return cls(trees)
 
-    def to_plr_resources(self) -> List["PLRResource"]:
+    def to_plr_resources(self, skip_devices=True) -> List["PLRResource"]:
         """
         将 ResourceTreeSet 转换为 PLR 资源列表
 
@@ -448,13 +458,20 @@ class ResourceTreeSet(object):
         from pylabrobot.utils.object_parsing import find_subclass
 
         # 类型映射
-        TYPE_MAP = {"plate": "Plate", "well": "Well", "deck": "Deck", "container": "RegularContainer", "tip_spot": "TipSpot"}
+        TYPE_MAP = {
+            "plate": "Plate",
+            "well": "Well",
+            "deck": "Deck",
+            "container": "RegularContainer",
+            "tip_spot": "TipSpot",
+        }
 
         def collect_node_data(node: ResourceDictInstance, name_to_uuid: dict, all_states: dict, name_to_extra: dict):
             """一次遍历收集 name_to_uuid, all_states 和 name_to_extra"""
             name_to_uuid[node.res_content.name] = node.res_content.uuid
             all_states[node.res_content.name] = node.res_content.data
             name_to_extra[node.res_content.name] = node.res_content.extra
+            name_to_extra[node.res_content.name][EXTRA_CLASS] = node.res_content.klass
             for child in node.children:
                 collect_node_data(child, name_to_uuid, all_states, name_to_extra)
 
@@ -499,7 +516,10 @@ class ResourceTreeSet(object):
             plr_dict = node_to_plr_dict(tree.root_node, has_model)
             try:
                 sub_cls = find_subclass(plr_dict["type"], PLRResource)
-                if sub_cls is None:
+                if skip_devices and plr_dict["type"] == "device":
+                    logger.info(f"跳过更新 {plr_dict['name']} 设备是class")
+                    continue
+                elif sub_cls is None:
                     raise ValueError(
                         f"无法找到类型 {plr_dict['type']} 对应的 PLR 资源类。原始信息：{tree.root_node.res_content}"
                     )
@@ -507,6 +527,10 @@ class ResourceTreeSet(object):
                 if "category" not in spec.parameters:
                     plr_dict.pop("category", None)
                 plr_resource = sub_cls.deserialize(plr_dict, allow_marshal=True)
+                from pylabrobot.resources import Coordinate
+                from pylabrobot.serializer import deserialize
+                location = cast(Coordinate, deserialize(plr_dict["location"]))
+                plr_resource.location = location
                 plr_resource.load_all_state(all_states)
                 # 使用 DeviceNodeResourceTracker 设置 UUID 和 Extra
                 tracker.loop_set_uuid(plr_resource, name_to_uuid)
@@ -607,6 +631,16 @@ class ResourceTreeSet(object):
             所有根节点的资源实例列表
         """
         return [tree.root_node for tree in self.trees]
+
+    @property
+    def root_nodes_uuid(self) -> List[ResourceDictInstance]:
+        """
+        获取所有树的根节点
+
+        Returns:
+            所有根节点的资源实例列表
+        """
+        return [tree.root_node.res_content.uuid for tree in self.trees]
 
     @property
     def all_nodes(self) -> List[ResourceDictInstance]:
@@ -918,6 +952,33 @@ class DeviceNodeResourceTracker(object):
 
         return self._traverse_and_process(resource, process)
 
+    def loop_find_with_uuid(self, resource, target_uuid: str):
+        """
+        递归遍历资源树，根据 uuid 查找并返回对应的资源
+
+        Args:
+            resource: 资源对象（可以是list、dict或实例）
+            target_uuid: 要查找的uuid
+
+        Returns:
+            找到的资源对象，未找到则返回None
+        """
+        found_resource = None
+
+        def process(res):
+            nonlocal found_resource
+            if found_resource is not None:
+                return 0  # 已找到，跳过后续处理
+            current_uuid = self._get_resource_attr(res, "uuid", "unilabos_uuid")
+            if current_uuid and current_uuid == target_uuid:
+                found_resource = res
+                logger.trace(f"找到资源UUID: {target_uuid}")
+                return 1
+            return 0
+
+        self._traverse_and_process(resource, process)
+        return found_resource
+
     def loop_set_extra(self, resource, name_to_extra_map: Dict[str, dict]) -> int:
         """
         递归遍历资源树，根据 name 设置所有节点的 extra
@@ -936,7 +997,7 @@ class DeviceNodeResourceTracker(object):
                 extra = name_to_extra_map[resource_name]
                 self.set_resource_extra(res, extra)
                 if len(extra):
-                    logger.debug(f"设置资源Extra: {resource_name} -> {extra}")
+                    logger.trace(f"设置资源Extra: {resource_name} -> {extra}")
                 return 1
             return 0
 
@@ -1103,7 +1164,7 @@ class DeviceNodeResourceTracker(object):
         for key in keys_to_remove:
             self.resource2parent_resource.pop(key, None)
 
-        logger.debug(f"成功移除资源: {resource}")
+        logger.trace(f"[ResourceTracker] 成功移除资源: {resource}")
         return True
 
     def clear_resource(self):

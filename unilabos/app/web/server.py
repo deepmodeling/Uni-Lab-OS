@@ -6,7 +6,6 @@ Web服务器模块
 
 import webbrowser
 
-import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
@@ -96,7 +95,7 @@ def setup_server() -> FastAPI:
     return app
 
 
-def start_server(host: str = "0.0.0.0", port: int = 8002, open_browser: bool = True) -> None:
+def start_server(host: str = "0.0.0.0", port: int = 8002, open_browser: bool = True) -> bool:
     """
     启动服务器
 
@@ -104,7 +103,14 @@ def start_server(host: str = "0.0.0.0", port: int = 8002, open_browser: bool = T
         host: 服务器主机
         port: 服务器端口
         open_browser: 是否自动打开浏览器
+
+    Returns:
+        bool: True if restart was requested, False otherwise
     """
+    import threading
+    import time
+    from uvicorn import Config, Server
+
     # 设置服务器
     setup_server()
 
@@ -123,7 +129,37 @@ def start_server(host: str = "0.0.0.0", port: int = 8002, open_browser: bool = T
 
     # 启动服务器
     info(f"[Web] 启动FastAPI服务器: {host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_config=log_config)
+
+    # 使用支持重启的模式
+    config = Config(app=app, host=host, port=port, log_config=log_config)
+    server = Server(config)
+
+    # 启动服务器线程
+    server_thread = threading.Thread(target=server.run, daemon=True, name="uvicorn_server")
+    server_thread.start()
+
+    info("[Web] Server started, monitoring for restart requests...")
+
+    # 监控重启标志
+    import unilabos.app.main as main_module
+
+    while server_thread.is_alive():
+        if hasattr(main_module, "_restart_requested") and main_module._restart_requested:
+            info(
+                f"[Web] Restart requested via WebSocket, reason: {getattr(main_module, '_restart_reason', 'unknown')}"
+            )
+            main_module._restart_requested = False
+
+            # 停止服务器
+            server.should_exit = True
+            server_thread.join(timeout=5)
+
+            info("[Web] Server stopped, ready for restart")
+            return True
+
+        time.sleep(1)
+
+    return False
 
 
 # 当脚本直接运行时启动服务器

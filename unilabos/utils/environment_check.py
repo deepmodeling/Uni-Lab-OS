@@ -24,6 +24,7 @@ class EnvironmentChecker:
             "msgcenterpy": "msgcenterpy",
             "opentrons_shared_data": "opentrons_shared_data",
             "typing_extensions": "typing_extensions",
+            "crcmod": "crcmod-plus",
         }
 
         # 特殊安装包（需要特殊处理的包）

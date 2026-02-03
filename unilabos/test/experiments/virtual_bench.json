@@ -1,0 +1,28 @@
+{
+    "nodes": [
+        {
+            "id": "workbench_1",
+            "name": "虚拟工作台",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "virtual_workbench",
+            "position": {
+                "x": 400,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "arm_operation_time": 3.0,
+                "heating_time": 10.0,
+                "num_heating_stations": 3
+            },
+            "data": {
+                "status": "Ready",
+                "arm_state": "idle",
+                "message": "工作台就绪"
+            }
+        }
+    ],
+    "links": []
+}

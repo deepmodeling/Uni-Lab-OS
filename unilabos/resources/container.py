@@ -27,7 +27,7 @@ class RegularContainer(Container):
 def get_regular_container(name="container"):
     r = RegularContainer(name=name)
     r.category = "container"
-    return RegularContainer(name=name)
+    return r
 
 #
 # class RegularContainer(object):

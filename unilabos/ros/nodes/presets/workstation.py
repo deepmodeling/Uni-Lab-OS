@@ -6,8 +6,6 @@ from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 import rclpy
 from rosidl_runtime_py import message_to_ordereddict
-from unilabos_msgs.msg import Resource
-from unilabos_msgs.srv import ResourceUpdate
 
 from unilabos.messages import *  # type: ignore  # protocol names
 from rclpy.action import ActionServer, ActionClient
@@ -15,7 +13,6 @@ from rclpy.action.server import ServerGoalHandle
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 
 from unilabos.compile import action_protocol_generators
-from unilabos.resources.graphio import nested_dict_to_list
 from unilabos.ros.initialize_device import initialize_device_from_dict
 from unilabos.ros.msgs.message_converter import (
     get_action_type,
@@ -231,15 +228,15 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                         try:
                             # 统一处理单个或多个资源
                             resource_id = (
-                                protocol_kwargs[k]["id"] if v == "unilabos_msgs/Resource" else protocol_kwargs[k][0]["id"]
+                                protocol_kwargs[k]["id"]
+                                if v == "unilabos_msgs/Resource"
+                                else protocol_kwargs[k][0]["id"]
                             )
                             resource_uuid = protocol_kwargs[k].get("uuid", None)
                             r = SerialCommand_Request()
                             r.command = json.dumps({"id": resource_id, "uuid": resource_uuid, "with_children": True})
                             # 发送请求并等待响应
-                            response: SerialCommand_Response = await self._resource_clients[
-                                "resource_get"
-                            ].call_async(
+                            response: SerialCommand_Response = await self._resource_clients["resource_get"].call_async(
                                 r
                             )  # type: ignore
                             raw_data = json.loads(response.response)
@@ -307,12 +304,52 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
 
                 # 向Host更新物料当前状态
                 for k, v in goal.get_fields_and_field_types().items():
-                    if v in ["unilabos_msgs/Resource", "sequence<unilabos_msgs/Resource>"]:
-                        r = ResourceUpdate.Request()
-                        r.resources = [
-                            convert_to_ros_msg(Resource, rs) for rs in nested_dict_to_list(protocol_kwargs[k])
-                        ]
-                        response = await self._resource_clients["resource_update"].call_async(r)
+                    if v not in ["unilabos_msgs/Resource", "sequence<unilabos_msgs/Resource>"]:
+                        continue
+                    self.lab_logger().info(f"更新资源状态: {k}")
+                    try:
+                        # 去重：使用 seen 集合获取唯一的资源对象
+                        seen = set()
+                        unique_resources = []
+
+                        # 获取资源数据，统一转换为列表
+                        resource_data = protocol_kwargs[k]
+                        is_sequence = v != "unilabos_msgs/Resource"
+                        if not is_sequence:
+                            resource_list = [resource_data] if isinstance(resource_data, dict) else resource_data
+                        else:
+                            # 处理序列类型，可能是嵌套列表
+                            resource_list = []
+                            if isinstance(resource_data, list):
+                                for item in resource_data:
+                                    if isinstance(item, list):
+                                        resource_list.extend(item)
+                                    else:
+                                        resource_list.append(item)
+                            else:
+                                resource_list = [resource_data]
+
+                        for res_data in resource_list:
+                            if not isinstance(res_data, dict):
+                                continue
+                            res_name = res_data.get("id") or res_data.get("name")
+                            if not res_name:
+                                continue
+
+                            # 使用 resource_tracker 获取本地 PLR 实例
+                            plr = self.resource_tracker.figure_resource({"name": res_name}, try_mode=False)
+                            # 获取父资源
+                            res = self.resource_tracker.parent_resource(plr)
+                            if id(res) not in seen:
+                                seen.add(id(res))
+                                unique_resources.append(res)
+
+                        # 使用新的资源树接口更新
+                        if unique_resources:
+                            await self.update_resource(unique_resources)
+                    except Exception as e:
+                        self.lab_logger().error(f"资源更新失败: {e}")
+                        self.lab_logger().error(traceback.format_exc())
 
                 # 设置成功状态和返回值
                 execution_success = True

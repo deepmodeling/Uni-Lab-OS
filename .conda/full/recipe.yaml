@@ -1,0 +1,42 @@
+# unilabos-full: Full package with all features
+# Depends on unilabos + complete ROS2 desktop + dev tools
+
+package:
+  name: unilabos-full
+  version: 0.10.17
+
+build:
+  noarch: generic
+
+requirements:
+  run:
+  # Base unilabos package (includes unilabos-env)
+  - uni-lab::unilabos ==0.10.17
+  # Documentation tools
+  - sphinx
+  - sphinx_rtd_theme
+  # Web UI
+  - gradio
+  - flask
+  # Interactive development
+  - ipython
+  - jupyter
+  - jupyros
+  - colcon-common-extensions
+  # ROS2 full desktop (includes rviz2, gazebo, etc.)
+  - robostack-staging::ros-humble-desktop-full
+  # Navigation and motion control
+  - ros-humble-navigation2
+  - ros-humble-ros2-control
+  - ros-humble-robot-state-publisher
+  - ros-humble-joint-state-publisher
+  # MoveIt motion planning
+  - ros-humble-moveit
+  - ros-humble-moveit-servo
+  # Simulation
+  - ros-humble-simulation
+
+about:
+  repository: https://github.com/deepmodeling/Uni-Lab-OS
+  license: GPL-3.0-only
+  description: "UniLabOS Full - Complete package with ROS2 Desktop, MoveIt, Navigation2, Gazebo, Jupyter"

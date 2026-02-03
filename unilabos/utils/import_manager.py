@@ -28,6 +28,7 @@ __all__ = [
 from ast import Constant
 
 from unilabos.utils import logger
+from unilabos.utils.decorator import is_not_action
 
 
 class ImportManager:
@@ -275,6 +276,9 @@ class ImportManager:
                     method_info = self._analyze_method_signature(method)
                     result["status_methods"][actual_name] = method_info
                 elif not name.startswith("_"):
+                    # 检查是否被 @not_action 装饰器标记
+                    if is_not_action(method):
+                        continue
                     # 其他非_开头的方法归类为action
                     method_info = self._analyze_method_signature(method)
                     result["action_methods"][name] = method_info
@@ -330,6 +334,9 @@ class ImportManager:
                     if actual_name not in result["status_methods"]:
                         result["status_methods"][actual_name] = method_info
                 else:
+                    # 检查是否被 @not_action 装饰器标记
+                    if self._is_not_action_method(node):
+                        continue
                     # 其他非_开头的方法归类为action
                     result["action_methods"][method_name] = method_info
         return result
@@ -447,6 +454,13 @@ class ImportManager:
         """检查是否是@xxx.setter装饰的方法"""
         for decorator in node.decorator_list:
             if isinstance(decorator, ast.Attribute) and decorator.attr == "setter":
+                return True
+        return False
+
+    def _is_not_action_method(self, node: ast.FunctionDef) -> bool:
+        """检查是否是@not_action装饰的方法"""
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == "not_action":
                 return True
         return False
 

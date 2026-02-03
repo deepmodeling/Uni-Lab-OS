@@ -1,4 +1,5 @@
 import json
+
 # from nt import device_encoding
 import threading
 import time
@@ -55,7 +56,11 @@ def main(
 ) -> None:
     """主函数"""
 
-    rclpy.init(args=rclpy_init_args)
+    # Support restart - check if rclpy is already initialized
+    if not rclpy.ok():
+        rclpy.init(args=rclpy_init_args)
+    else:
+        logger.info("[ROS] rclpy already initialized, reusing context")
     executor = rclpy.__executor = MultiThreadedExecutor()
     # 创建主机节点
     host_node = HostNode(
@@ -88,7 +93,7 @@ def main(
         joint_republisher = JointRepublisher("joint_republisher", host_node.resource_tracker)
         # lh_joint_pub = LiquidHandlerJointPublisher(
         #     resources_config=resources_list, resource_tracker=host_node.resource_tracker
-        # ) 
+        # )
         executor.add_node(resource_mesh_manager)
         executor.add_node(joint_republisher)
         # executor.add_node(lh_joint_pub)

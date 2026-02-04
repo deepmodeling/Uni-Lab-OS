@@ -139,7 +139,6 @@ class AI4MDevice(OpcUaClientWithSubscription):
         
         logger.info("模式切换完成")
         return {
-            "success": True,
             "message": "指令作业模式启动成功",
         }
 
@@ -162,26 +161,25 @@ class AI4MDevice(OpcUaClientWithSubscription):
         """
         # 校验输入范围
         if pick_beaker_id not in (1, 2, 3, 4, 5):
-            logger.error("取烧杯编号必须在 1-5 范围内")
-            return {
-                "success": False,
-                "pick_beaker_id": pick_beaker_id,
-                "place_station_id": place_station_id,
-                "message": "取烧杯编号必须在 1-5 范围内",
-            }
+            error_msg = f"取烧杯编号必须在 1-5 范围内，当前值: {pick_beaker_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         if place_station_id not in (1, 2, 3):
-            logger.error("放检测编号必须在 1-3 范围内")
-            return {
-                "success": False,
-                "pick_beaker_id": pick_beaker_id,
-                "place_station_id": place_station_id,
-                "message": "放检测编号必须在 1-3 范围内",
-            }
+            error_msg = f"放检测编号必须在 1-3 范围内，当前值: {place_station_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
         # 获取仓库资源
         rack_warehouse = self.deck.warehouses["水凝胶烧杯堆栈"]
         station_warehouse = self.deck.warehouses[f"反应工站{place_station_id}"]
         rack_site_key = f"A{pick_beaker_id}"
+
+        # 在执行硬件操作之前，先检查载具是否存在
+        carrier = rack_warehouse[rack_site_key]
+        if carrier is None:
+            error_msg = f"堆栈位置 {rack_site_key} 没有载具"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
         pick_complete_node = f"robot_rack_pick_beaker_{pick_beaker_id}_complete"
         place_complete_node = f"robot_place_station_{place_station_id}_complete"
@@ -197,29 +195,9 @@ class AI4MDevice(OpcUaClientWithSubscription):
             time.sleep(2.0)
             pick_complete = self.get_node_value(pick_complete_node)
         
-        # 获取载具（carrier）
-        carrier = rack_warehouse[rack_site_key]
-        if carrier is None:
-            logger.error(f"堆栈位置 {rack_site_key} 没有载具")
-            return {
-                "success": False,
-                "pick_beaker_id": pick_beaker_id,
-                "place_station_id": place_station_id,
-                "message": f"堆栈位置 {rack_site_key} 没有载具",
-            }
-        
         # 阶段1.5：机器人取烧杯完成后，从堆栈解绑载具
-        try:
-            rack_warehouse.unassign_child_resource(carrier)
-            logger.info(f"✓ 已从堆栈解绑载具 {carrier.name}")
-        except Exception as e:
-            logger.error(f"从堆栈解绑载具失败: {e}")
-            return {
-                "success": False,
-                "pick_beaker_id": pick_beaker_id,
-                "place_station_id": place_station_id,
-                "message": f"从堆栈解绑载具失败: {e}",
-            }
+        rack_warehouse.unassign_child_resource(carrier)
+        logger.info(f"✓ 已从堆栈解绑载具 {carrier.name}")
         
         # 阶段2：取完成后再下发放检测编号并等待完成
         logger.info("取完成，开始下发放检测编号...")
@@ -255,7 +233,6 @@ class AI4MDevice(OpcUaClientWithSubscription):
                 logger.warning(f"前端资源更新失败: {e}")
 
         return {
-            "success": True,
             "pick_beaker_id": pick_beaker_id,
             "place_station_id": place_station_id,
             "message": f"机器人取烧杯{pick_beaker_id}并放到检测站{place_station_id}完成",
@@ -280,21 +257,13 @@ class AI4MDevice(OpcUaClientWithSubscription):
         """
         # 校验输入范围
         if place_beaker_id not in (1, 2, 3, 4, 5):
-            logger.error("放烧杯编号必须在 1-5 范围内")
-            return {
-                "success": False,
-                "place_beaker_id": place_beaker_id,
-                "pick_station_id": pick_station_id,
-                "message": "放烧杯编号必须在 1-5 范围内",
-            }
+            error_msg = f"放烧杯编号必须在 1-5 范围内，当前值: {place_beaker_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         if pick_station_id not in (1, 2, 3):
-            logger.error("取检测编号必须在 1-3 范围内")
-            return {
-                "success": False,
-                "place_beaker_id": place_beaker_id,
-                "pick_station_id": pick_station_id,
-                "message": "取检测编号必须在 1-3 范围内",
-            }
+            error_msg = f"取检测编号必须在 1-3 范围内，当前值: {pick_station_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
         # 获取仓库资源
         rack_warehouse = self.deck.warehouses["水凝胶烧杯堆栈"]
@@ -304,25 +273,17 @@ class AI4MDevice(OpcUaClientWithSubscription):
         station_site_idx = 0
         
         if not station_warehouse.sites or len(station_warehouse.sites) == 0:
-            logger.error(f"检测站{pick_station_id} 的 warehouse sites 列表为空")
-            return {
-                "success": False,
-                "place_beaker_id": place_beaker_id,
-                "pick_station_id": pick_station_id,
-                "message": f"检测站{pick_station_id} 的 warehouse sites 列表为空",
-            }
+            error_msg = f"检测站{pick_station_id} 的 warehouse sites 列表为空"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         carrier = station_warehouse.sites[station_site_idx]
         
         # 检查是否是 ResourceHolder
         if carrier is None or type(carrier).__name__ == 'ResourceHolder':
-            logger.error(f"检测站{pick_station_id} 没有载具（可能是空的 ResourceHolder）")
-            return {
-                "success": False,
-                "place_beaker_id": place_beaker_id,
-                "pick_station_id": pick_station_id,
-                "message": f"检测站{pick_station_id} 没有载具",
-            }
+            error_msg = f"检测站{pick_station_id} 没有载具（可能是空的 ResourceHolder）"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # 确定堆栈目标位置
         rack_site_key = f"C{place_beaker_id}"
@@ -342,17 +303,8 @@ class AI4MDevice(OpcUaClientWithSubscription):
             pick_complete = self.get_node_value(pick_complete_node)
         
         # 阶段1.5：机器人取检测完成后，从检测站解绑载具
-        try:
-            station_warehouse.unassign_child_resource(carrier)
-            logger.info(f"✓ 已从检测站{pick_station_id}解绑载具 {carrier.name}")
-        except Exception as e:
-            logger.error(f"从检测站解绑载具失败: {e}")
-            return {
-                "success": False,
-                "place_beaker_id": place_beaker_id,
-                "pick_station_id": pick_station_id,
-                "message": f"从检测站解绑载具失败: {e}",
-            }
+        station_warehouse.unassign_child_resource(carrier)
+        logger.info(f"✓ 已从检测站{pick_station_id}解绑载具 {carrier.name}")
         
         # 阶段2：取完成后再下发放烧杯编号并等待完成
         logger.info("取完成，开始下发放烧杯编号...")
@@ -366,14 +318,11 @@ class AI4MDevice(OpcUaClientWithSubscription):
             place_complete = self.get_node_value(place_complete_node)
         
         # 阶段2.5：机器人放烧杯完成后，绑定载具回堆栈
-        try:
-            rack_site_idx = list(rack_warehouse._ordering.keys()).index(rack_site_key)
-            rack_location = rack_warehouse.child_locations[rack_site_key]
-            
-            rack_warehouse.assign_child_resource(carrier, location=rack_location, spot=rack_site_idx)
-            logger.info(f"✓ 已绑定载具 {carrier.name} 回堆栈 {rack_site_key}")
-        except Exception as e:
-            logger.error(f"绑定载具回堆栈失败: {e}")
+        rack_site_idx = list(rack_warehouse._ordering.keys()).index(rack_site_key)
+        rack_location = rack_warehouse.child_locations[rack_site_key]
+        
+        rack_warehouse.assign_child_resource(carrier, location=rack_location, spot=rack_site_idx)
+        logger.info(f"✓ 已绑定载具 {carrier.name} 回堆栈 {rack_site_key}")
         
         logger.info("放烧杯完成")
         
@@ -386,15 +335,20 @@ class AI4MDevice(OpcUaClientWithSubscription):
             except Exception as e:
                 logger.warning(f"前端资源更新失败: {e}")
 
-        # 序列化 carrier 对象
-        # carrier_serialized = carrier.serialize() if hasattr(carrier, 'serialize') else {"name": carrier.name}
+        # !!样例：准备载具信息作为样本数据，记录保存样品数据
+        carrier_info = {
+            "name": carrier.name,
+            "type": "carrier",
+            "rack_location": rack_site_key,
+            "station_id": pick_station_id,
+            "rack_site_index": rack_site_idx
+        }
 
         return {
-            "success": True,
             "place_beaker_id": place_beaker_id,
             "pick_station_id": pick_station_id,
-            # "carrier": carrier_serialized,
             "message": f"机器人从检测站{pick_station_id}取烧杯并放回位置{place_beaker_id}完成",
+            # "unilabos_samples": [carrier_info],  # 使用 unilabos_samples 避免被外部服务转换
         }
 
     def trigger_station_process(
@@ -425,12 +379,9 @@ class AI4MDevice(OpcUaClientWithSubscription):
         """
         # 校验输入范围
         if station_id not in (1, 2, 3):
-            logger.error("检测编号必须在 1-3 范围内")
-            return {
-                "success": False,
-                "station_id": station_id,
-                "message": "检测编号必须在 1-3 范围内",
-            }
+            error_msg = f"检测编号必须在 1-3 范围内，当前值: {station_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
         # 检测站索引（0-2）
         station_idx = station_id - 1
@@ -489,7 +440,6 @@ class AI4MDevice(OpcUaClientWithSubscription):
         self.set_node_value(start_node, False)
 
         return {
-            "success": True,
             "station_id": station_id,
             "message": f"检测站{station_id}工艺执行完成",
         }
@@ -541,7 +491,6 @@ class AI4MDevice(OpcUaClientWithSubscription):
         self.set_node_value("initialize", False)
         
         return {
-            "success": True,
             "message": "设备初始化完成",
         }
 
@@ -610,7 +559,6 @@ class AI4MDevice(OpcUaClientWithSubscription):
         self.set_node_value("auto_param_downloaded", False)
 
         return {
-            "success": True,
             "message": "自动模式参数下发完成",
         }
 
@@ -661,7 +609,6 @@ class AI4MDevice(OpcUaClientWithSubscription):
         self.set_node_value("manual_auto_switch", False)
 
         return {
-            "success": True,
             "message": "自动作业模式执行完成",
         }
 

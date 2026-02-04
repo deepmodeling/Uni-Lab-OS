@@ -49,11 +49,7 @@ AI4M_station:
                 message:
                   title: Message
                   type: string
-                success:
-                  title: Success
-                  type: boolean
               required:
-              - success
               - message
               title: download_auto_params返回结果
               type: object
@@ -83,11 +79,7 @@ AI4M_station:
                 message:
                   title: Message
                   type: string
-                success:
-                  title: Success
-                  type: boolean
               required:
-              - success
               - message
               title: start_auto_mode返回结果
               type: object
@@ -117,11 +109,7 @@ AI4M_station:
                 message:
                   title: Message
                   type: string
-                success:
-                  title: Success
-                  type: boolean
               required:
-              - success
               - message
               title: start_manual_mode返回结果
               type: object
@@ -151,11 +139,7 @@ AI4M_station:
                 message:
                   title: Message
                   type: string
-                success:
-                  title: Success
-                  type: boolean
               required:
-              - success
               - message
               title: trigger_init返回结果
               type: object
@@ -213,11 +197,7 @@ AI4M_station:
                 place_station_id:
                   title: Place Station Id
                   type: integer
-                success:
-                  title: Success
-                  type: boolean
               required:
-              - success
               - pick_beaker_id
               - place_station_id
               - message
@@ -268,20 +248,38 @@ AI4M_station:
             result:
               description: trigger_robot_place_beaker 返回类型
               properties:
-                success:
-                  title: Success
-                  type: boolean
-                place_beaker_id:
-                  title: Place Beaker Id
-                  type: integer
-                pick_station_id:
-                  title: Pick Station Id
-                  type: integer
                 message:
                   title: Message
                   type: string
+                pick_station_id:
+                  title: Pick Station Id
+                  type: integer
+                place_beaker_id:
+                  title: Place Beaker Id
+                  type: integer
+                unilabos_samples:
+                  description: 载具样本信息列表，包含载具名称、位置等信息（使用 unilabos_samples 避免被外部服务转换）
+                  items:
+                    properties:
+                      name:
+                        description: 载具名称
+                        type: string
+                      rack_location:
+                        description: 堆栈位置
+                        type: string
+                      rack_site_index:
+                        description: 堆栈位置索引
+                        type: integer
+                      station_id:
+                        description: 检测站编号
+                        type: integer
+                      type:
+                        description: 载具类型
+                        type: string
+                    type: object
+                  title: Unilabos Samples
+                  type: array
               required:
-              - success
               - place_beaker_id
               - pick_station_id
               - message
@@ -353,11 +351,7 @@ AI4M_station:
                 station_id:
                   title: Station Id
                   type: integer
-                success:
-                  title: Success
-                  type: boolean
               required:
-              - success
               - station_id
               - message
               title: trigger_station_process返回结果

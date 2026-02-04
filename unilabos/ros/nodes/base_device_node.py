@@ -231,14 +231,15 @@ class PropertyPublisher:
 
     def publish_property(self):
         try:
-            self.node.lab_logger().trace(f"【.publish_property】开始发布属性: {self.name}")
+            # self.node.lab_logger().trace(f"【.publish_property】开始发布属性: {self.name}")
             value = self.get_property()
             if self.print_publish:
-                self.node.lab_logger().trace(f"【.publish_property】发布 {self.msg_type}: {value}")
+                pass
+                # self.node.lab_logger().trace(f"【.publish_property】发布 {self.msg_type}: {value}")
             if value is not None:
                 msg = convert_to_ros_msg(self.msg_type, value)
                 self.publisher_.publish(msg)
-                self.node.lab_logger().trace(f"【.publish_property】属性 {self.name} 发布成功")
+                # self.node.lab_logger().trace(f"【.publish_property】属性 {self.name} 发布成功")
         except Exception as e:
             self.node.lab_logger().error(
                 f"【.publish_property】发布属性 {self.publisher_.topic} 出错: {str(e)}\n{traceback.format_exc()}"
@@ -1594,7 +1595,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             function_name = target["function_name"]
             function_args = target["function_args"]
             # 获取 unilabos 系统参数
-            unilabos_param: Dict[str, Any] = target.get(JSON_UNILABOS_PARAM, {})
+            unilabos_param: Dict[str, Any] = target[JSON_UNILABOS_PARAM]
 
             assert isinstance(function_args, dict), "执行动作时JSON必须为dict类型\n原JSON: {string}"
             function = getattr(self.driver_instance, function_name)
@@ -1612,9 +1613,19 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 if arg_name not in function_args:
                     # 处理 sample_uuids 参数注入
                     if arg_name == PARAM_SAMPLE_UUIDS:
-                        function_args[PARAM_SAMPLE_UUIDS] = unilabos_param.get(PARAM_SAMPLE_UUIDS, [])
+                        raw_sample_uuids = unilabos_param.get(PARAM_SAMPLE_UUIDS, {})
+                        # 将 material uuid 转换为 resource 实例
+                        # key: sample_uuid, value: material_uuid -> resource 实例
+                        resolved_sample_uuids: Dict[str, Any] = {}
+                        for sample_uuid, material_uuid in raw_sample_uuids.items():
+                            if material_uuid and self.resource_tracker:
+                                resource = self.resource_tracker.uuid_to_resources.get(material_uuid)
+                                resolved_sample_uuids[sample_uuid] = resource if resource else material_uuid
+                            else:
+                                resolved_sample_uuids[sample_uuid] = material_uuid
+                        function_args[PARAM_SAMPLE_UUIDS] = resolved_sample_uuids
                         self.lab_logger().debug(
-                            f"[JsonCommand] 注入 {PARAM_SAMPLE_UUIDS}: {function_args[PARAM_SAMPLE_UUIDS]}"
+                            f"[JsonCommand] 注入 {PARAM_SAMPLE_UUIDS}: {resolved_sample_uuids}"
                         )
                     continue
 
@@ -1754,9 +1765,19 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 if arg_name not in function_args:
                     # 处理 sample_uuids 参数注入
                     if arg_name == PARAM_SAMPLE_UUIDS:
-                        function_args[PARAM_SAMPLE_UUIDS] = unilabos_param.get(PARAM_SAMPLE_UUIDS, [])
+                        raw_sample_uuids = unilabos_param.get(PARAM_SAMPLE_UUIDS, {})
+                        # 将 material uuid 转换为 resource 实例
+                        # key: sample_uuid, value: material_uuid -> resource 实例
+                        resolved_sample_uuids: Dict[str, Any] = {}
+                        for sample_uuid, material_uuid in raw_sample_uuids.items():
+                            if material_uuid and self.resource_tracker:
+                                resource = self.resource_tracker.uuid_to_resources.get(material_uuid)
+                                resolved_sample_uuids[sample_uuid] = resource if resource else material_uuid
+                            else:
+                                resolved_sample_uuids[sample_uuid] = material_uuid
+                        function_args[PARAM_SAMPLE_UUIDS] = resolved_sample_uuids
                         self.lab_logger().debug(
-                            f"[JsonCommandAsync] 注入 {PARAM_SAMPLE_UUIDS}: {function_args[PARAM_SAMPLE_UUIDS]}"
+                            f"[JsonCommandAsync] 注入 {PARAM_SAMPLE_UUIDS}: {resolved_sample_uuids}"
                         )
                     continue
 

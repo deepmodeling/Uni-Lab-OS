@@ -758,6 +758,7 @@ class HostNode(BaseROS2DeviceNode):
         item: "QueueItem",
         action_type: str,
         action_kwargs: Dict[str, Any],
+        sample_material: Dict[str, str],
         server_info: Optional[Dict[str, Any]] = None,
     ) -> None:
         """

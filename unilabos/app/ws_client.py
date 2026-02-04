@@ -688,6 +688,7 @@ class MessageProcessor:
                 queue_item,
                 action_type=req.action_type,
                 action_kwargs=req.action_args,
+                sample_material=req.sample_material,
                 server_info=req.server_info,
             )
 

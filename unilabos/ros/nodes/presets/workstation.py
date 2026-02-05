@@ -340,6 +340,8 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                             plr = self.resource_tracker.figure_resource({"name": res_name}, try_mode=False)
                             # 获取父资源
                             res = self.resource_tracker.parent_resource(plr)
+                            if res is None:
+                                res = plr
                             if id(res) not in seen:
                                 seen.add(id(res))
                                 unique_resources.append(res)

@@ -412,16 +412,11 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             else:
                 for r in rts.root_nodes:
                     r.res_content.parent_uuid = self.uuid
-
-            if (
-                len(LIQUID_INPUT_SLOT)
-                and LIQUID_INPUT_SLOT[0] == -1
-                and len(rts.root_nodes) == 1
-                and isinstance(rts.root_nodes[0], RegularContainer)
-            ):
+            rts_plr_instances = rts.to_plr_resources()
+            if len(rts.root_nodes) == 1 and isinstance(rts_plr_instances[0], RegularContainer):
                 # noinspection PyTypeChecker
-                container_instance: RegularContainer = rts.root_nodes[0]
-                found_resources = self.resource_tracker.figure_resource({"id": container_instance.name}, try_mode=True)
+                container_instance: RegularContainer = rts_plr_instances[0]
+                found_resources = self.resource_tracker.figure_resource({"name": container_instance.name}, try_mode=True)
                 if not len(found_resources):
                     self.resource_tracker.add_resource(container_instance)
                     logger.info(f"添加物料{container_instance.name}到资源跟踪器")
@@ -430,7 +425,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     found_resource = found_resources[0]
                     if isinstance(found_resource, RegularContainer):
                         logger.info(f"更新物料{container_instance.name}的数据{found_resource.state}")
-                        found_resource.state.update(json.loads(container_instance.state))
+                        found_resource.state.update(container_instance.state)
                     elif isinstance(found_resource, dict):
                         raise ValueError("已不支持 字典 版本的RegularContainer")
                     else:
@@ -443,7 +438,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     "action": "add",
                     "data": {
                         "data": rts.dump(),
-                        "mount_uuid": parent_resource.unilabos_uuid if parent_resource is not None else "",
+                        "mount_uuid": parent_resource.unilabos_uuid if parent_resource is not None else self.uuid,
                         "first_add": False,
                     },
                 }
@@ -1538,11 +1533,18 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             if isinstance(rs, list):
                                 for r in rs:
                                     res = self.resource_tracker.parent_resource(r)  # 获取 resource 对象
+                                    if res is None:
+                                        res = rs
+                                    if id(res) not in seen:
+                                        seen.add(id(res))
+                                        unique_resources.append(res)
                             else:
                                 res = self.resource_tracker.parent_resource(rs)
-                            if id(res) not in seen:
-                                seen.add(id(res))
-                                unique_resources.append(res)
+                                if res is None:
+                                    res = rs
+                                if id(res) not in seen:
+                                    seen.add(id(res))
+                                    unique_resources.append(res)
 
                         # 使用新的资源树接口
                         if unique_resources:

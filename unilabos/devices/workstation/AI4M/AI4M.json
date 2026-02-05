@@ -10,7 +10,7 @@
             "type": "device",
             "class": "AI4M_station",
             "position": {
-                "x": 250,
+                "x": 1550,
                 "y": 0,
                 "z": 0
             },
@@ -43,12 +43,64 @@
             "type": "deck",
             "class": "AI4M_deck",
             "position": {
-                "x": 250,
+                "x": 1550,
                 "y": 0,
                 "z": 0
             },
             "config": {
                 "type": "AI4M_deck"
+            },
+            "data": {}
+        },
+        {
+            "id": "AI4M002_station",
+            "name": "AI4M002_station",
+            "children": [
+                "AI4M002_deck"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "AI4M002_station",
+            "position": {
+                "x": 250,
+                "y": 0,
+                "z": 0
+            },
+            "pose": {
+                "size": {
+                    "width": 1217,
+                    "height": 1320,
+                    "depth": 2670
+                }
+            },
+            "config": {
+                "url": "opc.tcp://127.0.0.1:49320",
+                "csv_path": "opcua_nodes_AI4M_sim.csv",
+                "deck": {
+                    "data": {
+                        "_resource_child_name": "AI4M002_deck",
+                        "_resource_type": "unilabos.devices.workstation.AI4M.decks:AI4M002_deck"
+                    }
+                }
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "AI4M002_deck",
+            "name": "AI4M002_deck",
+            "sample_id": null,
+            "children": [],
+            "parent": "AI4M002_station",
+            "type": "deck",
+            "class": "AI4M002_deck",
+            "position": {
+                "x": 250,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "type": "AI4M002_deck"
             },
             "data": {}
         }

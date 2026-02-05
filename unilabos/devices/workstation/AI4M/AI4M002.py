@@ -12,14 +12,14 @@ import os
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import logger
 from unilabos.utils.decorator import not_action
-from unilabos.devices.workstation.AI4M.decks import AI4M_deck
+from unilabos.devices.workstation.AI4M.decks import AI4M002_deck
 from unilabos.devices.workstation.AI4M.bottle_carriers import Hydrogel_Clean_1BottleCarrier
 
 # 导入通讯基类
 from unilabos.devices.workstation.AI4M.base_opcua_client import OpcUaClientWithSubscription
 
 
-class AI4MDevice(OpcUaClientWithSubscription):
+class AI4M002Device(OpcUaClientWithSubscription):
     """
     AI4M 设备类
     继承自 OpcUaClientWithSubscription，实现具体的设备动作函数
@@ -28,7 +28,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
     def __init__(
         self, 
         url: str, 
-        deck: Optional[AI4M_deck] = None,
+        deck: Optional[AI4M002_deck] = None,
         csv_path: str = None, 
         username: str = None, 
         password: str = None,
@@ -65,7 +65,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
 
         # 处理 deck 参数
         if deck is None or isinstance(deck.get("data") if isinstance(deck, dict) else deck, dict):
-            self.deck = AI4M_deck(setup=True)
+            self.deck = AI4M002_deck(setup=True)
         else:
             self.deck = deck.get("data") if isinstance(deck, dict) else deck
 
@@ -651,12 +651,12 @@ class AI4MDevice(OpcUaClientWithSubscription):
 
 
 # 为了向后兼容，保留旧的类名
-OpcUaClient = AI4MDevice
+OpcUaClient = AI4M002Device
     
 
 if __name__ == '__main__':
     # 调试用法
-    A4 = AI4MDevice(
+    A4 = AI4M002Device(
         url="opc.tcp://127.0.0.1:49320",
         csv_path="opcua_nodes_AI4M_sim.csv"
     )

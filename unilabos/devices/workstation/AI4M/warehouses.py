@@ -72,3 +72,105 @@ def Station_3_warehouse_1x1x1(name: str) -> WareHouse:
         custom_keys=[3],  # 使用数字3作为编号
     )
 
+
+def Raw_electrode_warehouse_3x5x1(name: str) -> WareHouse:
+    """创建原始电极 3x5x1仓库"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=3,
+        num_items_y=5,
+        num_items_z=1,
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        naming_mode="continuous_number",
+    )
+
+def Finished_electrode_warehouse_3x5x1(name: str) -> WareHouse:
+    """创建完成电极 3x5x1仓库"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=3,
+        num_items_y=5,
+        num_items_z=1,
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        naming_mode="continuous_number",
+    )
+
+def Stir_1_warehouse_1x1x1(name: str) -> WareHouse:
+    """创建搅拌仪 1x1x1仓库"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=1,
+        num_items_y=1,
+        num_items_z=1,
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        custom_keys=[0],  # 使用数字0作为编号
+    )
+
+def Stir_2_warehouse_1x1x1(name: str) -> WareHouse:
+    """创建搅拌仪 1x1x1仓库"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=1,
+        num_items_y=1,
+        num_items_z=1,
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        custom_keys=[0],  # 使用数字0作为编号
+    )
+
+def Water_wash_warehouse_1x1x1(name: str) -> WareHouse:
+    """创建水洗 1x1x1仓库"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=1,
+        num_items_y=1,
+        num_items_z=1,
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        custom_keys=[0],  # 使用数字0作为编号
+    )
+
+def Acid_wash_warehouse_1x1x1(name: str) -> WareHouse:
+    """创建酸洗 1x1x1仓库"""
+    return warehouse_factory(
+        name=name,
+        num_items_x=1,
+        num_items_y=1,
+        num_items_z=1,
+        dx=10.0,
+        dy=10.0,
+        dz=10.0,
+        item_dx=137.0,
+        item_dy=96.0,
+        item_dz=120.0,
+        category="warehouse",
+        custom_keys=[0],  # 使用数字0作为编号
+    )

@@ -690,16 +690,14 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         )
 
     def set_liquid_from_plate(
-        self, plate: List[ResourceSlot], well_names: list[str], liquid_names: list[str], volumes: list[float]
+        self, plate: ResourceSlot, well_names: list[str], liquid_names: list[str], volumes: list[float]
     ) -> SetLiquidFromPlateReturn:
         """Set the liquid in wells of a plate by well names (e.g., A1, A2, B3).
 
         如果 liquid_names 和 volumes 为空，但 plate 和 well_names 不为空，直接返回 plate 和 wells。
         """
-        if isinstance(plate, list):  # 未来移除
-            plate = plate[0]
         assert issubclass(plate.__class__, Plate), "plate must be a Plate"
-        plate: Plate = cast(Plate, plate)
+        plate: Plate = cast(Plate, cast(Resource, plate))
         # 根据 well_names 获取对应的 Well 对象
         wells = [plate.get_well(name) for name in well_names]
         res_volumes = []

@@ -5,6 +5,8 @@ from pydantic import BaseModel, field_serializer, field_validator, ValidationErr
 from pydantic import Field
 from typing import List, Tuple, Any, Dict, Literal, Optional, cast, TYPE_CHECKING, Union
 
+from typing_extensions import TypedDict
+
 from unilabos.resources.plr_additional_res_reg import register
 from unilabos.utils.log import logger
 
@@ -28,6 +30,12 @@ RETURN_UNILABOS_SAMPLES = "unilabos_samples"
 
 # sample_uuids 参数类型 (用于 virtual bench 等设备添加 sample_uuids 参数)
 SampleUUIDsType = Dict[str, Optional["PLRResource"]]
+
+
+class LabSample(TypedDict):
+    sample_uuid: str
+    oss_path: str
+    extra: Dict[str, Any]
 
 
 class ResourceDictPositionSize(BaseModel):

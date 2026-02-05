@@ -5835,6 +5835,25 @@ virtual_workbench:
               - material_number
               type: object
             result:
+              $defs:
+                LabSample:
+                  properties:
+                    extra:
+                      additionalProperties: true
+                      title: Extra
+                      type: object
+                    oss_path:
+                      title: Oss Path
+                      type: string
+                    sample_uuid:
+                      title: Sample Uuid
+                      type: string
+                  required:
+                  - sample_uuid
+                  - oss_path
+                  - extra
+                  title: LabSample
+                  type: object
               description: move_to_heating_station 返回类型
               properties:
                 material_id:
@@ -5853,12 +5872,18 @@ virtual_workbench:
                 success:
                   title: Success
                   type: boolean
+                unilabos_samples:
+                  items:
+                    $ref: '#/$defs/LabSample'
+                  title: Unilabos Samples
+                  type: array
               required:
               - success
               - station_id
               - material_id
               - material_number
               - message
+              - unilabos_samples
               title: MoveToHeatingStationResult
               type: object
           required:
@@ -5903,6 +5928,25 @@ virtual_workbench:
               - material_number
               type: object
             result:
+              $defs:
+                LabSample:
+                  properties:
+                    extra:
+                      additionalProperties: true
+                      title: Extra
+                      type: object
+                    oss_path:
+                      title: Oss Path
+                      type: string
+                    sample_uuid:
+                      title: Sample Uuid
+                      type: string
+                  required:
+                  - sample_uuid
+                  - oss_path
+                  - extra
+                  title: LabSample
+                  type: object
               description: move_to_output 返回类型
               properties:
                 material_id:
@@ -5914,10 +5958,16 @@ virtual_workbench:
                 success:
                   title: Success
                   type: boolean
+                unilabos_samples:
+                  items:
+                    $ref: '#/$defs/LabSample'
+                  title: Unilabos Samples
+                  type: array
               required:
               - success
               - station_id
               - material_id
+              - unilabos_samples
               title: MoveToOutputResult
               type: object
           required:
@@ -5972,6 +6022,25 @@ virtual_workbench:
               required: []
               type: object
             result:
+              $defs:
+                LabSample:
+                  properties:
+                    extra:
+                      additionalProperties: true
+                      title: Extra
+                      type: object
+                    oss_path:
+                      title: Oss Path
+                      type: string
+                    sample_uuid:
+                      title: Sample Uuid
+                      type: string
+                  required:
+                  - sample_uuid
+                  - oss_path
+                  - extra
+                  title: LabSample
+                  type: object
               description: prepare_materials 返回类型 - 批量准备物料
               properties:
                 count:
@@ -5998,6 +6067,11 @@ virtual_workbench:
                 success:
                   title: Success
                   type: boolean
+                unilabos_samples:
+                  items:
+                    $ref: '#/$defs/LabSample'
+                  title: Unilabos Samples
+                  type: array
               required:
               - success
               - count
@@ -6007,6 +6081,7 @@ virtual_workbench:
               - material_4
               - material_5
               - message
+              - unilabos_samples
               title: PrepareMaterialsResult
               type: object
           required:
@@ -6062,6 +6137,25 @@ virtual_workbench:
               - material_number
               type: object
             result:
+              $defs:
+                LabSample:
+                  properties:
+                    extra:
+                      additionalProperties: true
+                      title: Extra
+                      type: object
+                    oss_path:
+                      title: Oss Path
+                      type: string
+                    sample_uuid:
+                      title: Sample Uuid
+                      type: string
+                  required:
+                  - sample_uuid
+                  - oss_path
+                  - extra
+                  title: LabSample
+                  type: object
               description: start_heating 返回类型
               properties:
                 material_id:
@@ -6079,12 +6173,18 @@ virtual_workbench:
                 success:
                   title: Success
                   type: boolean
+                unilabos_samples:
+                  items:
+                    $ref: '#/$defs/LabSample'
+                  title: Unilabos Samples
+                  type: array
               required:
               - success
               - station_id
               - material_id
               - material_number
               - message
+              - unilabos_samples
               title: StartHeatingResult
               type: object
           required:

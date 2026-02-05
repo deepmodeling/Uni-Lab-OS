@@ -863,7 +863,7 @@ class HostNode(BaseROS2DeviceNode):
                                     f"{[s.get('name', s.get('id', 'unknown')) if isinstance(s, dict) else str(s)[:20] for s in unilabos_samples[:5]]}"
                                     f"{'...' if len(unilabos_samples) > 5 else ''}"
                                 )
-                                return_info[RETURN_UNILABOS_SAMPLES] = unilabos_samples
+                                return_info["samples"] = unilabos_samples
                         suc = return_info.get("suc", False)
                         if not suc:
                             status = "failed"

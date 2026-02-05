@@ -595,7 +595,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         return super().set_liquid(wells, liquid_names, volumes)
 
     def set_liquid_from_plate(
-        self, plate: List[ResourceSlot], well_names: list[str], liquid_names: list[str], volumes: list[float]
+        self, plate: ResourceSlot, well_names: list[str], liquid_names: list[str], volumes: list[float]
     ) -> SetLiquidFromPlateReturn:
         return super().set_liquid_from_plate(plate, well_names, liquid_names, volumes)
 

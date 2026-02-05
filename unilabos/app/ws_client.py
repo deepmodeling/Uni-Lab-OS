@@ -657,6 +657,8 @@ class MessageProcessor:
     async def _handle_job_start(self, data: Dict[str, Any]):
         """处理job_start消息"""
         try:
+            if not data.get("sample_material"):
+                data["sample_material"] = {}
             req = JobAddReq(**data)
 
             job_log = format_job_log(req.job_id, req.task_id, req.device_id, req.action)

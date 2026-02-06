@@ -46,7 +46,7 @@ requirements:
   - jinja2
   - requests
   - uvicorn
-  - opcua
+  - opcua # [not osx]
   - pyserial
   - pandas
   - pymodbus

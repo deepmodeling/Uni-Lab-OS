@@ -452,8 +452,9 @@ unilab --ak your_ak --sk your_sk -g test/experiments/mock_devices/mock_all.json
 **操作步骤：**
 
 1. 将两个 `container` 拖拽到 `workstation` 中
-2. 将 `virtual_transfer_pump` 拖拽到 `workstation` 中
-3. 在画布上连接它们（建立父子关系）
+2. 将 `virtual_multiway_valve` 拖拽到 `workstation` 中
+3. 将 `virtual_transfer_pump` 拖拽到 `workstation` 中
+4. 在画布上连接它们（建立父子关系）
 
 ![设备连接](image/links.png)
 

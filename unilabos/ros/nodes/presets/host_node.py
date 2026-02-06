@@ -1,17 +1,17 @@
 import collections
-from dataclasses import dataclass, field
 import json
 import threading
 import time
 import traceback
 import uuid
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Set, Union
-from typing_extensions import TypedDict
 
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point
 from rclpy.action import ActionClient, get_action_server_names_and_types_by_node
 from rclpy.service import Service
+from typing_extensions import TypedDict
 from unilabos_msgs.msg import Resource  # type: ignore
 from unilabos_msgs.srv import (
     ResourceAdd,
@@ -23,10 +23,20 @@ from unilabos_msgs.srv import (
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 from unique_identifier_msgs.msg import UUID
 
+from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
 from unilabos.registry.registry import lab_registry
 from unilabos.resources.container import RegularContainer
 from unilabos.resources.graphio import initialize_resource
 from unilabos.resources.registry import add_schema
+from unilabos.resources.resource_tracker import (
+    ResourceDict,
+    ResourceDictInstance,
+    ResourceTreeSet,
+    ResourceTreeInstance,
+    RETURN_UNILABOS_SAMPLES,
+    JSON_UNILABOS_PARAM,
+    PARAM_SAMPLE_UUIDS,
+)
 from unilabos.ros.initialize_device import initialize_device_from_dict
 from unilabos.ros.msgs.message_converter import (
     get_msg_type,
@@ -37,17 +47,10 @@ from unilabos.ros.msgs.message_converter import (
 )
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode, DeviceNodeResourceTracker
 from unilabos.ros.nodes.presets.controller_node import ControllerNode
-from unilabos.resources.resource_tracker import (
-    ResourceDict,
-    ResourceDictInstance,
-    ResourceTreeSet,
-    ResourceTreeInstance,
-)
 from unilabos.utils import logger
 from unilabos.utils.exception import DeviceClassInvalid
 from unilabos.utils.log import warning
 from unilabos.utils.type_check import serialize_result_info
-from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
 
 if TYPE_CHECKING:
     from unilabos.app.ws_client import QueueItem
@@ -755,6 +758,7 @@ class HostNode(BaseROS2DeviceNode):
         item: "QueueItem",
         action_type: str,
         action_kwargs: Dict[str, Any],
+        sample_material: Dict[str, str],
         server_info: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
@@ -772,14 +776,14 @@ class HostNode(BaseROS2DeviceNode):
             if action_name.startswith("auto-"):
                 action_name = action_name[5:]
             action_id = f"/devices/{device_id}/_execute_driver_command"
-            action_kwargs = {
-                "string": json.dumps(
-                    {
-                        "function_name": action_name,
-                        "function_args": action_kwargs,
-                    }
-                )
+            json_command: Dict[str, Any] = {
+                "function_name": action_name,
+                "function_args": action_kwargs,
+                JSON_UNILABOS_PARAM: {
+                    PARAM_SAMPLE_UUIDS: sample_material,
+                },
             }
+            action_kwargs = {"string": json.dumps(json_command)}
             if action_type.startswith("UniLabJsonCommandAsync"):
                 action_id = f"/devices/{device_id}/_execute_driver_command_async"
         else:
@@ -790,24 +794,9 @@ class HostNode(BaseROS2DeviceNode):
             raise ValueError(f"ActionClient {action_id} not found.")
 
         action_client: ActionClient = self._action_clients[action_id]
-
-        # 遍历action_kwargs下的所有子dict，将"sample_uuid"的值赋给"sample_id"
-        def assign_sample_id(obj):
-            if isinstance(obj, dict):
-                if "sample_uuid" in obj:
-                    obj["sample_id"] = obj["sample_uuid"]
-                    obj.pop("sample_uuid")
-                for k, v in obj.items():
-                    if k != "unilabos_extra":
-                        assign_sample_id(v)
-            elif isinstance(obj, list):
-                for item in obj:
-                    assign_sample_id(item)
-
-        assign_sample_id(action_kwargs)
         goal_msg = convert_to_ros_msg(action_client._action_type.Goal(), action_kwargs)
 
-        self.lab_logger().info(f"[Host Node] Sending goal for {action_id}: {str(goal_msg)[:1000]}")
+        # self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {str(goal_msg)[:1000]}")
         self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {action_kwargs}")
         self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {goal_msg}")
         action_client.wait_for_server()
@@ -867,14 +856,14 @@ class HostNode(BaseROS2DeviceNode):
                         # 适配后端的一些额外处理
                         return_value = return_info.get("return_value")
                         if isinstance(return_value, dict):
-                            unilabos_samples = return_value.pop("unilabos_samples", None)
+                            unilabos_samples = return_value.pop(RETURN_UNILABOS_SAMPLES, None)
                             if isinstance(unilabos_samples, list) and unilabos_samples:
                                 self.lab_logger().info(
                                     f"[Host Node] Job {job_id[:8]} returned {len(unilabos_samples)} sample(s): "
                                     f"{[s.get('name', s.get('id', 'unknown')) if isinstance(s, dict) else str(s)[:20] for s in unilabos_samples[:5]]}"
                                     f"{'...' if len(unilabos_samples) > 5 else ''}"
                                 )
-                                return_info["unilabos_samples"] = unilabos_samples
+                                return_info["samples"] = unilabos_samples
                         suc = return_info.get("suc", False)
                         if not suc:
                             status = "failed"
@@ -1180,7 +1169,7 @@ class HostNode(BaseROS2DeviceNode):
         """
         更新节点信息回调
         """
-        # self.lab_logger().info(f"[Host Node] Node info update request received: {request}")
+        self.lab_logger().trace(f"[Host Node] Node info update request received: {request}")
         try:
             from unilabos.app.communication import get_communication_client
             from unilabos.app.web.client import HTTPClient, http_client

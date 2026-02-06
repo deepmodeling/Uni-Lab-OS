@@ -327,6 +327,7 @@ def job_add(req: JobAddReq) -> JobData:
             queue_item,
             action_type=action_type,
             action_kwargs=action_args,
+            sample_material=req.sample_material,
             server_info=server_info,
         )
 

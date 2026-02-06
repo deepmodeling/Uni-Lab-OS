@@ -95,8 +95,29 @@ def get_vessel_liquid_volume(G: nx.DiGraph, vessel: str) -> float:
     return total_volume
 
 
-def is_integrated_pump(node_name):
-    return "pump" in node_name and "valve" in node_name
+def is_integrated_pump(node_class: str, node_name: str = "") -> bool:
+    """
+    判断是否为泵阀一体设备
+    """
+    class_lower = (node_class or "").lower()
+    name_lower = (node_name or "").lower()
+
+    if "pump" not in class_lower and "pump" not in name_lower:
+        return False
+
+    integrated_markers = [
+        "valve",
+        "pump_valve",
+        "pumpvalve",
+        "integrated",
+        "transfer_pump",
+    ]
+
+    for marker in integrated_markers:
+        if marker in class_lower or marker in name_lower:
+            return True
+
+    return False
 
 
 def find_connected_pump(G, valve_node):
@@ -186,7 +207,9 @@ def build_pump_valve_maps(G, pump_backbone):
     debug_print(f"🔧 过滤后的骨架: {filtered_backbone}")
 
     for node in filtered_backbone:
-        if is_integrated_pump(G.nodes[node]["class"]):
+        node_data = G.nodes.get(node, {})
+        node_class = node_data.get("class", "") or ""
+        if is_integrated_pump(node_class, node):
             pumps_from_node[node] = node
             valve_from_node[node] = node
             debug_print(f"  - 集成泵-阀: {node}")

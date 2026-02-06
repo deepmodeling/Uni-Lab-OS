@@ -5,6 +5,8 @@ from pydantic import BaseModel, field_serializer, field_validator, ValidationErr
 from pydantic import Field
 from typing import List, Tuple, Any, Dict, Literal, Optional, cast, TYPE_CHECKING, Union
 
+from typing_extensions import TypedDict
+
 from unilabos.resources.plr_additional_res_reg import register
 from unilabos.utils.log import logger
 
@@ -14,6 +16,26 @@ if TYPE_CHECKING:
 
 
 EXTRA_CLASS = "unilabos_resource_class"
+EXTRA_SAMPLE_UUID = "sample_uuid"
+EXTRA_UNILABOS_SAMPLE_UUID = "unilabos_sample_uuid"
+
+# 函数参数名常量 - 用于自动注入 sample_uuids 列表
+PARAM_SAMPLE_UUIDS = "sample_uuids"
+
+# JSON Command 中的系统参数字段名
+JSON_UNILABOS_PARAM = "unilabos_param"
+
+# 返回值中的 samples 字段名
+RETURN_UNILABOS_SAMPLES = "unilabos_samples"
+
+# sample_uuids 参数类型 (用于 virtual bench 等设备添加 sample_uuids 参数)
+SampleUUIDsType = Dict[str, Optional["PLRResource"]]
+
+
+class LabSample(TypedDict):
+    sample_uuid: str
+    oss_path: str
+    extra: Dict[str, Any]
 
 
 class ResourceDictPositionSize(BaseModel):
@@ -529,6 +551,7 @@ class ResourceTreeSet(object):
                 plr_resource = sub_cls.deserialize(plr_dict, allow_marshal=True)
                 from pylabrobot.resources import Coordinate
                 from pylabrobot.serializer import deserialize
+
                 location = cast(Coordinate, deserialize(plr_dict["location"]))
                 plr_resource.location = location
                 plr_resource.load_all_state(all_states)

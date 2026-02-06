@@ -11,9 +11,10 @@ Virtual Workbench Device - 模拟工作台设备
 
 注意：调用来自线程池，使用 threading.Lock 进行同步
 """
+
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
 from threading import Lock, RLock
@@ -22,37 +23,46 @@ from typing_extensions import TypedDict
 
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 from unilabos.utils.decorator import not_action
+from unilabos.resources.resource_tracker import SampleUUIDsType, LabSample, RETURN_UNILABOS_SAMPLES
 
 
 # ============ TypedDict 返回类型定义 ============
 
+
 class MoveToHeatingStationResult(TypedDict):
     """move_to_heating_station 返回类型"""
+
     success: bool
     station_id: int
     material_id: str
     material_number: int
     message: str
+    unilabos_samples: List[LabSample]
 
 
 class StartHeatingResult(TypedDict):
     """start_heating 返回类型"""
+
     success: bool
     station_id: int
     material_id: str
     material_number: int
     message: str
+    unilabos_samples: List[LabSample]
 
 
 class MoveToOutputResult(TypedDict):
     """move_to_output 返回类型"""
+
     success: bool
     station_id: int
     material_id: str
+    unilabos_samples: List[LabSample]
 
 
 class PrepareMaterialsResult(TypedDict):
     """prepare_materials 返回类型 - 批量准备物料"""
+
     success: bool
     count: int
     material_1: int  # 物料编号1
@@ -61,12 +71,15 @@ class PrepareMaterialsResult(TypedDict):
     material_4: int  # 物料编号4
     material_5: int  # 物料编号5
     message: str
+    unilabos_samples: List[LabSample]
 
 
 # ============ 状态枚举 ============
 
+
 class HeatingStationState(Enum):
     """加热台状态枚举"""
+
     IDLE = "idle"  # 空闲
     OCCUPIED = "occupied"  # 已放置物料，等待加热
     HEATING = "heating"  # 加热中
@@ -75,6 +88,7 @@ class HeatingStationState(Enum):
 
 class ArmState(Enum):
     """机械臂状态枚举"""
+
     IDLE = "idle"  # 空闲
     BUSY = "busy"  # 工作中
 
@@ -82,6 +96,7 @@ class ArmState(Enum):
 @dataclass
 class HeatingStation:
     """加热台数据结构"""
+
     station_id: int
     state: HeatingStationState = HeatingStationState.IDLE
     current_material: Optional[str] = None  # 当前物料 (如 "A1", "A2")
@@ -137,8 +152,7 @@ class VirtualWorkbench:
 
         # 加热台状态 (station_id -> HeatingStation) - 立即初始化，不依赖initialize()
         self._heating_stations: Dict[int, HeatingStation] = {
-            i: HeatingStation(station_id=i)
-            for i in range(1, self.NUM_HEATING_STATIONS + 1)
+            i: HeatingStation(station_id=i) for i in range(1, self.NUM_HEATING_STATIONS + 1)
         }
         self._stations_lock = RLock()  # 可重入锁，保护加热台状态
 
@@ -178,14 +192,16 @@ class VirtualWorkbench:
                 station.heating_progress = 0.0
 
         # 初始化状态
-        self.data.update({
-            "status": "Ready",
-            "arm_state": ArmState.IDLE.value,
-            "arm_current_task": None,
-            "heating_stations": self._get_stations_status(),
-            "active_tasks_count": 0,
-            "message": "工作台就绪",
-        })
+        self.data.update(
+            {
+                "status": "Ready",
+                "arm_state": ArmState.IDLE.value,
+                "arm_current_task": None,
+                "heating_stations": self._get_stations_status(),
+                "active_tasks_count": 0,
+                "message": "工作台就绪",
+            }
+        )
 
         self.logger.info(f"工作台初始化完成: {self.NUM_HEATING_STATIONS}个加热台就绪")
         return True
@@ -204,12 +220,14 @@ class VirtualWorkbench:
         with self._tasks_lock:
             self._active_tasks.clear()
 
-        self.data.update({
-            "status": "Offline",
-            "arm_state": ArmState.IDLE.value,
-            "heating_stations": {},
-            "message": "工作台已关闭",
-        })
+        self.data.update(
+            {
+                "status": "Offline",
+                "arm_state": ArmState.IDLE.value,
+                "heating_stations": {},
+                "message": "工作台已关闭",
+            }
+        )
         return True
 
     def _get_stations_status(self) -> Dict[int, Dict[str, Any]]:
@@ -227,12 +245,14 @@ class VirtualWorkbench:
 
     def _update_data_status(self, message: Optional[str] = None):
         """更新状态数据"""
-        self.data.update({
-            "arm_state": self._arm_state.value,
-            "arm_current_task": self._arm_current_task,
-            "heating_stations": self._get_stations_status(),
-            "active_tasks_count": len(self._active_tasks),
-        })
+        self.data.update(
+            {
+                "arm_state": self._arm_state.value,
+                "arm_current_task": self._arm_current_task,
+                "heating_stations": self._get_stations_status(),
+                "active_tasks_count": len(self._active_tasks),
+            }
+        )
         if message:
             self.data["message"] = message
 
@@ -280,6 +300,7 @@ class VirtualWorkbench:
 
     def prepare_materials(
         self,
+        sample_uuids: SampleUUIDsType,
         count: int = 5,
     ) -> PrepareMaterialsResult:
         """
@@ -297,10 +318,7 @@ class VirtualWorkbench:
         # 生成物料列表 A1 - A{count}
         materials = [i for i in range(1, count + 1)]
 
-        self.logger.info(
-            f"[准备物料] 生成 {count} 个物料: "
-            f"A1-A{count} -> material_1~material_{count}"
-        )
+        self.logger.info(f"[准备物料] 生成 {count} 个物料: " f"A1-A{count} -> material_1~material_{count}")
 
         return {
             "success": True,
@@ -311,10 +329,12 @@ class VirtualWorkbench:
             "material_4": materials[3] if len(materials) > 3 else 0,
             "material_5": materials[4] if len(materials) > 4 else 0,
             "message": f"已准备 {count} 个物料: A1-A{count}",
+            "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for sample_uuid, content in sample_uuids.items()]
         }
 
     def move_to_heating_station(
         self,
+        sample_uuids: SampleUUIDsType,
         material_number: int,
     ) -> MoveToHeatingStationResult:
         """
@@ -391,6 +411,9 @@ class VirtualWorkbench:
                 "material_id": material_id,
                 "material_number": material_number,
                 "message": f"{material_id}已成功移动到加热台{station_id}",
+                "unilabos_samples": [
+                    LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                    sample_uuid, content in sample_uuids.items()]
             }
 
         except Exception as e:
@@ -403,10 +426,14 @@ class VirtualWorkbench:
                 "material_id": material_id,
                 "material_number": material_number,
                 "message": f"移动失败: {str(e)}",
+                "unilabos_samples": [
+                    LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                    sample_uuid, content in sample_uuids.items()]
             }
 
     def start_heating(
         self,
+        sample_uuids: SampleUUIDsType,
         station_id: int,
         material_number: int,
     ) -> StartHeatingResult:
@@ -429,6 +456,9 @@ class VirtualWorkbench:
                 "material_id": "",
                 "material_number": material_number,
                 "message": f"无效的加热台ID: {station_id}",
+                "unilabos_samples": [
+                    LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                    sample_uuid, content in sample_uuids.items()]
             }
 
         with self._stations_lock:
@@ -441,6 +471,9 @@ class VirtualWorkbench:
                     "material_id": "",
                     "material_number": material_number,
                     "message": f"加热台{station_id}上没有物料",
+                    "unilabos_samples": [
+                        LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                        sample_uuid, content in sample_uuids.items()]
                 }
 
             if station.state == HeatingStationState.HEATING:
@@ -450,6 +483,9 @@ class VirtualWorkbench:
                     "material_id": station.current_material,
                     "material_number": material_number,
                     "message": f"加热台{station_id}已经在加热中",
+                    "unilabos_samples": [
+                        LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                        sample_uuid, content in sample_uuids.items()]
                 }
 
             material_id = station.current_material
@@ -499,10 +535,14 @@ class VirtualWorkbench:
             "material_id": material_id,
             "material_number": material_number,
             "message": f"加热台{station_id}加热完成",
+            "unilabos_samples": [
+                LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                sample_uuid, content in sample_uuids.items()]
         }
 
     def move_to_output(
         self,
+        sample_uuids: SampleUUIDsType,
         station_id: int,
         material_number: int,
     ) -> MoveToOutputResult:
@@ -525,6 +565,9 @@ class VirtualWorkbench:
                 "material_id": "",
                 "output_position": f"C{output_number}",
                 "message": f"无效的加热台ID: {station_id}",
+                "unilabos_samples": [
+                    LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                    sample_uuid, content in sample_uuids.items()]
             }
 
         with self._stations_lock:
@@ -538,6 +581,9 @@ class VirtualWorkbench:
                     "material_id": "",
                     "output_position": f"C{output_number}",
                     "message": f"加热台{station_id}上没有物料",
+                    "unilabos_samples": [
+                        LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                        sample_uuid, content in sample_uuids.items()]
                 }
 
             if station.state != HeatingStationState.COMPLETED:
@@ -547,6 +593,9 @@ class VirtualWorkbench:
                     "material_id": material_id,
                     "output_position": f"C{output_number}",
                     "message": f"加热台{station_id}尚未完成加热 (当前状态: {station.state.value})",
+                    "unilabos_samples": [
+                        LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                        sample_uuid, content in sample_uuids.items()]
                 }
 
         output_position = f"C{output_number}"
@@ -595,6 +644,9 @@ class VirtualWorkbench:
                 "material_id": material_id,
                 "output_position": output_position,
                 "message": f"{material_id}已成功移动到{output_position}",
+                "unilabos_samples": [
+                    LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                    sample_uuid, content in sample_uuids.items()]
             }
 
         except Exception as e:
@@ -607,6 +659,9 @@ class VirtualWorkbench:
                 "material_id": "",
                 "output_position": output_position,
                 "message": f"移动失败: {str(e)}",
+                "unilabos_samples": [
+                    LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for
+                    sample_uuid, content in sample_uuids.items()]
             }
 
     # ============ 状态属性 ============

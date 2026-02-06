@@ -151,12 +151,40 @@ def canonicalize_links_ports(links: List[Dict[str, Any]], resource_tree_set: Res
     """
     # 构建 id 到 uuid 的映射
     id_to_uuid: Dict[str, str] = {}
+    uuid_to_id: Dict[str, str] = {}
     for node in resource_tree_set.all_nodes:
         id_to_uuid[node.res_content.id] = node.res_content.uuid
+        uuid_to_id[node.res_content.uuid] = node.res_content.id
+
+    # 第三遍处理：为每个 link 添加 source_uuid 和 target_uuid
+    for link in links:
+        source_id = link.get("source")
+        target_id = link.get("target")
+
+        # 添加 source_uuid
+        if source_id and source_id in id_to_uuid:
+            link["source_uuid"] = id_to_uuid[source_id]
+
+        # 添加 target_uuid
+        if target_id and target_id in id_to_uuid:
+            link["target_uuid"] = id_to_uuid[target_id]
+
+        source_uuid = link.get("source_uuid")
+        target_uuid = link.get("target_uuid")
+
+        # 添加 source_uuid
+        if source_uuid and source_uuid in uuid_to_id:
+            link["source"] = uuid_to_id[source_uuid]
+
+        # 添加 target_uuid
+        if target_uuid and target_uuid in uuid_to_id:
+            link["target"] = uuid_to_id[target_uuid]
 
     # 第一遍处理：将字符串类型的port转换为字典格式
     for link in links:
         port = link.get("port")
+        if port is None:
+            continue
         if link.get("type", "physical") == "physical":
             link["type"] = "fluid"
         if isinstance(port, int):
@@ -179,13 +207,15 @@ def canonicalize_links_ports(links: List[Dict[str, Any]], resource_tree_set: Res
             link["port"] = {link["source"]: None, link["target"]: None}
 
     # 构建边字典，键为(source节点, target节点)，值为对应的port信息
-    edges = {(link["source"], link["target"]): link["port"] for link in links}
+    edges = {(link["source"], link["target"]): link["port"] for link in links if link.get("port")}
 
     # 第二遍处理：填充反向边的dest信息
     delete_reverses = []
     for i, link in enumerate(links):
         s, t = link["source"], link["target"]
-        current_port = link["port"]
+        current_port = link.get("port")
+        if current_port is None:
+            continue
         if current_port.get(t) is None:
             reverse_key = (t, s)
             reverse_port = edges.get(reverse_key)
@@ -200,20 +230,6 @@ def canonicalize_links_ports(links: List[Dict[str, Any]], resource_tree_set: Res
                 current_port[t] = current_port[s]
     # 删除已被使用反向端口信息的反向边
     standardized_links = [link for i, link in enumerate(links) if i not in delete_reverses]
-
-    # 第三遍处理：为每个 link 添加 source_uuid 和 target_uuid
-    for link in standardized_links:
-        source_id = link.get("source")
-        target_id = link.get("target")
-
-        # 添加 source_uuid
-        if source_id and source_id in id_to_uuid:
-            link["source_uuid"] = id_to_uuid[source_id]
-
-        # 添加 target_uuid
-        if target_id and target_id in id_to_uuid:
-            link["target_uuid"] = id_to_uuid[target_id]
-
     return standardized_links
 
 
@@ -284,6 +300,8 @@ def modify_to_backend_format(data: list[dict[str, Any]]) -> list[dict[str, Any]]
             edge["sourceHandle"] = port[source]
         elif "source_port" in edge:
             edge["sourceHandle"] = edge.pop("source_port")
+        elif "source_handle" in edge:
+            edge["sourceHandle"] = edge.pop("source_handle")
         else:
             typ = edge.get("type")
             if typ == "communication":
@@ -292,6 +310,8 @@ def modify_to_backend_format(data: list[dict[str, Any]]) -> list[dict[str, Any]]
             edge["targetHandle"] = port[target]
         elif "target_port" in edge:
             edge["targetHandle"] = edge.pop("target_port")
+        elif "target_handle" in edge:
+            edge["targetHandle"] = edge.pop("target_handle")
         else:
             typ = edge.get("type")
             if typ == "communication":

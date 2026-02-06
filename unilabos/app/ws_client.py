@@ -545,7 +545,7 @@ class MessageProcessor:
                         try:
                             message_str = json.dumps(msg, ensure_ascii=False)
                             await self.websocket.send(message_str)
-                            logger.trace(f"[MessageProcessor] Message sent: {msg.get('action', 'unknown')}")  # type: ignore  # noqa: E501
+                            # logger.trace(f"[MessageProcessor] Message sent: {msg.get('action', 'unknown')}")  # type: ignore  # noqa: E501
                         except Exception as e:
                             logger.error(f"[MessageProcessor] Failed to send message: {str(e)}")
                             logger.error(traceback.format_exc())
@@ -657,6 +657,8 @@ class MessageProcessor:
     async def _handle_job_start(self, data: Dict[str, Any]):
         """处理job_start消息"""
         try:
+            if not data.get("sample_material"):
+                data["sample_material"] = {}
             req = JobAddReq(**data)
 
             job_log = format_job_log(req.job_id, req.task_id, req.device_id, req.action)
@@ -688,6 +690,7 @@ class MessageProcessor:
                 queue_item,
                 action_type=req.action_type,
                 action_kwargs=req.action_args,
+                sample_material=req.sample_material,
                 server_info=req.server_info,
             )
 
@@ -1301,7 +1304,7 @@ class WebSocketClient(BaseCommunicationClient):
             },
         }
         self.message_processor.send_message(message)
-        logger.trace(f"[WebSocketClient] Device status published: {device_id}.{property_name}")
+        # logger.trace(f"[WebSocketClient] Device status published: {device_id}.{property_name}")
 
     def publish_job_status(
         self, feedback_data: dict, item: QueueItem, status: str, return_info: Optional[dict] = None

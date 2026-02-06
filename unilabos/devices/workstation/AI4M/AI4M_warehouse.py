@@ -29,6 +29,7 @@ def warehouse_factory(
     col_offset: int = 0,  # 列起始偏移量，用于生成5-8等命名
     layout: str = "col-major",  # 新增：排序方式，"col-major"=列优先，"row-major"=行优先
     custom_keys: Optional[List[Union[str, int]]] = None,  # 自定义编号列表
+    naming_mode: str = "letter_number",  # 排号模式："letter_number"=字母+数字(A1,A2,B1...)，"continuous_number"=连续数字(1,2,3...)
 ):
     # 创建位置坐标
     locations = []
@@ -64,15 +65,26 @@ def warehouse_factory(
     
     len_x, len_y = (num_items_x, num_items_y) if num_items_z == 1 else (num_items_y, num_items_z) if num_items_x == 1 else (num_items_x, num_items_z)
 
-    # 🔑 修改：使用字母+数字命名，如A1A2A3A4A5 B1B2B3B4B5
+    # 🔑 修改：支持两种排号模式
     # 命名顺序必须与坐标生成顺序一致：层 → 行 → 列
     if custom_keys:
         # 使用自定义键名
         keys = [str(k) for k in custom_keys]
         if len(keys) != len(_sites):
             raise ValueError(f"自定义键名数量({len(keys)})与位置数量({len(_sites)})不匹配")
+    elif naming_mode == "continuous_number":
+        # 模式2：连续数字模式 - 换行不重新排序，连续递增
+        # 例如：1, 2, 3, 4, 5, 6, 7, 8, 9, 10...
+        keys = []
+        counter = 1 + col_offset  # 支持偏移量，如从5开始
+        for layer in range(num_items_z):  # 遍历每一层
+            for row in range(num_items_y):  # 遍历每一行
+                for col in range(num_items_x):  # 遍历每一列
+                    keys.append(str(counter))
+                    counter += 1
     else:
-        # 使用默认的字母+数字命名
+        # 模式1：字母+数字模式（默认）- 每行一个字母
+        # 例如：A1, A2, A3, B1, B2, B3...
         keys = []
         for layer in range(num_items_z):  # 遍历每一层
             for row in range(num_items_y):  # 遍历每一行
@@ -84,7 +96,7 @@ def warehouse_factory(
                 
                 for col in range(num_items_x):  # 遍历每一列
                     # 从左到右编号：1, 2, 3, 4, 5...
-                    number = col + 1
+                    number = col + 1 + col_offset  # 支持列偏移
                     key = f"{letter}{number}"
                     keys.append(key)
 

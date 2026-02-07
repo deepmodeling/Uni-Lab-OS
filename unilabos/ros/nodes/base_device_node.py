@@ -146,7 +146,7 @@ def init_wrapper(
     device_id: str,
     device_uuid: str,
     driver_class: type[T],
-    device_config: ResourceTreeInstance,
+    device_config: ResourceDictInstance,
     status_types: Dict[str, Any],
     action_value_mappings: Dict[str, Any],
     hardware_interface: Dict[str, Any],
@@ -279,6 +279,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         self,
         driver_instance: T,
         device_id: str,
+        registry_name: str,
         device_uuid: str,
         status_types: Dict[str, Any],
         action_value_mappings: Dict[str, Any],
@@ -300,6 +301,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         """
         self.driver_instance = driver_instance
         self.device_id = device_id
+        self.registry_name = registry_name
         self.uuid = device_uuid
         self.publish_high_frequency = False
         self.callback_group = ReentrantCallbackGroup()
@@ -416,7 +418,9 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             if len(rts.root_nodes) == 1 and isinstance(rts_plr_instances[0], RegularContainer):
                 # noinspection PyTypeChecker
                 container_instance: RegularContainer = rts_plr_instances[0]
-                found_resources = self.resource_tracker.figure_resource({"name": container_instance.name}, try_mode=True)
+                found_resources = self.resource_tracker.figure_resource(
+                    {"name": container_instance.name}, try_mode=True
+                )
                 if not len(found_resources):
                     self.resource_tracker.add_resource(container_instance)
                     logger.info(f"添加物料{container_instance.name}到资源跟踪器")
@@ -1152,6 +1156,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     "machine_name": BasicConfig.machine_name,
                     "type": "slave",
                     "edge_device_id": self.device_id,
+                    "registry_name": self.registry_name,
                 }
             },
             ensure_ascii=False,
@@ -1626,9 +1631,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             else:
                                 resolved_sample_uuids[sample_uuid] = material_uuid
                         function_args[PARAM_SAMPLE_UUIDS] = resolved_sample_uuids
-                        self.lab_logger().debug(
-                            f"[JsonCommand] 注入 {PARAM_SAMPLE_UUIDS}: {resolved_sample_uuids}"
-                        )
+                        self.lab_logger().debug(f"[JsonCommand] 注入 {PARAM_SAMPLE_UUIDS}: {resolved_sample_uuids}")
                     continue
 
                 # 处理单个 ResourceSlot
@@ -2005,6 +2008,7 @@ class ROS2DeviceNode:
 
         if driver_is_ros:
             driver_params["device_id"] = device_id
+            driver_params["registry_name"] = device_config.res_content.klass
             driver_params["resource_tracker"] = self.resource_tracker
         self._driver_instance = self._driver_creator.create_instance(driver_params)
         if self._driver_instance is None:
@@ -2022,6 +2026,7 @@ class ROS2DeviceNode:
                 children=children,
                 driver_instance=self._driver_instance,  # type: ignore
                 device_id=device_id,
+                registry_name=device_config.res_content.klass,
                 device_uuid=device_uuid,
                 status_types=status_types,
                 action_value_mappings=action_value_mappings,
@@ -2033,6 +2038,7 @@ class ROS2DeviceNode:
             self._ros_node = BaseROS2DeviceNode(
                 driver_instance=self._driver_instance,
                 device_id=device_id,
+                registry_name=device_config.res_content.klass,
                 device_uuid=device_uuid,
                 status_types=status_types,
                 action_value_mappings=action_value_mappings,
@@ -2041,6 +2047,7 @@ class ROS2DeviceNode:
                 resource_tracker=self.resource_tracker,
             )
         self._ros_node: BaseROS2DeviceNode
+        # 将注册表类型名传递给BaseROS2DeviceNode,用于slave上报
         self._ros_node.lab_logger().info(f"初始化完成 {self._ros_node.uuid} {self.driver_is_ros}")
         self.driver_instance._ros_node = self._ros_node  # type: ignore
         self.driver_instance._execute_driver_command = self._ros_node._execute_driver_command  # type: ignore

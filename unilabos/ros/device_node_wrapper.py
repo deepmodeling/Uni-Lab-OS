@@ -44,8 +44,7 @@ def ros2_device_node(
     # 从属性中自动发现可发布状态
     if status_types is None:
         status_types = {}
-    if device_config is None:
-        raise ValueError("device_config cannot be None")
+    assert device_config is not None, "device_config cannot be None"
     if action_value_mappings is None:
         action_value_mappings = {}
     if hardware_interface is None:

@@ -26,7 +26,7 @@ from unilabos.resources.graphio import initialize_resources
 from unilabos.registry.registry import lab_registry
 
 class ResourceMeshManager(BaseROS2DeviceNode):
-    def __init__(self, resource_model: dict, resource_config: list,resource_tracker, device_id: str = "resource_mesh_manager", rate=50, **kwargs):
+    def __init__(self, resource_model: dict, resource_config: list,resource_tracker, device_id: str = "resource_mesh_manager", registry_name: str = "", rate=50, **kwargs):
         """初始化资源网格管理器节点
         
         Args:
@@ -37,6 +37,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         super().__init__(
             driver_instance=self,
             device_id=device_id,
+            registry_name=registry_name,
             status_types={},
             action_value_mappings={},
             hardware_interface={},

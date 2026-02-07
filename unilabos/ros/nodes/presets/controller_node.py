@@ -10,6 +10,7 @@ class ControllerNode(BaseROS2DeviceNode):
     def __init__(
         self,
         device_id: str,
+        registry_name: str,
         controller_func: Callable,
         update_rate: float,
         inputs: Dict[str, Dict[str, type | str]],
@@ -51,6 +52,7 @@ class ControllerNode(BaseROS2DeviceNode):
             self,
             driver_instance=self,
             device_id=device_id,
+            registry_name=registry_name,
             status_types=status_types,
             action_value_mappings=action_value_mappings,
             hardware_interface=hardware_interface,

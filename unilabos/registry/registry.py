@@ -838,6 +838,7 @@ class Registry:
                                         ("list", "unilabos.registry.placeholder_type:DeviceSlot"),
                                     ]
                                 },
+                                **({"always_free": True} if v.get("always_free") else {}),
                             }
                             for k, v in enhanced_info["action_methods"].items()
                             if k not in device_config["class"]["action_value_mappings"]

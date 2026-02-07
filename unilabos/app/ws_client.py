@@ -76,6 +76,7 @@ class JobInfo:
     start_time: float
     last_update_time: float = field(default_factory=time.time)
     ready_timeout: Optional[float] = None  # READY状态的超时时间
+    always_free: bool = False  # 是否为永久闲置动作(不受排队限制)
 
     def update_timestamp(self):
         """更新最后更新时间"""
@@ -127,6 +128,15 @@ class DeviceActionManager:
             # 总是将job添加到all_jobs中
             self.all_jobs[job_info.job_id] = job_info
 
+            # always_free的动作不受排队限制，直接设为READY
+            if job_info.always_free:
+                job_info.status = JobStatus.READY
+                job_info.update_timestamp()
+                job_info.set_ready_timeout(10)
+                job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
+                logger.trace(f"[DeviceActionManager] Job {job_log} always_free, start immediately")
+                return True
+
             # 检查是否有正在执行或准备执行的任务
             if device_key in self.active_jobs:
                 # 有正在执行或准备执行的任务，加入队列
@@ -176,11 +186,15 @@ class DeviceActionManager:
                 logger.error(f"[DeviceActionManager] Job {job_log} is not in READY status, current: {job_info.status}")
                 return False
 
-            # 检查设备上是否是这个job
-            if device_key not in self.active_jobs or self.active_jobs[device_key].job_id != job_id:
-                job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-                logger.error(f"[DeviceActionManager] Job {job_log} is not the active job for {device_key}")
-                return False
+            # always_free的job不需要检查active_jobs
+            if not job_info.always_free:
+                # 检查设备上是否是这个job
+                if device_key not in self.active_jobs or self.active_jobs[device_key].job_id != job_id:
+                    job_log = format_job_log(
+                        job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name
+                    )
+                    logger.error(f"[DeviceActionManager] Job {job_log} is not the active job for {device_key}")
+                    return False
 
             # 开始执行任务，将状态从READY转换为STARTED
             job_info.status = JobStatus.STARTED
@@ -202,6 +216,13 @@ class DeviceActionManager:
 
             job_info = self.all_jobs[job_id]
             device_key = job_info.device_action_key
+
+            # always_free的job直接清理，不影响队列
+            if job_info.always_free:
+                job_info.status = JobStatus.ENDED
+                job_info.update_timestamp()
+                del self.all_jobs[job_id]
+                return None
 
             # 移除活跃任务
             if device_key in self.active_jobs and self.active_jobs[device_key].job_id == job_id:
@@ -234,9 +255,14 @@ class DeviceActionManager:
             return None
 
     def get_active_jobs(self) -> List[JobInfo]:
-        """获取所有正在执行的任务"""
+        """获取所有正在执行的任务(含active_jobs和always_free的STARTED job)"""
         with self.lock:
-            return list(self.active_jobs.values())
+            jobs = list(self.active_jobs.values())
+            # 补充 always_free 的 STARTED job(它们不在 active_jobs 中)
+            for job in self.all_jobs.values():
+                if job.always_free and job.status == JobStatus.STARTED and job not in jobs:
+                    jobs.append(job)
+            return jobs
 
     def get_queued_jobs(self) -> List[JobInfo]:
         """获取所有排队中的任务"""
@@ -260,6 +286,14 @@ class DeviceActionManager:
 
             job_info = self.all_jobs[job_id]
             device_key = job_info.device_action_key
+
+            # always_free的job直接清理
+            if job_info.always_free:
+                job_info.status = JobStatus.ENDED
+                del self.all_jobs[job_id]
+                job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
+                logger.trace(f"[DeviceActionManager] Always-free job {job_log} cancelled")
+                return True
 
             # 如果是正在执行的任务
             if device_key in self.active_jobs and self.active_jobs[device_key].job_id == job_id:
@@ -334,13 +368,18 @@ class DeviceActionManager:
         timeout_jobs = []
 
         with self.lock:
-            # 统计READY状态的任务数量
-            ready_jobs_count = sum(1 for job in self.active_jobs.values() if job.status == JobStatus.READY)
+            # 收集所有需要检查的 READY 任务(active_jobs + always_free READY jobs)
+            ready_candidates = list(self.active_jobs.values())
+            for job in self.all_jobs.values():
+                if job.always_free and job.status == JobStatus.READY and job not in ready_candidates:
+                    ready_candidates.append(job)
+
+            ready_jobs_count = sum(1 for job in ready_candidates if job.status == JobStatus.READY)
             if ready_jobs_count > 0:
                 logger.trace(f"[DeviceActionManager] Checking {ready_jobs_count} READY jobs for timeout")  # type: ignore  # noqa: E501
 
             # 找到所有超时的READY任务（只检测，不处理）
-            for job_info in self.active_jobs.values():
+            for job_info in ready_candidates:
                 if job_info.is_ready_timeout():
                     timeout_jobs.append(job_info)
                     job_log = format_job_log(
@@ -608,6 +647,24 @@ class MessageProcessor:
         if host_node:
             host_node.handle_pong_response(pong_data)
 
+    def _check_action_always_free(self, device_id: str, action_name: str) -> bool:
+        """检查该action是否标记为always_free，通过HostNode统一的_action_value_mappings查找"""
+        try:
+            host_node = HostNode.get_instance(0)
+            if not host_node:
+                return False
+            # noinspection PyProtectedMember
+            action_mappings = host_node._action_value_mappings.get(device_id)
+            if not action_mappings:
+                return False
+            # 尝试直接匹配或 auto- 前缀匹配
+            for key in [action_name, f"auto-{action_name}"]:
+                if key in action_mappings:
+                    return action_mappings[key].get("always_free", False)
+            return False
+        except Exception:
+            return False
+
     async def _handle_query_action_state(self, data: Dict[str, Any]):
         """处理query_action_state消息"""
         device_id = data.get("device_id", "")
@@ -622,6 +679,9 @@ class MessageProcessor:
 
         device_action_key = f"/devices/{device_id}/{action_name}"
 
+        # 检查action是否为always_free
+        action_always_free = self._check_action_always_free(device_id, action_name)
+
         # 创建任务信息
         job_info = JobInfo(
             job_id=job_id,
@@ -631,6 +691,7 @@ class MessageProcessor:
             device_action_key=device_action_key,
             status=JobStatus.QUEUE,
             start_time=time.time(),
+            always_free=action_always_free,
         )
 
         # 添加到设备管理器

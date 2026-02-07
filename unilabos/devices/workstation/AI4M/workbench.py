@@ -22,7 +22,7 @@ from threading import Lock, RLock
 from typing_extensions import TypedDict
 
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
-from unilabos.utils.decorator import not_action
+from unilabos.utils.decorator import not_action, always_free
 from unilabos.resources.resource_tracker import SampleUUIDsType, LabSample, RETURN_UNILABOS_SAMPLES
 
 
@@ -123,8 +123,8 @@ class VirtualWorkbench:
     _ros_node: BaseROS2DeviceNode
 
     # 配置常量
-    ARM_OPERATION_TIME: float = 3.0  # 机械臂操作时间(秒)
-    HEATING_TIME: float = 10.0  # 加热时间(秒)
+    ARM_OPERATION_TIME: float = 2  # 机械臂操作时间(秒)
+    HEATING_TIME: float = 60.0  # 加热时间(秒)
     NUM_HEATING_STATIONS: int = 3  # 加热台数量
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
@@ -141,9 +141,9 @@ class VirtualWorkbench:
         self.data: Dict[str, Any] = {}
 
         # 从config中获取可配置参数
-        self.ARM_OPERATION_TIME = float(self.config.get("arm_operation_time", 3.0))
-        self.HEATING_TIME = float(self.config.get("heating_time", 10.0))
-        self.NUM_HEATING_STATIONS = int(self.config.get("num_heating_stations", 3))
+        self.ARM_OPERATION_TIME = float(self.config.get("arm_operation_time", self.ARM_OPERATION_TIME))
+        self.HEATING_TIME = float(self.config.get("heating_time", self.HEATING_TIME))
+        self.NUM_HEATING_STATIONS = int(self.config.get("num_heating_stations", self.NUM_HEATING_STATIONS))
 
         # 机械臂状态和锁 (使用threading.Lock)
         self._arm_lock = Lock()
@@ -431,6 +431,7 @@ class VirtualWorkbench:
                     sample_uuid, content in sample_uuids.items()]
             }
 
+    @always_free
     def start_heating(
         self,
         sample_uuids: SampleUUIDsType,
@@ -501,16 +502,32 @@ class VirtualWorkbench:
 
         self._update_data_status(f"加热台{station_id}开始加热{material_id}")
 
-        # 模拟加热过程 (10秒)
+        # 打印当前所有正在加热的台位
+        with self._stations_lock:
+            heating_list = [
+                f"加热台{sid}:{s.current_material}"
+                for sid, s in self._heating_stations.items()
+                if s.state == HeatingStationState.HEATING and s.current_material
+            ]
+        self.logger.info(f"[并行加热] 当前同时加热中: {', '.join(heating_list)}")
+
+        # 模拟加热过程
         start_time = time.time()
+        last_countdown_log = start_time
         while True:
             elapsed = time.time() - start_time
+            remaining = max(0.0, self.HEATING_TIME - elapsed)
             progress = min(100.0, (elapsed / self.HEATING_TIME) * 100)
 
             with self._stations_lock:
                 self._heating_stations[station_id].heating_progress = progress
 
             self._update_data_status(f"加热台{station_id}加热中: {progress:.1f}%")
+
+            # 每5秒打印一次倒计时
+            if time.time() - last_countdown_log >= 5.0:
+                self.logger.info(f"[加热台{station_id}] {material_id} 剩余 {remaining:.1f}s")
+                last_countdown_log = time.time()
 
             if elapsed >= self.HEATING_TIME:
                 break

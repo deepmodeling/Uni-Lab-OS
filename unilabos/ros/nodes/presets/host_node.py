@@ -248,6 +248,7 @@ class HostNode(BaseROS2DeviceNode):
             self,
             driver_instance=self,
             device_id=device_id,
+            registry_name="host_node",
             device_uuid=host_node_dict["uuid"],
             status_types={},
             action_value_mappings=lab_registry.device_type_registry["host_node"]["class"]["action_value_mappings"],
@@ -302,7 +303,8 @@ class HostNode(BaseROS2DeviceNode):
         }  # 用来存储多个ActionClient实例
         self._action_value_mappings: Dict[str, Dict] = (
             {}
-        )  # 用来存储多个ActionClient的type, goal, feedback, result的变量名映射关系
+        )  # device_id -> action_value_mappings(本地+远程设备统一存储)
+        self._slave_registry_configs: Dict[str, Dict] = {}  # registry_name -> registry_config(含action_value_mappings)
         self._goals: Dict[str, Any] = {}  # 用来存储多个目标的状态
         self._online_devices: Set[str] = {f"{self.namespace}/{device_id}"}  # 用于跟踪在线设备
         self._last_discovery_time = 0.0  # 上次设备发现的时间
@@ -635,6 +637,8 @@ class HostNode(BaseROS2DeviceNode):
         self.devices_names[device_id] = d._ros_node.namespace  # 这里不涉及二级device_id
         self.device_machine_names[device_id] = "本地"
         self.devices_instances[device_id] = d
+        # noinspection PyProtectedMember
+        self._action_value_mappings[device_id] = d._ros_node._action_value_mappings
         # noinspection PyProtectedMember
         for action_name, action_value_mapping in d._ros_node._action_value_mappings.items():
             if action_name.startswith("auto-") or str(action_value_mapping.get("type", "")).startswith(
@@ -1168,6 +1172,10 @@ class HostNode(BaseROS2DeviceNode):
     def _node_info_update_callback(self, request, response):
         """
         更新节点信息回调
+
+        处理两种消息:
+        1. 首次上报(main_slave_run): 带 devices_config + registry_config,存储 action_value_mappings
+        2. 设备重注册(SYNC_SLAVE_NODE_INFO): 带 edge_device_id + registry_name,用 registry_name 索引已存储的 mappings
         """
         self.lab_logger().trace(f"[Host Node] Node info update request received: {request}")
         try:
@@ -1179,12 +1187,48 @@ class HostNode(BaseROS2DeviceNode):
                 info = info["SYNC_SLAVE_NODE_INFO"]
                 machine_name = info["machine_name"]
                 edge_device_id = info["edge_device_id"]
+                registry_name = info.get("registry_name", "")
                 self.device_machine_names[edge_device_id] = machine_name
+
+                # 用 registry_name 索引已存储的 registry_config,获取 action_value_mappings
+                if registry_name and registry_name in self._slave_registry_configs:
+                    action_mappings = self._slave_registry_configs[registry_name].get(
+                        "class", {}
+                    ).get("action_value_mappings", {})
+                    if action_mappings:
+                        self._action_value_mappings[edge_device_id] = action_mappings
+                        self.lab_logger().info(
+                            f"[Host Node] Loaded {len(action_mappings)} action mappings "
+                            f"for remote device {edge_device_id} (registry: {registry_name})"
+                        )
             else:
                 devices_config = info.pop("devices_config")
                 registry_config = info.pop("registry_config")
                 if registry_config:
                     http_client.resource_registry({"resources": registry_config})
+
+                    # 存储 slave 的 registry_config,用于后续 SYNC_SLAVE_NODE_INFO 索引
+                    for reg_name, reg_data in registry_config.items():
+                        if isinstance(reg_data, dict) and "class" in reg_data:
+                            self._slave_registry_configs[reg_name] = reg_data
+
+                # 解析 devices_config,建立 device_id -> action_value_mappings 映射
+                if devices_config:
+                    for device_tree in devices_config:
+                        for device_dict in device_tree:
+                            device_id = device_dict.get("id", "")
+                            class_name = device_dict.get("class", "")
+                            if device_id and class_name and class_name in self._slave_registry_configs:
+                                action_mappings = self._slave_registry_configs[class_name].get(
+                                    "class", {}
+                                ).get("action_value_mappings", {})
+                                if action_mappings:
+                                    self._action_value_mappings[device_id] = action_mappings
+                                    self.lab_logger().info(
+                                        f"[Host Node] Stored {len(action_mappings)} action mappings "
+                                        f"for remote device {device_id} (class: {class_name})"
+                                    )
+
             self.lab_logger().debug(f"[Host Node] Node info update: {info}")
             response.response = "OK"
         except Exception as e:

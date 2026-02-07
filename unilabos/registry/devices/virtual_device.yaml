@@ -6090,6 +6090,7 @@ virtual_workbench:
           type: object
         type: UniLabJsonCommand
       auto-start_heating:
+        always_free: true
         feedback: {}
         goal: {}
         goal_default:

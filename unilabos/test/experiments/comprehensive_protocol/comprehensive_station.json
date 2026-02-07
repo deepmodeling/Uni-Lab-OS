@@ -339,13 +339,8 @@
                 "z": 0
             },
             "config": {
-                "max_volume": 500.0,
                 "type": "RegularContainer",
-                "category": "container",
-                "max_temp": 200.0,
-                "min_temp": -20.0,
-                "has_stirrer": true,
-                "has_heater": true
+                "category": "container"
             },
             "data": {
                 "liquids": [],
@@ -769,9 +764,7 @@
                 "size_y": 250,
                 "size_z": 0,
                 "type": "RegularContainer",
-                "category": "container",
-                "reagent": "sodium_chloride",
-                "physical_state": "solid"
+                "category": "container"
             },
             "data": {
                 "current_mass": 500.0,
@@ -792,14 +785,11 @@
                 "z": 0
             },
             "config": {
-                "volume": 500.0,
                 "size_x": 600,
                 "size_y": 250,
                 "size_z": 0,
                 "type": "RegularContainer",
-                "category": "container",
-                "reagent": "sodium_carbonate",
-                "physical_state": "solid"
+                "category": "container"
             },
             "data": {
                 "current_mass": 500.0,
@@ -820,14 +810,11 @@
                 "z": 0
             },
             "config": {
-                "volume": 500.0,
                 "size_x": 650,
                 "size_y": 250,
                 "size_z": 0,
                 "type": "RegularContainer",
-                "category": "container",
-                "reagent": "magnesium_chloride",
-                "physical_state": "solid"
+                "category": "container"
             },
             "data": {
                 "current_mass": 500.0,

@@ -7,10 +7,11 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 class JointRepublisher(BaseROS2DeviceNode):
-    def __init__(self,device_id,resource_tracker, **kwargs):
+    def __init__(self,device_id, registry_name, resource_tracker, **kwargs):
         super().__init__(
             driver_instance=self,
             device_id=device_id,
+            registry_name=registry_name,
             status_types={},
             action_value_mappings={},
             hardware_interface={},

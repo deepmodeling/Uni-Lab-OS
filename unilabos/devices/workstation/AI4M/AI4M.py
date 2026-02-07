@@ -8,6 +8,7 @@ import time
 import traceback
 from typing import Optional
 import os
+import threading
 
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import logger
@@ -71,6 +72,10 @@ class AI4MDevice(OpcUaClientWithSubscription):
 
         if self.deck is None:
             raise ValueError("Deck 配置不能为空")
+
+        # 创建机器人操作的线程锁，防止 pick 和 place 同时执行
+        self._robot_lock = threading.Lock()
+        logger.info("✓ 机器人操作线程锁已初始化")
 
         # 统计仓库信息
         warehouse_count = 0
@@ -149,6 +154,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
     ) -> dict:
         """
         机器人取烧杯并放到检测位：
+        - 使用线程锁保证同一时间只有一个机器人操作
         - 查询机器人空闲状态，循环等待直到机器人空闲
         - 如果未指定place_station_id，则查找空闲检测站，如果没有则等待后重试
         - 先写入取烧杯编号，等待取烧杯完成
@@ -171,93 +177,163 @@ class AI4MDevice(OpcUaClientWithSubscription):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        # 互锁1：循环等待直到机器人空闲
-        logger.info(f"[机器人取烧杯{pick_beaker_id}] 等待机器人空闲...")
-        robot_ready = self.get_node_value("robot_ready")
-        while not robot_ready:
-            logger.info(f"[机器人取烧杯{pick_beaker_id}] 机器人忙碌中，等待空闲...")
-            time.sleep(1.0)
-            robot_ready = self.get_node_value("robot_ready")
-        logger.info(f"[机器人取烧杯{pick_beaker_id}] 机器人已空闲")
-        
-        # 互锁2：如果未指定检测站，则查找空闲检测站，循环等待直到找到
+        # 在获取锁之前，先检查是否有空闲检测站
+        # 如果没有空闲检测站，不进行锁的争抢
         if place_station_id is None:
-            while place_station_id is None:
-                # 遍历检测站 1-3，查找空闲的
+            # 如果未指定检测站，则查找空闲检测站
+            place_station_id = None
+            for station_id in (1, 2, 3):
+                station_ready_node = f"station_{station_id}_ready"
+                station_ready = self.get_node_value(station_ready_node)
+                if station_ready:
+                    place_station_id = station_id
+                    logger.info(f"[机器人取烧杯{pick_beaker_id}] 找到空闲检测站{place_station_id}")
+                    break
+            
+            if place_station_id is None:
+                logger.info(f"[机器人取烧杯{pick_beaker_id}] 没有空闲检测站，不进行锁的争抢，等待中...")
+                # 循环等待直到找到空闲检测站
+                while place_station_id is None:
+                    for station_id in (1, 2, 3):
+                        station_ready_node = f"station_{station_id}_ready"
+                        station_ready = self.get_node_value(station_ready_node)
+                        if station_ready:
+                            place_station_id = station_id
+                            logger.info(f"[机器人取烧杯{pick_beaker_id}] 找到空闲检测站{place_station_id}")
+                            break
+                    
+                    if place_station_id is None:
+                        logger.info(f"[机器人取烧杯{pick_beaker_id}] 没有空闲检测站，等待中...")
+                        time.sleep(2.0)
+        else:
+            # 如果指定了检测站，检查该检测站是否空闲
+            station_ready_node = f"station_{place_station_id}_ready"
+            station_ready = self.get_node_value(station_ready_node)
+            if not station_ready:
+                logger.info(f"[机器人取烧杯{pick_beaker_id}] 检测站{place_station_id}不空闲，不进行锁的争抢，等待中...")
+                # 循环等待直到检测站空闲
+                while not station_ready:
+                    logger.info(f"[机器人取烧杯{pick_beaker_id}] 检测站{place_station_id}忙碌中，等待空闲...")
+                    time.sleep(2.0)
+                    station_ready = self.get_node_value(station_ready_node)
+                logger.info(f"[机器人取烧杯{pick_beaker_id}] 检测站{place_station_id}已空闲")
+
+        # 使用线程锁保证同一时间只有一个机器人操作
+        # 只有在确认有空闲检测站后，才进行锁的争抢
+        # 注意：等待循环在获取锁之前，等待时不持有锁，让其他操作（如place）有机会执行
+        # 一旦检测站空闲，立即尝试获取锁，但在获取锁之前再次确认检测站状态
+        while True:
+            # 再次确认检测站仍然空闲（防止在等待过程中检测站被占用）
+            if place_station_id is None:
+                # 重新查找空闲检测站
+                place_station_id = None
                 for station_id in (1, 2, 3):
                     station_ready_node = f"station_{station_id}_ready"
                     station_ready = self.get_node_value(station_ready_node)
                     if station_ready:
                         place_station_id = station_id
-                        logger.info(f"[机器人取烧杯{pick_beaker_id}] 找到空闲检测站{place_station_id}")
                         break
-                
                 if place_station_id is None:
-                    logger.info(f"[机器人取烧杯{pick_beaker_id}] 没有空闲检测站，等待中...")
-                    time.sleep(0.5)
-
-        # 获取仓库资源
-        rack_warehouse = self.deck.warehouses["水凝胶烧杯堆栈"]
-        station_warehouse = self.deck.warehouses[f"反应工站{place_station_id}"]
-        rack_site_key = f"A{pick_beaker_id}"
-
-        # 在执行硬件操作之前，先检查载具是否存在
-        carrier = rack_warehouse[rack_site_key]
-        if carrier is None:
-            error_msg = f"堆栈位置 {rack_site_key} 没有载具"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        pick_complete_node = f"robot_rack_pick_beaker_{pick_beaker_id}_complete"
-        place_complete_node = f"robot_place_station_{place_station_id}_complete"
-
-        # 阶段1：下发取烧杯编号并等待完成
-        logger.info("下发取烧杯编号，等待完成...")
-        self.set_node_value("robot_pick_beaker_id", pick_beaker_id)
-        
-        # 等待取烧杯完成
-        pick_complete = self.get_node_value(pick_complete_node)
-        while not pick_complete:
-            logger.info("取烧杯中...")
-            time.sleep(2.0)
-            pick_complete = self.get_node_value(pick_complete_node)
-        
-        # 阶段1.5：机器人取烧杯完成后，从堆栈解绑载具
-        rack_warehouse.unassign_child_resource(carrier)
-        logger.info(f"✓ 已从堆栈解绑载具 {carrier.name}")
-        
-        # 阶段2：取完成后再下发放检测编号并等待完成
-        logger.info("取完成，开始下发放检测编号...")
-        self.set_node_value("robot_place_station_id", place_station_id)
-        
-        # 等待放检测完成
-        place_complete = self.get_node_value(place_complete_node)
-        while not place_complete:
-            logger.info("放检测中...")
-            time.sleep(2.0)
-            place_complete = self.get_node_value(place_complete_node)
-        
-        # 阶段2.5：机器人放到检测站完成后，绑定载具到检测站
-        try:
-            station_site_idx = 0
-            station_site_key = list(station_warehouse._ordering.keys())[station_site_idx]
-            station_location = station_warehouse.child_locations[station_site_key]
+                    logger.info(f"[机器人取烧杯{pick_beaker_id}] 检测站状态变化，重新等待空闲检测站...")
+                    time.sleep(1.0)
+                    continue
+            else:
+                # 确认指定的检测站仍然空闲
+                station_ready_node = f"station_{place_station_id}_ready"
+                station_ready = self.get_node_value(station_ready_node)
+                if not station_ready:
+                    logger.info(f"[机器人取烧杯{pick_beaker_id}] 检测站{place_station_id}状态变化，重新等待...")
+                    time.sleep(1.0)
+                    continue
             
-            station_warehouse.assign_child_resource(carrier, location=station_location, spot=station_site_idx)
-            logger.info(f"✓ 已绑定载具 {carrier.name} 到检测站{place_station_id}")
-        except Exception as e:
-            logger.error(f"绑定载具到检测站失败: {e}")
-        
-        logger.info("放检测完成")
-            
-        # 更新资源树到前端
-        if hasattr(self, '_ros_node') and self._ros_node:
-            try:
-                from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
-                ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, resources=[self.deck])
-                logger.info(f"✓ 已同步资源更新到前端")
-            except Exception as e:
-                logger.warning(f"前端资源更新失败: {e}")
+            # 检测站空闲，尝试获取锁（阻塞方式，但等待循环在获取锁之前，所以不会阻塞其他操作）
+            logger.info(f"[机器人取烧杯{pick_beaker_id}] 检测站{place_station_id}空闲，尝试获取机器人操作锁...")
+            with self._robot_lock:
+                logger.info(f"[机器人取烧杯{pick_beaker_id}] 已获取机器人操作锁，开始执行")
+                
+                # 互锁1：循环等待直到机器人空闲
+                logger.info(f"[机器人取烧杯{pick_beaker_id}] 等待机器人空闲...")
+                robot_ready = self.get_node_value("robot_ready")
+                while not robot_ready:
+                    logger.info(f"[机器人取烧杯{pick_beaker_id}] 机器人忙碌中，等待空闲...")
+                    time.sleep(2.0)
+                    robot_ready = self.get_node_value("robot_ready")
+                logger.info(f"[机器人取烧杯{pick_beaker_id}] 机器人已空闲")
+                
+                # 再次确认检测站仍然空闲（防止在等待锁的过程中检测站被占用）
+                station_ready_node = f"station_{place_station_id}_ready"
+                station_ready = self.get_node_value(station_ready_node)
+                if not station_ready:
+                    error_msg = f"检测站{place_station_id}在获取锁后不再空闲，操作取消"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+
+                # 获取仓库资源
+                rack_warehouse = self.deck.warehouses["水凝胶烧杯堆栈"]
+                station_warehouse = self.deck.warehouses[f"反应工站{place_station_id}"]
+                rack_site_key = f"A{pick_beaker_id}"
+
+                # 在执行硬件操作之前，先检查载具是否存在
+                carrier = rack_warehouse[rack_site_key]
+                if carrier is None:
+                    error_msg = f"堆栈位置 {rack_site_key} 没有载具"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+
+                pick_complete_node = f"robot_rack_pick_beaker_{pick_beaker_id}_complete"
+                place_complete_node = f"robot_place_station_{place_station_id}_complete"
+
+                # 阶段1：下发取烧杯编号并等待完成
+                logger.info("下发取烧杯编号，等待完成...")
+                self.set_node_value("robot_pick_beaker_id", pick_beaker_id)
+                
+                # 等待取烧杯完成
+                pick_complete = self.get_node_value(pick_complete_node)
+                while not pick_complete:
+                    logger.info("取烧杯中...")
+                    time.sleep(5.0)
+                    pick_complete = self.get_node_value(pick_complete_node)
+                
+                # 阶段1.5：机器人取烧杯完成后，从堆栈解绑载具
+                rack_warehouse.unassign_child_resource(carrier)
+                logger.info(f"✓ 已从堆栈解绑载具 {carrier.name}")
+                
+                # 阶段2：取完成后再下发放检测编号并等待完成
+                logger.info("取完成，开始下发放检测编号...")
+                self.set_node_value("robot_place_station_id", place_station_id)
+                
+                # 等待放检测完成
+                place_complete = self.get_node_value(place_complete_node)
+                while not place_complete:
+                    logger.info("放检测中...")
+                    time.sleep(5.0)
+                    place_complete = self.get_node_value(place_complete_node)
+                
+                # 阶段2.5：机器人放到检测站完成后，绑定载具到检测站
+                try:
+                    station_site_idx = 0
+                    station_site_key = list(station_warehouse._ordering.keys())[station_site_idx]
+                    station_location = station_warehouse.child_locations[station_site_key]
+                    
+                    station_warehouse.assign_child_resource(carrier, location=station_location, spot=station_site_idx)
+                    logger.info(f"✓ 已绑定载具 {carrier.name} 到检测站{place_station_id}")
+                except Exception as e:
+                    logger.error(f"绑定载具到检测站失败: {e}")
+                
+                logger.info("放检测完成")
+                    
+                # 更新资源树到前端
+                if hasattr(self, '_ros_node') and self._ros_node:
+                    try:
+                        from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
+                        ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, resources=[self.deck])
+                        logger.info(f"✓ 已同步资源更新到前端")
+                    except Exception as e:
+                        logger.warning(f"前端资源更新失败: {e}")
+
+                logger.info(f"[机器人取烧杯{pick_beaker_id}] 释放机器人操作锁")
+                # 成功执行后退出外层循环
+                break
 
         return {
             "pick_beaker_id": pick_beaker_id,
@@ -272,6 +348,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
     ) -> dict:
         """
         机器人从检测位取烧杯并放回：
+        - 使用线程锁保证同一时间只有一个机器人操作
         - 查询机器人空闲状态，循环等待直到机器人空闲
         - 先写入取检测编号，等待取检测完成
         - 取完成后再写入放烧杯编号，等待对应的放烧杯完成信号
@@ -293,16 +370,8 @@ class AI4MDevice(OpcUaClientWithSubscription):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        # 互锁：循环等待直到机器人空闲
-        logger.info(f"[机器人放烧杯{place_beaker_id}] 等待机器人空闲...")
-        robot_ready = self.get_node_value("robot_ready")
-        while not robot_ready:
-            logger.info(f"[机器人放烧杯{place_beaker_id}] 机器人忙碌中，等待空闲...")
-            time.sleep(1.0)
-            robot_ready = self.get_node_value("robot_ready")
-        logger.info(f"[机器人放烧杯{place_beaker_id}] 机器人已空闲")
-
-        # 获取仓库资源
+        # 在获取锁之前，先检查检测站是否有载具
+        # 如果没有载具，不进行锁的争抢
         rack_warehouse = self.deck.warehouses["水凝胶烧杯堆栈"]
         station_warehouse = self.deck.warehouses[f"反应工站{pick_station_id}"]
         
@@ -318,59 +387,91 @@ class AI4MDevice(OpcUaClientWithSubscription):
         
         # 检查是否是 ResourceHolder
         if carrier is None or type(carrier).__name__ == 'ResourceHolder':
-            error_msg = f"检测站{pick_station_id} 没有载具（可能是空的 ResourceHolder）"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
-        # 确定堆栈目标位置
-        rack_site_key = f"C{place_beaker_id}"
+            logger.info(f"[机器人放烧杯{place_beaker_id}] 检测站{pick_station_id}没有载具，不进行锁的争抢，等待中...")
+            # 循环等待直到检测站有载具
+            while carrier is None or type(carrier).__name__ == 'ResourceHolder':
+                logger.info(f"[机器人放烧杯{place_beaker_id}] 检测站{pick_station_id}没有载具，等待中...")
+                time.sleep(2.0)
+                carrier = station_warehouse.sites[station_site_idx]
+                if carrier is None or type(carrier).__name__ == 'ResourceHolder':
+                    continue
+                else:
+                    logger.info(f"[机器人放烧杯{place_beaker_id}] 检测站{pick_station_id}已有载具")
+                    break
 
-        pick_complete_node = f"robot_pick_station_{pick_station_id}_complete"
-        place_complete_node = f"robot_rack_place_beaker_{place_beaker_id}_complete"
+        # 使用线程锁保证同一时间只有一个机器人操作
+        # 只有在确认检测站有载具后，才进行锁的争抢
+        logger.info(f"[机器人放烧杯{place_beaker_id}] 检测站{pick_station_id}有载具，尝试获取机器人操作锁...")
+        with self._robot_lock:
+            logger.info(f"[机器人放烧杯{place_beaker_id}] 已获取机器人操作锁，开始执行")
+            
+            # 互锁：循环等待直到机器人空闲
+            logger.info(f"[机器人放烧杯{place_beaker_id}] 等待机器人空闲...")
+            robot_ready = self.get_node_value("robot_ready")
+            while not robot_ready:
+                logger.info(f"[机器人放烧杯{place_beaker_id}] 机器人忙碌中，等待空闲...")
+                time.sleep(2.0)
+                robot_ready = self.get_node_value("robot_ready")
+            logger.info(f"[机器人放烧杯{place_beaker_id}] 机器人已空闲")
 
-        # 阶段1：下发取检测编号并等待完成
-        logger.info("下发取检测编号，等待完成...")
-        self.set_node_value("robot_pick_station_id", pick_station_id)
-        
-        # 等待取检测完成
-        pick_complete = self.get_node_value(pick_complete_node)
-        while not pick_complete:
-            logger.info("取检测中...")
-            time.sleep(2.0)
+            # 再次确认检测站仍然有载具（防止在等待锁的过程中载具被取走）
+            carrier = station_warehouse.sites[station_site_idx]
+            if carrier is None or type(carrier).__name__ == 'ResourceHolder':
+                error_msg = f"检测站{pick_station_id}在获取锁后没有载具，操作取消"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 确定堆栈目标位置
+            rack_site_key = f"C{place_beaker_id}"
+
+            pick_complete_node = f"robot_pick_station_{pick_station_id}_complete"
+            place_complete_node = f"robot_rack_place_beaker_{place_beaker_id}_complete"
+
+            # 阶段1：下发取检测编号并等待完成
+            logger.info("下发取检测编号，等待完成...")
+            self.set_node_value("robot_pick_station_id", pick_station_id)
+            
+            # 等待取检测完成
             pick_complete = self.get_node_value(pick_complete_node)
-        
-        # 阶段1.5：机器人取检测完成后，从检测站解绑载具
-        station_warehouse.unassign_child_resource(carrier)
-        logger.info(f"✓ 已从检测站{pick_station_id}解绑载具 {carrier.name}")
-        
-        # 阶段2：取完成后再下发放烧杯编号并等待完成
-        logger.info("取完成，开始下发放烧杯编号...")
-        self.set_node_value("robot_place_beaker_id", place_beaker_id)
-        
-        # 等待放烧杯完成
-        place_complete = self.get_node_value(place_complete_node)
-        while not place_complete:
-            logger.info("放烧杯中...")
-            time.sleep(2.0)
+            while not pick_complete:
+                logger.info("取检测中...")
+                time.sleep(5.0)
+                pick_complete = self.get_node_value(pick_complete_node)
+            
+            # 阶段1.5：机器人取检测完成后，从检测站解绑载具
+            station_warehouse.unassign_child_resource(carrier)
+            logger.info(f"✓ 已从检测站{pick_station_id}解绑载具 {carrier.name}")
+            
+            # 阶段2：取完成后再下发放烧杯编号并等待完成
+            logger.info("取完成，开始下发放烧杯编号...")
+            self.set_node_value("robot_place_beaker_id", place_beaker_id)
+            
+            # 等待放烧杯完成
             place_complete = self.get_node_value(place_complete_node)
-        
-        # 阶段2.5：机器人放烧杯完成后，绑定载具回堆栈
-        rack_site_idx = list(rack_warehouse._ordering.keys()).index(rack_site_key)
-        rack_location = rack_warehouse.child_locations[rack_site_key]
-        
-        rack_warehouse.assign_child_resource(carrier, location=rack_location, spot=rack_site_idx)
-        logger.info(f"✓ 已绑定载具 {carrier.name} 回堆栈 {rack_site_key}")
-        
-        logger.info("放烧杯完成")
-        
-        # 更新资源树到前端
-        if hasattr(self, '_ros_node') and self._ros_node:
-            try:
-                from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
-                ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, resources=[self.deck])
-                logger.info(f"✓ 已同步资源更新到前端")
-            except Exception as e:
-                logger.warning(f"前端资源更新失败: {e}")
+            while not place_complete:
+                logger.info("放烧杯中...")
+                time.sleep(5.0)
+                place_complete = self.get_node_value(place_complete_node)
+            
+            # 阶段2.5：机器人放烧杯完成后，绑定载具回堆栈
+            rack_site_idx = list(rack_warehouse._ordering.keys()).index(rack_site_key)
+            rack_location = rack_warehouse.child_locations[rack_site_key]
+            
+            rack_warehouse.assign_child_resource(carrier, location=rack_location, spot=rack_site_idx)
+            logger.info(f"✓ 已绑定载具 {carrier.name} 回堆栈 {rack_site_key}")
+            
+            logger.info("放烧杯完成")
+            
+            # 更新资源树到前端
+            if hasattr(self, '_ros_node') and self._ros_node:
+                try:
+                    from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
+                    ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, resources=[self.deck])
+                    logger.info(f"✓ 已同步资源更新到前端")
+                except Exception as e:
+                    logger.warning(f"前端资源更新失败: {e}")
+
+            logger.info(f"[机器人放烧杯{place_beaker_id}] 释放机器人操作锁")
 
         # !!样例：准备载具信息作为样本数据，记录保存样品数据
         carrier_info = {
@@ -470,7 +571,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         process_complete = self.get_node_value(complete_node)
         while not process_complete:
             logger.info(f"检测{station_id}工艺执行中...")
-            time.sleep(2.0)
+            time.sleep(5.0)
             process_complete = self.get_node_value(complete_node)
         
         logger.info(f"检测{station_id}工艺完成")
@@ -627,7 +728,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         auto_mode = self.get_node_value("auto_mode")
         while not auto_mode:
             logger.info("等待自动模式变为true...")
-            time.sleep(5.0)
+            time.sleep(1.0)
             auto_mode = self.get_node_value("auto_mode")
         
         # 将自动作业开始触发写true
@@ -650,8 +751,6 @@ class AI4MDevice(OpcUaClientWithSubscription):
         }
 
 
-# 为了向后兼容，保留旧的类名
-OpcUaClient = AI4MDevice
     
 
 if __name__ == '__main__':

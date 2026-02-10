@@ -8,6 +8,7 @@ import time
 import traceback
 from typing import Optional
 import os
+import threading
 
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import logger
@@ -72,6 +73,10 @@ class AI4M002Device(OpcUaClientWithSubscription):
         if self.deck is None:
             raise ValueError("Deck 配置不能为空")
 
+        # 创建三轴操作的线程锁，防止多个动作同时执行
+        self._3axis_lock = threading.Lock()
+        logger.info("✓ 三轴操作线程锁已初始化")
+
         # 统计仓库信息
         warehouse_count = 0
         if hasattr(self.deck, 'children'):
@@ -112,547 +117,995 @@ class AI4M002Device(OpcUaClientWithSubscription):
    
     # ==================== 设备动作函数 ====================
     
-    def start_manual_mode(self) -> dict:
+    def trigger_s02_init(self) -> dict:
         """
-        指令作业模式函数：
-        - 将模式切换、手自动切换写false
-        - 等待自动模式为false
-        - 将模式切换写true
+        S02工站初始化函数：
+        - 将S02工站初始化PC写true
+        - 等待S02工站初始化完成为true
+        - 将S02工站初始化PC写false
+        - 返回成功
 
         Returns:
             dict: 包含 success 和 message
         """
-        logger.info("启动指令作业模式...")
-
-        # 将模式切换、手自动切换写true
-        logger.info("设置模式切换和手自动切换为true...")
-        self.set_node_value("mode_switch", True)
-        self.set_node_value("manual_auto_switch", False)
-
-        # 等待自动模式为false
-        logger.info("等待自动模式为False...")
-        auto_mode = self.get_node_value("auto_mode")
-        while auto_mode:
-            logger.info("等待自动模式变为False...")
-            time.sleep(1.0)
-            auto_mode = self.get_node_value("auto_mode")
+        logger.info("开始S02工站初始化...")
         
-        logger.info("模式切换完成")
+        # 将S02工站初始化PC写false（先复位）
+        logger.info("复位S02工站初始化PC...")
+        self.set_node_value("S02_Station_Initialization_PC", False)
+        time.sleep(1.0)
+        
+        # 将S02工站初始化PC写true
+        logger.info("设置S02工站初始化PC为true...")
+        self.set_node_value("S02_Station_Initialization_PC", True)
+        time.sleep(1.0)
+        
+        # 等待S02工站初始化完成为true
+        logger.info("等待S02工站初始化完成...")
+        init_done = self.get_node_value("S02_Station_Initialization_Done")
+        while not init_done:
+            logger.info("S02工站初始化中...")
+            time.sleep(1.0)
+            init_done = self.get_node_value("S02_Station_Initialization_Done")
+        
+        # 将S02工站初始化PC写false
+        logger.info("S02工站初始化完成，设置初始化PC为false...")
+        self.set_node_value("S02_Station_Initialization_PC", False)
+        
         return {
-            "message": "指令作业模式启动成功",
+            "message": "S02工站初始化完成",
         }
-
-    def trigger_robot_pick_beaker(
+    
+    def trigger_3axis_pick_from_raw_and_place_to_electrolytic_cell(
         self,
-        pick_beaker_id: int,
-        place_station_id: int = None,
+        pick_code: int,
+        electrolytic_cell_id: Optional[int] = None,
     ) -> dict:
         """
-        机器人取烧杯并放到检测位：
-        - 查询机器人空闲状态，循环等待直到机器人空闲
-        - 如果未指定place_station_id，则查找空闲检测站，如果没有则等待后重试
-        - 先写入取烧杯编号，等待取烧杯完成
-        - 取完成后再写入放检测编号，等待对应的放检测完成信号
+        从原始电极取料，动作完成，放到电解池
+        使用进程锁保证同一时间只有一个三轴操作
+        
+        流程：
+        1. 检查电解池是否空闲（如果electrolytic_cell_id为空，自动查找空闲电解池）
+        2. 如果都有占位，释放进程锁并等待
+        3. 获取进程锁
+        4. 从原始电极仓库取料
+        5. 等待动作完成
+        6. 放到指定的电解池（搅拌仪）
+        7. 等待动作完成
         
         Args:
-            pick_beaker_id: 取烧杯编号（1-5）
-            place_station_id: 放检测编号（1-3），如果为None则自动查找空闲检测站
-            
-        Returns:
-            dict: 包含 success, pick_beaker_id, place_station_id, message
-        """
-        # 校验输入范围
-        if pick_beaker_id not in (1, 2, 3, 4, 5):
-            error_msg = f"取烧杯编号必须在 1-5 范围内，当前值: {pick_beaker_id}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        if place_station_id is not None and place_station_id not in (1, 2, 3):
-            error_msg = f"放检测编号必须在 1-3 范围内，当前值: {place_station_id}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        # 互锁1：循环等待直到机器人空闲
-        logger.info(f"[机器人取烧杯{pick_beaker_id}] 等待机器人空闲...")
-        robot_ready = self.get_node_value("robot_ready")
-        while not robot_ready:
-            logger.info(f"[机器人取烧杯{pick_beaker_id}] 机器人忙碌中，等待空闲...")
-            time.sleep(1.0)
-            robot_ready = self.get_node_value("robot_ready")
-        logger.info(f"[机器人取烧杯{pick_beaker_id}] 机器人已空闲")
+            electrolytic_cell_id: 电解池ID（1或2），如果为None则自动查找空闲电解池
+                - 1: 电解池1（对应搅拌仪1，位置3）
+                - 2: 电解池2（对应搅拌仪2，位置2）
+            pick_code: 目标取放料代码（对应3-Axis_Target_Pick_&_Place_Code，用于取料）
         
-        # 互锁2：如果未指定检测站，则查找空闲检测站，循环等待直到找到
-        if place_station_id is None:
-            while place_station_id is None:
-                # 遍历检测站 1-3，查找空闲的
-                for station_id in (1, 2, 3):
-                    station_ready_node = f"station_{station_id}_ready"
-                    station_ready = self.get_node_value(station_ready_node)
-                    if station_ready:
-                        place_station_id = station_id
-                        logger.info(f"[机器人取烧杯{pick_beaker_id}] 找到空闲检测站{place_station_id}")
+        Returns:
+            dict: 包含 message 和相关信息
+        """
+        logger.info(f"开始流程：从原始电极取料 -> 放到电解池（电解池ID：{electrolytic_cell_id}，取放料代码：{pick_code}）")
+        
+        # 电解池映射：ID -> (位置代码, 占位节点, 名称)
+        electrolytic_cell_map = {
+            1: (3, "Electrolytic_Cell_1_Occupancy", "电解池1（搅拌仪1）"),
+            2: (2, "Electrolytic_Cell_2_Occupancy", "电解池2（搅拌仪2）"),
+        }
+        
+        # 使用线程锁保证同一时间只有一个三轴操作
+        while True:
+            # 确定目标电解池ID
+            target_cell_id = electrolytic_cell_id
+            
+            # 如果未指定电解池ID，自动查找空闲电解池
+            if target_cell_id is None:
+                logger.info("未指定电解池ID，自动查找空闲电解池...")
+                target_cell_id = None
+                for cell_id in (1, 2):
+                    _, occupancy_node, _ = electrolytic_cell_map[cell_id]
+                    occupancy = self.get_node_value(occupancy_node)
+                    if not occupancy:
+                        target_cell_id = cell_id
+                        logger.info(f"找到空闲电解池：{target_cell_id}")
                         break
                 
-                if place_station_id is None:
-                    logger.info(f"[机器人取烧杯{pick_beaker_id}] 没有空闲检测站，等待中...")
-                    time.sleep(0.5)
-
-        # 获取仓库资源
-        rack_warehouse = self.deck.warehouses["水凝胶烧杯堆栈"]
-        station_warehouse = self.deck.warehouses[f"反应工站{place_station_id}"]
-        rack_site_key = f"A{pick_beaker_id}"
-
-        # 在执行硬件操作之前，先检查载具是否存在
-        carrier = rack_warehouse[rack_site_key]
-        if carrier is None:
-            error_msg = f"堆栈位置 {rack_site_key} 没有载具"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        pick_complete_node = f"robot_rack_pick_beaker_{pick_beaker_id}_complete"
-        place_complete_node = f"robot_place_station_{place_station_id}_complete"
-
-        # 阶段1：下发取烧杯编号并等待完成
-        logger.info("下发取烧杯编号，等待完成...")
-        self.set_node_value("robot_pick_beaker_id", pick_beaker_id)
-        
-        # 等待取烧杯完成
-        pick_complete = self.get_node_value(pick_complete_node)
-        while not pick_complete:
-            logger.info("取烧杯中...")
-            time.sleep(2.0)
-            pick_complete = self.get_node_value(pick_complete_node)
-        
-        # 阶段1.5：机器人取烧杯完成后，从堆栈解绑载具
-        rack_warehouse.unassign_child_resource(carrier)
-        logger.info(f"✓ 已从堆栈解绑载具 {carrier.name}")
-        
-        # 阶段2：取完成后再下发放检测编号并等待完成
-        logger.info("取完成，开始下发放检测编号...")
-        self.set_node_value("robot_place_station_id", place_station_id)
-        
-        # 等待放检测完成
-        place_complete = self.get_node_value(place_complete_node)
-        while not place_complete:
-            logger.info("放检测中...")
-            time.sleep(2.0)
-            place_complete = self.get_node_value(place_complete_node)
-        
-        # 阶段2.5：机器人放到检测站完成后，绑定载具到检测站
-        try:
-            station_site_idx = 0
-            station_site_key = list(station_warehouse._ordering.keys())[station_site_idx]
-            station_location = station_warehouse.child_locations[station_site_key]
+                if target_cell_id is None:
+                    # 都有占位，不获取锁，等待
+                    logger.info("所有电解池都有占位，等待空闲...")
+                    time.sleep(1.0)
+                    continue
             
-            station_warehouse.assign_child_resource(carrier, location=station_location, spot=station_site_idx)
-            logger.info(f"✓ 已绑定载具 {carrier.name} 到检测站{place_station_id}")
-        except Exception as e:
-            logger.error(f"绑定载具到检测站失败: {e}")
-        
-        logger.info("放检测完成")
+            # 检查指定电解池是否空闲
+            _, occupancy_node, cell_name = electrolytic_cell_map[target_cell_id]
+            logger.info(f"检查{cell_name}是否空闲...")
+            occupancy = self.get_node_value(occupancy_node)
+            if occupancy:
+                # 不空闲，不获取锁，等待
+                logger.info(f"{cell_name}忙碌中，等待空闲...")
+                time.sleep(1.0)
+                continue
             
-        # 更新资源树到前端
-        if hasattr(self, '_ros_node') and self._ros_node:
+            # 电解池空闲，获取锁
+            logger.info(f"{cell_name}已空闲，尝试获取三轴操作锁...")
+            self._3axis_lock.acquire()
+            logger.info("已获取三轴操作锁")
+            
             try:
-                from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
-                ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, resources=[self.deck])
-                logger.info(f"✓ 已同步资源更新到前端")
+                # 再次确认电解池仍然空闲
+                occupancy = self.get_node_value(occupancy_node)
+                if occupancy:
+                    # 状态变化，释放锁并重新等待
+                    logger.info(f"{cell_name}状态变化，释放锁并重新等待...")
+                    self._3axis_lock.release()
+                    logger.info("已释放三轴操作锁")
+                    time.sleep(1.0)
+                    continue
+                
+                # 确认空闲，继续执行
+                break
             except Exception as e:
-                logger.warning(f"前端资源更新失败: {e}")
-
+                # 如果出现异常，确保释放锁
+                self._3axis_lock.release()
+                logger.error(f"检查电解池状态时出错，已释放锁: {e}")
+                raise
+        
+        try:
+            target_position, _, cell_name = electrolytic_cell_map[target_cell_id]
+            
+            # 步骤1：从原始电极取料
+            logger.info("步骤1：从原始电极仓库取料...")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 设置取料动作
+            logger.info(f"设置三轴动作代码：1（取料），目标位置代码：1（原始电极仓库），取放料代码：{pick_code}")
+            self.set_node_value("3-Axis_Action_Code", 1)
+            self.set_node_value("3-Axis_Target_Position_Code", 1)
+            self.set_node_value("3-Axis_Target_Pick_&_Place_Code", pick_code)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴取料动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴取料动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴取料动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info("✓ 从原始电极仓库取料完成")
+            
+            # 步骤2：放到电解池
+            logger.info(f"步骤2：放到{cell_name}...")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 设置放料动作
+            logger.info(f"设置三轴动作代码：2（放料），目标位置代码：{target_position}（{cell_name}），取放料代码：1（放料）")
+            self.set_node_value("3-Axis_Action_Code", 2)
+            self.set_node_value("3-Axis_Target_Position_Code", target_position)
+            self.set_node_value("3-Axis_Target_Pick_&_Place_Code", 1)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴放料动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴放料动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴放料动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info(f"✓ 放到{cell_name}完成")
+            
+            logger.info(f"完整流程完成：从原始电极取料 -> 放到{cell_name}")
+        finally:
+            # 确保释放锁
+            self._3axis_lock.release()
+            logger.info("已释放三轴操作锁")
+        
         return {
-            "pick_beaker_id": pick_beaker_id,
-            "place_station_id": place_station_id,
-            "message": f"机器人取烧杯{pick_beaker_id}并放到检测站{place_station_id}完成",
+            "electrolytic_cell_id": target_cell_id,
+            "electrolytic_cell_name": cell_name,
+            "pick_code": pick_code,
+            "message": f"从原始电极取料并放到{cell_name}完成",
         }
-
-    def trigger_robot_place_beaker(
+    
+    def trigger_3axis_pick_from_electrolytic_cell_and_place_to_finished(
         self,
-        place_beaker_id: int,
-        pick_station_id: int,
+        electrolytic_cell_id: int,
+        cleaning_time: int,
+        nitrogen_time: int,
+        place_code: int,
     ) -> dict:
         """
-        机器人从检测位取烧杯并放回：
-        - 查询机器人空闲状态，循环等待直到机器人空闲
-        - 先写入取检测编号，等待取检测完成
-        - 取完成后再写入放烧杯编号，等待对应的放烧杯完成信号
+        从电解池1或2取料，夹住到水洗池，动作完成，放到完成电极
+        使用进程锁保证同一时间只有一个三轴操作
+        
+        流程：
+        1. 检查电解池是否加工完成
+        2. 如果未完成，释放进程锁并等待
+        3. 获取进程锁
+        4. 从指定的电解池（搅拌仪）取料
+        5. 等待动作完成
+        6. 夹住到水洗池
+        7. 等待动作完成
+        8. 放到完成电极
+        9. 等待动作完成
         
         Args:
-            place_beaker_id: 放烧杯编号（1-5）
-            pick_station_id: 取检测编号（1-3）
-            
+            electrolytic_cell_id: 电解池ID（1或2）
+                - 1: 电解池1（对应搅拌仪1，位置3）
+                - 2: 电解池2（对应搅拌仪2，位置2）
+            cleaning_time: 水洗时间设置（对应Cleaning_Timeset）
+            nitrogen_time: 氮气时间设置（对应N2_Timeset）
+            place_code: 目标取放料代码（对应3-Axis_Target_Pick_&_Place_Code，用于放料）
+        
         Returns:
-            dict: 包含 success, place_beaker_id, pick_station_id, message
+            dict: 包含 message 和相关信息
         """
-        # 校验输入范围
-        if place_beaker_id not in (1, 2, 3, 4, 5):
-            error_msg = f"放烧杯编号必须在 1-5 范围内，当前值: {place_beaker_id}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        if pick_station_id not in (1, 2, 3):
-            error_msg = f"取检测编号必须在 1-3 范围内，当前值: {pick_station_id}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        # 互锁：循环等待直到机器人空闲
-        logger.info(f"[机器人放烧杯{place_beaker_id}] 等待机器人空闲...")
-        robot_ready = self.get_node_value("robot_ready")
-        while not robot_ready:
-            logger.info(f"[机器人放烧杯{place_beaker_id}] 机器人忙碌中，等待空闲...")
-            time.sleep(1.0)
-            robot_ready = self.get_node_value("robot_ready")
-        logger.info(f"[机器人放烧杯{place_beaker_id}] 机器人已空闲")
-
-        # 获取仓库资源
-        rack_warehouse = self.deck.warehouses["水凝胶烧杯堆栈"]
-        station_warehouse = self.deck.warehouses[f"反应工站{pick_station_id}"]
-        
-        # 获取检测站的载具
-        station_site_idx = 0
-        
-        if not station_warehouse.sites or len(station_warehouse.sites) == 0:
-            error_msg = f"检测站{pick_station_id} 的 warehouse sites 列表为空"
+        # 校验电解池ID范围
+        if electrolytic_cell_id not in (1, 2):
+            error_msg = f"电解池ID必须在 1-2 范围内，当前值: {electrolytic_cell_id}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        carrier = station_warehouse.sites[station_site_idx]
+        # 电解池映射：ID -> (位置代码, 完成节点, 名称)
+        electrolytic_cell_map = {
+            1: (3, "Electrolytic_Cell_1_Done", "电解池1（搅拌仪1）"),
+            2: (2, "Electrolytic_Cell_2_Done", "电解池2（搅拌仪2）"),
+        }
+        target_position, done_node, cell_name = electrolytic_cell_map[electrolytic_cell_id]
         
-        # 检查是否是 ResourceHolder
-        if carrier is None or type(carrier).__name__ == 'ResourceHolder':
-            error_msg = f"检测站{pick_station_id} 没有载具（可能是空的 ResourceHolder）"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+        logger.info(f"开始流程：从{cell_name}取料 -> 夹住到水洗池 -> 放到完成电极")
         
-        # 确定堆栈目标位置
-        rack_site_key = f"C{place_beaker_id}"
-
-        pick_complete_node = f"robot_pick_station_{pick_station_id}_complete"
-        place_complete_node = f"robot_rack_place_beaker_{place_beaker_id}_complete"
-
-        # 阶段1：下发取检测编号并等待完成
-        logger.info("下发取检测编号，等待完成...")
-        self.set_node_value("robot_pick_station_id", pick_station_id)
-        
-        # 等待取检测完成
-        pick_complete = self.get_node_value(pick_complete_node)
-        while not pick_complete:
-            logger.info("取检测中...")
-            time.sleep(2.0)
-            pick_complete = self.get_node_value(pick_complete_node)
-        
-        # 阶段1.5：机器人取检测完成后，从检测站解绑载具
-        station_warehouse.unassign_child_resource(carrier)
-        logger.info(f"✓ 已从检测站{pick_station_id}解绑载具 {carrier.name}")
-        
-        # 阶段2：取完成后再下发放烧杯编号并等待完成
-        logger.info("取完成，开始下发放烧杯编号...")
-        self.set_node_value("robot_place_beaker_id", place_beaker_id)
-        
-        # 等待放烧杯完成
-        place_complete = self.get_node_value(place_complete_node)
-        while not place_complete:
-            logger.info("放烧杯中...")
-            time.sleep(2.0)
-            place_complete = self.get_node_value(place_complete_node)
-        
-        # 阶段2.5：机器人放烧杯完成后，绑定载具回堆栈
-        rack_site_idx = list(rack_warehouse._ordering.keys()).index(rack_site_key)
-        rack_location = rack_warehouse.child_locations[rack_site_key]
-        
-        rack_warehouse.assign_child_resource(carrier, location=rack_location, spot=rack_site_idx)
-        logger.info(f"✓ 已绑定载具 {carrier.name} 回堆栈 {rack_site_key}")
-        
-        logger.info("放烧杯完成")
-        
-        # 更新资源树到前端
-        if hasattr(self, '_ros_node') and self._ros_node:
+        # 使用线程锁保证同一时间只有一个三轴操作
+        while True:
+            # 先检查电解池是否加工完成
+            logger.info(f"检查{cell_name}是否加工完成...")
+            cell_done = self.get_node_value(done_node)
+            if not cell_done:
+                # 没有完成，不获取锁，等待完成
+                logger.info(f"{cell_name}加工未完成，等待完成...")
+                time.sleep(1.0)
+                continue
+            
+            # 加工完成，获取锁
+            logger.info(f"{cell_name}加工已完成，尝试获取三轴操作锁...")
+            self._3axis_lock.acquire()
+            logger.info("已获取三轴操作锁")
+            
             try:
-                from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
-                ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, resources=[self.deck])
-                logger.info(f"✓ 已同步资源更新到前端")
+                # 再次确认电解池加工完成（防止在等待过程中状态变化）
+                cell_done = self.get_node_value(done_node)
+                if not cell_done:
+                    # 状态变化，释放锁并重新等待
+                    logger.info(f"{cell_name}状态变化，释放锁并重新等待...")
+                    self._3axis_lock.release()
+                    logger.info("已释放三轴操作锁")
+                    time.sleep(1.0)
+                    continue
+                
+                # 确认完成，继续执行
+                break
             except Exception as e:
-                logger.warning(f"前端资源更新失败: {e}")
-
-        # !!样例：准备载具信息作为样本数据，记录保存样品数据
-        carrier_info = {
-            "name": carrier.name,
-            "type": "carrier",
-            "rack_location": rack_site_key,
-            "station_id": pick_station_id,
-            "rack_site_index": rack_site_idx
-        }
-
+                # 如果出现异常，确保释放锁
+                self._3axis_lock.release()
+                logger.error(f"检查电解池状态时出错，已释放锁: {e}")
+                raise
+        
+        try:
+            # 步骤1：从电解池取料
+            logger.info(f"步骤1：从{cell_name}取料...")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 设置取料动作
+            logger.info(f"设置三轴动作代码：1（取料），目标位置代码：{target_position}（{cell_name}）")
+            self.set_node_value("3-Axis_Action_Code", 1)
+            self.set_node_value("3-Axis_Target_Position_Code", target_position)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴取料动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴取料动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴取料动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info(f"✓ 从{cell_name}取料完成")
+            
+            # 步骤2：夹住到水洗池
+            logger.info(f"步骤2：夹住到水洗池（水洗时间：{cleaning_time}，氮气时间：{nitrogen_time}）...")
+            
+            # 检查水洗池是否空闲
+            logger.info("检查水洗池是否空闲...")
+            occupancy = self.get_node_value("Cleaning_Tank_Occupancy")
+            while occupancy:
+                logger.info("水洗池忙碌中，等待空闲...")
+                time.sleep(1.0)
+                occupancy = self.get_node_value("Cleaning_Tank_Occupancy")
+            logger.info("水洗池已空闲")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 下发水洗时间设置和氮气时间设置
+            logger.info(f"设置水洗时间：{cleaning_time}，氮气时间：{nitrogen_time}")
+            self.set_node_value("Cleaning_Timeset", cleaning_time)
+            self.set_node_value("N2_Timeset", nitrogen_time)
+            time.sleep(1.0)
+            
+            # 设置夹住动作
+            logger.info("设置三轴动作代码：3（夹住），目标位置代码：5（水洗池）")
+            self.set_node_value("3-Axis_Action_Code", 3)
+            self.set_node_value("3-Axis_Target_Position_Code", 5)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴夹住动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴夹住动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴夹住动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info("✓ 夹住到水洗池完成")
+            
+            # 步骤3：放到完成电极
+            logger.info(f"步骤3：放到完成电极（取放料代码：{place_code}）...")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 设置放料动作
+            logger.info(f"设置三轴动作代码：2（放料），目标位置代码：6（完成电极），取放料代码：{place_code}")
+            self.set_node_value("3-Axis_Action_Code", 2)
+            self.set_node_value("3-Axis_Target_Position_Code", 6)
+            self.set_node_value("3-Axis_Target_Pick_&_Place_Code", place_code)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴放料动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴放料动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴放料动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info("✓ 放到完成电极完成")
+            
+            logger.info(f"完整流程完成：从{cell_name}取料 -> 夹住到水洗池 -> 放到完成电极")
+        finally:
+            # 确保释放锁
+            self._3axis_lock.release()
+            logger.info("已释放三轴操作锁")
+        
         return {
-            "place_beaker_id": place_beaker_id,
-            "pick_station_id": pick_station_id,
-            "message": f"机器人从检测站{pick_station_id}取烧杯并放回位置{place_beaker_id}完成",
-            # "unilabos_samples": [carrier_info],  # 使用 unilabos_samples 避免被外部服务转换
+            "electrolytic_cell_id": electrolytic_cell_id,
+            "electrolytic_cell_name": cell_name,
+            "cleaning_time": cleaning_time,
+            "nitrogen_time": nitrogen_time,
+            "place_code": place_code,
+            "message": f"从{cell_name}取料，夹住到水洗池，放到完成电极完成",
         }
-
-    def trigger_station_process(
+    
+    def trigger_3axis_pick_from_raw_and_process_to_finished(
+        self,
+        pick_code: int,
+        pickling_time: int,
+        cleaning_time: int,
+        nitrogen_time: int,
+        place_code: int,
+    ) -> dict:
+        """
+        从原始电极取料，动作完成，夹住到酸洗池，动作完成，夹住到水洗池，动作完成，放到完成电极
+        使用进程锁保证同一时间只有一个三轴操作
+        
+        流程：
+        1. 获取进程锁
+        2. 从原始电极仓库取料
+        3. 等待动作完成
+        4. 夹住到酸洗池
+        5. 等待动作完成
+        6. 夹住到水洗池
+        7. 等待动作完成
+        8. 放到完成电极
+        9. 等待动作完成
+        
+        Args:
+            pick_code: 取放料代码（对应3-Axis_Target_Pick_&_Place_Code，用于取料）
+            pickling_time: 酸洗时间设置（对应Pickling_Timeset）
+            cleaning_time: 水洗时间设置（对应Cleaning_Timeset）
+            nitrogen_time: 氮气时间设置（对应N2_Timeset）
+            place_code: 取放料代码（对应3-Axis_Target_Pick_&_Place_Code，用于放料）
+        
+        Returns:
+            dict: 包含 message 和相关信息
+        """
+        logger.info("开始流程：从原始电极取料 -> 夹住到酸洗池 -> 夹住到水洗池 -> 放到完成电极")
+        
+        # 使用线程锁保证同一时间只有一个三轴操作
+        self._3axis_lock.acquire()
+        logger.info("已获取三轴操作锁")
+        
+        try:
+            # 步骤1：从原始电极取料
+            logger.info(f"步骤1：从原始电极仓库取料（取放料代码：{pick_code}）...")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 设置取料动作
+            logger.info(f"设置三轴动作代码：1（取料），目标位置代码：1（原始电极仓库），取放料代码：{pick_code}")
+            self.set_node_value("3-Axis_Action_Code", 1)
+            self.set_node_value("3-Axis_Target_Position_Code", 1)
+            self.set_node_value("3-Axis_Target_Pick_&_Place_Code", pick_code)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴取料动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴取料动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴取料动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info("✓ 从原始电极仓库取料完成")
+            
+            # 步骤2：夹住到酸洗池
+            logger.info(f"步骤2：夹住到酸洗池（酸洗时间：{pickling_time}）...")
+            
+            # 检查酸洗池是否空闲
+            logger.info("检查酸洗池是否空闲...")
+            occupancy = self.get_node_value("Pickling_Tank_Occupancy")
+            while occupancy:
+                logger.info("酸洗池忙碌中，等待空闲...")
+                time.sleep(1.0)
+                occupancy = self.get_node_value("Pickling_Tank_Occupancy")
+            logger.info("酸洗池已空闲")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 下发酸洗时间设置
+            logger.info(f"设置酸洗时间：{pickling_time}")
+            self.set_node_value("Pickling_Timeset", pickling_time)
+            time.sleep(1.0)
+            
+            # 设置夹住动作
+            logger.info("设置三轴动作代码：3（夹住），目标位置代码：4（酸洗池）")
+            self.set_node_value("3-Axis_Action_Code", 3)
+            self.set_node_value("3-Axis_Target_Position_Code", 4)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴夹住动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴夹住动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴夹住动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info("✓ 夹住到酸洗池完成")
+            
+            # 步骤3：夹住到水洗池
+            logger.info(f"步骤3：夹住到水洗池（水洗时间：{cleaning_time}，氮气时间：{nitrogen_time}）...")
+            
+            # 检查水洗池是否空闲
+            logger.info("检查水洗池是否空闲...")
+            occupancy = self.get_node_value("Cleaning_Tank_Occupancy")
+            while occupancy:
+                logger.info("水洗池忙碌中，等待空闲...")
+                time.sleep(1.0)
+                occupancy = self.get_node_value("Cleaning_Tank_Occupancy")
+            logger.info("水洗池已空闲")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 下发水洗时间设置和氮气时间设置
+            logger.info(f"设置水洗时间：{cleaning_time}，氮气时间：{nitrogen_time}")
+            self.set_node_value("Cleaning_Timeset", cleaning_time)
+            self.set_node_value("N2_Timeset", nitrogen_time)
+            time.sleep(1.0)
+            
+            # 设置夹住动作
+            logger.info("设置三轴动作代码：3（夹住），目标位置代码：5（水洗池）")
+            self.set_node_value("3-Axis_Action_Code", 3)
+            self.set_node_value("3-Axis_Target_Position_Code", 5)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴夹住动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴夹住动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴夹住动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info("✓ 夹住到水洗池完成")
+            
+            # 步骤4：放到完成电极
+            logger.info(f"步骤4：放到完成电极（取放料代码：{place_code}）...")
+            
+            # 等待三轴空闲
+            logger.info("等待三轴空闲...")
+            axis_idle = self.get_node_value("3-Axis_Idle")
+            while not axis_idle:
+                logger.info("三轴忙碌中，等待空闲...")
+                time.sleep(1.0)
+                axis_idle = self.get_node_value("3-Axis_Idle")
+            logger.info("三轴已空闲")
+            
+            # 检查是否有故障
+            axis_fault = self.get_node_value("3-Axis_Fault")
+            if axis_fault:
+                error_msg = "三轴存在故障，无法执行动作"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            # 设置放料动作
+            logger.info(f"设置三轴动作代码：2（放料），目标位置代码：6（完成电极），取放料代码：{place_code}")
+            self.set_node_value("3-Axis_Action_Code", 2)
+            self.set_node_value("3-Axis_Target_Position_Code", 6)
+            self.set_node_value("3-Axis_Target_Pick_&_Place_Code", place_code)
+            time.sleep(1.0)
+            
+            # 复位动作完成标志
+            self.set_node_value("3-Axis_Action_Done", False)
+            time.sleep(1.0)
+            
+            # 触发动作
+            logger.info("触发三轴放料动作...")
+            self.set_node_value("3-Axis_Action_Trigger", True)
+            time.sleep(1.0)
+            
+            # 等待动作完成
+            logger.info("等待三轴放料动作完成...")
+            action_done = self.get_node_value("3-Axis_Action_Done")
+            while not action_done:
+                logger.info("三轴放料动作执行中...")
+                time.sleep(1.0)
+                action_done = self.get_node_value("3-Axis_Action_Done")
+                
+                # 检查是否有故障
+                axis_fault = self.get_node_value("3-Axis_Fault")
+                if axis_fault:
+                    error_msg = "三轴动作执行过程中出现故障"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # 检查动作参数错误
+                param_error = self.get_node_value("Action_Parameter_Error")
+                if param_error:
+                    error_msg = "三轴动作参数错误"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+            
+            # 复位动作触发和动作完成
+            self.set_node_value("3-Axis_Action_Trigger", False)
+            self.set_node_value("3-Axis_Action_Done", False)
+            logger.info("✓ 放到完成电极完成")
+            
+            logger.info("完整流程完成：从原始电极取料 -> 夹住到酸洗池 -> 夹住到水洗池 -> 放到完成电极")
+        finally:
+            # 确保释放锁
+            self._3axis_lock.release()
+            logger.info("已释放三轴操作锁")
+        
+        return {
+            "pick_code": pick_code,
+            "pickling_time": pickling_time,
+            "cleaning_time": cleaning_time,
+            "nitrogen_time": nitrogen_time,
+            "place_code": place_code,
+            "message": "从原始电极取料，夹住到酸洗池，夹住到水洗池，放到完成电极完成",
+        }
+    
+    def set_stirrer_params(
         self,
         station_id: int,
-        mag_stir_stir_speed: int,
-        mag_stir_heat_temp: int,
-        mag_stir_time_set: int,
-        syringe_pump_abs_position_set: int,
+        stir_speed: int,
+        heat_temp: int,
+        time_set: int,
     ) -> dict:
         """
-        执行检测工艺流程：
-        1. 等待检测站请求参数
-        2. 下发对应编号的搅拌仪和注射泵参数
-        3. 等待参数已执行
-        4. 给出检测开始信号
-        5. 等待检测工艺完成
+        设置搅拌仪参数
+        
+        搅拌仪站号映射：
+        - 站号1：对应csv中的c4（搅拌仪1）
+        - 站号2：对应csv中的c3（搅拌仪2）
         
         Args:
-            station_id: 检测编号（1-3）
-            mag_stir_stir_speed: 磁力搅拌仪搅拌速度
-            mag_stir_heat_temp: 磁力搅拌仪加热温度
-            mag_stir_time_set: 磁力搅拌仪时间设置
-            syringe_pump_abs_position_set: 注射泵绝对位置设置
-            
+            station_id: 搅拌仪站号（1-2）
+            stir_speed: 搅拌速度
+            heat_temp: 加热温度
+            time_set: 时间设置
+        
         Returns:
-            dict: 包含 success, station_id, message
+            dict: 包含 message
         """
-        # 校验输入范围
-        if station_id not in (1, 2, 3):
-            error_msg = f"检测编号必须在 1-3 范围内，当前值: {station_id}"
+        # 校验站号范围
+        if station_id not in (1, 2):
+            error_msg = f"搅拌仪站号必须在 1-2 范围内，当前值: {station_id}"
             logger.error(error_msg)
             raise ValueError(error_msg)
-
-        # 检测站索引（0-2）
-        station_idx = station_id - 1
         
-        # 节点名称
-        request_node = f"station_{station_id}_request_params"
-        params_received_node = f"station_{station_id}_params_received"
-        start_node = f"station_{station_id}_start"
-        complete_node = f"station_{station_id}_process_complete"
+        # 站号到csv索引的映射：站号1->c4(索引4)，站号2->c3(索引3)
+        csv_index_map = {
+            1: 3,  # 站号1对应c3（搅拌仪1）
+            2: 4,  # 站号2对应c4（搅拌仪2）
+        }
+        csv_index = csv_index_map[station_id]
+        station_name_map = {
+            1: "搅拌仪1",
+            2: "搅拌仪2",
+        }
+        station_name = station_name_map[station_id]
         
-        self.set_node_value(complete_node, False)
-        self.set_node_value(start_node, False)
-        self.set_node_value(params_received_node, False)
-
-        # 阶段1：等待检测站请求参数
-        logger.info(f"等待检测{station_id}请求参数...")
-        request_params = self.get_node_value(request_node)
-        while not request_params:
-            logger.info(f"等待检测{station_id}请求参数中...")
-            time.sleep(2.0)
-            request_params = self.get_node_value(request_node)
+        logger.info(f"开始设置{station_name}（站号{station_id}，csv索引c{csv_index}）参数：搅拌速度={stir_speed}，加热温度={heat_temp}，时间设置={time_set}")
         
-        logger.info(f"检测{station_id}已请求参数，开始下发...")
+        # 确定电解池参数已下发和已执行的节点名称
+        param_downloaded_node = f"Electrolytic_Cell_{station_id}_param_downloaded"
+        params_received_node = f"Electrolytic_Cell_{station_id}_params_received"
         
-        # 阶段2：下发对应编号的搅拌仪参数
-        self.set_node_value(f"mag_stirrer_c{station_idx}_stir_speed", mag_stir_stir_speed)
-        self.set_node_value(f"mag_stirrer_c{station_idx}_heat_temp", mag_stir_heat_temp)
-        self.set_node_value(f"mag_stirrer_c{station_idx}_time_set", mag_stir_time_set)
-        logger.info(f"已下发检测{station_id}磁力搅拌仪参数：速度={mag_stir_stir_speed}, 温度={mag_stir_heat_temp}, 时间={mag_stir_time_set}")
+        # 1. 先将"电解池参数已下发"置位为 false
+        logger.info(f"复位{station_name}参数已下发标志...")
+        self.set_node_value(param_downloaded_node, False)
         
-        # 下发对应编号的注射泵参数
-        self.set_node_value(f"syringe_pump_{station_idx}_abs_position_set", syringe_pump_abs_position_set)
-        logger.info(f"已下发检测{station_id}注射泵绝对位置设置：{syringe_pump_abs_position_set}")
-
+        # 2. 下发搅拌仪参数
+        logger.info(f"设置{station_name}参数：搅拌速度={stir_speed}，加热温度={heat_temp}，时间设置={time_set}")
+        self.set_node_value(f"mag_stirrer_c{csv_index}_stir_speed", stir_speed)
+        self.set_node_value(f"mag_stirrer_c{csv_index}_heat_temp", heat_temp)
+        self.set_node_value(f"mag_stirrer_c{csv_index}_time_set", time_set)
+        time.sleep(1.0)
         
-        # 阶段3：等待参数已执行
-        self.set_node_value(start_node, True)
-        logger.info(f"等待检测{station_id}参数已执行...")
+        # 3. 将"已下发"置位为 true
+        logger.info(f"设置{station_name}参数已下发标志为 true...")
+        self.set_node_value(param_downloaded_node, True)
+        
+        # 4. 等待电解池参数执行完成
+        logger.info(f"等待{station_name}参数执行完成...")
         params_received = self.get_node_value(params_received_node)
         while not params_received:
-            logger.info(f"检测{station_id}参数执行中...")
-            time.sleep(2.0)
+            logger.info(f"{station_name}参数执行中...")
+            time.sleep(1.0)
             params_received = self.get_node_value(params_received_node)
+        logger.info(f"{station_name}参数执行完成")
         
-        logger.info(f"检测{station_id}参数已执行")
-           
-        # 阶段4：等待检测工艺完成
-        logger.info(f"等待检测{station_id}工艺完成...")
-        process_complete = self.get_node_value(complete_node)
-        while not process_complete:
-            logger.info(f"检测{station_id}工艺执行中...")
-            time.sleep(2.0)
-            process_complete = self.get_node_value(complete_node)
+        # 5. 将"已下发"置位为 false
+        logger.info(f"复位{station_name}参数已下发标志...")
+        self.set_node_value(param_downloaded_node, False)
         
-        logger.info(f"检测{station_id}工艺完成")
-        self.set_node_value(start_node, False)
-
+        logger.info(f"{station_name}参数设置完成")
+        
         return {
             "station_id": station_id,
-            "message": f"检测站{station_id}工艺执行完成",
-        }
-
-    def trigger_init(self) -> dict:
-        """
-        初始化函数：
-        - 将手自动切换写false
-        - 等待自动模式为false
-        - 将初始化PC写true
-        - 等待初始化完成PC为true
-        - 将初始化PC写false
-        - 返回成功
-
-        Returns:
-            dict: 包含 success 和 message
-        """
-        logger.info("开始初始化...")
-        
-        # 将手自动切换写false
-        logger.info("设置手自动切换为false...")
-        self.set_node_value("manual_auto_switch", False)
-        self.set_node_value("initialize", False)
-        time.sleep(1.0)
-        
-        # 等待自动模式为false
-        logger.info("等待自动模式为false...")
-        auto_mode = self.get_node_value("auto_mode")
-        while auto_mode:
-            logger.info("等待自动模式变为false...")
-            time.sleep(2.0)
-            auto_mode = self.get_node_value("auto_mode")
-        
-        # 将初始化PC写true
-        logger.info("自动模式已为false，设置初始化PC为true...")
-        self.set_node_value("initialize", True)
-        time.sleep(2.0)
-        
-        # 等待初始化完成PC为true
-        logger.info("等待初始化完成...")
-        init_finished = self.get_node_value("init finished")
-        while not init_finished:
-            logger.info("初始化中...")
-            time.sleep(2.0)
-            init_finished = self.get_node_value("init finished")
-        
-        # 将初始化PC写false
-        logger.info("初始化完成，设置初始化PC为false...")
-        self.set_node_value("initialize", False)
-        
-        return {
-            "message": "设备初始化完成",
-        }
-
-    def download_auto_params(
-        self,
-        mag_stir_stir_speed: int,
-        mag_stir_heat_temp: int,
-        mag_stir_time_set: int,
-        syringe_pump_abs_position_set: int,
-        auto_job_stop_delay: int
-    ) -> dict:
-        """
-        自动模式参数下发函数：
-        - 将搅拌仪的搅拌速度、加热温度、时间设置、泵的绝对位置设置和自动作业停止等待时间作为传入参数
-        - 一起下发给3个搅拌仪和3个泵
-        - 下发后将自动作业参数已下发写true
-        - 等待自动作业参数已执行为true
-        - 将已下发写false
-        - 返回成功
-
-        Args:
-            mag_stir_stir_speed: 磁力搅拌仪搅拌速度
-            mag_stir_heat_temp: 磁力搅拌仪加热温度
-            mag_stir_time_set: 磁力搅拌仪时间设置
-            syringe_pump_abs_position_set: 注射泵绝对位置设置
-            auto_job_stop_delay: 自动作业等待停止时间
-
-        Returns:
-            dict: 包含 success 和 message
-        """
-        logger.info("开始下发自动模式参数...")
-        self.set_node_value("auto_param_applied", False)
-        self.set_node_value("auto_param_downloaded", False)
-        self.set_node_value("mode_switch", False)
-        
-        # 下发3个磁力搅拌仪的参数
-        for c in (0, 1, 2):
-            self.set_node_value(f"mag_stirrer_c{c}_stir_speed", mag_stir_stir_speed)
-            self.set_node_value(f"mag_stirrer_c{c}_heat_temp", mag_stir_heat_temp)
-            self.set_node_value(f"mag_stirrer_c{c}_time_set", mag_stir_time_set)
-        logger.info(f"已下发3个磁力搅拌仪参数：速度={mag_stir_stir_speed}, 温度={mag_stir_heat_temp}, 时间={mag_stir_time_set}")
-
-        # 下发3个注射泵的绝对位置设置
-        for p in (0, 1, 2):
-            self.set_node_value(f"syringe_pump_{p}_abs_position_set", syringe_pump_abs_position_set)
-        logger.info(f"已下发3个注射泵绝对位置设置：{syringe_pump_abs_position_set}")
-
-        # 下发自动作业等待停止时间
-        self.set_node_value("auto_job_stop_delay", auto_job_stop_delay)
-        logger.info(f"已下发自动作业等待停止时间：{auto_job_stop_delay}")
-
-        # 将自动作业参数已下发写true
-        logger.info("设置自动作业参数已下发为true...")
-        self.set_node_value("auto_param_downloaded", True)
-
-        # 等待自动作业参数已执行为true
-        logger.info("等待自动作业参数已执行...")
-        param_applied = self.get_node_value("auto_param_applied")
-        while not param_applied:
-            logger.info("参数执行中...")
-            time.sleep(2.0)
-            param_applied = self.get_node_value("auto_param_applied")
-        
-        logger.info("自动作业参数已执行")
-        # 将已下发写false
-        self.set_node_value("auto_param_downloaded", False)
-
-        return {
-            "message": "自动模式参数下发完成",
-        }
-
-    def start_auto_mode(self) -> dict:
-        """
-        自动作业模式函数：
-        - 将模式切换、手自动切换写true
-        - 等待自动模式为true
-        - 将自动作业开始触发写true
-        - 等待自动作业完成为true
-        - 返回成功
-
-        Returns:
-            dict: 包含 success 和 message
-        """
-        logger.info("启动自动作业模式...")
-
-        # 将模式切换、手自动切换写true
-        logger.info("设置模式切换和手自动切换为true...")
-        self.set_node_value("mode_switch", False)
-        self.set_node_value("manual_auto_switch", False)
-        self.set_node_value("auto_run_start_trigger", False)
-        self.set_node_value("auto_run_complete", False)
-        time.sleep(1.0)
-        self.set_node_value("manual_auto_switch", True)
-
-        # 等待自动模式为true
-        logger.info("等待自动模式为true...")
-        auto_mode = self.get_node_value("auto_mode")
-        while not auto_mode:
-            logger.info("等待自动模式变为true...")
-            time.sleep(5.0)
-            auto_mode = self.get_node_value("auto_mode")
-        
-        # 将自动作业开始触发写true
-        logger.info("自动模式已为true，设置自动作业开始触发为true...")
-        self.set_node_value("auto_run_start_trigger", True)
-
-        # 等待自动作业完成为true
-        logger.info("等待自动作业完成...")
-        auto_run_complete = self.get_node_value("auto_run_complete")
-        while not auto_run_complete:
-            logger.info("自动作业执行中...")
-            time.sleep(5.0)
-            auto_run_complete = self.get_node_value("auto_run_complete")
-        
-        logger.info("自动作业完成")
-        self.set_node_value("manual_auto_switch", False)
-
-        return {
-            "message": "自动作业模式执行完成",
+            "station_name": station_name,
+            "stir_speed": stir_speed,
+            "heat_temp": heat_temp,
+            "time_set": time_set,
+            "message": f"{station_name}参数设置完成：搅拌速度={stir_speed}，加热温度={heat_temp}，时间设置={time_set}",
         }
 
 
-# 为了向后兼容，保留旧的类名
-OpcUaClient = AI4M002Device
-    
 
 if __name__ == '__main__':
     # 调试用法

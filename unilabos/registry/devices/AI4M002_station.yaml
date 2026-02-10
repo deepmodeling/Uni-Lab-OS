@@ -3,369 +3,170 @@ AI4M002_station:
   - AI4M002_station
   class:
     action_value_mappings:
-      auto-download_auto_params:
+      auto-set_stirrer_params:
         feedback: {}
         goal: {}
         goal_default:
-          auto_job_stop_delay: null
-          mag_stir_heat_temp: null
-          mag_stir_stir_speed: null
-          mag_stir_time_set: null
-          syringe_pump_abs_position_set: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: 自动模式参数下发，将搅拌仪和注射泵参数下发给3个检测站，等待参数执行完成
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                auto_job_stop_delay:
-                  description: 自动作业等待停止时间
-                  type: integer
-                mag_stir_heat_temp:
-                  description: 磁力搅拌仪加热温度
-                  type: integer
-                mag_stir_stir_speed:
-                  description: 磁力搅拌仪搅拌速度
-                  type: integer
-                mag_stir_time_set:
-                  description: 磁力搅拌仪时间设置
-                  type: integer
-                syringe_pump_abs_position_set:
-                  description: 注射泵绝对位置设置
-                  type: integer
-              required:
-              - mag_stir_stir_speed
-              - mag_stir_heat_temp
-              - mag_stir_time_set
-              - syringe_pump_abs_position_set
-              - auto_job_stop_delay
-              type: object
-            result:
-              description: download_auto_params 返回类型
-              properties:
-                message:
-                  title: Message
-                  type: string
-              required:
-              - message
-              title: download_auto_params返回结果
-              type: object
-          required:
-          - goal
-          title: download_auto_params参数
-          type: object
-        type: UniLabJsonCommand
-      auto-start_auto_mode:
-        feedback: {}
-        goal: {}
-        goal_default: {}
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: 启动自动作业模式，将模式切换为自动，触发自动作业开始，等待自动作业完成
-          properties:
-            feedback: {}
-            goal:
-              properties: {}
-              required: []
-              type: object
-            result:
-              description: start_auto_mode 返回类型
-              properties:
-                message:
-                  title: Message
-                  type: string
-              required:
-              - message
-              title: start_auto_mode返回结果
-              type: object
-          required:
-          - goal
-          title: start_auto_mode参数
-          type: object
-        type: UniLabJsonCommand
-      auto-start_manual_mode:
-        feedback: {}
-        goal: {}
-        goal_default: {}
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: 启动指令作业模式，将模式切换设为手动模式
-          properties:
-            feedback: {}
-            goal:
-              properties: {}
-              required: []
-              type: object
-            result:
-              description: start_manual_mode 返回类型
-              properties:
-                message:
-                  title: Message
-                  type: string
-              required:
-              - message
-              title: start_manual_mode返回结果
-              type: object
-          required:
-          - goal
-          title: start_manual_mode参数
-          type: object
-        type: UniLabJsonCommand
-      auto-trigger_init:
-        feedback: {}
-        goal: {}
-        goal_default: {}
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: 设备初始化，将手自动切换写false，等待自动模式为false，执行初始化并等待完成
-          properties:
-            feedback: {}
-            goal:
-              properties: {}
-              required: []
-              type: object
-            result:
-              description: trigger_init 返回类型
-              properties:
-                message:
-                  title: Message
-                  type: string
-              required:
-              - message
-              title: trigger_init返回结果
-              type: object
-          required:
-          - goal
-          title: trigger_init参数
-          type: object
-        type: UniLabJsonCommand
-      auto-trigger_robot_pick_beaker:
-        feedback: {}
-        goal: {}
-        goal_default:
-          pick_beaker_id: null
-          place_station_id: null
-        handles:
-          input:
-          - data_key: pick_beaker_id
-            data_source: handle
-            data_type: ai4m_beaker
-            handler_key: beaker_input
-            label: 取烧杯编号
-          output:
-          - data_key: place_station_id
-            data_source: executor
-            data_type: ai4m_station
-            handler_key: station_output
-            label: 放置检测站编号
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: 机器人取烧杯并放到检测位，先写入取烧杯编号等待完成，再写入放检测编号等待完成
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                pick_beaker_id:
-                  description: 取烧杯编号，1-5
-                  type: integer
-                place_station_id:
-                  description: 放检测编号，1-3
-                  type: integer
-              required:
-              - pick_beaker_id
-              - place_station_id
-              type: object
-            result:
-              description: trigger_robot_pick_beaker 返回类型
-              properties:
-                message:
-                  title: Message
-                  type: string
-                pick_beaker_id:
-                  title: Pick Beaker Id
-                  type: integer
-                place_station_id:
-                  title: Place Station Id
-                  type: integer
-              required:
-              - pick_beaker_id
-              - place_station_id
-              - message
-              title: trigger_robot_pick_beaker返回结果
-              type: object
-          required:
-          - goal
-          title: trigger_robot_pick_beaker参数
-          type: object
-        type: UniLabJsonCommand
-      auto-trigger_robot_place_beaker:
-        feedback: {}
-        goal: {}
-        goal_default:
-          pick_station_id: null
-          place_beaker_id: null
-        handles:
-          input:
-          - data_key: pick_station_id
-            data_source: handle
-            data_type: ai4m_station
-            handler_key: station_input
-            label: 取检测站编号
-          output:
-          - data_key: place_beaker_id
-            data_source: executor
-            data_type: ai4m_beaker
-            handler_key: beaker_output
-            label: 放烧杯编号
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: 机器人从检测位取烧杯并放回：先写入取检测编号，等待取检测完成；取完成后再写入放烧杯编号，等待对应的放烧杯完成信号
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                pick_station_id:
-                  description: 取检测编号，1-3
-                  type: integer
-                place_beaker_id:
-                  description: 放烧杯编号，1-5
-                  type: integer
-              required:
-              - place_beaker_id
-              - pick_station_id
-              type: object
-            result:
-              description: trigger_robot_place_beaker 返回类型
-              properties:
-                message:
-                  title: Message
-                  type: string
-                pick_station_id:
-                  title: Pick Station Id
-                  type: integer
-                place_beaker_id:
-                  title: Place Beaker Id
-                  type: integer
-                unilabos_samples:
-                  description: 载具样本信息列表，包含载具名称、位置等信息（使用 unilabos_samples 避免被外部服务转换）
-                  items:
-                    properties:
-                      name:
-                        description: 载具名称
-                        type: string
-                      rack_location:
-                        description: 堆栈位置
-                        type: string
-                      rack_site_index:
-                        description: 堆栈位置索引
-                        type: integer
-                      station_id:
-                        description: 检测站编号
-                        type: integer
-                      type:
-                        description: 载具类型
-                        type: string
-                    type: object
-                  title: Unilabos Samples
-                  type: array
-              required:
-              - place_beaker_id
-              - pick_station_id
-              - message
-              title: trigger_robot_place_beaker返回结果
-              type: object
-          required:
-          - goal
-          title: trigger_robot_place_beaker参数
-          type: object
-        type: UniLabJsonCommand
-      auto-trigger_station_process:
-        feedback: {}
-        goal: {}
-        goal_default:
-          mag_stir_heat_temp: null
-          mag_stir_stir_speed: null
-          mag_stir_time_set: null
+          heat_temp: null
           station_id: null
-          syringe_pump_abs_position_set: null
-        handles:
-          input:
-          - data_key: station_id
-            data_source: handle
-            data_type: ai4m_station
-            handler_key: process_station_input
-            label: 检测站编号
-          output:
-          - data_key: station_id
-            data_source: executor
-            data_type: ai4m_station
-            handler_key: process_station_output
-            label: 完成的检测站编号
-        placeholder_keys: {}
+          stir_speed: null
+          time_set: null
+        handles: {}
         result: {}
         schema:
-          description: 执行检测工艺流程，等待检测站请求参数，下发搅拌仪和注射泵参数，等待工艺完成
+          description: ''
           properties:
             feedback: {}
             goal:
               properties:
-                mag_stir_heat_temp:
-                  description: 磁力搅拌仪加热温度
-                  type: integer
-                mag_stir_stir_speed:
-                  description: 磁力搅拌仪搅拌速度
-                  type: integer
-                mag_stir_time_set:
-                  description: 磁力搅拌仪时间设置
+                heat_temp:
                   type: integer
                 station_id:
-                  description: 检测编号，1-3
                   type: integer
-                syringe_pump_abs_position_set:
-                  description: 注射泵绝对位置设置
+                stir_speed:
+                  type: integer
+                time_set:
                   type: integer
               required:
               - station_id
-              - mag_stir_stir_speed
-              - mag_stir_heat_temp
-              - mag_stir_time_set
-              - syringe_pump_abs_position_set
+              - stir_speed
+              - heat_temp
+              - time_set
               type: object
-            result:
-              description: trigger_station_process 返回类型
-              properties:
-                message:
-                  title: Message
-                  type: string
-                station_id:
-                  title: Station Id
-                  type: integer
-              required:
-              - station_id
-              - message
-              title: trigger_station_process返回结果
-              type: object
+            result: {}
           required:
           - goal
-          title: trigger_station_process参数
+          title: set_stirrer_params参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_3axis_pick_from_electrolytic_cell_and_place_to_finished:
+        feedback: {}
+        goal: {}
+        goal_default:
+          cleaning_time: null
+          electrolytic_cell_id: null
+          nitrogen_time: null
+          place_code: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                cleaning_time:
+                  type: integer
+                electrolytic_cell_id:
+                  type: integer
+                nitrogen_time:
+                  type: integer
+                place_code:
+                  type: integer
+              required:
+              - electrolytic_cell_id
+              - cleaning_time
+              - nitrogen_time
+              - place_code
+              type: object
+            result: {}
+          required:
+          - goal
+          title: trigger_3axis_pick_from_electrolytic_cell_and_place_to_finished参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_3axis_pick_from_raw_and_place_to_electrolytic_cell:
+        feedback: {}
+        goal: {}
+        goal_default:
+          electrolytic_cell_id: null
+          pick_code: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                electrolytic_cell_id:
+                  type: integer
+                pick_code:
+                  type: integer
+              required:
+              - pick_code
+              type: object
+            result: {}
+          required:
+          - goal
+          title: trigger_3axis_pick_from_raw_and_place_to_electrolytic_cell参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_3axis_pick_from_raw_and_process_to_finished:
+        feedback: {}
+        goal: {}
+        goal_default:
+          cleaning_time: null
+          nitrogen_time: null
+          pick_code: null
+          pickling_time: null
+          place_code: null
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                cleaning_time:
+                  type: integer
+                nitrogen_time:
+                  type: integer
+                pick_code:
+                  type: integer
+                pickling_time:
+                  type: integer
+                place_code:
+                  type: integer
+              required:
+              - pick_code
+              - pickling_time
+              - cleaning_time
+              - nitrogen_time
+              - place_code
+              type: object
+            result: {}
+          required:
+          - goal
+          title: trigger_3axis_pick_from_raw_and_process_to_finished参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_s02_init:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: trigger_s02_init参数
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.workstation.AI4M.AI4M002:AI4M002Device
     status_types: {}
     type: python
   config_info: []
-  description: AI4M002 电极检测工作站，包含三轴、2个磁力搅拌仪和2个清洗池，支持手动指令模式和自动作业模式
+  description: ''
   handles: []
   icon: Electrode_Module.jpg
   init_param_schema:
@@ -373,43 +174,29 @@ AI4M002_station:
       properties:
         cache_timeout:
           default: 5.0
-          description: 缓存超时时间（秒）
           type: number
         csv_path:
-          description: 节点配置 CSV 文件路径
           type: string
         deck:
-          description: AI4M002  资源树配置
           type: string
         password:
-          description: OPC UA 密码
           type: string
         subscription_interval:
           default: 500
-          description: 订阅发布间隔（毫秒）
           type: integer
         url:
-          description: OPC UA 服务器地址
           type: string
         use_subscription:
           default: true
-          description: 是否启用订阅模式
           type: boolean
         username:
-          description: OPC UA 用户名
           type: string
       required:
       - url
       type: object
     data:
-      properties:
-        message:
-          type: string
-        status:
-          type: string
-      required:
-      - status
-      - message
+      properties: {}
+      required: []
       type: object
   registry_type: device
   version: 1.0.0

@@ -36,3 +36,16 @@ Hydrogel_Waste_1BottleCarrier:
   init_param_schema: {}
   registry_type: resource
   version: 1.0.0
+
+Electrode_Holder:
+  category:
+  - bottle_carriers
+  class:
+    module: unilabos.devices.workstation.AI4M.bottle_carriers:Electrode_Holder
+    type: pylabrobot
+  description: Electrode_Holder
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

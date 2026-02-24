@@ -30,3 +30,14 @@ Hydrogel_Clean_Bottle:
   icon: ''
   init_param_schema: {}
   version: 1.0.0
+
+Electrode:
+  category:
+  - bottles
+  class:
+    module: unilabos.devices.workstation.AI4M.bottles:Electrode
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0

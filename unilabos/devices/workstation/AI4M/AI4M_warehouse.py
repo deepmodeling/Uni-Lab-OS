@@ -30,6 +30,7 @@ def warehouse_factory(
     layout: str = "col-major",  # 新增：排序方式，"col-major"=列优先，"row-major"=行优先
     custom_keys: Optional[List[Union[str, int]]] = None,  # 自定义编号列表
     naming_mode: str = "letter_number",  # 排号模式："letter_number"=字母+数字(A1,A2,B1...)，"continuous_number"=连续数字(1,2,3...)
+    reverse_col_order: bool = False,  # 列序号是否从右往左：False=从左到右123，True=从右往左123
 ):
     # 创建位置坐标
     locations = []
@@ -79,9 +80,13 @@ def warehouse_factory(
         counter = 1 + col_offset  # 支持偏移量，如从5开始
         for layer in range(num_items_z):  # 遍历每一层
             for row in range(num_items_y):  # 遍历每一行
+                row_keys = []
                 for col in range(num_items_x):  # 遍历每一列
-                    keys.append(str(counter))
+                    row_keys.append(str(counter))
                     counter += 1
+                if reverse_col_order:
+                    row_keys = list(reversed(row_keys))  # 从右往左：右=1, 中=2, 左=3
+                keys.extend(row_keys)
     else:
         # 模式1：字母+数字模式（默认）- 每行一个字母
         # 例如：A1, A2, A3, B1, B2, B3...

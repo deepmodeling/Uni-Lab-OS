@@ -117,6 +117,16 @@ class AI4M002Device(OpcUaClientWithSubscription):
    
     # ==================== 设备动作函数 ====================
     
+    def _sync_resource_to_frontend(self) -> None:
+        """将资源树同步到前端，使物料转移的中间状态能实时显示"""
+        if hasattr(self, '_ros_node') and self._ros_node:
+            try:
+                from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
+                ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, resources=[self.deck])
+                logger.info("✓ 已同步资源更新到前端")
+            except Exception as e:
+                logger.warning(f"前端资源更新失败: {e}")
+    
     def trigger_s02_init(self) -> dict:
         """
         S02工站初始化函数：
@@ -251,6 +261,20 @@ class AI4M002Device(OpcUaClientWithSubscription):
         try:
             target_position, _, cell_name = electrolytic_cell_map[target_cell_id]
             
+            # 获取仓库资源
+            raw_warehouse = self.deck.warehouses["原始电极堆栈"]
+            station_warehouse = self.deck.warehouses[f"搅拌仪{target_cell_id}"]
+            raw_site_key = str(pick_code)
+            
+            # 在执行硬件操作之前，尝试获取载具（物料转移失败不终止硬件执行）
+            try:
+                carrier = raw_warehouse[raw_site_key]
+            except Exception as e:
+                logger.warning(f"获取原始电极堆栈位置 {raw_site_key} 载具失败（不影响硬件操作）: {e}")
+                carrier = None
+            if carrier is None:
+                logger.warning(f"原始电极堆栈位置 {raw_site_key} 没有载具，将跳过物料转移，硬件照常执行")
+            
             # 步骤1：从原始电极取料
             logger.info("步骤1：从原始电极仓库取料...")
             
@@ -314,6 +338,14 @@ class AI4M002Device(OpcUaClientWithSubscription):
             self.set_node_value("3-Axis_Action_Done", False)
             logger.info("✓ 从原始电极仓库取料完成")
             
+            # 阶段1.5：三轴取料完成后，从原始电极堆栈解绑载具
+            if carrier is not None:
+                try:
+                    raw_warehouse.unassign_child_resource(carrier)
+                    logger.info(f"✓ 已从原始电极堆栈解绑载具 {carrier.name}")
+                except Exception as e:
+                    logger.warning(f"从原始电极堆栈解绑载具失败（不影响硬件操作）: {e}")
+            
             # 步骤2：放到电解池
             logger.info(f"步骤2：放到{cell_name}...")
             
@@ -376,7 +408,20 @@ class AI4M002Device(OpcUaClientWithSubscription):
             self.set_node_value("3-Axis_Action_Done", False)
             logger.info(f"✓ 放到{cell_name}完成")
             
+            # 阶段2.5：三轴放到电解池完成后，绑定载具到搅拌仪
+            if carrier is not None:
+                try:
+                    station_site_idx = 0
+                    station_site_key = list(station_warehouse._ordering.keys())[station_site_idx]
+                    station_location = station_warehouse.child_locations[station_site_key]
+                    station_warehouse.assign_child_resource(carrier, location=station_location, spot=station_site_idx)
+                    logger.info(f"✓ 已绑定载具 {carrier.name} 到{cell_name}")
+                except Exception as e:
+                    logger.warning(f"绑定载具到{cell_name}失败（不影响硬件操作）: {e}")
+            
             logger.info(f"完整流程完成：从原始电极取料 -> 放到{cell_name}")
+            
+            self._sync_resource_to_frontend()
         finally:
             # 确保释放锁
             self._3axis_lock.release()
@@ -435,6 +480,12 @@ class AI4M002Device(OpcUaClientWithSubscription):
         }
         target_position, done_node, cell_name = electrolytic_cell_map[electrolytic_cell_id]
         
+        # 获取仓库资源
+        station_warehouse = self.deck.warehouses[f"搅拌仪{electrolytic_cell_id}"]
+        water_wash_warehouse = self.deck.warehouses["水洗池"]
+        finished_warehouse = self.deck.warehouses["完成电极堆栈"]
+        finished_site_key = str(place_code)
+        
         logger.info(f"开始流程：从{cell_name}取料 -> 夹住到水洗池 -> 放到完成电极")
         
         # 使用线程锁保证同一时间只有一个三轴操作
@@ -473,6 +524,13 @@ class AI4M002Device(OpcUaClientWithSubscription):
                 raise
         
         try:
+            # 获取搅拌仪的载具（与 AI4M place_beaker 一致：使用 sites 列表索引）
+            station_site_idx = 0
+            try:
+                carrier = station_warehouse.sites[station_site_idx] if station_warehouse.sites else None
+            except Exception:
+                carrier = None
+            
             # 步骤1：从电解池取料
             logger.info(f"步骤1：从{cell_name}取料...")
             
@@ -535,6 +593,15 @@ class AI4M002Device(OpcUaClientWithSubscription):
             self.set_node_value("3-Axis_Action_Done", False)
             logger.info(f"✓ 从{cell_name}取料完成")
             
+            # 阶段1.5：三轴从电解池取料完成后，从搅拌仪解绑载具（无论载具类型，统一解绑转移）
+            if carrier is not None:
+                try:
+                    station_warehouse.unassign_child_resource(carrier)
+                    logger.info(f"✓ 已从{cell_name}解绑载具 {carrier.name}")
+                except Exception as e:
+                    logger.warning(f"从{cell_name}解绑载具失败（不影响硬件操作）: {e}")
+                self._sync_resource_to_frontend()
+
             # 步骤2：夹住到水洗池
             logger.info(f"步骤2：夹住到水洗池（水洗时间：{cleaning_time}，氮气时间：{nitrogen_time}）...")
             
@@ -578,6 +645,18 @@ class AI4M002Device(OpcUaClientWithSubscription):
             # 复位动作完成标志
             self.set_node_value("3-Axis_Action_Done", False)
             time.sleep(1.0)
+            
+            # 【触发时】物料转移：绑定载具到水洗池
+            if carrier is not None:
+                try:
+                    water_site_idx = 0
+                    water_site_key = list(water_wash_warehouse._ordering.keys())[water_site_idx]
+                    water_location = water_wash_warehouse.child_locations[water_site_key]
+                    water_wash_warehouse.assign_child_resource(carrier, location=water_location, spot=water_site_idx)
+                    logger.info(f"✓ [触发时] 已绑定载具 {carrier.name} 到水洗池")
+                except Exception as e:
+                    logger.warning(f"[触发时] 绑定载具到水洗池失败（不影响硬件操作）: {e}")
+                self._sync_resource_to_frontend()
             
             # 触发动作
             logger.info("触发三轴夹住动作...")
@@ -641,6 +720,22 @@ class AI4M002Device(OpcUaClientWithSubscription):
             self.set_node_value("3-Axis_Action_Done", False)
             time.sleep(1.0)
             
+            # 【触发时】物料转移：从水洗池解绑，绑定到完成电极堆栈
+            if carrier is not None:
+                try:
+                    water_wash_warehouse.unassign_child_resource(carrier)
+                    logger.info(f"✓ [触发时] 已从水洗池解绑载具 {carrier.name}")
+                except Exception as e:
+                    logger.warning(f"[触发时] 从水洗池解绑载具失败（不影响硬件操作）: {e}")
+                try:
+                    finished_site_idx = list(finished_warehouse._ordering.keys()).index(finished_site_key)
+                    finished_location = finished_warehouse.child_locations[finished_site_key]
+                    finished_warehouse.assign_child_resource(carrier, location=finished_location, spot=finished_site_idx)
+                    logger.info(f"✓ [触发时] 已绑定载具 {carrier.name} 到完成电极堆栈 {finished_site_key}")
+                except Exception as e:
+                    logger.warning(f"[触发时] 绑定载具到完成电极堆栈失败（不影响硬件操作）: {e}")
+                self._sync_resource_to_frontend()
+            
             # 触发动作
             logger.info("触发三轴放料动作...")
             self.set_node_value("3-Axis_Action_Trigger", True)
@@ -674,6 +769,8 @@ class AI4M002Device(OpcUaClientWithSubscription):
             logger.info("✓ 放到完成电极完成")
             
             logger.info(f"完整流程完成：从{cell_name}取料 -> 夹住到水洗池 -> 放到完成电极")
+            
+            self._sync_resource_to_frontend()
         finally:
             # 确保释放锁
             self._3axis_lock.release()
@@ -722,6 +819,23 @@ class AI4M002Device(OpcUaClientWithSubscription):
             dict: 包含 message 和相关信息
         """
         logger.info("开始流程：从原始电极取料 -> 夹住到酸洗池 -> 夹住到水洗池 -> 放到完成电极")
+        
+        # 获取仓库资源
+        raw_warehouse = self.deck.warehouses["原始电极堆栈"]
+        acid_warehouse = self.deck.warehouses["酸洗池"]
+        water_wash_warehouse = self.deck.warehouses["水洗池"]
+        finished_warehouse = self.deck.warehouses["完成电极堆栈"]
+        raw_site_key = str(pick_code)
+        finished_site_key = str(place_code)
+        
+        # 尝试获取载具（物料转移失败不终止硬件执行）
+        try:
+            carrier = raw_warehouse[raw_site_key]
+        except Exception as e:
+            logger.warning(f"获取原始电极堆栈位置 {raw_site_key} 载具失败（不影响硬件操作）: {e}")
+            carrier = None
+        if carrier is None:
+            logger.warning(f"原始电极堆栈位置 {raw_site_key} 没有载具，将跳过物料转移，硬件照常执行")
         
         # 使用线程锁保证同一时间只有一个三轴操作
         self._3axis_lock.acquire()
@@ -791,6 +905,14 @@ class AI4M002Device(OpcUaClientWithSubscription):
             self.set_node_value("3-Axis_Action_Done", False)
             logger.info("✓ 从原始电极仓库取料完成")
             
+            # 阶段1.5：三轴取料完成后，从原始电极堆栈解绑载具
+            try:
+                raw_warehouse.unassign_child_resource(carrier)
+                logger.info(f"✓ 已从原始电极堆栈解绑载具 {carrier.name}")
+            except Exception as e:
+                logger.warning(f"从原始电极堆栈解绑载具失败（不影响硬件操作）: {e}")
+            self._sync_resource_to_frontend()
+
             # 步骤2：夹住到酸洗池
             logger.info(f"步骤2：夹住到酸洗池（酸洗时间：{pickling_time}）...")
             
@@ -833,6 +955,18 @@ class AI4M002Device(OpcUaClientWithSubscription):
             # 复位动作完成标志
             self.set_node_value("3-Axis_Action_Done", False)
             time.sleep(1.0)
+            
+            # 【触发时】物料转移：绑定载具到酸洗池
+            if carrier is not None:
+                try:
+                    acid_site_idx = 0
+                    acid_site_key = list(acid_warehouse._ordering.keys())[acid_site_idx]
+                    acid_location = acid_warehouse.child_locations[acid_site_key]
+                    acid_warehouse.assign_child_resource(carrier, location=acid_location, spot=acid_site_idx)
+                    logger.info(f"✓ [触发时] 已绑定载具 {carrier.name} 到酸洗池")
+                except Exception as e:
+                    logger.warning(f"[触发时] 绑定载具到酸洗池失败（不影响硬件操作）: {e}")
+                self._sync_resource_to_frontend()
             
             # 触发动作
             logger.info("触发三轴夹住动作...")
@@ -910,6 +1044,23 @@ class AI4M002Device(OpcUaClientWithSubscription):
             self.set_node_value("3-Axis_Action_Done", False)
             time.sleep(1.0)
             
+            # 【触发时】物料转移：从酸洗池解绑，绑定到水洗池
+            if carrier is not None:
+                try:
+                    acid_warehouse.unassign_child_resource(carrier)
+                    logger.info(f"✓ [触发时] 已从酸洗池解绑载具 {carrier.name}")
+                except Exception as e:
+                    logger.warning(f"[触发时] 从酸洗池解绑载具失败（不影响硬件操作）: {e}")
+                try:
+                    water_site_idx = 0
+                    water_site_key = list(water_wash_warehouse._ordering.keys())[water_site_idx]
+                    water_location = water_wash_warehouse.child_locations[water_site_key]
+                    water_wash_warehouse.assign_child_resource(carrier, location=water_location, spot=water_site_idx)
+                    logger.info(f"✓ [触发时] 已绑定载具 {carrier.name} 到水洗池")
+                except Exception as e:
+                    logger.warning(f"[触发时] 绑定载具到水洗池失败（不影响硬件操作）: {e}")
+                self._sync_resource_to_frontend()
+            
             # 触发动作
             logger.info("触发三轴夹住动作...")
             self.set_node_value("3-Axis_Action_Trigger", True)
@@ -972,6 +1123,22 @@ class AI4M002Device(OpcUaClientWithSubscription):
             self.set_node_value("3-Axis_Action_Done", False)
             time.sleep(1.0)
             
+            # 【触发时】物料转移：从水洗池解绑，绑定到完成电极堆栈
+            if carrier is not None:
+                try:
+                    water_wash_warehouse.unassign_child_resource(carrier)
+                    logger.info(f"✓ [触发时] 已从水洗池解绑载具 {carrier.name}")
+                except Exception as e:
+                    logger.warning(f"[触发时] 从水洗池解绑载具失败（不影响硬件操作）: {e}")
+                try:
+                    finished_site_idx = list(finished_warehouse._ordering.keys()).index(finished_site_key)
+                    finished_location = finished_warehouse.child_locations[finished_site_key]
+                    finished_warehouse.assign_child_resource(carrier, location=finished_location, spot=finished_site_idx)
+                    logger.info(f"✓ [触发时] 已绑定载具 {carrier.name} 到完成电极堆栈 {finished_site_key}")
+                except Exception as e:
+                    logger.warning(f"[触发时] 绑定载具到完成电极堆栈失败（不影响硬件操作）: {e}")
+                self._sync_resource_to_frontend()
+            
             # 触发动作
             logger.info("触发三轴放料动作...")
             self.set_node_value("3-Axis_Action_Trigger", True)
@@ -1005,6 +1172,8 @@ class AI4M002Device(OpcUaClientWithSubscription):
             logger.info("✓ 放到完成电极完成")
             
             logger.info("完整流程完成：从原始电极取料 -> 夹住到酸洗池 -> 夹住到水洗池 -> 放到完成电极")
+            
+            self._sync_resource_to_frontend()
         finally:
             # 确保释放锁
             self._3axis_lock.release()

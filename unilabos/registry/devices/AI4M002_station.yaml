@@ -47,21 +47,38 @@ AI4M002_station:
           electrolytic_cell_id: null
           nitrogen_time: null
           place_code: null
-        handles: {}
+        handles:
+          input:
+          - data_key: electrolytic_cell_id
+            data_source: handle
+            data_type: ai4m002_electrolytic_cell
+            handler_key: electrolytic_cell_input
+            label: 电解池编号
+          output:
+          - data_key: place_code
+            data_source: executor
+            data_type: ai4m002_finished_electrode
+            handler_key: finished_electrode_output
+            label: 完成电极堆栈位置
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 从电解池取料，夹住到水洗池，放到完成电极
           properties:
             feedback: {}
             goal:
               properties:
                 cleaning_time:
+                  description: 水洗时间设置
                   type: integer
                 electrolytic_cell_id:
+                  description: 电解池ID，1或2
                   type: integer
                 nitrogen_time:
+                  description: 氮气时间设置
                   type: integer
                 place_code:
+                  description: 完成电极堆栈取放料代码，1-15
                   type: integer
               required:
               - electrolytic_cell_id
@@ -69,7 +86,25 @@ AI4M002_station:
               - nitrogen_time
               - place_code
               type: object
-            result: {}
+            result:
+              description: trigger_3axis_pick_from_electrolytic_cell_and_place_to_finished
+                返回类型
+              properties:
+                electrolytic_cell_id:
+                  title: Electrolytic Cell Id
+                  type: integer
+                message:
+                  title: Message
+                  type: string
+                place_code:
+                  title: Place Code
+                  type: integer
+              required:
+              - electrolytic_cell_id
+              - place_code
+              - message
+              title: trigger_3axis_pick_from_electrolytic_cell_and_place_to_finished返回结果
+              type: object
           required:
           - goal
           title: trigger_3axis_pick_from_electrolytic_cell_and_place_to_finished参数
@@ -81,22 +116,56 @@ AI4M002_station:
         goal_default:
           electrolytic_cell_id: null
           pick_code: null
-        handles: {}
+        handles:
+          input:
+          - data_key: pick_code
+            data_source: handle
+            data_type: ai4m002_raw_electrode
+            handler_key: raw_electrode_input
+            label: 原始电极堆栈位置
+          output:
+          - data_key: electrolytic_cell_id
+            data_source: executor
+            data_type: ai4m002_electrolytic_cell
+            handler_key: electrolytic_cell_output
+            label: 电解池编号
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 从原始电极取料并放到电解池
           properties:
             feedback: {}
             goal:
               properties:
                 electrolytic_cell_id:
+                  description: 目标电解池ID，1或2
                   type: integer
                 pick_code:
+                  description: 原始电极堆栈取放料代码，1-15
                   type: integer
               required:
               - pick_code
+              - electrolytic_cell_id
               type: object
-            result: {}
+            result:
+              description: trigger_3axis_pick_from_raw_and_place_to_electrolytic_cell
+                返回类型
+              properties:
+                electrolytic_cell_id:
+                  title: Electrolytic Cell Id
+                  type: integer
+                message:
+                  title: Message
+                  type: string
+                pick_code:
+                  title: Pick Code
+                  type: integer
+              required:
+              - pick_code
+              - electrolytic_cell_id
+              - message
+              title: trigger_3axis_pick_from_raw_and_place_to_electrolytic_cell返回结果
+              type: object
           required:
           - goal
           title: trigger_3axis_pick_from_raw_and_place_to_electrolytic_cell参数
@@ -111,23 +180,41 @@ AI4M002_station:
           pick_code: null
           pickling_time: null
           place_code: null
-        handles: {}
+        handles:
+          input:
+          - data_key: pick_code
+            data_source: handle
+            data_type: ai4m002_raw_electrode
+            handler_key: raw_electrode_input
+            label: 原始电极堆栈位置
+          output:
+          - data_key: place_code
+            data_source: executor
+            data_type: ai4m002_finished_electrode
+            handler_key: finished_electrode_output
+            label: 完成电极堆栈位置
+        placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 从原始电极取料，经酸洗池、水洗池，放到完成电极
           properties:
             feedback: {}
             goal:
               properties:
                 cleaning_time:
+                  description: 水洗时间设置
                   type: integer
                 nitrogen_time:
+                  description: 氮气时间设置
                   type: integer
                 pick_code:
+                  description: 原始电极堆栈取放料代码，1-15
                   type: integer
                 pickling_time:
+                  description: 酸洗时间设置
                   type: integer
                 place_code:
+                  description: 完成电极堆栈取放料代码，1-15
                   type: integer
               required:
               - pick_code
@@ -136,7 +223,24 @@ AI4M002_station:
               - nitrogen_time
               - place_code
               type: object
-            result: {}
+            result:
+              description: trigger_3axis_pick_from_raw_and_process_to_finished 返回类型
+              properties:
+                message:
+                  title: Message
+                  type: string
+                pick_code:
+                  title: Pick Code
+                  type: integer
+                place_code:
+                  title: Place Code
+                  type: integer
+              required:
+              - pick_code
+              - place_code
+              - message
+              title: trigger_3axis_pick_from_raw_and_process_to_finished返回结果
+              type: object
           required:
           - goal
           title: trigger_3axis_pick_from_raw_and_process_to_finished参数

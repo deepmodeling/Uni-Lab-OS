@@ -10,7 +10,7 @@ from typing import Optional
 import os
 import threading
 
-from unilabos.resources.resource_tracker import ResourceTreeSet
+from unilabos.resources.resource_tracker import ResourceTreeSet, SampleUUIDsType, LabSample
 from unilabos.utils.log import logger
 from unilabos.utils.decorator import not_action
 from unilabos.devices.workstation.AI4M.decks import AI4M_deck
@@ -151,6 +151,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         self,
         pick_beaker_id: int,
         place_station_id: int = None,
+        sample_uuids: SampleUUIDsType = None,
     ) -> dict:
         """
         机器人取烧杯并放到检测位：
@@ -338,16 +339,28 @@ class AI4MDevice(OpcUaClientWithSubscription):
                 # 成功执行后退出外层循环
                 break
 
+        # 准备载具信息作为样本数据
+        carrier_info = {}
+        if carrier is not None:
+            carrier_info = {
+                "name": carrier.name,
+                "type": "carrier",
+                "rack_location": rack_site_key,
+                "station_id": place_station_id,
+            }
+
         return {
             "pick_beaker_id": pick_beaker_id,
             "place_station_id": place_station_id,
             "message": f"机器人取烧杯{pick_beaker_id}并放到检测站{place_station_id}完成",
+            "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"carrier_info": carrier_info, "pick_beaker_id": pick_beaker_id, "place_station_id": place_station_id} if isinstance(content, str) else content.serialize()) for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})]
         }
 
     def trigger_robot_place_beaker(
         self,
         place_beaker_id: int,
         pick_station_id: int,
+        sample_uuids: SampleUUIDsType = None,
     ) -> dict:
         """
         机器人从检测位取烧杯并放回：
@@ -462,7 +475,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
 
             logger.info(f"[机器人放烧杯{place_beaker_id}] 释放机器人操作锁")
 
-        # !!样例：准备载具信息作为样本数据，记录保存样品数据
+        # 准备载具信息作为样本数据，记录保存样品数据
         carrier_info = {
             "name": carrier.name if carrier is not None else None,
             "type": "carrier",
@@ -475,7 +488,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
             "place_beaker_id": place_beaker_id,
             "pick_station_id": pick_station_id,
             "message": f"机器人从检测站{pick_station_id}取烧杯并放回位置{place_beaker_id}完成",
-            # "unilabos_samples": [carrier_info],  # 使用 unilabos_samples 避免被外部服务转换
+            "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"carrier_info": carrier_info, "place_beaker_id": place_beaker_id, "pick_station_id": pick_station_id} if isinstance(content, str) else content.serialize()) for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})]
         }
 
     def trigger_station_process(
@@ -485,6 +498,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         mag_stir_heat_temp: int,
         mag_stir_time_set: int,
         syringe_pump_abs_position_set: int,
+        sample_uuids: SampleUUIDsType = None,
     ) -> dict:
         """
         执行检测工艺流程：
@@ -569,6 +583,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         return {
             "station_id": station_id,
             "message": f"检测站{station_id}工艺执行完成",
+            "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"station_id": station_id, "mag_stir_stir_speed": mag_stir_stir_speed, "mag_stir_heat_temp": mag_stir_heat_temp, "mag_stir_time_set": mag_stir_time_set, "syringe_pump_abs_position_set": syringe_pump_abs_position_set} if isinstance(content, str) else content.serialize()) for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})]
         }
 
     def trigger_init(self) -> dict:

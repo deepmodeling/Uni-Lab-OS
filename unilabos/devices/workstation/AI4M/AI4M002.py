@@ -10,7 +10,7 @@ from typing import Optional
 import os
 import threading
 
-from unilabos.resources.resource_tracker import ResourceTreeSet
+from unilabos.resources.resource_tracker import ResourceTreeSet, SampleUUIDsType, LabSample
 from unilabos.utils.log import logger
 from unilabos.utils.decorator import not_action
 from unilabos.devices.workstation.AI4M.decks import AI4M002_deck
@@ -170,6 +170,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
         self,
         pick_code: int,
         electrolytic_cell_id: Optional[int] = None,
+        sample_uuids: SampleUUIDsType = None,
     ) -> dict:
         """
         从原始电极取料，动作完成，放到电解池
@@ -432,6 +433,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
             "electrolytic_cell_name": cell_name,
             "pick_code": pick_code,
             "message": f"从原始电极取料并放到{cell_name}完成",
+            "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"electrolytic_cell_id": target_cell_id, "pick_code": pick_code} if isinstance(content, str) else content.serialize()) for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})]
         }
     
     def trigger_3axis_pick_from_electrolytic_cell_and_place_to_finished(
@@ -440,6 +442,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
         cleaning_time: int,
         nitrogen_time: int,
         place_code: int,
+        sample_uuids: SampleUUIDsType = None,
     ) -> dict:
         """
         从电解池1或2取料，夹住到水洗池，动作完成，放到完成电极
@@ -783,6 +786,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
             "nitrogen_time": nitrogen_time,
             "place_code": place_code,
             "message": f"从{cell_name}取料，夹住到水洗池，放到完成电极完成",
+            "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"electrolytic_cell_id": electrolytic_cell_id, "cleaning_time": cleaning_time, "nitrogen_time": nitrogen_time, "place_code": place_code} if isinstance(content, str) else content.serialize()) for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})]
         }
     
     def trigger_3axis_pick_from_raw_and_process_to_finished(
@@ -792,6 +796,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
         cleaning_time: int,
         nitrogen_time: int,
         place_code: int,
+        sample_uuids: SampleUUIDsType = None,
     ) -> dict:
         """
         从原始电极取料，动作完成，夹住到酸洗池，动作完成，夹住到水洗池，动作完成，放到完成电极
@@ -1186,6 +1191,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
             "nitrogen_time": nitrogen_time,
             "place_code": place_code,
             "message": "从原始电极取料，夹住到酸洗池，夹住到水洗池，放到完成电极完成",
+            "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"pick_code": pick_code, "pickling_time": pickling_time, "cleaning_time": cleaning_time, "nitrogen_time": nitrogen_time, "place_code": place_code} if isinstance(content, str) else content.serialize()) for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})]
         }
     
     def set_stirrer_params(
@@ -1194,6 +1200,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
         stir_speed: int,
         heat_temp: int,
         time_set: int,
+        sample_uuids: SampleUUIDsType = None,
     ) -> dict:
         """
         设置搅拌仪参数
@@ -1272,6 +1279,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
             "heat_temp": heat_temp,
             "time_set": time_set,
             "message": f"{station_name}参数设置完成：搅拌速度={stir_speed}，加热温度={heat_temp}，时间设置={time_set}",
+            "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"station_id": station_id, "stir_speed": stir_speed, "heat_temp": heat_temp, "time_set": time_set} if isinstance(content, str) else content.serialize()) for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})]
         }
 
 

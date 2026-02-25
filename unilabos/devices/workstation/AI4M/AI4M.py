@@ -204,7 +204,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
                     
                     if place_station_id is None:
                         logger.info(f"[机器人取烧杯{pick_beaker_id}] 没有空闲检测站，等待中...")
-                        time.sleep(2.0)
+                        time.sleep(1.0)
         else:
             # 如果指定了检测站，检查该检测站是否空闲
             station_ready_node = f"station_{place_station_id}_ready"
@@ -214,7 +214,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
                 # 循环等待直到检测站空闲
                 while not station_ready:
                     logger.info(f"[机器人取烧杯{pick_beaker_id}] 检测站{place_station_id}忙碌中，等待空闲...")
-                    time.sleep(2.0)
+                    time.sleep(1.0)
                     station_ready = self.get_node_value(station_ready_node)
                 logger.info(f"[机器人取烧杯{pick_beaker_id}] 检测站{place_station_id}已空闲")
 
@@ -256,7 +256,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
                 robot_ready = self.get_node_value("robot_ready")
                 while not robot_ready:
                     logger.info(f"[机器人取烧杯{pick_beaker_id}] 机器人忙碌中，等待空闲...")
-                    time.sleep(2.0)
+                    time.sleep(1.0)
                     robot_ready = self.get_node_value("robot_ready")
                 logger.info(f"[机器人取烧杯{pick_beaker_id}] 机器人已空闲")
                 
@@ -295,8 +295,11 @@ class AI4MDevice(OpcUaClientWithSubscription):
                     pick_complete = self.get_node_value(pick_complete_node)
                 
                 # 阶段1.5：机器人取烧杯完成后，从堆栈解绑载具
-                rack_warehouse.unassign_child_resource(carrier)
-                logger.info(f"✓ 已从堆栈解绑载具 {carrier.name}")
+                try:
+                    rack_warehouse.unassign_child_resource(carrier)
+                    logger.info(f"✓ 已从堆栈解绑载具 {carrier.name}")
+                except Exception as e:
+                    logger.warning(f"从堆栈解绑载具失败（不影响硬件操作）: {e}")
                 
                 # 阶段2：取完成后再下发放检测编号并等待完成
                 logger.info("取完成，开始下发放检测编号...")
@@ -318,7 +321,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
                     station_warehouse.assign_child_resource(carrier, location=station_location, spot=station_site_idx)
                     logger.info(f"✓ 已绑定载具 {carrier.name} 到检测站{place_station_id}")
                 except Exception as e:
-                    logger.error(f"绑定载具到检测站失败: {e}")
+                    logger.warning(f"绑定载具到检测站失败（不影响硬件操作）: {e}")
                 
                 logger.info("放检测完成")
                     
@@ -370,38 +373,13 @@ class AI4MDevice(OpcUaClientWithSubscription):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        # 在获取锁之前，先检查检测站是否有载具
-        # 如果没有载具，不进行锁的争抢
+        # 获取仓库资源
         rack_warehouse = self.deck.warehouses["水凝胶烧杯堆栈"]
         station_warehouse = self.deck.warehouses[f"反应工站{pick_station_id}"]
-        
-        # 获取检测站的载具
         station_site_idx = 0
-        
-        if not station_warehouse.sites or len(station_warehouse.sites) == 0:
-            error_msg = f"检测站{pick_station_id} 的 warehouse sites 列表为空"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
-        carrier = station_warehouse.sites[station_site_idx]
-        
-        # 检查是否是 ResourceHolder
-        if carrier is None or type(carrier).__name__ == 'ResourceHolder':
-            logger.info(f"[机器人放烧杯{place_beaker_id}] 检测站{pick_station_id}没有载具，不进行锁的争抢，等待中...")
-            # 循环等待直到检测站有载具
-            while carrier is None or type(carrier).__name__ == 'ResourceHolder':
-                logger.info(f"[机器人放烧杯{place_beaker_id}] 检测站{pick_station_id}没有载具，等待中...")
-                time.sleep(2.0)
-                carrier = station_warehouse.sites[station_site_idx]
-                if carrier is None or type(carrier).__name__ == 'ResourceHolder':
-                    continue
-                else:
-                    logger.info(f"[机器人放烧杯{place_beaker_id}] 检测站{pick_station_id}已有载具")
-                    break
 
         # 使用线程锁保证同一时间只有一个机器人操作
-        # 只有在确认检测站有载具后，才进行锁的争抢
-        logger.info(f"[机器人放烧杯{place_beaker_id}] 检测站{pick_station_id}有载具，尝试获取机器人操作锁...")
+        logger.info(f"[机器人放烧杯{place_beaker_id}] 尝试获取机器人操作锁...")
         with self._robot_lock:
             logger.info(f"[机器人放烧杯{place_beaker_id}] 已获取机器人操作锁，开始执行")
             
@@ -410,19 +388,23 @@ class AI4MDevice(OpcUaClientWithSubscription):
             robot_ready = self.get_node_value("robot_ready")
             while not robot_ready:
                 logger.info(f"[机器人放烧杯{place_beaker_id}] 机器人忙碌中，等待空闲...")
-                time.sleep(2.0)
+                time.sleep(1.0)
                 robot_ready = self.get_node_value("robot_ready")
             logger.info(f"[机器人放烧杯{place_beaker_id}] 机器人已空闲")
 
-            # 再次确认检测站仍然有载具（防止在等待锁的过程中载具被取走）
-            carrier = station_warehouse.sites[station_site_idx]
-            if carrier is None or type(carrier).__name__ == 'ResourceHolder':
-                error_msg = f"检测站{pick_station_id}在获取锁后没有载具，操作取消"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
+            # 获取检测站的载具（如果存在）
+            try:
+                carrier = station_warehouse.sites[station_site_idx] if station_warehouse.sites else None
+            except Exception:
+                carrier = None
             
             # 确定堆栈目标位置
             rack_site_key = f"C{place_beaker_id}"
+            # 预先计算 rack_site_idx，即使不执行绑定操作也需要这个值
+            try:
+                rack_site_idx = list(rack_warehouse._ordering.keys()).index(rack_site_key)
+            except Exception:
+                rack_site_idx = None
 
             pick_complete_node = f"robot_pick_station_{pick_station_id}_complete"
             place_complete_node = f"robot_rack_place_beaker_{place_beaker_id}_complete"
@@ -439,8 +421,12 @@ class AI4MDevice(OpcUaClientWithSubscription):
                 pick_complete = self.get_node_value(pick_complete_node)
             
             # 阶段1.5：机器人取检测完成后，从检测站解绑载具
-            station_warehouse.unassign_child_resource(carrier)
-            logger.info(f"✓ 已从检测站{pick_station_id}解绑载具 {carrier.name}")
+            if carrier is not None and type(carrier).__name__ != 'ResourceHolder':
+                try:
+                    station_warehouse.unassign_child_resource(carrier)
+                    logger.info(f"✓ 已从检测站{pick_station_id}解绑载具 {carrier.name}")
+                except Exception as e:
+                    logger.warning(f"从检测站解绑载具失败（不影响硬件操作）: {e}")
             
             # 阶段2：取完成后再下发放烧杯编号并等待完成
             logger.info("取完成，开始下发放烧杯编号...")
@@ -454,11 +440,14 @@ class AI4MDevice(OpcUaClientWithSubscription):
                 place_complete = self.get_node_value(place_complete_node)
             
             # 阶段2.5：机器人放烧杯完成后，绑定载具回堆栈
-            rack_site_idx = list(rack_warehouse._ordering.keys()).index(rack_site_key)
-            rack_location = rack_warehouse.child_locations[rack_site_key]
-            
-            rack_warehouse.assign_child_resource(carrier, location=rack_location, spot=rack_site_idx)
-            logger.info(f"✓ 已绑定载具 {carrier.name} 回堆栈 {rack_site_key}")
+            if carrier is not None and type(carrier).__name__ != 'ResourceHolder' and rack_site_idx is not None:
+                try:
+                    rack_location = rack_warehouse.child_locations[rack_site_key]
+                    
+                    rack_warehouse.assign_child_resource(carrier, location=rack_location, spot=rack_site_idx)
+                    logger.info(f"✓ 已绑定载具 {carrier.name} 回堆栈 {rack_site_key}")
+                except Exception as e:
+                    logger.warning(f"绑定载具回堆栈失败（不影响硬件操作）: {e}")
             
             logger.info("放烧杯完成")
             
@@ -475,7 +464,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
 
         # !!样例：准备载具信息作为样本数据，记录保存样品数据
         carrier_info = {
-            "name": carrier.name,
+            "name": carrier.name if carrier is not None else None,
             "type": "carrier",
             "rack_location": rack_site_key,
             "station_id": pick_station_id,
@@ -539,7 +528,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         request_params = self.get_node_value(request_node)
         while not request_params:
             logger.info(f"等待检测{station_id}请求参数中...")
-            time.sleep(2.0)
+            time.sleep(1.0)
             request_params = self.get_node_value(request_node)
         
         logger.info(f"检测{station_id}已请求参数，开始下发...")
@@ -561,7 +550,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         params_received = self.get_node_value(params_received_node)
         while not params_received:
             logger.info(f"检测{station_id}参数执行中...")
-            time.sleep(2.0)
+            time.sleep(1.0)
             params_received = self.get_node_value(params_received_node)
         
         logger.info(f"检测{station_id}参数已执行")
@@ -608,20 +597,20 @@ class AI4MDevice(OpcUaClientWithSubscription):
         auto_mode = self.get_node_value("auto_mode")
         while auto_mode:
             logger.info("等待自动模式变为false...")
-            time.sleep(2.0)
+            time.sleep(1.0)
             auto_mode = self.get_node_value("auto_mode")
         
         # 将初始化PC写true
         logger.info("自动模式已为false，设置初始化PC为true...")
         self.set_node_value("initialize", True)
-        time.sleep(2.0)
+        time.sleep(1.0)
         
         # 等待初始化完成PC为true
         logger.info("等待初始化完成...")
         init_finished = self.get_node_value("init finished")
         while not init_finished:
             logger.info("初始化中...")
-            time.sleep(2.0)
+            time.sleep(1.0)
             init_finished = self.get_node_value("init finished")
         
         # 将初始化PC写false
@@ -689,7 +678,7 @@ class AI4MDevice(OpcUaClientWithSubscription):
         param_applied = self.get_node_value("auto_param_applied")
         while not param_applied:
             logger.info("参数执行中...")
-            time.sleep(2.0)
+            time.sleep(1.0)
             param_applied = self.get_node_value("auto_param_applied")
         
         logger.info("自动作业参数已执行")

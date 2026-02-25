@@ -291,6 +291,7 @@ AI4M_station:
           type: object
         type: UniLabJsonCommand
       auto-trigger_station_process:
+        always_free: true
         feedback: {}
         goal: {}
         goal_default:

@@ -6,12 +6,10 @@ HTTP客户端模块
 
 import json
 import os
-import time
-from threading import Thread
 from typing import List, Dict, Any, Optional
 
 import requests
-from unilabos.ros.nodes.resource_tracker import ResourceTreeSet
+from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import info
 from unilabos.config.config import HTTPConfig, BasicConfig
 from unilabos.utils import logger
@@ -345,9 +343,10 @@ class HTTPClient:
         edges: List[Dict[str, Any]],
         tags: Optional[List[str]] = None,
         published: bool = False,
+        description: str = "",
     ) -> Dict[str, Any]:
         """
-        导入工作流到服务器
+        导入工作流到服务器，如果 published 为 True，则额外发起发布请求
 
         Args:
             name: 工作流名称（顶层）
@@ -357,13 +356,12 @@ class HTTPClient:
             edges: 工作流边列表
             tags: 工作流标签列表，默认为空列表
             published: 是否发布工作流，默认为False
+            description: 工作流描述，发布时使用
 
         Returns:
             Dict: API响应数据，包含 code 和 data (uuid, name)
         """
-        # target_lab_uuid 暂时使用默认值，后续由后端根据 ak/sk 获取
         payload = {
-            "target_lab_uuid": "28c38bb0-63f6-4352-b0d8-b5b8eb1766d5",
             "name": name,
             "data": {
                 "workflow_uuid": workflow_uuid,
@@ -371,7 +369,6 @@ class HTTPClient:
                 "nodes": nodes,
                 "edges": edges,
                 "tags": tags if tags is not None else [],
-                "published": published,
             },
         }
         # 保存请求到文件
@@ -392,9 +389,49 @@ class HTTPClient:
             res = response.json()
             if "code" in res and res["code"] != 0:
                 logger.error(f"导入工作流失败: {response.text}")
+                return res
+            # 导入成功后，如果需要发布则额外发起发布请求
+            if published:
+                imported_uuid = res.get("data", {}).get("uuid", workflow_uuid)
+                publish_res = self.workflow_publish(imported_uuid, description)
+                res["publish_result"] = publish_res
             return res
         else:
             logger.error(f"导入工作流失败: {response.status_code}, {response.text}")
+            return {"code": response.status_code, "message": response.text}
+
+    def workflow_publish(self, workflow_uuid: str, description: str = "") -> Dict[str, Any]:
+        """
+        发布工作流
+
+        Args:
+            workflow_uuid: 工作流UUID
+            description: 工作流描述
+
+        Returns:
+            Dict: API响应数据
+        """
+        payload = {
+            "uuid": workflow_uuid,
+            "description": description,
+            "published": True,
+        }
+        logger.info(f"正在发布工作流: {workflow_uuid}")
+        response = requests.patch(
+            f"{self.remote_addr}/lab/workflow/owner",
+            json=payload,
+            headers={"Authorization": f"Lab {self.auth}"},
+            timeout=60,
+        )
+        if response.status_code == 200:
+            res = response.json()
+            if "code" in res and res["code"] != 0:
+                logger.error(f"发布工作流失败: {response.text}")
+            else:
+                logger.info(f"工作流发布成功: {workflow_uuid}")
+            return res
+        else:
+            logger.error(f"发布工作流失败: {response.status_code}, {response.text}")
             return {"code": response.status_code, "message": response.text}
 
 

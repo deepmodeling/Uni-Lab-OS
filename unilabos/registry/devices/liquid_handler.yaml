@@ -638,7 +638,7 @@ liquid_handler:
         placeholder_keys: {}
         result: {}
         schema:
-          description: 吸头迭代函数。用于自动管理和切换吸头架中的吸头，实现批量实验中的吸头自动分配和追踪。该函数监控吸头使用状态，自动切换到下一个可用吸头位置，确保实验流程的连续性。适用于高通量实验、批量处理、自动化流水线等需要大量吸头管理的应用场景。
+          description: 吸头迭代函数。用于自动管理和切换枪头盒中的吸头，实现批量实验中的吸头自动分配和追踪。该函数监控吸头使用状态，自动切换到下一个可用吸头位置，确保实验流程的连续性。适用于高通量实验、批量处理、自动化流水线等需要大量吸头管理的应用场景。
           properties:
             feedback: {}
             goal:
@@ -712,6 +712,43 @@ liquid_handler:
           title: set_group参数
           type: object
         type: UniLabJsonCommand
+      auto-set_liquid_from_plate:
+        feedback: {}
+        goal: {}
+        goal_default:
+          liquid_names: null
+          plate: null
+          volumes: null
+          well_names: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                liquid_names:
+                  type: string
+                plate:
+                  type: string
+                volumes:
+                  type: string
+                well_names:
+                  type: string
+              required:
+              - plate
+              - well_names
+              - liquid_names
+              - volumes
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_liquid_from_plate参数
+          type: object
+        type: UniLabJsonCommand
       auto-set_tiprack:
         feedback: {}
         goal: {}
@@ -721,7 +758,7 @@ liquid_handler:
         placeholder_keys: {}
         result: {}
         schema:
-          description: 吸头架设置函数。用于配置和初始化液体处理系统的吸头架信息，包括吸头架位置、类型、容量等参数。该函数建立吸头资源管理系统，为后续的吸头选择和使用提供基础配置。适用于系统初始化、吸头架更换、实验配置等需要吸头资源管理的操作场景。
+          description: 枪头盒设置函数。用于配置和初始化液体处理系统的枪头盒信息，包括枪头盒位置、类型、容量等参数。该函数建立吸头资源管理系统，为后续的吸头选择和使用提供基础配置。适用于系统初始化、枪头盒更换、实验配置等需要吸头资源管理的操作场景。
           properties:
             feedback: {}
             goal:
@@ -4093,32 +4130,32 @@ liquid_handler:
           - 0
         handles:
           input:
-          - data_key: liquid
+          - data_key: sources
             data_source: handle
             data_type: resource
             handler_key: sources
-            label: sources
-          - data_key: liquid
-            data_source: executor
-            data_type: resource
-            handler_key: targets
-            label: targets
-          - data_key: liquid
-            data_source: executor
-            data_type: resource
-            handler_key: tip_rack
-            label: tip_rack
-          output:
-          - data_key: liquid
+            label: 待移动液体
+          - data_key: targets
             data_source: handle
             data_type: resource
+            handler_key: targets
+            label: 转移目标
+          - data_key: tip_racks
+            data_source: handle
+            data_type: resource
+            handler_key: tip_rack
+            label: 枪头盒
+          output:
+          - data_key: sources.@flatten
+            data_source: executor
+            data_type: resource
             handler_key: sources_out
-            label: sources
-          - data_key: liquid
+            label: 移液后源孔
+          - data_key: targets.@flatten
             data_source: executor
             data_type: resource
             handler_key: targets_out
-            label: targets
+            label: 移液后目标孔
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources
@@ -4497,6 +4534,9 @@ liquid_handler:
         simulator:
           default: false
           type: boolean
+        total_height:
+          default: 310
+          type: number
       required:
       - backend
       - deck
@@ -5111,19 +5151,34 @@ liquid_handler.biomek:
           - 0
         handles:
           input:
-          - data_key: liquid
+          - data_key: sources
             data_source: handle
             data_type: resource
-            handler_key: liquid-input
+            handler_key: sources
             io_type: target
-            label: Liquid Input
+            label: 待移动液体
+          - data_key: targets
+            data_source: handle
+            data_type: resource
+            handler_key: targets
+            label: 转移目标
+          - data_key: tip_racks
+            data_source: handle
+            data_type: resource
+            handler_key: tip_rack
+            label: 枪头盒
           output:
-          - data_key: liquid
+          - data_key: sources.@flatten
             data_source: executor
             data_type: resource
-            handler_key: liquid-output
+            handler_key: sources_out
             io_type: source
-            label: Liquid Output
+            label: 移液后源孔
+          - data_key: targets.@flatten
+            data_source: executor
+            data_type: resource
+            handler_key: targets_out
+            label: 移液后目标孔
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources
@@ -7547,6 +7602,35 @@ liquid_handler.prcxi:
           title: custom_delay参数
           type: object
         type: UniLabJsonCommandAsync
+      auto-heater_action:
+        feedback: {}
+        goal: {}
+        goal_default:
+          temperature: null
+          time: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                temperature:
+                  type: number
+                time:
+                  type: integer
+              required:
+              - temperature
+              - time
+              type: object
+            result: {}
+          required:
+          - goal
+          title: heater_action参数
+          type: object
+        type: UniLabJsonCommandAsync
       auto-iter_tips:
         feedback: {}
         goal: {}
@@ -7688,6 +7772,43 @@ liquid_handler.prcxi:
           title: set_group参数
           type: object
         type: UniLabJsonCommand
+      auto-shaker_action:
+        feedback: {}
+        goal: {}
+        goal_default:
+          amplitude: null
+          is_wait: null
+          module_no: null
+          time: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                amplitude:
+                  type: integer
+                is_wait:
+                  type: boolean
+                module_no:
+                  type: integer
+                time:
+                  type: integer
+              required:
+              - time
+              - module_no
+              - amplitude
+              - is_wait
+              type: object
+            result: {}
+          required:
+          - goal
+          title: shaker_action参数
+          type: object
+        type: UniLabJsonCommandAsync
       auto-touch_tip:
         feedback: {}
         goal: {}
@@ -8347,6 +8468,341 @@ liquid_handler.prcxi:
           title: LiquidHandlerMix
           type: object
         type: LiquidHandlerMix
+      move_plate:
+        feedback: {}
+        goal:
+          destination_offset: destination_offset
+          drop_direction: drop_direction
+          get_direction: get_direction
+          intermediate_locations: intermediate_locations
+          pickup_direction: pickup_direction
+          pickup_offset: pickup_offset
+          plate: plate
+          put_direction: put_direction
+          resource_offset: resource_offset
+          to: to
+        goal_default:
+          destination_offset:
+            x: 0.0
+            y: 0.0
+            z: 0.0
+          drop_direction: ''
+          get_direction: ''
+          intermediate_locations:
+          - x: 0.0
+            y: 0.0
+            z: 0.0
+          pickup_direction: ''
+          pickup_distance_from_top: 0.0
+          pickup_offset:
+            x: 0.0
+            y: 0.0
+            z: 0.0
+          plate:
+            category: ''
+            children: []
+            config: ''
+            data: ''
+            id: ''
+            name: ''
+            parent: ''
+            pose:
+              orientation:
+                w: 1.0
+                x: 0.0
+                y: 0.0
+                z: 0.0
+              position:
+                x: 0.0
+                y: 0.0
+                z: 0.0
+            sample_id: ''
+            type: ''
+          put_direction: ''
+          resource_offset:
+            x: 0.0
+            y: 0.0
+            z: 0.0
+          to:
+            category: ''
+            children: []
+            config: ''
+            data: ''
+            id: ''
+            name: ''
+            parent: ''
+            pose:
+              orientation:
+                w: 1.0
+                x: 0.0
+                y: 0.0
+                z: 0.0
+              position:
+                x: 0.0
+                y: 0.0
+                z: 0.0
+            sample_id: ''
+            type: ''
+        handles: {}
+        placeholder_keys:
+          plate: unilabos_resources
+          to: unilabos_resources
+        result:
+          name: name
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties: {}
+              required: []
+              title: LiquidHandlerMovePlate_Feedback
+              type: object
+            goal:
+              properties:
+                destination_offset:
+                  properties:
+                    x:
+                      type: number
+                    y:
+                      type: number
+                    z:
+                      type: number
+                  required:
+                  - x
+                  - y
+                  - z
+                  title: destination_offset
+                  type: object
+                drop_direction:
+                  type: string
+                get_direction:
+                  type: string
+                intermediate_locations:
+                  items:
+                    properties:
+                      x:
+                        type: number
+                      y:
+                        type: number
+                      z:
+                        type: number
+                    required:
+                    - x
+                    - y
+                    - z
+                    title: intermediate_locations
+                    type: object
+                  type: array
+                pickup_direction:
+                  type: string
+                pickup_distance_from_top:
+                  type: number
+                pickup_offset:
+                  properties:
+                    x:
+                      type: number
+                    y:
+                      type: number
+                    z:
+                      type: number
+                  required:
+                  - x
+                  - y
+                  - z
+                  title: pickup_offset
+                  type: object
+                plate:
+                  properties:
+                    category:
+                      type: string
+                    children:
+                      items:
+                        type: string
+                      type: array
+                    config:
+                      type: string
+                    data:
+                      type: string
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    parent:
+                      type: string
+                    pose:
+                      properties:
+                        orientation:
+                          properties:
+                            w:
+                              type: number
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          - w
+                          title: orientation
+                          type: object
+                        position:
+                          properties:
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          title: position
+                          type: object
+                      required:
+                      - position
+                      - orientation
+                      title: pose
+                      type: object
+                    sample_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - id
+                  - name
+                  - sample_id
+                  - children
+                  - parent
+                  - type
+                  - category
+                  - pose
+                  - config
+                  - data
+                  title: plate
+                  type: object
+                put_direction:
+                  type: string
+                resource_offset:
+                  properties:
+                    x:
+                      type: number
+                    y:
+                      type: number
+                    z:
+                      type: number
+                  required:
+                  - x
+                  - y
+                  - z
+                  title: resource_offset
+                  type: object
+                to:
+                  properties:
+                    category:
+                      type: string
+                    children:
+                      items:
+                        type: string
+                      type: array
+                    config:
+                      type: string
+                    data:
+                      type: string
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    parent:
+                      type: string
+                    pose:
+                      properties:
+                        orientation:
+                          properties:
+                            w:
+                              type: number
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          - w
+                          title: orientation
+                          type: object
+                        position:
+                          properties:
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          title: position
+                          type: object
+                      required:
+                      - position
+                      - orientation
+                      title: pose
+                      type: object
+                    sample_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - id
+                  - name
+                  - sample_id
+                  - children
+                  - parent
+                  - type
+                  - category
+                  - pose
+                  - config
+                  - data
+                  title: to
+                  type: object
+              required:
+              - plate
+              - to
+              - intermediate_locations
+              - resource_offset
+              - pickup_offset
+              - destination_offset
+              - pickup_direction
+              - drop_direction
+              - get_direction
+              - put_direction
+              - pickup_distance_from_top
+              title: LiquidHandlerMovePlate_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: LiquidHandlerMovePlate_Result
+              type: object
+          required:
+          - goal
+          title: LiquidHandlerMovePlate
+          type: object
+        type: LiquidHandlerMovePlate
       pick_up_tips:
         feedback: {}
         goal:
@@ -8874,7 +9330,19 @@ liquid_handler.prcxi:
                 z: 0.0
             sample_id: ''
             type: ''
-        handles: {}
+        handles:
+          input:
+          - data_key: wells
+            data_source: handle
+            data_type: resource
+            handler_key: input_wells
+            label: 待设定液体孔
+          output:
+          - data_key: wells.@flatten
+            data_source: executor
+            data_type: resource
+            handler_key: output_wells
+            label: 已设定液体孔
         placeholder_keys:
           wells: unilabos_resources
         result: {}
@@ -8990,6 +9458,352 @@ liquid_handler.prcxi:
           title: LiquidHandlerSetLiquid
           type: object
         type: LiquidHandlerSetLiquid
+      set_liquid_from_plate:
+        feedback: {}
+        goal: {}
+        goal_default:
+          liquid_names: null
+          plate: null
+          volumes: null
+          well_names: null
+        handles:
+          input:
+          - data_key: '@this.0@@@plate'
+            data_source: handle
+            data_type: resource
+            handler_key: input_plate
+            label: 待设定液体板
+          output:
+          - data_key: plate.@flatten
+            data_source: executor
+            data_type: resource
+            handler_key: output_plate
+            label: 已设定液体板
+          - data_key: wells.@flatten
+            data_source: executor
+            data_type: resource
+            handler_key: output_wells
+            label: 已设定液体孔
+          - data_key: volumes
+            data_source: executor
+            data_type: number_array
+            handler_key: output_volumes
+            label: 各孔设定体积
+        placeholder_keys:
+          plate: unilabos_resources
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                liquid_names:
+                  items:
+                    type: string
+                  type: array
+                plate:
+                  properties:
+                    category:
+                      type: string
+                    children:
+                      items:
+                        type: string
+                      type: array
+                    config:
+                      type: string
+                    data:
+                      type: string
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    parent:
+                      type: string
+                    pose:
+                      properties:
+                        orientation:
+                          properties:
+                            w:
+                              type: number
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          - w
+                          title: orientation
+                          type: object
+                        position:
+                          properties:
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          title: position
+                          type: object
+                      required:
+                      - position
+                      - orientation
+                      title: pose
+                      type: object
+                    sample_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - id
+                  - name
+                  - sample_id
+                  - children
+                  - parent
+                  - type
+                  - category
+                  - pose
+                  - config
+                  - data
+                  title: plate
+                  type: object
+                volumes:
+                  items:
+                    type: number
+                  type: array
+                well_names:
+                  items:
+                    type: string
+                  type: array
+              required:
+              - plate
+              - well_names
+              - liquid_names
+              - volumes
+              type: object
+            result:
+              $defs:
+                ResourceDict:
+                  properties:
+                    class:
+                      description: Resource class name
+                      title: Class
+                      type: string
+                    config:
+                      additionalProperties: true
+                      description: Resource configuration
+                      title: Config
+                      type: object
+                    data:
+                      additionalProperties: true
+                      description: 'Resource data, eg: container liquid data'
+                      title: Data
+                      type: object
+                    description:
+                      default: ''
+                      description: Resource description
+                      title: Description
+                      type: string
+                    extra:
+                      additionalProperties: true
+                      description: 'Extra data, eg: slot index'
+                      title: Extra
+                      type: object
+                    icon:
+                      default: ''
+                      description: Resource icon
+                      title: Icon
+                      type: string
+                    id:
+                      description: Resource ID
+                      title: Id
+                      type: string
+                    model:
+                      additionalProperties: true
+                      description: Resource model
+                      title: Model
+                      type: object
+                    name:
+                      description: Resource name
+                      title: Name
+                      type: string
+                    parent:
+                      anyOf:
+                      - $ref: '#/$defs/ResourceDict'
+                      - type: 'null'
+                      default: null
+                      description: Parent resource object
+                    parent_uuid:
+                      anyOf:
+                      - type: string
+                      - type: 'null'
+                      default: null
+                      description: Parent resource uuid
+                      title: Parent Uuid
+                    pose:
+                      $ref: '#/$defs/ResourceDictPosition'
+                      description: Resource position
+                    schema:
+                      additionalProperties: true
+                      description: Resource schema
+                      title: Schema
+                      type: object
+                    type:
+                      anyOf:
+                      - const: device
+                        type: string
+                      - type: string
+                      description: Resource type
+                      title: Type
+                    uuid:
+                      description: Resource UUID
+                      title: Uuid
+                      type: string
+                  required:
+                  - id
+                  - uuid
+                  - name
+                  - type
+                  - class
+                  - config
+                  - data
+                  - extra
+                  title: ResourceDict
+                  type: object
+                ResourceDictPosition:
+                  properties:
+                    cross_section_type:
+                      default: rectangle
+                      description: Cross section type
+                      enum:
+                      - rectangle
+                      - circle
+                      - rounded_rectangle
+                      title: Cross Section Type
+                      type: string
+                    layout:
+                      default: x-y
+                      description: Resource layout
+                      enum:
+                      - 2d
+                      - x-y
+                      - z-y
+                      - x-z
+                      title: Layout
+                      type: string
+                    position:
+                      $ref: '#/$defs/ResourceDictPositionObject'
+                      description: Resource position
+                    position3d:
+                      $ref: '#/$defs/ResourceDictPositionObject'
+                      description: Resource position in 3D space
+                    rotation:
+                      $ref: '#/$defs/ResourceDictPositionObject'
+                      description: Resource rotation
+                    scale:
+                      $ref: '#/$defs/ResourceDictPositionScale'
+                      description: Resource scale
+                    size:
+                      $ref: '#/$defs/ResourceDictPositionSize'
+                      description: Resource size
+                  title: ResourceDictPosition
+                  type: object
+                ResourceDictPositionObject:
+                  properties:
+                    x:
+                      default: 0.0
+                      description: X coordinate
+                      title: X
+                      type: number
+                    y:
+                      default: 0.0
+                      description: Y coordinate
+                      title: Y
+                      type: number
+                    z:
+                      default: 0.0
+                      description: Z coordinate
+                      title: Z
+                      type: number
+                  title: ResourceDictPositionObject
+                  type: object
+                ResourceDictPositionScale:
+                  properties:
+                    x:
+                      default: 0.0
+                      description: x scale
+                      title: X
+                      type: number
+                    y:
+                      default: 0.0
+                      description: y scale
+                      title: Y
+                      type: number
+                    z:
+                      default: 0.0
+                      description: z scale
+                      title: Z
+                      type: number
+                  title: ResourceDictPositionScale
+                  type: object
+                ResourceDictPositionSize:
+                  properties:
+                    depth:
+                      default: 0.0
+                      description: Depth
+                      title: Depth
+                      type: number
+                    height:
+                      default: 0.0
+                      description: Height
+                      title: Height
+                      type: number
+                    width:
+                      default: 0.0
+                      description: Width
+                      title: Width
+                      type: number
+                  title: ResourceDictPositionSize
+                  type: object
+              properties:
+                plate:
+                  items:
+                    items:
+                      $ref: '#/$defs/ResourceDict'
+                    type: array
+                  title: Plate
+                  type: array
+                volumes:
+                  items:
+                    type: number
+                  title: Volumes
+                  type: array
+                wells:
+                  items:
+                    items:
+                      $ref: '#/$defs/ResourceDict'
+                    type: array
+                  title: Wells
+                  type: array
+              required:
+              - plate
+              - wells
+              - volumes
+              title: SetLiquidFromPlateReturn
+              type: object
+          required:
+          - goal
+          title: set_liquid_from_plate参数
+          type: object
+        type: UniLabJsonCommand
       set_tiprack:
         feedback: {}
         goal:
@@ -9335,32 +10149,32 @@ liquid_handler.prcxi:
           - 0
         handles:
           input:
-          - data_key: liquid
+          - data_key: sources
             data_source: handle
             data_type: resource
-            handler_key: sources
-            label: sources
-          - data_key: liquid
-            data_source: executor
+            handler_key: sources_identifier
+            label: 待移动液体
+          - data_key: targets
+            data_source: handle
             data_type: resource
-            handler_key: targets
-            label: targets
-          - data_key: liquid
-            data_source: executor
+            handler_key: targets_identifier
+            label: 转移目标
+          - data_key: tip_rack
+            data_source: handle
             data_type: resource
-            handler_key: tip_rack
-            label: tip_rack
+            handler_key: tip_rack_identifier
+            label: 枪头盒
           output:
-          - data_key: liquid
-            data_source: handle
+          - data_key: sources.@flatten
+            data_source: executor
             data_type: resource
             handler_key: sources_out
-            label: sources
-          - data_key: liquid
+            label: 移液后源孔
+          - data_key: targets.@flatten
             data_source: executor
             data_type: resource
             handler_key: targets_out
-            label: targets
+            label: 移液后目标孔
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources

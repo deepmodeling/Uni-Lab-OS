@@ -1,6 +1,6 @@
 import threading
 
-from unilabos.ros.nodes.resource_tracker import ResourceTreeSet
+from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils import logger
 
 

@@ -1,0 +1,67 @@
+name: CI Check
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  registry-check:
+    runs-on: windows-latest
+
+    env:
+      # Fix Unicode encoding issue on Windows runner (cp1252 -> utf-8)
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: 1
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Miniforge
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          channels: robostack-staging,conda-forge,uni-lab
+          channel-priority: flexible
+          activate-environment: check-env
+          auto-update-conda: false
+          show-channel-urls: true
+
+      - name: Install ROS dependencies, uv and unilabos-msgs
+        run: |
+          echo Installing ROS dependencies...
+          mamba install -n check-env conda-forge::uv conda-forge::opencv robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs robostack-staging::ros-humble-nav2-msgs uni-lab::ros-humble-unilabos-msgs robostack-staging::ros-humble-cv-bridge robostack-staging::ros-humble-vision-opencv robostack-staging::ros-humble-tf-transformations robostack-staging::ros-humble-moveit-msgs robostack-staging::ros-humble-tf2-ros robostack-staging::ros-humble-tf2-ros-py conda-forge::transforms3d -c robostack-staging -c conda-forge -c uni-lab -y
+
+      - name: Install pip dependencies and unilabos
+        run: |
+          call conda activate check-env
+          echo Installing pip dependencies...
+          uv pip install -r unilabos/utils/requirements.txt
+          uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git
+          uv pip uninstall enum34 || echo enum34 not installed, skipping
+          uv pip install .
+
+      - name: Run check mode (complete_registry)
+        run: |
+          call conda activate check-env
+          echo Running check mode...
+          python -m unilabos --check_mode --skip_env_check
+
+      - name: Check for uncommitted changes
+        shell: bash
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::检测到文件变化！请先在本地运行 'python -m unilabos --complete_registry' 并提交变更"
+            echo "变化的文件:"
+            git diff --name-only
+            exit 1
+          fi
+          echo "检查通过：无文件变化"

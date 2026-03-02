@@ -67,6 +67,9 @@ camera:
         period:
           default: 0.1
           type: number
+        registry_name:
+          default: ''
+          type: string
         resource_tracker:
           type: object
       required: []

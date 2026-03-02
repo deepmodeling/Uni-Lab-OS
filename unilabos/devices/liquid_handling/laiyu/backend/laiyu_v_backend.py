@@ -153,7 +153,7 @@ class UniLiquidHandlerLaiyuBackend(LiquidHandlerBackend):
     if self.hardware_interface.tip_status == TipStatus.TIP_ATTACHED:
         print("已有枪头，无需重复拾取")
         return
-    self.hardware_interface.xyz_controller.move_to_work_coord_safe(x=x, y=-y, z=z,speed=100)
+    self.hardware_interface.xyz_controller.move_to_work_coord_safe(x=x, y=-y, z=z,speed=200)
     self.hardware_interface.xyz_controller.move_to_work_coord_safe(z=self.hardware_interface.xyz_controller.machine_config.safe_z_height,speed=100)
     # self.joint_state_publisher.send_resource_action(ops[0].resource.name, x, y, z, "pick",channels=use_channels)
     #   goback()
@@ -202,7 +202,7 @@ class UniLiquidHandlerLaiyuBackend(LiquidHandlerBackend):
     if self.hardware_interface.tip_status == TipStatus.NO_TIP:
         print("无枪头，无需丢弃")
         return
-    self.hardware_interface.xyz_controller.move_to_work_coord_safe(x=x, y=-y, z=z)
+    self.hardware_interface.xyz_controller.move_to_work_coord_safe(x=x, y=-y, z=z,speed=200)
     self.hardware_interface.eject_tip
     self.hardware_interface.xyz_controller.move_to_work_coord_safe(z=self.hardware_interface.xyz_controller.machine_config.safe_z_height)  
 
@@ -267,7 +267,7 @@ class UniLiquidHandlerLaiyuBackend(LiquidHandlerBackend):
         return
 
     # 移动到吸液位置
-    self.hardware_interface.xyz_controller.move_to_work_coord_safe(x=x, y=-y, z=z)
+    self.hardware_interface.xyz_controller.move_to_work_coord_safe(x=x, y=-y, z=z,speed=200)
     self.pipette_aspirate(volume=ops[0].volume, flow_rate=flow_rate)
 
 
@@ -340,7 +340,7 @@ class UniLiquidHandlerLaiyuBackend(LiquidHandlerBackend):
 
     
     # 移动到排液位置  
-    self.hardware_interface.xyz_controller.move_to_work_coord_safe(x=x, y=-y, z=z)
+    self.hardware_interface.xyz_controller.move_to_work_coord_safe(x=x, y=-y, z=z,speed=200)
     self.pipette_dispense(volume=ops[0].volume, flow_rate=flow_rate)
 
 

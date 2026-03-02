@@ -27,7 +27,9 @@ __all__ = [
 
 from ast import Constant
 
+from unilabos.resources.resource_tracker import PARAM_SAMPLE_UUIDS
 from unilabos.utils import logger
+from unilabos.utils.decorator import is_not_action, is_always_free
 
 
 class ImportManager:
@@ -275,8 +277,14 @@ class ImportManager:
                     method_info = self._analyze_method_signature(method)
                     result["status_methods"][actual_name] = method_info
                 elif not name.startswith("_"):
+                    # 检查是否被 @not_action 装饰器标记
+                    if is_not_action(method):
+                        continue
                     # 其他非_开头的方法归类为action
                     method_info = self._analyze_method_signature(method)
+                    # 检查是否被 @always_free 装饰器标记
+                    if is_always_free(method):
+                        method_info["always_free"] = True
                     result["action_methods"][name] = method_info
 
         return result
@@ -330,16 +338,27 @@ class ImportManager:
                     if actual_name not in result["status_methods"]:
                         result["status_methods"][actual_name] = method_info
                 else:
+                    # 检查是否被 @not_action 装饰器标记
+                    if self._is_not_action_method(node):
+                        continue
                     # 其他非_开头的方法归类为action
+                    # 检查是否被 @always_free 装饰器标记
+                    if self._is_always_free_method(node):
+                        method_info["always_free"] = True
                     result["action_methods"][method_name] = method_info
         return result
 
-    def _analyze_method_signature(self, method) -> Dict[str, Any]:
+    def _analyze_method_signature(self, method, skip_unilabos_params: bool = True) -> Dict[str, Any]:
         """
         分析方法签名，提取具体的命名参数信息
 
         注意：此方法会跳过*args和**kwargs，只提取具体的命名参数
         这样可以确保通过**dict方式传参时的准确性
+
+        Args:
+            method: 要分析的方法
+            skip_unilabos_params: 是否跳过 unilabos 系统参数（如 sample_uuids），
+                                  registry 补全时为 True，JsonCommand 执行时为 False
 
         示例用法：
             method_info = self._analyze_method_signature(some_method)
@@ -359,6 +378,10 @@ class ImportManager:
             if param.kind == param.VAR_POSITIONAL:  # *args
                 continue
             if param.kind == param.VAR_KEYWORD:  # **kwargs
+                continue
+
+            # 跳过 sample_uuids 参数（由系统自动注入，registry 补全时跳过）
+            if skip_unilabos_params and param_name == PARAM_SAMPLE_UUIDS:
                 continue
 
             is_required = param.default == inspect.Parameter.empty
@@ -447,6 +470,20 @@ class ImportManager:
         """检查是否是@xxx.setter装饰的方法"""
         for decorator in node.decorator_list:
             if isinstance(decorator, ast.Attribute) and decorator.attr == "setter":
+                return True
+        return False
+
+    def _is_not_action_method(self, node: ast.FunctionDef) -> bool:
+        """检查是否是@not_action装饰的方法"""
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == "not_action":
+                return True
+        return False
+
+    def _is_always_free_method(self, node: ast.FunctionDef) -> bool:
+        """检查是否是@always_free装饰的方法"""
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == "always_free":
                 return True
         return False
 
@@ -548,6 +585,9 @@ class ImportManager:
         # 提取参数信息
         for i, arg in enumerate(node.args.args):
             if arg.arg == "self":
+                continue
+            # 跳过 sample_uuids 参数（由系统自动注入）
+            if arg.arg == PARAM_SAMPLE_UUIDS:
                 continue
             arg_info = {
                 "name": arg.arg,

@@ -96,10 +96,13 @@ serial:
           type: string
         port:
           type: string
+        registry_name:
+          type: string
         resource_tracker:
           type: object
       required:
       - device_id
+      - registry_name
       - port
       type: object
     data:

@@ -1,6 +1,7 @@
 PRCXI_trash:
-  category: 
+  category:
   - prcxi
+  - trash
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_trash
     type: pylabrobot

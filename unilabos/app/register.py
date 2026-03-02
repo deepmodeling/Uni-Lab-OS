@@ -38,9 +38,9 @@ def register_devices_and_resources(lab_registry, gather_only=False) -> Optional[
             response = http_client.resource_registry({"resources": list(devices_to_register.values())})
             cost_time = time.time() - start_time
             if response.status_code in [200, 201]:
-                logger.info(f"[UniLab Register] 成功注册 {len(devices_to_register)} 个设备 {cost_time}ms")
+                logger.info(f"[UniLab Register] 成功注册 {len(devices_to_register)} 个设备 {cost_time}s")
             else:
-                logger.error(f"[UniLab Register] 设备注册失败: {response.status_code}, {response.text} {cost_time}ms")
+                logger.error(f"[UniLab Register] 设备注册失败: {response.status_code}, {response.text} {cost_time}s")
         except Exception as e:
             logger.error(f"[UniLab Register] 设备注册异常: {e}")
 
@@ -51,9 +51,9 @@ def register_devices_and_resources(lab_registry, gather_only=False) -> Optional[
             response = http_client.resource_registry({"resources": list(resources_to_register.values())})
             cost_time = time.time() - start_time
             if response.status_code in [200, 201]:
-                logger.info(f"[UniLab Register] 成功注册 {len(resources_to_register)} 个资源 {cost_time}ms")
+                logger.info(f"[UniLab Register] 成功注册 {len(resources_to_register)} 个资源 {cost_time}s")
             else:
-                logger.error(f"[UniLab Register] 资源注册失败: {response.status_code}, {response.text} {cost_time}ms")
+                logger.error(f"[UniLab Register] 资源注册失败: {response.status_code}, {response.text} {cost_time}s")
         except Exception as e:
             logger.error(f"[UniLab Register] 资源注册异常: {e}")
 

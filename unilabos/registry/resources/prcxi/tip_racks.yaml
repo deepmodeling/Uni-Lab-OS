@@ -1,6 +1,7 @@
 PRCXI_1000uL_Tips:
-  category: 
+  category:
   - prcxi
+  - tip_racks
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_1000uL_Tips
     type: pylabrobot
@@ -11,8 +12,9 @@ PRCXI_1000uL_Tips:
   registry_type: resource
   version: 1.0.0
 PRCXI_10uL_Tips:
-  category: 
+  category:
   - prcxi
+  - tip_racks
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_10uL_Tips
     type: pylabrobot
@@ -23,8 +25,9 @@ PRCXI_10uL_Tips:
   registry_type: resource
   version: 1.0.0
 PRCXI_10ul_eTips:
-  category: 
+  category:
   - prcxi
+  - tip_racks
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_10ul_eTips
     type: pylabrobot
@@ -35,8 +38,9 @@ PRCXI_10ul_eTips:
   registry_type: resource
   version: 1.0.0
 PRCXI_1250uL_Tips:
-  category: 
+  category:
   - prcxi
+  - tip_racks
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_1250uL_Tips
     type: pylabrobot
@@ -47,8 +51,9 @@ PRCXI_1250uL_Tips:
   registry_type: resource
   version: 1.0.0
 PRCXI_200uL_Tips:
-  category: 
+  category:
   - prcxi
+  - tip_racks
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_200uL_Tips
     type: pylabrobot
@@ -59,8 +64,9 @@ PRCXI_200uL_Tips:
   registry_type: resource
   version: 1.0.0
 PRCXI_300ul_Tips:
-  category: 
+  category:
   - prcxi
+  - tip_racks
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_300ul_Tips
     type: pylabrobot

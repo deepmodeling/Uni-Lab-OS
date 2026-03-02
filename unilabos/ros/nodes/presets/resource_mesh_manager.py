@@ -26,7 +26,7 @@ from unilabos.resources.graphio import initialize_resources
 from unilabos.registry.registry import lab_registry
 
 class ResourceMeshManager(BaseROS2DeviceNode):
-    def __init__(self, resource_model: dict, resource_config: list,resource_tracker, device_id: str = "resource_mesh_manager", rate=50, **kwargs):
+    def __init__(self, resource_model: dict, resource_config: list,resource_tracker, device_id: str = "resource_mesh_manager", registry_name: str = "", rate=50, **kwargs):
         """初始化资源网格管理器节点
         
         Args:
@@ -37,6 +37,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         super().__init__(
             driver_instance=self,
             device_id=device_id,
+            registry_name=registry_name,
             status_types={},
             action_value_mappings={},
             hardware_interface={},
@@ -203,9 +204,9 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 continue
             # 提取位置信息并转换单位
             position = {
-                "x": float(resource_config['position']['position']['x'])/1000,
-                "y": float(resource_config['position']['position']['y'])/1000,
-                "z": float(resource_config['position']['position']['z'])/1000
+                "x": float(resource_config['pose']['position']['x'])/1000,
+                "y": float(resource_config['pose']['position']['y'])/1000,
+                "z": float(resource_config['pose']['position']['z'])/1000
             }
             
             rotation_dict = {
@@ -214,8 +215,8 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 "z": 0
             }
 
-            if 'rotation' in resource_config['position']:
-                rotation_dict = resource_config['position']['rotation']   
+            if 'rotation' in resource_config['pose']:
+                rotation_dict = resource_config['pose']['rotation']   
                 
             # 从欧拉角转换为四元数
             q = quaternion_from_euler(

@@ -7,48 +7,17 @@ from typing import Dict, Any, List
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 
-class SmartPumpController:
-    """
-    智能泵控制器
+class AnyDevice:
+    @property
+    def status(self) -> str:
+        return "Idle"
 
-    支持多种泵送模式，具有高精度流量控制和自动校准功能。
-    适用于实验室自动化系统中的液体处理任务。
-    """
-
-    _ros_node: BaseROS2DeviceNode
-
-    def __init__(self, device_id: str = "smart_pump_01", port: str = "/dev/ttyUSB0"):
-        """
-        初始化智能泵控制器
-
-        Args:
-            device_id: 设备唯一标识符
-            port: 通信端口
-        """
-        self.device_id = device_id
-        self.port = port
-        self.is_connected = False
-        self.current_flow_rate = 0.0
-        self.total_volume_pumped = 0.0
-        self.calibration_factor = 1.0
-        self.pump_mode = "continuous"  # continuous, volume, rate
-
-    def post_init(self, ros_node: BaseROS2DeviceNode):
-        self._ros_node = ros_node
-
-    def connect_device(self, timeout: int = 10) -> bool:
-        """
-        连接到泵设备
-
-        Args:
-            timeout: 连接超时时间（秒）
-
-        Returns:
-            bool: 连接是否成功
-        """
-        # 模拟连接过程
-        self.is_connected = True
+    async def action(self, addr: str) -> bool:
         return True
+
+
+
+
 
     def disconnect_device(self) -> bool:
         """

@@ -4,6 +4,73 @@ separator.chinwe:
   - chinwe
   class:
     action_value_mappings:
+      auto-connect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: connect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-disconnect:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: disconnect参数
+          type: object
+        type: UniLabJsonCommand
+      auto-execute_command_from_outer:
+        feedback: {}
+        goal: {}
+        goal_default:
+          command_dict: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                command_dict:
+                  type: object
+              required:
+              - command_dict
+              type: object
+            result: {}
+          required:
+          - goal
+          title: execute_command_from_outer参数
+          type: object
+        type: UniLabJsonCommand
       motor_rotate_quarter:
         goal:
           direction: 顺时针
@@ -303,42 +370,44 @@ separator.chinwe:
   handles: []
   icon: ''
   init_param_schema:
-    goal:
-      baudrate:
-        default: 9600
-        description: 串口波特率
-        type: integer
-      motor_ids:
-        default:
-        - 4
-        - 5
-        description: 步进电机ID列表
-        items:
+    config:
+      properties:
+        baudrate:
+          default: 9600
           type: integer
-        type: array
-      port:
-        default: 192.168.1.200:8899
-        description: 串口号或 IP:Port
-        type: string
-      pump_ids:
-        default:
-        - 1
-        - 2
-        - 3
-        description: 注射泵ID列表
-        items:
+        motor_ids:
+          items:
+            type: integer
+          type: array
+        port:
+          default: 192.168.1.200:8899
+          type: string
+        pump_ids:
+          items:
+            type: integer
+          type: array
+        sensor_id:
+          default: 6
           type: integer
-        type: array
-      sensor_id:
-        default: 6
-        description: XKC传感器ID
-        type: integer
-      sensor_threshold:
-        default: 300
-        description: 传感器液位判定阈值
-        type: integer
-      timeout:
-        default: 10
-        description: 通信超时时间 (秒)
-        type: integer
+        sensor_threshold:
+          default: 300
+          type: integer
+        timeout:
+          default: 10.0
+          type: number
+      required: []
+      type: object
+    data:
+      properties:
+        is_connected:
+          type: boolean
+        sensor_level:
+          type: boolean
+        sensor_rssi:
+          type: integer
+      required:
+      - sensor_level
+      - sensor_rssi
+      - is_connected
+      type: object
   version: 2.1.0

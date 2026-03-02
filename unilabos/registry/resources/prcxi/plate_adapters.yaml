@@ -1,6 +1,7 @@
 PRCXI_30mm_Adapter:
-  category: 
+  category:
   - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_30mm_Adapter
     type: pylabrobot
@@ -11,8 +12,9 @@ PRCXI_30mm_Adapter:
   registry_type: resource
   version: 1.0.0
 PRCXI_Adapter:
-  category: 
-   - prcxi
+  category:
+  - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Adapter
     type: pylabrobot
@@ -23,8 +25,9 @@ PRCXI_Adapter:
   registry_type: resource
   version: 1.0.0
 PRCXI_Deep10_Adapter:
-  category: 
+  category:
   - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Deep10_Adapter
     type: pylabrobot
@@ -35,8 +38,9 @@ PRCXI_Deep10_Adapter:
   registry_type: resource
   version: 1.0.0
 PRCXI_Deep300_Adapter:
-  category: 
+  category:
   - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Deep300_Adapter
     type: pylabrobot
@@ -47,8 +51,9 @@ PRCXI_Deep300_Adapter:
   registry_type: resource
   version: 1.0.0
 PRCXI_PCR_Adapter:
-  category: 
+  category:
   - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Adapter
     type: pylabrobot
@@ -59,8 +64,9 @@ PRCXI_PCR_Adapter:
   registry_type: resource
   version: 1.0.0
 PRCXI_Reservoir_Adapter:
-  category: 
+  category:
   - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Reservoir_Adapter
     type: pylabrobot
@@ -73,6 +79,7 @@ PRCXI_Reservoir_Adapter:
 PRCXI_Tip10_Adapter:
   category:
   - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip10_Adapter
     type: pylabrobot
@@ -85,6 +92,7 @@ PRCXI_Tip10_Adapter:
 PRCXI_Tip1250_Adapter:
   category:
   - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip1250_Adapter
     type: pylabrobot
@@ -97,6 +105,7 @@ PRCXI_Tip1250_Adapter:
 PRCXI_Tip300_Adapter:
   category:
   - prcxi
+  - plate_adapters
   class:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip300_Adapter
     type: pylabrobot

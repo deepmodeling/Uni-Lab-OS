@@ -54,6 +54,7 @@ class JobAddReq(BaseModel):
     action_type: str = Field(
         examples=["unilabos_msgs.action._str_single_input.StrSingleInput"], description="action type", default=""
     )
+    sample_material: dict = Field(examples=[{"string": "string"}], description="sample uuid to material uuid")
     action_args: dict = Field(examples=[{"string": "string"}], description="action arguments", default_factory=dict)
     task_id: str = Field(examples=["task_id"], description="task uuid (auto-generated if empty)", default="")
     job_id: str = Field(examples=["job_id"], description="goal uuid (auto-generated if empty)", default="")

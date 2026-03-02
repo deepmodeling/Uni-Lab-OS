@@ -6,6 +6,7 @@ Bioyond Workstation Implementation
 """
 import time
 import traceback
+import threading
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Union
 import json
@@ -23,10 +24,92 @@ from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.ros.msgs.message_converter import convert_to_ros_msg, Float64, String
 from pylabrobot.resources.resource import Resource as ResourcePLR
 
-from unilabos.devices.workstation.bioyond_studio.config import (
-    API_CONFIG, WORKFLOW_MAPPINGS, MATERIAL_TYPE_MAPPINGS, WAREHOUSE_MAPPING, HTTP_SERVICE_CONFIG
-)
+
 from unilabos.devices.workstation.workstation_http_service import WorkstationHTTPService
+
+
+class ConnectionMonitor:
+    """Bioyond连接监控器"""
+    def __init__(self, workstation, check_interval=30):
+        self.workstation = workstation
+        self.check_interval = check_interval
+        self._running = False
+        self._thread = None
+        self._last_status = "unknown"
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._monitor_loop, daemon=True, name="BioyondConnectionMonitor")
+        self._thread.start()
+        logger.info("Bioyond连接监控器已启动")
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2)
+            logger.info("Bioyond连接监控器已停止")
+
+    def _monitor_loop(self):
+        while self._running:
+            try:
+                # 使用 lightweight API 检查连接
+                # query_matial_type_list 是比较快的查询
+                start_time = time.time()
+                result = self.workstation.hardware_interface.material_type_list()
+
+                status = "online" if result else "offline"
+                msg = "Connection established" if status == "online" else "Failed to get material type list"
+
+                if status != self._last_status:
+                    logger.info(f"Bioyond连接状态变更: {self._last_status} -> {status}")
+                    self._publish_event(status, msg)
+                    self._last_status = status
+
+                # 发布心跳 (可选，或者只在状态变更时发布)
+                # self._publish_event(status, msg)
+
+            except Exception as e:
+                logger.error(f"Bioyond连接检查异常: {e}")
+                if self._last_status != "error":
+                    self._publish_event("error", str(e))
+                    self._last_status = "error"
+
+            time.sleep(self.check_interval)
+
+    def _publish_event(self, status, message):
+        try:
+            if hasattr(self.workstation, "_ros_node") and self.workstation._ros_node:
+                event_data = {
+                    "status": status,
+                    "message": message,
+                    "timestamp": datetime.now().isoformat()
+                }
+
+                # 动态发布消息，需要在 ROS2DeviceNode 中有对应支持
+                # 这里假设通用事件发布机制，使用 String 类型的 topic
+                # 话题: /<namespace>/events/device_status
+                ns = self.workstation._ros_node.namespace
+                topic = f"{ns}/events/device_status"
+
+                # 使用 ROS2DeviceNode 的发布功能
+                # 如果没有预定义的 publisher，需要动态创建
+                # 注意：workstation base node 可能没有自动创建 arbitrary publishers 的机制
+                # 这里我们先尝试用 String json 发布
+
+                # 在 ROS2DeviceNode 中通常需要先 create_publisher
+                # 为了简单起见，我们检查是否已有 publisher，没有则创建
+                if not hasattr(self.workstation, "_device_status_pub"):
+                    self.workstation._device_status_pub = self.workstation._ros_node.create_publisher(
+                        String, topic, 10
+                    )
+
+                self.workstation._device_status_pub.publish(
+                    convert_to_ros_msg(String, json.dumps(event_data, ensure_ascii=False))
+                )
+        except Exception as e:
+            logger.error(f"发布设备状态事件失败: {e}")
 
 
 class BioyondResourceSynchronizer(ResourceSynchronizer):
@@ -174,9 +257,8 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
             else:
                 logger.info(f"[同步→Bioyond] ➕ 物料不存在于 Bioyond，将创建新物料并入库")
 
-            # 第1步：获取仓库配置
-            from .config import WAREHOUSE_MAPPING
-            warehouse_mapping = WAREHOUSE_MAPPING
+            # 第1步：从配置中获取仓库配置
+            warehouse_mapping = self.bioyond_config.get("warehouse_mapping", {})
 
             # 确定目标仓库名称
             parent_name = None
@@ -238,14 +320,20 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
             # 第2步：转换为 Bioyond 格式
             logger.info(f"[同步→Bioyond] 🔄 转换物料为 Bioyond 格式...")
 
-            # 导入物料默认参数配置
-            from .config import MATERIAL_DEFAULT_PARAMETERS
+            # 从配置中获取物料默认参数
+            material_default_params = self.workstation.bioyond_config.get("material_default_parameters", {})
+            material_type_params = self.workstation.bioyond_config.get("material_type_parameters", {})
+
+            # 合并参数配置：物料名称参数 + typeId参数（转换为 type:<uuid> 格式）
+            merged_params = material_default_params.copy()
+            for type_id, params in material_type_params.items():
+                merged_params[f"type:{type_id}"] = params
 
             bioyond_material = resource_plr_to_bioyond(
                 [resource],
                 type_mapping=self.workstation.bioyond_config["material_type_mappings"],
                 warehouse_mapping=self.workstation.bioyond_config["warehouse_mapping"],
-                material_params=MATERIAL_DEFAULT_PARAMETERS
+                material_params=merged_params
             )[0]
 
             logger.info(f"[同步→Bioyond] 🔧 准备覆盖locations字段，目标仓库: {parent_name}, 库位: {update_site}, UUID: {target_location_uuid[:8]}...")
@@ -468,13 +556,20 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
                 return material_bioyond_id
 
             # 转换为 Bioyond 格式
-            from .config import MATERIAL_DEFAULT_PARAMETERS
+            # 从配置中获取物料默认参数
+            material_default_params = self.workstation.bioyond_config.get("material_default_parameters", {})
+            material_type_params = self.workstation.bioyond_config.get("material_type_parameters", {})
+
+            # 合并参数配置：物料名称参数 + typeId参数（转换为 type:<uuid> 格式）
+            merged_params = material_default_params.copy()
+            for type_id, params in material_type_params.items():
+                merged_params[f"type:{type_id}"] = params
 
             bioyond_material = resource_plr_to_bioyond(
                 [resource],
                 type_mapping=self.workstation.bioyond_config["material_type_mappings"],
                 warehouse_mapping=self.workstation.bioyond_config["warehouse_mapping"],
-                material_params=MATERIAL_DEFAULT_PARAMETERS
+                material_params=merged_params
             )[0]
 
             # ⚠️ 关键：创建物料时不设置 locations，让 Bioyond 系统暂不分配库位
@@ -528,8 +623,7 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
             logger.info(f"[物料入库] 目标库位: {update_site}")
 
             # 获取仓库配置和目标库位 UUID
-            from .config import WAREHOUSE_MAPPING
-            warehouse_mapping = WAREHOUSE_MAPPING
+            warehouse_mapping = self.workstation.bioyond_config.get("warehouse_mapping", {})
 
             parent_name = None
             target_location_uuid = None
@@ -584,6 +678,44 @@ class BioyondWorkstation(WorkstationBase):
     集成Bioyond物料管理的工作站实现
     """
 
+    def _publish_task_status(
+        self,
+        task_id: str,
+        task_type: str,
+        status: str,
+        result: dict = None,
+        progress: float = 0.0,
+        task_code: str = None
+    ):
+        """发布任务状态事件"""
+        try:
+            if not getattr(self, "_ros_node", None):
+                return
+
+            event_data = {
+                "task_id": task_id,
+                "task_code": task_code,
+                "task_type": task_type,
+                "status": status,
+                "progress": progress,
+                "timestamp": datetime.now().isoformat()
+            }
+            if result:
+                event_data["result"] = result
+
+            topic = f"{self._ros_node.namespace}/events/task_status"
+
+            if not hasattr(self, "_task_status_pub"):
+                self._task_status_pub = self._ros_node.create_publisher(
+                    String, topic, 10
+                )
+
+            self._task_status_pub.publish(
+                convert_to_ros_msg(String, json.dumps(event_data, ensure_ascii=False))
+            )
+        except Exception as e:
+            logger.error(f"发布任务状态事件失败: {e}")
+
     def __init__(
         self,
         bioyond_config: Optional[Dict[str, Any]] = None,
@@ -605,10 +737,28 @@ class BioyondWorkstation(WorkstationBase):
             raise ValueError("Deck 配置不能为空，请在配置文件中添加正确的 deck 配置")
 
         # 初始化 warehouses 属性
-        self.deck.warehouses = {}
-        for resource in self.deck.children:
-            if isinstance(resource, WareHouse):
-                self.deck.warehouses[resource.name] = resource
+        if not hasattr(self.deck, "warehouses") or self.deck.warehouses is None:
+            self.deck.warehouses = {}
+
+        # 仅当 warehouses 为空时尝试重新扫描（避免覆盖子类的修复）
+        if not self.deck.warehouses:
+            for resource in self.deck.children:
+                # 兼容性增强: 只要是仓库类别或者是 WareHouse 实例均可
+                is_warehouse = isinstance(resource, WareHouse) or getattr(resource, "category", "") == "warehouse"
+
+                # 如果配置中有定义，也可以认定为 warehouse
+                if not is_warehouse and "warehouse_mapping" in bioyond_config:
+                    if resource.name in bioyond_config["warehouse_mapping"]:
+                        is_warehouse = True
+
+                if is_warehouse:
+                    self.deck.warehouses[resource.name] = resource
+                    # 确保 category 被正确设置，方便后续使用
+                    if getattr(resource, "category", "") != "warehouse":
+                        try:
+                            resource.category = "warehouse"
+                        except:
+                            pass
 
         # 创建通信模块
         self._create_communication_module(bioyond_config)
@@ -627,18 +777,22 @@ class BioyondWorkstation(WorkstationBase):
             self._set_workflow_mappings(bioyond_config["workflow_mappings"])
 
         # 准备 HTTP 报送接收服务配置（延迟到 post_init 启动）
-        # 从 bioyond_config 中获取，如果没有则使用 HTTP_SERVICE_CONFIG 的默认值
+        # 从 bioyond_config 中的 http_service_config 获取
+        http_service_cfg = bioyond_config.get("http_service_config", {})
         self._http_service_config = {
-            "host": bioyond_config.get("http_service_host", HTTP_SERVICE_CONFIG["http_service_host"]),
-            "port": bioyond_config.get("http_service_port", HTTP_SERVICE_CONFIG["http_service_port"])
+            "host": http_service_cfg.get("http_service_host", "127.0.0.1"),
+            "port": http_service_cfg.get("http_service_port", 8080)
         }
-        self.http_service = None  # 将在 post_init 中启动
+        self.http_service = None  # 将在 post_init 启动
+        self.connection_monitor = None # 将在 post_init 启动
 
         logger.info(f"Bioyond工作站初始化完成")
 
     def __del__(self):
         """析构函数：清理资源，停止 HTTP 服务"""
         try:
+            if hasattr(self, 'connection_monitor') and self.connection_monitor:
+                self.connection_monitor.stop()
             if hasattr(self, 'http_service') and self.http_service is not None:
                 logger.info("正在停止 HTTP 报送服务...")
                 self.http_service.stop()
@@ -648,8 +802,19 @@ class BioyondWorkstation(WorkstationBase):
     def post_init(self, ros_node: ROS2WorkstationNode):
         self._ros_node = ros_node
 
+        # 启动连接监控
+        try:
+            self.connection_monitor = ConnectionMonitor(self)
+            self.connection_monitor.start()
+        except Exception as e:
+            logger.error(f"启动连接监控失败: {e}")
+
         # 启动 HTTP 报送接收服务（现在 device_id 已可用）
-        if hasattr(self, '_http_service_config'):
+        # ⚠️ 检查子类是否已经自己管理 HTTP 服务
+        if self.bioyond_config.get("_disable_auto_http_service"):
+            logger.info("🔧 检测到 _disable_auto_http_service 标志，跳过自动启动 HTTP 服务")
+            logger.info("   子类（BioyondCellWorkstation）已自行管理 HTTP 服务")
+        elif hasattr(self, '_http_service_config'):
             try:
                 self.http_service = WorkstationHTTPService(
                     workstation_instance=self,
@@ -688,19 +853,14 @@ class BioyondWorkstation(WorkstationBase):
 
     def _create_communication_module(self, config: Optional[Dict[str, Any]] = None) -> None:
         """创建Bioyond通信模块"""
-        # 创建默认配置
-        default_config = {
-            **API_CONFIG,
-            "workflow_mappings": WORKFLOW_MAPPINGS,
-            "material_type_mappings": MATERIAL_TYPE_MAPPINGS,
-            "warehouse_mapping": WAREHOUSE_MAPPING
-        }
-
-        # 如果传入了 config，合并配置（config 中的值会覆盖默认值）
+        # 直接使用传入的配置，不再使用默认值
+        # 所有配置必须从 JSON 文件中提供
         if config:
-            self.bioyond_config = {**default_config, **config}
+            self.bioyond_config = config
         else:
-            self.bioyond_config = default_config
+            # 如果没有配置，使用空字典（会导致后续错误，但这是预期的）
+            self.bioyond_config = {}
+            print("警告: 未提供 bioyond_config，请确保在 JSON 配置文件中提供完整配置")
 
         self.hardware_interface = BioyondV1RPC(self.bioyond_config)
 
@@ -1014,7 +1174,15 @@ class BioyondWorkstation(WorkstationBase):
 
         workflow_id = self._get_workflow(actual_workflow_name)
         if workflow_id:
-            self.workflow_sequence.append(workflow_id)
+            # 兼容 BioyondReactionStation 中 workflow_sequence 被重写为 property 的情况
+            if isinstance(self.workflow_sequence, list):
+                self.workflow_sequence.append(workflow_id)
+            elif hasattr(self, "_cached_workflow_sequence") and isinstance(self._cached_workflow_sequence, list):
+                self._cached_workflow_sequence.append(workflow_id)
+            else:
+                print(f"❌ 无法添加工作流: workflow_sequence 类型错误 {type(self.workflow_sequence)}")
+                return False
+
             print(f"添加工作流到执行顺序: {actual_workflow_name} -> {workflow_id}")
             return True
         return False
@@ -1215,6 +1383,22 @@ class BioyondWorkstation(WorkstationBase):
             # TODO: 根据实际业务需求处理步骤完成逻辑
             # 例如：更新数据库、触发后续流程等
 
+            # 发布任务状态事件 (running/progress update)
+            self._publish_task_status(
+                task_id=data.get('orderCode'), # 使用 OrderCode 作为关联 ID
+                task_code=data.get('orderCode'),
+                task_type="bioyond_step",
+                status="running",
+                progress=0.5, # 步骤完成视为任务进行中
+                result={"step_name": data.get('stepName'), "step_id": data.get('stepId')}
+            )
+
+            # 更新物料信息
+            # 步骤完成后，物料状态可能发生变化（如位置、用量等），触发同步
+            logger.info(f"[步骤完成报送] 触发物料同步...")
+            self.resource_synchronizer.sync_from_external()
+
+
             return {
                 "processed": True,
                 "step_id": data.get('stepId'),
@@ -1248,6 +1432,17 @@ class BioyondWorkstation(WorkstationBase):
             logger.info(f"  结束时间: {data.get('endTime')}")
 
             # TODO: 根据实际业务需求处理通量完成逻辑
+
+            # 发布任务状态事件
+            self._publish_task_status(
+                task_id=data.get('orderCode'),
+                task_code=data.get('orderCode'),
+                task_type="bioyond_sample",
+                status="running",
+                progress=0.7,
+                result={"sample_id": data.get('sampleId'), "status": status_desc}
+            )
+
 
             return {
                 "processed": True,
@@ -1287,6 +1482,32 @@ class BioyondWorkstation(WorkstationBase):
 
             # TODO: 根据实际业务需求处理任务完成逻辑
             # 例如：更新物料库存、生成报表等
+
+            # 映射状态到事件状态
+            event_status = "completed"
+            if str(data.get('status')) in ["-11", "-12"]:
+                event_status = "error"
+            elif str(data.get('status')) == "30":
+                event_status = "completed"
+            else:
+                event_status = "running" # 其他状态视为运行中（或根据实际定义）
+
+            # 发布任务状态事件
+            self._publish_task_status(
+                task_id=data.get('orderCode'),
+                task_code=data.get('orderCode'),
+                task_type="bioyond_order",
+                status=event_status,
+                progress=1.0 if event_status in ["completed", "error"] else 0.9,
+                result={"order_name": data.get('orderName'), "status": status_desc, "materials_count": len(used_materials)}
+            )
+
+            # 更新物料信息
+            # 任务完成后，且状态为完成时，触发同步以更新最终物料状态
+            if event_status == "completed":
+                logger.info(f"[任务完成报送] 触发物料同步...")
+                self.resource_synchronizer.sync_from_external()
+
 
             return {
                 "processed": True,

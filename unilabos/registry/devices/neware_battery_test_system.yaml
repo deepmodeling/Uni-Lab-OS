@@ -5,6 +5,73 @@ neware_battery_test_system:
   - battery_test
   class:
     action_value_mappings:
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
+      auto-print_status_summary:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: print_status_summary参数
+          type: object
+        type: UniLabJsonCommand
+      auto-test_connection:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: test_connection参数
+          type: object
+        type: UniLabJsonCommand
       debug_resource_names:
         feedback: {}
         goal: {}
@@ -407,6 +474,8 @@ neware_battery_test_system:
     status_types:
       channel_status: dict
       connection_info: dict
+      device_summary: dict
+      plate_status: dict
       status: str
       total_channels: int
     type: python
@@ -418,36 +487,30 @@ neware_battery_test_system:
     config:
       properties:
         devtype:
-          default: '27'
           type: string
         ip:
-          default: 127.0.0.1
           type: string
         machine_id:
           default: 1
           type: integer
         oss_prefix:
           default: neware_backup
-          description: OSS对象路径前缀
           type: string
         oss_upload_enabled:
           default: false
-          description: 是否启用OSS上传功能
           type: boolean
         port:
-          default: 502
           type: integer
         size_x:
-          default: 500.0
+          default: 50
           type: number
         size_y:
-          default: 500.0
+          default: 50
           type: number
         size_z:
-          default: 2000.0
+          default: 20
           type: number
         timeout:
-          default: 20
           type: integer
       required: []
       type: object
@@ -459,6 +522,8 @@ neware_battery_test_system:
           type: object
         device_summary:
           type: object
+        plate_status:
+          type: object
         status:
           type: string
         total_channels:
@@ -468,6 +533,7 @@ neware_battery_test_system:
       - channel_status
       - connection_info
       - total_channels
+      - plate_status
       - device_summary
       type: object
   version: 1.0.0

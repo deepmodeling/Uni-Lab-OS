@@ -85,7 +85,7 @@ Verification:
 -------------
 
 The verify_installation.py script will check:
-  - Python version (3.11.11)
+  - Python version (3.11.14)
   - ROS2 rclpy installation
   - UniLabOS installation and dependencies
 
@@ -104,7 +104,7 @@ Build Information:
 
   Branch:   {branch}
   Platform: {platform}
-  Python:   3.11.11
+  Python:   3.11.14
   Date:     {build_date}
 
 Troubleshooting:
@@ -126,7 +126,7 @@ If installation fails:
 For more help:
   - Documentation: docs/user_guide/installation.md
   - Quick Start: QUICK_START_CONDA_PACK.md
-  - Issues: https://github.com/dptech-corp/Uni-Lab-OS/issues
+  - Issues: https://github.com/deepmodeling/Uni-Lab-OS/issues
 
 License:
 --------
@@ -134,7 +134,7 @@ License:
 UniLabOS is licensed under GPL-3.0-only.
 See LICENSE file for details.
 
-Repository: https://github.com/dptech-corp/Uni-Lab-OS
+Repository: https://github.com/deepmodeling/Uni-Lab-OS
 """
 
     return readme

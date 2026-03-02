@@ -41,6 +41,7 @@ def upload_workflow(
     workflow_name: Optional[str] = None,
     tags: Optional[List[str]] = None,
     published: bool = False,
+    description: str = "",
 ) -> Dict[str, Any]:
     """
     上传工作流到服务器
@@ -56,6 +57,7 @@ def upload_workflow(
         workflow_name: 工作流名称，如果不提供则从文件中读取或使用文件名
         tags: 工作流标签列表，默认为空列表
         published: 是否发布工作流，默认为False
+        description: 工作流描述，发布时使用
 
     Returns:
         Dict: API响应数据
@@ -74,6 +76,14 @@ def upload_workflow(
     except json.JSONDecodeError as e:
         print_status(f"工作流文件JSON解析失败: {e}", "error")
         return {"code": -1, "message": f"JSON解析失败: {e}"}
+
+    # 从 JSON 文件中提取 description 和 tags（作为 fallback）
+    if not description and "description" in workflow_data:
+        description = workflow_data["description"]
+        print_status(f"从文件中读取 description", "info")
+    if not tags and "tags" in workflow_data:
+        tags = workflow_data["tags"]
+        print_status(f"从文件中读取 tags: {tags}", "info")
 
     # 自动检测并转换格式
     if not _is_node_link_format(workflow_data):
@@ -96,6 +106,7 @@ def upload_workflow(
     print_status(f"  - 节点数量: {len(nodes)}", "info")
     print_status(f"  - 边数量: {len(edges)}", "info")
     print_status(f"  - 标签: {tags or []}", "info")
+    print_status(f"  - 描述: {description[:50]}{'...' if len(description) > 50 else ''}", "info")
     print_status(f"  - 发布状态: {published}", "info")
 
     # 调用 http_client 上传
@@ -107,6 +118,7 @@ def upload_workflow(
         edges=edges,
         tags=tags,
         published=published,
+        description=description,
     )
 
     if result.get("code") == 0:
@@ -131,8 +143,9 @@ def handle_workflow_upload_command(args_dict: Dict[str, Any]) -> None:
     workflow_name = args_dict.get("workflow_name")
     tags = args_dict.get("tags", [])
     published = args_dict.get("published", False)
+    description = args_dict.get("description", "")
 
     if workflow_file:
-        upload_workflow(workflow_file, workflow_name, tags, published)
+        upload_workflow(workflow_file, workflow_name, tags, published, description)
     else:
         print_status("未指定工作流文件路径，请使用 -f/--workflow_file 参数", "error")

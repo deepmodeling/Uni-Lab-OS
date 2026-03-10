@@ -1,0 +1,23 @@
+{
+  "nodes": [
+    {
+      "id": "SOLID_PARAMS_STATION",
+      "name": "SolidParams",
+      "parent": null,
+      "type": "device",
+      "class": "solid_params",
+      "position": {
+        "x": 720.0,
+        "y": 200.0,
+        "z": 0
+      },
+      "config": {
+        "ip": "127.0.0.1",
+        "port": 8091
+      },
+      "data": {},
+      "children": []
+    }
+  ],
+  "links": []
+}

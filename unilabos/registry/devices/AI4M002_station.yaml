@@ -39,57 +39,6 @@ AI4M002_station:
           title: set_stirrer_params参数
           type: object
         type: UniLabJsonCommand
-      auto-trigger_electrolytic_cell_bts_reaction:
-        feedback: {}
-        goal: {}
-        goal_default:
-          electrolytic_cell_id: null
-        handles:
-          input:
-          - data_key: electrolytic_cell_id
-            data_source: handle
-            data_type: ai4m002_electrolytic_cell
-            handler_key: electrolytic_cell_input
-            label: 电解池编号
-          output:
-          - data_key: electrolytic_cell_id
-            data_source: executor
-            data_type: ai4m002_electrolytic_cell
-            handler_key: electrolytic_cell_output
-            label: 电解池编号
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: 触发电解池BTS反应，通过OPC UA信号与PLC同步加工流程
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                electrolytic_cell_id:
-                  description: 电解池编号，1或2
-                  type: integer
-              required:
-              - electrolytic_cell_id
-              type: object
-            result:
-              description: trigger_electrolytic_cell_bts_reaction 返回类型
-              properties:
-                electrolytic_cell_id:
-                  title: Electrolytic Cell Id
-                  type: integer
-                message:
-                  title: Message
-                  type: string
-              required:
-              - electrolytic_cell_id
-              - message
-              title: trigger_electrolytic_cell_bts_reaction返回结果
-              type: object
-          required:
-          - goal
-          title: trigger_electrolytic_cell_bts_reaction参数
-          type: object
-        type: UniLabJsonCommand
       auto-trigger_3axis_pick_from_electrolytic_cell_and_place_to_finished:
         feedback: {}
         goal: {}
@@ -295,6 +244,65 @@ AI4M002_station:
           required:
           - goal
           title: trigger_3axis_pick_from_raw_and_process_to_finished参数
+          type: object
+        type: UniLabJsonCommand
+      auto-trigger_electrolytic_cell_bts_reaction:
+        feedback: {}
+        goal: {}
+        goal_default:
+          current: 50.0
+          duration_sec: 20
+          electrolytic_cell_id: null
+        handles:
+          input:
+          - data_key: electrolytic_cell_id
+            data_source: handle
+            data_type: ai4m002_electrolytic_cell
+            handler_key: electrolytic_cell_input
+            label: 电解池编号
+          output:
+          - data_key: electrolytic_cell_id
+            data_source: executor
+            data_type: ai4m002_electrolytic_cell
+            handler_key: electrolytic_cell_output
+            label: 电解池编号
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 触发电解池BTS反应，通过OPC UA信号与PLC同步加工流程
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                current:
+                  description: 电流（mA）
+                  type: number
+                duration_sec:
+                  description: BTS测试时长（秒）
+                  type: integer
+                electrolytic_cell_id:
+                  description: 电解池编号，1或2
+                  type: integer
+              required:
+              - electrolytic_cell_id
+              type: object
+            result:
+              description: trigger_electrolytic_cell_bts_reaction 返回类型
+              properties:
+                electrolytic_cell_id:
+                  title: Electrolytic Cell Id
+                  type: integer
+                message:
+                  title: Message
+                  type: string
+              required:
+              - electrolytic_cell_id
+              - message
+              title: trigger_electrolytic_cell_bts_reaction返回结果
+              type: object
+          required:
+          - goal
+          title: trigger_electrolytic_cell_bts_reaction参数
           type: object
         type: UniLabJsonCommand
       auto-trigger_s02_init:

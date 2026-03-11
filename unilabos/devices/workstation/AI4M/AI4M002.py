@@ -1295,6 +1295,8 @@ class AI4M002Device(OpcUaClientWithSubscription):
         self,
         electrolytic_cell_id: int,
         sample_uuids: SampleUUIDsType = None,
+        duration_sec: int = 20,  # 秒，内部转为 ms 传给 API
+        current: float = 50.0,  # mA
     ) -> dict:
         """
         触发电解池BTS反应
@@ -1311,6 +1313,8 @@ class AI4M002Device(OpcUaClientWithSubscription):
         Args:
             electrolytic_cell_id: 电解池编号（1或2）
             sample_uuids: 样品UUID，可为空
+            duration_sec: BTS测试时长（秒）
+            current: 电流（mA）
 
         Returns:
             dict: 包含 electrolytic_cell_id 和 message
@@ -1324,22 +1328,27 @@ class AI4M002Device(OpcUaClientWithSubscription):
         start_node = f"Electrolytic_Cell_{electrolytic_cell_id}_Start"
         done_node = f"Electrolytic_Cell_{electrolytic_cell_id}_Done"
         cell_name = f"电解池{electrolytic_cell_id}"
+        channel_id = electrolytic_cell_id - 1
 
         logger.info(f"开始触发{cell_name} BTS反应...")
 
-        # 检查是否有请求加工信号
+        # 等待请求加工信号
         request_signal = self.get_node_value(request_node)
-        if not request_signal:
-            error_msg = f"{cell_name}无请求加工信号，无法触发BTS反应"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+        while not request_signal:
+            logger.info(f"{cell_name}无请求加工信号，等待中...")
+            time.sleep(1.0)
+            request_signal = self.get_node_value(request_node)
 
         logger.info(f"{cell_name}有请求加工信号，触发BTS反应...")
 
         # 触发BTS反应，同时将开始加工信号和加工完成信号置0
         bts_thread = threading.Thread(
             target=self.bts_start_cp_test,
-            kwargs={"chl_list": [electrolytic_cell_id]},
+            kwargs={
+                "chl_list": [channel_id],
+                "duration_sec": duration_sec,
+                "current": current,
+            },
             daemon=True,
         )
         bts_thread.start()
@@ -1417,6 +1426,11 @@ class AI4M002Device(OpcUaClientWithSubscription):
             payload = {"cmd-type": 5, "request-id": f"channel-state-{int(time.time())}", "data": [{"dev-uuid": dev_uuid, "chl-list": chl_list}]}
             response = self._bts_session.post(url, json=payload)
             logger.info(f"BTS 通道状态: 状态码={response.status_code}, 响应={response.text}")
+
+            logger.info(f"启动前先停止通道: chl_list={chl_list}")
+            stop_result = self.bts_stop_test(dev_uuid, chl_list)
+            logger.info(f"BTS 启动前停止结果: {stop_result}")
+
             url = f"{self._bts_base_url}/api/bts/test/start"
             test_id = f"test-cp-{int(time.time())}"
             payload = {
@@ -1565,15 +1579,17 @@ if __name__ == '__main__':
     A4 = AI4M002Device(
         url="opc.tcp://127.0.0.1:49320",
         csv_path="opcua_nodes_AI4M_sim.csv"
+        #url="opc.tcp://192.168.1.10:4840",
+        #csv_path="opcua_nodes_AI4M.csv"
     )
     
     
     # A4.trigger_init()
     # print("初始化完成")
-    # A4.bts_start_cp_test(chl_list=[2], duration_sec=10, current=50.0)
+    # A4.bts_start_cp_test(chl_list=[0], duration_sec=10, current=10.0)
     # print("CP测试完成")
 
-    result = A4.trigger_electrolytic_cell_bts_reaction(electrolytic_cell_id=1)
+    result = A4.trigger_electrolytic_cell_bts_reaction(electrolytic_cell_id=1,duration_sec=10,current=10.0)
     print(f"电解池BTS反应完成: {result}")
 
     # # 给水凝胶堆栈A1位置添加clean物料

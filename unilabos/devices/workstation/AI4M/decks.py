@@ -71,8 +71,8 @@ class AI4M002_deck(Deck):
     def __init__(
         self,
         name: str = "AI4M002_deck",
-        size_x: float = 1217.0,
-        size_y: float = 1500.0,
+        size_x: float = 1460.0,
+        size_y: float = 1560.0,
         size_z: float = 2670.0,
         origin: Coordinate = Coordinate(0, 35, 0),
         category: str = "deck",
@@ -95,16 +95,16 @@ class AI4M002_deck(Deck):
             "酸洗池": Acid_wash_warehouse_1x1x1("酸洗池")
         }
         # warehouse 的位置
-        # 根据前端显示位置转换计算（Deck尺寸: 1217x1320mm, 前端显示: 742x745px）
+        # 根据前端显示位置转换计算（Deck尺寸: 1460x1560mm, 前端显示: 977x1039px）
         # 缩放比例: x=1.640, y=1.772
         # 前端坐标 -> 实际坐标: x' = x_px * 1.640, y' = (745 - y_px) * 1.772
         self.warehouse_locations = {
-            "原始电极堆栈": Coordinate(750.0, 900.0, 0.0),     # 前端: 200x630 (左下电极网格)
-            "完成电极堆栈": Coordinate(200.0, 900.0, 0.0),     # 前端: 530x630 (右下电极网格)
-            "搅拌仪1": Coordinate(500.0, 760.0, 0.0),           # 前端: 280x350 (左上"0"区域)
-            "搅拌仪2": Coordinate(740.0, 760.0, 0.0),           # 前端: 500x350 (右上"0"区域)
-            "水洗池": Coordinate(420.0, 560.0, 0.0),            # 前端: 280x480 (左下"0"区域)
-            "酸洗池": Coordinate(750.0, 560.0, 0.0)             # 前端: 500x480 (右下"0"区域)
+            "原始电极堆栈": Coordinate(930.0, 1100.0, 0.0),     # 前端: 245x713 (左下电极网格)
+            "完成电极堆栈": Coordinate(300.0, 1100.0, 0.0),     # 前端: 608x713 (右下电极网格)
+            "搅拌仪1": Coordinate(500.0, 760.0, 0.0),           # 前端: 386x617 (左上"0"区域)
+            "搅拌仪2": Coordinate(740.0, 760.0, 0.0),           # 前端: 625x617 (右上"0"区域)
+            "水洗池": Coordinate(420.0, 560.0, 0.0),            # 前端: 350x461 (左下"0"区域)
+            "酸洗池": Coordinate(750.0, 560.0, 0.0)             # 前端: 622x461 (右下"0"区域)
         }
 
         for warehouse_name, warehouse in self.warehouses.items():

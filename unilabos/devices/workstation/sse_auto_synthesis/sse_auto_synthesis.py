@@ -32,13 +32,14 @@ import socket
 import time
 import datetime
 
-class SolidParamsDevice:
+class SSEAutoSynthesisStation:
     """
-    Solid 设备命令封装类（长连接）
+    SSE auto synthesis 设备命令封装类（长连接）
     属性：
     ip: 目标设备 IP
     port: 目标设备端口
     _sock: 复用的 TCP 套接字（出现异常时自动重连）
+    status: 设备侧状态（简单标记）
     status: 设备侧状态（简单标记）
     """
     def __init__(self, **kwargs):

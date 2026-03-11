@@ -1,6 +1,6 @@
-solid_params:
+sse_auto_synthesis:
   category:
-  - solid_params
+  - sse_auto_synthesis
   class:
     action_value_mappings:
       auto-get_ball_bead:
@@ -308,7 +308,7 @@ solid_params:
         handles: {}
         result: {}
         schema:
-          description: 生成 Solid 设备的 params.json，默认通过 TCP 发送（使用设备图 IP/Port），并支持写文件/预览
+          description: 生成 SSE auto synthesis 设备的 params.json，默认通过 TCP 发送（使用设备图 IP/Port），并支持写文件/预览
           properties:
             feedback: {}
             goal:
@@ -532,11 +532,11 @@ solid_params:
           title: update_params参数
           type: object
         type: UniLabJsonCommand
-    module: unilabos.devices.Solid.update_params:SolidParamsDevice
+    module: unilabos.devices.workstation.sse_auto_synthesis:SSEAutoSynthesisStation
     status_types: {}
     type: python
   config_info: []
-  description: Solid 设备参数生成器，将配方与流程打包为 params.json，并支持写入文件或通过 JSON 命令管道发送
+  description: SSE auto synthesis 设备参数生成器，将配方与流程打包为 params.json，并支持写入文件或通过 JSON 命令管道发送
   handles: []
   icon: ''
   init_param_schema:

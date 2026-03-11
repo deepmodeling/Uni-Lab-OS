@@ -200,3 +200,7 @@ S02工站初始化完成,S02_Station_Initialization_Done,VARIABLE,BOOLEAN,Chines
 电解池1参数已执行,Electrolytic_Cell_1_params_received,VARIABLE,BOOLEAN,Chinese,ns=2;s=AI4M.设备 1.电解池1参数已执行
 电解池2参数已下发,Electrolytic_Cell_2_param_downloaded,VARIABLE,BOOLEAN,Chinese,ns=2;s=AI4M.设备 1.电解池2参数已下发
 电解池2参数已执行,Electrolytic_Cell_2_params_received,VARIABLE,BOOLEAN,Chinese,ns=2;s=AI4M.设备 1.电解池2参数已执行
+电解池1请求加工,Electrolytic_Cell_1_Request,VARIABLE,BOOLEAN,Chinese,ns=2;s=AI4M.设备 1.电解池1请求加工
+电解池2请求加工,Electrolytic_Cell_2_Request,VARIABLE,BOOLEAN,Chinese,ns=2;s=AI4M.设备 1.电解池2请求加工
+电解池1开始加工,Electrolytic_Cell_1_Start,VARIABLE,BOOLEAN,Chinese,ns=2;s=AI4M.设备 1.电解池1开始加工
+电解池2开始加工,Electrolytic_Cell_2_Start,VARIABLE,BOOLEAN,Chinese,ns=2;s=AI4M.设备 1.电解池2开始加工

@@ -1291,6 +1291,94 @@ class AI4M002Device(OpcUaClientWithSubscription):
             "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"station_id": station_id, "stir_speed": stir_speed, "heat_temp": heat_temp, "time_set": time_set} if isinstance(content, str) else content.serialize()) for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})]
         }
 
+    def trigger_electrolytic_cell_bts_reaction(
+        self,
+        electrolytic_cell_id: int,
+        sample_uuids: SampleUUIDsType = None,
+    ) -> dict:
+        """
+        触发电解池BTS反应
+
+        对应电解池有请求加工信号时，触发BTS反应，并通过OPC UA信号与PLC同步加工流程。
+
+        流程：
+        1. 检查电解池是否有请求加工信号
+        2. 触发BTS反应（调用 bts_start_cp_test）
+        3. 将开始加工信号和加工完成信号置0
+        4. Sleep 1s 后将开始加工信号置1
+        5. 等待加工完成信号为1时，将开始加工信号置0
+
+        Args:
+            electrolytic_cell_id: 电解池编号（1或2）
+            sample_uuids: 样品UUID，可为空
+
+        Returns:
+            dict: 包含 electrolytic_cell_id 和 message
+        """
+        if electrolytic_cell_id not in (1, 2):
+            error_msg = f"电解池编号必须为1或2，当前值: {electrolytic_cell_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        request_node = f"Electrolytic_Cell_{electrolytic_cell_id}_Request"
+        start_node = f"Electrolytic_Cell_{electrolytic_cell_id}_Start"
+        done_node = f"Electrolytic_Cell_{electrolytic_cell_id}_Done"
+        cell_name = f"电解池{electrolytic_cell_id}"
+
+        logger.info(f"开始触发{cell_name} BTS反应...")
+
+        # 检查是否有请求加工信号
+        request_signal = self.get_node_value(request_node)
+        if not request_signal:
+            error_msg = f"{cell_name}无请求加工信号，无法触发BTS反应"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        logger.info(f"{cell_name}有请求加工信号，触发BTS反应...")
+
+        # 触发BTS反应，同时将开始加工信号和加工完成信号置0
+        bts_thread = threading.Thread(
+            target=self.bts_start_cp_test,
+            kwargs={"chl_list": [electrolytic_cell_id]},
+            daemon=True,
+        )
+        bts_thread.start()
+        self.set_node_value(start_node, False)
+        self.set_node_value(done_node, False)
+        logger.info(f"{cell_name}开始加工信号和加工完成信号已置0")
+
+        # sleep 1s 后将开始加工信号置1
+        time.sleep(1.0)
+        logger.info(f"设置{cell_name}开始加工信号为True...")
+        self.set_node_value(start_node, True)
+
+        # 等待加工完成信号为1
+        logger.info(f"等待{cell_name}加工完成...")
+        done = self.get_node_value(done_node)
+        while not done:
+            logger.info(f"{cell_name}加工中...")
+            time.sleep(1.0)
+            done = self.get_node_value(done_node)
+
+        # 将开始加工信号置0
+        logger.info(f"{cell_name}加工完成，复位开始加工信号...")
+        self.set_node_value(start_node, False)
+
+        logger.info(f"{cell_name} BTS反应流程完成")
+
+        return {
+            "electrolytic_cell_id": electrolytic_cell_id,
+            "message": f"{cell_name} BTS反应完成",
+            "unilabos_samples": [
+                LabSample(
+                    sample_uuid=sample_uuid,
+                    oss_path="",
+                    extra={"electrolytic_cell_id": electrolytic_cell_id},
+                )
+                for sample_uuid, content in (sample_uuids.items() if sample_uuids else {})
+            ],
+        }
+
     # ==================== BTS HTTP API 驱动（CP计时电位法） ====================
 
     def bts_start_cp_test(
@@ -1482,9 +1570,11 @@ if __name__ == '__main__':
     
     # A4.trigger_init()
     # print("初始化完成")
-    A4.bts_start_cp_test(chl_list=[2], duration_sec=10, current=50.0)
+    # A4.bts_start_cp_test(chl_list=[2], duration_sec=10, current=50.0)
+    # print("CP测试完成")
 
-    print("CP测试完成")
+    result = A4.trigger_electrolytic_cell_bts_reaction(electrolytic_cell_id=1)
+    print(f"电解池BTS反应完成: {result}")
 
     # # 给水凝胶堆栈A1位置添加clean物料
     # rack_warehouse = A4.deck.warehouses["水凝胶烧杯堆栈"]

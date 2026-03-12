@@ -31,6 +31,8 @@ def warehouse_factory(
     custom_keys: Optional[List[Union[str, int]]] = None,  # 自定义编号列表
     naming_mode: str = "letter_number",  # 排号模式："letter_number"=字母+数字(A1,A2,B1...)，"continuous_number"=连续数字(1,2,3...)
     reverse_col_order: bool = False,  # 列序号是否从右往左：False=从左到右123，True=从右往左123
+    name_prefix: Optional[str] = None,  # 编号前缀，如 "R" 生成 R1,R2...，"F" 生成 F1,F2...
+    letter_replace: Optional[Dict[str, str]] = None,  # 字母替换，如 {"A":"R","C":"F"} 将 A行→R，C行→F
 ):
     # 创建位置坐标
     locations = []
@@ -75,14 +77,15 @@ def warehouse_factory(
             raise ValueError(f"自定义键名数量({len(keys)})与位置数量({len(_sites)})不匹配")
     elif naming_mode == "continuous_number":
         # 模式2：连续数字模式 - 换行不重新排序，连续递增
-        # 例如：1, 2, 3, 4, 5, 6, 7, 8, 9, 10...
+        # 例如：1, 2, 3... 或 name_prefix="R" 时 R1, R2, R3...
         keys = []
         counter = 1 + col_offset  # 支持偏移量，如从5开始
+        prefix = name_prefix or ""
         for layer in range(num_items_z):  # 遍历每一层
             for row in range(num_items_y):  # 遍历每一行
                 row_keys = []
                 for col in range(num_items_x):  # 遍历每一列
-                    row_keys.append(str(counter))
+                    row_keys.append(f"{prefix}{counter}")
                     counter += 1
                 if reverse_col_order:
                     row_keys = list(reversed(row_keys))  # 从右往左：右=1, 中=2, 左=3
@@ -98,7 +101,8 @@ def warehouse_factory(
                 reversed_row = (num_items_y - 1 - row)  # 调整为从上到下：row=0→reversed_row=2, row=1→reversed_row=1
                 global_row = layer * num_items_y + reversed_row
                 letter = LETTERS[global_row]
-                
+                if letter_replace and letter in letter_replace:
+                    letter = letter_replace[letter]
                 for col in range(num_items_x):  # 遍历每一列
                     # 从左到右编号：1, 2, 3, 4, 5...
                     number = col + 1 + col_offset  # 支持列偏移

@@ -274,7 +274,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
             # 获取仓库资源
             raw_warehouse = self.deck.warehouses["原始电极堆栈"]
             station_warehouse = self.deck.warehouses[f"搅拌仪{target_cell_id}"]
-            raw_site_key = str(pick_code)
+            raw_site_key = f"R{pick_code}"
             
             # 在执行硬件操作之前，尝试获取载具（物料转移失败不终止硬件执行）
             try:
@@ -496,7 +496,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
         station_warehouse = self.deck.warehouses[f"搅拌仪{electrolytic_cell_id}"]
         water_wash_warehouse = self.deck.warehouses["水洗池"]
         finished_warehouse = self.deck.warehouses["完成电极堆栈"]
-        finished_site_key = str(place_code)
+        finished_site_key = f"F{place_code}"
         
         logger.info(f"开始流程：从{cell_name}取料 -> 夹住到水洗池 -> 放到完成电极")
         
@@ -839,8 +839,8 @@ class AI4M002Device(OpcUaClientWithSubscription):
         acid_warehouse = self.deck.warehouses["酸洗池"]
         water_wash_warehouse = self.deck.warehouses["水洗池"]
         finished_warehouse = self.deck.warehouses["完成电极堆栈"]
-        raw_site_key = str(pick_code)
-        finished_site_key = str(place_code)
+        raw_site_key = f"R{pick_code}"
+        finished_site_key = f"F{place_code}"
         
         # 尝试获取载具（物料转移失败不终止硬件执行）
         try:

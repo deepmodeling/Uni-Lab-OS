@@ -35,7 +35,7 @@ def Station_1_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[1],  # 使用数字1作为编号
+        custom_keys=["Station_1"],  # 使用数字1作为编号
     )
 
 def Station_2_warehouse_1x1x1(name: str) -> WareHouse:
@@ -52,7 +52,7 @@ def Station_2_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[2],  # 使用数字2作为编号
+        custom_keys=["Station_2"],  # 使用数字2作为编号
     )
 
 def Station_3_warehouse_1x1x1(name: str) -> WareHouse:
@@ -69,7 +69,7 @@ def Station_3_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[3],  # 使用数字3作为编号
+        custom_keys=["Station_3"],  # 使用数字3作为编号
     )
 
 
@@ -123,7 +123,7 @@ def Stir_1_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[0],  # 使用数字0作为编号
+        custom_keys=["Stir_1"],  # 使用数字0作为编号
     )
 
 def Stir_2_warehouse_1x1x1(name: str) -> WareHouse:
@@ -140,7 +140,7 @@ def Stir_2_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[0],  # 使用数字0作为编号
+        custom_keys=["Stir_2"],  # 使用数字0作为编号
     )
 
 def Water_wash_warehouse_1x1x1(name: str) -> WareHouse:
@@ -157,7 +157,7 @@ def Water_wash_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[0],  # 使用数字0作为编号
+        custom_keys=["Wash"],  # 使用数字0作为编号
     )
 
 def Acid_wash_warehouse_1x1x1(name: str) -> WareHouse:
@@ -174,5 +174,5 @@ def Acid_wash_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[0],  # 使用数字0作为编号
+        custom_keys=["Acid"],  # 使用数字0作为编号
     )

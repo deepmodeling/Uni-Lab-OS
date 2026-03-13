@@ -115,7 +115,7 @@ class BTSHttpApiCPTest:
                 "chl-list": chl_list,
                 "globalProtect": {
                     "voltageProtect": {
-                        "underVoltage": 0,
+                        "underVoltage": -5,
                         "overVoltage": 5,
                         "enableUnderVoltage": True,
                         "enableOverVoltage": True,
@@ -124,8 +124,8 @@ class BTSHttpApiCPTest:
                         "enableDelay": False
                     },
                     "currentProtect": {
-                        "charge": 5000,
-                        "discharge": 5000,
+                        "charge": 100,
+                        "discharge": 100,
                         "enableCharge": True,
                         "enableDischarge": True,
                         "enableRangeProtect": False
@@ -143,9 +143,9 @@ class BTSHttpApiCPTest:
                     "creator": "test-user",
                     "weight": 100,
                     "batteryBatchNum": "",
-                    "currentUpperLimit": 5000,
+                    "currentUpperLimit": 100,
                     "voltageUpperLimit": 5,
-                    "voltageLowerLimit": 0
+                    "voltageLowerLimit": -5
                 },
 
                 "stepList": [
@@ -297,7 +297,7 @@ def main():
         first_device = test.devices[0]
         dev_uuid = first_device['dev-uuid']
         chl_list = first_device['chl']
-        chl_list = [2]
+        #chl_list = [2]
 
         print(f"\n将使用设备: {dev_uuid}")
         print(f"通道列表: {chl_list}")

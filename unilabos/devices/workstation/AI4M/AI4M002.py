@@ -1442,7 +1442,7 @@ class AI4M002Device(OpcUaClientWithSubscription):
                     "chl-list": chl_list,
                     "globalProtect": {
                         "voltageProtect": {
-                            "underVoltage": 0,
+                            "underVoltage": -5,
                             "overVoltage": 5,
                             "enableUnderVoltage": True,
                             "enableOverVoltage": True,
@@ -1451,8 +1451,8 @@ class AI4M002Device(OpcUaClientWithSubscription):
                             "enableDelay": False
                         },
                         "currentProtect": {
-                            "charge": 5000,
-                            "discharge": 5000,
+                            "charge": 100,
+                            "discharge": 100,
                             "enableCharge": True,
                             "enableDischarge": True,
                             "enableRangeProtect": False
@@ -1470,15 +1470,15 @@ class AI4M002Device(OpcUaClientWithSubscription):
                         "creator": "test-user",
                         "weight": 100,
                         "batteryBatchNum": "",
-                        "currentUpperLimit": 5000,
+                        "currentUpperLimit": 100,
                         "voltageUpperLimit": 5,
-                        "voltageLowerLimit": 0
+                        "voltageLowerLimit": -5
                     },
                     "stepList": [
                         {
                             "type": 21,
                             "pType": 0,
-                            "mode": 1,
+                            "mode": 2,
                             "mPara": current,
                             "rateMode": False,
                             "rateValue": 0,
@@ -1586,11 +1586,11 @@ if __name__ == '__main__':
     
     # A4.trigger_init()
     # print("初始化完成")
-    # A4.bts_start_cp_test(chl_list=[0], duration_sec=10, current=10.0)
-    # print("CP测试完成")
+    A4.bts_start_cp_test(chl_list=[1], duration_sec=10, current=20.0)
+    print("CP测试完成")
 
-    result = A4.trigger_electrolytic_cell_bts_reaction(electrolytic_cell_id=1,duration_sec=10,current=10.0)
-    print(f"电解池BTS反应完成: {result}")
+    # result = A4.trigger_electrolytic_cell_bts_reaction(electrolytic_cell_id=1,duration_sec=20,current=10.0)
+    # print(f"电解池BTS反应完成: {result}")
 
     # # 给水凝胶堆栈A1位置添加clean物料
     # rack_warehouse = A4.deck.warehouses["水凝胶烧杯堆栈"]

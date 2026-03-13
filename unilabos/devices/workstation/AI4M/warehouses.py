@@ -19,6 +19,7 @@ def Hydrogel_warehouse_5x3x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
+        letter_replace={"A": "R", "C": "F"},
     )
 
 def Station_1_warehouse_1x1x1(name: str) -> WareHouse:
@@ -35,7 +36,7 @@ def Station_1_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[1],  # 使用数字1作为编号
+        custom_keys=["Station_1"],  # 使用数字1作为编号
     )
 
 def Station_2_warehouse_1x1x1(name: str) -> WareHouse:
@@ -52,7 +53,7 @@ def Station_2_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[2],  # 使用数字2作为编号
+        custom_keys=["Station_2"],  # 使用数字2作为编号
     )
 
 def Station_3_warehouse_1x1x1(name: str) -> WareHouse:
@@ -69,12 +70,12 @@ def Station_3_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[3],  # 使用数字3作为编号
+        custom_keys=["Station_3"],  # 使用数字3作为编号
     )
 
 
 def Raw_electrode_warehouse_3x5x1(name: str) -> WareHouse:
-    """创建原始电极 3x5x1仓库（序号从右往左：右=1, 中=2, 左=3）"""
+    """创建原始电极 3x5x1仓库（序号从右往左：右=R1, 中=R2, 左=R3）"""
     return warehouse_factory(
         name=name,
         num_items_x=3,
@@ -89,10 +90,11 @@ def Raw_electrode_warehouse_3x5x1(name: str) -> WareHouse:
         category="warehouse",
         naming_mode="continuous_number",
         reverse_col_order=True,
+        name_prefix="R",
     )
 
 def Finished_electrode_warehouse_3x5x1(name: str) -> WareHouse:
-    """创建完成电极 3x5x1仓库（序号从右往左：右=1, 中=2, 左=3）"""
+    """创建完成电极 3x5x1仓库（序号从右往左：右=F1, 中=F2, 左=F3）"""
     return warehouse_factory(
         name=name,
         num_items_x=3,
@@ -107,6 +109,7 @@ def Finished_electrode_warehouse_3x5x1(name: str) -> WareHouse:
         category="warehouse",
         naming_mode="continuous_number",
         reverse_col_order=True,
+        name_prefix="F",
     )
 
 def Stir_1_warehouse_1x1x1(name: str) -> WareHouse:
@@ -123,7 +126,7 @@ def Stir_1_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[0],  # 使用数字0作为编号
+        custom_keys=["Test_1"],  # 使用数字0作为编号
     )
 
 def Stir_2_warehouse_1x1x1(name: str) -> WareHouse:
@@ -140,7 +143,7 @@ def Stir_2_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[0],  # 使用数字0作为编号
+        custom_keys=["Test_2"],  # 使用数字0作为编号
     )
 
 def Water_wash_warehouse_1x1x1(name: str) -> WareHouse:
@@ -157,7 +160,7 @@ def Water_wash_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[0],  # 使用数字0作为编号
+        custom_keys=["Wash"],  # 使用数字0作为编号
     )
 
 def Acid_wash_warehouse_1x1x1(name: str) -> WareHouse:
@@ -174,5 +177,5 @@ def Acid_wash_warehouse_1x1x1(name: str) -> WareHouse:
         item_dy=96.0,
         item_dz=120.0,
         category="warehouse",
-        custom_keys=[0],  # 使用数字0作为编号
+        custom_keys=["Acid"],  # 使用数字0作为编号
     )

@@ -95,16 +95,13 @@ class AI4M002_deck(Deck):
             "酸洗池": Acid_wash_warehouse_1x1x1("酸洗池")
         }
         # warehouse 的位置
-        # 根据前端显示位置转换计算（Deck尺寸: 1460x1560mm, 前端显示: 977x1039px）
-        # 缩放比例: x=1.640, y=1.772
-        # 前端坐标 -> 实际坐标: x' = x_px * 1.640, y' = (745 - y_px) * 1.772
         self.warehouse_locations = {
-            "原始电极堆栈": Coordinate(930.0, 1100.0, 0.0),     # 前端: 245x713 (左下电极网格)
-            "完成电极堆栈": Coordinate(300.0, 1100.0, 0.0),     # 前端: 608x713 (右下电极网格)
-            "搅拌仪1": Coordinate(500.0, 760.0, 0.0),           # 前端: 386x617 (左上"0"区域)
-            "搅拌仪2": Coordinate(740.0, 760.0, 0.0),           # 前端: 625x617 (右上"0"区域)
-            "水洗池": Coordinate(420.0, 560.0, 0.0),            # 前端: 350x461 (左下"0"区域)
-            "酸洗池": Coordinate(750.0, 560.0, 0.0)             # 前端: 622x461 (右下"0"区域)
+            "原始电极堆栈": Coordinate(930.0, 1069.0, 0.0),     
+            "完成电极堆栈": Coordinate(300.0, 1069.0, 0.0),     
+            "搅拌仪1": Coordinate(588.0, 931.0, 0.0),          
+            "搅拌仪2": Coordinate(890.0, 931.0, 0.0),         
+            "水洗池": Coordinate(508.0, 681.0, 0.0),            
+            "酸洗池": Coordinate(924.0, 681.0, 0.0)             
         }
 
         for warehouse_name, warehouse in self.warehouses.items():

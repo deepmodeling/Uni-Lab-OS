@@ -26,7 +26,6 @@ formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%y-%m-
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
-
 class opsky_ATR30007:
     """
     封装 UniLabOS 设备动作逻辑，兼容 pymodbus 2.x / 3.x。
@@ -234,6 +233,11 @@ class opsky_ATR30007:
 
             logger.info("✅ PLC 与 机器人连接成功")
             time_mod.sleep(0.2)
+            #这里再写 R275 = 1（启动标志）
+            if self.safe_write(robot, "机器人", robot.write_register, address=275, value=1):
+                logger.info(" 已写入启动标志 R275 = 1")
+            else:
+                logger.warning(" 写入启动标志 R275 = 1 失败")
 
             # 伺服使能 (coil 写示例)
             if self.safe_write(plc, "PLC", plc.write_coil, 10, True):

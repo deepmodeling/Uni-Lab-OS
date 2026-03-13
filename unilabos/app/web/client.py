@@ -3,7 +3,7 @@ HTTP客户端模块
 
 提供与远程服务器通信的客户端功能，只有host需要用
 """
-
+import gzip
 import json
 import os
 from typing import List, Dict, Any, Optional
@@ -290,10 +290,17 @@ class HTTPClient:
         Returns:
             Response: API响应对象
         """
+        compressed_body = gzip.compress(
+            json.dumps(registry_data, ensure_ascii=False, default=str).encode("utf-8")
+        )
         response = requests.post(
             f"{self.remote_addr}/lab/resource",
-            json=registry_data,
-            headers={"Authorization": f"Lab {self.auth}"},
+            data=compressed_body,
+            headers={
+                "Authorization": f"Lab {self.auth}",
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip",
+            },
             timeout=30,
         )
         if response.status_code not in [200, 201]:

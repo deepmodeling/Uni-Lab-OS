@@ -40,7 +40,7 @@ class BasicConfig:
 class WSConfig:
     reconnect_interval = 5  # 重连间隔（秒）
     max_reconnect_attempts = 999  # 最大重连次数
-    ping_interval = 30  # ping间隔（秒）
+    ping_interval = 20  # ping间隔（秒）
 
 
 # HTTP配置

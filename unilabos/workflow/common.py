@@ -26,7 +26,7 @@
     res_id: plate_slot_{slot}
     device_id: /PRCXI
     class_name: PRCXI_BioER_96_wellplate
-    parent: /PRCXI/PRCXI_Deck/T{slot}
+    parent: /PRCXI/PRCXI_Deck
     slot_on_deck: "{slot}"
 - 输出端口: labware（用于连接 set_liquid_from_plate）
 - 控制流: create_resource 之间通过 ready 端口串联
@@ -122,7 +122,7 @@ NODE_TYPE_DEFAULT = "ILab"  # 所有节点的默认类型
 # create_resource 节点默认参数
 CREATE_RESOURCE_DEFAULTS = {
     "device_id": "/PRCXI",
-    "parent_template": "/PRCXI/PRCXI_Deck/T{slot}",  # {slot} 会被替换为实际的 slot 值
+    "parent_template": "/PRCXI/PRCXI_Deck",
     "class_name": "PRCXI_BioER_96_wellplate",
 }
 
@@ -424,7 +424,7 @@ def build_protocol_graph(
                 "res_id": res_id,
                 "device_id": CREATE_RESOURCE_DEFAULTS["device_id"],
                 "class_name": lw_type,
-                "parent": CREATE_RESOURCE_DEFAULTS["parent_template"].format(slot=slot),
+                "parent": CREATE_RESOURCE_DEFAULTS["parent_template"],
                 "bind_locations": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "slot_on_deck": slot,
             },

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 
 EXTRA_CLASS = "unilabos_resource_class"
+FRONTEND_POSE_EXTRA = "unilabos_frontend_pose_extra"
 EXTRA_SAMPLE_UUID = "sample_uuid"
 EXTRA_UNILABOS_SAMPLE_UUID = "unilabos_sample_uuid"
 
@@ -100,6 +101,7 @@ class ResourceDictPosition(BaseModel):
     cross_section_type: Literal["rectangle", "circle", "rounded_rectangle"] = Field(
         description="Cross section type", default="rectangle"
     )
+    extra: Optional[Dict[str, Any]] = Field(description="Extra data", default=None)
 
 
 class ResourceDictType(TypedDict):
@@ -411,6 +413,15 @@ class ResourceTreeSet(object):
                 "tip_spot": "tip_spot",
                 "tube": "tube",
                 "bottle_carrier": "bottle_carrier",
+                "material_hole": "material_hole",
+                "container": "container",
+                "material_plate": "material_plate",
+                "electrode_sheet": "electrode_sheet",
+                "warehouse": "warehouse",
+                "magazine_holder": "magazine_holder",
+                "resource_group": "resource_group",
+                "trash": "trash",
+                "plate_adapter": "plate_adapter",
             }
             if source in replace_info:
                 return replace_info[source]
@@ -454,6 +465,7 @@ class ResourceTreeSet(object):
                 "position3d": raw_pos,
                 "rotation": d["rotation"],
                 "cross_section_type": d.get("cross_section_type", "rectangle"),
+                "extra": extra.get(FRONTEND_POSE_EXTRA)
             }
 
             # 先构建当前节点的字典（不包含children）
@@ -539,6 +551,7 @@ class ResourceTreeSet(object):
             name_to_uuid[node.res_content.name] = node.res_content.uuid
             all_states[node.res_content.name] = node.res_content.data
             name_to_extra[node.res_content.name] = node.res_content.extra
+            name_to_extra[node.res_content.name][FRONTEND_POSE_EXTRA] = node.res_content.pose.extra
             name_to_extra[node.res_content.name][EXTRA_CLASS] = node.res_content.klass
             for child in node.children:
                 collect_node_data(child, name_to_uuid, all_states, name_to_extra)
@@ -607,7 +620,7 @@ class ResourceTreeSet(object):
                 plr_resources.append(plr_resource)
 
             except Exception as e:
-                logger.error(f"转换 PLR 资源失败: {e}")
+                logger.error(f"转换 PLR 资源失败: {e} {str(plr_dict)[:1000]}")
                 import traceback
 
                 logger.error(f"堆栈: {traceback.format_exc()}")
@@ -827,14 +840,27 @@ class ResourceTreeSet(object):
                                 f"从远端同步了 {added_count} 个物料子树"
                             )
                     else:
-                        # 情况2: 二级是物料（不是 device）
-                        if remote_child_name not in local_children_map:
-                            # 引入整个子树
-                            remote_child.res_content.parent = local_device.res_content
-                            local_device.children.append(remote_child)
-                            logger.info(f"Device '{remote_root_id}': 从远端同步物料子树 '{remote_child_name}'")
-                        else:
-                            logger.info(f"物料 '{remote_root_id}/{remote_child_name}' 已存在，跳过")
+                        # 二级物料已存在，比较三级子节点是否缺失
+                        local_material = local_children_map[remote_child_name]
+                        local_material_children_map = {child.res_content.name: child for child in
+                                                       local_material.children}
+                        added_count = 0
+                        for remote_sub in remote_child.children:
+                            remote_sub_name = remote_sub.res_content.name
+                            if remote_sub_name not in local_material_children_map:
+                                remote_sub.res_content.parent = local_material.res_content
+                                local_material.children.append(remote_sub)
+                                added_count += 1
+                            else:
+                                logger.info(
+                                    f"物料 '{remote_root_id}/{remote_child_name}/{remote_sub_name}' "
+                                    f"已存在，跳过"
+                                )
+                        if added_count > 0:
+                            logger.info(
+                                f"物料 '{remote_root_id}/{remote_child_name}': "
+                                f"从远端同步了 {added_count} 个子物料"
+                            )
             else:
                 # 情况1: 一级节点是物料（不是 device）
                 # 检查是否已存在

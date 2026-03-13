@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+import platform
 import shutil
 import signal
 import sys
@@ -358,7 +359,7 @@ def main():
     if BasicConfig.test_mode:
         print_status("启用测试模式：所有动作将模拟执行，不调用真实硬件", "warning")
     BasicConfig.communication_protocol = "websocket"
-    machine_name = os.popen("hostname").read().strip()
+    machine_name = platform.node()
     machine_name = "".join([c if c.isalnum() or c == "_" else "_" for c in machine_name])
     BasicConfig.machine_name = machine_name
     BasicConfig.vis_2d_enable = args_dict["2d_vis"]

@@ -97,6 +97,18 @@ class Registry:
         )
         test_resource_schema["description"] = "用于测试物料、设备和样本。"
 
+        create_resource_method_info = host_node_enhanced_info.get("action_methods", {}).get("create_resource", {})
+        create_resource_schema = self._generate_unilab_json_command_schema(
+            create_resource_method_info.get("args", []),
+            "create_resource",
+            create_resource_method_info.get("return_annotation"),
+        )
+        create_resource_schema["description"] = "用于创建物料"
+        raw_create_resource_schema = ros_action_to_json_schema(
+            self.ResourceCreateFromOuterEasy, "用于创建或更新物料资源，每次传入一个物料信息。"
+        )
+        raw_create_resource_schema["properties"]["result"] = create_resource_schema["properties"]["result"]
+
         self.device_type_registry.update(
             {
                 "host_node": {
@@ -140,9 +152,7 @@ class Registry:
                                 },
                                 "feedback": {},
                                 "result": {"success": "success"},
-                                "schema": ros_action_to_json_schema(
-                                    self.ResourceCreateFromOuterEasy, "用于创建或更新物料资源，每次传入一个物料信息。"
-                                ),
+                                "schema": raw_create_resource_schema,
                                 "goal_default": yaml.safe_load(
                                     io.StringIO(get_yaml_from_goal_type(self.ResourceCreateFromOuterEasy.Goal))
                                 ),
@@ -175,7 +185,8 @@ class Registry:
                                     "res_id": "unilabos_resources",  # 将当前实验室的全部物料id作为下拉框可选择
                                     "device_id": "unilabos_devices",  # 将当前实验室的全部设备id作为下拉框可选择
                                     "parent": "unilabos_nodes",  # 将当前实验室的设备/物料作为下拉框可选择
-                                    "class_name": "unilabos_class",
+                                    "class_name": "unilabos_class",  # 当前实验室物料的class name
+                                    "slot_on_deck": "unilabos_resource_slot:parent",  # 勾选的parent的config中的sites的name，展示name，参数对应slot（index）
                                 },
                             },
                             "test_latency": {

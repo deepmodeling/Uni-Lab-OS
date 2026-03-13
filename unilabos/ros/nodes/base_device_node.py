@@ -569,9 +569,11 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 future.add_done_callback(done_cb)
             except ImportError:
                 self.lab_logger().error("Host请求添加物料时，本环境并不存在pylabrobot")
+                res.response = get_result_info_str(traceback.format_exc(), False, {})
             except Exception as e:
                 self.lab_logger().error("Host请求添加物料时出错")
                 self.lab_logger().error(traceback.format_exc())
+                res.response = get_result_info_str(traceback.format_exc(), False, {})
             return res
 
         # noinspection PyTypeChecker
@@ -915,8 +917,24 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         else []
                     )
                     if target_site is not None and sites is not None and site_names is not None:
-                        site_index = sites.index(original_instance)
-                        site_name = site_names[site_index]
+                        site_index = None
+                        try:
+                            # sites 可能是 Resource 列表或 dict 列表 (如 PRCXI9300Deck)
+                            # 只有itemized_carrier在使用，准备弃用
+                            site_index = sites.index(original_instance)
+                        except ValueError:
+                            # dict 类型的 sites: 通过name匹配
+                            for idx, site in enumerate(sites):
+                                if original_instance.name == site["occupied_by"]:
+                                    site_index = idx
+                                    break
+                                elif (original_instance.location.x == site["position"]["x"] and original_instance.location.y == site["position"]["y"] and original_instance.location.z == site["position"]["z"]):
+                                    site_index = idx
+                                    break
+                        if site_index is None:
+                            site_name = None
+                        else:
+                            site_name = site_names[site_index]
                         if site_name != target_site:
                             parent = self.transfer_to_new_resource(original_instance, tree, additional_add_params)
                             if parent is not None:
@@ -924,6 +942,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                                 parent_appended = True
 
                 # 加载状态
+                # noinspection PyProtectedMember
+                original_instance._size_x = plr_resource._size_x
+                # noinspection PyProtectedMember
+                original_instance._size_y = plr_resource._size_y
+                # noinspection PyProtectedMember
+                original_instance._size_z = plr_resource._size_z
+                # noinspection PyProtectedMember
+                original_instance._local_size_z = plr_resource._local_size_z
                 original_instance.location = plr_resource.location
                 original_instance.rotation = plr_resource.rotation
                 original_instance.barcode = plr_resource.barcode
@@ -984,7 +1010,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         ].call_async(
                             r
                         )  # type: ignore
-                        self.lab_logger().info(f"确认资源云端 Add 结果: {response.response}")
+                        self.lab_logger().trace(f"确认资源云端 Add 结果: {response.response}")
                         results.append(result)
                     elif action == "update":
                         if tree_set is None:
@@ -1010,7 +1036,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                             ].call_async(
                                 r
                             )  # type: ignore
-                            self.lab_logger().info(f"确认资源云端 Update 结果: {response.response}")
+                            self.lab_logger().trace(f"确认资源云端 Update 结果: {response.response}")
                         results.append(result)
                     elif action == "remove":
                         result = _handle_remove(resources_uuid)

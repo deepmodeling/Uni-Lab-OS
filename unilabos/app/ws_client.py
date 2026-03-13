@@ -466,8 +466,10 @@ class MessageProcessor:
                 async with websockets.connect(
                     self.websocket_url,
                     ssl=ssl_context,
+                    open_timeout=20,
                     ping_interval=WSConfig.ping_interval,
                     ping_timeout=10,
+                    close_timeout=5,
                     additional_headers={
                         "Authorization": f"Lab {BasicConfig.auth_secret()}",
                         "EdgeSession": f"{self.session_id}",
@@ -478,81 +480,94 @@ class MessageProcessor:
                     self.connected = True
                     self.reconnect_count = 0
 
-                    logger.trace(f"[MessageProcessor] Connected to {self.websocket_url}")
+                    logger.info(f"[MessageProcessor] 已连接到 {self.websocket_url}")
 
                     # 启动发送协程
-                    send_task = asyncio.create_task(self._send_handler())
+                    send_task = asyncio.create_task(self._send_handler(), name="websocket-send_task")
+
+                    # 每次连接（含重连）后重新向服务端注册，
+                    # 否则服务端不知道客户端已上线，不会推送消息。
+                    if self.websocket_client:
+                        self.websocket_client.publish_host_ready()
 
                     try:
                         # 接收消息循环
                         await self._message_handler()
                     finally:
+                        # 必须在 async with __aexit__ 之前停止 send_task，
+                        # 否则 send_task 会在关闭握手期间继续发送数据，
+                        # 干扰 websockets 库的内部清理，导致 task 泄漏。
+                        self.connected = False
                         send_task.cancel()
                         try:
                             await send_task
                         except asyncio.CancelledError:
                             pass
-                        self.connected = False
 
             except websockets.exceptions.ConnectionClosed:
-                logger.warning("[MessageProcessor] Connection closed")
-                self.connected = False
+                logger.warning("[MessageProcessor] 与服务端连接中断")
+            except TimeoutError:
+                logger.warning(
+                    f"[MessageProcessor] 与服务端连接通信超时 (已尝试 {self.reconnect_count + 1} 次)，请检查您的网络状况"
+                )
+            except websockets.exceptions.InvalidStatus as e:
+                logger.warning(
+                    f"[MessageProcessor] 收到服务端注册码 {e.response.status_code}, 上一进程可能还未退出"
+                )
             except Exception as e:
-                logger.error(f"[MessageProcessor] Connection error: {str(e)}")
                 logger.error(traceback.format_exc())
-                self.connected = False
+                logger.error(f"[MessageProcessor] 尝试重连时出错 {str(e)}")
             finally:
+                self.connected = False
                 self.websocket = None
 
             # 重连逻辑
-            if self.is_running and self.reconnect_count < WSConfig.max_reconnect_attempts:
+            if not self.is_running:
+                break
+            if self.reconnect_count < WSConfig.max_reconnect_attempts:
                 self.reconnect_count += 1
+                backoff = WSConfig.reconnect_interval
                 logger.info(
-                    f"[MessageProcessor] Reconnecting in {WSConfig.reconnect_interval}s "
-                    f"(attempt {self.reconnect_count}/{WSConfig.max_reconnect_attempts})"
+                    f"[MessageProcessor] 即将在 {backoff} 秒后重连 (已尝试 {self.reconnect_count}/{WSConfig.max_reconnect_attempts})"
                 )
-                await asyncio.sleep(WSConfig.reconnect_interval)
-            elif self.reconnect_count >= WSConfig.max_reconnect_attempts:
+                await asyncio.sleep(backoff)
+            else:
                 logger.error("[MessageProcessor] Max reconnection attempts reached")
                 break
-            else:
-                self.reconnect_count -= 1
 
     async def _message_handler(self):
-        """处理接收到的消息"""
+        """处理接收到的消息。
+
+        ConnectionClosed 不在此处捕获，让其向上传播到 _connection_handler，
+        以便 async with websockets.connect() 的 __aexit__ 能感知连接已断，
+        正确清理内部 task，避免 task 泄漏。
+        """
         if not self.websocket:
             logger.error("[MessageProcessor] WebSocket connection is None")
             return
 
-        try:
-            async for message in self.websocket:
-                try:
-                    data = json.loads(message)
-                    message_type = data.get("action", "")
-                    message_data = data.get("data")
-                    if self.session_id and self.session_id == data.get("edge_session"):
-                        await self._process_message(message_type, message_data)
+        async for message in self.websocket:
+            try:
+                data = json.loads(message)
+                message_type = data.get("action", "")
+                message_data = data.get("data")
+                if self.session_id and self.session_id == data.get("edge_session"):
+                    await self._process_message(message_type, message_data)
+                else:
+                    if message_type.endswith("_material"):
+                        logger.trace(
+                            f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}"
+                        )
+                        logger.debug(
+                            f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}"
+                        )
                     else:
-                        if message_type.endswith("_material"):
-                            logger.trace(
-                                f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}"
-                            )
-                            logger.debug(
-                                f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}"
-                            )
-                        else:
-                            await self._process_message(message_type, message_data)
-                except json.JSONDecodeError:
-                    logger.error(f"[MessageProcessor] Invalid JSON received: {message}")
-                except Exception as e:
-                    logger.error(f"[MessageProcessor] Error processing message: {str(e)}")
-                    logger.error(traceback.format_exc())
-
-        except websockets.exceptions.ConnectionClosed:
-            logger.info("[MessageProcessor] Message handler stopped - connection closed")
-        except Exception as e:
-            logger.error(f"[MessageProcessor] Message handler error: {str(e)}")
-            logger.error(traceback.format_exc())
+                        await self._process_message(message_type, message_data)
+            except json.JSONDecodeError:
+                logger.error(f"[MessageProcessor] Invalid JSON received: {message}")
+            except Exception as e:
+                logger.error(f"[MessageProcessor] Error processing message: {str(e)}")
+                logger.error(traceback.format_exc())
 
     async def _send_handler(self):
         """处理发送队列中的消息"""
@@ -601,6 +616,7 @@ class MessageProcessor:
 
         except asyncio.CancelledError:
             logger.debug("[MessageProcessor] Send handler cancelled")
+            raise
         except Exception as e:
             logger.error(f"[MessageProcessor] Fatal error in send handler: {str(e)}")
             logger.error(traceback.format_exc())

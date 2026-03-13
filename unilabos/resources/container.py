@@ -1,10 +1,6 @@
-import json
 from typing import Dict, Any
 
 from pylabrobot.resources import Container
-from unilabos_msgs.msg import Resource
-
-from unilabos.ros.msgs.message_converter import convert_from_ros_msg
 
 
 class RegularContainer(Container):
@@ -16,12 +12,14 @@ class RegularContainer(Container):
             kwargs["size_y"] = 0
         if "size_z" not in kwargs:
             kwargs["size_z"] = 0
+        if "category" not in kwargs:
+            kwargs["category"] = "container"
+
         self.kwargs = kwargs
-        self.state = {}
-        super().__init__(*args, category="container", **kwargs)
+        super().__init__(*args, **kwargs)
 
     def load_state(self, state: Dict[str, Any]):
-        self.state = state
+        super().load_state(state)
 
 
 def get_regular_container(name="container"):
@@ -29,7 +27,6 @@ def get_regular_container(name="container"):
     r.category = "container"
     return r
 
-#
 # class RegularContainer(object):
 #     # 第一个参数必须是id传入
 #     # noinspection PyShadowingBuiltins

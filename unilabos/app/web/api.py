@@ -1340,5 +1340,5 @@ def setup_api_routes(app):
     # 启动广播任务
     @app.on_event("startup")
     async def startup_event():
-        asyncio.create_task(broadcast_device_status())
-        asyncio.create_task(broadcast_status_page_data())
+        asyncio.create_task(broadcast_device_status(), name="web-api-startup-device")
+        asyncio.create_task(broadcast_status_page_data(), name="web-api-startup-status")

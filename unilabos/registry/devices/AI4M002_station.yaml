@@ -4,6 +4,7 @@ AI4M002_station:
   class:
     action_value_mappings:
       auto-set_stirrer_params:
+        always_free: true
         feedback: {}
         goal: {}
         goal_default:
@@ -247,6 +248,7 @@ AI4M002_station:
           type: object
         type: UniLabJsonCommand
       auto-trigger_electrolytic_cell_bts_reaction:
+        always_free: true
         feedback: {}
         goal: {}
         goal_default:

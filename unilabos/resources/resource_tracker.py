@@ -585,6 +585,31 @@ class ResourceTreeSet(object):
                 d["model"] = res.config.get("model", None)
             return d
 
+        def _deduplicate_plr_dict(d: dict, _seen: set = None) -> dict:
+            """递归去除 children 中同名重复节点（全树范围、保留首次出现）。
+
+            根本原因：同一槽位被 sync_from_external（Bioyond 同步）重复写入，
+            导致数据库中同一 WareHouse 下存在多条同名 BottleCarrier 记录（不同 UUID）。
+            PLR 的 _check_naming_conflicts 在全树范围检查名称唯一性，
+            重复名称会在 deserialize 时抛出 ValueError，导致节点启动失败。
+            此函数在 sub_cls.deserialize 前预先清理，保证名称唯一。
+            """
+            if _seen is None:
+                _seen = set()
+            children = d.get("children", [])
+            deduped = []
+            for child in children:
+                child = _deduplicate_plr_dict(child, _seen)
+                cname = child.get("name")
+                if cname not in _seen:
+                    _seen.add(cname)
+                    deduped.append(child)
+                else:
+                    logger.warning(
+                        f"[资源树去重] 发现重复资源名称 '{cname}'，跳过重复项（历史脏数据）"
+                    )
+            return {**d, "children": deduped}
+
         plr_resources = []
         tracker = DeviceNodeResourceTracker()
 
@@ -595,6 +620,8 @@ class ResourceTreeSet(object):
             collect_node_data(tree.root_node, name_to_uuid, all_states, name_to_extra)
             has_model = tree.root_node.res_content.type != "deck"
             plr_dict = node_to_plr_dict(tree.root_node, has_model)
+            plr_dict = _deduplicate_plr_dict(plr_dict)
+
             try:
                 sub_cls = find_subclass(plr_dict["type"], PLRResource)
                 if skip_devices and plr_dict["type"] == "device":
@@ -613,6 +640,14 @@ class ResourceTreeSet(object):
 
                 location = cast(Coordinate, deserialize(plr_dict["location"]))
                 plr_resource.location = location
+
+                # 预填 Container 类型资源在新版 PLR 中要求必须存在的键，
+                # 防止旧数据库状态缺失这些键时 load_all_state 抛出 KeyError。
+                for state in all_states.values():
+                    if isinstance(state, dict):
+                        state.setdefault("liquid_history", [])
+                        state.setdefault("pending_liquids", {})
+
                 plr_resource.load_all_state(all_states)
                 # 使用 DeviceNodeResourceTracker 设置 UUID 和 Extra
                 tracker.loop_set_uuid(plr_resource, name_to_uuid)

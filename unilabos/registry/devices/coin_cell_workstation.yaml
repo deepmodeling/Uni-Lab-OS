@@ -70,51 +70,6 @@ coincellassemblyworkstation_device:
           title: fun_wuliao_test参数
           type: object
         type: UniLabJsonCommand
-      auto-func_allpack_cmd:
-        feedback: {}
-        goal: {}
-        goal_default:
-          assembly_pressure: 4200
-          assembly_type: 7
-          elec_num: null
-          elec_use_num: null
-          elec_vol: 50
-          file_path: /Users/sml/work
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                assembly_pressure:
-                  default: 4200
-                  type: integer
-                assembly_type:
-                  default: 7
-                  type: integer
-                elec_num:
-                  type: string
-                elec_use_num:
-                  type: string
-                elec_vol:
-                  default: 50
-                  type: integer
-                file_path:
-                  default: /Users/sml/work
-                  type: string
-              required:
-              - elec_num
-              - elec_use_num
-              type: object
-            result: {}
-          required:
-          - goal
-          title: func_allpack_cmd参数
-          type: object
-        type: UniLabJsonCommand
       auto-func_allpack_cmd_simp:
         feedback: {}
         goal: {}
@@ -390,12 +345,10 @@ coincellassemblyworkstation_device:
         handles:
           input:
           - data_key: bottle_num
-            data_source: workflow
+            data_source: handle
             data_type: integer
             handler_key: bottle_count
-            io_type: source
             label: 配液瓶数
-            required: true
         placeholder_keys: {}
         result: {}
         schema:
@@ -523,12 +476,15 @@ coincellassemblyworkstation_device:
         handles:
           input:
           - data_key: elec_num
-            data_source: workflow
+            data_source: handle
             data_type: integer
             handler_key: bottle_count
-            io_type: source
             label: 配液瓶数
-            required: true
+          - data_key: formulations
+            data_source: handle
+            data_type: array
+            handler_key: formulations_input
+            label: 配方信息列表
         placeholder_keys: {}
         result: {}
         schema:
@@ -743,6 +699,10 @@ coincellassemblyworkstation_device:
         type: UniLabJsonCommand
     module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinCellAssemblyWorkstation
     status_types:
+      data_10mm_positive_plate_remaining: float
+      data_12mm_positive_plate_remaining: float
+      data_16mm_positive_plate_remaining: float
+      data_aluminum_foil_remaining: float
       data_assembly_coin_cell_num: int
       data_assembly_pressure: int
       data_assembly_time: float
@@ -750,14 +710,22 @@ coincellassemblyworkstation_device:
       data_axis_y_pos: float
       data_axis_z_pos: float
       data_coin_cell_code: str
-      data_coin_num: int
+      data_coin_type: int
+      data_current_assembling_count: int
+      data_current_completed_count: int
       data_electrolyte_code: str
       data_electrolyte_volume: int
+      data_finished_battery_ng_remaining_capacity: float
+      data_finished_battery_remaining_capacity: float
+      data_flat_washer_remaining: float
       data_glove_box_o2_content: float
       data_glove_box_pressure: float
       data_glove_box_water_content: float
+      data_negative_shell_remaining: float
       data_open_circuit_voltage: float
       data_pole_weight: float
+      data_positive_shell_remaining: float
+      data_spring_washer_remaining: float
       request_rec_msg_status: bool
       request_send_msg_status: bool
       sys_mode: str
@@ -787,6 +755,14 @@ coincellassemblyworkstation_device:
       type: object
     data:
       properties:
+        data_10mm_positive_plate_remaining:
+          type: number
+        data_12mm_positive_plate_remaining:
+          type: number
+        data_16mm_positive_plate_remaining:
+          type: number
+        data_aluminum_foil_remaining:
+          type: number
         data_assembly_coin_cell_num:
           type: integer
         data_assembly_pressure:
@@ -801,21 +777,37 @@ coincellassemblyworkstation_device:
           type: number
         data_coin_cell_code:
           type: string
-        data_coin_num:
+        data_coin_type:
+          type: integer
+        data_current_assembling_count:
+          type: integer
+        data_current_completed_count:
           type: integer
         data_electrolyte_code:
           type: string
         data_electrolyte_volume:
           type: integer
+        data_finished_battery_ng_remaining_capacity:
+          type: number
+        data_finished_battery_remaining_capacity:
+          type: number
+        data_flat_washer_remaining:
+          type: number
         data_glove_box_o2_content:
           type: number
         data_glove_box_pressure:
           type: number
         data_glove_box_water_content:
           type: number
+        data_negative_shell_remaining:
+          type: number
         data_open_circuit_voltage:
           type: number
         data_pole_weight:
+          type: number
+        data_positive_shell_remaining:
+          type: number
+        data_spring_washer_remaining:
           type: number
         request_rec_msg_status:
           type: boolean
@@ -831,7 +823,6 @@ coincellassemblyworkstation_device:
       - request_rec_msg_status
       - request_send_msg_status
       - data_assembly_coin_cell_num
-      - data_assembly_time
       - data_open_circuit_voltage
       - data_axis_x_pos
       - data_axis_y_pos
@@ -839,12 +830,24 @@ coincellassemblyworkstation_device:
       - data_pole_weight
       - data_assembly_pressure
       - data_electrolyte_volume
-      - data_coin_num
+      - data_coin_type
+      - data_current_assembling_count
+      - data_current_completed_count
       - data_coin_cell_code
       - data_electrolyte_code
       - data_glove_box_pressure
       - data_glove_box_o2_content
       - data_glove_box_water_content
+      - data_10mm_positive_plate_remaining
+      - data_12mm_positive_plate_remaining
+      - data_16mm_positive_plate_remaining
+      - data_aluminum_foil_remaining
+      - data_positive_shell_remaining
+      - data_flat_washer_remaining
+      - data_negative_shell_remaining
+      - data_spring_washer_remaining
+      - data_finished_battery_remaining_capacity
+      - data_finished_battery_ng_remaining_capacity
       type: object
   registry_type: device
   version: 1.0.0

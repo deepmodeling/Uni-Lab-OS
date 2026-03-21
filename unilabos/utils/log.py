@@ -193,7 +193,6 @@ def configure_logger(loglevel=None, working_dir=None):
     root_logger.addHandler(console_handler)
 
     # 如果指定了工作目录，添加文件处理器
-    log_filepath = None
     if working_dir is not None:
         logs_dir = os.path.join(working_dir, "logs")
         os.makedirs(logs_dir, exist_ok=True)
@@ -214,7 +213,6 @@ def configure_logger(loglevel=None, working_dir=None):
 
     logging.getLogger("asyncio").setLevel(logging.INFO)
     logging.getLogger("urllib3").setLevel(logging.INFO)
-    return log_filepath
 
 
 

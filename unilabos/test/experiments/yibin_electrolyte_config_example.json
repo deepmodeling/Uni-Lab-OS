@@ -13,7 +13,7 @@
                 "deck": {
                     "data": {
                         "_resource_child_name": "YB_Bioyond_Deck",
-                        "_resource_type": "unilabos.resources.bioyond.decks:BIOYOND_YB_Deck"
+                        "_resource_type": "unilabos.resources.bioyond.decks:BioyondElectrolyteDeck"
                     }
                 },
                 "protocol_type": [],
@@ -103,15 +103,14 @@
             "children": [],
             "parent": "bioyond_cell_workstation",
             "type": "deck",
-            "class": "BIOYOND_YB_Deck",
+            "class": "BioyondElectrolyteDeck",
             "position": {
                 "x": 0,
                 "y": 0,
                 "z": 0
             },
             "config": {
-                "type": "BIOYOND_YB_Deck",
-                "setup": true,
+                "type": "BioyondElectrolyteDeck",
                 "rotation": {
                     "x": 0,
                     "y": 0,

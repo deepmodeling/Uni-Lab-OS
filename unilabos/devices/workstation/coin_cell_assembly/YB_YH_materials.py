@@ -130,20 +130,14 @@ class MaterialPlate(ItemizedResource[MaterialHole]):
         ordering: Optional[OrderedDict[str, str]] = None,
         category: str = "material_plate",
         model: Optional[str] = None,
-        fill: bool = False
     ):
-        """初始化料板
+        """初始化料板（不主动填充洞位，由工厂方法或反序列化恢复）
 
         Args:
             name: 料板名称
             size_x: 长度 (mm)
             size_y: 宽度 (mm)
             size_z: 高度 (mm)
-            hole_diameter: 洞直径 (mm)
-            hole_depth: 洞深度 (mm)
-            hole_spacing_x: X方向洞位间距 (mm)
-            hole_spacing_y: Y方向洞位间距 (mm)
-            number: 编号
             category: 类别
             model: 型号
         """
@@ -153,42 +147,45 @@ class MaterialPlate(ItemizedResource[MaterialHole]):
             hole_diameter=20.0,
             info="",
         )
-        # 创建4x4的洞位
-        # TODO: 这里要改，对应不同形状
+        super().__init__(
+            name=name,
+            size_x=size_x,
+            size_y=size_y,
+            size_z=size_z,
+            ordered_items=ordered_items,
+            ordering=ordering,
+            category=category,
+            model=model,
+        )
+
+    @classmethod
+    def create_with_holes(
+        cls,
+        name: str,
+        size_x: float,
+        size_y: float,
+        size_z: float,
+        category: str = "material_plate",
+        model: Optional[str] = None,
+    ) -> "MaterialPlate":
+        """工厂方法：创建带 4x4 洞位的料板（仅用于初始 setup，不在反序列化路径调用）"""
+        plate = cls(name=name, size_x=size_x, size_y=size_y, size_z=size_z, category=category, model=model)
         holes = create_ordered_items_2d(
             klass=MaterialHole,
             num_items_x=4,
             num_items_y=4,
-            dx=(size_x - 4 * self._unilabos_state["hole_spacing_x"]) / 2,  # 居中
-            dy=(size_y - 4 * self._unilabos_state["hole_spacing_y"]) / 2,  # 居中
+            dx=(size_x - 4 * plate._unilabos_state["hole_spacing_x"]) / 2,
+            dy=(size_y - 4 * plate._unilabos_state["hole_spacing_y"]) / 2,
             dz=size_z,
-            item_dx=self._unilabos_state["hole_spacing_x"],
-            item_dy=self._unilabos_state["hole_spacing_y"],
-            size_x = 16,
-            size_y = 16,
-            size_z = 16,
+            item_dx=plate._unilabos_state["hole_spacing_x"],
+            item_dy=plate._unilabos_state["hole_spacing_y"],
+            size_x=16,
+            size_y=16,
+            size_z=16,
         )
-        if fill:
-            super().__init__(
-                name=name,
-                size_x=size_x,
-                size_y=size_y,
-                size_z=size_z,
-                ordered_items=holes,
-                category=category,
-                model=model,
-            )
-        else:
-            super().__init__(
-                name=name,
-                size_x=size_x,
-                size_y=size_y,
-                size_z=size_z,
-                ordered_items=ordered_items,
-                ordering=ordering,
-                category=category,
-                model=model,
-            )
+        for hole_name, hole in holes.items():
+            plate.assign_child_resource(hole, location=hole.location)
+        return plate
 
     def update_locations(self):
         # TODO:调多次相加
@@ -534,30 +531,18 @@ class WasteTipBox(Trash):
         return data
 
 
-class CoincellDeck(Deck):
-    """纽扣电池组装工作站台面类"""
+class YihuaCoinCellDeck(Deck):
+    """依华纽扣电池组装工作站台面类"""
 
     def __init__(
         self,
         name: str = "coin_cell_deck",
-        size_x: float = 1450.0,  # 1m
-        size_y: float = 1450.0,  # 1m
-        size_z: float = 100.0,   # 0.9m
+        size_x: float = 1450.0,
+        size_y: float = 1450.0,
+        size_z: float = 100.0,
         origin: Coordinate = Coordinate(-2200, 0, 0),
         category: str = "coin_cell_deck",
-        setup: bool = False,  # 是否自动执行 setup
     ):
-        """初始化纽扣电池组装工作站台面
-
-        Args:
-            name: 台面名称
-            size_x: 长度 (mm) - 1m
-            size_y: 宽度 (mm) - 1m
-            size_z: 高度 (mm) - 0.9m
-            origin: 原点坐标
-            category: 类别
-            setup: 是否自动执行 setup 配置标准布局
-        """
         super().__init__(
             name=name,
             size_x=1450.0,
@@ -565,8 +550,6 @@ class CoincellDeck(Deck):
             size_z=100.0,
             origin=origin,
         )
-        if setup:
-            self.setup()
 
     def setup(self) -> None:
         """设置工作站的标准布局 - 包含子弹夹、料盘、瓶架等完整配置"""
@@ -591,14 +574,11 @@ class CoincellDeck(Deck):
         # ====================================== 物料板 ============================================
         # 创建物料板（料盘carrier）- 4x4布局
         # 负极料盘
-        fujiliaopan = MaterialPlate(name="负极料盘", size_x=120, size_y=100, size_z=10.0, fill=True)
+        fujiliaopan = MaterialPlate.create_with_holes(name="负极料盘", size_x=120, size_y=100, size_z=10.0)
         self.assign_child_resource(fujiliaopan, Coordinate(x=708.0, y=794.0, z=0))
-        # for i in range(16):
-        #     fujipian = ElectrodeSheet(name=f"{fujiliaopan.name}_jipian_{i}", size_x=12, size_y=12, size_z=0.1)
-        #     fujiliaopan.children[i].assign_child_resource(fujipian, location=None)
 
         # 隔膜料盘
-        gemoliaopan = MaterialPlate(name="隔膜料盘", size_x=120, size_y=100, size_z=10.0, fill=True)
+        gemoliaopan = MaterialPlate.create_with_holes(name="隔膜料盘", size_x=120, size_y=100, size_z=10.0)
         self.assign_child_resource(gemoliaopan, Coordinate(x=718.0, y=918.0, z=0))
         # for i in range(16):
         #     gemopian = ElectrodeSheet(name=f"{gemoliaopan.name}_jipian_{i}", size_x=12, size_y=12, size_z=0.1)
@@ -633,11 +613,27 @@ class CoincellDeck(Deck):
         waste_tip_box = WasteTipBox(name="waste_tip_box")
         self.assign_child_resource(waste_tip_box, Coordinate(x=778.0, y=622.0, z=0))
 
+        # 分液瓶板接驳区 - 接收来自 BioyondElectrolyte 侧的完整 Vial Carrier 板
+        # 命名 electrolyte_buffer 与 bioyond_cell_workstation.py 中 sites=["electrolyte_buffer"] 对应
+        electrolyte_buffer = ResourceStack(
+            name="electrolyte_buffer",
+            direction="z",
+            resources=[],
+        )
+        self.assign_child_resource(electrolyte_buffer, Coordinate(x=1050.0, y=700.0, z=0))
 
-def YH_Deck(name=""):
-    cd = CoincellDeck(name=name)
-    cd.setup()
-    return cd
+
+def yihua_coin_cell_deck(name: str = "coin_cell_deck") -> YihuaCoinCellDeck:
+    deck = YihuaCoinCellDeck(name=name)
+    deck.setup()
+    return deck
+
+
+# 向后兼容别名，日后废弃
+CoincellDeck = YihuaCoinCellDeck
+
+def YH_Deck(name: str = "") -> YihuaCoinCellDeck:
+    return yihua_coin_cell_deck(name=name or "coin_cell_deck")
 
 
 if __name__ == "__main__":

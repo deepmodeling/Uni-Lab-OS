@@ -41,8 +41,9 @@ def warehouse_factory(
 
                 # 根据 layout 决定 y 坐标计算
                 if layout == "row-major":
-                    # 行优先：row=0(A行) 应该显示在上方，需要较小的 y 值
-                    y = dy + row * item_dy
+                    # 行优先：row=0(A行) 应该显示在上方
+                    # 前端现在 y 越大越靠上，所以 row=0 对应最大的 y
+                    y = dy + (num_items_y - row - 1) * item_dy
                 elif layout == "vertical-col-major":
                     # 竖向warehouse: row=0 对应顶部（y小），row=n-1 对应底部（y大）
                     # 但标签 01 应该在底部，所以使用反向映射

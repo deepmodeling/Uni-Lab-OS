@@ -632,6 +632,11 @@ class Registry:
                     # 保留字段的 title（用户自定义的中文名）
                     if "title" in prev_field and prev_field["title"]:
                         field_schema["title"] = prev_field["title"]
+                    # 保留旧 schema 中手动定义的复杂嵌套结构（如 items、properties、required）
+                    # 当旧 schema 比自动生成的更丰富时，使用旧 schema 的结构
+                    for rich_key in ("items", "properties", "required"):
+                        if rich_key in prev_field and rich_key not in field_schema:
+                            field_schema[rich_key] = prev_field[rich_key]
 
     def _is_typed_dict(self, annotation: Any) -> bool:
         """
@@ -818,20 +823,26 @@ class Registry:
                                 "goal_default": {i["name"]: i["default"] for i in v["args"]},
                                 "handles": old_action_configs.get(f"auto-{k}", {}).get("handles", []),
                                 "placeholder_keys": {
-                                    i["name"]: (
-                                        "unilabos_resources"
-                                        if i["type"] == "unilabos.registry.placeholder_type:ResourceSlot"
-                                        or i["type"] == ("list", "unilabos.registry.placeholder_type:ResourceSlot")
-                                        else "unilabos_devices"
-                                    )
-                                    for i in v["args"]
-                                    if i.get("type", "")
-                                    in [
-                                        "unilabos.registry.placeholder_type:ResourceSlot",
-                                        "unilabos.registry.placeholder_type:DeviceSlot",
-                                        ("list", "unilabos.registry.placeholder_type:ResourceSlot"),
-                                        ("list", "unilabos.registry.placeholder_type:DeviceSlot"),
-                                    ]
+                                    # 先用旧配置中手动定义的 placeholder_keys 作为基础
+                                    **old_action_configs.get(f"auto-{k}", {}).get("placeholder_keys", {}),
+                                    # 再用自动推断的覆盖（ResourceSlot/DeviceSlot 类型）
+                                    **{
+                                        i["name"]: (
+                                            "unilabos_resources"
+                                            if i["type"] == "unilabos.registry.placeholder_type:ResourceSlot"
+                                            or i["type"]
+                                            == ("list", "unilabos.registry.placeholder_type:ResourceSlot")
+                                            else "unilabos_devices"
+                                        )
+                                        for i in v["args"]
+                                        if i.get("type", "")
+                                        in [
+                                            "unilabos.registry.placeholder_type:ResourceSlot",
+                                            "unilabos.registry.placeholder_type:DeviceSlot",
+                                            ("list", "unilabos.registry.placeholder_type:ResourceSlot"),
+                                            ("list", "unilabos.registry.placeholder_type:DeviceSlot"),
+                                        ]
+                                    },
                                 },
                                 **({"always_free": True} if v.get("always_free") else {}),
                             }

@@ -22,11 +22,11 @@ BIOYOND_PolymerReactionStation_Deck:
   init_param_schema: {}
   registry_type: resource
   version: 1.0.0
-BIOYOND_YB_Deck:
+BioyondElectrolyteDeck:
   category:
   - deck
   class:
-    module: unilabos.resources.bioyond.decks:YB_Deck
+    module: unilabos.resources.bioyond.decks:bioyond_electrolyte_deck
     type: pylabrobot
   description: BIOYOND ElectrolyteFormulationStation Deck
   handles: []
@@ -34,11 +34,11 @@ BIOYOND_YB_Deck:
   init_param_schema: {}
   registry_type: resource
   version: 1.0.0
-CoincellDeck:
+YihuaCoinCellDeck:
   category:
   - deck
   class:
-    module: unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials:YH_Deck
+    module: unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials:yihua_coin_cell_deck
     type: pylabrobot
   description: YIHUA CoinCellAssembly Deck
   handles: []

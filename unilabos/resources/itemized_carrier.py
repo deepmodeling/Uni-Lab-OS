@@ -179,6 +179,35 @@ class ItemizedCarrier(ResourcePLR):
           idx = i
           break
 
+    if idx is None and location is not None:
+      # 精确坐标匹配失败（常见原因：DB 存储的 z=0，而槽位定义 z=dz>0）。
+      # 降级为仅按 XY 坐标进行近似匹配，找到后使用槽位自身的正确坐标写回，
+      # 避免因 Z 偏移导致反序列化中断。
+      _XY_TOLERANCE = 2.0  # mm，覆盖浮点误差和 z 偏移
+      min_dist = float("inf")
+      nearest_idx = None
+      for _i, _loc in enumerate(self.child_locations.values()):
+        _d = (((_loc.x - location.x) ** 2) + ((_loc.y - location.y) ** 2)) ** 0.5
+        if _d < min_dist:
+          min_dist = _d
+          nearest_idx = _i
+      if nearest_idx is not None and min_dist <= _XY_TOLERANCE:
+        from unilabos.utils.log import logger as _logger
+        _slot_label = list(self.child_locations.keys())[nearest_idx]
+        _logger.warning(
+          f"[ItemizedCarrier '{self.name}'] 资源 '{resource.name}' 坐标 {location} 与槽位 "
+          f"'{_slot_label}' {list(self.child_locations.values())[nearest_idx]} 的 XY 吻合"
+          f"（XY 偏差={min_dist:.2f}mm），按 XY 近似匹配成功，z 偏移已被修正。"
+        )
+        idx = nearest_idx
+
+    if idx is None:
+      raise ValueError(
+        f"[ItemizedCarrier '{self.name}'] 无法为资源 '{resource.name}' 找到匹配的槽位。\n"
+        f"  已知槽位: {list(self.child_locations.keys())}\n"
+        f"  传入坐标: {location}\n"
+        f"  提示: XY 近似匹配也失败，请检查资源坐标或 Carrier 槽位定义是否正确。"
+      )
     if not reassign and self.sites[idx] is not None:
       raise ValueError(f"a site with index {idx} already exists")
     location = list(self.child_locations.values())[idx]

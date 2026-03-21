@@ -53,13 +53,28 @@ class Magazine(ResourceStack):
         return self.get_size_z()
 
     def serialize(self) -> dict:
-        return {
-            **super().serialize(),
+        data = super().serialize()
+        # 物料余量由寄存器接管，不再持久化极片子节点，
+        # 防止旧数据写回数据库后下次启动时再次引发重复 UUID。
+        data["children"] = []
+        data.update({
             "size_x": self.size_x or 10.0,
             "size_y": self.size_y or 10.0,
             "size_z": self.size_z or 10.0,
             "max_sheets": self.max_sheets,
-        }
+        })
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict, allow_marshal: bool = False):
+        """反序列化时丢弃极片子节点（ElectrodeSheet 等）。
+
+        物料余量已由寄存器接管，不再在资源树中追踪每个极片实体。
+        清空 children 可防止数据库中的旧极片记录被重新加载，避免重复 UUID 报错。
+        """
+        data = dict(data)
+        data["children"] = []
+        return super().deserialize(data, allow_marshal=allow_marshal)
 
 
 class MagazineHolder(ItemizedResource):
@@ -220,7 +235,7 @@ def MagazineHolder_6_Cathode(
         size_y=size_y,
         size_z=size_z,
         locations=locations,
-        klasses=[FlatWasher, PositiveCan, PositiveCan, FlatWasher, PositiveCan, PositiveCan],
+        klasses=None,
         hole_diameter=hole_diameter,
         hole_depth=hole_depth,
         max_sheets_per_hole=max_sheets_per_hole,
@@ -258,7 +273,7 @@ def MagazineHolder_6_Anode(
         size_y=size_y,
         size_z=size_z,
         locations=locations,
-        klasses=[SpringWasher, NegativeCan, NegativeCan, SpringWasher, NegativeCan, NegativeCan],
+        klasses=None,
         hole_diameter=hole_diameter,
         hole_depth=hole_depth,
         max_sheets_per_hole=max_sheets_per_hole,
@@ -335,7 +350,7 @@ def MagazineHolder_4_Cathode(
         size_y=size_y,
         size_z=size_z,
         locations=locations,
-        klasses=[AluminumFoil, PositiveElectrode, PositiveElectrode, PositiveElectrode],
+        klasses=None,
         hole_diameter=hole_diameter,
         hole_depth=hole_depth,
         max_sheets_per_hole=max_sheets_per_hole,

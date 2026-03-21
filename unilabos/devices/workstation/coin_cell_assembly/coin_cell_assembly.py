@@ -17,7 +17,7 @@ from unilabos.device_comms.modbus_plc.modbus import DeviceType, Base as ModbusNo
 from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import *
 from unilabos.ros.nodes.base_device_node import ROS2DeviceNode, BaseROS2DeviceNode
 from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
-from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import CoincellDeck
+from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import YihuaCoinCellDeck, yihua_coin_cell_deck
 from unilabos.resources.graphio import convert_resources_to_type
 from unilabos.utils.log import logger
 import struct
@@ -623,12 +623,28 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         return vol
 
     @property
-    def data_coin_num(self) -> int:
-        """当前电池数量 (INT16)"""
+    def data_coin_type(self) -> int:
+        """电池类型 - 7种或8种组装物料 (INT16)"""
+        if self.debug_mode:
+            return 7
+        coin_type, read_err = self.client.use_node('REG_DATA_COIN_TYPE').read(1)
+        return coin_type
+    
+    @property
+    def data_current_assembling_count(self) -> int:
+        """当前进行组装的电池数量 - Current assembling battery count (INT16)"""
         if self.debug_mode:
             return 0
-        num, read_err = self.client.use_node('REG_DATA_COIN_NUM').read(1)
-        return num
+        count, read_err = self.client.use_node('REG_DATA_CURRENT_ASSEMBLING_COUNT').read(1)
+        return count
+    
+    @property
+    def data_current_completed_count(self) -> int:
+        """当前完成组装的电池数量 - Current completed battery count (INT16)"""
+        if self.debug_mode:
+            return 0
+        count, read_err = self.client.use_node('REG_DATA_CURRENT_COMPLETED_COUNT').read(1)
+        return count
 
     @property
     def data_coin_cell_code(self) -> str:
@@ -723,6 +739,116 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_GLOVE_BOX_WATER_CONTENT').address, count=2)
         if result.isError():
             logger.error(f"读取手套箱水含量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_10mm_positive_plate_remaining(self) -> float:
+        """10mm正极片剩余物料数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_10MM_POSITIVE_PLATE_REMAINING_COUNT').address, count=2)
+        if result.isError():
+            logger.error("读取10mm正极片余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_12mm_positive_plate_remaining(self) -> float:
+        """12mm正极片剩余物料数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_12MM_POSITIVE_PLATE_REMAINING_COUNT').address, count=2)
+        if result.isError():
+            logger.error("读取12mm正极片余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_16mm_positive_plate_remaining(self) -> float:
+        """16mm正极片剩余物料数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_16MM_POSITIVE_PLATE_REMAINING_COUNT').address, count=2)
+        if result.isError():
+            logger.error("读取16mm正极片余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_aluminum_foil_remaining(self) -> float:
+        """铝箔剩余物料数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_ALUMINUM_FOIL_REMAINING_COUNT').address, count=2)
+        if result.isError():
+            logger.error("读取铝箔余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_positive_shell_remaining(self) -> float:
+        """正极壳剩余物料数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_POSITIVE_SHELL_REMAINING_COUNT').address, count=2)
+        if result.isError():
+            logger.error("读取正极壳余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_flat_washer_remaining(self) -> float:
+        """平垫剩余物料数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_FLAT_WASHER_REMAINING_COUNT').address, count=2)
+        if result.isError():
+            logger.error("读取平垫余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_negative_shell_remaining(self) -> float:
+        """负极壳剩余物料数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_NEGATIVE_SHELL_REMAINING_COUNT').address, count=2)
+        if result.isError():
+            logger.error("读取负极壳余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_spring_washer_remaining(self) -> float:
+        """弹垫剩余物料数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_SPRING_WASHER_REMAINING_COUNT').address, count=2)
+        if result.isError():
+            logger.error("读取弹垫余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_finished_battery_remaining_capacity(self) -> float:
+        """成品电池剩余可容纳数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_FINISHED_BATTERY_REMAINING_CAPACITY').address, count=2)
+        if result.isError():
+            logger.error("读取成品电池余量失败")
+            return 0.0
+        return _decode_float32_correct(result.registers)
+
+    @property
+    def data_finished_battery_ng_remaining_capacity(self) -> float:
+        """成品电池NG槽剩余可容纳数量 (FLOAT32)"""
+        if self.debug_mode:
+            return 0.0
+        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_FINISHED_BATTERY_NG_REMAINING_CAPACITY').address, count=2)
+        if result.isError():
+            logger.error("读取成品电池NG槽余量失败")
             return 0.0
         return _decode_float32_correct(result.registers)
 
@@ -1158,7 +1284,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         lvbodian: bool = True,
         battery_pressure_mode: bool = True,
         battery_clean_ignore: bool = False,
-        file_path: str = "/Users/sml/work"
+        file_path: str = "/Users/sml/work",
+        formulations: List[Dict] = None
     ) -> Dict[str, Any]:
         """
         发送瓶数+简化组装函数（适用于第二批次及后续批次）
@@ -1185,17 +1312,44 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             battery_pressure_mode: 是否启用压力模式
             battery_clean_ignore: 是否忽略电池清洁
             file_path: 实验记录保存路径
+            formulations: 配方信息列表（从 create_orders.mass_ratios 获取）
+                         包含 orderCode, target_mass_ratio, real_mass_ratio 等
+                         用于CSV数据追溯，可选参数
             
         Returns:
             dict: 包含组装结果的字典
             
-        注意：
+        注意:
             - 第一次启动需先调用 func_pack_device_init_auto_start_combined()
             - 后续批次直接调用此函数即可
         """
         logger.info("=" * 60)
         logger.info("开始发送瓶数+简化组装流程...")
         logger.info(f"电解液瓶数: {elec_num}, 每瓶电池数: {elec_use_num}")
+        
+        # 存储配方信息到设备状态（供 CSV 写入使用）
+        if formulations:
+            logger.info(f"接收到配方信息: {len(formulations)} 条")
+            # 将配方信息按 orderCode 索引，方便后续查找
+            self._formulations_map = {
+                f["orderCode"]: f for f in formulations
+            } if formulations else {}
+            # ✅ 新增：存储配方列表（按接收顺序），用于索引访问
+            self._formulations_list = formulations
+        else:
+            logger.warning("未接收到配方信息，CSV将不包含配方字段")
+            self._formulations_map = {}
+            self._formulations_list = []
+        
+        # ✅ 新增：存储每瓶电池数，用于计算当前使用的瓶号
+        # ⚠️ 确保转换为整数（前端可能传递字符串）
+        self._elec_use_num = int(elec_use_num) if elec_use_num else 0
+        logger.info(f"已存储参数: 每瓶电池数={self._elec_use_num}, 配方数={len(self._formulations_list)}")
+        
+        # ✅ 新增：软件层电池计数器（防止硬件计数器不准确）
+        self._software_battery_counter = 0  # 从0开始，每写入一次CSV递增
+        logger.info("软件层电池计数器已初始化")
+        
         logger.info("=" * 60)
         
         # 步骤1: 发送电解液瓶数（触发物料搬运）
@@ -1331,7 +1485,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         data_assembly_time = self.data_assembly_time
         data_assembly_pressure = self.data_assembly_pressure
         data_electrolyte_volume = self.data_electrolyte_volume
-        data_coin_num = self.data_coin_num
+        data_coin_type = self.data_coin_type  # 电池类型（7或8种物料）
+        data_battery_number = self.data_current_assembling_count  # ✅ 真正的电池编号
         
         # 处理电解液二维码 - 确保是字符串类型
         try:
@@ -1361,27 +1516,31 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         logger.debug(f"data_assembly_time: {data_assembly_time}")
         logger.debug(f"data_assembly_pressure: {data_assembly_pressure}")
         logger.debug(f"data_electrolyte_volume: {data_electrolyte_volume}")
-        logger.debug(f"data_coin_num: {data_coin_num}")
+        logger.debug(f"data_coin_type: {data_coin_type}")  # 电池类型
+        logger.debug(f"data_battery_number: {data_battery_number}")  # ✅ 电池编号
         logger.debug(f"data_electrolyte_code: {data_electrolyte_code}")
         logger.debug(f"data_coin_cell_code: {data_coin_cell_code}")
         #接收完信息后，读取完毕标志位置True
-        liaopan3 = self.deck.get_resource("成品弹夹")        
+        finished_battery_magazine = self.deck.get_resource("成品弹夹")        
+        
+        # 计算电池应该放在哪个洞，以及洞内的堆叠位置
+        # 成品弹夹有6个洞，每个洞可堆叠20颗电池
+        # 前5个洞（索引0-4）放正常电池，第6个洞（索引5）放NG电池
+        BATTERIES_PER_HOLE = 20
+        MAX_NORMAL_BATTERIES = 100  # 5个洞 × 20颗/洞
+        
+        hole_index = self.coin_num_N // BATTERIES_PER_HOLE  # 第几个洞（0-4为正常电池）
+        in_hole_position = self.coin_num_N % BATTERIES_PER_HOLE  # 洞内的堆叠序号
+        
+        if hole_index >= 5:
+            logger.error(f"电池数量超出正常容量范围: {self.coin_num_N + 1} > {MAX_NORMAL_BATTERIES}")
+            raise ValueError(f"成品弹夹正常洞位已满（最多{MAX_NORMAL_BATTERIES}颗），当前尝试放置第{self.coin_num_N + 1}颗")
+        
+        target_hole = finished_battery_magazine.children[hole_index]  # 获取目标洞
         
         # 生成唯一的电池名称（使用时间戳确保唯一性）
         timestamp_suffix = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         battery_name = f"battery_{self.coin_num_N}_{timestamp_suffix}"
-        
-        # 检查目标位置是否已有资源，如果有则先卸载
-        target_slot = liaopan3.children[self.coin_num_N]
-        if target_slot.children:
-            logger.warning(f"位置 {self.coin_num_N} 已有资源，将先卸载旧资源")
-            try:
-                # 卸载所有现有子资源
-                for child in list(target_slot.children):
-                    target_slot.unassign_child_resource(child)
-                    logger.info(f"已卸载旧资源: {child.name}")
-            except Exception as e:
-                logger.error(f"卸载旧资源时出错: {e}")
         
         # 创建新的电池资源
         battery = ElectrodeSheet(name=battery_name, size_x=14, size_y=14, size_z=2)
@@ -1393,13 +1552,12 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                             "electrolyte_volume": data_electrolyte_volume
                             }
         
-        # 分配新资源到目标位置
+        # 将电池堆叠到目标洞中
         try:
-            target_slot.assign_child_resource(battery, location=None)
-            logger.info(f"成功分配电池 {battery_name} 到位置 {self.coin_num_N}")
+            target_hole.assign_child_resource(battery, location=None)
+            logger.info(f"成功放置电池 {battery_name} 到弹夹洞{hole_index}的第{in_hole_position + 1}层 (总计第{self.coin_num_N + 1}颗)")
         except Exception as e:
-            logger.error(f"分配电池资源失败: {e}")
-            # 如果分配失败，尝试使用更简单的方法
+            logger.error(f"放置电池资源失败: {e}")
             raise
         
         #print(jipian2.parent)
@@ -1430,17 +1588,72 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 writer.writerow([
                     'Time', 'open_circuit_voltage', 'pole_weight', 
                     'assembly_time', 'assembly_pressure', 'electrolyte_volume', 
-                    'coin_num', 'electrolyte_code', 'coin_cell_code'
+                    'coin_num', 'electrolyte_code', 'coin_cell_code',
+                    'formulation_order_code', 'formulation_ratio'  # ← 新增配方列
                 ])
                 #立刻写入磁盘
                 csvfile.flush()
         #开始追加电池信息
         with open(self.csv_export_file, 'a', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
+            
+            # ========== 提取配方信息 ==========
+            formulation_order_code = ""
+            formulation_ratio_str = ""
+            
+            # 从 self._formulations_list 获取配方信息
+            if hasattr(self, '_formulations_list') and self._formulations_list:
+                # ✅ 新方案：根据电池编号和每瓶电池数计算当前瓶号
+                # 例如：elec_use_num=2时，电池1-2用瓶0，电池3-4用瓶1
+                if hasattr(self, '_elec_use_num') and self._elec_use_num:
+                    # ⚠️ 确保转换为整数（防御性编程）
+                    elec_use_num_int = int(self._elec_use_num) if self._elec_use_num else 1
+                    if elec_use_num_int > 0:
+                        current_bottle_index = (data_battery_number - 1) // elec_use_num_int
+                    else:
+                        current_bottle_index = 0
+                    
+                    logger.debug(
+                        f"[CSV写入] 电池 {data_battery_number}: 计算瓶号索引={current_bottle_index} "
+                        f"(每瓶{self._elec_use_num}颗电池)"
+                    )
+                else:
+                    # 降级方案：尝试从二维码解析（仅当参数未设置时）
+                    current_bottle_index = int(data_electrolyte_code.split('-')[-1]) if '-' in str(data_electrolyte_code) else 0
+                    logger.debug(
+                        f"[CSV写入] 电池 {data_battery_number}: 从二维码解析瓶号索引={current_bottle_index}"
+                    )
+                
+                # 从配方列表中获取对应配方
+                if 0 <= current_bottle_index < len(self._formulations_list):
+                    formulation = self._formulations_list[current_bottle_index]
+                    formulation_order_code = formulation.get("orderCode", "")
+                    # ✅ 优先使用实际质量比（real_mass_ratio），如果不存在则使用目标质量比
+                    real_ratio = formulation.get("real_mass_ratio", {})
+                    target_ratio = formulation.get("target_mass_ratio", {})
+                    mass_ratio = real_ratio if real_ratio else target_ratio
+                    
+                    # 将配方比例转为JSON字符串
+                    import json
+                    formulation_ratio_str = json.dumps(mass_ratio, ensure_ascii=False) if mass_ratio else ""
+                    
+                    logger.info(
+                        f"[CSV写入] 电池 {data_battery_number}: 使用配方[{current_bottle_index}] "
+                        f"orderCode={formulation_order_code}, 比例={formulation_ratio_str}"
+                    )
+                else:
+                    logger.warning(
+                        f"[CSV写入] 电池 {data_battery_number}: 瓶号索引 {current_bottle_index} "
+                        f"超出配方列表范围 (共{len(self._formulations_list)}个配方)"
+                    )
+            else:
+                logger.debug(f"[CSV写入] 电池 {data_battery_number}: 未找到配方信息数据")
+            
             writer.writerow([
                 timestamp, data_open_circuit_voltage, data_pole_weight,
                 data_assembly_time, data_assembly_pressure, data_electrolyte_volume,
-                data_coin_num, data_electrolyte_code, data_coin_cell_code
+                data_coin_type, data_electrolyte_code, data_coin_cell_code,
+                formulation_order_code, formulation_ratio_str  # ← 新增配方数据
             ])
             #立刻写入磁盘
             csvfile.flush()
@@ -1667,8 +1880,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         file_path: str = "/Users/sml/work"
     ) -> Dict[str, Any]:
         """
-        简化版电池组装函数，整合了原 qiming_coin_cell_code 的参数设置和双滴模式
-        
+    
         此函数是 func_allpack_cmd 的增强版本，自动处理以下配置：
         - 负极片和隔膜的盘数及矩阵点位
         - 枪头盒矩阵点位
@@ -1922,7 +2134,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
     
     def fun_wuliao_test(self) -> bool: 
         #找到data_init中构建的2个物料盘
-        liaopan3 = self.deck.get_resource("\u7535\u6c60\u6599\u76d8")
+        test_battery_plate = self.deck.get_resource("\u7535\u6c60\u6599\u76d8")
         for i in range(16):            
             battery = ElectrodeSheet(name=f"battery_{i}", size_x=16, size_y=16, size_z=2)
             battery._unilabos_state = {
@@ -1932,7 +2144,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                                 "electrolyte_volume": 20.0,
                                 "electrolyte_name": f"DP{i}"
                                 }
-            liaopan3.children[i].assign_child_resource(battery, location=None)
+            test_battery_plate.children[i].assign_child_resource(battery, location=None)
             
             ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
                 "resources": [self.deck]
@@ -1975,7 +2187,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             data_assembly_time = self.data_assembly_time
             data_assembly_pressure = self.data_assembly_pressure
             data_electrolyte_volume = self.data_electrolyte_volume
-            data_coin_num = self.data_coin_num
+            data_coin_type = self.data_coin_type  # 电池类型（7或8种物料）
             data_electrolyte_code = self.data_electrolyte_code
             data_coin_cell_code = self.data_coin_cell_code
             # 电解液瓶位置
@@ -2089,7 +2301,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 writer.writerow([
                     timestamp, data_open_circuit_voltage, data_pole_weight,
                     data_assembly_time, data_assembly_pressure, data_electrolyte_volume,
-                    data_coin_num, data_electrolyte_code, data_coin_cell_code
+                    data_coin_type, data_electrolyte_code, data_coin_cell_code  # ✅ 已修正
                 ])
                 #立刻写入磁盘
                 csvfile.flush()
@@ -2140,7 +2352,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
 
 if __name__ == "__main__":
     # 简单测试
-    workstation = CoinCellAssemblyWorkstation(deck=CoincellDeck(setup=True, name="coin_cell_deck"))
+    workstation = CoinCellAssemblyWorkstation(deck=yihua_coin_cell_deck(name="coin_cell_deck"))
     # workstation.qiming_coin_cell_code(fujipian_panshu=1, fujipian_juzhendianwei=2, gemopanshu=3, gemo_juzhendianwei=4, lvbodian=False, battery_pressure_mode=False, battery_pressure=4200, battery_clean_ignore=False)
     # print(f"工作站创建成功: {workstation.deck.name}")
     # print(f"料盘数量: {len(workstation.deck.children)}")

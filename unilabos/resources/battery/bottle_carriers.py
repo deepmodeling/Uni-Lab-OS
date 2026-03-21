@@ -1,9 +1,6 @@
 from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d
 
 from unilabos.resources.itemized_carrier import Bottle, BottleCarrier
-from unilabos.resources.bioyond.YB_bottles import (
-    YB_pei_ye_xiao_Bottle,
-)
 # 命名约定：试剂瓶-Bottle，烧杯-Beaker，烧瓶-Flask，小瓶-Vial
 
 
@@ -51,6 +48,5 @@ def YIHUA_Electrolyte_12VialCarrier(name: str) -> BottleCarrier:
     carrier.num_items_x = 2
     carrier.num_items_y = 6
     carrier.num_items_z = 1
-    for i in range(12):
-        carrier[i] = YB_pei_ye_xiao_Bottle(f"{name}_vial_{i+1}")
+    # 载架初始化为空，瓶子由实际转运操作填入，避免反序列化时重复 assign
     return carrier

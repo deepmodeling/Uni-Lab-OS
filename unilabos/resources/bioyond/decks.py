@@ -1,4 +1,3 @@
-from os import name
 from pylabrobot.resources import Deck, Coordinate, Rotation
 
 from unilabos.resources.bioyond.YB_warehouses import (
@@ -34,11 +33,8 @@ class BIOYOND_PolymerReactionStation_Deck(Deck):
         size_y: float = 1080.0,
         size_z: float = 1500.0,
         category: str = "deck",
-        setup: bool = False
     ) -> None:
         super().__init__(name=name, size_x=2700.0, size_y=1080.0, size_z=1500.0)
-        if setup:
-            self.setup()
 
     def setup(self) -> None:
         # 添加仓库
@@ -66,6 +62,7 @@ class BIOYOND_PolymerReactionStation_Deck(Deck):
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
 
+
 class BIOYOND_PolymerPreparationStation_Deck(Deck):
     def __init__(
         self,
@@ -74,11 +71,8 @@ class BIOYOND_PolymerPreparationStation_Deck(Deck):
         size_y: float = 1080.0,
         size_z: float = 1500.0,
         category: str = "deck",
-        setup: bool = False
     ) -> None:
         super().__init__(name=name, size_x=2700.0, size_y=1080.0, size_z=1500.0)
-        if setup:
-            self.setup()
 
     def setup(self) -> None:
         # 添加仓库 - 配液站的3个堆栈，使用Bioyond系统中的实际名称
@@ -101,7 +95,8 @@ class BIOYOND_PolymerPreparationStation_Deck(Deck):
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
 
-class BIOYOND_YB_Deck(Deck):
+
+class BioyondElectrolyteDeck(Deck):
     def __init__(
         self,
         name: str = "YB_Deck",
@@ -109,17 +104,14 @@ class BIOYOND_YB_Deck(Deck):
         size_y: float = 1400.0,
         size_z: float = 2670.0,
         category: str = "deck",
-        setup: bool = False
     ) -> None:
         super().__init__(name=name, size_x=4150.0, size_y=1400.0, size_z=2670.0)
-        if setup:
-            self.setup()
 
     def setup(self) -> None:
         # 添加仓库
         self.warehouses = {
-            "321窗口": bioyond_warehouse_2x2x1("321窗口"),  # 2行×2列
-            "43窗口": bioyond_warehouse_2x2x1("43窗口"),  # 2行×2列
+            "自动堆栈-左": bioyond_warehouse_2x2x1("自动堆栈-左"),  # 2行×2列
+            "自动堆栈-右": bioyond_warehouse_2x2x1("自动堆栈-右"),  # 2行×2列
             "手动传递窗右": bioyond_warehouse_5x3x1("手动传递窗右", row_offset=0),  # A01-E03
             "手动传递窗左": bioyond_warehouse_5x3x1("手动传递窗左", row_offset=5),  # F01-J03
             "加样头堆栈左": bioyond_warehouse_10x1x1("加样头堆栈左"),
@@ -133,29 +125,34 @@ class BIOYOND_YB_Deck(Deck):
         }
         # warehouse 的位置
         self.warehouse_locations = {
-            "321窗口": Coordinate(-150.0, 158.0, 0.0),
-            "43窗口": Coordinate(4160.0, 158.0, 0.0),
-            "手动传递窗左": Coordinate(-150.0, 877.0, 0.0),
-            "手动传递窗右": Coordinate(4160.0, 877.0, 0.0),
-            "加样头堆栈左": Coordinate(385.0, 1300.0, 0.0),
-            "加样头堆栈右": Coordinate(2187.0, 1300.0, 0.0),
+            "自动堆栈-左": Coordinate(-150.0, 1142.0, 0.0),
+            "自动堆栈-右": Coordinate(4160.0, 1142.0, 0.0),
+            "手动传递窗左": Coordinate(-150.0, 423.0, 0.0),
+            "手动传递窗右": Coordinate(4160.0, 423.0, 0.0),
+            "加样头堆栈左": Coordinate(385.0, 0, 0.0),
+            "加样头堆栈右": Coordinate(2187.0, 0, 0.0),
 
-            "15ml配液堆栈左": Coordinate(749.0, 355.0, 0.0),
-            "母液加样右": Coordinate(2152.0, 333.0, 0.0),
-            "大瓶母液堆栈左": Coordinate(1164.0, 676.0, 0.0),
-            "大瓶母液堆栈右": Coordinate(2717.0, 676.0, 0.0),
-            "2号手套箱内部堆栈": Coordinate(-800, -500.0, 0.0),  # 新增：位置需根据实际硬件调整
+            "15ml配液堆栈左": Coordinate(749.0, 945.0, 0.0),
+            "母液加样右": Coordinate(2152.0, 967.0, 0.0),
+            "大瓶母液堆栈左": Coordinate(1164.0, 624.0, 0.0),
+            "大瓶母液堆栈右": Coordinate(2717.0, 624.0, 0.0),
+            "2号手套箱内部堆栈": Coordinate(-800, 800.0, 0.0),  # 新增：位置需根据实际硬件调整
         }
 
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
 
-def YB_Deck(name: str) -> Deck:
-    by=BIOYOND_YB_Deck(name=name)
-    by.setup()
-    return by
+
+# 向后兼容别名，日后废弃
+BIOYOND_YB_Deck = BioyondElectrolyteDeck
 
 
+def bioyond_electrolyte_deck(name: str) -> BioyondElectrolyteDeck:
+    deck = BioyondElectrolyteDeck(name=name)
+    deck.setup()
+    return deck
 
 
-
+# 向后兼容别名，日后废弃
+def YB_Deck(name: str) -> BioyondElectrolyteDeck:
+    return bioyond_electrolyte_deck(name)

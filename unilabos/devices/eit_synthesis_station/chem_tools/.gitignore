@@ -1,0 +1,4 @@
+data/chemicalbook_cache/
+data/chemicalbook_raw/
+data/chemicalbook_records/
+__pycache__/

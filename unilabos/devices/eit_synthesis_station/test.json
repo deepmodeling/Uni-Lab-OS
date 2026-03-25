@@ -1,0 +1,102 @@
+{
+    "nodes": [
+        {
+            "id": "eit_synthesis_station",
+            "name": "eit_synthesis_station",
+            "children": null,
+            "parent": null,
+            "type": "device",
+            "class": "eit_synthesis_station",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "deck": {
+                    "data": {
+                        "_resource_child_name": "EIT_Synthesis_Station_Deck",
+                        "_resource_type": "unilabos.resources.eit_synthesis_station.decks:EIT_Synthesis_Station_Deck"
+                    }
+                },
+                "protocol_type": []
+            }
+        },
+        {
+            "id": "eit_agv",
+            "name": "eit_agv",
+            "children": null,
+            "parent": null,
+            "type": "device",
+            "class": "eit_agv",
+            "position": {
+                "x": 420,
+                "y": 520,
+                "z": 0
+            },
+            "config": {
+                "deck": {
+                    "data": {
+                        "_resource_child_name": "EIT_AGV_Deck",
+                        "_resource_type": "unilabos.resources.eit_agv.decks:EIT_AGV_Deck"
+                    }
+                },
+                "protocol_type": [],
+                "arm_ip": "",
+                "arm_port": 0,
+                "arm_timeout": 180000
+            }
+        },
+        {
+            "id": "EIT_Synthesis_Station_Deck",
+            "name": "EIT_Synthesis_Station_Deck",
+            "sample_id": null,
+            "children": [],
+            "parent": "eit_synthesis_station",
+            "type": "deck",
+            "class": "",
+            "position": {
+                "x": 100,
+                "y": 100,
+                "z": 0
+            },
+            "config": {
+                "type": "EIT_Synthesis_Station_Deck",
+                "setup": true,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                }
+            },
+            "data": {}
+        },
+        {
+            "id": "EIT_AGV_Deck",
+            "name": "EIT_AGV_Deck",
+            "sample_id": null,
+            "children": [],
+            "parent": "eit_agv",
+            "type": "deck",
+            "class": "",
+            "position": {
+                "x": 520,
+                "y": 620,
+                "z": 0
+            },
+            "config": {
+                "type": "EIT_AGV_Deck",
+                "setup": true,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                }
+            },
+            "data": {}
+        }
+    ],
+    "links": []
+}

@@ -1,0 +1,1082 @@
+{
+  "task_id": 0,
+  "task_name": "仪器示范",
+  "layout_list": [
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 0,
+      "unit_row": 0,
+      "unit_id": "unit-30911870",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.1,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 5.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 0,
+      "unit_row": 1,
+      "unit_id": "unit-fa5c0db4",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 0,
+      "unit_row": 2,
+      "unit_id": "unit-20c0755c",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.1
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 0,
+      "unit_row": 4,
+      "unit_id": "unit-2d1cd7ab",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 1,
+      "unit_row": 0,
+      "unit_id": "unit-a85c48f5",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.2,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 10.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 1,
+      "unit_row": 1,
+      "unit_id": "unit-91430398",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 1,
+      "unit_row": 2,
+      "unit_id": "unit-958066a3",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.2
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 1,
+      "unit_row": 4,
+      "unit_id": "unit-18f1a222",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 2,
+      "unit_row": 0,
+      "unit_id": "unit-cdb12b53",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.3,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 15.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 2,
+      "unit_row": 1,
+      "unit_id": "unit-06e8163a",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 2,
+      "unit_row": 2,
+      "unit_id": "unit-cfea5af1",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.3
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 2,
+      "unit_row": 4,
+      "unit_id": "unit-f7615755",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 3,
+      "unit_row": 0,
+      "unit_id": "unit-2827590a",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.4,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 20.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 3,
+      "unit_row": 1,
+      "unit_id": "unit-90ff2bdd",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 3,
+      "unit_row": 2,
+      "unit_id": "unit-f75d7264",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.4
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 3,
+      "unit_row": 4,
+      "unit_id": "unit-ce7ec4a6",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 4,
+      "unit_row": 0,
+      "unit_id": "unit-5e97de8d",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.5,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 4,
+      "unit_row": 1,
+      "unit_id": "unit-49691b30",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 4,
+      "unit_row": 2,
+      "unit_id": "unit-1170f4b5",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.5
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 4,
+      "unit_row": 4,
+      "unit_id": "unit-ab503e55",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 5,
+      "unit_row": 0,
+      "unit_id": "unit-961d89fe",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.6,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 30.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 5,
+      "unit_row": 1,
+      "unit_id": "unit-2957a58f",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 5,
+      "unit_row": 2,
+      "unit_id": "unit-6414baae",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.6
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 5,
+      "unit_row": 4,
+      "unit_id": "unit-3db6cedf",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 6,
+      "unit_row": 0,
+      "unit_id": "unit-cc3622f3",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.7,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 35.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 6,
+      "unit_row": 1,
+      "unit_id": "unit-27beabc5",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 6,
+      "unit_row": 2,
+      "unit_id": "unit-a36a97ab",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.7
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 6,
+      "unit_row": 4,
+      "unit_id": "unit-1d83a32c",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 7,
+      "unit_row": 0,
+      "unit_id": "unit-d8d056b5",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.8,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 40.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 7,
+      "unit_row": 1,
+      "unit_id": "unit-087f8c37",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 7,
+      "unit_row": 2,
+      "unit_id": "unit-80936466",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.8
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 7,
+      "unit_row": 4,
+      "unit_id": "unit-97db263a",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 8,
+      "unit_row": 0,
+      "unit_id": "unit-7c275860",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 0.9,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 45.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 8,
+      "unit_row": 1,
+      "unit_id": "unit-72582020",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 8,
+      "unit_row": 2,
+      "unit_id": "unit-ba72d006",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 0.9
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 8,
+      "unit_row": 4,
+      "unit_id": "unit-0d45c094",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 9,
+      "unit_row": 0,
+      "unit_id": "unit-0c62dfcc",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 1.0,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 50.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 9,
+      "unit_row": 1,
+      "unit_id": "unit-63327a13",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 9,
+      "unit_row": 2,
+      "unit_id": "unit-b28d33c6",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 1.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 9,
+      "unit_row": 4,
+      "unit_id": "unit-9cb017b9",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 10,
+      "unit_row": 0,
+      "unit_id": "unit-167a8a5e",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 1.0,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 55.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 10,
+      "unit_row": 1,
+      "unit_id": "unit-12bfe757",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 10,
+      "unit_row": 2,
+      "unit_id": "unit-8cc75eb3",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 1.1
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 10,
+      "unit_row": 4,
+      "unit_id": "unit-ab56e98f",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 11,
+      "unit_row": 0,
+      "unit_id": "unit-8e8fcc12",
+      "unit_type": "exp_add_powder",
+      "process_json": {
+        "offset": 1.0,
+        "custom": {
+          "unit": "mg",
+          "unitOptions": [
+            "mg",
+            "g"
+          ]
+        },
+        "substance": "碳酸铯",
+        "chemical_id": 385,
+        "add_weight": 60.0
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_add_magnet",
+      "unit_column": 11,
+      "unit_row": 1,
+      "unit_id": "unit-19d8094b",
+      "process_json": {
+        "custom": {
+          "unit": ""
+        }
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 11,
+      "unit_row": 2,
+      "unit_id": "unit-cc44c32c",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "乙腈",
+        "chemical_id": 381,
+        "add_volume": 1.2
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_type": "exp_magnetic_stirrer",
+      "unit_column": 11,
+      "unit_row": 4,
+      "unit_id": "unit-e8c5ec26",
+      "process_json": {
+        "rotation_speed": 500,
+        "reaction_duration": 360,
+        "is_wait": true,
+        "custom": {
+          "unit": ""
+        },
+        "temperature": 25.0,
+        "is_heating": true,
+        "target_temperature": 25.0
+      }
+    }
+  ],
+  "task_setup": {
+    "subtype": null,
+    "experiment_num": 12,
+    "vessel": "551000502",
+    "added_slots": ""
+  },
+  "is_audit_log": 1,
+  "is_copy": false
+}

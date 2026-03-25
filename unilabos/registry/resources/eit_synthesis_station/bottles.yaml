@@ -1,0 +1,110 @@
+2mL试剂瓶:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_REAGENT_BOTTLE_2ML
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+8mL试剂瓶:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_REAGENT_BOTTLE_8ML
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+40mL试剂瓶:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_REAGENT_BOTTLE_40ML
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+125mL试剂瓶:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_REAGENT_BOTTLE_125ML
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+30mL粉桶:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_POWDER_BUCKET_30ML
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+闪滤瓶内瓶:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_FLASH_FILTER_INNER_BOTTLE
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+闪滤瓶外瓶:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_FLASH_FILTER_OUTER_BOTTLE
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+反应密封盖:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_REACTION_SEAL_CAP
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+2mL反应试管:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_REACTION_TUBE_2ML
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+2mL试管磁子:
+  category:
+  - items
+  - EIT
+  class:
+    module: unilabos.resources.eit_synthesis_station.items:EIT_TEST_TUBE_MAGNET_2ML
+    type: pylabrobot
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0

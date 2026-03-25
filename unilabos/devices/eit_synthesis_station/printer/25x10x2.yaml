@@ -1,0 +1,28 @@
+printer:
+  port: "Gprinter GP-1134T"  # Windows打印机名称(佳博等非TSC打印机不能用"USB", 需填写系统中的打印机名称)
+  ppi: 300               # 打印机分辨率(DPI): 常见值 203 或 300
+
+# 纸张参数
+paper:
+  width: 56            # 纸张总宽度(mm)
+  height: 10         # 单个标签高度(mm)
+  unit: mm
+  columns: 2           # 列数
+  column_gap: 3        # 列间距(mm)
+  margin: 1.3         # 左右边间距(mm)
+  gap: 2          # 连续纸设为0, 有间隙标签纸填实际间距(mm)
+  gap_offset: 0       # 间隙偏移(mm)
+  direction: 1         # 打印方向: 0或1
+
+# 字体参数 (Windows字体, 支持中文)
+font:
+  name: Arial          # 字体名称(ASCII, 如: Arial, SimHei, SimSun)
+  size: 60             # 字号上限(dot). 实际字号 = min(此值, 标签高度上限). 仅文字溢出时缩小
+  bold: 0              # 粗体: 0=否, 1=是
+  underline: 0         # 下划线: 0=否, 1=是
+  rotation: 0          # 旋转角度: 0/90/180/270
+
+# 文字打印位置微调 (全局偏移, 单位mm, 正值=向右/向下)
+position:
+  x: 1.5
+  y: 1

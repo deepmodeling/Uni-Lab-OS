@@ -425,11 +425,12 @@ class ResourceTreeSet(object):
                 "tip_spot": "tip_spot",
                 "tube": "tube",
                 "bottle_carrier": "bottle_carrier",
-                "material_hole": "material_hole",
                 "container": "container",
-                "material_plate": "material_plate",
-                "electrode_sheet": "electrode_sheet",
+                "resource_holder": "resource_holder",
                 "warehouse": "warehouse",
+                "electrode_sheet": "electrode_sheet",
+                "material_hole": "material_hole",
+                "material_plate": "material_plate",
                 "magazine_holder": "magazine_holder",
                 "resource_group": "resource_group",
                 "trash": "trash",
@@ -464,6 +465,11 @@ class ResourceTreeSet(object):
 
             uuid_list.append((uid, parent_uuid, extra))
             for child in res.children:
+                if (
+                    getattr(res, "category", None) == "bottle_carrier"
+                    and getattr(child, "category", None) == "resource_holder"
+                ):
+                    continue
                 build_uuid_mapping(child, uuid_list, uid)
 
         def resource_plr_inner(
@@ -542,7 +548,8 @@ class ResourceTreeSet(object):
         for resource in resources:
             # 构建uuid列表
             uuid_list = []
-            build_uuid_mapping(resource, uuid_list, getattr(resource.parent, "unilabos_uuid", None))
+            parent_uuid = getattr(resource.parent, "unilabos_uuid", None) if resource.parent else None
+            build_uuid_mapping(resource, uuid_list, parent_uuid)
 
             serialized_data = resource.serialize()
             all_states = resource.serialize_all_state()
@@ -571,8 +578,10 @@ class ResourceTreeSet(object):
             "deck": "Deck",
             "container": "RegularContainer",
             "tip_spot": "TipSpot",
+            "resource_holder": "ResourceHolder",
+            "bottle_carrier": "BottleCarrier",
+            "warehouse": "WareHouse",
         }
-
         def collect_node_data(node: ResourceDictInstance, name_to_uuid: dict, all_states: dict, name_to_extra: dict):
             """一次遍历收集 name_to_uuid, all_states 和 name_to_extra"""
             name_to_uuid[node.res_content.name] = node.res_content.uuid
@@ -701,6 +710,7 @@ class ResourceTreeSet(object):
             # 设置 parent 引用并建立 children 关系
             if parent_instance:
                 instance.res_content.parent = parent_instance.res_content
+                instance.res_content.parent_uuid = parent_instance.res_content.uuid
                 # 将当前节点添加到父节点的 children 列表（避免重复添加）
                 if instance not in parent_instance.children:
                     parent_instance.children.append(instance)
@@ -854,6 +864,7 @@ class ResourceTreeSet(object):
                             if remote_material_name not in local_sub_children_map:
                                 # 引入整个子树
                                 remote_material.res_content.parent = local_sub_device.res_content
+                                remote_material.res_content.parent_uuid = local_sub_device.res_content.uuid
                                 local_sub_device.children.append(remote_material)
                                 added_count += 1
                             else:
@@ -877,6 +888,7 @@ class ResourceTreeSet(object):
                             remote_sub_name = remote_sub.res_content.name
                             if remote_sub_name not in local_material_children_map:
                                 remote_sub.res_content.parent = local_material.res_content
+                                remote_sub.res_content.parent_uuid = local_material.res_content.uuid
                                 local_material.children.append(remote_sub)
                                 added_count += 1
                             else:
@@ -1232,6 +1244,11 @@ class DeviceNodeResourceTracker(object):
         Args:
             resource: 资源对象（可以是dict或实例）
         """
+        try:
+            from pylabrobot.resources import Resource as ResourcePLR
+        except Exception:
+            ResourcePLR = None  # type: ignore
+
         root_uuids = {}
         for r in self.resources:
             res_uuid = r.get("uuid") if isinstance(r, dict) else getattr(r, "unilabos_uuid", None)
@@ -1247,8 +1264,21 @@ class DeviceNodeResourceTracker(object):
             res_uuid = getattr(resource, "unilabos_uuid", None)
         if res_uuid in root_uuids:
             old_res = root_uuids[res_uuid]
-            # self.remove_resource(old_res)
-            logger.warning(f"资源{resource}已存在，旧资源: {old_res}")
+
+            def _is_plr(obj) -> bool:
+                return ResourcePLR is not None and isinstance(obj, ResourcePLR)
+
+            # 优先保留 PLR 资源，避免 dict + PLR 重复导致冲突
+            if _is_plr(old_res) and not _is_plr(resource):
+                logger.warning(f"资源{resource}已存在（保留PLR实例），跳过新增，旧资源: {old_res}")
+                return
+            if _is_plr(resource) and not _is_plr(old_res):
+                logger.warning(f"资源{resource}已存在（替换为PLR实例），旧资源: {old_res}")
+                self.remove_resource(old_res)
+            else:
+                logger.warning(f"资源{resource}已存在（替换旧资源），旧资源: {old_res}")
+                self.remove_resource(old_res)
+
         self.resources.append(resource)
         # 递归收集uuid映射
         self._collect_uuid_mapping(resource)

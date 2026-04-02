@@ -82,6 +82,29 @@ T = TypeVar("T")
 registered_devices: Dict[str, "DeviceInfoType"] = {}
 
 
+def _dump_resource_state(resource: Any) -> Dict[str, Any]:
+    """Read resource state from either the current tracker API or legacy .state."""
+    if hasattr(resource, "serialize_state"):
+        state = resource.serialize_state()
+        if isinstance(state, dict):
+            return dict(state)
+    state = getattr(resource, "state", None)
+    if isinstance(state, dict):
+        return dict(state)
+    return {}
+
+
+def _load_resource_state(resource: Any, state: Dict[str, Any]) -> None:
+    """Write resource state back using whichever API the resource exposes."""
+    if hasattr(resource, "load_state"):
+        resource.load_state(state)
+        return
+    if hasattr(resource, "state"):
+        resource.state = state
+        return
+    raise AttributeError(f"Resource {resource} does not support state loading")
+
+
 # 实现同时记录自定义日志和ROS2日志的适配器
 class ROSLoggerAdapter:
     """同时向自定义日志和ROS2日志发送消息的适配器"""
@@ -430,8 +453,11 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     assert len(found_resources) == 1, f"找到多个同名物料: {container_instance.name}, 请检查物料系统"
                     found_resource = found_resources[0]
                     if isinstance(found_resource, RegularContainer):
-                        logger.info(f"更新物料{container_instance.name}的数据{found_resource.state}")
-                        found_resource.state.update(container_instance.state)
+                        current_state = _dump_resource_state(found_resource)
+                        incoming_state = _dump_resource_state(container_instance)
+                        logger.info(f"更新物料{container_instance.name}的数据{current_state}")
+                        current_state.update(incoming_state)
+                        _load_resource_state(found_resource, current_state)
                     elif isinstance(found_resource, dict):
                         raise ValueError("已不支持 字典 版本的RegularContainer")
                     else:

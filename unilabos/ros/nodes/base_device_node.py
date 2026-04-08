@@ -761,6 +761,84 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     f"物料{plr_resource}请求挂载{tree.root_node.res_content.name}的父节点{parent_resource}[{parent_uuid}]失败！\n{traceback.format_exc()}"
                 )
 
+    def batch_transfer_resources(
+        self,
+        transfers: List[Dict[str, Any]],
+    ) -> List["ResourcePLR"]:
+        """批量转移 PLR 资源：先全部 unassign，再全部 assign，最后一次性回调和同步
+
+        Args:
+            transfers: 转移列表，每项包含:
+                - "resource": PLR 资源对象
+                - "from_parent": 原父节点 (PLR ResourceHolder/WareHouse)
+                - "to_parent": 目标父节点
+                - "to_site": 目标 slot 名称（可选，用于 ItemizedCarrier）
+
+        Returns:
+            成功转移的目标 parent 列表
+        """
+        from pylabrobot.resources.resource import Resource as ResourcePLR
+
+        if not transfers:
+            return []
+
+        # 第一遍：校验所有物料和目标 parent 的合法性
+        for t in transfers:
+            resource = t["resource"]
+            to_parent = t["to_parent"]
+            if resource is None:
+                raise ValueError("转移列表中存在 resource=None")
+            if to_parent is None:
+                raise ValueError(f"物料 {resource} 的目标 parent 为 None")
+
+        # 第二遍：批量 unassign
+        old_parents = []
+        for t in transfers:
+            resource = t["resource"]
+            old_parent = resource.parent
+            old_parents.append(old_parent)
+            if old_parent is not None:
+                self.lab_logger().debug(f"批量 unassign: {resource.name} 从 {old_parent.name}")
+                old_parent.unassign_child_resource(resource)
+            # 从顶级资源列表中移除（避免 figure_resource 重复引用）
+            resource_id = id(resource)
+            for i, r in enumerate(self.resource_tracker.resources):
+                if id(r) == resource_id:
+                    self.resource_tracker.resources.pop(i)
+                    break
+
+        # 第三遍：批量 assign
+        parents = []
+        for t, old_parent in zip(transfers, old_parents):
+            resource = t["resource"]
+            to_parent = t["to_parent"]
+            to_site = t.get("to_site")
+            additional_params = {}
+            if to_site is not None:
+                spec = inspect.signature(to_parent.assign_child_resource)
+                if "spot" in spec.parameters:
+                    ordering_dict = getattr(to_parent, "_ordering", None)
+                    if ordering_dict and to_site in ordering_dict:
+                        additional_params["spot"] = list(ordering_dict.keys()).index(to_site)
+                    else:
+                        additional_params["spot"] = to_site
+            self.lab_logger().debug(f"批量 assign: {resource.name} → {to_parent.name} site={to_site}")
+            to_parent.assign_child_resource(resource, location=None, **additional_params)
+            parents.append(to_parent)
+
+        # 一次性触发 driver 回调
+        func = getattr(self.driver_instance, "resource_tree_batch_transfer", None)
+        if callable(func):
+            func(transfers, old_parents, parents)
+        else:
+            # 兜底：逐个调用 resource_tree_transfer
+            single_func = getattr(self.driver_instance, "resource_tree_transfer", None)
+            if callable(single_func):
+                for t, old_parent, new_parent in zip(transfers, old_parents, parents):
+                    single_func(old_parent, t["resource"], new_parent)
+
+        return parents
+
     async def s2c_resource_tree(self, req: SerialCommand_Request, res: SerialCommand_Response):
         """
         处理资源树更新请求

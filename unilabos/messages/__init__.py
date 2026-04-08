@@ -217,6 +217,24 @@ class AGVTransferProtocol(BaseModel):
     from_repo_position: str
     to_repo_position: str
 
+
+class BatchTransferItem(BaseModel):
+    """批量转运中的单个物料条目"""
+    resource_uuid: str = ""
+    resource_id: str = ""
+    from_position: str
+    to_position: str
+
+
+class BatchTransferProtocol(BaseModel):
+    """批量物料转运协议 — 支持多物料一次性从来源工站转运到目标工站"""
+    from_repo: dict
+    to_repo: dict
+    transfer_resources: list  # list[Resource dict]，被转运的物料
+    from_positions: list      # list[str]，来源 slot 位置（与 transfer_resources 平行）
+    to_positions: list        # list[str]，目标 slot 位置（与 transfer_resources 平行）
+
+
 #=============新添加的新的协议================
 class AddProtocol(BaseModel):
     vessel: dict
@@ -629,15 +647,16 @@ class HydrogenateProtocol(BaseModel):
     vessel: dict = Field(..., description="反应容器")
 
 __all__ = [
-    "Point3D", "PumpTransferProtocol", "CleanProtocol", "SeparateProtocol", 
-    "EvaporateProtocol", "EvacuateAndRefillProtocol", "AGVTransferProtocol", 
-    "CentrifugeProtocol", "AddProtocol", "FilterProtocol", 
+    "Point3D", "PumpTransferProtocol", "CleanProtocol", "SeparateProtocol",
+    "EvaporateProtocol", "EvacuateAndRefillProtocol", "AGVTransferProtocol",
+    "BatchTransferItem", "BatchTransferProtocol",
+    "CentrifugeProtocol", "AddProtocol", "FilterProtocol",
     "HeatChillProtocol",
     "HeatChillStartProtocol", "HeatChillStopProtocol",
-    "StirProtocol", "StartStirProtocol", "StopStirProtocol", 
-    "TransferProtocol", "CleanVesselProtocol", "DissolveProtocol", 
+    "StirProtocol", "StartStirProtocol", "StopStirProtocol",
+    "TransferProtocol", "CleanVesselProtocol", "DissolveProtocol",
     "FilterThroughProtocol", "RunColumnProtocol", "WashSolidProtocol",
-    "AdjustPHProtocol", "ResetHandlingProtocol", "DryProtocol", 
+    "AdjustPHProtocol", "ResetHandlingProtocol", "DryProtocol",
     "RecrystallizeProtocol", "HydrogenateProtocol"
 ]
 # End Protocols

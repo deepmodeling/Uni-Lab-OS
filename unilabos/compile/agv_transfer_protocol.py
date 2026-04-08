@@ -1,4 +1,12 @@
+"""
+AGV 单物料转运编译器
+
+从 physical_setup_graph 中查询 AGV 配置（device_roles, route_table），
+不再硬编码 device_id 和路由表。
+"""
+
 import networkx as nx
+from unilabos.compile._agv_utils import find_agv_config
 
 
 def generate_agv_transfer_protocol(
@@ -17,37 +25,32 @@ def generate_agv_transfer_protocol(
     from_repo_id = from_repo_["id"]
     to_repo_id = to_repo_["id"]
 
-    wf_list = {
-        ("AiChemEcoHiWo", "zhixing_agv"): {"nav_command" : '{"target" : "LM14"}',
-                             "arm_command": '{"task_name" : "camera/250111_biaozhi.urp"}'},
-        ("AiChemEcoHiWo", "AGV"): {"nav_command" : '{"target" : "LM14"}',
-                             "arm_command": '{"task_name" : "camera/250111_biaozhi.urp"}'},
+    # 从 G 中查询 AGV 配置
+    agv_cfg = find_agv_config(G)
+    device_roles = agv_cfg["device_roles"]
+    route_table = agv_cfg["route_table"]
 
-        ("zhixing_agv", "Revvity"): {"nav_command" : '{"target" : "LM13"}',
-                             "arm_command": '{"task_name" : "camera/250111_put_board.urp"}'},
+    route_key = f"{from_repo_id}->{to_repo_id}"
+    if route_key not in route_table:
+        raise KeyError(f"AGV 路由表中未找到路线: {route_key}，可用路线: {list(route_table.keys())}")
 
-        ("AGV", "Revvity"): {"nav_command" : '{"target" : "LM13"}',
-                             "arm_command": '{"task_name" : "camera/250111_put_board.urp"}'},
+    route = route_table[route_key]
+    nav_device = device_roles.get("navigator", device_roles.get("nav"))
+    arm_device = device_roles.get("arm")
 
-        ("Revvity", "HPLC"): {"nav_command": '{"target" : "LM13"}',
-                              "arm_command": '{"task_name" : "camera/250111_hplc.urp"}'},
-
-        ("HPLC", "Revvity"): {"nav_command": '{"target" : "LM13"}',
-                              "arm_command": '{"task_name" : "camera/250111_lfp.urp"}'},
-    }
     return [
         {
-            "device_id": "zhixing_agv",
+            "device_id": nav_device,
             "action_name": "send_nav_task",
             "action_kwargs": {
-                "command": wf_list[(from_repo_id, to_repo_id)]["nav_command"]
+                "command": route["nav_command"]
             }
         },
         {
-            "device_id": "zhixing_ur_arm",
+            "device_id": arm_device,
             "action_name": "move_pos_task",
             "action_kwargs": {
-                "command": wf_list[(from_repo_id, to_repo_id)]["arm_command"]
+                "command": route.get("arm_command", route.get("arm_place", ""))
             }
         }
     ]

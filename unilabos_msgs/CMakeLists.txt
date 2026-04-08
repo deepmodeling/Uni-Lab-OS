@@ -96,6 +96,7 @@ set(action_files
 
   "action/WorkStationRun.action"
   "action/AGVTransfer.action"
+  "action/BatchTransfer.action"
 
   "action/DispenStationSolnPrep.action"
   "action/DispenStationVialFeed.action"

@@ -1,27 +1,23 @@
 import networkx as nx
 
 from .logger_util import debug_print
+from .resource_helper import get_resource_id, get_resource_data
 
 
 def get_vessel(vessel):
     """
     统一处理vessel参数，返回vessel_id和vessel_data。
+    支持 dict、str、ResourceDictInstance。
 
     Args:
-        vessel: 可以是一个字典或字符串，表示vessel的ID或数据。
+        vessel: 可以是一个字典、字符串或 ResourceDictInstance，表示vessel的ID或数据。
 
     Returns:
         tuple: 包含vessel_id和vessel_data。
     """
-    if isinstance(vessel, dict):
-        if "id" not in vessel:
-            vessel_id = list(vessel.values())[0].get("id", "")
-        else:
-            vessel_id = vessel.get("id", "")
-        vessel_data = vessel.get("data", {})
-    else:
-        vessel_id = str(vessel)
-        vessel_data = {}
+    # 统一使用 resource_helper 处理
+    vessel_id = get_resource_id(vessel)
+    vessel_data = get_resource_data(vessel)
     return vessel_id, vessel_data
 
 
@@ -279,3 +275,30 @@ def find_solid_dispenser(G: nx.DiGraph) -> str:
 
     debug_print(f"❌ 未找到固体加样器")
     return ""
+
+
+def find_connected_heatchill(G: nx.DiGraph, vessel: str) -> str:
+    """查找与指定容器相连的加热/冷却设备"""
+    heatchill_nodes = []
+    for node in G.nodes():
+        node_data = G.nodes[node]
+        node_class = node_data.get('class', '') or ''
+        node_name = node.lower()
+        if ('heatchill' in node_class.lower() or 'virtual_heatchill' in node_class
+                or 'heater' in node_name or 'heat' in node_name):
+            heatchill_nodes.append(node)
+
+    # 检查连接
+    if vessel and heatchill_nodes:
+        for hc in heatchill_nodes:
+            if G.has_edge(hc, vessel) or G.has_edge(vessel, hc):
+                debug_print(f"加热设备 '{hc}' 与容器 '{vessel}' 相连")
+                return hc
+
+    # 使用第一个可用设备
+    if heatchill_nodes:
+        debug_print(f"使用第一个加热设备: {heatchill_nodes[0]}")
+        return heatchill_nodes[0]
+
+    debug_print("未找到加热设备，使用默认设备")
+    return "heatchill_1"

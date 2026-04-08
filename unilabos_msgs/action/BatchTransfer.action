@@ -1,0 +1,11 @@
+# 批量物料转运
+Resource from_repo
+Resource to_repo
+Resource[] transfer_resources
+string[] from_positions
+string[] to_positions
+---
+string return_info
+bool success
+---
+string status

@@ -553,8 +553,13 @@ def main():
         os._exit(0)
 
     if not BasicConfig.ak or not BasicConfig.sk:
-        print_status("后续运行必须拥有一个实验室，请前往 https://uni-lab.bohrium.com 注册实验室！", "warning")
-        os._exit(1)
+        if BasicConfig.test_mode:
+            print_status("测试模式：跳过 ak/sk 检查，使用占位凭据", "warning")
+            BasicConfig.ak = BasicConfig.ak or "test_ak"
+            BasicConfig.sk = BasicConfig.sk or "test_sk"
+        else:
+            print_status("后续运行必须拥有一个实验室，请前往 https://uni-lab.bohrium.com 注册实验室！", "warning")
+            os._exit(1)
     graph: nx.Graph
     resource_tree_set: ResourceTreeSet
     resource_links: List[Dict[str, Any]]

@@ -1,0 +1,368 @@
+agv_transport_station:
+  category:
+  - work_station
+  - transport_agv
+  class:
+    action_value_mappings:
+      AGVTransferProtocol:
+        feedback: {}
+        goal:
+          from_repo: from_repo
+          from_repo_position: from_repo_position
+          to_repo: to_repo
+          to_repo_position: to_repo_position
+        goal_default:
+          from_repo:
+            category: ''
+            children: []
+            config: ''
+            data: ''
+            id: ''
+            name: ''
+            parent: ''
+            pose:
+              orientation:
+                w: 1.0
+                x: 0.0
+                y: 0.0
+                z: 0.0
+              position:
+                x: 0.0
+                y: 0.0
+                z: 0.0
+            sample_id: ''
+            type: ''
+          from_repo_position: ''
+          to_repo:
+            category: ''
+            children: []
+            config: ''
+            data: ''
+            id: ''
+            name: ''
+            parent: ''
+            pose:
+              orientation:
+                w: 1.0
+                x: 0.0
+                y: 0.0
+                z: 0.0
+              position:
+                x: 0.0
+                y: 0.0
+                z: 0.0
+            sample_id: ''
+            type: ''
+          to_repo_position: ''
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties:
+                status:
+                  type: string
+              required:
+              - status
+              title: AGVTransfer_Feedback
+              type: object
+            goal:
+              properties:
+                from_repo:
+                  properties:
+                    category:
+                      type: string
+                    children:
+                      items:
+                        type: string
+                      type: array
+                    config:
+                      type: string
+                    data:
+                      type: string
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    parent:
+                      type: string
+                    pose:
+                      properties:
+                        orientation:
+                          properties:
+                            w:
+                              type: number
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          - w
+                          title: orientation
+                          type: object
+                        position:
+                          properties:
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          title: position
+                          type: object
+                      required:
+                      - position
+                      - orientation
+                      title: pose
+                      type: object
+                    sample_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - id
+                  - name
+                  - sample_id
+                  - children
+                  - parent
+                  - type
+                  - category
+                  - pose
+                  - config
+                  - data
+                  title: from_repo
+                  type: object
+                from_repo_position:
+                  type: string
+                to_repo:
+                  properties:
+                    category:
+                      type: string
+                    children:
+                      items:
+                        type: string
+                      type: array
+                    config:
+                      type: string
+                    data:
+                      type: string
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    parent:
+                      type: string
+                    pose:
+                      properties:
+                        orientation:
+                          properties:
+                            w:
+                              type: number
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          - w
+                          title: orientation
+                          type: object
+                        position:
+                          properties:
+                            x:
+                              type: number
+                            y:
+                              type: number
+                            z:
+                              type: number
+                          required:
+                          - x
+                          - y
+                          - z
+                          title: position
+                          type: object
+                      required:
+                      - position
+                      - orientation
+                      title: pose
+                      type: object
+                    sample_id:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - id
+                  - name
+                  - sample_id
+                  - children
+                  - parent
+                  - type
+                  - category
+                  - pose
+                  - config
+                  - data
+                  title: to_repo
+                  type: object
+                to_repo_position:
+                  type: string
+              required:
+              - from_repo
+              - from_repo_position
+              - to_repo
+              - to_repo_position
+              title: AGVTransfer_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
+              title: AGVTransfer_Result
+              type: object
+          required:
+          - goal
+          title: AGVTransfer
+          type: object
+        type: AGVTransfer
+      BatchTransferProtocol:
+        feedback: {}
+        goal:
+          from_positions: from_positions
+          from_repo: from_repo
+          to_positions: to_positions
+          to_repo: to_repo
+          transfer_resources: transfer_resources
+        goal_default:
+          from_positions: []
+          from_repo:
+            category: ''
+            children: []
+            config: ''
+            data: ''
+            id: ''
+            name: ''
+            parent: ''
+            pose:
+              orientation:
+                w: 1.0
+                x: 0.0
+                y: 0.0
+                z: 0.0
+              position:
+                x: 0.0
+                y: 0.0
+                z: 0.0
+            sample_id: ''
+            type: ''
+          to_positions: []
+          to_repo:
+            category: ''
+            children: []
+            config: ''
+            data: ''
+            id: ''
+            name: ''
+            parent: ''
+            pose:
+              orientation:
+                w: 1.0
+                x: 0.0
+                y: 0.0
+                z: 0.0
+              position:
+                x: 0.0
+                y: 0.0
+                z: 0.0
+            sample_id: ''
+            type: ''
+          transfer_resources: []
+        handles: {}
+        result: {}
+        schema:
+          description: AGV 批量物料转运协议
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                from_positions:
+                  items:
+                    type: string
+                  type: array
+                from_repo:
+                  type: object
+                to_positions:
+                  items:
+                    type: string
+                  type: array
+                to_repo:
+                  type: object
+                transfer_resources:
+                  items:
+                    type: object
+                  type: array
+              required:
+              - from_repo
+              - to_repo
+              - transfer_resources
+              - from_positions
+              - to_positions
+              type: object
+            result: {}
+          required:
+          - goal
+          title: BatchTransferProtocol
+          type: object
+        type: BatchTransfer
+    module: unilabos.devices.transport.agv_workstation:AGVTransportStation
+    status_types:
+      agv_status: String
+      carrier_status: String
+    type: python
+  config_info: []
+  description: 通用 AGV 转运工站。继承 WorkstationBase，通过 Warehouse 子资源管理物料中转态。支持单物料和批量物料转运协议，路由表和子设备配置全部由
+    JSON 驱动。
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        device_roles:
+          properties:
+            arm:
+              type: string
+            navigator:
+              type: string
+          type: object
+        protocol_type:
+          items:
+            type: string
+          type: array
+        route_table:
+          type: object
+      type: object
+    data:
+      properties:
+        agv_status:
+          type: string
+        carrier_status:
+          type: string
+      type: object
+  version: 1.0.0

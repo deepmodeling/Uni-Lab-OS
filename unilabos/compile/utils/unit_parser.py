@@ -184,6 +184,42 @@ def parse_time_input(time_input: Union[str, float]) -> float:
 
     return time_sec
 
+
+def parse_temperature_input(temp_input: Union[str, float], default_temp: float = 25.0) -> float:
+    """
+    解析温度输入，支持字符串和数值
+
+    Args:
+        temp_input: 温度输入（如 "256 °C", "reflux", 45.0）
+        default_temp: 默认温度
+
+    Returns:
+        float: 温度（°C）
+    """
+    if not temp_input:
+        return default_temp
+
+    if isinstance(temp_input, (int, float)):
+        return float(temp_input)
+
+    temp_str = str(temp_input).lower().strip()
+
+    # 特殊温度关键词
+    special_temps = {
+        "room temperature": 25.0, "reflux": 78.0, "ice bath": 0.0,
+        "boiling": 100.0, "hot": 60.0, "warm": 40.0, "cold": 10.0,
+    }
+    if temp_str in special_temps:
+        return special_temps[temp_str]
+
+    # 正则解析（如 "256 °C", "45°C", "45"）
+    match = re.search(r'(\d+(?:\.\d+)?)\s*°?[cf]?', temp_str)
+    if match:
+        return float(match.group(1))
+
+    debug_print(f"无法解析温度: '{temp_str}'，使用默认值: {default_temp}°C")
+    return default_temp
+
 # 测试函数
 def test_unit_parser():
     """测试单位解析功能"""

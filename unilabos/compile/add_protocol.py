@@ -2,19 +2,12 @@ from functools import partial
 
 import networkx as nx
 import re
-import logging
 from typing import List, Dict, Any, Union
 
 from .utils.unit_parser import parse_volume_input, parse_mass_input, parse_time_input
 from .utils.vessel_parser import get_vessel, find_solid_dispenser, find_connected_stirrer, find_reagent_vessel
-from .utils.logger_util import action_log
+from .utils.logger_util import action_log, debug_print
 from .pump_protocol import generate_pump_protocol_with_rinsing
-
-logger = logging.getLogger(__name__)
-
-def debug_print(message):
-    """调试输出"""
-    logger.info(f"[ADD] {message}")
 
 
 # 🆕 创建进度日志动作

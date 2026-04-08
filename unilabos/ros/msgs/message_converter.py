@@ -142,12 +142,16 @@ _msg_converter: Dict[Type, Any] = {
     ),
     Resource: lambda x: Resource(
         id=x.get("id", ""),
+        uuid=x.get("uuid", ""),
         name=x.get("name", ""),
         sample_id=x.get("sample_id", "") or "",
+        description=x.get("description", ""),
         children=list(x.get("children", [])),
         parent=x.get("parent", "") or "",
+        parent_uuid=x.get("parent_uuid", ""),
         type=x.get("type", ""),
-        category=x.get("class", "") or x.get("type", ""),
+        category=x.get("category", "") or x.get("class", "") or x.get("type", ""),
+        klass=x.get("class", "") or x.get("klass", ""),
         pose=(
             Pose(
                 position=Point(
@@ -160,14 +164,10 @@ _msg_converter: Dict[Type, Any] = {
             else Pose()
         ),
         config=json.dumps(x.get("config", {})),
-        data=json.dumps(obtain_data_with_uuid(x)),
+        data=json.dumps(x.get("data", {})),
+        extra=json.dumps(x.get("extra", {})),
     ),
 }
-
-def obtain_data_with_uuid(x: dict):
-    data = x.get("data", {})
-    data["unilabos_uuid"] = x.get("uuid", None)
-    return data
 
 def json_or_yaml_loads(data: str) -> Any:
     try:
@@ -195,15 +195,20 @@ _msg_converter_back: Dict[Type, Any] = {
     Point: lambda x: Point3D(x=x.x, y=x.y, z=x.z),
     Resource: lambda x: {
         "id": x.id,
+        "uuid": x.uuid if x.uuid else None,
         "name": x.name,
         "sample_id": x.sample_id if x.sample_id else None,
+        "description": x.description if x.description else "",
         "children": list(x.children),
         "parent": x.parent if x.parent else None,
+        "parent_uuid": x.parent_uuid if x.parent_uuid else None,
         "type": x.type,
-        "class": "",
+        "class": x.klass if x.klass else "",
+        "category": x.category if x.category else "",
         "position": {"x": x.pose.position.x, "y": x.pose.position.y, "z": x.pose.position.z},
         "config": json_or_yaml_loads(x.config or "{}"),
         "data": json_or_yaml_loads(x.data or "{}"),
+        "extra": json_or_yaml_loads(x.extra or "{}"),
     },
 }
 

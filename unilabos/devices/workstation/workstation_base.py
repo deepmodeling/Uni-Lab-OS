@@ -197,6 +197,28 @@ class WorkstationBase(ABC):
         self._ros_node = workstation_node
         logger.info(f"工作站 {self._ros_node.device_id} 关联协议节点")
 
+    # ============ 物料转运回调 ============
+
+    def resource_tree_batch_transfer(
+        self,
+        transfers: list,
+        old_parents: list,
+        new_parents: list,
+    ) -> None:
+        """批量物料转运完成后的回调，供子类重写
+
+        默认实现：逐个调用 resource_tree_transfer（如存在）。
+
+        Args:
+            transfers: 转移列表，每项包含 resource, from_parent, to_parent, to_site 等
+            old_parents: 每个物料转移前的原父节点
+            new_parents: 每个物料转移后的新父节点
+        """
+        func = getattr(self, "resource_tree_transfer", None)
+        if callable(func):
+            for t, old_parent, new_parent in zip(transfers, old_parents, new_parents):
+                func(old_parent, t["resource"], new_parent)
+
     # ============ 设备操作接口 ============
 
     def call_device_method(self, method: str, *args, **kwargs) -> Any:

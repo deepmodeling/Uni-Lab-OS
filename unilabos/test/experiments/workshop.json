@@ -577,17 +577,38 @@
         {
             "id": "AGV",
             "name": "AGV",
-            "children": ["zhixing_agv", "zhixing_ur_arm"],
+            "children": ["zhixing_agv", "zhixing_ur_arm", "agv_platform"],
             "parent": null,
             "type": "device",
-            "class": "workstation",
+            "class": "agv_transport_station",
             "position": {
                 "x": 698.1111111111111,
                 "y": 478,
                 "z": 0
             },
             "config": {
-                "protocol_type": ["AGVTransferProtocol"]
+                "protocol_type": ["AGVTransferProtocol", "BatchTransferProtocol"],
+                "device_roles": {
+                    "navigator": "zhixing_agv",
+                    "arm": "zhixing_ur_arm"
+                },
+                "route_table": {
+                    "AiChemEcoHiWo->Revvity": {
+                        "nav_command": "{\"target\": \"LM14\"}",
+                        "arm_pick": "{\"task_name\": \"camera/250111_biaozhi.urp\"}",
+                        "arm_place": "{\"task_name\": \"camera/250111_put_board.urp\"}"
+                    },
+                    "Revvity->HPLC": {
+                        "nav_command": "{\"target\": \"LM13\"}",
+                        "arm_pick": "{\"task_name\": \"camera/250111_lfp.urp\"}",
+                        "arm_place": "{\"task_name\": \"camera/250111_hplc.urp\"}"
+                    },
+                    "HPLC->Revvity": {
+                        "nav_command": "{\"target\": \"LM13\"}",
+                        "arm_pick": "{\"task_name\": \"camera/250111_hplc.urp\"}",
+                        "arm_place": "{\"task_name\": \"camera/250111_lfp.urp\"}"
+                    }
+                }
             },
             "data": {
             }
@@ -624,6 +645,27 @@
             },
             "config": {
                 "host": "192.168.1.178"
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "agv_platform",
+            "name": "agv_platform",
+            "children": [],
+            "parent": "AGV",
+            "type": "warehouse",
+            "class": "",
+            "position": {
+                "x": 698.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "name": "agv_platform",
+                "num_items_x": 2,
+                "num_items_y": 1,
+                "num_items_z": 1
             },
             "data": {
             }

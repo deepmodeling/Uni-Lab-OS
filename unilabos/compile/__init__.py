@@ -5,6 +5,7 @@ from .separate_protocol import generate_separate_protocol
 from .evaporate_protocol import generate_evaporate_protocol
 from .evacuateandrefill_protocol import generate_evacuateandrefill_protocol
 from .agv_transfer_protocol import generate_agv_transfer_protocol
+from .batch_transfer_protocol import generate_batch_transfer_protocol
 from .add_protocol import generate_add_protocol
 from .centrifuge_protocol import generate_centrifuge_protocol
 from .filter_protocol import generate_filter_protocol
@@ -31,6 +32,7 @@ from .hydrogenate_protocol import generate_hydrogenate_protocol
 action_protocol_generators = {
     AddProtocol: generate_add_protocol,
     AGVTransferProtocol: generate_agv_transfer_protocol,
+    BatchTransferProtocol: generate_batch_transfer_protocol,
     AdjustPHProtocol: generate_adjust_ph_protocol,
     CentrifugeProtocol: generate_centrifuge_protocol,
     CleanProtocol: generate_clean_protocol,

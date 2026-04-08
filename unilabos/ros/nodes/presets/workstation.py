@@ -340,8 +340,17 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                             )  # type: ignore
                             raw_data = json.loads(response.response)
                             tree_set = ResourceTreeSet.from_raw_dict_list(raw_data)
-                            target = tree_set.dump()
-                            protocol_kwargs[k] = target[0][0] if v == "unilabos_msgs/Resource" else target
+
+                            # 传递 ResourceDictInstance（保留树结构），不再调用 dump() 扁平化
+                            if v == "unilabos_msgs/Resource":
+                                # 单个资源：取第一棵树的根节点
+                                root_instance = tree_set.trees[0].root_node if tree_set.trees else None
+                                protocol_kwargs[k] = root_instance.get_plr_nested_dict() if root_instance else protocol_kwargs[k]
+                            else:
+                                # 多个资源：取每棵树的根节点
+                                protocol_kwargs[k] = [
+                                    tree.root_node.get_plr_nested_dict() for tree in tree_set.trees
+                                ]
                         except Exception as ex:
                             self.lab_logger().error(f"查询资源失败: {k}, 错误: {ex}\n{traceback.format_exc()}")
                             raise

@@ -80,8 +80,7 @@ opsky_ATR30007:
                   type: string
               required: []
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: run_once参数

@@ -122,6 +122,31 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
           title: moveit_task参数
           type: object
         type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: post_init的参数schema
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: object
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
       auto-resource_manager:
         feedback: {}
         goal: {}
@@ -174,99 +199,83 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
         type: UniLabJsonCommand
       pick_and_place:
         feedback: {}
-        goal: {}
-        goal_default:
-          constraints: null
-          lift_height: null
-          move_group: null
-          option: null
-          resource: null
-          retry: null
-          speed: null
-          status: null
-          target: null
-          x_distance: null
-          y_distance: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: pick_and_place 显式参数（UniLabJsonCommand）
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                constraints:
-                  items:
-                    type: number
-                  type: array
-                lift_height:
-                  type: string
-                move_group:
-                  type: string
-                option:
-                  type: string
-                resource:
-                  type: string
-                retry:
-                  type: string
-                speed:
-                  type: string
-                status:
-                  type: string
-                target:
-                  type: string
-                x_distance:
-                  type: string
-                y_distance:
-                  type: string
-              required:
-              - option
-              - move_group
-              - status
-              type: object
-            result: {}
-          required:
-          - goal
-          title: pick_and_place参数
-          type: object
-        type: UniLabJsonCommand
-      set_position:
-        feedback:
-          status: status
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
+              title: SendCmd_Result
+              type: object
+          required:
+          - goal
+          title: SendCmd
+          type: object
+        type: SendCmd
+      set_position:
+        feedback: {}
+        goal:
+          command: command
+        goal_default:
+          command: ''
+        handles: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              properties:
+                status:
+                  type: string
+              required:
+              - status
+              title: SendCmd_Feedback
+              type: object
+            goal:
+              properties:
+                command:
+                  type: string
+              required:
+              - command
+              title: SendCmd_Goal
+              type: object
+            result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -275,41 +284,41 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
           type: object
         type: SendCmd
       set_status:
-        feedback:
-          status: status
+        feedback: {}
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -446,41 +455,42 @@ robotic_arm.UR:
           type: object
         type: UniLabJsonCommand
       move_pos_task:
-        feedback:
-          status: status
+        feedback: {}
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
         result:
-          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -522,8 +532,8 @@ robotic_arm.UR:
           type: string
       required:
       - arm_pose
-      - arm_status
       - gripper_pose
+      - arm_status
       - gripper_status
       type: object
   version: 1.0.0
@@ -716,41 +726,41 @@ robotic_arm.elite:
           type: object
         type: UniLabJsonCommand
       modbus_task_cmd:
-        feedback:
-          status: status
+        feedback: {}
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -760,8 +770,8 @@ robotic_arm.elite:
         type: SendCmd
     module: unilabos.devices.arm.elite_robot:EliteRobot
     status_types:
-      actual_joint_positions: ''
-      arm_pose: list[float]
+      actual_joint_positions: String
+      arm_pose: String
     type: python
   config_info: []
   description: Elite robot arm
@@ -787,8 +797,8 @@ robotic_arm.elite:
             type: number
           type: array
       required:
-      - actual_joint_positions
       - arm_pose
+      - actual_joint_positions
       type: object
   model:
     mesh: elite_robot

@@ -132,7 +132,10 @@ class ResourceVisualization:
                             new_dev.set("x",str(float(node["position"]["position"]["x"])/1000))
                             new_dev.set("y",str(float(node["position"]["position"]["y"])/1000))
                             new_dev.set("z",str(float(node["position"]["position"]["z"])/1000))
-
+                        if "rotation" in node["config"]:
+                            new_dev.set("rx",str(float(node["config"]["rotation"]["x"])))
+                            new_dev.set("ry",str(float(node["config"]["rotation"]["y"])))
+                            new_dev.set("r",str(float(node["config"]["rotation"]["z"])))
                         if "pose" in node:
                             new_dev.set("x",str(float(node["pose"]["position"]["x"])/1000))
                             new_dev.set("y",str(float(node["pose"]["position"]["y"])/1000))
@@ -140,10 +143,6 @@ class ResourceVisualization:
                             new_dev.set("rx",str(float(node["pose"]["rotation"]["x"])))
                             new_dev.set("ry",str(float(node["pose"]["rotation"]["y"])))
                             new_dev.set("r",str(float(node["pose"]["rotation"]["z"])))
-                        if "rotation" in node["config"]:
-                            new_dev.set("rx",str(float(node["config"]["rotation"]["x"])))
-                            new_dev.set("ry",str(float(node["config"]["rotation"]["y"])))
-                            new_dev.set("r",str(float(node["config"]["rotation"]["z"])))
                         if "device_config" in node["config"]:
                             for key, value in node["config"]["device_config"].items():
                                 new_dev.set(key, str(value))

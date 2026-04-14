@@ -22,7 +22,6 @@ class EnvironmentChecker:
             # "pymodbus.framer.FramerType": "pymodbus==3.9.2",
             "websockets": "websockets",
             "msgcenterpy": "msgcenterpy",
-            "orjson": "orjson",
             "opentrons_shared_data": "opentrons_shared_data",
             "typing_extensions": "typing_extensions",
             "crcmod": "crcmod-plus",
@@ -33,7 +32,7 @@ class EnvironmentChecker:
 
         # 包版本要求（包名: 最低版本）
         self.version_requirements = {
-            "msgcenterpy": "0.1.8",  # msgcenterpy 最低版本要求
+            "msgcenterpy": "0.1.5",  # msgcenterpy 最低版本要求
         }
 
         self.missing_packages = []

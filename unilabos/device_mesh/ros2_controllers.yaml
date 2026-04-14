@@ -1,31 +1,5 @@
-arm_slider_arm_controller:
-  ros__parameters:
-    command_interfaces:
-    - position
-    joints:
-    - arm_slider_arm_base_joint
-    - arm_slider_arm_link_1_joint
-    - arm_slider_arm_link_2_joint
-    - arm_slider_arm_link_3_joint
-    - arm_slider_gripper_base_joint
-    state_interfaces:
-    - position
-    - velocity
-arm_slider_gripper_controller:
-  ros__parameters:
-    command_interfaces:
-    - position
-    joints:
-    - arm_slider_gripper_right_joint
-    state_interfaces:
-    - position
-    - velocity
 controller_manager:
   ros__parameters:
-    arm_slider_arm_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-    arm_slider_gripper_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
     update_rate: 100

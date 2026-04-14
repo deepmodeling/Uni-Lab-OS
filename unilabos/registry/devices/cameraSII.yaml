@@ -18,7 +18,7 @@ cameracontroller_device:
             goal:
               properties:
                 config:
-                  type: object
+                  type: string
               required: []
               type: object
             result: {}
@@ -42,8 +42,7 @@ cameracontroller_device:
               properties: {}
               required: []
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: stop参数
@@ -51,7 +50,7 @@ cameracontroller_device:
         type: UniLabJsonCommand
     module: unilabos.devices.cameraSII.cameraUSB:CameraController
     status_types:
-      status: Dict[str, Any]
+      status: dict
     type: python
   config_info: []
   description: Uni-Lab-OS 摄像头驱动（Linux USB 摄像头版，无 PTZ）
@@ -104,4 +103,5 @@ cameracontroller_device:
       required:
       - status
       type: object
+  registry_type: device
   version: 1.0.0

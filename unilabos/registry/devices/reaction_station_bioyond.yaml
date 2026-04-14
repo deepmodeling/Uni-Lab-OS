@@ -13,13 +13,12 @@ reaction_station.bioyond:
           start_point: start_point
           start_step_key: start_step_key
         goal_default:
-          duration: null
+          duration: 0
           end_point: 0
           end_step_key: ''
           start_point: 0
           start_step_key: ''
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 添加时间约束 - 在两个工作流之间添加时间约束
@@ -31,19 +30,23 @@ reaction_station.bioyond:
                   description: 时间(秒)
                   type: integer
                 end_point:
-                  default: 0
+                  default: Start
                   description: 终点计时点 (Start=开始前, End=结束后)
-                  type: integer
+                  enum:
+                  - Start
+                  - End
+                  type: string
                 end_step_key:
-                  default: ''
                   description: 终点步骤Key (可选, 默认为空则自动选择)
                   type: string
                 start_point:
-                  default: 0
+                  default: Start
                   description: 起点计时点 (Start=开始前, End=结束后)
-                  type: integer
+                  enum:
+                  - Start
+                  - End
+                  type: string
                 start_step_key:
-                  default: ''
                   description: 起点步骤Key (例如 "feeding", "liquid", 可选, 默认为空则自动选择)
                   type: string
               required:
@@ -95,8 +98,7 @@ reaction_station.bioyond:
               required:
               - json_str
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: create_order参数
@@ -123,8 +125,7 @@ reaction_station.bioyond:
               required:
               - workflow_ids
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: hard_delete_merged_workflows参数
@@ -149,8 +150,7 @@ reaction_station.bioyond:
               required:
               - json_str
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: merge_workflow_with_parameters参数
@@ -175,8 +175,7 @@ reaction_station.bioyond:
               required:
               - report_request
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: process_temperature_cutoff_report参数
@@ -201,12 +200,7 @@ reaction_station.bioyond:
               required:
               - web_workflow_json
               type: object
-            result:
-              items:
-                additionalProperties:
-                  type: string
-                type: object
-              type: array
+            result: {}
           required:
           - goal
           title: process_web_workflows参数
@@ -235,8 +229,7 @@ reaction_station.bioyond:
               - reactor_id
               - temperature
               type: object
-            result:
-              type: string
+            result: {}
           required:
           - goal
           title: set_reactor_temperature参数
@@ -261,8 +254,7 @@ reaction_station.bioyond:
               required:
               - preintake_id
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: skip_titration_steps参数
@@ -283,8 +275,7 @@ reaction_station.bioyond:
               properties: {}
               required: []
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: sync_workflow_sequence_from_bioyond参数
@@ -316,8 +307,7 @@ reaction_station.bioyond:
                   type: integer
               required: []
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: wait_for_multiple_orders_and_get_reports参数
@@ -369,8 +359,7 @@ reaction_station.bioyond:
               required:
               - workflow_id
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: workflow_step_query参数
@@ -381,8 +370,9 @@ reaction_station.bioyond:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result: {}
+        result:
+          code: code
+          message: message
         schema:
           description: 清空服务端所有非核心工作流 (保留核心流程)
           properties:
@@ -392,6 +382,13 @@ reaction_station.bioyond:
               required: []
               type: object
             result:
+              properties:
+                code:
+                  description: 操作结果代码(1表示成功)
+                  type: integer
+                message:
+                  description: 结果描述
+                  type: string
               type: object
           required:
           - goal
@@ -408,14 +405,13 @@ reaction_station.bioyond:
           torque_variation: torque_variation
           volume: volume
         goal_default:
-          assign_material_name: null
-          temperature: 25.0
-          time: '90'
-          titration_type: '1'
-          torque_variation: 2
-          volume: null
+          assign_material_name: ''
+          temperature: ''
+          time: ''
+          titration_type: ''
+          torque_variation: ''
+          volume: ''
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 滴回去
@@ -427,27 +423,33 @@ reaction_station.bioyond:
                   description: 物料名称（不能为空）
                   type: string
                 temperature:
-                  default: 25.0
                   description: 温度设定(°C)
-                  type: number
+                  type: string
                 time:
-                  default: '90'
                   description: 观察时间(分钟)
                   type: string
                 titration_type:
-                  default: '1'
                   description: 是否滴定(NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  default: 2
                   description: 是否观察 (NO=否, YES=是)
-                  type: integer
+                  enum:
+                  - 'NO'
+                  - 'YES'
+                  type: string
                 volume:
                   description: 分液公式(mL)
                   type: string
               required:
-              - assign_material_name
               - volume
+              - assign_material_name
+              - time
+              - torque_variation
+              - titration_type
+              - temperature
               type: object
             result: {}
           required:
@@ -460,7 +462,7 @@ reaction_station.bioyond:
         goal:
           batch_reports_result: batch_reports_result
         goal_default:
-          batch_reports_result: null
+          batch_reports_result: ''
         handles:
           input:
           - data_key: batch_reports_result
@@ -476,8 +478,8 @@ reaction_station.bioyond:
             handler_key: ACTUALS_EXTRACTED
             io_type: sink
             label: Extracted Actuals
-        placeholder_keys: {}
-        result: {}
+        result:
+          return_info: return_info
         schema:
           description: 从批量任务完成报告中提取每个订单的实际加料量，输出extracted列表。
           properties:
@@ -491,6 +493,13 @@ reaction_station.bioyond:
               - batch_reports_result
               type: object
             result:
+              properties:
+                return_info:
+                  description: JSON字符串，包含actuals数组，每项含order_code, order_id, actualTargetWeigh,
+                    actualVolume
+                  type: string
+              required:
+              - return_info
               title: extract_actuals_from_batch_reports结果
               type: object
           required:
@@ -508,14 +517,13 @@ reaction_station.bioyond:
           torque_variation: torque_variation
           volume: volume
         goal_default:
-          assign_material_name: BAPP
-          temperature: 25.0
-          time: '0'
-          titration_type: '1'
-          torque_variation: 1
-          volume: '350'
+          assign_material_name: ''
+          temperature: ''
+          time: ''
+          titration_type: ''
+          torque_variation: ''
+          volume: ''
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 液体进料烧杯
@@ -524,30 +532,36 @@ reaction_station.bioyond:
             goal:
               properties:
                 assign_material_name:
-                  default: BAPP
                   description: 物料名称
                   type: string
                 temperature:
-                  default: 25.0
                   description: 温度设定(°C)
-                  type: number
+                  type: string
                 time:
-                  default: '0'
                   description: 观察时间(分钟)
                   type: string
                 titration_type:
-                  default: '1'
                   description: 是否滴定(NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  default: 1
                   description: 是否观察 (NO=否, YES=是)
-                  type: integer
+                  enum:
+                  - 'NO'
+                  - 'YES'
+                  type: string
                 volume:
-                  default: '350'
                   description: 分液公式(mL)
                   type: string
-              required: []
+              required:
+              - volume
+              - assign_material_name
+              - time
+              - torque_variation
+              - titration_type
+              - temperature
               type: object
             result: {}
           required:
@@ -566,13 +580,13 @@ reaction_station.bioyond:
           torque_variation: torque_variation
           volume: volume
         goal_default:
-          assign_material_name: null
-          solvents: null
-          temperature: 25.0
+          assign_material_name: ''
+          solvents: ''
+          temperature: '25.00'
           time: '360'
           titration_type: '1'
-          torque_variation: 2
-          volume: null
+          torque_variation: '2'
+          volume: ''
         handles:
           input:
           - data_key: solvents
@@ -581,7 +595,6 @@ reaction_station.bioyond:
             handler_key: solvents
             io_type: source
             label: Solvents Data From Calculation Node
-        placeholder_keys: {}
         result: {}
         schema:
           description: 液体投料-溶剂。可以直接提供volume(mL),或通过solvents对象自动从additional_solvent(mL)计算volume。
@@ -596,21 +609,27 @@ reaction_station.bioyond:
                   description: '溶剂信息对象(可选),包含: additional_solvent(溶剂体积mL), total_liquid_volume(总液体体积mL)。如果提供,将自动计算volume'
                   type: string
                 temperature:
-                  default: 25.0
+                  default: '25.00'
                   description: 温度设定(°C),默认25.00
-                  type: number
+                  type: string
                 time:
                   default: '360'
                   description: 观察时间(分钟),默认360
                   type: string
                 titration_type:
-                  default: '1'
+                  default: 'NO'
                   description: 是否滴定(NO=否, YES=是),默认NO
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  default: 2
+                  default: 'YES'
                   description: 是否观察 (NO=否, YES=是),默认YES
-                  type: integer
+                  enum:
+                  - 'NO'
+                  - 'YES'
+                  type: string
                 volume:
                   description: 分液量(mL)。可直接提供,或通过solvents参数自动计算
                   type: string
@@ -636,15 +655,15 @@ reaction_station.bioyond:
           volume_formula: volume_formula
           x_value: x_value
         goal_default:
-          assign_material_name: null
-          extracted_actuals: null
-          feeding_order_data: null
-          temperature: 25.0
+          assign_material_name: ''
+          extracted_actuals: ''
+          feeding_order_data: ''
+          temperature: '25.00'
           time: '90'
           titration_type: '2'
-          torque_variation: 2
-          volume_formula: null
-          x_value: null
+          torque_variation: '2'
+          volume_formula: ''
+          x_value: ''
         handles:
           input:
           - data_key: extracted_actuals
@@ -659,7 +678,6 @@ reaction_station.bioyond:
             handler_key: feeding_order
             io_type: source
             label: Feeding Order Data From Calculation Node
-        placeholder_keys: {}
         result: {}
         schema:
           description: 液体进料(滴定)。支持两种模式:1)直接提供volume_formula;2)自动计算-提供x_value+feeding_order_data+extracted_actuals,系统自动生成公式"1000*(m二酐-x)*V二酐滴定/m二酐滴定"
@@ -678,21 +696,27 @@ reaction_station.bioyond:
                     {"feeding_order": [{"type": "main_anhydride", "amount": 1.915}]}'
                   type: string
                 temperature:
-                  default: 25.0
+                  default: '25.00'
                   description: 温度设定(°C),默认25.00
-                  type: number
+                  type: string
                 time:
                   default: '90'
                   description: 观察时间(分钟),默认90
                   type: string
                 titration_type:
-                  default: '2'
+                  default: 'YES'
                   description: 是否滴定(NO=否, YES=是),默认YES
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  default: 2
+                  default: 'YES'
                   description: 是否观察 (NO=否, YES=是),默认YES
-                  type: integer
+                  enum:
+                  - 'NO'
+                  - 'YES'
+                  type: string
                 volume_formula:
                   description: 分液公式(mL)。可直接提供固定公式,或留空由系统根据x_value、feeding_order_data、extracted_actuals自动生成
                   type: string
@@ -718,14 +742,13 @@ reaction_station.bioyond:
           torque_variation: torque_variation
           volume_formula: volume_formula
         goal_default:
-          assign_material_name: null
-          temperature: 25.0
-          time: '0'
-          titration_type: '1'
-          torque_variation: 1
-          volume_formula: null
+          assign_material_name: ''
+          temperature: ''
+          time: ''
+          titration_type: ''
+          torque_variation: ''
+          volume_formula: ''
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 液体进料小瓶(非滴定)
@@ -737,27 +760,33 @@ reaction_station.bioyond:
                   description: 物料名称
                   type: string
                 temperature:
-                  default: 25.0
                   description: 温度设定(°C)
-                  type: number
+                  type: string
                 time:
-                  default: '0'
                   description: 观察时间(分钟)
                   type: string
                 titration_type:
-                  default: '1'
                   description: 是否滴定(NO=否, YES=是)
+                  enum:
+                  - 'NO'
+                  - 'YES'
                   type: string
                 torque_variation:
-                  default: 1
                   description: 是否观察 (NO=否, YES=是)
-                  type: integer
+                  enum:
+                  - 'NO'
+                  - 'YES'
+                  type: string
                 volume_formula:
                   description: 分液公式(mL)
                   type: string
               required:
               - volume_formula
               - assign_material_name
+              - time
+              - torque_variation
+              - titration_type
+              - temperature
               type: object
             result: {}
           required:
@@ -771,10 +800,9 @@ reaction_station.bioyond:
           task_name: task_name
           workflow_name: workflow_name
         goal_default:
-          task_name: null
-          workflow_name: null
+          task_name: ''
+          workflow_name: ''
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 处理并执行工作流
@@ -792,8 +820,7 @@ reaction_station.bioyond:
               - workflow_name
               - task_name
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: process_and_execute_workflow参数
@@ -806,11 +833,10 @@ reaction_station.bioyond:
           cutoff: cutoff
           temperature: temperature
         goal_default:
-          assign_material_name: null
-          cutoff: '900000'
-          temperature: -10.0
+          assign_material_name: ''
+          cutoff: ''
+          temperature: ''
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 反应器放入 - 将反应器放入工作站，配置物料名称、粘度上限和温度参数
@@ -822,14 +848,14 @@ reaction_station.bioyond:
                   description: 物料名称
                   type: string
                 cutoff:
-                  default: '900000'
                   description: 粘度上限
                   type: string
                 temperature:
-                  default: -10.0
                   description: 温度设定(°C)
-                  type: number
+                  type: string
               required:
+              - cutoff
+              - temperature
               - assign_material_name
               type: object
             result: {}
@@ -843,7 +869,6 @@ reaction_station.bioyond:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 反应器取出 - 从工作站中取出反应器，无需参数的简单操作
@@ -853,7 +878,15 @@ reaction_station.bioyond:
               properties: {}
               required: []
               type: object
-            result: {}
+            result:
+              properties:
+                code:
+                  description: 操作结果代码(1表示成功,0表示失败)
+                  type: integer
+                return_info:
+                  description: 操作结果详细信息
+                  type: string
+              type: object
           required:
           - goal
           title: reactor_taken_out参数
@@ -864,8 +897,8 @@ reaction_station.bioyond:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result: {}
+        result:
+          return_info: return_info
         schema:
           description: 启动调度器 - 启动Bioyond工作站的任务调度器，开始执行队列中的任务
           properties:
@@ -875,6 +908,12 @@ reaction_station.bioyond:
               required: []
               type: object
             result:
+              properties:
+                return_info:
+                  description: 调度器启动结果，成功返回1，失败返回0
+                  type: integer
+              required:
+              - return_info
               title: scheduler_start结果
               type: object
           required:
@@ -891,13 +930,12 @@ reaction_station.bioyond:
           time: time
           torque_variation: torque_variation
         goal_default:
-          assign_material_name: null
-          material_id: null
-          temperature: 25.0
-          time: '0'
-          torque_variation: 1
+          assign_material_name: ''
+          material_id: ''
+          temperature: ''
+          time: ''
+          torque_variation: ''
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 固体进料小瓶 - 通过小瓶向反应器中添加固体物料，支持多种粉末类型(盐、面粉、BTDA)
@@ -910,21 +948,29 @@ reaction_station.bioyond:
                   type: string
                 material_id:
                   description: 粉末类型ID，Salt=盐（21分钟），Flour=面粉（27分钟），BTDA=BTDA（38分钟）
+                  enum:
+                  - Salt
+                  - Flour
+                  - BTDA
                   type: string
                 temperature:
-                  default: 25.0
                   description: 温度设定(°C)
-                  type: number
+                  type: string
                 time:
-                  default: '0'
                   description: 观察时间(分钟)
                   type: string
                 torque_variation:
-                  default: 1
                   description: 是否观察 (NO=否, YES=是)
-                  type: integer
+                  enum:
+                  - 'NO'
+                  - 'YES'
+                  type: string
               required:
+              - assign_material_name
               - material_id
+              - time
+              - torque_variation
+              - temperature
               type: object
             result: {}
           required:

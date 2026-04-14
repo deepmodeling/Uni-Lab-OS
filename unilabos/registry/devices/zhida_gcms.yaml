@@ -8,25 +8,26 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -76,6 +77,31 @@ zhida_gcms:
           title: connect参数
           type: object
         type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
       get_methods:
         feedback: {}
         goal: {}
@@ -86,18 +112,21 @@ zhida_gcms:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -115,18 +144,21 @@ zhida_gcms:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -144,18 +176,21 @@ zhida_gcms:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -168,25 +203,26 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -198,35 +234,35 @@ zhida_gcms:
         feedback: {}
         goal:
           string: string
-          text: text
         goal_default:
           string: ''
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: StrSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 string:
                   type: string
+              required:
+              - string
               title: StrSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -237,36 +273,36 @@ zhida_gcms:
       start_with_csv_file:
         feedback: {}
         goal:
-          csv_file_path: csv_file_path
           string: string
         goal_default:
           string: ''
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: StrSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 string:
                   type: string
+              required:
+              - string
               title: StrSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -307,8 +343,8 @@ zhida_gcms:
         version:
           type: object
       required:
-      - methods
       - status
+      - methods
       - version
       type: object
   version: 1.0.0

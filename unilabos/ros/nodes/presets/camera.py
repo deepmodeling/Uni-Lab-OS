@@ -4,14 +4,7 @@ import cv2
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
-from unilabos.registry.decorators import device
 
-
-@device(
-    id="camera",
-    category=["camera"],
-    description="""VideoPublisher摄像头设备节点，用于实时视频采集和流媒体发布。该设备通过OpenCV连接本地摄像头（如USB摄像头、内置摄像头等），定时采集视频帧并将其转换为ROS2的sensor_msgs/Image消息格式发布到视频话题。主要用于实验室自动化系统中的视觉监控、图像分析、实时观察等应用场景。支持可配置的摄像头索引、发布频率等参数。""",
-)
 class VideoPublisher(BaseROS2DeviceNode):
     def __init__(self, device_id='video_publisher', registry_name="", device_uuid='', camera_index=0, period: float = 0.1, resource_tracker: DeviceNodeResourceTracker = None):
         # 初始化BaseROS2DeviceNode，使用自身作为driver_instance

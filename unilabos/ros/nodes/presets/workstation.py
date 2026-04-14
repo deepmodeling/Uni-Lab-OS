@@ -20,7 +20,7 @@ from unilabos.ros.msgs.message_converter import (
     convert_from_ros_msg_with_mapping,
 )
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker, ROS2DeviceNode
-from unilabos.resources.resource_tracker import ResourceDictType, ResourceTreeSet, ResourceDictInstance
+from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDictInstance
 from unilabos.utils.type_check import get_result_info_str
 
 if TYPE_CHECKING:
@@ -176,103 +176,6 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                         continue
                     self.lab_logger().trace(f"为子设备 {device_id} 创建动作客户端: {action_name}")
         return d
-
-    def create_device(self, device_id: str, config: ResourceDictType) -> dict:
-        """Dynamically add a sub-device to this workstation."""
-        if not device_id:
-            return {"success": False, "error": "device_id required"}
-
-        if device_id in self.sub_devices:
-            return {"success": False, "error": f"Sub-device {device_id} already exists"}
-
-        try:
-            from unilabos.config.config import BasicConfig
-            config.setdefault("id", device_id)
-            config.setdefault("type", "device")
-            config.setdefault("machine_name", BasicConfig.machine_name or "本地")
-            res_dict = ResourceDictInstance.get_resource_instance_from_dict(config)
-
-            d = self.initialize_device(device_id, res_dict)
-            if d is None:
-                return {"success": False, "error": f"initialize_device returned None for {device_id}"}
-
-            # Add to children config list
-            self.children.append(res_dict)
-
-            # Add to resource tracker
-            try:
-                from unilabos.resources.resource_tracker import ResourceTreeInstance
-                tree = ResourceTreeInstance(res_dict)
-                for plr_resource in ResourceTreeSet([tree]).to_plr_resources():
-                    self.resource_tracker.add_resource(plr_resource)
-            except Exception as ex:
-                self.lab_logger().warning(f"[Workstation-DeviceMgr] PLR resource registration skipped: {ex}")
-
-            self.lab_logger().info(f"[Workstation-DeviceMgr] Sub-device {device_id} created")
-            return {"success": True, "device_id": device_id}
-
-        except Exception as e:
-            self.lab_logger().error(f"[Workstation-DeviceMgr] Failed to create {device_id}: {e}")
-            self.lab_logger().error(traceback.format_exc())
-            return {"success": False, "error": str(e)}
-
-    def destroy_device(self, device_id: str) -> dict:
-        """Dynamically remove a sub-device from this workstation."""
-        if not device_id:
-            return {"success": False, "error": "device_id required"}
-
-        if device_id not in self.sub_devices:
-            return {"success": False, "error": f"Sub-device {device_id} not found"}
-
-        try:
-            # Remove from children config list
-            self.children = [
-                c for c in self.children
-                if c.res_content.id != device_id
-            ]
-
-            # Remove from resource tracker
-            try:
-                tracked = self.resource_tracker.uuid_to_resources.copy()
-                for uid, res in tracked.items():
-                    res_id = res.get("id") if isinstance(res, dict) else getattr(res, "name", None)
-                    if res_id == device_id:
-                        self.resource_tracker.remove_resource(res)
-            except Exception as ex:
-                self.lab_logger().warning(f"[Workstation-DeviceMgr] Resource tracker cleanup: {ex}")
-
-            # Remove action clients for this sub-device
-            action_prefix = f"/devices/{device_id}/"
-            to_remove = [k for k in self._action_clients if k.startswith(action_prefix)]
-            for k in to_remove:
-                try:
-                    self._action_clients[k].destroy()
-                except Exception:
-                    pass
-                del self._action_clients[k]
-
-            # Destroy the ROS2 node
-            instance = self.sub_devices.pop(device_id, None)
-            if instance is not None:
-                ros_node = getattr(instance, "ros_node_instance", None)
-                if ros_node is not None:
-                    try:
-                        ros_node.destroy_node()
-                    except Exception as e:
-                        self.lab_logger().warning(
-                            f"[Workstation-DeviceMgr] Error destroying ROS node for {device_id}: {e}"
-                        )
-
-            # Remove from communication map if present
-            self.communication_node_id_to_instance.pop(device_id, None)
-
-            self.lab_logger().info(f"[Workstation-DeviceMgr] Sub-device {device_id} destroyed")
-            return {"success": True, "device_id": device_id}
-
-        except Exception as e:
-            self.lab_logger().error(f"[Workstation-DeviceMgr] Failed to destroy {device_id}: {e}")
-            self.lab_logger().error(traceback.format_exc())
-            return {"success": False, "error": str(e)}
 
     def create_ros_action_server(self, action_name, action_value_mapping):
         """创建ROS动作服务器"""

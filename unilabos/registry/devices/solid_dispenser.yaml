@@ -14,24 +14,19 @@ solid_dispenser.laiyu:
           powder_tube_number: 0
           target_tube_position: ''
         handles: {}
-        placeholder_keys: {}
         result:
           actual_mass_mg: actual_mass_mg
-          return_info: return_info
-          success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: SolidDispenseAddPowderTube_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 compound_mass:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 powder_tube_number:
                   maximum: 2147483647
@@ -39,19 +34,24 @@ solid_dispenser.laiyu:
                   type: integer
                 target_tube_position:
                   type: string
+              required:
+              - powder_tube_number
+              - target_tube_position
+              - compound_mass
               title: SolidDispenseAddPowderTube_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 actual_mass_mg:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - actual_mass_mg
+              - success
               title: SolidDispenseAddPowderTube_Result
               type: object
           required:
@@ -74,12 +74,11 @@ solid_dispenser.laiyu:
             goal:
               properties:
                 data:
-                  type: object
+                  type: string
               required:
               - data
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: calculate_crc参数
@@ -100,12 +99,11 @@ solid_dispenser.laiyu:
             goal:
               properties:
                 command:
-                  type: object
+                  type: string
               required:
               - command
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: send_command参数
@@ -114,37 +112,36 @@ solid_dispenser.laiyu:
       discharge:
         feedback: {}
         goal:
-          float_in: float_in
+          float_input: float_input
         goal_default:
           float_in: 0.0
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: FloatSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 float_in:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
+              required:
+              - float_in
               title: FloatSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: FloatSingleInput_Result
               type: object
           required:
@@ -159,31 +156,32 @@ solid_dispenser.laiyu:
         goal_default:
           string: ''
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: StrSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 string:
                   type: string
+              required:
+              - string
               title: StrSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -202,41 +200,38 @@ solid_dispenser.laiyu:
           y: 0.0
           z: 0.0
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: Point3DSeparateInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 x:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 y:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 z:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
+              required:
+              - x
+              - y
+              - z
               title: Point3DSeparateInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: Point3DSeparateInput_Result
               type: object
           required:
@@ -251,33 +246,34 @@ solid_dispenser.laiyu:
         goal_default:
           int_input: 0
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: IntSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 int_input:
                   maximum: 2147483647
                   minimum: -2147483648
                   type: integer
+              required:
+              - int_input
               title: IntSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: IntSingleInput_Result
               type: object
           required:
@@ -292,33 +288,34 @@ solid_dispenser.laiyu:
         goal_default:
           int_input: 0
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: IntSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 int_input:
                   maximum: 2147483647
                   minimum: -2147483648
                   type: integer
+              required:
+              - int_input
               title: IntSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: IntSingleInput_Result
               type: object
           required:
@@ -331,25 +328,26 @@ solid_dispenser.laiyu:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:

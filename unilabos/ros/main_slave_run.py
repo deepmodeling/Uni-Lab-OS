@@ -90,7 +90,7 @@ def main(
             device_id="resource_mesh_manager",
             device_uuid=str(uuid.uuid4()),
         )
-        joint_republisher = JointRepublisher("joint_republisher","", host_node.resource_tracker)
+        joint_republisher = JointRepublisher("joint_republisher", host_node.resource_tracker)
         # lh_joint_pub = LiquidHandlerJointPublisher(
         #     resources_config=resources_list, resource_tracker=host_node.resource_tracker
         # )

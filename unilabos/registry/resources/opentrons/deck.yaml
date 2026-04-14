@@ -12,6 +12,7 @@ OTDeck:
     mesh: opentrons_liquid_handler
     path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/opentrons_liquid_handler/macro_device.xacro
     type: device
+  registry_type: resource
   version: 1.0.0
 hplc_station:
   category:
@@ -27,4 +28,5 @@ hplc_station:
     mesh: hplc_station
     path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/hplc_station/macro_device.xacro
     type: device
+  registry_type: resource
   version: 1.0.0

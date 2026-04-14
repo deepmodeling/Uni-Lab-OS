@@ -221,10 +221,10 @@ Laboratory A    Laboratory B
 
 ```bash
 # 实验室A
-unilab --ak your_ak --sk your_sk --upload_registry
+unilab --ak your_ak --sk your_sk --upload_registry --use_remote_resource
 
 # 实验室B
-unilab --ak your_ak --sk your_sk --upload_registry
+unilab --ak your_ak --sk your_sk --upload_registry --use_remote_resource
 ```
 
 ---

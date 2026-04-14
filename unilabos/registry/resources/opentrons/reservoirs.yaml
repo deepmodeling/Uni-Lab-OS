@@ -8,6 +8,7 @@ agilent_1_reservoir_290ml:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 axygen_1_reservoir_90ml:
   category:
@@ -19,6 +20,7 @@ axygen_1_reservoir_90ml:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 nest_12_reservoir_15ml:
   category:
@@ -30,6 +32,7 @@ nest_12_reservoir_15ml:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 nest_1_reservoir_195ml:
   category:
@@ -41,6 +44,7 @@ nest_1_reservoir_195ml:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 nest_1_reservoir_290ml:
   category:
@@ -52,6 +56,7 @@ nest_1_reservoir_290ml:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 usascientific_12_reservoir_22ml:
   category:
@@ -63,4 +68,5 @@ usascientific_12_reservoir_22ml:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0

@@ -34,8 +34,7 @@ from unilabos_msgs.action import SendCmd
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 
 from unilabos.config.config import BasicConfig
-from unilabos.registry.decorators import get_topic_config
-from unilabos.utils.decorator import get_all_subscriptions
+from unilabos.utils.decorator import get_topic_config, get_all_subscriptions
 
 from unilabos.resources.container import RegularContainer
 from unilabos.resources.graphio import (
@@ -58,7 +57,6 @@ from unilabos_msgs.msg import Resource  # type: ignore
 
 from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
-    ResourceDictType,
     ResourceTreeSet,
     ResourceTreeInstance,
     ResourceDictInstance,
@@ -196,9 +194,9 @@ class PropertyPublisher:
         self._value = None
         try:
             self.publisher_ = node.create_publisher(msg_type, f"{name}", qos)
-        except Exception as e:
+        except AttributeError as ex:
             self.node.lab_logger().error(
-                f"StatusError, DeviceId: {self.node.device_id} 创建发布者 {name} 失败，可能由于注册表有误，类型: {msg_type}，错误: {e}"
+                f"创建发布者 {name} 失败，可能由于注册表有误，类型: {msg_type}，错误: {ex}\n{traceback.format_exc()}"
             )
         self.timer = node.create_timer(self.timer_period, self.publish_property)
         self.__loop = ROS2DeviceNode.get_asyncio_loop()
@@ -596,12 +594,6 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 SerialCommand,
                 f"/srv{self.namespace}/s2c_resource_tree",
                 self.s2c_resource_tree,  # type: ignore
-                callback_group=self.callback_group,
-            ),
-            "s2c_device_manage": self.create_service(
-                SerialCommand,
-                f"/srv{self.namespace}/s2c_device_manage",
-                self.s2c_device_manage,  # type: ignore
                 callback_group=self.callback_group,
             ),
         }
@@ -1072,48 +1064,6 @@ class BaseROS2DeviceNode(Node, Generic[T]):
 
         return res
 
-    async def s2c_device_manage(self, req: SerialCommand_Request, res: SerialCommand_Response):
-        """Handle add/remove device requests from HostNode via SerialCommand."""
-        try:
-            cmd = json.loads(req.command)
-            action = cmd.get("action", "")
-            data = cmd.get("data", {})
-            device_id = data.get("device_id", "")
-
-            if not device_id:
-                res.response = json.dumps({"success": False, "error": "device_id required"})
-                return res
-
-            if action == "add":
-                result = self.create_device(device_id, data)
-            elif action == "remove":
-                result = self.destroy_device(device_id)
-            else:
-                result = {"success": False, "error": f"Unknown action: {action}"}
-
-            res.response = json.dumps(result, ensure_ascii=False)
-
-        except NotImplementedError as e:
-            self.lab_logger().warning(f"[DeviceManage] {e}")
-            res.response = json.dumps({"success": False, "error": str(e)})
-        except Exception as e:
-            self.lab_logger().error(f"[DeviceManage] Error: {e}")
-            res.response = json.dumps({"success": False, "error": str(e)})
-
-        return res
-
-    def create_device(self, device_id: str, config: "ResourceDictType") -> dict:
-        """Create a sub-device dynamically. Override in HostNode / WorkstationNode."""
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support dynamic device creation"
-        )
-
-    def destroy_device(self, device_id: str) -> dict:
-        """Destroy a sub-device dynamically. Override in HostNode / WorkstationNode."""
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not support dynamic device removal"
-        )
-
     async def transfer_resource_to_another(
         self,
         plr_resources: List["ResourcePLR"],
@@ -1256,40 +1206,22 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         return self._lab_logger
 
     def create_ros_publisher(self, attr_name, msg_type, initial_period=5.0):
-        """创建ROS发布者，仅当方法/属性有 @topic_config 装饰器时才创建。"""
-        # 检测 @topic_config 装饰器配置
+        """创建ROS发布者"""
+        # 检测装饰器配置（支持 get_{attr_name} 方法和 @property）
         topic_config = {}
-        driver_class = type(self.driver_instance)
 
-        # 区分 @property 和普通方法两种情况
-        is_prop = hasattr(driver_class, attr_name) and isinstance(
-            getattr(driver_class, attr_name), property
-        )
+        # 优先检测 get_{attr_name} 方法
+        if hasattr(self.driver_instance, f"get_{attr_name}"):
+            getter_method = getattr(self.driver_instance, f"get_{attr_name}")
+            topic_config = get_topic_config(getter_method)
 
-        if is_prop:
-            # @property: 检测 fget 上的 @topic_config
-            class_attr = getattr(driver_class, attr_name)
-            if class_attr.fget is not None:
-                topic_config = get_topic_config(class_attr.fget)
-        else:
-            # 普通方法: 直接检测 attr_name 方法上的 @topic_config
-            if hasattr(self.driver_instance, attr_name):
-                method = getattr(self.driver_instance, attr_name)
-                if callable(method):
-                    topic_config = get_topic_config(method)
-
-        # 没有 @topic_config 装饰器则跳过发布
+        # 如果没有配置，检测 @property 装饰的属性
         if not topic_config:
-            return
-
-        # 发布名称优先级: @topic_config(name=...) > get_ 前缀去除 > attr_name
-        cfg_name = topic_config.get("name")
-        if cfg_name:
-            publish_name = cfg_name
-        elif attr_name.startswith("get_"):
-            publish_name = attr_name[4:]
-        else:
-            publish_name = attr_name
+            driver_class = type(self.driver_instance)
+            if hasattr(driver_class, attr_name):
+                class_attr = getattr(driver_class, attr_name)
+                if isinstance(class_attr, property) and class_attr.fget is not None:
+                    topic_config = get_topic_config(class_attr.fget)
 
         # 使用装饰器配置或默认值
         cfg_period = topic_config.get("period")
@@ -1302,10 +1234,10 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         # 获取属性值的方法
         def get_device_attr():
             try:
-                if is_prop:
-                    return getattr(self.driver_instance, attr_name)
+                if hasattr(self.driver_instance, f"get_{attr_name}"):
+                    return getattr(self.driver_instance, f"get_{attr_name}")()
                 else:
-                    return getattr(self.driver_instance, attr_name)()
+                    return getattr(self.driver_instance, attr_name)
             except AttributeError as ex:
                 if ex.args[0].startswith(f"AttributeError: '{self.driver_instance.__class__.__name__}' object"):
                     self.lab_logger().error(
@@ -1317,8 +1249,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     )
                     self.lab_logger().error(traceback.format_exc())
 
-        self._property_publishers[publish_name] = PropertyPublisher(
-            self, publish_name, get_device_attr, msg_type, period, print_publish, qos
+        self._property_publishers[attr_name] = PropertyPublisher(
+            self, attr_name, get_device_attr, msg_type, period, print_publish, qos
         )
 
     def create_ros_action_server(self, action_name, action_value_mapping):
@@ -1326,17 +1258,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         action_type = action_value_mapping["type"]
         str_action_type = str(action_type)[8:-2]
 
-        try:
-            self._action_servers[action_name] = ActionServer(
-                self,
-                action_type,
-                action_name,
-                execute_callback=self._create_execute_callback(action_name, action_value_mapping),
-                callback_group=self.callback_group,
-            )
-        except Exception as e:
-            self.lab_logger().error(f"创建ActionServer失败，Device: {self.device_id}, Action Name: {action_name}, Action Type: {action_type}, Error: {e}")
-            return
+        self._action_servers[action_name] = ActionServer(
+            self,
+            action_type,
+            action_name,
+            execute_callback=self._create_execute_callback(action_name, action_value_mapping),
+            callback_group=self.callback_group,
+        )
+
         self.lab_logger().trace(f"发布动作: {action_name}, 类型: {str_action_type}")
 
     def _setup_decorated_subscribers(self):
@@ -1884,8 +1813,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     continue
 
                 # 处理单个 ResourceSlot
-                _is_resource_slot = isinstance(arg_type, str) and arg_type.endswith(":ResourceSlot")
-                if _is_resource_slot:
+                if arg_type == "unilabos.registry.placeholder_type:ResourceSlot":
                     resource_data = function_args[arg_name]
                     if isinstance(resource_data, dict) and "id" in resource_data:
                         try:
@@ -1899,7 +1827,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
 
                 # 处理 ResourceSlot 列表
                 elif isinstance(arg_type, tuple) and len(arg_type) == 2:
-                    if arg_type[0] == "list" and isinstance(arg_type[1], str) and arg_type[1].endswith(":ResourceSlot"):
+                    resource_slot_type = "unilabos.registry.placeholder_type:ResourceSlot"
+                    if arg_type[0] == "list" and arg_type[1] == resource_slot_type:
                         resource_list = function_args[arg_name]
                         if isinstance(resource_list, list):
                             try:

@@ -8,8 +8,6 @@ import json
 import os
 from typing import List, Dict, Any, Optional
 
-from unilabos.utils.tools import fast_dumps as _fast_dumps, fast_dumps_pretty as _fast_dumps_pretty
-
 import requests
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import info
@@ -282,54 +280,29 @@ class HTTPClient:
             )
         return response
 
-    def resource_registry(
-        self, registry_data: Dict[str, Any] | List[Dict[str, Any]], tag: str = "registry",
-    ) -> requests.Response:
+    def resource_registry(self, registry_data: Dict[str, Any] | List[Dict[str, Any]]) -> requests.Response:
         """
-        注册资源到服务器，同步保存请求/响应到 unilabos_data
+        注册资源到服务器
 
         Args:
             registry_data: 注册表数据，格式为 {resource_id: resource_info} / [{resource_info}]
-            tag: 保存文件的标签后缀 (如 "device_registry" / "resource_registry")
 
         Returns:
             Response: API响应对象
         """
-        # 序列化一次，同时用于保存和发送
-        json_bytes = _fast_dumps(registry_data)
-
-        # 保存请求数据到 unilabos_data
-        req_path = os.path.join(BasicConfig.working_dir, f"req_{tag}_upload.json")
-        try:
-            os.makedirs(BasicConfig.working_dir, exist_ok=True)
-            with open(req_path, "wb") as f:
-                f.write(_fast_dumps_pretty(registry_data))
-            logger.trace(f"注册表请求数据已保存: {req_path}")
-        except Exception as e:
-            logger.warning(f"保存注册表请求数据失败: {e}")
-
-        compressed_body = gzip.compress(json_bytes)
-        headers = {
-            "Authorization": f"Lab {self.auth}",
-            "Content-Type": "application/json",
-            "Content-Encoding": "gzip",
-        }
+        compressed_body = gzip.compress(
+            json.dumps(registry_data, ensure_ascii=False, default=str).encode("utf-8")
+        )
         response = requests.post(
             f"{self.remote_addr}/lab/resource",
             data=compressed_body,
-            headers=headers,
+            headers={
+                "Authorization": f"Lab {self.auth}",
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip",
+            },
             timeout=30,
         )
-
-        # 保存响应数据到 unilabos_data
-        res_path = os.path.join(BasicConfig.working_dir, f"res_{tag}_upload.json")
-        try:
-            with open(res_path, "w", encoding="utf-8") as f:
-                f.write(f"{response.status_code}\n{response.text}")
-            logger.trace(f"注册表响应数据已保存: {res_path}")
-        except Exception as e:
-            logger.warning(f"保存注册表响应数据失败: {e}")
-
         if response.status_code not in [200, 201]:
             logger.error(f"注册资源失败: {response.status_code}, {response.text}")
         if response.status_code == 200:

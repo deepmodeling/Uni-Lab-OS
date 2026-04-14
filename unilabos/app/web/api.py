@@ -1052,7 +1052,7 @@ async def handle_file_import(websocket: WebSocket, request_data: dict):
                                 "result": {},
                                 "schema": lab_registry._generate_unilab_json_command_schema(v["args"], k),
                                 "goal_default": {i["name"]: i["default"] for i in v["args"]},
-                                "handles": {},
+                                "handles": [],
                             }
                             # 不生成已配置action的动作
                             for k, v in enhanced_info["action_methods"].items()

@@ -120,7 +120,6 @@ class ResourceDictType(TypedDict):
     config: Dict[str, Any]
     data: Dict[str, Any]
     extra: Dict[str, Any]
-    machine_name: str
 
 
 # 统一的资源字典模型，parent 自动序列化为 parent_uuid，children 不序列化
@@ -142,7 +141,6 @@ class ResourceDict(BaseModel):
     config: Dict[str, Any] = Field(description="Resource configuration")
     data: Dict[str, Any] = Field(description="Resource data, eg: container liquid data")
     extra: Dict[str, Any] = Field(description="Extra data, eg: slot index")
-    machine_name: str = Field(description="Machine this resource belongs to", default="")
 
     @field_serializer("parent_uuid")
     def _serialize_parent(self, parent_uuid: Optional["ResourceDict"]):
@@ -198,30 +196,22 @@ class ResourceDictInstance(object):
         self.typ = "dict"
 
     @classmethod
-    def get_resource_instance_from_dict(cls, content: ResourceDictType) -> "ResourceDictInstance":
+    def get_resource_instance_from_dict(cls, content: Dict[str, Any]) -> "ResourceDictInstance":
         """从字典创建资源实例"""
         if "id" not in content:
             content["id"] = content["name"]
         if "uuid" not in content:
             content["uuid"] = str(uuid.uuid4())
         if "description" in content and content["description"] is None:
-            # noinspection PyTypedDict
             del content["description"]
         if "model" in content and content["model"] is None:
-            # noinspection PyTypedDict
             del content["model"]
-        # noinspection PyTypedDict
         if "schema" in content and content["schema"] is None:
-            # noinspection PyTypedDict
             del content["schema"]
-        # noinspection PyTypedDict
         if "x" in content.get("position", {}):
             # 说明是老版本的position格式，转换成新的
-            # noinspection PyTypedDict
             content["position"] = {"position": content["position"]}
-        # noinspection PyTypedDict
         if not content.get("class"):
-            # noinspection PyTypedDict
             content["class"] = ""
         if not content.get("config"):  # todo: 后续从后端保证字段非空
             content["config"] = {}
@@ -232,24 +222,16 @@ class ResourceDictInstance(object):
         if "position" in content:
             pose = content.get("pose", {})
             if "position" not in pose:
-                # noinspection PyTypedDict
                 if "position" in content["position"]:
-                    # noinspection PyTypedDict
                     pose["position"] = content["position"]["position"]
                 else:
-                    pose["position"] = ResourceDictPositionObjectType(x=0, y=0, z=0)
+                    pose["position"] = {"x": 0, "y": 0, "z": 0}
             if "size" not in pose:
-                pose["size"] = ResourceDictPositionSizeType(
-                    width= content["config"].get("size_x", 0),
-                    height= content["config"].get("size_y", 0),
-                    depth= content["config"].get("size_z", 0),
-                )
-            if "rotation" not in pose:
-                pose["rotation"] = ResourceDictPositionObjectType(
-                    x=content["config"].get("rotation", {}).get("x", 0), 
-                    y=content["config"].get("rotation", {}).get("y", 0), 
-                    z=content["config"].get("rotation", {}).get("z", 0),
-                )
+                pose["size"] = {
+                    "width": content["config"].get("size_x", 0),
+                    "height": content["config"].get("size_y", 0),
+                    "depth": content["config"].get("size_z", 0),
+                }
             content["pose"] = pose
         try:
             res_dict = ResourceDict.model_validate(content)
@@ -417,7 +399,7 @@ class ResourceTreeSet(object):
             )
 
     @classmethod
-    def from_plr_resources(cls, resources: List["PLRResource"], known_newly_created=False, old_size=False) -> "ResourceTreeSet":
+    def from_plr_resources(cls, resources: List["PLRResource"], known_newly_created=False) -> "ResourceTreeSet":
         """
         从plr资源创建ResourceTreeSet
         """
@@ -440,20 +422,13 @@ class ResourceTreeSet(object):
                 "resource_group": "resource_group",
                 "trash": "trash",
                 "plate_adapter": "plate_adapter",
-                "consumable": "consumable",
-                "tool": "tool",
-                "condenser": "condenser",
-                "crucible": "crucible",
-                "reagent_bottle": "reagent_bottle",
-                "flask": "flask",
-                "beaker": "beaker",
             }
             if source in replace_info:
                 return replace_info[source]
             elif source is None:
                 return ""
             else:
-                logger.trace(f"转换pylabrobot的时候，出现未知类型 {source}")
+                print("转换pylabrobot的时候，出现未知类型", source)
                 return source
 
         def build_uuid_mapping(res: "PLRResource", uuid_list: list, parent_uuid: Optional[str] = None):
@@ -508,7 +483,7 @@ class ResourceTreeSet(object):
                     k: v
                     for k, v in d.items()
                     if k
-                    not in ([
+                    not in [
                         "name",
                         "children",
                         "parent_name",
@@ -519,15 +494,7 @@ class ResourceTreeSet(object):
                         "size_z",
                         "cross_section_type",
                         "bottom_type",
-                    ] if not old_size else [
-                        "name",
-                        "children",
-                        "parent_name",
-                        "location",
-                        "rotation",
-                        "cross_section_type",
-                        "bottom_type",
-                    ])
+                    ]
                 },
                 "data": states[d["name"]],
                 "extra": extra,
@@ -826,8 +793,7 @@ class ResourceTreeSet(object):
             if remote_root_type == "device":
                 # 情况1: 一级是 device
                 if remote_root_id not in local_device_map:
-                    if remote_root_id != "host_node":
-                        logger.warning(f"Device '{remote_root_id}' 在本地不存在，跳过该 device 下的物料同步")
+                    logger.warning(f"Device '{remote_root_id}' 在本地不存在，跳过该 device 下的物料同步")
                     continue
 
                 local_device = local_device_map[remote_root_id]
@@ -917,7 +883,7 @@ class ResourceTreeSet(object):
 
         return self
 
-    def dump(self, old_position=False) -> List[List[Dict[str, Any]]]:
+    def dump(self) -> List[List[Dict[str, Any]]]:
         """
         将 ResourceTreeSet 序列化为嵌套列表格式
 
@@ -933,10 +899,6 @@ class ResourceTreeSet(object):
             # 获取树的所有节点并序列化
             tree_nodes = [node.res_content.model_dump(by_alias=True) for node in tree.get_all_nodes()]
             result.append(tree_nodes)
-        if old_position:
-            for r in result:
-                for rr in r:
-                    rr["position"] = rr["pose"]["position"]
         return result
 
     @classmethod

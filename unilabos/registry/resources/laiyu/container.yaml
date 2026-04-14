@@ -29,6 +29,7 @@ bottle_container:
     - 0
     path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/bottle_container/modal.xacro
     type: resource
+  registry_type: resource
   version: 1.0.0
 tube_container:
   category:
@@ -61,4 +62,5 @@ tube_container:
     - 0
     path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tube_container/modal.xacro
     type: resource
+  registry_type: resource
   version: 1.0.0

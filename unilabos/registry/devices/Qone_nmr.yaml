@@ -13,18 +13,21 @@ Qone_nmr:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -66,6 +69,31 @@ Qone_nmr:
           required:
           - goal
           title: monitor_folder_for_new_content参数
+          type: object
+        type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
           type: object
         type: UniLabJsonCommand
       auto-strings_to_txt:
@@ -110,18 +138,21 @@ Qone_nmr:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -136,31 +167,32 @@ Qone_nmr:
         goal_default:
           string: ''
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: StrSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 string:
                   type: string
+              required:
+              - string
               title: StrSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: StrSingleInput_Result
               type: object
           required:

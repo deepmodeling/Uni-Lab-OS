@@ -422,20 +422,18 @@ placeholder_keys:
 
 ### status_types
 
-系统会扫描你的 Python 类，从带有 `@topic_config` 装饰器的 `@property` 或方法自动生成这部分：
+系统会扫描你的 Python 类，从状态方法（property 或 get\_方法）自动生成这部分：
 
 ```yaml
 status_types:
-  current_temperature: float # 从 @topic_config 装饰的 @property 或方法
-  is_heating: bool
-  status: str
+  current_temperature: float # 从 get_current_temperature() 或 @property current_temperature
+  is_heating: bool # 从 get_is_heating() 或 @property is_heating
+  status: str # 从 get_status() 或 @property status
 ```
 
 **注意事项**：
 
-- 仅有带 `@topic_config` 装饰器的 `@property` 或方法才会被识别为状态属性
-- 没有 `@topic_config` 的 `@property` 不会生成 status_types，也不会广播
-- `get_` 前缀的方法名会自动去除前缀（如 `get_temperature` → `temperature`）
+- 系统会查找所有 `get_` 开头的方法和 `@property` 装饰的属性
 - 类型会自动转成相应的类型（如 `str`、`float`、`bool`）
 - 如果类型是 `Any`、`None` 或未知的，默认使用 `String`
 
@@ -539,13 +537,11 @@ class AdvancedLiquidHandler:
         self._temperature = 25.0
 
     @property
-    @topic_config()
     def status(self) -> str:
         """设备状态"""
         return self._status
 
     @property
-    @topic_config()
     def temperature(self) -> float:
         """当前温度"""
         return self._temperature
@@ -813,23 +809,21 @@ my_temperature_controller:
 你的设备类需要符合以下要求：
 
 ```python
-from unilabos.registry.decorators import device, topic_config
+from unilabos.common.device_base import DeviceBase
 
-@device(id="my_device", category=["temperature"], description="My Device")
-class MyDevice:
+class MyDevice(DeviceBase):
     def __init__(self, config):
         """初始化，参数会自动分析到 init_param_schema.config"""
+        super().__init__(config)
         self.port = config.get('port', '/dev/ttyUSB0')
 
-    # 状态方法（必须添加 @topic_config 才会生成到 status_types 并广播）
+    # 状态方法（会自动生成到 status_types）
     @property
-    @topic_config()
     def status(self):
         """返回设备状态"""
         return "idle"
 
     @property
-    @topic_config()
     def temperature(self):
         """返回当前温度"""
         return 25.0
@@ -1045,34 +1039,7 @@ resource.type      # "resource"
 
 ### 代码规范
 
-1. **使用 `@device` 装饰器标识设备类**
-
-```python
-from unilabos.registry.decorators import device
-
-@device(id="my_device", category=["heating"], description="My Device")
-class MyDevice:
-    ...
-```
-
-2. **使用 `@topic_config` 声明广播属性**
-
-```python
-from unilabos.registry.decorators import topic_config
-
-# ✓ 需要广播的状态属性
-@property
-@topic_config(period=2.0)
-def temperature(self) -> float:
-    return self._temp
-
-# ✗ 仅有 @property 不会广播
-@property
-def internal_counter(self) -> int:
-    return self._counter
-```
-
-3. **始终使用类型注解**
+1. **始终使用类型注解**
 
 ```python
 # ✓ 好
@@ -1084,7 +1051,7 @@ def method(self, resource, device):
     pass
 ```
 
-4. **提供有意义的参数名**
+2. **提供有意义的参数名**
 
 ```python
 # ✓ 好 - 清晰的参数名
@@ -1096,7 +1063,7 @@ def transfer(self, r1: ResourceSlot, r2: ResourceSlot):
     pass
 ```
 
-5. **使用 Optional 表示可选参数**
+3. **使用 Optional 表示可选参数**
 
 ```python
 from typing import Optional
@@ -1109,7 +1076,7 @@ def method(
     pass
 ```
 
-6. **添加详细的文档字符串**
+4. **添加详细的文档字符串**
 
 ```python
 def method(
@@ -1129,13 +1096,13 @@ def method(
     pass
 ```
 
-7. **方法命名规范**
+5. **方法命名规范**
 
-   - 状态方法使用 `@property` + `@topic_config` 装饰器，或普通方法 + `@topic_config`
+   - 状态方法使用 `@property` 装饰器或 `get_` 前缀
    - 动作方法使用动词开头
    - 保持命名清晰、一致
 
-8. **完善的错误处理**
+6. **完善的错误处理**
    - 实现完善的错误处理
    - 添加日志记录
    - 提供有意义的错误信息

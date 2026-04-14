@@ -12,7 +12,6 @@ from geometry_msgs.msg import Point
 from rclpy.action import ActionClient, get_action_server_names_and_types_by_node
 from rclpy.service import Service
 from typing_extensions import TypedDict
-from unilabos_msgs.action import EmptyIn, StrSingleInput, ResourceCreateFromOuterEasy, ResourceCreateFromOuter
 from unilabos_msgs.msg import Resource  # type: ignore
 from unilabos_msgs.srv import (
     ResourceAdd,
@@ -24,7 +23,6 @@ from unilabos_msgs.srv import (
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 from unique_identifier_msgs.msg import UUID
 
-from unilabos.registry.decorators import device
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
 from unilabos.registry.registry import lab_registry
 from unilabos.resources.container import RegularContainer
@@ -32,7 +30,6 @@ from unilabos.resources.graphio import initialize_resource
 from unilabos.resources.registry import add_schema
 from unilabos.resources.resource_tracker import (
     ResourceDict,
-    ResourceDictType,
     ResourceDictInstance,
     ResourceTreeSet,
     ResourceTreeInstance,
@@ -89,7 +86,6 @@ class TestLatencyReturn(TypedDict):
     status: str
 
 
-@device(id="host_node", category=[], description="Host Node", icon="icon_device.webp")
 class HostNode(BaseROS2DeviceNode):
     """
     主机节点类，负责管理设备、资源和控制器
@@ -278,42 +274,44 @@ class HostNode(BaseROS2DeviceNode):
         self._action_clients: Dict[str, ActionClient] = {  # 为了方便了解实际的数据类型，host的默认写好
             "/devices/host_node/create_resource": ActionClient(
                 self,
-                ResourceCreateFromOuterEasy,
+                lab_registry.ResourceCreateFromOuterEasy,
                 "/devices/host_node/create_resource",
                 callback_group=self.callback_group,
             ),
             "/devices/host_node/create_resource_detailed": ActionClient(
                 self,
-                ResourceCreateFromOuter,
+                lab_registry.ResourceCreateFromOuter,
                 "/devices/host_node/create_resource_detailed",
                 callback_group=self.callback_group,
             ),
             "/devices/host_node/test_latency": ActionClient(
                 self,
-                EmptyIn,
+                lab_registry.EmptyIn,
                 "/devices/host_node/test_latency",
                 callback_group=self.callback_group,
             ),
             "/devices/host_node/test_resource": ActionClient(
                 self,
-                EmptyIn,
+                lab_registry.EmptyIn,
                 "/devices/host_node/test_resource",
                 callback_group=self.callback_group,
             ),
             "/devices/host_node/_execute_driver_command": ActionClient(
                 self,
-                StrSingleInput,
+                lab_registry.StrSingleInput,
                 "/devices/host_node/_execute_driver_command",
                 callback_group=self.callback_group,
             ),
             "/devices/host_node/_execute_driver_command_async": ActionClient(
                 self,
-                StrSingleInput,
+                lab_registry.StrSingleInput,
                 "/devices/host_node/_execute_driver_command_async",
                 callback_group=self.callback_group,
             ),
         }  # 用来存储多个ActionClient实例
-        self._action_value_mappings: Dict[str, Dict] = {}  # device_id -> action_value_mappings(本地+远程设备统一存储)
+        self._action_value_mappings: Dict[str, Dict] = (
+            {}
+        )  # device_id -> action_value_mappings(本地+远程设备统一存储)
         self._slave_registry_configs: Dict[str, Dict] = {}  # registry_name -> registry_config(含action_value_mappings)
         self._goals: Dict[str, Any] = {}  # 用来存储多个目标的状态
         self._online_devices: Set[str] = {f"{self.namespace}/{device_id}"}  # 用于跟踪在线设备
@@ -331,17 +329,9 @@ class HostNode(BaseROS2DeviceNode):
         self._discover_devices()
 
         # 初始化所有本机设备节点，多一次过滤，防止重复初始化
-        local_machine = BasicConfig.machine_name
         for device_config in devices_config.root_nodes:
             device_id = device_config.res_content.id
             if device_config.res_content.type != "device":
-                continue
-            dev_machine = device_config.res_content.machine_name
-            if dev_machine and local_machine and dev_machine != local_machine:
-                self.lab_logger().info(
-                    f"[Host Node] Device {device_id} belongs to machine '{dev_machine}', "
-                    f"local is '{local_machine}', skipping initialization."
-                )
                 continue
             if device_id not in self.devices_names:
                 self.initialize_device(device_id, device_config)
@@ -668,12 +658,7 @@ class HostNode(BaseROS2DeviceNode):
             action_id = f"/devices/{device_id}/{action_name}"
             if action_id not in self._action_clients:
                 action_type = action_value_mapping["type"]
-                try:
-                    self._action_clients[action_id] = ActionClient(self, action_type, action_id)
-                except Exception as e:
-                    self.lab_logger().error(
-                        f"创建ActionClient失败，Device: {device_id}, Action Name: {action_name}, Action Type: {action_type}, Error: {e}")
-                    continue
+                self._action_clients[action_id] = ActionClient(self, action_type, action_id)
                 self.lab_logger().trace(
                     f"[Host Node] Created ActionClient (Local): {action_id}"
                 )  # 子设备再创建用的是Discover发现的
@@ -1273,9 +1258,9 @@ class HostNode(BaseROS2DeviceNode):
 
                 # 用 registry_name 索引已存储的 registry_config,获取 action_value_mappings
                 if registry_name and registry_name in self._slave_registry_configs:
-                    action_mappings = (
-                        self._slave_registry_configs[registry_name].get("class", {}).get("action_value_mappings", {})
-                    )
+                    action_mappings = self._slave_registry_configs[registry_name].get(
+                        "class", {}
+                    ).get("action_value_mappings", {})
                     if action_mappings:
                         self._action_value_mappings[edge_device_id] = action_mappings
                         self.lab_logger().info(
@@ -1295,37 +1280,20 @@ class HostNode(BaseROS2DeviceNode):
 
                 # 解析 devices_config,建立 device_id -> action_value_mappings 映射
                 if devices_config:
-                    machine_name = info["machine_name"]
-                    # Stamp machine_name on each device dict before parsing
                     for device_tree in devices_config:
                         for device_dict in device_tree:
-                            device_dict["machine_name"] = machine_name
                             device_id = device_dict.get("id", "")
                             class_name = device_dict.get("class", "")
                             if device_id and class_name and class_name in self._slave_registry_configs:
-                                action_mappings = (
-                                    self._slave_registry_configs[class_name]
-                                    .get("class", {})
-                                    .get("action_value_mappings", {})
-                                )
+                                action_mappings = self._slave_registry_configs[class_name].get(
+                                    "class", {}
+                                ).get("action_value_mappings", {})
                                 if action_mappings:
                                     self._action_value_mappings[device_id] = action_mappings
                                     self.lab_logger().info(
                                         f"[Host Node] Stored {len(action_mappings)} action mappings "
                                         f"for remote device {device_id} (class: {class_name})"
                                     )
-
-                    # Merge slave devices_config into self.devices_config tree
-                    try:
-                        slave_tree_set = ResourceTreeSet.load(devices_config)  # slave一定是根节点的tree
-                        for tree in slave_tree_set.trees:
-                            self.devices_config.trees.append(tree)
-                        self.lab_logger().info(
-                            f"[Host Node] Merged {len(slave_tree_set.trees)} slave device trees "
-                            f"(machine: {machine_name}) into devices_config"
-                        )
-                    except Exception as e:
-                        self.lab_logger().error(f"[Host Node] Failed to merge slave devices_config: {e}")
 
             self.lab_logger().debug(f"[Host Node] Node info update: {info}")
             response.response = "OK"
@@ -1735,177 +1703,3 @@ class HostNode(BaseROS2DeviceNode):
             self.lab_logger().error(f"[Host Node-Resource] Error notifying resource tree update: {str(e)}")
             self.lab_logger().error(traceback.format_exc())
             return False
-
-    # ------------------------------------------------------------------
-    # Device lifecycle (add / remove) — pure forwarder
-    # ------------------------------------------------------------------
-
-    def notify_device_manage(self, target_node_id: str, action: str, config: ResourceDictType) -> bool:
-        """Forward an add/remove device command to the target node via ROS2 SerialCommand.
-
-        The HostNode does NOT interpret the command; it simply resolves the
-        target namespace and forwards the request to ``s2c_device_manage``.
-
-        If *target_node_id* equals the HostNode's own device_id (i.e. the
-        command targets the host itself), we call our local ``create_device``
-        / ``destroy_device`` directly instead of going through ROS2.
-        """
-        try:
-            # If the target is the host itself, handle locally
-            device_id = config["id"]
-            if target_node_id == self.device_id:
-                if action == "add":
-                    return self.create_device(device_id, config).get("success", False)
-                elif action == "remove":
-                    return self.destroy_device(device_id).get("success", False)
-
-            if target_node_id not in self.devices_names:
-                self.lab_logger().error(
-                    f"[Host Node-DeviceMgr] Target {target_node_id} not found in devices_names"
-                )
-                return False
-
-            namespace = self.devices_names[target_node_id]
-            device_key = f"{namespace}/{target_node_id}"
-            if device_key not in self._online_devices:
-                self.lab_logger().error(f"[Host Node-DeviceMgr] Target {device_key} is offline")
-                return False
-
-            srv_address = f"/srv{namespace}/s2c_device_manage"
-            self.lab_logger().info(
-                f"[Host Node-DeviceMgr] Forwarding {action}_device to {target_node_id} ({srv_address})"
-            )
-
-            sclient = self.create_client(SerialCommand, srv_address)
-            if not sclient.wait_for_service(timeout_sec=5.0):
-                self.lab_logger().error(f"[Host Node-DeviceMgr] Service {srv_address} not available")
-                return False
-
-            request = SerialCommand.Request()
-            request.command = json.dumps({"action": action, "data": config}, ensure_ascii=False)
-
-            future = sclient.call_async(request)
-            timeout = 30.0
-            start_time = time.time()
-            while not future.done():
-                if time.time() - start_time > timeout:
-                    self.lab_logger().error(
-                        f"[Host Node-DeviceMgr] Timeout waiting for {action}_device on {target_node_id}"
-                    )
-                    return False
-                time.sleep(0.05)
-
-            response = future.result()
-            self.lab_logger().info(
-                f"[Host Node-DeviceMgr] {action}_device on {target_node_id} completed"
-            )
-            return True
-
-        except Exception as e:
-            self.lab_logger().error(f"[Host Node-DeviceMgr] Error: {e}")
-            self.lab_logger().error(traceback.format_exc())
-            return False
-
-    def create_device(self, device_id: str, config: ResourceDictType) -> dict:
-        """Dynamically create a root-level device on the host."""
-        if not device_id:
-            return {"success": False, "error": "device_id required"}
-
-        if device_id in self.devices_names:
-            return {"success": False, "error": f"Device {device_id} already exists"}
-
-        try:
-            config.setdefault("id", device_id)
-            config.setdefault("type", "device")
-            config.setdefault("machine_name", BasicConfig.machine_name or "本地")
-            res_dict = ResourceDictInstance.get_resource_instance_from_dict(config)
-
-            self.initialize_device(device_id, res_dict)
-
-            if device_id not in self.devices_names:
-                return {"success": False, "error": f"initialize_device failed for {device_id}"}
-
-            # Add to config tree (devices_config)
-            tree = ResourceTreeInstance(res_dict)
-            self.devices_config.trees.append(tree)
-
-            # Add to resource tracker so s2c_resource_tree can find it
-            try:
-                for plr_resource in ResourceTreeSet([tree]).to_plr_resources():
-                    self._resource_tracker.add_resource(plr_resource)
-            except Exception as ex:
-                self.lab_logger().warning(f"[Host Node-DeviceMgr] PLR resource registration skipped: {ex}")
-
-            self.lab_logger().info(f"[Host Node-DeviceMgr] Device {device_id} created successfully")
-            return {"success": True, "device_id": device_id}
-
-        except Exception as e:
-            self.lab_logger().error(f"[Host Node-DeviceMgr] Failed to create {device_id}: {e}")
-            self.lab_logger().error(traceback.format_exc())
-            return {"success": False, "error": str(e)}
-
-    def destroy_device(self, device_id: str) -> dict:
-        """Remove a root-level device from the host."""
-        if not device_id:
-            return {"success": False, "error": "device_id required"}
-
-        if device_id not in self.devices_names:
-            return {"success": False, "error": f"Device {device_id} not found"}
-
-        if device_id == self.device_id:
-            return {"success": False, "error": "Cannot destroy host_node itself"}
-
-        try:
-            namespace = self.devices_names[device_id]
-            device_key = f"{namespace}/{device_id}"
-
-            # Remove action clients
-            action_prefix = f"/devices/{device_id}/"
-            to_remove = [k for k in self._action_clients if k.startswith(action_prefix)]
-            for k in to_remove:
-                try:
-                    self._action_clients[k].destroy()
-                except Exception:
-                    pass
-                del self._action_clients[k]
-
-            # Remove from config tree (devices_config)
-            self.devices_config.trees = [
-                t for t in self.devices_config.trees
-                if t.root_node.res_content.id != device_id
-            ]
-
-            # Remove from resource tracker
-            try:
-                tracked = self._resource_tracker.uuid_to_resources.copy()
-                for uid, res in tracked.items():
-                    res_id = res.get("id") if isinstance(res, dict) else getattr(res, "name", None)
-                    if res_id == device_id:
-                        self._resource_tracker.remove_resource(res)
-            except Exception as ex:
-                self.lab_logger().warning(f"[Host Node-DeviceMgr] Resource tracker cleanup: {ex}")
-
-            # Clean internal state
-            self._online_devices.discard(device_key)
-            self.devices_names.pop(device_id, None)
-            self.device_machine_names.pop(device_id, None)
-            self._action_value_mappings.pop(device_id, None)
-
-            # Destroy the ROS2 node of the device
-            instance = self.devices_instances.pop(device_id, None)
-            if instance is not None:
-                try:
-                    # noinspection PyProtectedMember
-                    ros_node = getattr(instance, "_ros_node", None)
-                    if ros_node is not None:
-                        ros_node.destroy_node()
-                except Exception as e:
-                    self.lab_logger().warning(f"[Host Node-DeviceMgr] Error destroying ROS node for {device_id}: {e}")
-
-            self.lab_logger().info(f"[Host Node-DeviceMgr] Device {device_id} destroyed")
-            return {"success": True, "device_id": device_id}
-
-        except Exception as e:
-            self.lab_logger().error(f"[Host Node-DeviceMgr] Failed to destroy {device_id}: {e}")
-            self.lab_logger().error(traceback.format_exc())
-            return {"success": False, "error": str(e)}

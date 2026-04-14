@@ -86,7 +86,7 @@ def setup_server() -> FastAPI:
     # 设置页面路由
     try:
         setup_web_pages(pages)
-        # info("[Web] 已加载Web UI模块")
+        info("[Web] 已加载Web UI模块")
     except ImportError as e:
         info(f"[Web] 未找到Web页面模块: {str(e)}")
     except Exception as e:
@@ -138,7 +138,7 @@ def start_server(host: str = "0.0.0.0", port: int = 8002, open_browser: bool = T
     server_thread = threading.Thread(target=server.run, daemon=True, name="uvicorn_server")
     server_thread.start()
 
-    # info("[Web] Server started, monitoring for restart requests...")
+    info("[Web] Server started, monitoring for restart requests...")
 
     # 监控重启标志
     import unilabos.app.main as main_module

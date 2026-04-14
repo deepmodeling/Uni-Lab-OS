@@ -49,7 +49,7 @@ jobs:
           uv pip uninstall enum34 || echo enum34 not installed, skipping
           uv pip install .
 
-      - name: Run check mode (AST registry validation)
+      - name: Run check mode (complete_registry)
         run: |
           call conda activate check-env
           echo Running check mode...

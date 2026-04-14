@@ -42,7 +42,7 @@ def canonicalize_nodes_data(
     Returns:
         ResourceTreeSet: 标准化后的资源树集合
     """
-    print_status(f"{len(nodes)} Resources loaded:", "info")
+    print_status(f"{len(nodes)} Resources loaded", "info")
 
     # 第一步：基本预处理（处理graphml的label字段）
     outer_host_node_id = None
@@ -76,7 +76,7 @@ def canonicalize_nodes_data(
             if sample_id:
                 logger.error(f"{node}的sample_id参数已弃用，sample_id: {sample_id}")
         for k in list(node.keys()):
-            if k not in ["id", "uuid", "name", "description", "schema", "model", "icon", "parent_uuid", "parent", "type", "class", "position", "config", "data", "children", "pose", "extra", "machine_name"]:
+            if k not in ["id", "uuid", "name", "description", "schema", "model", "icon", "parent_uuid", "parent", "type", "class", "position", "config", "data", "children", "pose", "extra"]:
                 v = node.pop(k)
                 node["config"][k] = v
     if outer_host_node_id is not None:
@@ -288,15 +288,6 @@ def read_node_link_json(
     physical_setup_graph = nx.node_link_graph(graph_data, edges="links", multigraph=False)
     handle_communications(physical_setup_graph)
 
-    # Stamp machine_name on device trees only (resources are cloud-managed)
-    local_machine = BasicConfig.machine_name or "本地"
-    for tree in resource_tree_set.trees:
-        if tree.root_node.res_content.type != "device":
-            continue
-        for node in tree.get_all_nodes():
-            if not node.res_content.machine_name:
-                node.res_content.machine_name = local_machine
-
     return physical_setup_graph, resource_tree_set, standardized_links
 
 
@@ -380,15 +371,6 @@ def read_graphml(graphml_file: str) -> tuple[nx.Graph, ResourceTreeSet, List[Dic
         print_status(f"GraphML converted to JSON and saved to {dump_json_path}", "info")
     physical_setup_graph = nx.node_link_graph(graph_data, link="links", multigraph=False)
     handle_communications(physical_setup_graph)
-
-    # Stamp machine_name on device trees only (resources are cloud-managed)
-    local_machine = BasicConfig.machine_name or "本地"
-    for tree in resource_tree_set.trees:
-        if tree.root_node.res_content.type != "device":
-            continue
-        for node in tree.get_all_nodes():
-            if not node.res_content.machine_name:
-                node.res_content.machine_name = local_machine
 
     return physical_setup_graph, resource_tree_set, standardized_links
 
@@ -593,7 +575,7 @@ def resource_ulab_to_plr(resource: dict, plr_model=False) -> "ResourcePLR":
             "size_y": resource["config"].get("size_y", 0),
             "size_z": resource["config"].get("size_z", 0),
             "location": {**resource["position"], "type": "Coordinate"},
-            "rotation": {resource["config"].get("rotation", {"x": 0, "y": 0, "z": 0, "type": "Rotation"})},  # Resource如果没有rotation，是plr版本太低
+            "rotation": {"x": 0, "y": 0, "z": 0, "type": "Rotation"},  # Resource如果没有rotation，是plr版本太低
             "category": resource["type"],
             "model": resource["config"].get("model", None),  # resource中deck没有model
             "children": (

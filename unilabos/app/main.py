@@ -4,7 +4,6 @@ import os
 import platform
 import shutil
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -25,84 +24,6 @@ from unilabos.config.config import load_config, BasicConfig, HTTPConfig
 # Global restart flags (used by ws_client and web/server)
 _restart_requested: bool = False
 _restart_reason: str = ""
-
-RESTART_EXIT_CODE = 42
-
-
-def _build_child_argv():
-    """Build sys.argv for child process, stripping supervisor-only arguments."""
-    result = []
-    skip_next = False
-    for arg in sys.argv:
-        if skip_next:
-            skip_next = False
-            continue
-        if arg in ("--restart_mode", "--restart-mode"):
-            continue
-        if arg in ("--auto_restart_count", "--auto-restart-count"):
-            skip_next = True
-            continue
-        if arg.startswith("--auto_restart_count=") or arg.startswith("--auto-restart-count="):
-            continue
-        result.append(arg)
-    return result
-
-
-def _run_as_supervisor(max_restarts: int):
-    """
-    Supervisor process that spawns and monitors child processes.
-
-    Similar to Uvicorn's --reload: the supervisor itself does no heavy work,
-    it only launches the real process as a child and restarts it when the child
-    exits with RESTART_EXIT_CODE.
-    """
-    child_argv = [sys.executable] + _build_child_argv()
-    restart_count = 0
-
-    print_status(
-        f"[Supervisor] Restart mode enabled (max restarts: {max_restarts}), "
-        f"child command: {' '.join(child_argv)}",
-        "info",
-    )
-
-    while True:
-        print_status(
-            f"[Supervisor] Launching process (restart {restart_count}/{max_restarts})...",
-            "info",
-        )
-
-        try:
-            process = subprocess.Popen(child_argv)
-            exit_code = process.wait()
-        except KeyboardInterrupt:
-            print_status("[Supervisor] Interrupted, terminating child process...", "info")
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-            sys.exit(1)
-
-        if exit_code == RESTART_EXIT_CODE:
-            restart_count += 1
-            if restart_count > max_restarts:
-                print_status(
-                    f"[Supervisor] Maximum restart count ({max_restarts}) reached, exiting",
-                    "warning",
-                )
-                sys.exit(1)
-            print_status(
-                f"[Supervisor] Child requested restart ({restart_count}/{max_restarts}), restarting in 2s...",
-                "info",
-            )
-            time.sleep(2)
-        else:
-            if exit_code != 0:
-                print_status(f"[Supervisor] Child exited with code {exit_code}", "warning")
-            else:
-                print_status("[Supervisor] Child exited normally", "info")
-            sys.exit(exit_code)
 
 
 def load_config_from_file(config_path):
@@ -144,13 +65,6 @@ def parse_args():
         default=None,
         action="append",
         help="Path to the registry directory",
-    )
-    parser.add_argument(
-        "--devices",
-        type=str,
-        default=None,
-        action="append",
-        help="Path to Python code directory for AST-based device/resource scanning",
     )
     parser.add_argument(
         "--working_dir",
@@ -242,16 +156,16 @@ def parse_args():
         help="Skip environment dependency check on startup",
     )
     parser.add_argument(
+        "--complete_registry",
+        action="store_true",
+        default=False,
+        help="Complete registry information",
+    )
+    parser.add_argument(
         "--check_mode",
         action="store_true",
         default=False,
         help="Run in check mode for CI: validates registry imports and ensures no file changes",
-    )
-    parser.add_argument(
-        "--complete_registry",
-        action="store_true",
-        default=False,
-        help="Complete and rewrite YAML registry files using AST analysis results",
     )
     parser.add_argument(
         "--no_update_feedback",
@@ -263,24 +177,6 @@ def parse_args():
         action="store_true",
         default=False,
         help="Test mode: all actions simulate execution and return mock results without running real hardware",
-    )
-    parser.add_argument(
-        "--extra_resource",
-        action="store_true",
-        default=False,
-        help="Load extra lab_ prefixed labware resources (529 auto-generated definitions from lab_resources.py)",
-    )
-    parser.add_argument(
-        "--restart_mode",
-        action="store_true",
-        default=False,
-        help="Enable supervisor mode: automatically restart the process when triggered via WebSocket",
-    )
-    parser.add_argument(
-        "--auto_restart_count",
-        type=int,
-        default=500,
-        help="Maximum number of automatic restarts in restart mode (default: 500)",
     )
     # workflow upload subcommand
     workflow_parser = subparsers.add_parser(
@@ -331,11 +227,6 @@ def main():
     convert_argv_dashes_to_underscores(parser)
     args = parser.parse_args()
     args_dict = vars(args)
-
-    # Supervisor mode: spawn child processes and monitor for restart
-    if args_dict.get("restart_mode", False):
-        _run_as_supervisor(args_dict.get("auto_restart_count", 5))
-        return
 
     # 环境检查 - 检查并自动安装必需的包 (可选)
     skip_env_check = args_dict.get("skip_env_check", False)
@@ -467,9 +358,6 @@ def main():
     BasicConfig.test_mode = args_dict.get("test_mode", False)
     if BasicConfig.test_mode:
         print_status("启用测试模式：所有动作将模拟执行，不调用真实硬件", "warning")
-    BasicConfig.extra_resource = args_dict.get("extra_resource", False)
-    if BasicConfig.extra_resource:
-        print_status("启用额外资源加载：将加载lab_开头的labware资源定义", "info")
     BasicConfig.communication_protocol = "websocket"
     machine_name = platform.node()
     machine_name = "".join([c if c.isalnum() or c == "_" else "_" for c in machine_name])
@@ -494,32 +382,22 @@ def main():
     # 显示启动横幅
     print_unilab_banner(args_dict)
 
-    # Step 0: AST 分析优先 + YAML 注册表加载
-    # check_mode 和 upload_registry 都会执行实际 import 验证
-    devices_dirs = args_dict.get("devices", None)
+    # 注册表 - check_mode 时强制启用 complete_registry
     complete_registry = args_dict.get("complete_registry", False) or check_mode
-    lab_registry = build_registry(
-        registry_paths=args_dict["registry_path"],
-        devices_dirs=devices_dirs,
-        upload_registry=BasicConfig.upload_registry,
-        check_mode=check_mode,
-        complete_registry=complete_registry,
-    )
+    lab_registry = build_registry(args_dict["registry_path"], complete_registry, BasicConfig.upload_registry)
 
-    # Check mode: 注册表验证完成后直接退出
+    # Check mode: complete_registry 完成后直接退出，git diff 检测由 CI workflow 执行
     if check_mode:
-        device_count = len(lab_registry.device_type_registry)
-        resource_count = len(lab_registry.resource_type_registry)
-        print_status(f"Check mode: 注册表验证完成 ({device_count} 设备, {resource_count} 资源)，退出", "info")
+        print_status("Check mode: complete_registry 完成，退出", "info")
         os._exit(0)
 
-    # Step 1: 上传全部注册表到服务端，同步保存到 unilabos_data
     if BasicConfig.upload_registry:
+        # 设备注册到服务端 - 需要 ak 和 sk
         if BasicConfig.ak and BasicConfig.sk:
-            # print_status("开始注册设备到服务端...", "info")
+            print_status("开始注册设备到服务端...", "info")
             try:
                 register_devices_and_resources(lab_registry)
-                # print_status("设备注册完成", "info")
+                print_status("设备注册完成", "info")
             except Exception as e:
                 print_status(f"设备注册失败: {e}", "error")
         else:
@@ -604,7 +482,7 @@ def main():
             continue
 
     # 如果从远端获取了物料信息，则与本地物料进行同步
-    if file_path is not None and request_startup_json and "nodes" in request_startup_json:
+    if request_startup_json and "nodes" in request_startup_json:
         print_status("开始同步远端物料到本地...", "info")
         remote_tree_set = ResourceTreeSet.from_raw_dict_list(request_startup_json["nodes"])
         resource_tree_set.merge_remote_resources(remote_tree_set)
@@ -701,10 +579,6 @@ def main():
             open_browser=not args_dict["disable_browser"],
             port=BasicConfig.port,
         )
-        if restart_requested:
-            print_status("[Main] Restart requested, cleaning up...", "info")
-            cleanup_for_restart()
-            os._exit(RESTART_EXIT_CODE)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,31 @@ post_process_station:
           title: load_config参数
           type: object
         type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
       auto-print_cache_stats:
         feedback: {}
         goal: {}
@@ -79,41 +104,42 @@ post_process_station:
           type: object
         type: UniLabJsonCommand
       disconnect:
-        feedback:
-          status: status
+        feedback: {}
         goal:
-          command: command
+          command: {}
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
         result:
-          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -123,41 +149,42 @@ post_process_station:
         type: SendCmd
       read_node:
         feedback:
-          status: status
+          result: result
         goal:
-          command: command
-          node_name: node_name
+          command: node_name
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
         result:
-          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -256,19 +283,17 @@ post_process_station:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: PostProcessTriggerClean_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 acetone_inner_wall_cleaning_count:
                   maximum: 2147483647
                   minimum: -2147483648
                   type: integer
                 acetone_inner_wall_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 acetone_inner_wall_cleaning_waste_time:
                   maximum: 2147483647
@@ -279,8 +304,6 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 acetone_outer_wall_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 acetone_outer_wall_cleaning_wait_time:
                   maximum: 2147483647
@@ -299,8 +322,6 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 acetone_stirrer_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 acetone_stirrer_cleaning_wait_time:
                   maximum: 2147483647
@@ -327,8 +348,6 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 nmp_inner_wall_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 nmp_inner_wall_cleaning_waste_time:
                   maximum: 2147483647
@@ -339,8 +358,6 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 nmp_outer_wall_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 nmp_outer_wall_cleaning_wait_time:
                   maximum: 2147483647
@@ -359,8 +376,6 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 nmp_stirrer_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 nmp_stirrer_cleaning_wait_time:
                   maximum: 2147483647
@@ -379,8 +394,6 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 water_inner_wall_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 water_inner_wall_cleaning_waste_time:
                   maximum: 2147483647
@@ -391,8 +404,6 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 water_outer_wall_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 water_outer_wall_cleaning_wait_time:
                   maximum: 2147483647
@@ -411,8 +422,6 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 water_stirrer_cleaning_injection:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 water_stirrer_cleaning_wait_time:
                   maximum: 2147483647
@@ -422,13 +431,55 @@ post_process_station:
                   maximum: 2147483647
                   minimum: -2147483648
                   type: integer
+              required:
+              - nmp_outer_wall_cleaning_injection
+              - nmp_outer_wall_cleaning_count
+              - nmp_outer_wall_cleaning_wait_time
+              - nmp_outer_wall_cleaning_waste_time
+              - nmp_inner_wall_cleaning_injection
+              - nmp_inner_wall_cleaning_count
+              - nmp_pump_cleaning_suction_count
+              - nmp_inner_wall_cleaning_waste_time
+              - nmp_stirrer_cleaning_injection
+              - nmp_stirrer_cleaning_count
+              - nmp_stirrer_cleaning_wait_time
+              - nmp_stirrer_cleaning_waste_time
+              - water_outer_wall_cleaning_injection
+              - water_outer_wall_cleaning_count
+              - water_outer_wall_cleaning_wait_time
+              - water_outer_wall_cleaning_waste_time
+              - water_inner_wall_cleaning_injection
+              - water_inner_wall_cleaning_count
+              - water_pump_cleaning_suction_count
+              - water_inner_wall_cleaning_waste_time
+              - water_stirrer_cleaning_injection
+              - water_stirrer_cleaning_count
+              - water_stirrer_cleaning_wait_time
+              - water_stirrer_cleaning_waste_time
+              - acetone_outer_wall_cleaning_injection
+              - acetone_outer_wall_cleaning_count
+              - acetone_outer_wall_cleaning_wait_time
+              - acetone_outer_wall_cleaning_waste_time
+              - acetone_inner_wall_cleaning_injection
+              - acetone_inner_wall_cleaning_count
+              - acetone_pump_cleaning_suction_count
+              - acetone_inner_wall_cleaning_waste_time
+              - acetone_stirrer_cleaning_injection
+              - acetone_stirrer_cleaning_count
+              - acetone_stirrer_cleaning_wait_time
+              - acetone_stirrer_cleaning_waste_time
+              - pipe_blowing_time
+              - injection_pump_forward_empty_suction_count
+              - injection_pump_reverse_empty_suction_count
+              - filtration_liquid_selection
               title: PostProcessTriggerClean_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: PostProcessTriggerClean_Result
               type: object
           required:
@@ -451,11 +502,11 @@ post_process_station:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: PostProcessGrab_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 raw_tank_number:
                   maximum: 2147483647
@@ -465,13 +516,17 @@ post_process_station:
                   maximum: 2147483647
                   minimum: -2147483648
                   type: integer
+              required:
+              - reaction_tank_number
+              - raw_tank_number
               title: PostProcessGrab_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: PostProcessGrab_Result
               type: object
           required:
@@ -518,15 +573,13 @@ post_process_station:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: PostProcessTriggerPostPro_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 atomization_fast_speed:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 atomization_pressure_kpa:
                   maximum: 2147483647
@@ -541,12 +594,8 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 first_wash_water_amount:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 initial_water_amount:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 injection_pump_push_speed:
                   maximum: 2147483647
@@ -573,20 +622,32 @@ post_process_station:
                   minimum: -2147483648
                   type: integer
                 second_wash_water_amount:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 wash_slow_speed:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
+              required:
+              - atomization_fast_speed
+              - wash_slow_speed
+              - injection_pump_suction_speed
+              - injection_pump_push_speed
+              - raw_liquid_suction_count
+              - first_wash_water_amount
+              - second_wash_water_amount
+              - first_powder_mixing_tim
+              - second_powder_mixing_time
+              - first_powder_wash_count
+              - second_powder_wash_count
+              - initial_water_amount
+              - pre_filtration_mixing_time
+              - atomization_pressure_kpa
               title: PostProcessTriggerPostPro_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: PostProcessTriggerPostPro_Result
               type: object
           required:
@@ -608,26 +669,30 @@ post_process_station:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -637,7 +702,8 @@ post_process_station:
         type: SendCmd
     module: unilabos.devices.workstation.post_process.post_process:OpcUaClient
     status_types:
-      cache_stats: Dict[str, Any]
+      cache_stats: dict
+      node_value: String
     type: python
   config_info: []
   description: 后处理站
@@ -652,9 +718,7 @@ post_process_station:
         config_path:
           type: string
         deck:
-          anyOf:
-          - type: object
-          - type: object
+          type: string
         password:
           type: string
         subscription_interval:
@@ -674,7 +738,10 @@ post_process_station:
       properties:
         cache_stats:
           type: object
+        node_value:
+          type: string
       required:
+      - node_value
       - cache_stats
       type: object
   version: 1.0.0

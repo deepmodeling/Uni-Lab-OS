@@ -45,6 +45,31 @@ xrd_d7mate:
           title: connect参数
           type: object
         type: UniLabJsonCommand
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
       auto-start_from_string:
         feedback: {}
         goal: {}
@@ -60,14 +85,11 @@ xrd_d7mate:
             goal:
               properties:
                 params:
-                  anyOf:
-                  - type: string
-                  - type: object
+                  type: string
               required:
               - params
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: start_from_string参数
@@ -83,18 +105,21 @@ xrd_d7mate:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -105,38 +130,38 @@ xrd_d7mate:
       get_sample_down:
         feedback: {}
         goal:
-          int_input: int_input
-          sample_station: sample_station
+          sample_station: 1
         goal_default:
           int_input: 0
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: IntSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 int_input:
                   maximum: 2147483647
                   minimum: -2147483648
                   type: integer
+              required:
+              - int_input
               title: IntSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: IntSingleInput_Result
               type: object
           required:
@@ -154,18 +179,21 @@ xrd_d7mate:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -183,18 +211,21 @@ xrd_d7mate:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -207,25 +238,26 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -242,35 +274,42 @@ xrd_d7mate:
           sample_id: ''
           start_theta: 10.0
         goal_default:
-          end_theta: null
-          exp_time: null
-          increment: null
-          sample_id: null
-          start_theta: null
+          end_theta: 80.0
+          exp_time: 0.5
+          increment: 0.02
+          sample_id: Sample001
+          start_theta: 10.0
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 送样完成后，发送样品信息和采集参数
           properties:
             feedback:
+              properties: {}
+              required: []
               title: SampleReadyInput_Feedback
+              type: object
             goal:
               properties:
                 end_theta:
                   description: 结束角度（≥5.5°，且必须大于start_theta）
+                  minimum: 5.5
                   type: number
                 exp_time:
                   description: 曝光时间（0.1-5.0秒）
+                  maximum: 5.0
+                  minimum: 0.1
                   type: number
                 increment:
                   description: 角度增量（≥0.005）
+                  minimum: 0.005
                   type: number
                 sample_id:
                   description: 样品标识符
                   type: string
                 start_theta:
                   description: 起始角度（≥5°）
+                  minimum: 5.0
                   type: number
               required:
               - sample_id
@@ -281,11 +320,19 @@ xrd_d7mate:
               title: SampleReadyInput_Goal
               type: object
             result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
               title: SampleReadyInput_Result
               type: object
           required:
           - goal
-          title: send_sample_ready参数
+          title: SampleReadyInput
           type: object
         type: UniLabJsonCommand
       set_power_off:
@@ -293,25 +340,26 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -324,25 +372,26 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result:
-          return_info: return_info
+        result: {}
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Feedback
               type: object
             goal:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: EmptyIn_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
+              required:
+              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -356,16 +405,18 @@ xrd_d7mate:
           current: 30.0
           voltage: 40.0
         goal_default:
-          current: null
-          voltage: null
+          current: 30.0
+          voltage: 40.0
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 设置高压电源电压和电流
           properties:
             feedback:
+              properties: {}
+              required: []
               title: VoltageCurrentInput_Feedback
+              type: object
             goal:
               properties:
                 current:
@@ -380,11 +431,19 @@ xrd_d7mate:
               title: VoltageCurrentInput_Goal
               type: object
             result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
               title: VoltageCurrentInput_Result
               type: object
           required:
           - goal
-          title: set_voltage_current参数
+          title: VoltageCurrentInput
           type: object
         type: UniLabJsonCommand
       start:
@@ -394,12 +453,11 @@ xrd_d7mate:
           end_theta: 80.0
           exp_time: 0.1
           increment: 0.05
-          sample_id: ''
+          sample_id: 样品名称
           start_theta: 10.0
           string: ''
           wait_minutes: 3.0
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 启动自动模式→上样→等待→样品准备→监控→检测下样位→执行下样流程。
@@ -408,42 +466,54 @@ xrd_d7mate:
             goal:
               properties:
                 end_theta:
-                  default: 80.0
                   description: 结束角度（≥5.5°，且必须大于start_theta）
-                  type: number
+                  minimum: 5.5
+                  type: string
                 exp_time:
-                  default: 0.1
                   description: 曝光时间（0.1-5.0秒）
-                  type: number
+                  maximum: 5.0
+                  minimum: 0.1
+                  type: string
                 increment:
-                  default: 0.05
                   description: 角度增量（≥0.005）
-                  type: number
+                  minimum: 0.005
+                  type: string
                 sample_id:
-                  default: ''
                   description: 样品标识符
                   type: string
                 start_theta:
-                  default: 10.0
                   description: 起始角度（≥5°）
-                  type: number
+                  minimum: 5.0
+                  type: string
                 string:
-                  default: ''
                   description: 字符串格式的参数输入，如果提供则优先解析使用
                   type: string
                 wait_minutes:
-                  default: 3.0
                   description: 允许上样后等待分钟数
+                  minimum: 0.0
                   type: number
-              required: []
+              required:
+              - sample_id
+              - start_theta
+              - end_theta
+              - increment
+              - exp_time
               title: StartWorkflow_Goal
               type: object
             result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
               title: StartWorkflow_Result
               type: object
           required:
           - goal
-          title: start参数
+          title: StartWorkflow
           type: object
         type: UniLabJsonCommand
       start_auto_mode:
@@ -451,15 +521,17 @@ xrd_d7mate:
         goal:
           status: true
         goal_default:
-          status: null
+          status: true
         handles: {}
-        placeholder_keys: {}
         result: {}
         schema:
           description: 启动或停止自动模式
           properties:
             feedback:
+              properties: {}
+              required: []
               title: BoolSingleInput_Feedback
+              type: object
             goal:
               properties:
                 status:
@@ -470,16 +542,25 @@ xrd_d7mate:
               title: BoolSingleInput_Goal
               type: object
             result:
+              properties:
+                return_info:
+                  type: string
+                success:
+                  type: boolean
+              required:
+              - return_info
+              - success
               title: BoolSingleInput_Result
               type: object
           required:
           - goal
-          title: start_auto_mode参数
+          title: BoolSingleInput
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.xrd_d7mate.xrd_d7mate:XRDClient
     status_types:
       current_acquire_data: dict
+      sample_down: dict
       sample_request: dict
       sample_status: dict
     type: python
@@ -505,13 +586,16 @@ xrd_d7mate:
       properties:
         current_acquire_data:
           type: object
+        sample_down:
+          type: object
         sample_request:
           type: object
         sample_status:
           type: object
       required:
-      - current_acquire_data
       - sample_request
+      - current_acquire_data
       - sample_status
+      - sample_down
       type: object
   version: 1.0.0

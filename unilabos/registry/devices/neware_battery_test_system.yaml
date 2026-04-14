@@ -5,6 +5,31 @@ neware_battery_test_system:
   - battery_test
   class:
     action_value_mappings:
+      auto-post_init:
+        feedback: {}
+        goal: {}
+        goal_default:
+          ros_node: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                ros_node:
+                  type: string
+              required:
+              - ros_node
+              type: object
+            result: {}
+          required:
+          - goal
+          title: post_init参数
+          type: object
+        type: UniLabJsonCommand
       auto-print_status_summary:
         feedback: {}
         goal: {}
@@ -41,8 +66,7 @@ neware_battery_test_system:
               properties: {}
               required: []
               type: object
-            result:
-              type: boolean
+            result: {}
           required:
           - goal
           title: test_connection参数
@@ -53,8 +77,9 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: 调试方法：显示所有资源的实际名称
           properties:
@@ -64,10 +89,19 @@ neware_battery_test_system:
               required: []
               type: object
             result:
+              properties:
+                return_info:
+                  description: 资源调试信息
+                  type: string
+                success:
+                  description: 是否成功
+                  type: boolean
+              required:
+              - return_info
+              - success
               type: object
           required:
           - goal
-          title: debug_resource_names参数
           type: object
         type: UniLabJsonCommand
       export_status_json:
@@ -77,8 +111,9 @@ neware_battery_test_system:
         goal_default:
           filepath: bts_status.json
         handles: {}
-        placeholder_keys: {}
-        result: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: 导出当前状态数据到JSON文件
           properties:
@@ -92,10 +127,19 @@ neware_battery_test_system:
               required: []
               type: object
             result:
+              properties:
+                return_info:
+                  description: 导出操作结果信息
+                  type: string
+                success:
+                  description: 导出是否成功
+                  type: boolean
+              required:
+              - return_info
+              - success
               type: object
           required:
           - goal
-          title: export_status_json参数
           type: object
         type: UniLabJsonCommand
       get_device_summary:
@@ -137,8 +181,10 @@ neware_battery_test_system:
         goal_default:
           plate_num: null
         handles: {}
-        placeholder_keys: {}
-        result: {}
+        result:
+          plate_data: plate_data
+          return_info: return_info
+          success: success
         schema:
           description: 获取指定盘或所有盘的状态信息
           properties:
@@ -147,14 +193,29 @@ neware_battery_test_system:
               properties:
                 plate_num:
                   description: 盘号 (1 或 2)，如果为null则返回所有盘的状态
+                  maximum: 2
+                  minimum: 1
                   type: integer
               required: []
               type: object
             result:
+              properties:
+                plate_data:
+                  description: 盘状态数据（单盘或所有盘）
+                  type: object
+                return_info:
+                  description: 操作结果信息
+                  type: string
+                success:
+                  description: 查询是否成功
+                  type: boolean
+              required:
+              - return_info
+              - success
+              - plate_data
               type: object
           required:
           - goal
-          title: get_plate_status参数
           type: object
         type: UniLabJsonCommand
       print_status_summary_action:
@@ -162,8 +223,9 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: 打印通道状态摘要信息到控制台
           properties:
@@ -173,21 +235,28 @@ neware_battery_test_system:
               required: []
               type: object
             result:
+              properties:
+                return_info:
+                  description: 打印操作结果信息
+                  type: string
+                success:
+                  description: 打印是否成功
+                  type: boolean
+              required:
+              - return_info
+              - success
               type: object
           required:
           - goal
-          title: print_status_summary_action参数
           type: object
         type: UniLabJsonCommand
       query_plate_action:
         feedback: {}
         goal:
-          plate_id: plate_id
-          string: string
+          string: plate_id
         goal_default:
           string: ''
         handles: {}
-        placeholder_keys: {}
         result:
           return_info: return_info
           success: success
@@ -195,23 +264,27 @@ neware_battery_test_system:
           description: ''
           properties:
             feedback:
-              additionalProperties: true
+              properties: {}
+              required: []
               title: StrSingleInput_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 string:
                   type: string
+              required:
+              - string
               title: StrSingleInput_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -225,11 +298,13 @@ neware_battery_test_system:
           csv_path: string
           output_dir: string
         goal_default:
-          csv_path: null
+          csv_path: ''
           output_dir: .
         handles: {}
-        placeholder_keys: {}
-        result: {}
+        result:
+          return_info: return_info
+          submitted_count: submitted_count
+          success: success
         schema:
           description: 从CSV文件批量提交Neware测试任务
           properties:
@@ -240,17 +315,31 @@ neware_battery_test_system:
                   description: 输入CSV文件的绝对路径
                   type: string
                 output_dir:
-                  default: .
                   description: 输出目录（用于存储XML和备份文件），默认当前目录
                   type: string
               required:
               - csv_path
               type: object
             result:
+              properties:
+                return_info:
+                  description: 执行结果详细信息
+                  type: string
+                submitted_count:
+                  description: 成功提交的任务数量
+                  type: integer
+                success:
+                  description: 是否成功
+                  type: boolean
+                total_count:
+                  description: CSV文件中的总行数
+                  type: integer
+              required:
+              - return_info
+              - success
               type: object
           required:
           - goal
-          title: submit_from_csv参数
           type: object
         type: UniLabJsonCommand
       test_connection_action:
@@ -258,8 +347,9 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
-        placeholder_keys: {}
-        result: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: 测试与电池测试系统的TCP连接
           properties:
@@ -269,10 +359,19 @@ neware_battery_test_system:
               required: []
               type: object
             result:
+              properties:
+                return_info:
+                  description: 连接测试结果信息
+                  type: string
+                success:
+                  description: 连接测试是否成功
+                  type: boolean
+              required:
+              - return_info
+              - success
               type: object
           required:
           - goal
-          title: test_connection_action参数
           type: object
         type: UniLabJsonCommand
       upload_backup_to_oss:
@@ -293,8 +392,12 @@ neware_battery_test_system:
             handler_key: uploaded_files
             io_type: sink
             label: Uploaded Files (with standard flow info)
-        placeholder_keys: {}
-        result: {}
+        result:
+          failed_files: failed_files
+          return_info: return_info
+          success: success
+          total_count: total_count
+          uploaded_count: uploaded_count
         schema:
           description: 上传备份文件到阿里云OSS
           properties:
@@ -314,17 +417,65 @@ neware_battery_test_system:
               required: []
               type: object
             result:
+              properties:
+                failed_files:
+                  description: 上传失败的文件名列表
+                  items:
+                    type: string
+                  type: array
+                return_info:
+                  description: 上传操作结果信息
+                  type: string
+                success:
+                  description: 上传是否成功
+                  type: boolean
+                total_count:
+                  description: 总文件数
+                  type: integer
+                uploaded_count:
+                  description: 成功上传的文件数
+                  type: integer
+                uploaded_files:
+                  description: 成功上传的文件详情列表
+                  items:
+                    properties:
+                      Battery_Code:
+                        description: 电池编码
+                        type: string
+                      Electrolyte_Code:
+                        description: 电解液编码
+                        type: string
+                      filename:
+                        description: 文件名
+                        type: string
+                      url:
+                        description: OSS下载链接
+                        type: string
+                    required:
+                    - filename
+                    - url
+                    - Battery_Code
+                    - Electrolyte_Code
+                    type: object
+                  type: array
+              required:
+              - return_info
+              - success
+              - uploaded_count
+              - total_count
+              - failed_files
+              - uploaded_files
               type: object
           required:
           - goal
-          title: upload_backup_to_oss参数
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.neware_battery_test_system.neware_battery_test_system:NewareBatteryTestSystem
     status_types:
-      channel_status: Dict[int, Dict]
-      connection_info: Dict[str, str]
+      channel_status: dict
+      connection_info: dict
       device_summary: dict
+      plate_status: dict
       status: str
       total_channels: int
     type: python
@@ -366,24 +517,23 @@ neware_battery_test_system:
     data:
       properties:
         channel_status:
-          additionalProperties:
-            type: object
           type: object
         connection_info:
-          additionalProperties:
-            type: string
           type: object
         device_summary:
+          type: object
+        plate_status:
           type: object
         status:
           type: string
         total_channels:
           type: integer
       required:
+      - status
       - channel_status
       - connection_info
-      - device_summary
-      - status
       - total_channels
+      - plate_status
+      - device_summary
       type: object
   version: 1.0.0

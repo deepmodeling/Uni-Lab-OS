@@ -34,8 +34,7 @@ chiller:
               - register_address
               - value
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: build_modbus_frame参数
@@ -64,8 +63,7 @@ chiller:
               required:
               - temperature
               type: object
-            result:
-              type: integer
+            result: {}
           required:
           - goal
           title: convert_temperature_to_modbus_value参数
@@ -86,12 +84,11 @@ chiller:
             goal:
               properties:
                 data:
-                  type: object
+                  type: string
               required:
               - data
               type: object
-            result:
-              type: object
+            result: {}
           required:
           - goal
           title: modbus_crc参数
@@ -119,41 +116,42 @@ chiller:
           type: object
         type: UniLabJsonCommand
       set_temperature:
-        feedback:
-          status: status
+        feedback: {}
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
         result:
-          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -268,15 +266,9 @@ heaterstirrer.dalong:
         feedback:
           status: status
         goal:
-          pressure: pressure
           purpose: purpose
-          reflux_solvent: reflux_solvent
-          stir: stir
-          stir_speed: stir_speed
           temp: temp
-          temp_spec: temp_spec
           time: time
-          time_spec: time_spec
           vessel: vessel
         goal_default:
           pressure: ''
@@ -309,23 +301,20 @@ heaterstirrer.dalong:
             sample_id: ''
             type: ''
         handles: {}
-        placeholder_keys: {}
         result:
-          message: message
-          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: HeatChill_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 pressure:
                   type: string
@@ -336,12 +325,8 @@ heaterstirrer.dalong:
                 stir:
                   type: boolean
                 stir_speed:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 temp:
-                  maximum: 1.7976931348623157e+308
-                  minimum: -1.7976931348623157e+308
                   type: number
                 temp_spec:
                   type: string
@@ -350,7 +335,6 @@ heaterstirrer.dalong:
                 time_spec:
                   type: string
                 vessel:
-                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -369,26 +353,16 @@ heaterstirrer.dalong:
                     parent:
                       type: string
                     pose:
-                      additionalProperties: false
                       properties:
                         orientation:
-                          additionalProperties: false
                           properties:
                             w:
-                              maximum: 1.7976931348623157e+308
-                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
-                              maximum: 1.7976931348623157e+308
-                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
-                              maximum: 1.7976931348623157e+308
-                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
-                              maximum: 1.7976931348623157e+308
-                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -398,19 +372,12 @@ heaterstirrer.dalong:
                           title: orientation
                           type: object
                         position:
-                          additionalProperties: false
                           properties:
                             x:
-                              maximum: 1.7976931348623157e+308
-                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
-                              maximum: 1.7976931348623157e+308
-                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
-                              maximum: 1.7976931348623157e+308
-                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -440,10 +407,20 @@ heaterstirrer.dalong:
                   - data
                   title: vessel
                   type: object
+              required:
+              - vessel
+              - temp
+              - time
+              - temp_spec
+              - time_spec
+              - pressure
+              - reflux_solvent
+              - stir
+              - stir_speed
+              - purpose
               title: HeatChill_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -451,6 +428,10 @@ heaterstirrer.dalong:
                   type: string
                 success:
                   type: boolean
+              required:
+              - success
+              - message
+              - return_info
               title: HeatChill_Result
               type: object
           required:
@@ -459,42 +440,42 @@ heaterstirrer.dalong:
           type: object
         type: HeatChill
       set_temp_target:
-        feedback:
-          status: status
+        feedback: {}
         goal:
-          command: command
-          temp: temp
+          command: temp
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
         result:
-          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -503,42 +484,42 @@ heaterstirrer.dalong:
           type: object
         type: SendCmd
       set_temp_warning:
-        feedback:
-          status: status
+        feedback: {}
         goal:
-          command: command
-          temp: temp
+          command: temp
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
         result:
-          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:
@@ -588,8 +569,8 @@ heaterstirrer.dalong:
       - status
       - stir_speed
       - temp
-      - temp_target
       - temp_warning
+      - temp_target
       type: object
   version: 1.0.0
 tempsensor:
@@ -710,41 +691,42 @@ tempsensor:
           type: object
         type: UniLabJsonCommand
       set_warning:
-        feedback:
-          status: status
+        feedback: {}
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        placeholder_keys: {}
         result:
-          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
-              additionalProperties: false
               properties:
                 status:
                   type: string
+              required:
+              - status
               title: SendCmd_Feedback
               type: object
             goal:
-              additionalProperties: false
               properties:
                 command:
                   type: string
+              required:
+              - command
               title: SendCmd_Goal
               type: object
             result:
-              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
+              required:
+              - return_info
+              - success
               title: SendCmd_Result
               type: object
           required:

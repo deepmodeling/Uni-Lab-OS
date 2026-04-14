@@ -8,6 +8,7 @@ eppendorf_96_tiprack_1000ul_eptips:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 eppendorf_96_tiprack_10ul_eptips:
   category:
@@ -19,6 +20,7 @@ eppendorf_96_tiprack_10ul_eptips:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 geb_96_tiprack_1000ul:
   category:
@@ -30,6 +32,7 @@ geb_96_tiprack_1000ul:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 geb_96_tiprack_10ul:
   category:
@@ -41,6 +44,7 @@ geb_96_tiprack_10ul:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 opentrons_96_filtertiprack_1000ul:
   category:
@@ -71,6 +75,7 @@ opentrons_96_filtertiprack_1000ul:
     - 1.5708
     path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tecan_nested_tip_rack/modal.xacro
     type: resource
+  registry_type: resource
   version: 1.0.0
 opentrons_96_filtertiprack_10ul:
   category:
@@ -82,6 +87,7 @@ opentrons_96_filtertiprack_10ul:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 opentrons_96_filtertiprack_200ul:
   category:
@@ -93,6 +99,7 @@ opentrons_96_filtertiprack_200ul:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 opentrons_96_filtertiprack_20ul:
   category:
@@ -104,6 +111,7 @@ opentrons_96_filtertiprack_20ul:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 opentrons_96_tiprack_1000ul:
   category:
@@ -115,6 +123,7 @@ opentrons_96_tiprack_1000ul:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 opentrons_96_tiprack_10ul:
   category:
@@ -126,6 +135,7 @@ opentrons_96_tiprack_10ul:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 opentrons_96_tiprack_20ul:
   category:
@@ -137,6 +147,7 @@ opentrons_96_tiprack_20ul:
   handles: []
   icon: ''
   init_param_schema: {}
+  registry_type: resource
   version: 1.0.0
 opentrons_96_tiprack_300ul:
   category:

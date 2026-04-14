@@ -26,7 +26,6 @@ from enum import Enum
 from typing_extensions import TypedDict
 
 from unilabos.app.model import JobAddReq
-from unilabos.resources.resource_tracker import ResourceDictType
 from unilabos.ros.nodes.presets.host_node import HostNode
 from unilabos.utils.type_check import serialize_result_info
 from unilabos.app.communication import BaseCommunicationClient
@@ -409,7 +408,6 @@ class MessageProcessor:
         # 线程控制
         self.is_running = False
         self.thread = None
-        self._loop = None  # asyncio event loop引用，用于外部关闭websocket
         self.reconnect_count = 0
 
         logger.info(f"[MessageProcessor] Initialized for URL: {websocket_url}")
@@ -436,31 +434,22 @@ class MessageProcessor:
     def stop(self) -> None:
         """停止消息处理线程"""
         self.is_running = False
-        # 主动关闭websocket以快速中断消息接收循环
-        ws = self.websocket
-        loop = self._loop
-        if ws and loop and loop.is_running():
-            try:
-                asyncio.run_coroutine_threadsafe(ws.close(), loop)
-            except Exception:
-                pass
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2)
         logger.info("[MessageProcessor] Stopped")
 
     def _run(self):
         """运行消息处理主循环"""
-        self._loop = asyncio.new_event_loop()
+        loop = asyncio.new_event_loop()
         try:
-            asyncio.set_event_loop(self._loop)
-            self._loop.run_until_complete(self._connection_handler())
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._connection_handler())
         except Exception as e:
             logger.error(f"[MessageProcessor] Thread error: {str(e)}")
             logger.error(traceback.format_exc())
         finally:
-            if self._loop:
-                self._loop.close()
-            self._loop = None
+            if loop:
+                loop.close()
 
     async def _connection_handler(self):
         """处理WebSocket连接和重连逻辑"""
@@ -659,10 +648,6 @@ class MessageProcessor:
             # elif message_type == "session_id":
             #     self.session_id = message_data.get("session_id")
             #     logger.info(f"[MessageProcessor] Session ID: {self.session_id}")
-            elif message_type == "add_device":
-                await self._handle_device_manage(message_data, "add")
-            elif message_type == "remove_device":
-                await self._handle_device_manage(message_data, "remove")
             elif message_type == "request_restart":
                 await self._handle_request_restart(message_data)
             else:
@@ -999,37 +984,6 @@ class MessageProcessor:
             )
             thread.start()
 
-    async def _handle_device_manage(self, device_list: list[ResourceDictType], action: str):
-        """Handle add_device / remove_device from LabGo server."""
-        if not device_list:
-            return
-
-        for item in device_list:
-            target_node_id = item.get("target_node_id", "host_node")
-
-            def _notify(target_id: str, act: str, cfg: ResourceDictType):
-                try:
-                    host_node = HostNode.get_instance(timeout=5)
-                    if not host_node:
-                        logger.error(f"[DeviceManage] HostNode not available for {act}_device")
-                        return
-                    success = host_node.notify_device_manage(target_id, act, cfg)
-                    if success:
-                        logger.info(f"[DeviceManage] {act}_device completed on {target_id}")
-                    else:
-                        logger.warning(f"[DeviceManage] {act}_device failed on {target_id}")
-                except Exception as e:
-                    logger.error(f"[DeviceManage] Error in {act}_device: {e}")
-                    logger.error(traceback.format_exc())
-
-            thread = threading.Thread(
-                target=_notify,
-                args=(target_node_id, action, item),
-                daemon=True,
-                name=f"DeviceManage-{action}-{item.get('id', '')}",
-            )
-            thread.start()
-
     async def _handle_request_restart(self, data: Dict[str, Any]):
         """
         处理重启请求
@@ -1041,9 +995,10 @@ class MessageProcessor:
         logger.info(f"[MessageProcessor] Received restart request, reason: {reason}, delay: {delay}s")
 
         # 发送确认消息
-        self.send_message(
-            {"action": "restart_acknowledged", "data": {"reason": reason, "delay": delay}}
-        )
+        if self.websocket_client:
+            await self.websocket_client.send_message(
+                {"action": "restart_acknowledged", "data": {"reason": reason, "delay": delay}}
+            )
 
         # 设置全局重启标志
         import unilabos.app.main as main_module
@@ -1145,7 +1100,6 @@ class QueueProcessor:
     def stop(self) -> None:
         """停止队列处理线程"""
         self.is_running = False
-        self.queue_update_event.set()  # 立即唤醒等待中的线程
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2)
         logger.info("[QueueProcessor] Stopped")
@@ -1399,8 +1353,8 @@ class WebSocketClient(BaseCommunicationClient):
                 message = {"action": "normal_exit", "data": {"session_id": session_id}}
                 self.message_processor.send_message(message)
                 logger.info(f"[WebSocketClient] Sent normal_exit message with session_id: {session_id}")
-                # send_handler 每100ms检查一次队列，等300ms足以让消息发出
-                time.sleep(0.3)
+                # 给一点时间让消息发送出去
+                time.sleep(1)
             except Exception as e:
                 logger.warning(f"[WebSocketClient] Failed to send normal_exit message: {str(e)}")
 

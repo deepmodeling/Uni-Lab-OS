@@ -51,7 +51,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Miniforge (with mamba)
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
           use-mamba: true

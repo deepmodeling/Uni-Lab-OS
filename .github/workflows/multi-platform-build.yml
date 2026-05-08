@@ -101,7 +101,7 @@ jobs:
 
       - name: Setup Miniforge
         if: steps.should_build.outputs.should_build == 'true'
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
           use-mamba: true

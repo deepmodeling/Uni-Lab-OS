@@ -37,42 +37,41 @@ agv.SEER:
           type: object
         type: UniLabJsonCommand
       send_nav_task:
-        feedback: {}
+        feedback:
+          status: status
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
+        placeholder_keys: {}
         result:
+          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:

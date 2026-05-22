@@ -1,5 +1,5 @@
 channel_sources:
-  - robostack,robostack-staging,conda-forge,defaults
+  - robostack,robostack-staging,conda-forge
   
 gazebo:
   - '11'

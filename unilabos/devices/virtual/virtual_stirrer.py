@@ -3,6 +3,7 @@ import logging
 import time as time_module
 from typing import Dict, Any
 
+from unilabos.registry.decorators import topic_config
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 class VirtualStirrer:
@@ -314,9 +315,11 @@ class VirtualStirrer:
     def min_speed(self) -> float:
         return self._min_speed
     
-    def get_device_info(self) -> Dict[str, Any]:
-        """获取设备状态信息 📊"""
-        info = {
+    @property
+    @topic_config()
+    def device_info(self) -> Dict[str, Any]:
+        """设备状态快照信息 📊"""
+        return {
             "device_id": self.device_id,
             "status": self.status,
             "operation_mode": self.operation_mode,
@@ -325,12 +328,9 @@ class VirtualStirrer:
             "is_stirring": self.is_stirring,
             "remaining_time": self.remaining_time,
             "max_speed": self._max_speed,
-            "min_speed": self._min_speed
+            "min_speed": self._min_speed,
         }
-        
-        # self.logger.debug(f"📊 设备信息: 模式={self.operation_mode}, 速度={self.current_speed} RPM, 搅拌={self.is_stirring}")
-        return info
-    
+
     def __str__(self):
         status_emoji = "✅" if self.operation_mode == "Idle" else "🌪️" if self.operation_mode == "Stirring" else "🛑" if self.operation_mode == "Settling" else "❌"
         return f"🌪️ VirtualStirrer({status_emoji} {self.device_id}: {self.operation_mode}, {self.current_speed} RPM)"

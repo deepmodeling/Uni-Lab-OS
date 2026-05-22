@@ -8,7 +8,6 @@ BIOYOND_PolymerStation_1BottleCarrier:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 BIOYOND_PolymerStation_1FlaskCarrier:
   category:
@@ -20,7 +19,6 @@ BIOYOND_PolymerStation_1FlaskCarrier:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 BIOYOND_PolymerStation_6StockCarrier:
   category:
@@ -32,7 +30,6 @@ BIOYOND_PolymerStation_6StockCarrier:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 BIOYOND_PolymerStation_8StockCarrier:
   category:
@@ -44,5 +41,4 @@ BIOYOND_PolymerStation_8StockCarrier:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0

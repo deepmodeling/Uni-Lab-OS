@@ -9,7 +9,6 @@ PRCXI_1000uL_Tips:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_10uL_Tips:
   category:
@@ -22,7 +21,6 @@ PRCXI_10uL_Tips:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_10ul_eTips:
   category:
@@ -35,7 +33,6 @@ PRCXI_10ul_eTips:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_1250uL_Tips:
   category:
@@ -48,7 +45,6 @@ PRCXI_1250uL_Tips:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_200uL_Tips:
   category:
@@ -61,7 +57,6 @@ PRCXI_200uL_Tips:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_300ul_Tips:
   category:
@@ -74,5 +69,4 @@ PRCXI_300ul_Tips:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0

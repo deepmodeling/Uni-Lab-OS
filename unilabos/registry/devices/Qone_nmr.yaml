@@ -13,21 +13,18 @@ Qone_nmr:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -54,14 +51,18 @@ Qone_nmr:
               properties:
                 check_interval:
                   default: 60
+                  description: 检查间隔时间（秒），默认60秒
                   type: string
                 expected_count:
                   default: 1
+                  description: 期望生成的.nmr文件数量，默认1个
                   type: string
                 monitor_dir:
+                  description: 要监督的目录路径，如果未指定则使用self.monitor_directory
                   type: string
                 stability_checks:
                   default: 3
+                  description: 文件大小稳定性检查次数，默认3次
                   type: string
               required: []
               type: object
@@ -69,31 +70,6 @@ Qone_nmr:
           required:
           - goal
           title: monitor_folder_for_new_content参数
-          type: object
-        type: UniLabJsonCommand
-      auto-post_init:
-        feedback: {}
-        goal: {}
-        goal_default:
-          ros_node: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                ros_node:
-                  type: string
-              required:
-              - ros_node
-              type: object
-            result: {}
-          required:
-          - goal
-          title: post_init参数
           type: object
         type: UniLabJsonCommand
       auto-strings_to_txt:
@@ -113,11 +89,14 @@ Qone_nmr:
             goal:
               properties:
                 output_dir:
+                  description: 输出目录（如果未指定，使用self.output_directory）
                   type: string
                 string_list:
+                  description: 字符串列表
                   type: string
                 txt_encoding:
                   default: utf-8
+                  description: 文件编码
                   type: string
               required:
               - string_list
@@ -138,21 +117,18 @@ Qone_nmr:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -167,32 +143,38 @@ Qone_nmr:
         goal_default:
           string: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: StrSingleInput_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 string:
+                  description: '包含多个字符串的输入数据，支持两种格式：
+
+                    1. 逗号分隔：如 "A 1 B 2 C 3, X 10 Y 20 Z 30"
+
+                    2. 换行分隔：如 "A 1 B 2 C 3
+
+                    X 10 Y 20 Z 30"'
                   type: string
-              required:
-              - string
               title: StrSingleInput_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: StrSingleInput_Result
               type: object
           required:

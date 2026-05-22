@@ -1,0 +1,11 @@
+{
+  "type": "UniLabJsonCommand",
+  "goal": {},
+  "schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "goal_default": {},
+  "placeholder_keys": {}
+}

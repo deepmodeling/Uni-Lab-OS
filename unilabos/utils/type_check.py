@@ -15,14 +15,21 @@ def get_type_class(type_hint):
     return final_type
 
 
+def json_default(obj):
+    """将 type 对象序列化为类名，其余 fallback 到 str()。"""
+    if isinstance(obj, type):
+        return str(obj)[8:-2]
+    return str(obj)
+
+
 class TypeEncoder(json.JSONEncoder):
     """自定义JSON编码器处理特殊类型"""
 
     def default(self, obj):
-        # 优先处理类型对象
-        if isinstance(obj, type):
-            return str(obj)[8:-2]
-        return super().default(obj)
+        try:
+            return json_default(obj)
+        except Exception:
+            return super().default(obj)
 
 
 class NoAliasDumper(yaml.SafeDumper):
@@ -43,13 +50,10 @@ class ResultInfoEncoder(json.JSONEncoder):
     """专门用于处理任务执行结果信息的JSON编码器"""
 
     def default(self, obj):
-        # 优先处理类型对象
         if isinstance(obj, type):
-            return str(obj)[8:-2]
+            return json_default(obj)
 
-        # 对于无法序列化的对象，统一转换为字符串
         try:
-            # 尝试调用 __dict__ 或者其他序列化方法
             if hasattr(obj, "__dict__"):
                 return obj.__dict__
             elif hasattr(obj, "_asdict"):  # namedtuple
@@ -59,10 +63,8 @@ class ResultInfoEncoder(json.JSONEncoder):
             elif hasattr(obj, "dict"):
                 return obj.dict()
             else:
-                # 如果都不行，转换为字符串
                 return str(obj)
         except Exception:
-            # 如果转换失败，直接返回字符串表示
             return str(obj)
 
 
@@ -78,11 +80,12 @@ def get_result_info_str(error: str, suc: bool, return_value=None) -> str:
     Returns:
         JSON字符串格式的结果信息
     """
-    samples = None
-    if isinstance(return_value, dict):
-        if "samples" in return_value:
-            samples = return_value.pop("samples")
-    result_info = {"error": error, "suc": suc, "return_value": return_value, "samples": samples}
+    # 请在返回的字典中使用 unilabos_samples进行返回
+    # samples = None
+    # if isinstance(return_value, dict):
+    #     if "samples" in return_value and type(return_value["samples"]) in [list, tuple] and type(return_value["samples"][0]) == dict:
+    #         samples = return_value.pop("samples")
+    result_info = {"error": error, "suc": suc, "return_value": return_value}
 
     return json.dumps(result_info, ensure_ascii=False, cls=ResultInfoEncoder)
 

@@ -1,6 +1,10 @@
 name: Build Conda-Pack Environment
 
 on:
+  # 在 UniLabOS Conda Build 成功上传后自动构建非全量 conda-pack
+  workflow_run:
+    workflows: ["UniLabOS Conda Build"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       branch:
@@ -13,9 +17,24 @@ on:
         required: false
         default: 'win-64'
         type: string
+      build_full:
+        description: '是否构建完整版 unilabos-full (默认构建轻量版 unilabos)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-conda-pack:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'workflow_run'
+      )
+    env:
+      BUILD_FULL: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_full == 'true' }}
+      PACKAGE_REF: ${{ github.event.inputs.branch || github.event.workflow_run.head_sha || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +43,7 @@ jobs:
             platform: linux-64
             env_file: unilabos-linux-64.yaml
             script_ext: sh
-          - os: macos-13 # Intel
+          - os: macos-15 # Intel (via Rosetta)
             platform: osx-64
             env_file: unilabos-osx-64.yaml
             script_ext: sh
@@ -49,7 +68,9 @@ jobs:
         id: should_build
         shell: bash
         run: |
-          if [[ -z "${{ github.event.inputs.platforms }}" ]]; then
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          elif [[ -z "${{ github.event.inputs.platforms }}" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event.inputs.platforms }}" == *"${{ matrix.platform }}"* ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
@@ -57,10 +78,10 @@ jobs:
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.should_build.outputs.should_build == 'true'
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
       - name: Setup Miniforge (with mamba)
@@ -69,8 +90,8 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.11'
-          channels: conda-forge,robostack-staging,uni-lab,defaults
+          python-version: '3.11.14'
+          channels: conda-forge,robostack-staging,uni-lab
           channel-priority: flexible
           activate-environment: unilab
           auto-update-conda: false
@@ -81,7 +102,14 @@ jobs:
         run: |
           echo Installing unilabos and dependencies to unilab environment...
           echo Using mamba for faster and more reliable dependency resolution...
-          mamba install -n unilab uni-lab::unilabos conda-pack -c uni-lab -c robostack-staging -c conda-forge -y
+          echo Build full: ${{ env.BUILD_FULL }}
+          if "${{ env.BUILD_FULL }}"=="true" (
+            echo Installing unilabos-full ^(complete package^)...
+            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos-full conda-pack zstandard -y
+          ) else (
+            echo Installing unilabos ^(minimal package^)...
+            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos conda-pack zstandard -y
+          )
 
       - name: Install conda-pack, unilabos and dependencies (Unix)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
@@ -89,7 +117,14 @@ jobs:
         run: |
           echo "Installing unilabos and dependencies to unilab environment..."
           echo "Using mamba for faster and more reliable dependency resolution..."
-          mamba install -n unilab uni-lab::unilabos conda-pack -c uni-lab -c robostack-staging -c conda-forge -y
+          echo "Build full: ${{ env.BUILD_FULL }}"
+          if [[ "${{ env.BUILD_FULL }}" == "true" ]]; then
+            echo "Installing unilabos-full (complete package)..."
+            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos-full conda-pack zstandard -y
+          else
+            echo "Installing unilabos (minimal package)..."
+            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos conda-pack zstandard -y
+          fi
 
       - name: Get latest ros-humble-unilabos-msgs version (Windows)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
@@ -115,27 +150,27 @@ jobs:
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
         run: |
           echo Checking for available ros-humble-unilabos-msgs versions...
-          mamba search ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge || echo Search completed
+          mamba search --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs || echo Search completed
           echo.
           echo Updating ros-humble-unilabos-msgs to latest version...
-          mamba update -n unilab ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge -y || echo Already at latest version
+          mamba update -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs -y || echo Already at latest version
 
       - name: Check for newer ros-humble-unilabos-msgs (Unix)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
         shell: bash
         run: |
           echo "Checking for available ros-humble-unilabos-msgs versions..."
-          mamba search ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge || echo "Search completed"
+          mamba search --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs || echo "Search completed"
           echo ""
           echo "Updating ros-humble-unilabos-msgs to latest version..."
-          mamba update -n unilab ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge -y || echo "Already at latest version"
+          mamba update -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs -y || echo "Already at latest version"
 
       - name: Install latest unilabos from source (Windows)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
         run: |
           echo Uninstalling existing unilabos...
           mamba run -n unilab pip uninstall unilabos -y || echo unilabos not installed via pip
-          echo Installing unilabos from source (branch: ${{ github.event.inputs.branch }})...
+          echo Installing unilabos from source (ref: ${{ env.PACKAGE_REF }})...
           mamba run -n unilab pip install .
           echo Verifying installation...
           mamba run -n unilab pip show unilabos
@@ -146,7 +181,7 @@ jobs:
         run: |
           echo "Uninstalling existing unilabos..."
           mamba run -n unilab pip uninstall unilabos -y || echo "unilabos not installed via pip"
-          echo "Installing unilabos from source (branch: ${{ github.event.inputs.branch }})..."
+          echo "Installing unilabos from source (ref: ${{ env.PACKAGE_REF }})..."
           mamba run -n unilab pip install .
           echo "Verifying installation..."
           mamba run -n unilab pip show unilabos
@@ -207,7 +242,9 @@ jobs:
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
         run: |
           echo Packing unilab environment with conda-pack...
-          mamba activate unilab && conda pack -n unilab -o unilab-env-${{ matrix.platform }}.tar.gz --ignore-missing-files
+          for /f "delims=" %%i in ('mamba run -n unilab python -c "import os; print(os.environ['CONDA_PREFIX'])"') do set "UNILAB_PREFIX=%%i"
+          echo Packing environment at: %UNILAB_PREFIX%
+          mamba run -n unilab conda-pack -p "%UNILAB_PREFIX%" -o unilab-env-${{ matrix.platform }}.tar.gz --ignore-missing-files
           echo Pack file created:
           dir unilab-env-${{ matrix.platform }}.tar.gz
 
@@ -216,8 +253,9 @@ jobs:
         shell: bash
         run: |
           echo "Packing unilab environment with conda-pack..."
-          mamba install conda-pack -c conda-forge -y
-          conda pack -n unilab -o unilab-env-${{ matrix.platform }}.tar.gz --ignore-missing-files
+          UNILAB_PREFIX="$(mamba run -n unilab python -c 'import os; print(os.environ["CONDA_PREFIX"])')"
+          echo "Packing environment at: $UNILAB_PREFIX"
+          mamba run -n unilab conda-pack -p "$UNILAB_PREFIX" -o unilab-env-${{ matrix.platform }}.tar.gz --ignore-missing-files
           echo "Pack file created:"
           ls -lh unilab-env-${{ matrix.platform }}.tar.gz
 
@@ -248,7 +286,7 @@ jobs:
 
           rem Create README using Python script
           echo Creating: README.txt
-          python scripts\create_readme.py ${{ matrix.platform }} ${{ github.event.inputs.branch }} dist-package\README.txt
+          python scripts\create_readme.py ${{ matrix.platform }} ${{ env.PACKAGE_REF }} dist-package\README.txt
 
           echo.
           echo Distribution package contents:
@@ -284,7 +322,7 @@ jobs:
 
           # Create README using Python script
           echo "Creating: README.txt"
-          python scripts/create_readme.py ${{ matrix.platform }} ${{ github.event.inputs.branch }} dist-package/README.txt
+          python scripts/create_readme.py ${{ matrix.platform }} ${{ env.PACKAGE_REF }} dist-package/README.txt
 
           echo ""
           echo "Distribution package contents:"
@@ -293,9 +331,9 @@ jobs:
 
       - name: Upload distribution package
         if: steps.should_build.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: unilab-pack-${{ matrix.platform }}-${{ github.event.inputs.branch }}
+          name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}
           path: dist-package/
           retention-days: 90
           if-no-files-found: error
@@ -307,13 +345,18 @@ jobs:
           echo Build Summary
           echo ==========================================
           echo Platform: ${{ matrix.platform }}
-          echo Branch: ${{ github.event.inputs.branch }}
-          echo Python version: 3.11.11
+          echo Branch: ${{ env.PACKAGE_REF }}
+          echo Python version: 3.11.14
+          if "${{ env.BUILD_FULL }}"=="true" (
+            echo Package: unilabos-full ^(complete^)
+          ) else (
+            echo Package: unilabos ^(minimal^)
+          )
           echo.
           echo Distribution package contents:
           dir dist-package
           echo.
-          echo Artifact name: unilab-pack-${{ matrix.platform }}-${{ github.event.inputs.branch }}
+          echo Artifact name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}
           echo.
           echo After download, extract the ZIP and run:
           echo   install_unilab.bat
@@ -327,13 +370,18 @@ jobs:
           echo "Build Summary"
           echo "=========================================="
           echo "Platform: ${{ matrix.platform }}"
-          echo "Branch: ${{ github.event.inputs.branch }}"
-          echo "Python version: 3.11.11"
+          echo "Branch: ${{ env.PACKAGE_REF }}"
+          echo "Python version: 3.11.14"
+          if [[ "${{ env.BUILD_FULL }}" == "true" ]]; then
+            echo "Package: unilabos-full (complete)"
+          else
+            echo "Package: unilabos (minimal)"
+          fi
           echo ""
           echo "Distribution package contents:"
           ls -lh dist-package/
           echo ""
-          echo "Artifact name: unilab-pack-${{ matrix.platform }}-${{ github.event.inputs.branch }}"
+          echo "Artifact name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}"
           echo ""
           echo "After download:"
           echo "  install_unilab.sh"

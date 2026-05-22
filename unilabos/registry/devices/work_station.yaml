@@ -59,16 +59,17 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: AGVTransfer_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 from_repo:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -87,16 +88,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -106,12 +117,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -144,6 +162,7 @@ workstation:
                 from_repo_position:
                   type: string
                 to_repo:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -162,16 +181,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -181,12 +210,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -218,22 +254,15 @@ workstation:
                   type: object
                 to_repo_position:
                   type: string
-              required:
-              - from_repo
-              - from_repo_position
-              - to_repo
-              - to_repo_position
               title: AGVTransfer_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: AGVTransfer_Result
               type: object
           required:
@@ -319,17 +348,18 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_status:
                   type: string
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - progress
-              - current_status
               title: Add_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 amount:
                   type: string
@@ -352,10 +382,13 @@ workstation:
                 stir:
                   type: boolean
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 time:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -374,16 +407,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -393,12 +436,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -432,25 +482,10 @@ workstation:
                   type: boolean
                 volume:
                   type: string
-              required:
-              - vessel
-              - reagent
-              - volume
-              - mass
-              - amount
-              - time
-              - stir
-              - stir_speed
-              - viscous
-              - purpose
-              - event
-              - mol
-              - rate_spec
-              - equiv
-              - ratio
               title: Add_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -458,10 +493,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Add_Result
               type: object
           required:
@@ -528,23 +559,27 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: AdjustPH_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 ph_value:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 reagent:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -563,16 +598,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -582,12 +627,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -617,13 +669,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - ph_value
-              - reagent
               title: AdjustPH_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -631,10 +680,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: AdjustPH_Result
               type: object
           required:
@@ -693,31 +738,41 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 current_status:
                   type: string
                 current_temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - progress
-              - current_speed
-              - current_temp
-              - current_status
               title: Centrifuge_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 time:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -736,16 +791,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -755,12 +820,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -790,14 +862,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - speed
-              - time
-              - temp
               title: Centrifuge_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -805,10 +873,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Centrifuge_Result
               type: object
           required:
@@ -874,12 +938,14 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_device:
                   type: string
                 status:
                   type: string
                 time_remaining:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -895,6 +961,7 @@ workstation:
                   title: time_remaining
                   type: object
                 time_spent:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -909,14 +976,10 @@ workstation:
                   - nanosec
                   title: time_spent
                   type: object
-              required:
-              - status
-              - current_device
-              - time_spent
-              - time_remaining
               title: Clean_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 repeats:
                   maximum: 2147483647
@@ -925,8 +988,11 @@ workstation:
                 solvent:
                   type: string
                 temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -945,16 +1011,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -964,12 +1040,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1000,24 +1083,18 @@ workstation:
                   title: vessel
                   type: object
                 volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - vessel
-              - solvent
-              - volume
-              - temp
-              - repeats
               title: Clean_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: Clean_Result
               type: object
           required:
@@ -1083,17 +1160,18 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: CleanVessel_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 repeats:
                   maximum: 2147483647
@@ -1102,8 +1180,11 @@ workstation:
                 solvent:
                   type: string
                 temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -1122,16 +1203,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1141,12 +1232,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1177,16 +1275,13 @@ workstation:
                   title: vessel
                   type: object
                 volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - vessel
-              - solvent
-              - volume
-              - temp
-              - repeats
               title: CleanVessel_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -1194,10 +1289,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: CleanVessel_Result
               type: object
           required:
@@ -1280,17 +1371,18 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: Dissolve_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 amount:
                   type: string
@@ -1305,12 +1397,15 @@ workstation:
                 solvent:
                   type: string
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 temp:
                   type: string
                 time:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -1329,16 +1424,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1348,12 +1453,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1385,21 +1497,10 @@ workstation:
                   type: object
                 volume:
                   type: string
-              required:
-              - vessel
-              - solvent
-              - volume
-              - amount
-              - temp
-              - time
-              - stir_speed
-              - mass
-              - mol
-              - reagent
-              - event
               title: Dissolve_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -1407,10 +1508,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Dissolve_Result
               type: object
           required:
@@ -1465,21 +1562,23 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: Dry_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 compound:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -1498,16 +1597,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1517,12 +1626,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1552,12 +1668,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - compound
-              - vessel
               title: Dry_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -1565,10 +1679,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Dry_Result
               type: object
           required:
@@ -1623,12 +1733,14 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_device:
                   type: string
                 status:
                   type: string
                 time_remaining:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -1644,6 +1756,7 @@ workstation:
                   title: time_remaining
                   type: object
                 time_spent:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -1658,18 +1771,15 @@ workstation:
                   - nanosec
                   title: time_spent
                   type: object
-              required:
-              - status
-              - current_device
-              - time_spent
-              - time_remaining
               title: EvacuateAndRefill_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 gas:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -1688,16 +1798,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1707,12 +1827,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1742,20 +1869,15 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - gas
               title: EvacuateAndRefill_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: EvacuateAndRefill_Result
               type: object
           required:
@@ -1823,12 +1945,14 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_device:
                   type: string
                 status:
                   type: string
                 time_remaining:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -1844,6 +1968,7 @@ workstation:
                   title: time_remaining
                   type: object
                 time_spent:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -1858,26 +1983,29 @@ workstation:
                   - nanosec
                   title: time_spent
                   type: object
-              required:
-              - status
-              - current_device
-              - time_spent
-              - time_remaining
               title: Evaporate_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 pressure:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 solvent:
                   type: string
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 time:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -1896,16 +2024,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1915,12 +2053,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -1950,24 +2095,15 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - pressure
-              - temp
-              - time
-              - stir_speed
-              - solvent
               title: Evaporate_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: Evaporate_Result
               type: object
           required:
@@ -2062,27 +2198,31 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_status:
                   type: string
                 current_temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 filtered_volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - progress
-              - current_temp
-              - filtered_volume
-              - current_status
               title: Filter_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 continue_heatchill:
                   type: boolean
                 filtrate_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -2101,16 +2241,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2120,12 +2270,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2158,10 +2315,15 @@ workstation:
                 stir:
                   type: boolean
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -2180,16 +2342,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2199,12 +2371,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2235,18 +2414,13 @@ workstation:
                   title: vessel
                   type: object
                 volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - vessel
-              - filtrate_vessel
-              - stir
-              - stir_speed
-              - temp
-              - continue_heatchill
-              - volume
               title: Filter_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -2254,10 +2428,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Filter_Result
               type: object
           required:
@@ -2376,17 +2546,18 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: FilterThrough_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 eluting_repeats:
                   maximum: 2147483647
@@ -2395,8 +2566,11 @@ workstation:
                 eluting_solvent:
                   type: string
                 eluting_volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 filter_through:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -2415,16 +2589,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2434,12 +2618,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2470,6 +2661,7 @@ workstation:
                   title: filter_through
                   type: object
                 from_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -2488,16 +2680,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2507,12 +2709,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2543,8 +2752,11 @@ workstation:
                   title: from_vessel
                   type: object
                 residence_time:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 to_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -2563,16 +2775,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2582,12 +2804,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2617,17 +2846,10 @@ workstation:
                   - data
                   title: to_vessel
                   type: object
-              required:
-              - from_vessel
-              - to_vessel
-              - filter_through
-              - eluting_solvent
-              - eluting_volume
-              - eluting_repeats
-              - residence_time
               title: FilterThrough_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -2635,10 +2857,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: FilterThrough_Result
               type: object
           required:
@@ -2709,14 +2927,14 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: HeatChill_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 pressure:
                   type: string
@@ -2727,8 +2945,12 @@ workstation:
                 stir:
                   type: boolean
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 temp_spec:
                   type: string
@@ -2737,6 +2959,7 @@ workstation:
                 time_spec:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -2755,16 +2978,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2774,12 +3007,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2809,20 +3049,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - temp
-              - time
-              - temp_spec
-              - time_spec
-              - pressure
-              - reflux_solvent
-              - stir
-              - stir_speed
-              - purpose
               title: HeatChill_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -2830,10 +3060,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: HeatChill_Result
               type: object
           required:
@@ -2890,20 +3116,23 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: HeatChillStart_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 purpose:
                   type: string
                 temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -2922,16 +3151,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2941,12 +3180,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -2976,21 +3222,15 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - temp
-              - purpose
               title: HeatChillStart_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: HeatChillStart_Result
               type: object
           required:
@@ -3043,16 +3283,17 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: HeatChillStop_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -3071,16 +3312,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3090,12 +3341,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3125,19 +3383,15 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
               title: HeatChillStop_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: HeatChillStop_Result
               type: object
           required:
@@ -3194,23 +3448,25 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: Hydrogenate_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 temp:
                   type: string
                 time:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -3229,16 +3485,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3248,12 +3514,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3283,13 +3556,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - temp
-              - time
-              - vessel
               title: Hydrogenate_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -3297,10 +3567,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Hydrogenate_Result
               type: object
           required:
@@ -3416,12 +3682,14 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_device:
                   type: string
                 status:
                   type: string
                 time_remaining:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -3437,6 +3705,7 @@ workstation:
                   title: time_remaining
                   type: object
                 time_spent:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -3451,22 +3720,21 @@ workstation:
                   - nanosec
                   title: time_spent
                   type: object
-              required:
-              - status
-              - current_device
-              - time_spent
-              - time_remaining
               title: PumpTransfer_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 amount:
                   type: string
                 event:
                   type: string
                 flowrate:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 from_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -3485,16 +3753,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3504,12 +3782,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3548,14 +3833,19 @@ workstation:
                 rinsing_solvent:
                   type: string
                 rinsing_volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 solid:
                   type: boolean
                 through:
                   type: string
                 time:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 to_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -3574,16 +3864,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3593,12 +3893,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3629,38 +3936,24 @@ workstation:
                   title: to_vessel
                   type: object
                 transfer_flowrate:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 viscous:
                   type: boolean
                 volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - from_vessel
-              - to_vessel
-              - volume
-              - amount
-              - time
-              - viscous
-              - rinsing_solvent
-              - rinsing_volume
-              - rinsing_repeats
-              - solid
-              - flowrate
-              - transfer_flowrate
-              - rate_spec
-              - event
-              - through
               title: PumpTransfer_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: PumpTransfer_Result
               type: object
           required:
@@ -3731,17 +4024,18 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: Recrystallize_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 ratio:
                   type: string
@@ -3750,6 +4044,7 @@ workstation:
                 solvent2:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -3768,16 +4063,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3787,12 +4092,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3824,15 +4136,10 @@ workstation:
                   type: object
                 volume:
                   type: string
-              required:
-              - ratio
-              - solvent1
-              - solvent2
-              - vessel
-              - volume
               title: Recrystallize_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -3840,10 +4147,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Recrystallize_Result
               type: object
           required:
@@ -3890,21 +4193,23 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: ResetHandling_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 solvent:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -3923,16 +4228,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3942,12 +4257,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -3977,12 +4299,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - solvent
-              - vessel
               title: ResetHandling_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -3990,10 +4310,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: ResetHandling_Result
               type: object
           required:
@@ -4087,21 +4403,23 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: RunColumn_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 column:
                   type: string
                 from_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4120,16 +4438,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4139,12 +4467,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4187,6 +4522,7 @@ workstation:
                 solvent2:
                   type: string
                 to_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4205,16 +4541,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4224,12 +4570,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4259,19 +4612,10 @@ workstation:
                   - data
                   title: to_vessel
                   type: object
-              required:
-              - from_vessel
-              - to_vessel
-              - column
-              - rf
-              - pct1
-              - pct2
-              - solvent1
-              - solvent2
-              - ratio
               title: RunColumn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -4279,10 +4623,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: RunColumn_Result
               type: object
           required:
@@ -4495,19 +4835,21 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: Separate_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 from_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4526,16 +4868,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4545,12 +4897,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4583,6 +4942,7 @@ workstation:
                 product_phase:
                   type: string
                 product_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4601,16 +4961,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4620,12 +4990,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4662,6 +5039,7 @@ workstation:
                   minimum: -2147483648
                   type: integer
                 separation_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4680,16 +5058,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4699,12 +5087,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4735,18 +5130,25 @@ workstation:
                   title: separation_vessel
                   type: object
                 settling_time:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 solvent:
                   type: string
                 solvent_volume:
                   type: string
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 stir_time:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 through:
                   type: string
                 to_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4765,16 +5167,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4784,12 +5196,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4820,6 +5239,7 @@ workstation:
                   title: to_vessel
                   type: object
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4838,16 +5258,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4857,12 +5287,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4895,6 +5332,7 @@ workstation:
                 volume:
                   type: string
                 waste_phase_to_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4913,16 +5351,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4932,12 +5380,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -4968,6 +5423,7 @@ workstation:
                   title: waste_phase_to_vessel
                   type: object
                 waste_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -4986,16 +5442,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5005,12 +5471,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5040,27 +5513,10 @@ workstation:
                   - data
                   title: waste_vessel
                   type: object
-              required:
-              - vessel
-              - purpose
-              - product_phase
-              - from_vessel
-              - separation_vessel
-              - to_vessel
-              - waste_phase_to_vessel
-              - product_vessel
-              - waste_vessel
-              - solvent
-              - solvent_volume
-              - volume
-              - through
-              - repeats
-              - stir_time
-              - stir_speed
-              - settling_time
               title: Separate_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -5068,10 +5524,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Separate_Result
               type: object
           required:
@@ -5128,26 +5580,31 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 current_status:
                   type: string
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - progress
-              - current_speed
-              - current_status
               title: StartStir_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 purpose:
                   type: string
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -5166,16 +5623,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5185,12 +5652,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5220,13 +5694,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - stir_speed
-              - purpose
               title: StartStir_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -5234,10 +5705,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: StartStir_Result
               type: object
           required:
@@ -5302,28 +5769,33 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: Stir_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 event:
                   type: string
                 settling_time:
                   type: string
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 stir_time:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 time:
                   type: string
                 time_spec:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -5342,16 +5814,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5361,12 +5843,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5396,17 +5885,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - time
-              - event
-              - time_spec
-              - stir_time
-              - stir_speed
-              - settling_time
               title: Stir_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -5414,10 +5896,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Stir_Result
               type: object
           required:
@@ -5470,19 +5948,21 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_status:
                   type: string
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - progress
-              - current_status
               title: StopStir_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -5501,16 +5981,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5520,12 +6010,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5555,11 +6052,10 @@ workstation:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
               title: StopStir_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -5567,10 +6063,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: StopStir_Result
               type: object
           required:
@@ -5638,20 +6130,22 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_status:
                   type: string
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 transferred_volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - progress
-              - transferred_volume
-              - current_status
               title: Transfer_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 amount:
                   type: string
@@ -5664,31 +6158,27 @@ workstation:
                 rinsing_solvent:
                   type: string
                 rinsing_volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 solid:
                   type: boolean
                 time:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 to_vessel:
                   type: string
                 viscous:
                   type: boolean
                 volume:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - from_vessel
-              - to_vessel
-              - volume
-              - amount
-              - time
-              - viscous
-              - rinsing_solvent
-              - rinsing_volume
-              - rinsing_repeats
-              - solid
               title: Transfer_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -5696,10 +6186,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Transfer_Result
               type: object
           required:
@@ -5807,21 +6293,23 @@ workstation:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 progress:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 status:
                   type: string
-              required:
-              - status
-              - progress
               title: WashSolid_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 event:
                   type: string
                 filtrate_vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -5840,16 +6328,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5859,12 +6357,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5907,12 +6412,17 @@ workstation:
                 stir:
                   type: boolean
                 stir_speed:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 temp:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 time:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -5931,16 +6441,26 @@ workstation:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5950,12 +6470,19 @@ workstation:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -5989,23 +6516,10 @@ workstation:
                   type: string
                 volume_spec:
                   type: string
-              required:
-              - vessel
-              - solvent
-              - volume
-              - filtrate_vessel
-              - temp
-              - stir
-              - stir_speed
-              - time
-              - repeats
-              - volume_spec
-              - repeats_spec
-              - mass
-              - event
               title: WashSolid_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -6013,10 +6527,6 @@ workstation:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: WashSolid_Result
               type: object
           required:
@@ -6035,7 +6545,7 @@ workstation:
     config:
       properties:
         deck:
-          type: string
+          type: object
         protocol_type:
           items:
             type: string

@@ -50,26 +50,25 @@ gas_source.mock:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -82,26 +81,25 @@ gas_source.mock:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -116,32 +114,31 @@ gas_source.mock:
         goal_default:
           string: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: StrSingleInput_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 string:
                   type: string
-              required:
-              - string
               title: StrSingleInput_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -232,26 +229,25 @@ vacuum_pump.mock:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -264,26 +260,25 @@ vacuum_pump.mock:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -298,32 +293,31 @@ vacuum_pump.mock:
         goal_default:
           string: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: StrSingleInput_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 string:
                   type: string
-              required:
-              - string
               title: StrSingleInput_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: StrSingleInput_Result
               type: object
           required:

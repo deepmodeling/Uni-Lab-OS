@@ -136,36 +136,36 @@ solenoid_valve:
       set_valve_position:
         feedback: {}
         goal:
-          string: position
+          position: position
+          string: string
         goal_default:
           string: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: StrSingleInput_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 string:
                   type: string
-              required:
-              - string
               title: StrSingleInput_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -278,26 +278,25 @@ solenoid_valve.mock:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -310,26 +309,25 @@ solenoid_valve.mock:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -422,6 +420,27 @@ syringe_pump_with_valve.runze.SY03B-T06:
           title: initialize参数
           type: object
         type: UniLabJsonCommand
+      auto-list:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: list的参数schema
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: list参数
+          type: object
+        type: UniLabJsonCommand
       auto-pull_plunger:
         feedback: {}
         goal: {}
@@ -437,6 +456,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
             goal:
               properties:
                 volume:
+                  description: 'absolute position of the plunger, unit: mL'
                   type: number
               required:
               - volume
@@ -462,6 +482,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
             goal:
               properties:
                 volume:
+                  description: 'absolute position of the plunger, unit: mL'
                   type: number
               required:
               - volume
@@ -668,8 +689,10 @@ syringe_pump_with_valve.runze.SY03B-T06:
             goal:
               properties:
                 max_velocity:
+                  description: 'maximum velocity of the plunger, unit: ml/s'
                   type: number
                 position:
+                  description: 'absolute position of the plunger, unit: ml'
                   type: number
               required:
               - position
@@ -695,7 +718,10 @@ syringe_pump_with_valve.runze.SY03B-T06:
             goal:
               properties:
                 position:
-                  type: string
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  - type: number
               required:
               - position
               type: object
@@ -720,7 +746,9 @@ syringe_pump_with_valve.runze.SY03B-T06:
             goal:
               properties:
                 velocity:
-                  type: string
+                  anyOf:
+                  - type: integer
+                  - type: string
               required:
               - velocity
               type: object
@@ -780,13 +808,13 @@ syringe_pump_with_valve.runze.SY03B-T06:
     status_types:
       max_velocity: float
       mode: int
-      plunger_position: String
+      plunger_position: ''
       position: float
       status: str
       valve_position: str
-      velocity_end: String
-      velocity_grade: String
-      velocity_init: String
+      velocity_end: ''
+      velocity_grade: ''
+      velocity_init: ''
     type: python
   config_info: []
   description: 润泽精密注射泵设备，集成阀门控制的高精度流体输送系统。该设备通过串口通信控制，支持多种运行模式和精确的体积控制。具备可变速度控制、精密定位、阀门切换、实时状态监控等功能。适用于微量液体输送、精密进样、流速控制、化学反应进料等需要高精度流体操作的实验室自动化应用。
@@ -885,15 +913,15 @@ syringe_pump_with_valve.runze.SY03B-T06:
         velocity_init:
           type: string
       required:
-      - status
-      - mode
       - max_velocity
+      - mode
+      - plunger_position
+      - position
+      - status
+      - valve_position
+      - velocity_end
       - velocity_grade
       - velocity_init
-      - velocity_end
-      - valve_position
-      - position
-      - plunger_position
       type: object
   version: 1.0.0
 syringe_pump_with_valve.runze.SY03B-T08:
@@ -943,6 +971,27 @@ syringe_pump_with_valve.runze.SY03B-T08:
           title: initialize参数
           type: object
         type: UniLabJsonCommand
+      auto-list:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: list的参数schema
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: list参数
+          type: object
+        type: UniLabJsonCommand
       auto-pull_plunger:
         feedback: {}
         goal: {}
@@ -958,6 +1007,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
             goal:
               properties:
                 volume:
+                  description: 'absolute position of the plunger, unit: mL'
                   type: number
               required:
               - volume
@@ -983,6 +1033,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
             goal:
               properties:
                 volume:
+                  description: 'absolute position of the plunger, unit: mL'
                   type: number
               required:
               - volume
@@ -1189,8 +1240,10 @@ syringe_pump_with_valve.runze.SY03B-T08:
             goal:
               properties:
                 max_velocity:
+                  description: 'maximum velocity of the plunger, unit: ml/s'
                   type: number
                 position:
+                  description: 'absolute position of the plunger, unit: ml'
                   type: number
               required:
               - position
@@ -1216,7 +1269,10 @@ syringe_pump_with_valve.runze.SY03B-T08:
             goal:
               properties:
                 position:
-                  type: string
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  - type: number
               required:
               - position
               type: object
@@ -1241,7 +1297,9 @@ syringe_pump_with_valve.runze.SY03B-T08:
             goal:
               properties:
                 velocity:
-                  type: string
+                  anyOf:
+                  - type: integer
+                  - type: string
               required:
               - velocity
               type: object
@@ -1301,13 +1359,13 @@ syringe_pump_with_valve.runze.SY03B-T08:
     status_types:
       max_velocity: float
       mode: int
-      plunger_position: String
+      plunger_position: ''
       position: float
       status: str
       valve_position: str
-      velocity_end: String
-      velocity_grade: String
-      velocity_init: String
+      velocity_end: ''
+      velocity_grade: ''
+      velocity_init: ''
     type: python
   config_info: []
   description: 润泽精密注射泵设备，集成阀门控制的高精度流体输送系统。该设备通过串口通信控制，支持多种运行模式和精确的体积控制。具备可变速度控制、精密定位、阀门切换、实时状态监控等功能。适用于微量液体输送、精密进样、流速控制、化学反应进料等需要高精度流体操作的实验室自动化应用。
@@ -1422,14 +1480,14 @@ syringe_pump_with_valve.runze.SY03B-T08:
         velocity_init:
           type: string
       required:
-      - status
-      - mode
       - max_velocity
+      - mode
+      - plunger_position
+      - position
+      - status
+      - valve_position
+      - velocity_end
       - velocity_grade
       - velocity_init
-      - velocity_end
-      - valve_position
-      - position
-      - plunger_position
       type: object
   version: 1.0.0

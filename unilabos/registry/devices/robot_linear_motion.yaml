@@ -24,6 +24,27 @@ linear_motion.grbl:
           title: initialize参数
           type: object
         type: UniLabJsonCommand
+      auto-list:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: list的参数schema
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: list参数
+          type: object
+        type: UniLabJsonCommand
       auto-set_position:
         feedback: {}
         goal: {}
@@ -93,44 +114,39 @@ linear_motion.grbl:
         type: UniLabJsonCommandAsync
       move_through_points:
         feedback:
-          current_pose.pose.position: position
-          estimated_time_remaining.sec: time_remaining
-          navigation_time.sec: time_spent
-          number_of_poses_remaining: pose_number_remaining
+          current_pose: current_pose
+          distance_remaining: distance_remaining
+          estimated_time_remaining: estimated_time_remaining
+          navigation_time: navigation_time
+          number_of_poses_remaining: number_of_poses_remaining
+          number_of_recoveries: number_of_recoveries
         goal:
-          poses[].pose.position: positions[]
+          behavior_tree: behavior_tree
+          poses: poses
+          positions: positions
         goal_default:
           behavior_tree: ''
-          poses:
-          - header:
-              frame_id: ''
-              stamp:
-                nanosec: 0
-                sec: 0
-            pose:
-              orientation:
-                w: 1.0
-                x: 0.0
-                y: 0.0
-                z: 0.0
-              position:
-                x: 0.0
-                y: 0.0
-                z: 0.0
+          poses: []
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          result: result
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 current_pose:
+                  additionalProperties: false
                   properties:
                     header:
+                      additionalProperties: false
                       properties:
                         frame_id:
                           type: string
                         stamp:
+                          additionalProperties: false
                           properties:
                             nanosec:
                               maximum: 4294967295
@@ -151,16 +167,26 @@ linear_motion.grbl:
                       title: header
                       type: object
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -170,12 +196,19 @@ linear_motion.grbl:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -194,8 +227,11 @@ linear_motion.grbl:
                   title: current_pose
                   type: object
                 distance_remaining:
+                  maximum: 3.4028235e+38
+                  minimum: -3.4028235e+38
                   type: number
                 estimated_time_remaining:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -211,6 +247,7 @@ linear_motion.grbl:
                   title: estimated_time_remaining
                   type: object
                 navigation_time:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -233,16 +270,10 @@ linear_motion.grbl:
                   maximum: 32767
                   minimum: -32768
                   type: integer
-              required:
-              - current_pose
-              - navigation_time
-              - estimated_time_remaining
-              - number_of_recoveries
-              - distance_remaining
-              - number_of_poses_remaining
               title: NavigateThroughPoses_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 behavior_tree:
                   type: string
@@ -256,12 +287,8 @@ linear_motion.grbl:
                           stamp:
                             properties:
                               nanosec:
-                                maximum: 4294967295
-                                minimum: 0
                                 type: integer
                               sec:
-                                maximum: 2147483647
-                                minimum: -2147483648
                                 type: integer
                             required:
                             - sec
@@ -314,23 +341,17 @@ linear_motion.grbl:
                     required:
                     - header
                     - pose
-                    title: poses
                     type: object
                   type: array
-              required:
-              - poses
-              - behavior_tree
               title: NavigateThroughPoses_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 result:
-                  properties: {}
-                  required: []
+                  additionalProperties: true
                   title: result
                   type: object
-              required:
-              - result
               title: NavigateThroughPoses_Result
               type: object
           required:
@@ -340,9 +361,15 @@ linear_motion.grbl:
         type: NavigateThroughPoses
       set_spindle_speed:
         feedback:
-          position: spindle_speed
+          error: error
+          header: header
+          position: position
+          velocity: velocity
         goal:
-          position: spindle_speed
+          max_velocity: max_velocity
+          min_duration: min_duration
+          position: position
+          spindle_speed: spindle_speed
         goal_default:
           max_velocity: 0.0
           min_duration:
@@ -350,19 +377,25 @@ linear_motion.grbl:
             sec: 0
           position: 0.0
         handles: {}
+        placeholder_keys: {}
         result: {}
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 error:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 header:
+                  additionalProperties: false
                   properties:
                     frame_id:
                       type: string
                     stamp:
+                      additionalProperties: false
                       properties:
                         nanosec:
                           maximum: 4294967295
@@ -383,21 +416,24 @@ linear_motion.grbl:
                   title: header
                   type: object
                 position:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 velocity:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - header
-              - position
-              - velocity
-              - error
               title: SingleJointPosition_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 max_velocity:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 min_duration:
+                  additionalProperties: false
                   properties:
                     nanosec:
                       maximum: 4294967295
@@ -413,16 +449,13 @@ linear_motion.grbl:
                   title: min_duration
                   type: object
                 position:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
-              required:
-              - position
-              - min_duration
-              - max_velocity
               title: SingleJointPosition_Goal
               type: object
             result:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: SingleJointPosition_Result
               type: object
           required:
@@ -432,7 +465,7 @@ linear_motion.grbl:
         type: SingleJointPosition
     module: unilabos.devices.cnc.grbl_sync:GrblCNC
     status_types:
-      position: unilabos.messages:Point3D
+      position: Point3D
       spindle_speed: float
       status: str
     type: python
@@ -471,9 +504,9 @@ linear_motion.grbl:
         status:
           type: string
       required:
-      - status
       - position
       - spindle_speed
+      - status
       type: object
   version: 1.0.0
 linear_motion.toyo_xyz.sim:
@@ -600,31 +633,6 @@ linear_motion.toyo_xyz.sim:
           title: moveit_task参数
           type: object
         type: UniLabJsonCommand
-      auto-post_init:
-        feedback: {}
-        goal: {}
-        goal_default:
-          ros_node: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: post_init的参数schema
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                ros_node:
-                  type: object
-              required:
-              - ros_node
-              type: object
-            result: {}
-          required:
-          - goal
-          title: post_init参数
-          type: object
-        type: UniLabJsonCommand
       auto-resource_manager:
         feedback: {}
         goal: {}
@@ -676,41 +684,43 @@ linear_motion.toyo_xyz.sim:
           type: object
         type: UniLabJsonCommand
       pick_and_place:
-        feedback: {}
+        feedback:
+          status: status
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
+                  description: A JSON-formatted string that includes option, target,
+                    speed, lift_height, mt_height
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:
@@ -719,41 +729,43 @@ linear_motion.toyo_xyz.sim:
           type: object
         type: SendCmd
       set_position:
-        feedback: {}
+        feedback:
+          status: status
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
+                  description: A JSON-formatted string that includes quaternion, speed,
+                    position
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:
@@ -762,41 +774,42 @@ linear_motion.toyo_xyz.sim:
           type: object
         type: SendCmd
       set_status:
-        feedback: {}
+        feedback:
+          status: status
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
+                  description: A JSON-formatted string that includes speed
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:
@@ -939,30 +952,26 @@ motor.iCL42:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:
@@ -1000,8 +1009,8 @@ motor.iCL42:
         success:
           type: boolean
       required:
-      - motor_position
       - is_executing_run
+      - motor_position
       - success
       type: object
   version: 1.0.0

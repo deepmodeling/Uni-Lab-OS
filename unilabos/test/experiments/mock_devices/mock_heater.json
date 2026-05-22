@@ -6,7 +6,7 @@
             "children": [],  
             "parent": null,  
             "type": "device",  
-            "class": "mock_heater",  
+            "class": "virtual_heatchill",
             "position": {  
                 "x": 620.6111111111111,  
                 "y": 171,  

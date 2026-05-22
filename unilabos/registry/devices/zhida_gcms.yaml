@@ -8,26 +8,25 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -77,31 +76,6 @@ zhida_gcms:
           title: connect参数
           type: object
         type: UniLabJsonCommand
-      auto-post_init:
-        feedback: {}
-        goal: {}
-        goal_default:
-          ros_node: null
-        handles: {}
-        placeholder_keys: {}
-        result: {}
-        schema:
-          description: ''
-          properties:
-            feedback: {}
-            goal:
-              properties:
-                ros_node:
-                  type: string
-              required:
-              - ros_node
-              type: object
-            result: {}
-          required:
-          - goal
-          title: post_init参数
-          type: object
-        type: UniLabJsonCommand
       get_methods:
         feedback: {}
         goal: {}
@@ -112,21 +86,18 @@ zhida_gcms:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -144,21 +115,18 @@ zhida_gcms:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -176,21 +144,18 @@ zhida_gcms:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -203,26 +168,25 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -234,35 +198,36 @@ zhida_gcms:
         feedback: {}
         goal:
           string: string
+          text: text
         goal_default:
           string: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: StrSingleInput_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 string:
+                  description: Base64编码的CSV数据（ROS2参数名）
                   type: string
-              required:
-              - string
               title: StrSingleInput_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -273,36 +238,37 @@ zhida_gcms:
       start_with_csv_file:
         feedback: {}
         goal:
+          csv_file_path: csv_file_path
           string: string
         goal_default:
           string: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: StrSingleInput_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 string:
+                  description: CSV文件路径（ROS2参数名）
                   type: string
-              required:
-              - string
               title: StrSingleInput_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -325,12 +291,15 @@ zhida_gcms:
       properties:
         host:
           default: 192.168.3.184
+          description: 设备IP地址，本地部署时可使用'127.0.0.1'
           type: string
         port:
           default: 5792
+          description: 通信端口，默认5792
           type: string
         timeout:
           default: 10.0
+          description: 超时时间，单位秒
           type: string
       required: []
       type: object
@@ -343,8 +312,8 @@ zhida_gcms:
         version:
           type: object
       required:
-      - status
       - methods
+      - status
       - version
       type: object
   version: 1.0.0

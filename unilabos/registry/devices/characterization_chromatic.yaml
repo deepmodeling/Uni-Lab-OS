@@ -141,30 +141,26 @@ hplc.agilent:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:
@@ -175,7 +171,6 @@ hplc.agilent:
     module: unilabos.devices.hplc.AgilentHPLC:HPLCDriver
     status_types:
       could_run: bool
-      data_file: String
       device_status: str
       driver_init_ok: bool
       finish_status: str
@@ -199,10 +194,6 @@ hplc.agilent:
       properties:
         could_run:
           type: boolean
-        data_file:
-          items:
-            type: string
-          type: array
         device_status:
           type: string
         driver_init_ok:
@@ -216,14 +207,13 @@ hplc.agilent:
         success:
           type: boolean
       required:
-      - status_text
-      - device_status
       - could_run
+      - device_status
       - driver_init_ok
-      - is_running
-      - success
       - finish_status
-      - data_file
+      - is_running
+      - status_text
+      - success
       type: object
   version: 1.0.0
 hplc.agilent-zhida:
@@ -236,26 +226,25 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -315,21 +304,18 @@ hplc.agilent-zhida:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Feedback
               type: object
             goal:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: EmptyIn_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
-              required:
-              - return_info
               title: EmptyIn_Result
               type: object
           required:
@@ -341,35 +327,35 @@ hplc.agilent-zhida:
         feedback: {}
         goal:
           string: string
+          text: text
         goal_default:
           string: ''
         handles: {}
-        result: {}
+        placeholder_keys: {}
+        result:
+          return_info: return_info
+          success: success
         schema:
           description: ''
           properties:
             feedback:
-              properties: {}
-              required: []
+              additionalProperties: true
               title: StrSingleInput_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 string:
                   type: string
-              required:
-              - string
               title: StrSingleInput_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: StrSingleInput_Result
               type: object
           required:
@@ -407,7 +393,7 @@ hplc.agilent-zhida:
         status:
           type: object
       required:
-      - status
       - methods
+      - status
       type: object
   version: 1.0.0

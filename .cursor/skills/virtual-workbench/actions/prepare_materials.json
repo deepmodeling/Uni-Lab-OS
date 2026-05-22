@@ -1,0 +1,20 @@
+{
+  "type": "UniLabJsonCommand",
+  "goal": {
+    "count": "count"
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "count": {
+        "type": "integer",
+        "default": 5
+      }
+    },
+    "required": []
+  },
+  "goal_default": {
+    "count": 5
+  },
+  "placeholder_keys": {}
+}

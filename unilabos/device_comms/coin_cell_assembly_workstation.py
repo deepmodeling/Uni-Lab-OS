@@ -6,7 +6,7 @@ Coin Cell Assembly Workstation
 """
 from typing import Dict, Any, List, Optional, Union
 
-from unilabos.ros.nodes.resource_tracker import DeviceNodeResourceTracker
+from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
 from unilabos.device_comms.workstation_base import WorkstationBase, WorkflowInfo
 from unilabos.device_comms.workstation_communication import (
     WorkstationCommunicationBase, CommunicationConfig, CommunicationProtocol, CoinCellCommunication
@@ -61,7 +61,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         
         # 创建资源跟踪器（如果没有提供）
         if resource_tracker is None:
-            from unilabos.ros.nodes.resource_tracker import DeviceNodeResourceTracker
+            from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
             resource_tracker = DeviceNodeResourceTracker()
         
         # 初始化基类

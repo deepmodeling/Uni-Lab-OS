@@ -11,10 +11,10 @@ import os
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-# 导入测试模块
-from test.ros.msgs.test_basic import TestBasicFunctionality
-from test.ros.msgs.test_conversion import TestBasicConversion, TestMappingConversion
-from test.ros.msgs.test_mapping import TestTypeMapping, TestFieldMapping
+# 导入测试模块（统一从 tests 包获取）
+from tests.ros.msgs.test_basic import TestBasicFunctionality
+from tests.ros.msgs.test_conversion import TestBasicConversion, TestMappingConversion
+from tests.ros.msgs.test_mapping import TestTypeMapping, TestFieldMapping
 
 
 def run_tests():

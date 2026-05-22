@@ -11,7 +11,7 @@ bottle_container:
   init_param_schema: {}
   model:
     children_mesh: bottle/meshes/bottle.stl
-    children_mesh_path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/bottle/modal.xacro
+    children_mesh_path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/bottle/modal.xacro
     children_mesh_tf:
     - 0.04
     - 0.04
@@ -27,9 +27,8 @@ bottle_container:
     - 0
     - 0
     - 0
-    path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/bottle_container/modal.xacro
+    path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/bottle_container/modal.xacro
     type: resource
-  registry_type: resource
   version: 1.0.0
 tube_container:
   category:
@@ -44,7 +43,7 @@ tube_container:
   init_param_schema: {}
   model:
     children_mesh: tube/meshes/tube.stl
-    children_mesh_path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tube/modal.xacro
+    children_mesh_path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tube/modal.xacro
     children_mesh_tf:
     - 0.017
     - 0.017
@@ -60,7 +59,6 @@ tube_container:
     - 0
     - 0
     - 0
-    path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tube_container/modal.xacro
+    path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tube_container/modal.xacro
     type: resource
-  registry_type: resource
   version: 1.0.0

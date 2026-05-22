@@ -8,7 +8,6 @@ appliedbiosystemsmicroamp_384_wellplate_40ul:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 biorad_384_wellplate_50ul:
   category:
@@ -20,7 +19,6 @@ biorad_384_wellplate_50ul:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 biorad_96_wellplate_200ul_pcr:
   category:
@@ -32,7 +30,6 @@ biorad_96_wellplate_200ul_pcr:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 corning_12_wellplate_6point9ml_flat:
   category:
@@ -44,7 +41,6 @@ corning_12_wellplate_6point9ml_flat:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 corning_24_wellplate_3point4ml_flat:
   category:
@@ -56,7 +52,6 @@ corning_24_wellplate_3point4ml_flat:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 corning_384_wellplate_112ul_flat:
   category:
@@ -68,7 +63,6 @@ corning_384_wellplate_112ul_flat:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 corning_48_wellplate_1point6ml_flat:
   category:
@@ -80,7 +74,6 @@ corning_48_wellplate_1point6ml_flat:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 corning_6_wellplate_16point8ml_flat:
   category:
@@ -92,7 +85,6 @@ corning_6_wellplate_16point8ml_flat:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 corning_96_wellplate_360ul_flat:
   category:
@@ -104,7 +96,6 @@ corning_96_wellplate_360ul_flat:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 nest_96_wellplate_100ul_pcr_full_skirt:
   category:
@@ -118,7 +109,7 @@ nest_96_wellplate_100ul_pcr_full_skirt:
   init_param_schema: {}
   model:
     children_mesh: generic_labware_tube_10_75/meshes/0_base.stl
-    children_mesh_path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/generic_labware_tube_10_75/modal.xacro
+    children_mesh_path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/generic_labware_tube_10_75/modal.xacro
     children_mesh_tf:
     - 0.0018
     - 0.0018
@@ -134,9 +125,8 @@ nest_96_wellplate_100ul_pcr_full_skirt:
     - -1.5708
     - 0
     - 1.5708
-    path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tecan_nested_tip_rack/modal.xacro
+    path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tecan_nested_tip_rack/modal.xacro
     type: resource
-  registry_type: resource
   version: 1.0.0
 nest_96_wellplate_200ul_flat:
   category:
@@ -148,7 +138,6 @@ nest_96_wellplate_200ul_flat:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 nest_96_wellplate_2ml_deep:
   category:
@@ -169,9 +158,8 @@ nest_96_wellplate_2ml_deep:
     - -1.5708
     - 0
     - 1.5708
-    path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tecan_nested_tip_rack/modal.xacro
+    path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/resources/tecan_nested_tip_rack/modal.xacro
     type: resource
-  registry_type: resource
   version: 1.0.0
 thermoscientificnunc_96_wellplate_1300ul:
   category:
@@ -183,7 +171,6 @@ thermoscientificnunc_96_wellplate_1300ul:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 thermoscientificnunc_96_wellplate_2000ul:
   category:
@@ -195,7 +182,6 @@ thermoscientificnunc_96_wellplate_2000ul:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 usascientific_96_wellplate_2point4ml_deep:
   category:
@@ -207,5 +193,4 @@ usascientific_96_wellplate_2point4ml_deep:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0

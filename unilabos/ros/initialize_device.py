@@ -1,10 +1,9 @@
-import copy
 from typing import Optional
 
 from unilabos.registry.registry import lab_registry
 from unilabos.ros.device_node_wrapper import ros2_device_node
 from unilabos.ros.nodes.base_device_node import ROS2DeviceNode, DeviceInitError
-from unilabos.ros.nodes.resource_tracker import ResourceDictInstance
+from unilabos.resources.resource_tracker import ResourceDictInstance
 from unilabos.utils import logger
 from unilabos.utils.exception import DeviceClassInvalid
 from unilabos.utils.import_manager import default_manager

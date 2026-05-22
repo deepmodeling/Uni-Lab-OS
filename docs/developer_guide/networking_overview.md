@@ -23,7 +23,7 @@ Uni-Lab-OS 支持多种部署模式：
 ```
 ┌──────────────────────────────────────────────┐
 │      Cloud Platform/Self-hosted Platform     │
-│           uni-lab.bohrium.com                │
+│           leap-lab.bohrium.com                │
 │  (Resource Management, Task Scheduling,      │
 │              Monitoring)                     │
 └────────────────────┬─────────────────────────┘
@@ -221,10 +221,10 @@ Laboratory A    Laboratory B
 
 ```bash
 # 实验室A
-unilab --ak your_ak --sk your_sk --upload_registry --use_remote_resource
+unilab --ak your_ak --sk your_sk --upload_registry
 
 # 实验室B
-unilab --ak your_ak --sk your_sk --upload_registry --use_remote_resource
+unilab --ak your_ak --sk your_sk --upload_registry
 ```
 
 ---
@@ -444,7 +444,7 @@ ros2 daemon stop && ros2 daemon start
 
 ```bash
 # 测试云端连接
-curl https://uni-lab.bohrium.com/api/v1/health
+curl https://leap-lab.bohrium.com/api/v1/health
 
 # 测试WebSocket
 # 启动Uni-Lab后查看日志

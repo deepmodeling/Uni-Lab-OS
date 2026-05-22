@@ -193,3 +193,20 @@ def BIOYOND_PolymerStation_Flask(
         barcode=barcode,
         model="BIOYOND_PolymerStation_Flask",
     )
+
+def BIOYOND_PolymerStation_Measurement_Vial(
+    name: str,
+    diameter: float = 25.0,
+    height: float = 60.0,
+    max_volume: float = 20000.0,  # 20mL
+    barcode: str = None,
+) -> Bottle:
+    """创建测量小瓶"""
+    return Bottle(
+        name=name,
+        diameter=diameter,
+        height=height,
+        max_volume=max_volume,
+        barcode=barcode,
+        model="BIOYOND_PolymerStation_Measurement_Vial",
+    )

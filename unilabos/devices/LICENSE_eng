@@ -1,0 +1,73 @@
+Uni-Lab-OS License Agreement
+
+Preamble
+This License Agreement (the "Agreement") is instituted to govern user conduct and obligations in relation to the utilization of the Uni-Lab-OS (the "Software"). By accessing, downloading, installing, or utilizing the Software in any manner, you hereby acknowledge that you have meticulously reviewed, comprehended, and consented to be legally bound by the terms herein. If you dissent from any provision of this Agreement, you must forthwith cease all interaction with the Software.
+
+1. Grant of License
+1.1 The proprietary rights to the Software are exclusively retained by Beijing DP Technology Co., Ltd. ("DP Technology"). Subject to full compliance with this Agreement, DP Technology hereby grants academic users ("Licensee") a worldwide, non-exclusive, royalty-free license to untilise the Software solely for non-commercial academic pursuits.
+
+1.2 The foregoing license applies exclusively to the Software's executable binary code. No rights whatsoever are conferred to the Software's source code.
+
+2. Usage Restrictions
+2.1 This license is restricted to academic users engaging in scholastic activities. Commercial entities, institutions, or any non-academic parties are expressly prohibited from utilizing the Software. Violations of this clause shall entitle DP Technology to pursue all available legal remedies.
+2.2 The Licensee shall obtain a commercial license from DP Technology for any commercial use of the Software.
+2.3 The Licensee shall not utilise the Software or any derivative works for commercial purposes, nor distribute, sublicense, lease, transfer, or otherwise disseminate the Software to third parties. The Licensee is strictly prohibited from utilizing the Software for the benefit of any third-party entity, whether gratuitously or otherwise.
+2.4 Reverse engineering, decompilation, disassembly, code isolation, or any attempt to derive source code from the Software is strictly prohibited. The Licensee shall not alter, circumvent, or remove copyright notices, trademarks, or proprietary legends embedded in the Software. Use of the Software for unlawful activities—including but not limited to intellectual property infringement or privacy violations—is categorically barred.
+2.5 The Licensee warrants that the Software shall be utilised solely for lawful academic purposes in compliance with applicable jurisdictional statutes. All legal liabilities arising from noncompliance shall be borne exclusively by the Licensee.
+
+3. Proprietary Rights
+This Agreement confers a license to utilise the Software, not a transfer of ownership. All intellectual property rights—including copyrights, patents, trade secrets, and documentation—remain the exclusive dominion of DP Technology. The Licensee acquires no entitlements beyond the limited usage privileges expressly delineated herein.
+
+4. Derivative Work
+You may convey a work based on the Software, or the modifications to produce it from the Software, provided that you meet all of these conditions:
+4.1 The work must carry prominent notices stating that you modified it, and giving a relevant date.
+4.2 The work must carry prominent notices stating that it is released under this License.
+4.3 You must license the entire work, as a whole, under this License to anyone who comes into possession of a copy. This License will therefore apply to the whole of the work, and all its parts, regardless of how they are packaged. This License gives no permission to license the work in any other way, but it does not invalidate such permission if you have separately received it.
+4.4 If the work has interactive user interfaces, each must display Appropriate Legal Notices; however, if the Software has interactive interfaces that do not display Appropriate Legal Notices, your work need not make them do so.
+
+5. Feedback and Proposals
+Licensees may submit proposals, suggestions, or improvements pertaining to the Software ("Feedback") under the following conditions:
+(a) Licensee represents and warrants that such Feedback does not infringe upon any third-party intellectual property rights;
+(b) Licensee acknowledges that DP Technology reserves the right, but assumes no obligation, to utilize such Feedback;
+(c) Licensee irrevocably grants DP Technology a non-exclusive, royalty-free, perpetual, worldwide, sublicensable copyright license to reproduce, distribute, modify, publicly perform or display, translate, create derivative works of, commercialize, and otherwise exploit the Feedback in any medium or format, whether now known or hereafter devised, including the right to grant multiple tiers of sublicenses to enable such activities;
+(d) Licensee hereby grants DP Technology a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable (except as stated in this section) patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Feedback and such Derivative Works, where such license applies only to those patent claimss licensable by Licensee that are necessarily infringed by the Feedback(s) alone or by comibination of the Feedback(s) with the Software to which such Feedback(s) were submitted. If any entity institutes patent litigation against Licensee or any other entity (including a cross-claim orcounterclaim in a lawsuit) alleging that the Feedback, or the Software to which you have contributed, constitutes direct or contributory patent infringement, then any patent licenses granted under this Agreement for the Feedback or Software shall terminate as of the date such litigation is filed.
+(e) Licensee hereby waives all claims, proprietary rights, or restrictions related to DP Technology's use of such Feedback.
+
+6. Citation Requirement
+If academic or research output generated using the Software is published, Licensee must explicitly acknowledge the use of Uni-Lab-OS and attribute ownership to DP Technology. The following citation must be included:
+@article{gao2025unilabos,
+	title = {UniLabOS: An AI-Native Operating System for Autonomous Laboratories},
+	doi = {10.48550/arXiv.2512.21766},
+	publisher = {arXiv},
+	author = {Gao, Jing and Chang, Junhan and Que, Haohui and Xiong, Yanfei and Zhang, Shixiang and Qi, Xianwei and Liu, Zhen and Wang, Jun-Jie and Ding, Qianjun and Li, Xinyu and Pan, Ziwei and Xie, Qiming and Yan, Zhuang and Yan, Junchi and Zhang, Linfeng},
+	year = {2025}
+}
+
+7. Reservation of Rights
+All rights not expressly granted herein, whether existing now or arising in the future, are exclusively reserved by DP Technology. Any unauthorized use of the Software beyond the scope of this Agreement constitutes infringement, and DP Technology reserves all legal rights to pursue remedies against violators.
+
+8. Confidentiality
+Licensee agrees to treat the Software's code, documentation, and related materials as confidential information. Licensee shall not disclose such materials to third parties and shall employ reasonable safeguards to prevent unauthorized access, dissemination, or misuse.
+
+9. Disclaimer of Warranties
+The software is provided "as is," without warranties of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, non-infringement, or error-free operation. Licensee accepts all risks associated with the use of the software.
+
+10. Limitation of Liability
+In no event and under no legal theory, whether in tort (including negligence), contract, or otherwise, unless required by applicable law (such as deliberate and grossly negligent acts) or agreed to in writing, shall DP Technology be liable to Licensee for damages, including any direct, indirect, special, incidental, or consequential damages of any character arising as a result of this License or out of the use or inability to use the software (including but not limited to damages for loss of goodwill, work stoppage, computer failure or malfunction, or any and all other commercial damages or losses), even if DP Technology has been advised of the possibility of such damages.
+While redistributing the Software or Derivative Works thereof, Licensee may act only on Licensee's own behalf and on Licensee's sole responsibility, not on behalf of DP Technology or any other Licensee.
+
+11. Termination
+All rights granted herein shall terminate immediately and automatically if Licensee materially breaches any provision of this Agreement.
+
+12. Reporting Violations
+To report suspected violations of this Agreement, notify DP Technology via the designated email address: changjh@dp.tech. DP Technology shall maintain the confidentiality of the reporter's identity.
+
+13. Governing Law and Dispute Resolution
+This Agreement shall be governed by the laws of the People's Republic of China, excluding its conflict of laws principles and the United Nations Convention on Contracts for the International Sale of Goods. Any dispute arising from this Agreement shall be exclusively adjudicated by the Haidian District People's Court in Beijing.
+
+14. Amendments and Updates
+DP Technology reserves the right to modify, suspend, or terminate the Software or this Agreement at any time without prior notice.
+
+15. Language Priority
+This Agreement is provided in both Chinese and English. In the event of any discrepancy, the Chinese version shall prevail.
+

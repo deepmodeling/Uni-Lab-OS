@@ -6,17 +6,13 @@ from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 import rclpy
 from rosidl_runtime_py import message_to_ordereddict
-from unilabos_msgs.msg import Resource
-from unilabos_msgs.srv import ResourceUpdate
 
 from unilabos.messages import *  # type: ignore  # protocol names
 from rclpy.action import ActionServer, ActionClient
 from rclpy.action.server import ServerGoalHandle
-from rclpy.callback_groups import ReentrantCallbackGroup
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 
 from unilabos.compile import action_protocol_generators
-from unilabos.resources.graphio import list_to_nested_dict, nested_dict_to_list
 from unilabos.ros.initialize_device import initialize_device_from_dict
 from unilabos.ros.msgs.message_converter import (
     get_action_type,
@@ -24,7 +20,7 @@ from unilabos.ros.msgs.message_converter import (
     convert_from_ros_msg_with_mapping,
 )
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker, ROS2DeviceNode
-from unilabos.ros.nodes.resource_tracker import ResourceTreeSet, ResourceDictInstance
+from unilabos.resources.resource_tracker import ResourceDictType, ResourceTreeSet, ResourceDictInstance
 from unilabos.utils.type_check import get_result_info_str
 
 if TYPE_CHECKING:
@@ -51,6 +47,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
         *,
         driver_instance: "WorkstationBase",
         device_id: str,
+        registry_name: str,
         device_uuid: str,
         status_types: Dict[str, Any],
         action_value_mappings: Dict[str, Any],
@@ -66,6 +63,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
         super().__init__(
             driver_instance=driver_instance,
             device_id=device_id,
+            registry_name=registry_name,
             device_uuid=device_uuid,
             status_types=status_types,
             action_value_mappings={**action_value_mappings, **self.protocol_action_mappings},
@@ -179,6 +177,103 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                     self.lab_logger().trace(f"为子设备 {device_id} 创建动作客户端: {action_name}")
         return d
 
+    def create_device(self, device_id: str, config: ResourceDictType) -> dict:
+        """Dynamically add a sub-device to this workstation."""
+        if not device_id:
+            return {"success": False, "error": "device_id required"}
+
+        if device_id in self.sub_devices:
+            return {"success": False, "error": f"Sub-device {device_id} already exists"}
+
+        try:
+            from unilabos.config.config import BasicConfig
+            config.setdefault("id", device_id)
+            config.setdefault("type", "device")
+            config.setdefault("machine_name", BasicConfig.machine_name or "本地")
+            res_dict = ResourceDictInstance.get_resource_instance_from_dict(config)
+
+            d = self.initialize_device(device_id, res_dict)
+            if d is None:
+                return {"success": False, "error": f"initialize_device returned None for {device_id}"}
+
+            # Add to children config list
+            self.children.append(res_dict)
+
+            # Add to resource tracker
+            try:
+                from unilabos.resources.resource_tracker import ResourceTreeInstance
+                tree = ResourceTreeInstance(res_dict)
+                for plr_resource in ResourceTreeSet([tree]).to_plr_resources():
+                    self.resource_tracker.add_resource(plr_resource)
+            except Exception as ex:
+                self.lab_logger().warning(f"[Workstation-DeviceMgr] PLR resource registration skipped: {ex}")
+
+            self.lab_logger().info(f"[Workstation-DeviceMgr] Sub-device {device_id} created")
+            return {"success": True, "device_id": device_id}
+
+        except Exception as e:
+            self.lab_logger().error(f"[Workstation-DeviceMgr] Failed to create {device_id}: {e}")
+            self.lab_logger().error(traceback.format_exc())
+            return {"success": False, "error": str(e)}
+
+    def destroy_device(self, device_id: str) -> dict:
+        """Dynamically remove a sub-device from this workstation."""
+        if not device_id:
+            return {"success": False, "error": "device_id required"}
+
+        if device_id not in self.sub_devices:
+            return {"success": False, "error": f"Sub-device {device_id} not found"}
+
+        try:
+            # Remove from children config list
+            self.children = [
+                c for c in self.children
+                if c.res_content.id != device_id
+            ]
+
+            # Remove from resource tracker
+            try:
+                tracked = self.resource_tracker.uuid_to_resources.copy()
+                for uid, res in tracked.items():
+                    res_id = res.get("id") if isinstance(res, dict) else getattr(res, "name", None)
+                    if res_id == device_id:
+                        self.resource_tracker.remove_resource(res)
+            except Exception as ex:
+                self.lab_logger().warning(f"[Workstation-DeviceMgr] Resource tracker cleanup: {ex}")
+
+            # Remove action clients for this sub-device
+            action_prefix = f"/devices/{device_id}/"
+            to_remove = [k for k in self._action_clients if k.startswith(action_prefix)]
+            for k in to_remove:
+                try:
+                    self._action_clients[k].destroy()
+                except Exception:
+                    pass
+                del self._action_clients[k]
+
+            # Destroy the ROS2 node
+            instance = self.sub_devices.pop(device_id, None)
+            if instance is not None:
+                ros_node = getattr(instance, "ros_node_instance", None)
+                if ros_node is not None:
+                    try:
+                        ros_node.destroy_node()
+                    except Exception as e:
+                        self.lab_logger().warning(
+                            f"[Workstation-DeviceMgr] Error destroying ROS node for {device_id}: {e}"
+                        )
+
+            # Remove from communication map if present
+            self.communication_node_id_to_instance.pop(device_id, None)
+
+            self.lab_logger().info(f"[Workstation-DeviceMgr] Sub-device {device_id} destroyed")
+            return {"success": True, "device_id": device_id}
+
+        except Exception as e:
+            self.lab_logger().error(f"[Workstation-DeviceMgr] Failed to destroy {device_id}: {e}")
+            self.lab_logger().error(traceback.format_exc())
+            return {"success": False, "error": str(e)}
+
     def create_ros_action_server(self, action_name, action_value_mapping):
         """创建ROS动作服务器"""
         if action_name not in self.protocol_names:
@@ -232,19 +327,19 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                         try:
                             # 统一处理单个或多个资源
                             resource_id = (
-                                protocol_kwargs[k]["id"] if v == "unilabos_msgs/Resource" else protocol_kwargs[k][0]["id"]
+                                protocol_kwargs[k]["id"]
+                                if v == "unilabos_msgs/Resource"
+                                else protocol_kwargs[k][0]["id"]
                             )
                             resource_uuid = protocol_kwargs[k].get("uuid", None)
                             r = SerialCommand_Request()
                             r.command = json.dumps({"id": resource_id, "uuid": resource_uuid, "with_children": True})
                             # 发送请求并等待响应
-                            response: SerialCommand_Response = await self._resource_clients[
-                                "resource_get"
-                            ].call_async(
+                            response: SerialCommand_Response = await self._resource_clients["resource_get"].call_async(
                                 r
                             )  # type: ignore
                             raw_data = json.loads(response.response)
-                            tree_set = ResourceTreeSet.from_raw_list(raw_data)
+                            tree_set = ResourceTreeSet.from_raw_dict_list(raw_data)
                             target = tree_set.dump()
                             protocol_kwargs[k] = target[0][0] if v == "unilabos_msgs/Resource" else target
                         except Exception as ex:
@@ -308,12 +403,54 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
 
                 # 向Host更新物料当前状态
                 for k, v in goal.get_fields_and_field_types().items():
-                    if v in ["unilabos_msgs/Resource", "sequence<unilabos_msgs/Resource>"]:
-                        r = ResourceUpdate.Request()
-                        r.resources = [
-                            convert_to_ros_msg(Resource, rs) for rs in nested_dict_to_list(protocol_kwargs[k])
-                        ]
-                        response = await self._resource_clients["resource_update"].call_async(r)
+                    if v not in ["unilabos_msgs/Resource", "sequence<unilabos_msgs/Resource>"]:
+                        continue
+                    self.lab_logger().info(f"更新资源状态: {k}")
+                    try:
+                        # 去重：使用 seen 集合获取唯一的资源对象
+                        seen = set()
+                        unique_resources = []
+
+                        # 获取资源数据，统一转换为列表
+                        resource_data = protocol_kwargs[k]
+                        is_sequence = v != "unilabos_msgs/Resource"
+                        if not is_sequence:
+                            resource_list = [resource_data] if isinstance(resource_data, dict) else resource_data
+                        else:
+                            # 处理序列类型，可能是嵌套列表
+                            resource_list = []
+                            if isinstance(resource_data, list):
+                                for item in resource_data:
+                                    if isinstance(item, list):
+                                        resource_list.extend(item)
+                                    else:
+                                        resource_list.append(item)
+                            else:
+                                resource_list = [resource_data]
+
+                        for res_data in resource_list:
+                            if not isinstance(res_data, dict):
+                                continue
+                            res_name = res_data.get("id") or res_data.get("name")
+                            if not res_name:
+                                continue
+
+                            # 使用 resource_tracker 获取本地 PLR 实例
+                            plr = self.resource_tracker.figure_resource({"name": res_name}, try_mode=False)
+                            # 获取父资源
+                            res = self.resource_tracker.parent_resource(plr)
+                            if res is None:
+                                res = plr
+                            if id(res) not in seen:
+                                seen.add(id(res))
+                                unique_resources.append(res)
+
+                        # 使用新的资源树接口更新
+                        if unique_resources:
+                            await self.update_resource(unique_resources)
+                    except Exception as e:
+                        self.lab_logger().error(f"资源更新失败: {e}")
+                        self.lab_logger().error(traceback.format_exc())
 
                 # 设置成功状态和返回值
                 execution_success = True

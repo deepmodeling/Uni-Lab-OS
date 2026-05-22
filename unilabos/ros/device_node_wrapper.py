@@ -5,7 +5,7 @@ from unilabos.ros.msgs.message_converter import (
     get_action_type,
 )
 from unilabos.ros.nodes.base_device_node import init_wrapper, ROS2DeviceNode
-from unilabos.ros.nodes.resource_tracker import ResourceDictInstance
+from unilabos.resources.resource_tracker import ResourceDictInstance
 
 # 定义泛型类型变量
 T = TypeVar("T")
@@ -44,8 +44,7 @@ def ros2_device_node(
     # 从属性中自动发现可发布状态
     if status_types is None:
         status_types = {}
-    if device_config is None:
-        raise ValueError("device_config cannot be None")
+    assert device_config is not None, "device_config cannot be None"
     if action_value_mappings is None:
         action_value_mappings = {}
     if hardware_interface is None:

@@ -24,7 +24,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",  # 如果您使用 Google 或 NumPy 风格的 docstrings
     "sphinx_rtd_theme",
-    "sphinxcontrib.mermaid"
+    "sphinxcontrib.mermaid",
 ]
 
 source_suffix = {
@@ -58,7 +58,7 @@ html_theme = "sphinx_rtd_theme"
 
 # sphinx-book-theme 主题选项
 html_theme_options = {
-    "repository_url": "https://github.com/用户名/Uni-Lab",
+    "repository_url": "https://github.com/deepmodeling/Uni-Lab-OS",
     "use_repository_button": True,
     "use_issues_button": True,
     "use_edit_page_button": True,

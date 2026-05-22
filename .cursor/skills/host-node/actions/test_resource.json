@@ -1,0 +1,255 @@
+{
+  "type": "UniLabJsonCommand",
+  "goal": {
+    "resource": "resource",
+    "resources": "resources",
+    "device": "device",
+    "devices": "devices"
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "resource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample_id": {
+            "type": "string"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "parent": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "pose": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308
+                  },
+                  "z": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "title": "position",
+                "additionalProperties": false
+              },
+              "orientation": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308
+                  },
+                  "z": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308
+                  },
+                  "w": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "z",
+                  "w"
+                ],
+                "title": "orientation",
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "position",
+              "orientation"
+            ],
+            "title": "pose",
+            "additionalProperties": false
+          },
+          "config": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string"
+          }
+        },
+        "title": "resource"
+      },
+      "resources": {
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sample_id": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parent": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "pose": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "z": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "title": "position",
+                  "additionalProperties": false
+                },
+                "orientation": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "z": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "w": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z",
+                    "w"
+                  ],
+                  "title": "orientation",
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "position",
+                "orientation"
+              ],
+              "title": "pose",
+              "additionalProperties": false
+            },
+            "config": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "title": "resources"
+        },
+        "type": "array"
+      },
+      "device": {
+        "type": "string",
+        "description": "device reference"
+      },
+      "devices": {
+        "type": "string",
+        "description": "device reference"
+      }
+    },
+    "required": [],
+    "_unilabos_placeholder_info": {
+      "resource": "unilabos_resources",
+      "resources": "unilabos_resources",
+      "device": "unilabos_devices",
+      "devices": "unilabos_devices"
+    }
+  },
+  "goal_default": {},
+  "placeholder_keys": {
+    "resource": "unilabos_resources",
+    "resources": "unilabos_resources",
+    "device": "unilabos_devices",
+    "devices": "unilabos_devices"
+  }
+}

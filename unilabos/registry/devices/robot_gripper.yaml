@@ -114,11 +114,12 @@ gripper.misumi_rz:
             goal:
               properties:
                 data:
-                  type: string
+                  type: object
               required:
               - data
               type: object
-            result: {}
+            result:
+              type: object
           required:
           - goal
           title: modbus_crc参数
@@ -398,30 +399,26 @@ gripper.misumi_rz:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:
@@ -504,71 +501,82 @@ gripper.mock:
         type: UniLabJsonCommand
       push_to:
         feedback:
-          effort: torque
+          effort: effort
           position: position
+          reached_goal: reached_goal
+          stalled: stalled
         goal:
-          command.max_effort: torque
-          command.position: position
+          command: command
+          position: position
+          torque: torque
+          velocity: velocity
         goal_default:
           command:
             max_effort: 0.0
             position: 0.0
         handles: {}
+        placeholder_keys: {}
         result:
-          effort: torque
+          effort: effort
           position: position
+          reached_goal: reached_goal
+          stalled: stalled
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 effort:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 position:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 reached_goal:
                   type: boolean
                 stalled:
                   type: boolean
-              required:
-              - position
-              - effort
-              - stalled
-              - reached_goal
               title: GripperCommand_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
+                  additionalProperties: false
                   properties:
                     max_effort:
+                      maximum: 1.7976931348623157e+308
+                      minimum: -1.7976931348623157e+308
                       type: number
                     position:
+                      maximum: 1.7976931348623157e+308
+                      minimum: -1.7976931348623157e+308
                       type: number
                   required:
                   - position
                   - max_effort
                   title: command
                   type: object
-              required:
-              - command
               title: GripperCommand_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 effort:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 position:
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 reached_goal:
                   type: boolean
                 stalled:
                   type: boolean
-              required:
-              - position
-              - effort
-              - stalled
-              - reached_goal
               title: GripperCommand_Result
               type: object
           required:
@@ -604,8 +612,8 @@ gripper.mock:
           type: number
       required:
       - position
-      - velocity
-      - torque
       - status
+      - torque
+      - velocity
       type: object
   version: 1.0.0

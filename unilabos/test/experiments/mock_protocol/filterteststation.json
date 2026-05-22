@@ -32,7 +32,7 @@
             "children": [],
             "parent": "FilterTestStation",
             "type": "device",
-            "class": "virtual_pump",
+            "class": "virtual_transfer_pump",
             "position": {
                 "x": 520.6111111111111,
                 "y": 300,

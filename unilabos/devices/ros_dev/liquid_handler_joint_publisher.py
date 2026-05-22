@@ -19,10 +19,11 @@ from rclpy.node import Node
 import re
 
 class LiquidHandlerJointPublisher(BaseROS2DeviceNode):
-    def __init__(self,resources_config:list, resource_tracker, rate=50, device_id:str = "lh_joint_publisher", **kwargs):
+    def __init__(self,resources_config:list, resource_tracker, rate=50, device_id:str = "lh_joint_publisher", registry_name: str = "lh_joint_publisher", **kwargs):
         super().__init__(
             driver_instance=self,
             device_id=device_id,
+            registry_name=registry_name,
             status_types={},
             action_value_mappings={},
             hardware_interface={},

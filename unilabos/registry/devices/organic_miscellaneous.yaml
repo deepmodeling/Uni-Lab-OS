@@ -100,42 +100,41 @@ rotavap.one:
           type: object
         type: UniLabJsonCommand
       set_timer:
-        feedback: {}
+        feedback:
+          status: status
         goal:
           command: command
         goal_default:
           command: ''
         handles: {}
+        placeholder_keys: {}
         result:
+          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:
@@ -208,8 +207,12 @@ separator.homemade:
             goal:
               properties:
                 condition:
+                  description: The condition to be monitored, either 'delta' or 'time'.
                   type: string
                 value:
+                  description: 'The threshold value for the condition.
+
+                    `delta > 0.05`, `time > 60`'
                   type: string
               required:
               - condition
@@ -250,9 +253,13 @@ separator.homemade:
         feedback:
           status: status
         goal:
+          event: event
           settling_time: settling_time
           stir_speed: stir_speed
-          stir_time: stir_time,
+          stir_time: stir_time
+          time: time
+          time_spec: time_spec
+          vessel: vessel
         goal_default:
           event: ''
           settling_time: ''
@@ -281,34 +288,47 @@ separator.homemade:
             sample_id: ''
             type: ''
         handles: {}
+        placeholder_keys: {}
         result:
+          message: message
+          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: Stir_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 event:
                   type: string
                 settling_time:
+                  description: The duration for which to settle after stirring, in
+                    seconds. Defaults to 10.
                   type: string
                 stir_speed:
+                  description: The speed of stirring, in RPM. Defaults to 300.
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 stir_time:
+                  description: The duration for which to stir, in seconds. Defaults
+                    to 10.
+                  maximum: 1.7976931348623157e+308
+                  minimum: -1.7976931348623157e+308
                   type: number
                 time:
                   type: string
                 time_spec:
                   type: string
                 vessel:
+                  additionalProperties: false
                   properties:
                     category:
                       type: string
@@ -327,16 +347,26 @@ separator.homemade:
                     parent:
                       type: string
                     pose:
+                      additionalProperties: false
                       properties:
                         orientation:
+                          additionalProperties: false
                           properties:
                             w:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -346,12 +376,19 @@ separator.homemade:
                           title: orientation
                           type: object
                         position:
+                          additionalProperties: false
                           properties:
                             x:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             y:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                             z:
+                              maximum: 1.7976931348623157e+308
+                              minimum: -1.7976931348623157e+308
                               type: number
                           required:
                           - x
@@ -381,17 +418,10 @@ separator.homemade:
                   - data
                   title: vessel
                   type: object
-              required:
-              - vessel
-              - time
-              - event
-              - time_spec
-              - stir_time
-              - stir_speed
-              - settling_time
               title: Stir_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 message:
                   type: string
@@ -399,10 +429,6 @@ separator.homemade:
                   type: string
                 success:
                   type: boolean
-              required:
-              - success
-              - message
-              - return_info
               title: Stir_Result
               type: object
           required:
@@ -418,36 +444,34 @@ separator.homemade:
         goal_default:
           command: ''
         handles: {}
+        placeholder_keys: {}
         result:
+          return_info: return_info
           success: success
         schema:
           description: ''
           properties:
             feedback:
+              additionalProperties: false
               properties:
                 status:
                   type: string
-              required:
-              - status
               title: SendCmd_Feedback
               type: object
             goal:
+              additionalProperties: false
               properties:
                 command:
                   type: string
-              required:
-              - command
               title: SendCmd_Goal
               type: object
             result:
+              additionalProperties: false
               properties:
                 return_info:
                   type: string
                 success:
                   type: boolean
-              required:
-              - return_info
-              - success
               title: SendCmd_Result
               type: object
           required:

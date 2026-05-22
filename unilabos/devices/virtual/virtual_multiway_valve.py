@@ -2,6 +2,8 @@ import time
 import logging
 from typing import Union, Dict, Optional
 
+from unilabos.registry.decorators import topic_config
+
 
 class VirtualMultiwayValve:
     """
@@ -41,13 +43,11 @@ class VirtualMultiwayValve:
     def target_position(self) -> int:
         return self._target_position
 
-    def get_current_position(self) -> int:
-        """获取当前阀门位置 📍"""
-        return self._current_position
-
-    def get_current_port(self) -> str:
-        """获取当前连接的端口名称 🔌"""
-        return self._current_position
+    @property
+    @topic_config()
+    def current_port(self) -> str:
+        """当前连接的端口名称 🔌"""
+        return self.port
 
     def set_position(self, command: Union[int, str]):
         """
@@ -169,12 +169,14 @@ class VirtualMultiwayValve:
         self._status = "Idle"
         self._valve_state = "Closed"
         
-        close_msg = f"🔒 阀门已关闭，保持在位置 {self._current_position} ({self.get_current_port()})"
+        close_msg = f"🔒 阀门已关闭，保持在位置 {self._current_position} ({self.port})"
         self.logger.info(close_msg)
         return close_msg
 
-    def get_valve_position(self) -> int:
-        """获取阀门位置 - 兼容性方法 📍"""
+    @property
+    @topic_config()
+    def valve_position(self) -> int:
+        """阀门位置 📍"""
         return self._current_position
 
     def set_valve_position(self, command: Union[int, str]):
@@ -229,19 +231,16 @@ class VirtualMultiwayValve:
             self.logger.info(f"🔄 从端口 {self._current_position} 切换到泵位置...")
             return self.set_to_pump_position()
 
-    def get_flow_path(self) -> str:
-        """获取当前流路路径描述 🌊"""
-        current_port = self.get_current_port()
+    @property
+    @topic_config()
+    def flow_path(self) -> str:
+        """当前流路路径描述 🌊"""
         if self._current_position == 0:
-            flow_path = f"🚰 转移泵已连接 (位置 {self._current_position})"
-        else:
-            flow_path = f"🔌 端口 {self._current_position} 已连接 ({current_port})"
-        
-        # 删除debug日志：self.logger.debug(f"🌊 当前流路: {flow_path}")
-        return flow_path
+            return f"🚰 转移泵已连接 (位置 {self._current_position})"
+        return f"🔌 端口 {self._current_position} 已连接 ({self.current_port})"
 
     def __str__(self):
-        current_port = self.get_current_port()
+        current_port = self.current_port
         status_emoji = "✅" if self._status == "Idle" else "🔄" if self._status == "Busy" else "❌"
         
         return f"🔄 VirtualMultiwayValve({status_emoji} 位置: {self._current_position}/{self.max_positions}, 端口: {current_port}, 状态: {self._status})"
@@ -253,7 +252,7 @@ if __name__ == "__main__":
     
     print("🔄 === 虚拟九通阀门测试 === ✨")
     print(f"🏠 初始状态: {valve}")
-    print(f"🌊 当前流路: {valve.get_flow_path()}")
+    print(f"🌊 当前流路: {valve.flow_path}")
     
     # 切换到试剂瓶1（1号位）
     print(f"\n🔌 切换到1号位: {valve.set_position(1)}")

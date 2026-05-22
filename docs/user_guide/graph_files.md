@@ -463,7 +463,7 @@ Uni-Lab 使用 `ResourceDictInstance.get_resource_instance_from_dict()` 方法�
 ### 使用示例
 
 ```python
-from unilabos.ros.nodes.resource_tracker import ResourceDictInstance
+from unilabos.resources.resource_tracker import ResourceDictInstance
 
 # 旧格式节点
 old_format_node = {
@@ -477,10 +477,10 @@ old_format_node = {
 instance = ResourceDictInstance.get_resource_instance_from_dict(old_format_node)
 
 # 访问标准化后的数据
-print(instance.res_content.id)      # "pump_1"
-print(instance.res_content.uuid)    # 自动生成的 UUID
+print(instance.res_content.id)  # "pump_1"
+print(instance.res_content.uuid)  # 自动生成的 UUID
 print(instance.res_content.config)  # {}
-print(instance.res_content.data)    # {}
+print(instance.res_content.data)  # {}
 ```
 
 ### 格式迁移建议
@@ -626,7 +626,7 @@ unilab
 
 **云端图文件管理**:
 
-1. 登录 https://uni-lab.bohrium.com
+1. 登录 https://leap-lab.bohrium.com
 2. 进入"设备配置"
 3. 创建或编辑配置
 4. 保存到云端
@@ -857,4 +857,4 @@ class ResourceDictPosition(BaseModel):
 - 在 Web 界面中使用模板创建
 - 参考示例文件：`test/experiments/` 目录
 - 查看 ResourceDict 源码了解完整定义
-- [GitHub 讨论区](https://github.com/dptech-corp/Uni-Lab-OS/discussions)
+- [GitHub 讨论区](https://github.com/deepmodeling/Uni-Lab-OS/discussions)

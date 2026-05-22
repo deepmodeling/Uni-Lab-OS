@@ -11,6 +11,7 @@ from io import StringIO
 from typing import Iterable, Any, Dict, Type, TypeVar, Union
 
 import yaml
+from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
 from pydantic import BaseModel
 from dataclasses import asdict, is_dataclass
 
@@ -159,10 +160,14 @@ _msg_converter: Dict[Type, Any] = {
             else Pose()
         ),
         config=json.dumps(x.get("config", {})),
-        data=json.dumps(x.get("data", {})),
+        data=json.dumps(obtain_data_with_uuid(x)),
     ),
 }
 
+def obtain_data_with_uuid(x: dict):
+    data = x.get("data", {})
+    data["unilabos_uuid"] = x.get("uuid", None)
+    return data
 
 def json_or_yaml_loads(data: str) -> Any:
     try:
@@ -712,6 +717,19 @@ def ros_field_type_to_json_schema(
     # return {'type': 'object', 'description': f'未知类型: {field_type}'}
 
 
+def _strip_rosidl_descriptions(schema: Any) -> None:
+    """递归清除 rosidl_parser 自动生成的无意义 description（含内存地址）。"""
+    if isinstance(schema, dict):
+        desc = schema.get("description", "")
+        if isinstance(desc, str) and "rosidl_parser" in desc:
+            del schema["description"]
+        for v in schema.values():
+            _strip_rosidl_descriptions(v)
+    elif isinstance(schema, list):
+        for item in schema:
+            _strip_rosidl_descriptions(item)
+
+
 def ros_message_to_json_schema(msg_class: Any, field_name: str) -> Dict[str, Any]:
     """
     将 ROS 消息类转换为 JSON Schema
@@ -723,56 +741,23 @@ def ros_message_to_json_schema(msg_class: Any, field_name: str) -> Dict[str, Any
     Returns:
         对应的 JSON Schema 定义
     """
-    schema = {"type": "object", "properties": {}, "required": []}
-
-    # 优先使用字段名作为标题，否则使用类名
+    schema = ROS2MessageInstance(msg_class()).get_json_schema()
     schema["title"] = field_name
-
-    # 获取消息的字段和字段类型
-    try:
-        for ind, slot_info in enumerate(msg_class._fields_and_field_types.items()):
-            slot_name, slot_type = slot_info
-            type_info = msg_class.SLOT_TYPES[ind]
-            field_schema = ros_field_type_to_json_schema(type_info, slot_name)
-            schema["properties"][slot_name] = field_schema
-            schema["required"].append(slot_name)
-        # if hasattr(msg_class, 'get_fields_and_field_types'):
-        #     fields_and_types = msg_class.get_fields_and_field_types()
-        #
-        #     for field_name, field_type in fields_and_types.items():
-        #         # 将 ROS 字段类型转换为 JSON Schema
-        #         field_schema = ros_field_type_to_json_schema(field_type)
-        #
-        #         schema['properties'][field_name] = field_schema
-        #         schema['required'].append(field_name)
-        # elif hasattr(msg_class, '__slots__') and hasattr(msg_class, '_fields_and_field_types'):
-        #     # 直接从实例属性获取
-        #     for field_name in msg_class.__slots__:
-        #         # 移除前导下划线（如果有）
-        #         clean_name = field_name[1:] if field_name.startswith('_') else field_name
-        #
-        #         # 从 _fields_and_field_types 获取类型
-        #         if clean_name in msg_class._fields_and_field_types:
-        #             field_type = msg_class._fields_and_field_types[clean_name]
-        #             field_schema = ros_field_type_to_json_schema(field_type)
-        #
-        #             schema['properties'][clean_name] = field_schema
-        #             schema['required'].append(clean_name)
-    except Exception as e:
-        # 如果获取字段类型失败，添加错误信息
-        schema["description"] = f"解析消息字段时出错: {str(e)}"
-        logger.error(f"解析 {msg_class.__name__} 消息字段失败: {str(e)}")
-
+    schema.pop("description", None)
+    _strip_rosidl_descriptions(schema)
     return schema
 
 
-def ros_action_to_json_schema(action_class: Any, description="") -> Dict[str, Any]:
+def ros_action_to_json_schema(
+    action_class: Any, description="", previous_schema: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     将 ROS Action 类转换为 JSON Schema
 
     Args:
         action_class: ROS Action 类
         description: 描述
+        previous_schema: 之前的 schema，用于保留 goal/feedback/result 下一级字段的 description
 
     Returns:
         完整的 JSON Schema 定义
@@ -806,7 +791,44 @@ def ros_action_to_json_schema(action_class: Any, description="") -> Dict[str, An
         "required": ["goal"],
     }
 
+    _strip_rosidl_descriptions(schema)
+
+    # 保留之前 schema 中 goal/feedback/result 下一级字段的 description
+    if previous_schema:
+        _preserve_field_descriptions(schema, previous_schema)
+
     return schema
+
+
+def _preserve_field_descriptions(
+    new_schema: Dict[str, Any], previous_schema: Dict[str, Any]
+) -> None:
+    """
+    保留之前 schema 中 goal/feedback/result 下一级字段的 description 和 title
+
+    Args:
+        new_schema: 新生成的 schema（会被修改）
+        previous_schema: 之前的 schema
+    """
+    for section in ["goal", "feedback", "result"]:
+        new_section = new_schema.get("properties", {}).get(section, {})
+        prev_section = previous_schema.get("properties", {}).get(section, {})
+
+        if not new_section or not prev_section:
+            continue
+
+        new_props = new_section.get("properties", {})
+        prev_props = prev_section.get("properties", {})
+
+        for field_name, field_schema in new_props.items():
+            if field_name in prev_props:
+                prev_field = prev_props[field_name]
+                # 保留字段的 description
+                if "description" in prev_field and prev_field["description"]:
+                    field_schema["description"] = prev_field["description"]
+                # 保留字段的 title（用户自定义的中文名）
+                if "title" in prev_field and prev_field["title"]:
+                    field_schema["title"] = prev_field["title"]
 
 
 def convert_ros_action_to_jsonschema(

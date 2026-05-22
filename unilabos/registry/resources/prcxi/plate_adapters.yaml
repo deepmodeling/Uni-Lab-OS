@@ -9,7 +9,6 @@ PRCXI_30mm_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_Adapter:
   category:
@@ -22,7 +21,6 @@ PRCXI_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_Deep10_Adapter:
   category:
@@ -35,7 +33,6 @@ PRCXI_Deep10_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_Deep300_Adapter:
   category:
@@ -48,7 +45,6 @@ PRCXI_Deep300_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_PCR_Adapter:
   category:
@@ -61,7 +57,6 @@ PRCXI_PCR_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_Reservoir_Adapter:
   category:
@@ -74,7 +69,6 @@ PRCXI_Reservoir_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_Tip10_Adapter:
   category:
@@ -87,7 +81,6 @@ PRCXI_Tip10_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_Tip1250_Adapter:
   category:
@@ -100,7 +93,6 @@ PRCXI_Tip1250_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0
 PRCXI_Tip300_Adapter:
   category:
@@ -113,5 +105,4 @@ PRCXI_Tip300_Adapter:
   handles: []
   icon: ''
   init_param_schema: {}
-  registry_type: resource
   version: 1.0.0

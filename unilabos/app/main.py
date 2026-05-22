@@ -1,15 +1,25 @@
 import argparse
 import asyncio
 import os
+import platform
 import shutil
 import signal
+import subprocess
 import sys
 import threading
 import time
 from typing import Dict, Any, List
-
 import networkx as nx
 import yaml
+
+# Windows 中文系统 stdout 默认 GBK，无法编码 banner / emoji 日志中的 Unicode 字符
+# 强制 stdout/stderr 用 UTF-8，避免 print 触发 UnicodeEncodeError 导致进程崩溃
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except (AttributeError, OSError):
+            pass
 
 # 首先添加项目根目录到路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,8 +27,91 @@ unilabos_dir = os.path.dirname(os.path.dirname(current_dir))
 if unilabos_dir not in sys.path:
     sys.path.append(unilabos_dir)
 
+from unilabos.app.utils import cleanup_for_restart
 from unilabos.utils.banner_print import print_status, print_unilab_banner
 from unilabos.config.config import load_config, BasicConfig, HTTPConfig
+
+# Global restart flags (used by ws_client and web/server)
+_restart_requested: bool = False
+_restart_reason: str = ""
+
+RESTART_EXIT_CODE = 42
+
+
+def _build_child_argv():
+    """Build sys.argv for child process, stripping supervisor-only arguments."""
+    result = []
+    skip_next = False
+    for arg in sys.argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in ("--restart_mode", "--restart-mode"):
+            continue
+        if arg in ("--auto_restart_count", "--auto-restart-count"):
+            skip_next = True
+            continue
+        if arg.startswith("--auto_restart_count=") or arg.startswith("--auto-restart-count="):
+            continue
+        result.append(arg)
+    return result
+
+
+def _run_as_supervisor(max_restarts: int):
+    """
+    Supervisor process that spawns and monitors child processes.
+
+    Similar to Uvicorn's --reload: the supervisor itself does no heavy work,
+    it only launches the real process as a child and restarts it when the child
+    exits with RESTART_EXIT_CODE.
+    """
+    child_argv = [sys.executable] + _build_child_argv()
+    restart_count = 0
+
+    print_status(
+        f"[Supervisor] Restart mode enabled (max restarts: {max_restarts}), "
+        f"child command: {' '.join(child_argv)}",
+        "info",
+    )
+
+    while True:
+        print_status(
+            f"[Supervisor] Launching process (restart {restart_count}/{max_restarts})...",
+            "info",
+        )
+
+        try:
+            process = subprocess.Popen(child_argv)
+            exit_code = process.wait()
+        except KeyboardInterrupt:
+            print_status("[Supervisor] Interrupted, terminating child process...", "info")
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            sys.exit(1)
+
+        if exit_code == RESTART_EXIT_CODE:
+            restart_count += 1
+            if restart_count > max_restarts:
+                print_status(
+                    f"[Supervisor] Maximum restart count ({max_restarts}) reached, exiting",
+                    "warning",
+                )
+                sys.exit(1)
+            print_status(
+                f"[Supervisor] Child requested restart ({restart_count}/{max_restarts}), restarting in 2s...",
+                "info",
+            )
+            time.sleep(2)
+        else:
+            if exit_code != 0:
+                print_status(f"[Supervisor] Child exited with code {exit_code}", "warning")
+            else:
+                print_status("[Supervisor] Child exited normally", "info")
+            sys.exit(exit_code)
 
 
 def load_config_from_file(config_path):
@@ -60,6 +153,13 @@ def parse_args():
         default=None,
         action="append",
         help="Path to the registry directory",
+    )
+    parser.add_argument(
+        "--devices",
+        type=str,
+        default=None,
+        action="append",
+        help="Path to Python code directory for AST-based device/resource scanning",
     )
     parser.add_argument(
         "--working_dir",
@@ -142,7 +242,7 @@ def parse_args():
     parser.add_argument(
         "--addr",
         type=str,
-        default="https://uni-lab.bohrium.com/api/v1",
+        default="https://leap-lab.bohrium.com/api/v1",
         help="Laboratory backend address",
     )
     parser.add_argument(
@@ -151,10 +251,51 @@ def parse_args():
         help="Skip environment dependency check on startup",
     )
     parser.add_argument(
+        "--check_mode",
+        action="store_true",
+        default=False,
+        help="Run in check mode for CI: validates registry imports and ensures no file changes",
+    )
+    parser.add_argument(
         "--complete_registry",
         action="store_true",
         default=False,
-        help="Complete registry information",
+        help="Complete and rewrite YAML registry files using AST analysis results",
+    )
+    parser.add_argument(
+        "--no_update_feedback",
+        action="store_true",
+        help="Disable sending update feedback to server",
+    )
+    parser.add_argument(
+        "--test_mode",
+        action="store_true",
+        default=False,
+        help="Test mode: all actions simulate execution and return mock results without running real hardware",
+    )
+    parser.add_argument(
+        "--external_devices_only",
+        action="store_true",
+        default=False,
+        help="Only load external device packages (--devices), skip built-in unilabos/devices/ scanning and YAML device registry",
+    )
+    parser.add_argument(
+        "--extra_resource",
+        action="store_true",
+        default=False,
+        help="Load extra lab_ prefixed labware resources (529 auto-generated definitions from lab_resources.py)",
+    )
+    parser.add_argument(
+        "--restart_mode",
+        action="store_true",
+        default=False,
+        help="Enable supervisor mode: automatically restart the process when triggered via WebSocket",
+    )
+    parser.add_argument(
+        "--auto_restart_count",
+        type=int,
+        default=500,
+        help="Maximum number of automatic restarts in restart mode (default: 500)",
     )
     # workflow upload subcommand
     workflow_parser = subparsers.add_parser(
@@ -189,6 +330,12 @@ def parse_args():
         default=False,
         help="Whether to publish the workflow (default: False)",
     )
+    workflow_parser.add_argument(
+        "--description",
+        type=str,
+        default="",
+        help="Workflow description, used when publishing the workflow",
+    )
     return parser
 
 
@@ -200,69 +347,110 @@ def main():
     args = parser.parse_args()
     args_dict = vars(args)
 
+    # Supervisor mode: spawn child processes and monitor for restart
+    if args_dict.get("restart_mode", False):
+        _run_as_supervisor(args_dict.get("auto_restart_count", 5))
+        return
+
     # 环境检查 - 检查并自动安装必需的包 (可选)
-    if not args_dict.get("skip_env_check", False):
-        from unilabos.utils.environment_check import check_environment
+    skip_env_check = args_dict.get("skip_env_check", False)
+    check_mode = args_dict.get("check_mode", False)
+
+    if not skip_env_check:
+        from unilabos.utils.environment_check import check_environment, check_device_package_requirements
 
         if not check_environment(auto_install=True):
             print_status("环境检查失败，程序退出", "error")
             os._exit(1)
+
+        # 第一次设备包依赖检查：build_registry 之前，确保 import map 可用
+        devices_dirs_for_req = args_dict.get("devices", None)
+        if devices_dirs_for_req:
+            if not check_device_package_requirements(devices_dirs_for_req):
+                print_status("设备包依赖检查失败，程序退出", "error")
+                os._exit(1)
     else:
         print_status("跳过环境依赖检查", "warning")
 
     # 加载配置文件，优先加载config，然后从env读取
     config_path = args_dict.get("config")
-    if os.getcwd().endswith("unilabos_data"):
-        working_dir = os.path.abspath(os.getcwd())
-    else:
-        working_dir = os.path.abspath(os.path.join(os.getcwd(), "unilabos_data"))
 
-    if args_dict.get("working_dir"):
-        working_dir = args_dict.get("working_dir", "")
-        if config_path and not os.path.exists(config_path):
-            config_path = os.path.join(working_dir, "local_config.py")
-            if not os.path.exists(config_path):
-                print_status(
-                    f"当前工作目录 {working_dir} 未找到local_config.py，请通过 --config 传入 local_config.py 文件路径",
-                    "error",
-                )
-                os._exit(1)
+    # === 解析 working_dir ===
+    # 规则1: working_dir 传入 → 检测 unilabos_data 子目录，已是则不修改
+    # 规则2: 仅 config_path 传入 → 用其父目录作为 working_dir
+    # 规则4: 两者都传入 → 各用各的，但 working_dir 仍做 unilabos_data 子目录检测
+    raw_working_dir = args_dict.get("working_dir")
+    if raw_working_dir:
+        working_dir = os.path.abspath(raw_working_dir)
     elif config_path and os.path.exists(config_path):
-        working_dir = os.path.dirname(config_path)
-    elif os.path.exists(working_dir) and os.path.exists(os.path.join(working_dir, "local_config.py")):
-        config_path = os.path.join(working_dir, "local_config.py")
-    elif not config_path and (
-        not os.path.exists(working_dir) or not os.path.exists(os.path.join(working_dir, "local_config.py"))
-    ):
-        print_status(f"未指定config路径，可通过 --config 传入 local_config.py 文件路径", "info")
-        print_status(f"您是否为第一次使用？并将当前路径 {working_dir} 作为工作目录？ (Y/n)", "info")
-        if input() != "n":
-            os.makedirs(working_dir, exist_ok=True)
-            config_path = os.path.join(working_dir, "local_config.py")
-            shutil.copy(
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "example_config.py"), config_path
-            )
-            print_status(f"已创建 local_config.py 路径： {config_path}", "info")
+        working_dir = os.path.dirname(os.path.abspath(config_path))
+    else:
+        working_dir = os.path.abspath(os.getcwd())
+
+    # unilabos_data 子目录自动检测
+    if os.path.basename(working_dir) != "unilabos_data":
+        unilabos_data_sub = os.path.join(working_dir, "unilabos_data")
+        if os.path.isdir(unilabos_data_sub):
+            working_dir = unilabos_data_sub
+        elif not raw_working_dir and not (config_path and os.path.exists(config_path)):
+            # 未显式指定路径，默认使用 cwd/unilabos_data
+            working_dir = os.path.abspath(os.path.join(os.getcwd(), "unilabos_data"))
+
+    # === 解析 config_path ===
+    if config_path and not os.path.exists(config_path):
+        # config_path 传入但不存在，尝试在 working_dir 中查找
+        candidate = os.path.join(working_dir, "local_config.py")
+        if os.path.exists(candidate):
+            config_path = candidate
+            print_status(f"在工作目录中发现配置文件: {config_path}", "info")
         else:
+            print_status(
+                f"配置文件 {config_path} 不存在，工作目录 {working_dir} 中也未找到 local_config.py，"
+                f"请通过 --config 传入 local_config.py 文件路径",
+                "error",
+            )
             os._exit(1)
-    # 加载配置文件
+    elif not config_path:
+        # 规则3: 未传入 config_path，尝试 working_dir/local_config.py
+        candidate = os.path.join(working_dir, "local_config.py")
+        if os.path.exists(candidate):
+            config_path = candidate
+            print_status(f"发现本地配置文件: {config_path}", "info")
+        else:
+            print_status(f"未指定config路径，可通过 --config 传入 local_config.py 文件路径", "info")
+            print_status(f"您是否为第一次使用？并将当前路径 {working_dir} 作为工作目录？ (Y/n)", "info")
+            if check_mode or input() != "n":
+                os.makedirs(working_dir, exist_ok=True)
+                config_path = os.path.join(working_dir, "local_config.py")
+                shutil.copy(
+                    os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "example_config.py"),
+                    config_path,
+                )
+                print_status(f"已创建 local_config.py 路径： {config_path}", "info")
+            else:
+                os._exit(1)
+
+    # 加载配置文件 (check_mode 跳过)
     print_status(f"当前工作目录为 {working_dir}", "info")
-    load_config_from_file(config_path)
+    if not check_mode:
+        load_config_from_file(config_path)
 
     # 根据配置重新设置日志级别
     from unilabos.utils.log import configure_logger, logger
 
     if hasattr(BasicConfig, "log_level"):
         logger.info(f"Log level set to '{BasicConfig.log_level}' from config file.")
-    configure_logger(loglevel=BasicConfig.log_level, working_dir=working_dir)
+    file_path = configure_logger(loglevel=BasicConfig.log_level, working_dir=working_dir)
+    if file_path is not None:
+        logger.info(f"[LOG_FILE] {file_path}")
 
     if args.addr != parser.get_default("addr"):
         if args.addr == "test":
             print_status("使用测试环境地址", "info")
-            HTTPConfig.remote_addr = "https://uni-lab.test.bohrium.com/api/v1"
+            HTTPConfig.remote_addr = "https://leap-lab.test.bohrium.com/api/v1"
         elif args.addr == "uat":
             print_status("使用uat环境地址", "info")
-            HTTPConfig.remote_addr = "https://uni-lab.uat.bohrium.com/api/v1"
+            HTTPConfig.remote_addr = "https://leap-lab.uat.bohrium.com/api/v1"
         elif args.addr == "local":
             print_status("使用本地环境地址", "info")
             HTTPConfig.remote_addr = "http://127.0.0.1:48197/api/v1"
@@ -297,41 +485,67 @@ def main():
     BasicConfig.is_host_mode = not args_dict.get("is_slave", False)
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
     BasicConfig.upload_registry = args_dict.get("upload_registry", False)
+    BasicConfig.no_update_feedback = args_dict.get("no_update_feedback", False)
+    BasicConfig.test_mode = args_dict.get("test_mode", False)
+    if BasicConfig.test_mode:
+        print_status("启用测试模式：所有动作将模拟执行，不调用真实硬件", "warning")
+    BasicConfig.extra_resource = args_dict.get("extra_resource", False)
+    if BasicConfig.extra_resource:
+        print_status("启用额外资源加载：将加载lab_开头的labware资源定义", "info")
     BasicConfig.communication_protocol = "websocket"
-    machine_name = os.popen("hostname").read().strip()
+    machine_name = platform.node()
     machine_name = "".join([c if c.isalnum() or c == "_" else "_" for c in machine_name])
     BasicConfig.machine_name = machine_name
     BasicConfig.vis_2d_enable = args_dict["2d_vis"]
+    BasicConfig.check_mode = check_mode
 
-    from unilabos.resources.graphio import (
-        read_node_link_json,
-        read_graphml,
-        dict_from_graph,
-    )
-    from unilabos.app.communication import get_communication_client
     from unilabos.registry.registry import build_registry
-    from unilabos.app.backend import start_backend
-    from unilabos.app.web import http_client
-    from unilabos.app.web import start_server
-    from unilabos.app.register import register_devices_and_resources
-    from unilabos.resources.graphio import modify_to_backend_format
-    from unilabos.ros.nodes.resource_tracker import ResourceTreeSet, ResourceDict
 
     # 显示启动横幅
     print_unilab_banner(args_dict)
 
-    # 注册表
+    # Step 0: AST 分析优先 + YAML 注册表加载
+    # check_mode 和 upload_registry 都会执行实际 import 验证
+    devices_dirs = args_dict.get("devices", None)
+    complete_registry = args_dict.get("complete_registry", False) or check_mode
+    external_only = args_dict.get("external_devices_only", False)
     lab_registry = build_registry(
-        args_dict["registry_path"], args_dict.get("complete_registry", False), BasicConfig.upload_registry
+        registry_paths=args_dict["registry_path"],
+        devices_dirs=devices_dirs,
+        upload_registry=BasicConfig.upload_registry,
+        check_mode=check_mode,
+        complete_registry=complete_registry,
+        external_only=external_only,
     )
 
+    # Check mode: 注册表验证完成后直接退出
+    if check_mode:
+        device_count = len(lab_registry.device_type_registry)
+        resource_count = len(lab_registry.resource_type_registry)
+        print_status(f"Check mode: 注册表验证完成 ({device_count} 设备, {resource_count} 资源)，退出", "info")
+        os._exit(0)
+
+    # 以下导入依赖 ROS2 环境，check_mode 已退出不需要
+    from unilabos.resources.graphio import (
+        read_node_link_json,
+        read_graphml,
+        dict_from_graph,
+        modify_to_backend_format,
+    )
+    from unilabos.app.communication import get_communication_client
+    from unilabos.app.backend import start_backend
+    from unilabos.app.web import http_client
+    from unilabos.app.web import start_server
+    from unilabos.app.register import register_devices_and_resources
+    from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDict
+
+    # Step 1: 上传全部注册表到服务端，同步保存到 unilabos_data
     if BasicConfig.upload_registry:
-        # 设备注册到服务端 - 需要 ak 和 sk
         if BasicConfig.ak and BasicConfig.sk:
-            print_status("开始注册设备到服务端...", "info")
+            # print_status("开始注册设备到服务端...", "info")
             try:
                 register_devices_and_resources(lab_registry)
-                print_status("设备注册完成", "info")
+                # print_status("设备注册完成", "info")
             except Exception as e:
                 print_status(f"设备注册失败: {e}", "error")
         else:
@@ -348,7 +562,7 @@ def main():
         os._exit(0)
 
     if not BasicConfig.ak or not BasicConfig.sk:
-        print_status("后续运行必须拥有一个实验室，请前往 https://uni-lab.bohrium.com 注册实验室！", "warning")
+        print_status("后续运行必须拥有一个实验室，请前往 https://leap-lab.bohrium.com 注册实验室！", "warning")
         os._exit(1)
     graph: nx.Graph
     resource_tree_set: ResourceTreeSet
@@ -416,11 +630,15 @@ def main():
             continue
 
     # 如果从远端获取了物料信息，则与本地物料进行同步
-    if request_startup_json and "nodes" in request_startup_json:
+    if file_path is not None and request_startup_json and "nodes" in request_startup_json:
         print_status("开始同步远端物料到本地...", "info")
-        remote_tree_set = ResourceTreeSet.from_raw_list(request_startup_json["nodes"])
+        remote_tree_set = ResourceTreeSet.from_raw_dict_list(request_startup_json["nodes"])
         resource_tree_set.merge_remote_resources(remote_tree_set)
         print_status("远端物料同步完成", "info")
+
+    # 第二次设备包依赖检查：云端物料同步后，community 包可能引入新的 requirements
+    # TODO: 当 community device package 功能上线后，在这里调用
+    #   install_requirements_txt(community_pkg_path / "requirements.txt", label="community.xxx")
 
     # 使用 ResourceTreeSet 代替 list
     args_dict["resources_config"] = resource_tree_set
@@ -497,16 +715,26 @@ def main():
                 time.sleep(1)
         else:
             start_backend(**args_dict)
-            start_server(
+            restart_requested = start_server(
                 open_browser=not args_dict["disable_browser"],
                 port=BasicConfig.port,
             )
+            if restart_requested:
+                print_status("[Main] Restart requested, cleaning up...", "info")
+                cleanup_for_restart()
+                return
     else:
         start_backend(**args_dict)
-        start_server(
+
+        # 启动服务器（默认支持WebSocket触发重启）
+        restart_requested = start_server(
             open_browser=not args_dict["disable_browser"],
             port=BasicConfig.port,
         )
+        if restart_requested:
+            print_status("[Main] Restart requested, cleaning up...", "info")
+            cleanup_for_restart()
+            os._exit(RESTART_EXIT_CODE)
 
 
 if __name__ == "__main__":

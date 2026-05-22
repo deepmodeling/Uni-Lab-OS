@@ -12,7 +12,7 @@ Uni-Lab 使用 Python 格式的配置文件（`.py`），默认为 `unilabos_dat
 
 **获取方式：**
 
-进入 [Uni-Lab 实验室](https://uni-lab.bohrium.com)，点击左下角的头像，在实验室详情中获取所在实验室的 ak 和 sk：
+进入 [Uni-Lab 实验室](https://leap-lab.bohrium.com)，点击左下角的头像，在实验室详情中获取所在实验室的 ak 和 sk：
 
 ![copy_aksk.gif](image/copy_aksk.gif)
 
@@ -69,7 +69,7 @@ class WSConfig:
 
 # HTTP配置
 class HTTPConfig:
-    remote_addr = "https://uni-lab.bohrium.com/api/v1"  # 远程服务器地址
+    remote_addr = "https://leap-lab.bohrium.com/api/v1"  # 远程服务器地址
 
 # ROS配置
 class ROSConfig:
@@ -209,8 +209,8 @@ unilab --ak "key" --sk "secret" --addr "test" --upload_registry --2d_vis -g grap
 
 `--addr` 参数支持以下预设值，会自动转换为对应的完整 URL：
 
-- `test` → `https://uni-lab.test.bohrium.com/api/v1`
-- `uat` → `https://uni-lab.uat.bohrium.com/api/v1`
+- `test` → `https://leap-lab.test.bohrium.com/api/v1`
+- `uat` → `https://leap-lab.uat.bohrium.com/api/v1`
 - `local` → `http://127.0.0.1:48197/api/v1`
 - 其他值 → 直接使用作为完整 URL
 
@@ -248,7 +248,7 @@ unilab --ak "key" --sk "secret" --addr "test" --upload_registry --2d_vis -g grap
 
 `ak` 和 `sk` 是必需的认证参数：
 
-1. **获取方式**：在 [Uni-Lab 官网](https://uni-lab.bohrium.com) 注册实验室后获得
+1. **获取方式**：在 [Uni-Lab 官网](https://leap-lab.bohrium.com) 注册实验室后获得
 2. **配置方式**：
    - **命令行参数**：`--ak "your_key" --sk "your_secret"`（最高优先级，推荐）
    - **环境变量**：`UNILABOS_BASICCONFIG_AK` 和 `UNILABOS_BASICCONFIG_SK`
@@ -275,15 +275,15 @@ WebSocket 是 Uni-Lab 的主要通信方式：
 
 HTTP 客户端配置用于与云端服务通信：
 
-| 参数          | 类型 | 默认值                                 | 说明         |
-| ------------- | ---- | -------------------------------------- | ------------ |
-| `remote_addr` | str  | `"https://uni-lab.bohrium.com/api/v1"` | 远程服务地址 |
+| 参数          | 类型 | 默认值                                  | 说明         |
+| ------------- | ---- | --------------------------------------- | ------------ |
+| `remote_addr` | str  | `"https://leap-lab.bohrium.com/api/v1"` | 远程服务地址 |
 
 **预设环境地址**：
 
-- 生产环境：`https://uni-lab.bohrium.com/api/v1`（默认）
-- 测试环境：`https://uni-lab.test.bohrium.com/api/v1`
-- UAT 环境：`https://uni-lab.uat.bohrium.com/api/v1`
+- 生产环境：`https://leap-lab.bohrium.com/api/v1`（默认）
+- 测试环境：`https://leap-lab.test.bohrium.com/api/v1`
+- UAT 环境：`https://leap-lab.uat.bohrium.com/api/v1`
 - 本地环境：`http://127.0.0.1:48197/api/v1`
 
 ### 4. ROSConfig - ROS 配置
@@ -401,7 +401,7 @@ export UNILABOS_WSCONFIG_RECONNECT_INTERVAL="10"
 export UNILABOS_WSCONFIG_MAX_RECONNECT_ATTEMPTS="500"
 
 # 设置HTTP配置
-export UNILABOS_HTTPCONFIG_REMOTE_ADDR="https://uni-lab.test.bohrium.com/api/v1"
+export UNILABOS_HTTPCONFIG_REMOTE_ADDR="https://leap-lab.test.bohrium.com/api/v1"
 ```
 
 ## 配置文件使用方法
@@ -484,13 +484,13 @@ export UNILABOS_WSCONFIG_MAX_RECONNECT_ATTEMPTS=100
 
 ```python
 class HTTPConfig:
-    remote_addr = "https://uni-lab.test.bohrium.com/api/v1"
+    remote_addr = "https://leap-lab.test.bohrium.com/api/v1"
 ```
 
 **环境变量方式：**
 
 ```bash
-export UNILABOS_HTTPCONFIG_REMOTE_ADDR=https://uni-lab.test.bohrium.com/api/v1
+export UNILABOS_HTTPCONFIG_REMOTE_ADDR=https://leap-lab.test.bohrium.com/api/v1
 ```
 
 **命令行方式（推荐）：**

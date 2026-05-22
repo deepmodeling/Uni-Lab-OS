@@ -13,7 +13,7 @@ from pylabrobot.resources import (
 import copy
 from unilabos_msgs.msg import Resource
 
-from unilabos.ros.nodes.resource_tracker import DeviceNodeResourceTracker  # type: ignore
+from unilabos.resources.resource_tracker import DeviceNodeResourceTracker  # type: ignore
 
 
 class LiquidHandlerBiomek:

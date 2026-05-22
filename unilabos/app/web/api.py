@@ -1052,7 +1052,7 @@ async def handle_file_import(websocket: WebSocket, request_data: dict):
                                 "result": {},
                                 "schema": lab_registry._generate_unilab_json_command_schema(v["args"], k),
                                 "goal_default": {i["name"]: i["default"] for i in v["args"]},
-                                "handles": [],
+                                "handles": {},
                             }
                             # 不生成已配置action的动作
                             for k, v in enhanced_info["action_methods"].items()
@@ -1340,5 +1340,5 @@ def setup_api_routes(app):
     # 启动广播任务
     @app.on_event("startup")
     async def startup_event():
-        asyncio.create_task(broadcast_device_status())
-        asyncio.create_task(broadcast_status_page_data())
+        asyncio.create_task(broadcast_device_status(), name="web-api-startup-device")
+        asyncio.create_task(broadcast_status_page_data(), name="web-api-startup-status")

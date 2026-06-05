@@ -29,6 +29,13 @@ def test_worker_parse_args_defaults():
     assert args.scene is None
     assert args.camera == "/World/Camera"
     assert args.rpc_timeout_s == 600.0
+    assert args.joint_control_ui is False
+
+
+def test_worker_parse_args_accepts_joint_control_ui():
+    args = worker.parse_args(["--joint-control-ui"])
+
+    assert args.joint_control_ui is True
 
 
 def test_worker_state_dispatches_to_controller():

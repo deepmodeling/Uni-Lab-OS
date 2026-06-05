@@ -345,6 +345,87 @@ def build_argparser():
         help="Physics backend RPC timeout in seconds.",
     )
     parser.add_argument(
+        "--isaac_managed",
+        action="store_true",
+        default=False,
+        help="Start and own an Isaac worker process before connecting --physics isaac.",
+    )
+    parser.add_argument(
+        "--isaac_host",
+        type=str,
+        default="127.0.0.1",
+        help="Host for the managed Isaac worker HTTP server.",
+    )
+    parser.add_argument(
+        "--isaac_port",
+        type=int,
+        default=8091,
+        help="Port for the managed Isaac worker HTTP server.",
+    )
+    parser.add_argument(
+        "--isaac_conda_env",
+        type=str,
+        default=None,
+        help="Optional conda environment used to launch the managed Isaac worker.",
+    )
+    parser.add_argument(
+        "--isaac_conda_executable",
+        type=str,
+        default="conda",
+        help="Conda executable used when --isaac_conda_env is set.",
+    )
+    parser.add_argument(
+        "--isaac_python",
+        type=str,
+        default="python",
+        help="Python executable used to launch the managed Isaac worker.",
+    )
+    parser.add_argument(
+        "--isaac_log_path",
+        type=str,
+        default=None,
+        help="Optional log path for managed Isaac worker stdout/stderr.",
+    )
+    parser.add_argument(
+        "--isaac_start_timeout",
+        type=float,
+        default=120.0,
+        help="Seconds to wait for the managed Isaac worker /health endpoint.",
+    )
+    parser.add_argument(
+        "--isaac_headless",
+        "--isaac-headless",
+        dest="isaac_headless",
+        action="store_true",
+        default=True,
+        help="Run the managed Isaac worker in headless mode.",
+    )
+    parser.add_argument(
+        "--no_isaac_headless",
+        "--no-isaac-headless",
+        dest="isaac_headless",
+        action="store_false",
+        help="Run the managed Isaac worker with GUI mode enabled.",
+    )
+    parser.add_argument(
+        "--isaac_camera",
+        type=str,
+        default="/World/Camera",
+        help="Camera prim path passed to the managed Isaac worker.",
+    )
+    parser.add_argument(
+        "--isaac_rpc_timeout_s",
+        type=float,
+        default=600.0,
+        help="Worker-side RPC timeout for managed Isaac dispatch.",
+    )
+    parser.add_argument(
+        "--isaac_joint_control_ui",
+        action="store_true",
+        default=False,
+        help="Show the managed Isaac worker joint control panel inside Isaac Sim.",
+    )
+    parser.add_argument(
         "--disable_query_api",
         action="store_true",
         default=False,

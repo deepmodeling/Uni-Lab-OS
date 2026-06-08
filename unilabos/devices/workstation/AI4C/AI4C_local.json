@@ -1,0 +1,23 @@
+{
+  "nodes": [
+    {
+      "id": "AI4C_station",
+      "name": "AI4C_station",
+      "parent": null,
+      "type": "device",
+      "class": "AI4C_station",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "config": {
+        "url": "opc.tcp://127.0.0.1:49320",
+        "csv_path": "/opt/unilabos/ai4c-yifeng/Uni-Lab-OS-xyf1/unilabos/devices/workstation/AI4C/ai4c_sim_updated_local.csv"
+      },
+      "data": {},
+      "children": []
+    }
+  ],
+  "links": []
+}

@@ -1,0 +1,75 @@
+{
+  "name": "robot",
+  "nodes": [
+    {
+      "uuid": "place_to_pipetting",
+      "name": "auto-place_well_plate_to_pipetting_station",
+      "device_name": "AI4C_robot_arm",
+      "param": {}
+    },
+    {
+      "uuid": "pick_from_pipetting",
+      "name": "auto-pick_well_plate_from_pipetting_station",
+      "device_name": "AI4C_robot_arm",
+      "param": {}
+    },
+    {
+      "uuid": "place_to_magnetic_stirrer",
+      "name": "auto-place_well_plate_to_magnetic_stirrer",
+      "device_name": "AI4C_robot_arm",
+      "param": {}
+    },
+    {
+      "uuid": "pick_from_magnetic_stirrer",
+      "name": "auto-pick_well_plate_from_magnetic_stirrer",
+      "device_name": "AI4C_robot_arm",
+      "param": {}
+    },
+    {
+      "uuid": "place_to_hplc",
+      "name": "auto-place_well_plate_to_hplc_station",
+      "device_name": "AI4C_robot_arm",
+      "param": {}
+    },
+    {
+      "uuid": "pick_from_hplc",
+      "name": "auto-pick_well_plate_from_hplc_station",
+      "device_name": "AI4C_robot_arm",
+      "param": {}
+    },
+    {
+      "uuid": "place_to_unloading_rack",
+      "name": "auto-place_well_plate_to_unloading_rack",
+      "device_name": "AI4C_robot_arm",
+      "param": {
+        "position": 1
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source_node_uuid": "place_to_pipetting",
+      "target_node_uuid": "pick_from_pipetting"
+    },
+    {
+      "source_node_uuid": "pick_from_pipetting",
+      "target_node_uuid": "place_to_magnetic_stirrer"
+    },
+    {
+      "source_node_uuid": "place_to_magnetic_stirrer",
+      "target_node_uuid": "pick_from_magnetic_stirrer"
+    },
+    {
+      "source_node_uuid": "pick_from_magnetic_stirrer",
+      "target_node_uuid": "place_to_hplc"
+    },
+    {
+      "source_node_uuid": "place_to_hplc",
+      "target_node_uuid": "pick_from_hplc"
+    },
+    {
+      "source_node_uuid": "pick_from_hplc",
+      "target_node_uuid": "place_to_unloading_rack"
+    }
+  ]
+}

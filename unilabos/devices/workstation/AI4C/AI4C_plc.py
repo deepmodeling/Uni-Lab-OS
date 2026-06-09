@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.utils.log import logger
-from unilabos.devices.workstation.AI4M.base_opcua_client import OpcUaClientWithSubscription
+from unilabos.devices.workstation.AI4C.base_opcua_client import OpcUaClientWithSubscription
 
 
 AI4C_PLC_STATUS_NODES = {

@@ -376,6 +376,34 @@ class HTTPClient:
                 logger.error(f"响应内容: {response.text}")
         return None
 
+    def resolve_community_packages(
+        self,
+        classes: List[str],
+        current_packages: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        根据 graph 中的 community.* class 解析需要加载的社区设备包。
+        """
+        payload = {
+            "classes": classes,
+            "machine_name": BasicConfig.machine_name,
+            "current_packages": current_packages or [],
+        }
+        req_path = os.path.join(BasicConfig.working_dir, "req_community_package_resolve.json")
+        with open(req_path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False, indent=4))
+        response = self._session.post(
+            f"{self.remote_addr}/lab/square/community-packages/resolve",
+            json=payload,
+            headers={"Authorization": f"Lab {self.auth}"},
+            timeout=(5, 30),
+        )
+        res_path = os.path.join(BasicConfig.working_dir, "res_community_package_resolve.json")
+        with open(res_path, "w", encoding="utf-8") as f:
+            f.write(f"{response.status_code}" + "\n" + response.text)
+        response.raise_for_status()
+        return response.json()
+
     def workflow_import(
         self,
         name: str,

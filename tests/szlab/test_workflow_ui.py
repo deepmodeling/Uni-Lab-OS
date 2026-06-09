@@ -3,6 +3,7 @@ import pytest
 from unilabos.szlab.run_workflow_local import (
     WorkflowLogger,
     WorkflowNode,
+    _load_class,
     collect_snapshot_variables,
     load_runtime_config,
     run_nodes,
@@ -28,6 +29,35 @@ def test_load_ai4c_preset():
     assert preset.target_device_id == "AI4C_robot_arm"
     assert preset.default_config["graph"] == "__generated__"
     assert "pick_well_plate_from_loading_rack" in preset.actions
+
+
+def test_load_ai4c_preset_uses_registry_actions_from_formal_device():
+    preset = load_preset("ai4c")
+
+    assert list(preset.actions) == [
+        "pick_well_plate_from_loading_rack",
+        "place_well_plate_to_pipetting_station",
+        "pick_well_plate_from_pipetting_station",
+        "place_well_plate_to_magnetic_stirrer",
+        "pick_well_plate_from_magnetic_stirrer",
+        "place_well_plate_to_hplc_station",
+        "pick_well_plate_from_hplc_station",
+        "place_well_plate_to_unloading_rack",
+    ]
+    action = preset.actions["pick_well_plate_from_loading_rack"]
+    assert action.label == "步骤2：从上料架抓取孔板"
+    assert action.description == "步骤2：从上料架抓取孔板"
+    assert action.params == [
+        {
+            "name": "position",
+            "label": "上料架位置",
+            "description": "孔板所在上料架位置，范围 1-8",
+            "type": "integer",
+            "min": 1,
+            "max": 8,
+            "default": 1,
+        }
+    ]
 
 
 def test_load_preset_accepts_json_path(tmp_path):
@@ -73,6 +103,17 @@ def test_example_preset_uses_szlab_local_action_class():
 
     assert runtime_config.device_factory.target_class == "unilabos.szlab.example.ai4c_actions.ExampleAI4CActions"
     assert "pick_well_plate_from_loading_rack" in preset.actions
+
+
+def test_example_runtime_device_classes_are_importable():
+    preset = load_preset("example/ai4c_preset.json")
+    runtime_config = _load_preset_runtime_config(preset)
+
+    plc_class = _load_class(runtime_config.device_factory.plc_class)
+    target_class = _load_class(runtime_config.device_factory.target_class)
+
+    assert plc_class.__name__ == "AI4CPLCDevice"
+    assert target_class.__name__ == "ExampleAI4CActions"
 
 
 def test_build_linear_workflow_creates_nodes_and_ordered_edges():

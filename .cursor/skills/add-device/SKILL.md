@@ -109,10 +109,10 @@ from unilabos.registry.decorators import device
 
 # 单设备
 @device(
-    id="my_device.vendor",           # 注册表唯一标识（必填）
+    id="my_device_vendor",           # 注册表唯一标识（必填，只能包含英文、数字、下划线）
     category=["temperature"],         # 分类标签列表（必填）
     description="设备描述",            # 设备描述
-    display_name="显示名称",           # UI 显示名称（默认用 id）
+    displayname="显示名称",            # UI 显示名称（默认用 id）
     icon="DeviceIcon.webp",           # 图标文件名
     version="1.0.0",                  # 版本号
     device_type="python",             # "python" 或 "ros2"
@@ -123,14 +123,19 @@ from unilabos.registry.decorators import device
 
 # 多设备（同一个类注册多个设备 ID，各自有不同的 handles 等配置）
 @device(
-    ids=["pump.vendor.model_A", "pump.vendor.model_B"],
+    ids=["pump_vendor_model_A", "pump_vendor_model_B"],
     id_meta={
-        "pump.vendor.model_A": {"handles": [...], "description": "型号 A"},
-        "pump.vendor.model_B": {"handles": [...], "description": "型号 B"},
+        "pump_vendor_model_A": {"handles": [...], "description": "型号 A", "displayname": "泵型号 A"},
+        "pump_vendor_model_B": {"handles": [...], "description": "型号 B", "displayname": "泵型号 B"},
     },
     category=["pump_and_valve"],
 )
 ```
+
+**ID 与显示名规则：**
+- `id` / `ids` 是注册表稳定标识，只能包含英文大小写字母、数字、下划线，推荐格式为 `vendor_model` 或 `category_vendor_model`。
+- `id` / `ids` 不能包含中文、空格、短横线、点号或其他符号；不要把中文设备名放进 id。
+- 中文名、品牌型号展示名、UI 友好名称使用 `displayname`，不要塞进 `id`。
 
 ### @action — 动作方法装饰器
 
@@ -239,23 +244,34 @@ from unilabos.registry.decorators import action, device, not_action, topic_confi
     id="my_device",
     category=["my_category"],
     description="设备描述",
-    display_name="设备显示名",
+    displayname="设备显示名",
 )
 class MyDevice:
     """设备类说明。"""
 
     _ros_node: BaseROS2DeviceNode
 
-    def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        port: str = "COM1",
+        baudrate: int = 9600,
+        timeout: float = 1.0,
+        **kwargs,
+    ):
         """
         初始化设备。
 
         Args:
             device_id[设备ID]: 设备实例 ID，默认使用 my_device。
-            config[设备配置]: 设备启动配置。
+            port[串口]: 设备串口号，例如 COM1 或 /dev/ttyUSB0。
+            baudrate[波特率]: 串口波特率。
+            timeout[超时时间(s)]: 通信超时时间，单位秒。
         """
         self.device_id = device_id or "my_device"
-        self.config = config or {}
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
         self.logger = logging.getLogger(f"MyDevice.{self.device_id}")
         self.data: Dict[str, Any] = {"status": "Idle"}
 
@@ -302,7 +318,8 @@ class MyDevice:
 ### 要点
 
 - `_ros_node: BaseROS2DeviceNode` 类型标注放在类体顶部
-- `__init__` 签名固定为 `(self, device_id=None, config=None, **kwargs)`
+- `__init__` 中需要现场配置的参数按基础类型显式展开，例如 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool`；不要把所有配置塞进单个 `config: dict`
+- `__init__` 保留 `device_id` 和 `**kwargs` 兼容运行时注入，但不要把 `**kwargs` 当成主要配置入口
 - `post_init` 用 `@not_action` 标记，参数类型标注为 `BaseROS2DeviceNode`
 - 运行时状态存储在 `self.data` 字典中
 - 设备文件放在 `unilabos/devices/<category>/` 目录下
@@ -370,9 +387,8 @@ SDK 封装：
 from my_device_sdk import DeviceController
 
 class MyDevice:
-    def __init__(self, device_id=None, config=None, **kwargs):
-        self.config = config or {}
-        self.controller = DeviceController(port=self.config.get("port", "COM1"))
+    def __init__(self, device_id=None, port: str = "COM1", timeout: float = 1.0, **kwargs):
+        self.controller = DeviceController(port=port, timeout=timeout)
 ```
 
 ---
@@ -396,7 +412,7 @@ unilab --check_mode --skip_env_check
 
 ## 图文件节点模板
 
-实验图 JSON 中的 `class` 对应 `@device(id=...)`，`config` 会传入 `__init__` 的 `config` 字典：
+实验图 JSON 中的 `class` 对应 `@device(id=...)`。`config` 中的字段应对应 `__init__` 的同名基础类型参数，不要只定义一个 `config: dict` 参数承载所有配置：
 
 ```json
 {
@@ -449,6 +465,7 @@ unilab --check_mode --skip_env_check
 ## 常见错误清单
 
 - 缺少 `@device`：设备不会被 AST 扫描发现。
+- `@device(id=...)` 使用中文、点号、短横线或空格：id 必须只包含英文、数字、下划线，显示名称用 `displayname`。
 - 只有 `@property` 没有 `@topic_config()`：属性不会稳定广播到 `status_types`。
 - `post_init` 没有 `@not_action`：会被误暴露为动作。
 - `self.data = {}`：空字典会导致属性读取和 schema 初始数据不稳定，必须预填充每个状态键。

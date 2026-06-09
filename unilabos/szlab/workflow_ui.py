@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import threading
 import uuid
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from unilabos.registry.ast_registry_scanner import scan_directory
 from unilabos.szlab.run_workflow_local import (
     ROBOT_ARM_DEVICE_ID,
     RuntimeConfig,
@@ -68,27 +71,132 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
     else:
         preset_path = PRESET_DIR / f"{name}.json"
     data = json.loads(preset_path.read_text(encoding="utf-8"))
-    actions = {
-        item["method"]: ActionSpec(
-            method=item["method"],
-            label=item.get("label", item["method"]),
-            description=item.get("description", ""),
-            params=item.get("params", []),
-        )
-        for item in data.get("actions", [])
-    }
+    target_device_id = data.get("target_device_id", ROBOT_ARM_DEVICE_ID)
+    path_roots = data.get("path_roots", ["unilabos/szlab"])
+    if data.get("actions_source") == "registry":
+        actions = _load_registry_actions(target_device_id, path_roots, preset_path.parent)
+    else:
+        actions = {
+            item["method"]: ActionSpec(
+                method=item["method"],
+                label=item.get("label", item["method"]),
+                description=item.get("description", ""),
+                params=item.get("params", []),
+            )
+            for item in data.get("actions", [])
+        }
     return WorkflowPreset(
         id=data["id"],
         title=data.get("title", "szlab 本地调试工具"),
-        target_device_id=data.get("target_device_id", ROBOT_ARM_DEVICE_ID),
+        target_device_id=target_device_id,
         runtime_config=data.get("runtime_config"),
         default_workflow_name=data.get("default_workflow_name", "szlab_canvas_workflow"),
         default_config=data.get("default_config", {}),
-        path_roots=data.get("path_roots", ["unilabos/szlab"]),
+        path_roots=path_roots,
         device_graph=data.get("device_graph", {"nodes": [], "links": []}),
         actions=actions,
         base_dir=preset_path.parent,
     )
+
+
+def _load_registry_actions(device_id: str, path_roots: list[str], base_dir: Path) -> dict[str, ActionSpec]:
+    repo_root = Path(__file__).resolve().parents[2]
+    with ThreadPoolExecutor(max_workers=4, thread_name_prefix="SzlabRegistryScan") as executor:
+        for root in path_roots:
+            root_path = _resolve_registry_scan_root(root, base_dir, repo_root)
+            if not root_path.exists():
+                continue
+            scan_result = scan_directory(root_path, python_path=repo_root, executor=executor)
+            device_meta = scan_result.get("devices", {}).get(device_id)
+            if device_meta:
+                return _actions_from_ast_device_meta(device_meta)
+    raise ValueError(f"无法从 registry AST 扫描找到设备动作: {device_id}")
+
+
+def _resolve_registry_scan_root(root: str, base_dir: Path, repo_root: Path) -> Path:
+    candidate = Path(root)
+    if candidate.is_absolute():
+        return candidate
+    repo_candidate = repo_root / candidate
+    if repo_candidate.exists():
+        return repo_candidate
+    return base_dir / candidate
+
+
+def _actions_from_ast_device_meta(device_meta: dict[str, Any]) -> dict[str, ActionSpec]:
+    actions: dict[str, ActionSpec] = {}
+    for method, method_info in device_meta.get("actions", {}).items():
+        action_args = method_info.get("action_args") or {}
+        description = action_args.get("description") or method
+        actions[method] = ActionSpec(
+            method=method,
+            label=description,
+            description=description,
+            params=_params_from_ast_action(method_info),
+        )
+    for method, method_info in device_meta.get("auto_methods", {}).items():
+        actions.setdefault(
+            method,
+            ActionSpec(
+                method=method,
+                label=method,
+                description=method_info.get("docstring") or "",
+                params=_params_from_ast_action(method_info),
+            ),
+        )
+    return actions
+
+
+def _params_from_ast_action(method_info: dict[str, Any]) -> list[dict[str, Any]]:
+    action_args = method_info.get("action_args") or {}
+    handles = action_args.get("handles") or []
+    params = []
+    for param in method_info.get("params", []):
+        name = param.get("name")
+        if not name:
+            continue
+        handle = _find_action_handle_for_param(handles, name)
+        item = {
+            "name": name,
+            "label": (handle or {}).get("label") or name,
+            "type": _json_type_from_python_type(param.get("type")),
+        }
+        description = (handle or {}).get("description")
+        if description:
+            item["description"] = description
+            item.update(_range_from_description(description))
+        if not param.get("required", False) and "default" in param:
+            item["default"] = param.get("default")
+        params.append(item)
+    return params
+
+
+def _range_from_description(description: str) -> dict[str, int]:
+    match = re.search(r"范围\s*[\[（(]?\s*(-?\d+)\s*[-~到,，]\s*(-?\d+)", description)
+    if not match:
+        return {}
+    return {"min": int(match.group(1)), "max": int(match.group(2))}
+
+
+def _find_action_handle_for_param(handles: Any, param_name: str) -> dict[str, Any] | None:
+    if isinstance(handles, dict):
+        handles = handles.values()
+    if not isinstance(handles, list):
+        return None
+    for handle in handles:
+        if isinstance(handle, dict) and handle.get("data_key") == param_name:
+            return handle
+    return None
+
+
+def _json_type_from_python_type(python_type: str | None) -> str:
+    type_name = str(python_type or "string")
+    return {
+        "int": "integer",
+        "float": "number",
+        "bool": "boolean",
+        "str": "string",
+    }.get(type_name, "string")
 
 
 DEFAULT_PRESET = load_preset("ai4c")

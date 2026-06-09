@@ -16,7 +16,7 @@ import logging
 from unilabos.registry.decorators import ActionInputHandle, DataSource, action, device, not_action
 
 # 导入通讯基类
-from unilabos.devices.workstation.AI4M.base_opcua_client import OpcUaClientWithSubscription
+from unilabos.devices.workstation.AI4C.base_opcua_client import OpcUaClientWithSubscription
 
 # 定义机械臂目标位置的枚举
 from enum import Enum

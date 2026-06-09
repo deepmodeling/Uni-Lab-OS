@@ -17,7 +17,12 @@ Python 类设备驱动在完成注册表后可以直接在 Uni-Lab 中使用，�
 ```python
 from unilabos.registry.decorators import device, topic_config
 
-@device(id="mock_gripper", category=["gripper"], description="Mock Gripper")
+@device(
+    id="mock_gripper",
+    category=["gripper"],
+    description="Mock Gripper",
+    displayname="模拟夹爪",
+)
 class MockGripper:
     def __init__(self):
         self._position: float = 0.0
@@ -188,7 +193,12 @@ Uni-Lab 设备驱动是一个 Python 类，需要遵循以下结构：
 from typing import Dict, Any
 from unilabos.registry.decorators import device, topic_config
 
-@device(id="my_device", category=["general"], description="My Device")
+@device(
+    id="my_device",
+    category=["general"],
+    description="My Device",
+    displayname="我的设备",
+)
 class MyDevice:
     """设备类文档字符串
 
@@ -929,14 +939,21 @@ class MyDevice:
 ```python
 from unilabos.registry.decorators import device
 
-@device(id="my_device", category=["heating"], description="My Heating Device", icon="heater.webp")
+@device(
+    id="my_heating_device",
+    category=["heating"],
+    description="My Heating Device",
+    displayname="加热设备",
+    icon="heater.webp",
+)
 class MyDevice:
     ...
 ```
 
-- `id`：设备唯一标识符，用于注册表匹配
+- `id`：设备唯一标识符，用于注册表匹配；只能包含英文大小写字母、数字、下划线，不能包含中文、空格、短横线、点号或其他符号
 - `category`：分类列表，前端用于分组显示
 - `description`：设备描述
+- `displayname`：设备显示名称，用于 UI 展示中文名或更友好的名称；不要把显示名写进 `id`
 - `icon`：图标文件名（可选）
 
 ### 2. 使用 `@topic_config` 声明需要广播的状态

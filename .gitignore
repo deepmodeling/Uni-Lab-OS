@@ -251,11 +251,13 @@ ros-humble-unilabos-msgs-0.9.13-h6403a04_5.tar.bz2
 *.bz2
 test_config.py
 
-# szlab workflow frontend
+
+# Cursor local workspace files
+.cursor/
+
+# szlab workflow frontend generated files
 unilabos/szlab/workflow_frontend/node_modules/
 unilabos/szlab/workflow_frontend/dist/
 unilabos/szlab/workflow_frontend/*.tsbuildinfo
 unilabos/szlab/workflow_frontend/vite.config.d.ts
 unilabos/szlab/workflow_frontend/vite.config.js
-
-

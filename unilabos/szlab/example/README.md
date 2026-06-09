@@ -8,6 +8,8 @@
 - `ai4c_runtime.json`：本地运行配置，定义设备工厂、设备路由、OPC 快照变量。
 - `ai4c_actions.py`：教学用本地动作类，示例动作可以先写在这里，不需要改生产设备类。
 - `ai4c_sim_updated.csv`：示例 OPC UA 节点表，preset 默认会引用这个文件。
+- `ai4c_graph.json`：命令行直跑用的最小设备图。
+- `ai4c_workflow.json`：命令行直跑用的最小 workflow。
 
 ## 启动示例
 
@@ -18,6 +20,29 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
   --ui \
   --port 8014 \
   --preset example/ai4c_preset.json
+```
+
+如果只想启动 UI 服务但不自动打开浏览器：
+
+```bash
+PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+  --ui \
+  --no-browser \
+  --port 8014 \
+  --preset example/ai4c_preset.json
+```
+
+如果完全不启动 UI，直接在命令行执行示例 workflow：
+
+```bash
+PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+  --runtime-config unilabos/szlab/example/ai4c_runtime.json \
+  --graph unilabos/szlab/example/ai4c_graph.json \
+  --workflow unilabos/szlab/example/ai4c_workflow.json \
+  --url opc.tcp://127.0.0.1:49320 \
+  --csv unilabos/szlab/example/ai4c_sim_updated.csv \
+  --no-subscription \
+  --timeout 60
 ```
 
 页面打开后：

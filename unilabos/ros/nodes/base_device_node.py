@@ -1747,8 +1747,14 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     _poll_future = Future()
 
                     def _on_sync_done(fut):
-                        if not _poll_future.done():
-                            _poll_future.set_result(None)
+                        async def _wake():
+                            if not _poll_future.done():
+                                _poll_future.set_result(None)
+
+                        # ThreadPoolExecutor callbacks run outside the rclpy executor.
+                        # Wake the awaiting action coroutine from the executor thread;
+                        # otherwise it may only resume when the executor naturally wakes up.
+                        rclpy.get_global_executor().create_task(_wake())
 
                     future.add_done_callback(_on_sync_done)
                     await _poll_future

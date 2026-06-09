@@ -117,3 +117,12 @@ class ExampleAI4CActions:
             arm_action=RoboticArmAction.PLACE,
             success_message="将孔板放置到移液站完成",
         )
+
+# PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+#   --runtime-config unilabos/szlab/example/ai4c_runtime.json \
+#   --graph unilabos/szlab/example/ai4c_graph.json \
+#   --workflow unilabos/szlab/example/ai4c_workflow.json \
+#   --url opc.tcp://jdht1471820.bohrium.tech:50003 \
+#   --csv unilabos/szlab/example/ai4c_sim_updated.csv \
+#   --no-subscription \
+#   --timeout 60

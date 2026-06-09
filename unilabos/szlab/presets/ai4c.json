@@ -2,6 +2,7 @@
   "id": "ai4c",
   "title": "szlab 本地调试工具",
   "target_device_id": "AI4C_robot_arm",
+  "actions_source": "registry",
   "runtime_config": "runtime_configs/ai4c_runtime.json",
   "default_workflow_name": "szlab_canvas_workflow",
   "default_config": {

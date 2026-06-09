@@ -12,9 +12,10 @@ Usage:
     )
 
     @device(
-        id="solenoid_valve.mock",
+        id="solenoid_valve_mock",
         category=["pump_and_valve"],
         description="模拟电磁阀设备",
+        displayname="模拟电磁阀",
         handles=[
             InputHandle(key="in", data_type="fluid", label="in", side=Side.NORTH),
             OutputHandle(key="out", data_type="fluid", label="out", side=Side.SOUTH),
@@ -46,11 +47,13 @@ Usage:
 
 from enum import Enum
 from functools import wraps
+import re
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 F = TypeVar("F", bound=Callable[..., Any])
+_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 # ---------------------------------------------------------------------------
 # 枚举
@@ -248,6 +251,7 @@ def device(
     category: Optional[List[str]] = None,
     description: str = "",
     display_name: str = "",
+    displayname: str = "",
     icon: str = "",
     version: str = "1.0.0",
     handles: Optional[List[_DeviceHandleBase]] = None,
@@ -270,7 +274,8 @@ def device(
         id_meta: 每个 device_id 的覆盖元数据 (handles/description/icon/model)
         category: 设备分类标签列表 (必填)
         description: 设备描述
-        display_name: 人类可读的设备显示名称，缺失时默认使用 id
+        displayname: 人类可读的设备显示名称，缺失时默认使用 id
+        display_name: 兼容旧代码的显示名称参数；新代码优先使用 displayname
         icon: 图标路径
         version: 版本号
         handles: 设备端口列表 (单设备或 id_meta 未覆盖时使用)
@@ -290,13 +295,21 @@ def device(
     else:
         raise ValueError("@device 必须提供 id 或 ids")
 
+    invalid_ids = [did for did in device_ids if not _DEVICE_ID_RE.fullmatch(did)]
+    if invalid_ids:
+        raise ValueError(
+            "@device id 只能包含英文、数字、下划线: "
+            + ", ".join(repr(did) for did in invalid_ids)
+        )
+
     if category is None:
         raise ValueError("@device category 必填")
 
+    resolved_display_name = displayname or display_name
     base_meta = {
         "category": category,
         "description": description,
-        "display_name": display_name,
+        "display_name": resolved_display_name,
         "icon": icon,
         "version": version,
         "handles": _device_handles_to_list(handles),
@@ -505,12 +518,14 @@ def get_device_meta(cls, device_id: Optional[str] = None) -> Optional[Dict[str, 
     overrides = id_meta[device_id]
     result = dict(base)
     result["device_id"] = device_id
-    for key in ["handles", "description", "icon", "model"]:
+    for key in ["handles", "description", "display_name", "displayname", "icon", "model"]:
         if key in overrides:
             val = overrides[key]
             if key == "handles" and isinstance(val, list):
                 # handles 必须是 Handle 对象列表
                 result[key] = [h.to_registry_dict() for h in val]
+            elif key == "displayname":
+                result["display_name"] = val
             else:
                 result[key] = val
     return result

@@ -1,0 +1,65 @@
+{
+    "nodes": [
+        {
+            "id": "AI4C_station",
+            "name": "AI4C_station",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "AI4C_station",
+            "position": {
+                "x": 250,
+                "y": 0,
+                "z": 0
+            },
+            "pose": {
+                "size": {
+                    "width": 1217,
+                    "height": 1580,
+                    "depth": 2670
+                }
+            },
+            "config": {
+                "url": "opc.tcp://192.168.1.88:4840",
+                "csv_path": "ai4c_sim_updated.csv",
+                "use_subscription": true
+            },
+            "data": {}
+        },
+        {
+            "id": "AI4C_plc",
+            "name": "AI4C_plc",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "AI4C_plc",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "url": "opc.tcp://192.168.1.88:4840",
+                "csv_path": "ai4c_sim_updated.csv",
+                "use_subscription": true
+            },
+            "data": {}
+        },
+        {
+            "id": "AI4C_robot_arm",
+            "name": "AI4C_robot_arm",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "AI4C_robot_arm",
+            "position": {
+                "x": 120,
+                "y": 0,
+                "z": 0
+            },
+            "config": {},
+            "data": {}
+        }
+    ],
+    "links": []
+}

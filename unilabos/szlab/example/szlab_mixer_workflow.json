@@ -1,0 +1,32 @@
+{
+  "name": "szlab_mixer_workflow",
+  "nodes": [
+    {
+      "uuid": "szlab-mixer-run-stirring-1",
+      "name": "auto-run_stirring",
+      "device_name": "szlab_mixer_stirrer",
+      "param": {
+        "position": 1,
+        "speed": 300,
+        "temperature": 25,
+        "duration": 60
+      }
+    },
+    {
+      "uuid": "szlab-mixer-transfer-liquid-1",
+      "name": "auto-transfer_liquid",
+      "device_name": "szlab_mixer_pump",
+      "param": {
+        "pump": 1,
+        "volume": 1,
+        "direction": "aspirate"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source_node_uuid": "szlab-mixer-run-stirring-1",
+      "target_node_uuid": "szlab-mixer-transfer-liquid-1"
+    }
+  ]
+}

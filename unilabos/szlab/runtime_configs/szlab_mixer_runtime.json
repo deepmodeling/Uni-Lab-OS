@@ -1,0 +1,53 @@
+{
+  "device_factory": {
+    "devices": {
+      "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_mixer.stirrer.SzlabMixerStirrerDevice",
+      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_mixer.pump.SzlabMixerPumpDevice"
+    }
+  },
+  "opc_snapshot": {
+    "common_variables": [],
+    "action_variables": {
+      "run_stirring": [
+        "S041允许加工",
+        "S041参数写入完成",
+        "S041加工完成",
+        "S042允许加工",
+        "S042参数写入完成",
+        "S042加工完成",
+        "S043允许加工",
+        "S043参数写入完成",
+        "S043加工完成",
+        "S044允许加工",
+        "S044参数写入完成",
+        "S044加工完成",
+        "S045允许加工",
+        "S045参数写入完成",
+        "S045加工完成",
+        "S046允许加工",
+        "S046参数写入完成",
+        "S046加工完成"
+      ],
+      "transfer_liquid": [
+        "S06允许加工",
+        "S06参数写入完成",
+        "S06注射泵选择",
+        "S06注射泵1抽液",
+        "S06注射泵1排液",
+        "S06注射泵2抽液",
+        "S06注射泵2排液",
+        "S06加工完成"
+      ]
+    },
+    "param_variables": {
+      "run_stirring": [
+        {"param": "position", "template": "磁搅搅拌_上位机[{position_minus_1}]"},
+        {"param": "position", "template": "磁搅加热_上位机[{position_minus_1}]"},
+        {"param": "position", "template": "磁搅速度设置_上位机[{position_minus_1}]"},
+        {"param": "position", "template": "磁搅温度设置_上位机[{position_minus_1}]"},
+        {"param": "position", "template": "磁搅时间设置_上位机[{position_minus_1}]"},
+        {"param": "position", "template": "磁搅安全温度设置_上位机[{position_minus_1}]"}
+      ]
+    }
+  }
+}

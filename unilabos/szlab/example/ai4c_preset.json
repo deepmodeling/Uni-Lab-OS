@@ -1,0 +1,70 @@
+{
+  "id": "ai4c_example",
+  "title": "szlab 本地调试教学示例",
+  "target_device_id": "AI4C_robot_arm",
+  "runtime_config": "ai4c_runtime.json",
+  "default_workflow_name": "szlab_example_workflow",
+  "default_config": {
+    "graph": "__generated__",
+    "csv": "ai4c_sim_updated.csv",
+    "timeout": 300,
+    "no_subscription": true
+  },
+  "path_roots": ["."],
+  "device_graph": {
+    "nodes": [
+      {
+        "id": "AI4C_plc",
+        "name": "AI4C_plc",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "AI4C_plc",
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "config": {
+          "url": "${opcua_url}",
+          "csv_path": "${csv_path}",
+          "use_subscription": "${use_subscription}"
+        },
+        "data": {}
+      },
+      {
+        "id": "AI4C_robot_arm",
+        "name": "AI4C_robot_arm",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "AI4C_robot_arm",
+        "position": { "x": 120, "y": 0, "z": 0 },
+        "config": {
+          "plc_device_id": "AI4C_plc"
+        },
+        "data": {}
+      }
+    ],
+    "links": []
+  },
+  "actions": [
+    {
+      "method": "pick_well_plate_from_loading_rack",
+      "label": "从上料架取孔板",
+      "description": "教学示例：带 position 参数，会观察上料架对应输入位",
+      "params": [
+        {
+          "name": "position",
+          "label": "料架位置",
+          "type": "integer",
+          "min": 1,
+          "max": 8,
+          "default": 1
+        }
+      ]
+    },
+    {
+      "method": "place_well_plate_to_pipetting_station",
+      "label": "放到移液站",
+      "description": "教学示例：无参数，会观察移液站占位变量",
+      "params": []
+    }
+  ]
+}

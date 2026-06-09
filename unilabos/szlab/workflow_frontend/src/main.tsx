@@ -19,12 +19,14 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import './styles.css';
+import { collectOpcChanges, formatOpcValue, type LogEvent, type OpcChange } from './opcChanges';
 import { createWorkflowRequest, workflowDraftKey } from './workflowDraft';
 
 type ActionSpec = {
   method: string;
   label: string;
   description: string;
+  device_id?: string;
   needs_position: boolean;
   params?: Array<Record<string, unknown>>;
 };
@@ -35,9 +37,11 @@ type PresetPayload = {
   default_workflow_name: string;
   default_config: {
     graph?: string;
+    url?: string;
     csv?: string;
     timeout?: number;
     no_subscription?: boolean;
+    show_csv?: boolean;
   };
   actions: ActionSpec[];
 };
@@ -46,26 +50,6 @@ type WorkflowJson = {
   name: string;
   nodes: Array<Record<string, unknown>>;
   edges: Array<Record<string, unknown>>;
-};
-
-type LogEvent = {
-  sequence: number;
-  message: string;
-  level: string;
-  scope: string;
-  node_id?: string | null;
-  detail?: Record<string, unknown> | null;
-};
-
-type OpcChange = {
-  eventSequence: number;
-  workflowNodeId: string | null;
-  opcNodeId: string;
-  displayName: string;
-  label: string;
-  name: string;
-  valueBegin: unknown;
-  valueEnd: unknown;
 };
 
 type RunStatus = {
@@ -80,6 +64,7 @@ type RunStatus = {
 type NodeRunStatus = 'idle' | 'preparing' | 'running' | 'success' | 'failed' | 'cancelled';
 
 type ActionNodeData = {
+  deviceId?: string;
   method: string;
   label: string;
   description: string;
@@ -90,9 +75,11 @@ type ActionNodeData = {
 
 const DEFAULT_CONFIG = {
   graph: '__generated__',
+  url: '',
   csv: 'ai4c_sim_updated.csv',
   timeout: 300,
   no_subscription: true,
+  show_csv: true,
 };
 
 function App() {
@@ -111,10 +98,11 @@ function App() {
   const [selectedLogNodeId, setSelectedLogNodeId] = useState<string | null>(null);
   const [config, setConfig] = useState({
     graph: DEFAULT_CONFIG.graph,
-    url: '',
+    url: DEFAULT_CONFIG.url,
     csv: DEFAULT_CONFIG.csv,
     timeout: DEFAULT_CONFIG.timeout,
     no_subscription: DEFAULT_CONFIG.no_subscription,
+    show_csv: DEFAULT_CONFIG.show_csv,
   });
 
   const nodeTypes = useMemo(() => ({ actionNode: ActionNode }), []);
@@ -141,10 +129,12 @@ function App() {
         setWorkflowName(payload.default_workflow_name || 'szlab_canvas_workflow');
         setConfig((current) => ({
           ...current,
-          graph: payload.default_config?.graph || DEFAULT_CONFIG.graph,
-          csv: payload.default_config?.csv || DEFAULT_CONFIG.csv,
-          timeout: payload.default_config?.timeout || DEFAULT_CONFIG.timeout,
+          graph: payload.default_config?.graph ?? DEFAULT_CONFIG.graph,
+          url: payload.default_config?.url ?? DEFAULT_CONFIG.url,
+          csv: payload.default_config?.csv ?? DEFAULT_CONFIG.csv,
+          timeout: payload.default_config?.timeout ?? DEFAULT_CONFIG.timeout,
           no_subscription: payload.default_config?.no_subscription ?? DEFAULT_CONFIG.no_subscription,
+          show_csv: payload.default_config?.show_csv ?? DEFAULT_CONFIG.show_csv,
         }));
       })
       .catch((error) => setMessage(`preset 加载失败: ${error.message}`));
@@ -190,6 +180,7 @@ function App() {
         type: 'actionNode',
         position: nextPosition,
         data: {
+          deviceId: action.device_id,
           method: action.method,
           label: action.label,
           description: action.description,
@@ -448,10 +439,12 @@ function App() {
               OPC UA URL
               <input value={config.url} onChange={(event) => setConfig({ ...config, url: event.target.value })} placeholder="例如 opc.tcp://192.168.1.88:4840" />
             </label>
-            <label>
-              节点 CSV
-              <input value={config.csv} onChange={(event) => setConfig({ ...config, csv: event.target.value })} />
-            </label>
+            {config.show_csv && (
+              <label>
+                节点 CSV
+                <input value={config.csv} onChange={(event) => setConfig({ ...config, csv: event.target.value })} />
+              </label>
+            )}
             <label>
               超时秒数
               <input type="number" min={1} value={config.timeout} onChange={(event) => setConfig({ ...config, timeout: Number(event.target.value) })} />
@@ -671,41 +664,6 @@ function groupLogEvents(events: LogEvent[]) {
   });
 
   return groups;
-}
-
-function collectOpcChanges(events: LogEvent[]): OpcChange[] {
-  return events.flatMap((event) => {
-    const changes = event.detail?.changes;
-    if (!Array.isArray(changes)) return [];
-
-    return changes.flatMap((change): OpcChange[] => {
-      if (!isOpcChangePayload(change)) return [];
-      return [
-        {
-          eventSequence: event.sequence,
-          workflowNodeId: event.node_id || null,
-          opcNodeId: typeof change.node_id === 'string' ? change.node_id : '',
-          displayName: typeof change.display_name === 'string' ? change.display_name : String(change.name),
-          label: typeof change.label === 'string' ? change.label : String(change.name),
-          name: String(change.name),
-          valueBegin: change.before,
-          valueEnd: change.after,
-        },
-      ];
-    });
-  });
-}
-
-function isOpcChangePayload(value: unknown): value is Record<string, unknown> & { name: unknown } {
-  return Boolean(value && typeof value === 'object' && 'name' in value);
-}
-
-function formatOpcValue(value: unknown): string {
-  if (value === null || value === undefined) return String(value);
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  return JSON.stringify(value);
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

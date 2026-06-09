@@ -44,6 +44,7 @@ class ActionSpec:
     label: str
     description: str
     params: list[dict[str, Any]] = field(default_factory=list)
+    device_id: str | None = None
 
     @property
     def needs_position(self) -> bool:
@@ -55,6 +56,7 @@ class WorkflowPreset:
     id: str
     title: str
     target_device_id: str
+    target_device_ids: list[str]
     runtime_config: str | None
     default_workflow_name: str
     default_config: dict[str, Any]
@@ -72,9 +74,10 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
         preset_path = PRESET_DIR / f"{name}.json"
     data = json.loads(preset_path.read_text(encoding="utf-8"))
     target_device_id = data.get("target_device_id", ROBOT_ARM_DEVICE_ID)
+    target_device_ids = list(data.get("target_device_ids") or [target_device_id])
     path_roots = data.get("path_roots", ["unilabos/szlab"])
     if data.get("actions_source") == "registry":
-        actions = _load_registry_actions(target_device_id, path_roots, preset_path.parent)
+        actions = _load_registry_actions(target_device_ids, path_roots, preset_path.parent)
     else:
         actions = {
             item["method"]: ActionSpec(
@@ -82,6 +85,7 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
                 label=item.get("label", item["method"]),
                 description=item.get("description", ""),
                 params=item.get("params", []),
+                device_id=item.get("device_id") or target_device_id,
             )
             for item in data.get("actions", [])
         }
@@ -89,6 +93,7 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
         id=data["id"],
         title=data.get("title", "szlab 本地调试工具"),
         target_device_id=target_device_id,
+        target_device_ids=target_device_ids,
         runtime_config=data.get("runtime_config"),
         default_workflow_name=data.get("default_workflow_name", "szlab_canvas_workflow"),
         default_config=data.get("default_config", {}),
@@ -99,18 +104,28 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
     )
 
 
-def _load_registry_actions(device_id: str, path_roots: list[str], base_dir: Path) -> dict[str, ActionSpec]:
+def _load_registry_actions(device_ids: list[str], path_roots: list[str], base_dir: Path) -> dict[str, ActionSpec]:
     repo_root = Path(__file__).resolve().parents[2]
+    pending = set(device_ids)
+    actions_by_device: dict[str, dict[str, ActionSpec]] = {}
     with ThreadPoolExecutor(max_workers=4, thread_name_prefix="SzlabRegistryScan") as executor:
         for root in path_roots:
             root_path = _resolve_registry_scan_root(root, base_dir, repo_root)
             if not root_path.exists():
                 continue
             scan_result = scan_directory(root_path, python_path=repo_root, executor=executor)
-            device_meta = scan_result.get("devices", {}).get(device_id)
-            if device_meta:
-                return _actions_from_ast_device_meta(device_meta)
-    raise ValueError(f"无法从 registry AST 扫描找到设备动作: {device_id}")
+            for device_id in list(pending):
+                device_meta = scan_result.get("devices", {}).get(device_id)
+                if device_meta:
+                    actions_by_device[device_id] = _actions_from_ast_device_meta(device_id, device_meta)
+                    pending.remove(device_id)
+            if not pending:
+                return {
+                    method: action
+                    for device_id in device_ids
+                    for method, action in actions_by_device.get(device_id, {}).items()
+                }
+    raise ValueError(f"无法从 registry AST 扫描找到设备动作: {sorted(pending)}")
 
 
 def _resolve_registry_scan_root(root: str, base_dir: Path, repo_root: Path) -> Path:
@@ -123,7 +138,7 @@ def _resolve_registry_scan_root(root: str, base_dir: Path, repo_root: Path) -> P
     return base_dir / candidate
 
 
-def _actions_from_ast_device_meta(device_meta: dict[str, Any]) -> dict[str, ActionSpec]:
+def _actions_from_ast_device_meta(device_id: str, device_meta: dict[str, Any]) -> dict[str, ActionSpec]:
     actions: dict[str, ActionSpec] = {}
     for method, method_info in device_meta.get("actions", {}).items():
         action_args = method_info.get("action_args") or {}
@@ -133,6 +148,7 @@ def _actions_from_ast_device_meta(device_meta: dict[str, Any]) -> dict[str, Acti
             label=description,
             description=description,
             params=_params_from_ast_action(method_info),
+            device_id=device_id,
         )
     for method, method_info in device_meta.get("auto_methods", {}).items():
         actions.setdefault(
@@ -142,6 +158,7 @@ def _actions_from_ast_device_meta(device_meta: dict[str, Any]) -> dict[str, Acti
                 label=method,
                 description=method_info.get("docstring") or "",
                 params=_params_from_ast_action(method_info),
+                device_id=device_id,
             ),
         )
     return actions
@@ -376,7 +393,7 @@ class WorkflowRunManager:
             if record.cancel_requested:
                 raise WorkflowCancelled("workflow 已终止")
             default_config = self._preset.default_config
-            csv_value = payload.get("csv") or default_config.get("csv")
+            csv_value = str(payload.get("csv") or default_config.get("csv") or "").strip()
             csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
             timeout = float(payload.get("timeout") or default_config.get("timeout") or 300.0)
             no_subscription = bool(payload.get("no_subscription", default_config.get("no_subscription", True)))
@@ -512,7 +529,7 @@ def build_linear_workflow(
             {
                 "uuid": f"step_{index:03d}_{method}",
                 "name": f"auto-{method}",
-                "device_name": preset.target_device_id,
+                "device_name": spec.device_id or preset.target_device_id,
                 "param": params,
             }
         )
@@ -590,8 +607,6 @@ def build_local_device_graph(
     """根据页面运行配置和 preset 生成本地设备图。"""
     if not opcua_url:
         raise ValueError("缺少 OPC UA URL")
-    if not csv_path:
-        raise ValueError("缺少 CSV 节点文件")
 
     return _render_template_value(
         preset.device_graph,
@@ -762,7 +777,7 @@ def _build_workflow_node_from_flow_node(flow_node: dict[str, Any], preset: Workf
     return {
         "uuid": node_id,
         "name": f"auto-{method}",
-        "device_name": preset.target_device_id,
+        "device_name": data.get("device_id") or spec.device_id or preset.target_device_id,
         "param": params,
     }
 
@@ -828,6 +843,7 @@ def _action_to_dict(action: ActionSpec) -> dict[str, Any]:
         "description": action.description,
         "needs_position": action.needs_position,
         "params": action.params,
+        "device_id": action.device_id,
     }
 
 

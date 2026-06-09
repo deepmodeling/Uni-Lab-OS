@@ -18,14 +18,15 @@ ROBOT_ARM_DEVICE_ID = "AI4C_robot_arm"
 
 @dataclass(frozen=True)
 class RuntimeDeviceFactoryConfig:
-    plc_device_id: str
-    target_device_id: str
-    route_aliases: set[str]
-    plc_class: str
-    target_class: str
+    plc_device_id: str = ""
+    target_device_id: str = ""
+    route_aliases: set[str] = field(default_factory=set)
+    plc_class: str = ""
+    target_class: str = ""
     target_config: dict[str, Any] = field(default_factory=dict)
     direct_plc_command_method: str | None = None
     timeout_config_key: str | None = None
+    devices: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -58,14 +59,15 @@ def load_runtime_config(config_path: Path | str | None = None) -> RuntimeConfig:
     snapshot_data = data.get("opc_snapshot") or {}
 
     device_factory = RuntimeDeviceFactoryConfig(
-        plc_device_id=device_data["plc_device_id"],
-        target_device_id=device_data["target_device_id"],
+        plc_device_id=device_data.get("plc_device_id", ""),
+        target_device_id=device_data.get("target_device_id", ""),
         route_aliases=set(device_data.get("route_aliases") or []),
-        plc_class=device_data["plc_class"],
-        target_class=device_data["target_class"],
+        plc_class=device_data.get("plc_class", ""),
+        target_class=device_data.get("target_class", ""),
         target_config=dict(device_data.get("target_config") or {}),
         direct_plc_command_method=device_data.get("direct_plc_command_method"),
         timeout_config_key=device_data.get("timeout_config_key"),
+        devices=dict(device_data.get("devices") or {}),
     )
     opc_snapshot = RuntimeOpcSnapshotConfig(
         common_variables=list(snapshot_data.get("common_variables") or []),
@@ -142,6 +144,8 @@ def _build_template_context(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def snapshot_opc_state(plc: Any, variable_names: list[str]) -> dict[str, Any]:
+    if not variable_names:
+        return {}
     try:
         return plc.get_variables(variable_names, use_cache=False)
     except Exception as exc:
@@ -161,6 +165,8 @@ def format_opc_variable_label(plc: Any, variable_name: str) -> str:
 
 
 def get_opc_variable_metadata(plc: Any, variable_name: str) -> tuple[str, str | None]:
+    if hasattr(plc, "get_opc_variable_metadata"):
+        return plc.get_opc_variable_metadata(variable_name)
     name_mapping = getattr(plc, "_name_mapping", {}) or {}
     variables_to_find = getattr(plc, "_variables_to_find", {}) or {}
     chinese_name = name_mapping.get(variable_name, variable_name)
@@ -288,6 +294,18 @@ def create_local_devices(
     runtime_config = runtime_config or load_runtime_config()
     device_factory = runtime_config.device_factory
     graph_config = load_ai4c_graph_config(graph_file)
+    if device_factory.devices:
+        devices: dict[str, Any] = {}
+        for device_id, class_path in device_factory.devices.items():
+            device_config = dict(graph_config.get(device_id, {}))
+            if opcua_url and "url" in device_config:
+                device_config["url"] = opcua_url
+            if plc_action_timeout and "timeout" in device_config:
+                device_config["timeout"] = plc_action_timeout
+            device_class = _load_class(class_path)
+            devices[device_id] = device_class(**device_config)
+        return devices
+
     plc_config = dict(graph_config.get(device_factory.plc_device_id, {}))
     target_graph_config = dict(graph_config.get(device_factory.target_device_id, {}))
 
@@ -340,7 +358,7 @@ def run_nodes(
     logger = logger or WorkflowLogger()
     runtime_config = runtime_config or load_runtime_config()
     results: list[dict[str, Any]] = []
-    plc = devices.get(runtime_config.device_factory.plc_device_id)
+    default_plc = devices.get(runtime_config.device_factory.plc_device_id)
 
     for index, node in enumerate(ordered_nodes, start=1):
         device_name = route_node_device(node, runtime_config)
@@ -353,7 +371,8 @@ def run_nodes(
             raise AttributeError(f"{device_name} 不存在动作方法: {method_name}")
 
         snapshot_variables = collect_snapshot_variables(method_name, node.param, runtime_config)
-        before = snapshot_opc_state(plc, snapshot_variables) if plc is not None else {}
+        snapshot_client = default_plc or (device if hasattr(device, "get_variables") else None)
+        before = snapshot_opc_state(snapshot_client, snapshot_variables) if snapshot_client is not None else {}
 
         logger.log(
             f"[{index}/{len(ordered_nodes)}] {device_name}.{method_name}({node.param})",
@@ -362,12 +381,12 @@ def run_nodes(
         if before:
             logger.log(
                 f"OPC状态采样: {len(before)} 个变量",
-                detail={"before": format_snapshot_detail(before, plc)},
+                detail={"before": format_snapshot_detail(before, snapshot_client)},
             )
         result = getattr(device, method_name)(**node.param)
-        after = snapshot_opc_state(plc, snapshot_variables) if plc is not None else {}
+        after = snapshot_opc_state(snapshot_client, snapshot_variables) if snapshot_client is not None else {}
         if after:
-            diff_detail = build_snapshot_diff_detail(before, after, plc=plc)
+            diff_detail = build_snapshot_diff_detail(before, after, plc=snapshot_client)
             logger.log(
                 f"OPC状态变化: {len(diff_detail['changes'])}/{len(before)} 个变量变化",
                 detail=diff_detail,
@@ -421,7 +440,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    runtime_config = load_runtime_config(args.runtime_config)
     if args.ui:
         from unilabos.szlab.workflow_ui import start_ui
 
@@ -430,10 +448,11 @@ def main() -> int:
             port=args.port,
             open_browser=not args.no_browser,
             preset_name=args.preset,
-            runtime_config=runtime_config,
+            runtime_config=load_runtime_config(args.runtime_config) if args.runtime_config else None,
         )
         return 0
 
+    runtime_config = load_runtime_config(args.runtime_config)
     devices = create_local_devices(
         graph_file=args.graph,
         opcua_url=args.url,
@@ -451,9 +470,9 @@ def main() -> int:
     finally:
         if log_handle is not None:
             log_handle.close()
-        plc = devices.get(runtime_config.device_factory.plc_device_id)
-        if hasattr(plc, "disconnect"):
-            plc.disconnect()
+        for device in devices.values():
+            if hasattr(device, "disconnect"):
+                device.disconnect()
 
 
 if __name__ == "__main__":

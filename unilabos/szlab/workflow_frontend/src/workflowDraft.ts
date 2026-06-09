@@ -2,6 +2,7 @@ type WorkflowDraftNode = {
   id: string;
   position: unknown;
   data: {
+    deviceId?: string;
     method: string;
     label: string;
     description: string;
@@ -31,16 +32,22 @@ export function createWorkflowRequest(
 ) {
   return {
     name,
-    nodes: nodes.map((node) => ({
-      id: node.id,
-      position: node.position,
-      data: {
+    nodes: nodes.map((node) => {
+      const data: Record<string, unknown> = {
         method: node.data.method,
         label: node.data.label,
         description: node.data.description,
         params: node.data.params,
-      },
-    })),
+      };
+      if (node.data.deviceId) {
+        data.device_id = node.data.deviceId;
+      }
+      return {
+        id: node.id,
+        position: node.position,
+        data,
+      };
+    }),
     edges: edges.map((edge) => ({
       id: edge.id,
       source: edge.source,

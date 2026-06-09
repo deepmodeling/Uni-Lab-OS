@@ -315,7 +315,136 @@ CSV：
 新料架_InPut[0],New_Rack_InPut[0],VARIABLE,BOOLEAN,Chinese,ns=4;s=UniLab|新料架_InPut[0]
 ```
 
-## 11. 验证命令
+## 11. 已有正式 `@device` 后的命令行测试
+
+如果设备已经按 `add-device` 流程写成正式 `@device` 类，就不需要再把动作手写到 `unilabos/szlab/example/`。本地测试时应让 preset 从 registry/AST 读取设备和 action。
+
+### 11.1 先确认设备类可导入
+
+在仓库根目录执行：
+
+```bash
+PYTHONPATH=. python - <<'PY'
+from unilabos.devices.workstation.szlab_mixer.stirrer import SzlabMixerStirrerDevice
+from unilabos.devices.workstation.szlab_mixer.pump import SzlabMixerPumpDevice
+
+print(SzlabMixerStirrerDevice.__name__)
+print(SzlabMixerPumpDevice.__name__)
+PY
+```
+
+这一步只验证 Python import，不会连接硬件。失败通常说明模块路径、依赖或类名不对。
+
+### 11.2 用 registry 驱动的 UI preset 测试
+
+preset 需要包含：
+
+```json
+{
+  "actions_source": "registry",
+  "target_device_ids": ["szlab_mixer_stirrer", "szlab_mixer_pump"],
+  "runtime_config": "runtime_configs/szlab_mixer_runtime.json",
+  "path_roots": [
+    "unilabos/szlab",
+    "unilabos/devices/workstation/szlab_mixer"
+  ]
+}
+```
+
+runtime config 需要把设备实例 id 映射到正式设备类：
+
+```json
+{
+  "device_factory": {
+    "devices": {
+      "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_mixer.stirrer.SzlabMixerStirrerDevice",
+      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_mixer.pump.SzlabMixerPumpDevice"
+    }
+  }
+}
+```
+
+启动 UI：
+
+```bash
+PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+  --ui \
+  --port 8014 \
+  --preset szlab_mixer
+```
+
+这种方式适合第一次联调：左侧动作卡片来自 `@device` / `@action`，运行时实例来自 `runtime_config.device_factory.devices`，设备参数来自 preset 里的 `device_graph.nodes[].config`。
+
+如果是 AI4C 正式 preset：
+
+```bash
+PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+  --ui \
+  --port 8014 \
+  --preset ai4c
+```
+
+注意不要再用 `--preset example/ai4c_preset.json`，那个是教学示例 preset，动作列表是手写的。
+
+### 11.3 不打开 UI，直接跑 workflow JSON
+
+已有 workflow JSON 和设备图 JSON 时，可以直接从命令行执行：
+
+```bash
+PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+  --workflow path/to/workflow.json \
+  --graph path/to/device_graph.json \
+  --runtime-config unilabos/szlab/runtime_configs/szlab_mixer_runtime.json \
+  --url opc.tcp://jdht1471820.bohrium.tech:50001 \
+  --timeout 300 \
+  --log-file /tmp/szlab_mixer_run.log
+```
+
+直接执行模式的要求：
+
+- `workflow.json` 的节点 `device_name` 必须能路由到 runtime config 中的设备实例 id，例如 `szlab_mixer_pump`。
+- `device_graph.json` 的节点 `id` 要和 runtime config 的 `devices` key 一致。
+- `device_graph.json` 的节点 `class` 要和 `@device(id=...)` 一致。
+- OPC UA 这类不需要 CSV 的设备可以不传 `--csv`；AI4C 这类 CSV 驱动的 PLC 仍需要传 `--csv` 或在 graph config 里配置 `csv_path`。
+- `--url` 会覆盖设备图里的 OPC UA 地址，便于同一套 graph 在不同环境测试。
+
+AI4C 这类 `PLC + target device` 的旧 runtime 仍可用：
+
+```bash
+PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+  --workflow unilabos/szlab/robot.json \
+  --graph unilabos/szlab/AI4C.json \
+  --runtime-config unilabos/szlab/runtime_configs/ai4c_runtime.json \
+  --url opc.tcp://jdht1471820.bohrium.tech:50003 \
+  --csv unilabos/szlab/example/ai4c_sim_updated.csv \
+  --no-subscription \
+  --timeout 60 \
+  --log-file /tmp/ai4c_run.log
+```
+
+### 11.4 常用验证命令
+
+只验证 szlab 本地测试逻辑：
+
+```bash
+PYTHONPATH=. pytest tests/szlab
+```
+
+只验证 registry-driven preset 是否能扫描到正式设备动作：
+
+```bash
+PYTHONPATH=. pytest tests/szlab/test_szlab_mixer_devices.py
+```
+
+前端代码更新后重新构建：
+
+```bash
+cd unilabos/szlab/workflow_frontend
+npm install
+npm run build
+```
+
+## 12. 验证命令
 
 后端测试：
 
@@ -343,7 +472,7 @@ print("example action class ok")
 PY
 ```
 
-## 12. 同步到正式配置
+## 13. 同步到正式配置
 
 教学示例调试完成后执行：
 
@@ -357,7 +486,7 @@ PY
 PYTHONPATH=. python -m unilabos.szlab.run_workflow_local --ui --port 8014 --preset ai4c
 ```
 
-## 13. 排查表
+## 14. 排查表
 
 | 现象 | 检查项 |
 | --- | --- |

@@ -1,0 +1,43 @@
+{
+    "nodes": [
+        {
+            "id": "szlab_poly_plc",
+            "name": "苏州实验室 PLC",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "szlab_poly_plc",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
+                "csv_path": "苏州实验室.csv",
+                "auto_connect": true
+            },
+            "data": {}
+        },
+        {
+            "id": "szlab_poly_studio_deck",
+            "name": "苏州实验室聚合物工作站 Deck",
+            "sample_id": null,
+            "children": [],
+            "parent": null,
+            "type": "deck",
+            "class": "szlab_poly_studio_deck",
+            "position": {
+                "x": 250,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "type": "szlab_poly_studio_deck",
+                "setup": true
+            },
+            "data": {}
+        }
+    ],
+    "links": []
+}

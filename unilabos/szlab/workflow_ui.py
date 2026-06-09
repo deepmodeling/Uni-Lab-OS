@@ -32,7 +32,7 @@ from unilabos.szlab.run_workflow_local import (
 
 SZLAB_DIR = Path(__file__).parent
 PRESET_DIR = SZLAB_DIR / "presets"
-FRONTEND_DIR = SZLAB_DIR / "workflow_frontend"
+FRONTEND_DIR = SZLAB_DIR.parent.parent / "unilabos_local_ui"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
 GENERATED_GRAPH_SENTINEL = "__generated__"
@@ -881,7 +881,7 @@ def _frontend_entry_response() -> Response:
             <main>
                 <h1>szlab 流程图画板未构建</h1>
                 <p>请先构建 Node.js 前端，或在开发时启动 Vite dev server。</p>
-                <pre>cd unilabos/szlab/workflow_frontend
+                <pre>cd unilabos_local_ui
 npm install
 npm run build</pre>
                 <p>后端 API 已可用：<code>/api/actions</code>、<code>/api/workflow/build-graph</code>、<code>/api/run</code>。</p>

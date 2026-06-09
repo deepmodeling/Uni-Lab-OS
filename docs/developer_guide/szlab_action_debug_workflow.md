@@ -27,13 +27,13 @@ unilabos/szlab/example/
 首次使用或前端代码更新后，需要先安装依赖并构建前端资源：
 
 ```bash
-cd unilabos/szlab/workflow_frontend
+cd unilabos_local_ui
 npm install
 npm run build
-cd ../../..
+cd ..
 ```
 
-如果 `unilabos/szlab/workflow_frontend/dist/` 已经是最新的，可以跳过这一步。
+如果 `unilabos_local_ui/dist/` 已经是最新的，可以跳过这一步。
 
 在仓库根目录执行：
 
@@ -439,7 +439,7 @@ PYTHONPATH=. pytest tests/szlab/test_szlab_mixer_devices.py
 前端代码更新后重新构建：
 
 ```bash
-cd unilabos/szlab/workflow_frontend
+cd unilabos_local_ui
 npm install
 npm run build
 ```
@@ -455,7 +455,7 @@ PYTHONPATH=. pytest tests/szlab/test_workflow_ui.py
 前端构建：
 
 ```bash
-cd unilabos/szlab/workflow_frontend
+cd unilabos_local_ui
 npm run build
 ```
 

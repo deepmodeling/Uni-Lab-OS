@@ -14,7 +14,7 @@
             },
             "config": {
                 "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
-                "csv_path": "苏州实验室.csv",
+                "csv_path": "苏州实验室_0610.csv",
                 "auto_connect": true
             },
             "data": {}

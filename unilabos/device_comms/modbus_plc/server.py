@@ -3,7 +3,7 @@ import modbus_tk.modbus_tcp as modbus_tcp
 
 # 创建一个 Modbus TCP 服务器
 server = modbus_tcp.TcpServer(
-	address="127.0.0.1", port=5021, timeout_in_sec=1
+    address="127.0.0.1", port=5021, timeout_in_sec=1
 )
 
 # 添加一个从设备 (slave)

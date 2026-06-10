@@ -503,7 +503,7 @@ class HostNode(BaseROS2DeviceNode):
                         self, action_type, action_id, callback_group=self.callback_group
                     )
                     self.lab_logger().trace(f"[Host Node] Created ActionClient (Discovery): {action_id}")
-                    action_name = action_id[len(namespace) + 1 :]
+                    action_name = action_id[len(namespace) + 1:]
                     edge_device_id = namespace[9:]
                     # from unilabos.app.comm_factory import get_communication_client
                     # comm_client = get_communication_client()

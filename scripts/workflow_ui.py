@@ -873,7 +873,14 @@ def _frontend_entry_response() -> Response:
             <title>szlab 流程图画板未构建</title>
             <style>
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; }
-                main { max-width: 760px; margin: 80px auto; background: white; border-radius: 16px; padding: 28px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08); }
+                main {
+                    max-width: 760px;
+                    margin: 80px auto;
+                    background: white;
+                    border-radius: 16px;
+                    padding: 28px;
+                    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+                }
                 code { background: #f1f5f9; border-radius: 6px; padding: 2px 5px; }
                 pre { background: #111827; color: #e5e7eb; border-radius: 12px; padding: 14px; overflow: auto; }
             </style>
@@ -885,7 +892,10 @@ def _frontend_entry_response() -> Response:
                 <pre>cd unilabos_local_ui
 npm install
 npm run build</pre>
-                <p>后端 API 已可用：<code>/api/actions</code>、<code>/api/workflow/build-graph</code>、<code>/api/run</code>。</p>
+                <p>
+                    后端 API 已可用：
+                    <code>/api/actions</code>、<code>/api/workflow/build-graph</code>、<code>/api/run</code>。
+                </p>
             </main>
         </body>
         </html>

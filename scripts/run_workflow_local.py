@@ -479,6 +479,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-    # 使用命令：
-    # python -m scripts.run_workflow_local --graph AI4C.json --workflow robot.json --url opc.tcp://jdht1471820.bohrium.tech:50003 --csv ai4c_sim_updated.csv --no-subscription --timeout 60 --log-file tmp.log

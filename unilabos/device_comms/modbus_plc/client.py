@@ -34,9 +34,11 @@ class PLCWorkflow(BaseModel):
             ]]
     ]
 
+
 class Action(BaseModel):
     name: str
     rw: bool  # read是0 write是1
+
 
 class WorkflowAction(BaseModel):
     init: Optional[Callable[[Callable[[str], ModbusNodeBase]], bool]] = None
@@ -51,23 +53,30 @@ class ModbusWorkflow(BaseModel):
 
 
 """ 前后端Json解析用 """
+
+
 class AddressFunctionJson(TypedDict):
     func_name: str
     node_name: str
     mode: str
     value: Any
 
+
 class InitFunctionJson(AddressFunctionJson):
     pass
+
 
 class StartFunctionJson(AddressFunctionJson):
     pass
 
+
 class StopFunctionJson(AddressFunctionJson):
     pass
 
+
 class CleanupFunctionJson(AddressFunctionJson):
     pass
+
 
 class ActionJson(TypedDict):
     address_function_to_create: list[AddressFunctionJson]
@@ -76,15 +85,16 @@ class ActionJson(TypedDict):
     create_stop_function: Optional[StopFunctionJson]
     create_cleanup_function: Optional[CleanupFunctionJson]
 
+
 class WorkflowCreateJson(TypedDict):
     name: str
     action: list[Union[ActionJson, 'WorkflowCreateJson'] | str]
+
 
 class ExecuteProcedureJson(TypedDict):
     register_node_list_from_csv_path: Optional[dict[str, Any]]
     create_flow: list[WorkflowCreateJson]
     execute_flow: list[str]
-
 
 
 class BaseClient(UniversalDriver):
@@ -116,7 +126,7 @@ class BaseClient(UniversalDriver):
     @classmethod
     def load_csv(cls, file_path: str):
         df = pd.read_csv(file_path)
-        df = df.drop_duplicates(subset='Name', keep='first') # FIXME: 重复的数据应该报错
+        df = df.drop_duplicates(subset='Name', keep='first')  # FIXME: 重复的数据应该报错
         data_dict = df.set_index('Name').to_dict(orient='index')
         nodes = []
         for k, v in data_dict.items():
@@ -303,7 +313,7 @@ class BaseClient(UniversalDriver):
         print("创建 address function", mode, func_name)
         self.function_name[func_name] = execute_address_function
         return execute_address_function
-    
+
     def create_init_function(self, func_name: str = None, node_name: str = None, mode: str = None, value: Any = None, data_type: Optional[DataType] = None, word_order: WorderOrder = None, slave: Optional[int] = None):
         return self.create_address_function(func_name, node_name, mode, value, data_type, word_order, slave)
 
@@ -359,7 +369,7 @@ class BaseClient(UniversalDriver):
             print("创建 cleanup function")
             cleanup = self.create_cleanup_function(**data["create_cleanup_function"])
         return WorkflowAction(init=init, start=start, stop=stop, cleanup=cleanup)
-    
+
     workflow_name = {}
 
     def create_workflow_from_json(self, data: list[WorkflowCreateJson]):
@@ -405,6 +415,7 @@ class RTUClient(BaseClient):
         super().__init__()
         self._set_client(ModbusSerialClient(framer=FramerType.RTU, port=port, baudrate=baudrate, timeout=timeout))
         self._connect()
+
 
 if __name__ == '__main__':
     """ 代码写法① """

@@ -2,19 +2,19 @@ import serial
 import time
 
 ser = serial.Serial(
-    port="COM18",         
+    port="COM18",
     baudrate=9600,
     bytesize=serial.EIGHTBITS,
     parity=serial.PARITY_NONE,
     stopbits=serial.STOPBITS_ONE,
     timeout=15,
 
-def send_cmd(cmd: str, wait: float = 1.0) -> str:
+def send_cmd(cmd: str, wait: float=1.0) -> str:
     """向 Cytomat 发送一行命令并打印/返回响应。"""
     print(f">>> {cmd}")
     ser.write((cmd + "\r").encode("ascii"))
     time.sleep(wait)
-    resp = ser.read_all().decode("ascii", errors="ignore").strip()
+    resp=ser.read_all().decode("ascii", errors="ignore").strip()
     print(f"<<< {resp or '<no response>'}")
     return resp
 
@@ -58,4 +58,3 @@ if __name__ == "__main__":
     finally:
         ser.close()
         print("Done.")
-

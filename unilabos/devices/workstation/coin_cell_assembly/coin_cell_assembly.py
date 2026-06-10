@@ -26,13 +26,13 @@ import struct
 def _decode_float32_correct(registers):
     """
     正确解码FLOAT32类型的Modbus寄存器
-    
+
     Args:
         registers: 从Modbus读取的原始寄存器值列表
-        
+
     Returns:
         正确解码的浮点数值
-        
+
     Note:
         根据test_glove_box_pressure.py验证的配置:
         - Byte Order: Big (Modbus标准)
@@ -40,20 +40,20 @@ def _decode_float32_correct(registers):
     """
     if not registers or len(registers) < 2:
         return 0.0
-    
+
     try:
         # Word Order: Little - 交换两个寄存器的顺序
         # Byte Order: Big - 每个寄存器内部使用大端字节序
         low_word = registers[0]
         high_word = registers[1]
-        
+
         # 将两个16位寄存器组合成一个32位值 (Little Word Order)
         # 使用大端字节序 ('>') 将每个寄存器转换为字节
         byte_string = struct.pack('>HH', high_word, low_word)
-        
+
         # 将字节字符串解码为浮点数 (大端)
         value = struct.unpack('>f', byte_string)[0]
-        
+
         return value
     except Exception as e:
         logger.error(f"解码FLOAT32失败: {e}, registers: {registers}")
@@ -143,17 +143,17 @@ def _coerce_deck_input(deck: Any) -> Optional[Deck]:
     return None
 
 
-#构建物料系统
+# 构建物料系统
 
 class CoinCellAssemblyWorkstation(WorkstationBase):
-    def __init__(self, 
-        config: dict = None, 
-        deck=None, 
-        address: str = "172.16.28.102",
-        port: str = "502",
-        debug_mode: bool = False,
-        *args,
-        **kwargs):
+    def __init__(self,
+                 config: dict = None,
+                 deck=None,
+                 address: str = "172.16.28.102",
+                 port: str = "502",
+                 debug_mode: bool = False,
+                 *args,
+                 **kwargs):
 
         if deck is None and config:
             deck = config.get('deck')
@@ -161,7 +161,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             logger.info("没有传入依华deck，检查启动json文件")
         super().__init__(deck=deck, *args, **kwargs,)
         self.debug_mode = debug_mode
- 
+
         """ 连接初始化 """
         modbus_client = TCPClient(addr=address, port=port)
         logger.debug(f"创建 Modbus 客户端: {modbus_client}")
@@ -169,14 +169,14 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if not debug_mode:
             modbus_client.client.connect()
             count = 100
-            while count >0:
-                count -=1
+            while count > 0:
+                count -= 1
                 if modbus_client.client.is_socket_open():
                     break
                 time.sleep(2)
             if not modbus_client.client.is_socket_open():
                 raise ValueError('modbus tcp connection failed')
-            self.nodes = BaseClient.load_csv(os.path.join(os.path.dirname(__file__), 'coin_cell_assembly_b.csv'))                            
+            self.nodes = BaseClient.load_csv(os.path.join(os.path.dirname(__file__), 'coin_cell_assembly_b.csv'))
             self.client = modbus_client.register_node_list(self.nodes)
         else:
             print("测试模式，跳过连接")
@@ -185,15 +185,15 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         """ 工站的配置 """
 
         self.success = False
-        self.allow_data_read = False  #允许读取函数运行标志位
+        self.allow_data_read = False  # 允许读取函数运行标志位
         self.csv_export_thread = None
         self.csv_export_running = False
         self.csv_export_file = None
-        self.coin_num_N = 0  #已组装电池数量
+        self.coin_num_N = 0  # 已组装电池数量
 
     def post_init(self, ros_node: ROS2WorkstationNode):
         self._ros_node = ros_node
-        #self.deck = create_a_coin_cell_deck()
+        # self.deck = create_a_coin_cell_deck()
         ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
             "resources": [self.deck]
         })
@@ -203,13 +203,12 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         hole._unilabos_state["max_sheets"] = 2
         return await self._ros_node.update_resource(hole)
 
-    
     async def fill_plate(self):
         plate_1: MaterialPlate = self.deck.children[0].children[0]
-        #plate_1
+        # plate_1
         return await self._ros_node.update_resource(plate_1)
 
-    #def run_assembly(self, wf_name: str, resource: PLRResource, params: str = "\{\}"):
+    # def run_assembly(self, wf_name: str, resource: PLRResource, params: str = "\{\}"):
     #    """启动工作流"""
     #    self.current_workflow_status = WorkflowStatus.RUNNING
     #    logger.info(f"工作站 {self.device_id} 启动工作流: {wf_name}")
@@ -217,8 +216,9 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
     #    # TODO: 实现工作流逻辑
 #
     #    anode_sheet = self.deck.get_resource("anode_sheet")
-        
+
     """ Action逻辑代码 """
+
     def _sys_start_cmd(self, cmd=None):
         """设备启动命令 (可读写)"""
         if cmd is not None:  # 写入模式
@@ -229,7 +229,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             self.success = True
             return self.success
         else:  # 读取模式
-            cmd_feedback, read_err =  self.client.use_node('COIL_SYS_START_CMD').read(1)
+            cmd_feedback, read_err = self.client.use_node('COIL_SYS_START_CMD').read(1)
             return cmd_feedback[0]
 
     def _sys_stop_cmd(self, cmd=None):
@@ -311,8 +311,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             cmd_feedback, read_err = self.client.use_node('COIL_UNILAB_REC_MSG_SUCC_CMD').read(1)
             return cmd_feedback
 
-
   # ====================== 命令类指令（REG_x_） ======================
+
     def _unilab_send_msg_electrolyte_num(self, num=None):
         """UNILAB写电解液使用瓶数(可读写)"""
         if num is not None:
@@ -350,24 +350,28 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         """UNILAB写电解液吸取量参数"""
         if vol is not None:
             self.success = False
-            self.client.use_node('REG_MSG_ELECTROLYTE_VOLUME').write(vol, data_type=DataType.FLOAT32, word_order=WorderOrder.LITTLE)
+            self.client.use_node('REG_MSG_ELECTROLYTE_VOLUME').write(
+                vol, data_type=DataType.FLOAT32, word_order=WorderOrder.LITTLE)
             self.success = True
             return self.success
         else:
-            cmd_feedback, read_err = self.client.use_node('REG_MSG_ELECTROLYTE_VOLUME').read(2, word_order=WorderOrder.LITTLE)
+            cmd_feedback, read_err = self.client.use_node(
+                'REG_MSG_ELECTROLYTE_VOLUME').read(2, word_order=WorderOrder.LITTLE)
             return cmd_feedback[0]
 
     def _unilab_send_msg_assembly_pressure(self, vol=None):
         """UNILAB写电池压制力"""
         if vol is not None:
             self.success = False
-            self.client.use_node('REG_MSG_ASSEMBLY_PRESSURE').write(vol, data_type=DataType.FLOAT32, word_order=WorderOrder.LITTLE)
+            self.client.use_node('REG_MSG_ASSEMBLY_PRESSURE').write(
+                vol, data_type=DataType.FLOAT32, word_order=WorderOrder.LITTLE)
             self.success = True
             return self.success
         else:
-            cmd_feedback, read_err = self.client.use_node('REG_MSG_ASSEMBLY_PRESSURE').read(2, word_order=WorderOrder.LITTLE)
+            cmd_feedback, read_err = self.client.use_node(
+                'REG_MSG_ASSEMBLY_PRESSURE').read(2, word_order=WorderOrder.LITTLE)
             return cmd_feedback[0]
-        
+
     # ==================== 0905新增内容（COIL_x_STATUS） ====================
     def _unilab_send_electrolyte_bottle_num(self, num=None):
         """UNILAB发送电解液瓶数完毕"""
@@ -379,7 +383,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         else:
             cmd_feedback, read_err = self.client.use_node('UNILAB_SEND_ELECTROLYTE_BOTTLE_NUM').read(1)
             return cmd_feedback[0]
-        
+
     def _unilab_rece_electrolyte_bottle_num(self, num=None):
         """设备请求接受电解液瓶数"""
         if num is not None:
@@ -412,7 +416,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         else:
             cmd_feedback, read_err = self.client.use_node('REG_DATA_ELECTROLYTE_USE_NUM').read(1)
             return cmd_feedback[0]
-        
+
     def _unilab_send_finished_cmd(self, num=None):
         """Unilab发送已知一组组装完成信号"""
         if num is not None:
@@ -435,9 +439,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             cmd_feedback, read_err = self.client.use_node('UNILAB_RECE_FINISHED_CMD').read(1)
             return cmd_feedback[0]
 
-
-
     # ==================== 状态类属性（COIL_x_STATUS） ====================
+
     def _sys_start_status(self) -> bool:
         """设备启动中( BOOL)"""
         status, read_err = self.client.use_node('COIL_SYS_START_STATUS').read(1)
@@ -457,7 +460,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         """设备初始化完成( BOOL)"""
         status, read_err = self.client.use_node('COIL_SYS_INIT_STATUS').read(1)
         return status[0]
-    
+
     # 查找资源
     def modify_deck_name(self, resource_name: str):
         # figure_res = self._ros_node.resource_tracker.figure_resource({"name": resource_name})
@@ -525,7 +528,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         return status[0]
     '''
     # ===================== 生产数据区 ======================
-    
+
     @property
     def data_assembly_coin_cell_num(self) -> int:
         """已完成电池数量 (INT16)"""
@@ -540,7 +543,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_ASSEMBLY_PER_TIME').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_ASSEMBLY_PER_TIME').address, count=2)
         if result.isError():
             logger.error(f"读取组装时间失败")
             return 0.0
@@ -552,7 +556,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_OPEN_CIRCUIT_VOLTAGE').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_OPEN_CIRCUIT_VOLTAGE').address, count=2)
         if result.isError():
             logger.error(f"读取开路电压失败")
             return 0.0
@@ -564,7 +569,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_AXIS_X_POS').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_AXIS_X_POS').address, count=2)
         if result.isError():
             logger.error(f"读取X轴位置失败")
             return 0.0
@@ -576,7 +582,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_AXIS_Y_POS').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_AXIS_Y_POS').address, count=2)
         if result.isError():
             logger.error(f"读变Y轴位置失败")
             return 0.0
@@ -588,7 +595,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_AXIS_Z_POS').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_AXIS_Z_POS').address, count=2)
         if result.isError():
             logger.error(f"读取Z轴位置失败")
             return 0.0
@@ -600,7 +608,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_POLE_WEIGHT').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_POLE_WEIGHT').address, count=2)
         if result.isError():
             logger.error(f"读取极片质量失败")
             return 0.0
@@ -635,55 +644,56 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         """电池二维码序列号 (STRING)"""
         try:
             # 读取 STRING 类型数据
-            code_little, read_err = self.client.use_node('REG_DATA_COIN_CELL_CODE').read(10, word_order=WorderOrder.LITTLE)
-            
+            code_little, read_err = self.client.use_node(
+                'REG_DATA_COIN_CELL_CODE').read(10, word_order=WorderOrder.LITTLE)
+
             # PyModbus 3.x 返回 string 类型
             if not isinstance(code_little, str):
                 logger.warning(f"电池二维码返回的类型不支持: {type(code_little)}, 值: {repr(code_little)}")
                 return "N/A"
-            
+
             # 从字符串末尾查找连续的字母数字字符（反转字符串）
             import re
             reversed_str = code_little[::-1]
             match = re.match(r'^([A-Za-z0-9]+)', reversed_str)
-            
+
             if not match:
                 logger.warning(f"未找到有效的电池二维码数据，原始字符串: {repr(code_little)}")
                 return "N/A"
-            
+
             # 提取匹配到的字符串（已经是正确顺序）
             decoded = match.group(1)[:8]  # 只取前8个字符
-            
+
             return decoded if decoded else "N/A"
         except Exception as e:
             logger.error(f"读取电池二维码失败: {e}")
             return "N/A"
-
 
     @property
     def data_electrolyte_code(self) -> str:
         """电解液二维码序列号 (STRING)"""
         try:
             # 读取 STRING 类型数据
-            code_little, read_err = self.client.use_node('REG_DATA_ELECTROLYTE_CODE').read(10, word_order=WorderOrder.LITTLE)
-            
+            code_little, read_err = self.client.use_node(
+                'REG_DATA_ELECTROLYTE_CODE').read(10, word_order=WorderOrder.LITTLE)
+
             # PyModbus 3.x 返回 string 类型
             if not isinstance(code_little, str):
                 logger.warning(f"电解液二维码返回的类型不支持: {type(code_little)}, 值: {repr(code_little)}")
                 return "N/A"
-            
+
             # 从字符串末尾查找连续的字母数字字符（反转字符串）
             import re
             reversed_str = code_little[::-1]
             match = re.match(r'^([A-Za-z0-9]+)', reversed_str)
-            
+
             if not match:
                 logger.warning(f"未找到有效的电解液二维码数据，原始字符串: {repr(code_little)}")
                 return "N/A"
-            
+
             # 提取匹配到的字符串（已经是正确顺序）
             decoded = match.group(1)[:8]  # 只取前8个字符
-            
+
             return decoded if decoded else "N/A"
         except Exception as e:
             logger.error(f"读取电解液二维码失败: {e}")
@@ -696,7 +706,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_GLOVE_BOX_PRESSURE').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_GLOVE_BOX_PRESSURE').address, count=2)
         if result.isError():
             logger.error(f"读取手套箱压力失败")
             return 0.0
@@ -708,7 +719,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_GLOVE_BOX_O2_CONTENT').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_GLOVE_BOX_O2_CONTENT').address, count=2)
         if result.isError():
             logger.error(f"读取手套箱氧含量失败")
             return 0.0
@@ -720,7 +732,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         if self.debug_mode:
             return 0
         # 读取原始寄存器并正确解码FLOAT32
-        result = self.client.client.read_holding_registers(address=self.client.use_node('REG_DATA_GLOVE_BOX_WATER_CONTENT').address, count=2)
+        result = self.client.client.read_holding_registers(
+            address=self.client.use_node('REG_DATA_GLOVE_BOX_WATER_CONTENT').address, count=2)
         if result.isError():
             logger.error(f"读取手套箱水含量失败")
             return 0.0
@@ -739,27 +752,27 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
 #        return int(code)
 
     def func_pack_device_init(self):
-        #切换手动模式
+        # 切换手动模式
         print("切换手动模式")
         self._sys_hand_cmd(True)
         time.sleep(1)
         while (self._sys_hand_status()) == False:
             print("waiting for hand_cmd")
             time.sleep(1)
-        #设备初始化
+        # 设备初始化
         self._sys_init_cmd(True)
         time.sleep(1)
-        #sys_init_status为bool值，不加括号
-        while (self._sys_init_status())== False:
+        # sys_init_status为bool值，不加括号
+        while (self._sys_init_status()) == False:
             print("waiting for init_cmd")
             time.sleep(1)
-        #手动按钮置回False
+        # 手动按钮置回False
         self._sys_hand_cmd(False)
         time.sleep(1)
         while (self._sys_hand_cmd()) == True:
             print("waiting for hand_cmd to False")
             time.sleep(1)
-        #初始化命令置回False
+        # 初始化命令置回False
         self._sys_init_cmd(False)
         time.sleep(1)
         while (self._sys_init_cmd()) == True:
@@ -767,14 +780,14 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             time.sleep(1)
 
     def func_pack_device_auto(self):
-        #切换自动
+        # 切换自动
         print("切换自动模式")
         self._sys_auto_cmd(True)
         time.sleep(1)
         while (self._sys_auto_status()) == False:
             print("waiting for auto_status")
             time.sleep(1)
-        #自动按钮置False
+        # 自动按钮置False
         self._sys_auto_cmd(False)
         time.sleep(1)
         while (self._sys_auto_cmd()) == True:
@@ -782,167 +795,166 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             time.sleep(1)
 
     def func_pack_device_start(self):
-        #切换自动
+        # 切换自动
         print("启动")
         self._sys_start_cmd(True)
         time.sleep(1)
         while (self._sys_start_status()) == False:
             print("waiting for start_status")
             time.sleep(1)
-        #自动按钮置False
+        # 自动按钮置False
         self._sys_start_cmd(False)
         time.sleep(1)
         while (self._sys_start_cmd()) == True:
             print("waiting for start_cmd")
-            time.sleep(1)      
+            time.sleep(1)
 
     def _handle_material_search_dialog(self, enable_search: bool, timeout: int = 30) -> None:
         """处理物料搜寻确认弹窗
-        
+
         监测弹窗是否出现，并根据参数自动点击"是"或"否"按钮（脉冲模式）
-        
+
         Args:
             enable_search: True=点击"是"启用物料搜寻, False=点击"否"不启用物料搜寻
             timeout: 等待弹窗出现的最大时间（秒），默认30秒
-            
+
         Raises:
             RuntimeError: 超时未检测到弹窗，或操作失败
         """
         logger.info(f"开始监测物料搜寻确认弹窗（超时: {timeout}秒）...")
         logger.info(f"用户选择: {'启用物料搜寻（点击是）' if enable_search else '不启用物料搜寻（点击否）'}")
-        
+
         start_time = time.time()
         dialog_appeared = False
-        
+
         # 步骤1: 监测弹窗是否出现
         while time.time() - start_time < timeout:
             try:
                 dialog_node = self.client.use_node('COIL_MATERIAL_SEARCH_DIALOG_APPEAR')
                 dialog_state, read_err = dialog_node.read(1)
-                
+
                 if read_err:
                     logger.warning("读取弹窗状态时出错，继续监测...")
                     time.sleep(0.5)
                     continue
-                
+
                 # 提取实际值
                 if isinstance(dialog_state, (list, tuple)):
                     dialog_actual = dialog_state[0] if len(dialog_state) > 0 else False
                 else:
                     dialog_actual = dialog_state
-                
+
                 if dialog_actual:
                     logger.info("✓ 检测到物料搜寻确认弹窗出现！")
                     dialog_appeared = True
                     break
-                    
+
             except Exception as e:
                 logger.warning(f"读取弹窗状态异常: {e}，继续监测...")
-            
+
             time.sleep(0.5)  # 每0.5秒检查一次
-        
+
         if not dialog_appeared:
             error_msg = f"❌ 超时未检测到物料搜寻确认弹窗（等待了 {timeout} 秒）"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
-        
+
         # 步骤2: 执行脉冲按钮点击
         button_name = "是" if enable_search else "否"
         coil_name = "COIL_MATERIAL_SEARCH_CONFIRM_YES" if enable_search else "COIL_MATERIAL_SEARCH_CONFIRM_NO"
-        
+
         logger.info(f"执行脉冲按钮点击: '{button_name}'")
-        
+
         try:
             button_node = self.client.use_node(coil_name)
-            
+
             # 读取初始状态
             initial_state, _ = button_node.read(1)
             logger.debug(f"按钮'{button_name}'初始状态: {initial_state}")
-            
+
             # 脉冲步骤1: 设置为 True
             logger.info(f"  → 按下按钮 '{button_name}' (设置为 True)")
             button_node.write(True)
             time.sleep(0.5)  # 保持0.5秒
-            
+
             # 验证已按下
             pressed_state, _ = button_node.read(1)
             if isinstance(pressed_state, (list, tuple)):
                 pressed_actual = pressed_state[0] if len(pressed_state) > 0 else False
             else:
                 pressed_actual = pressed_state
-            
+
             if pressed_actual:
                 logger.info(f"  ✓ 按钮 '{button_name}' 已按下")
             else:
                 logger.warning(f"  ⚠ 按钮 '{button_name}' 状态未变为 True，当前值: {pressed_actual}")
-            
+
             # 脉冲步骤2: 释放按钮 (设置为 False)
             logger.info(f"  → 释放按钮 '{button_name}' (设置为 False)")
             button_node.write(False)
             time.sleep(0.3)
-            
+
             # 验证已释放
             released_state, _ = button_node.read(1)
             if isinstance(released_state, (list, tuple)):
                 released_actual = released_state[0] if len(released_state) > 0 else False
             else:
                 released_actual = released_state
-            
+
             if not released_actual:
                 logger.info(f"  ✓ 按钮 '{button_name}' 已释放（脉冲完成）")
             else:
                 logger.warning(f"  ⚠ 按钮 '{button_name}' 未正确释放，当前值: {released_actual}")
-            
+
             logger.info(f"✓ 成功处理物料搜寻确认弹窗（选择: {button_name}）")
-            
+
         except Exception as e:
             error_msg = f"❌ 执行按钮'{button_name}'脉冲操作时失败: {e}"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
 
-
     def func_pack_device_init_auto_start_combined(self, material_search_enable: bool = False) -> bool:
         """
         组合函数：设备初始化 + 切换自动模式 + 启动
-        
+
         整合了原有的三个独立函数：
         1. func_pack_device_init()  - 设备初始化
         2. func_pack_device_auto()  - 切换自动模式
         3. func_pack_device_start() - 启动设备
-        
+
         Args:
             material_search_enable: 是否启用物料搜寻功能。
                                     设备初始化后会弹出物料搜寻确认弹窗，
                                     此参数控制自动点击'是'（启用）或'否'（不启用）。
                                     默认为False（不启用物料搜寻）。
-        
+
         Returns:
             bool: 操作成功返回 True，失败返回 False
         """
         logger.info("=" * 60)
         logger.info("开始组合操作：设备初始化 → 物料搜寻确认 → 自动模式 → 启动")
         logger.info("=" * 60)
-        
+
         # 步骤0: 前置条件检查
         logger.info("\n【步骤 0/4】前置条件检查...")
         try:
             # 检查 REG_UNILAB_INTERACT (应该为False，表示使用Unilab交互)
             unilab_interact_node = self.client.use_node('REG_UNILAB_INTERACT')
             unilab_interact_value, read_err = unilab_interact_node.read(1)
-            
+
             if read_err:
                 error_msg = "❌ 无法读取 REG_UNILAB_INTERACT 状态！请检查设备连接。"
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
-            
+
             # 提取实际值（处理可能的列表或单值）
             if isinstance(unilab_interact_value, (list, tuple)):
                 unilab_interact_actual = unilab_interact_value[0] if len(unilab_interact_value) > 0 else None
             else:
                 unilab_interact_actual = unilab_interact_value
-            
+
             logger.info(f"  REG_UNILAB_INTERACT 当前值: {unilab_interact_actual}")
-            
+
             if unilab_interact_actual != False:
                 error_msg = (
                     "❌ 前置条件检查失败！\n"
@@ -953,26 +965,26 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 )
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
-            
+
             logger.info("  ✓ REG_UNILAB_INTERACT 检查通过 (值为False，使用Unilab交互)")
-            
+
             # 检查 COIL_GB_L_IGNORE_CMD (应该为False，表示使用左手套箱)
             gb_l_ignore_node = self.client.use_node('COIL_GB_L_IGNORE_CMD')
             gb_l_ignore_value, read_err = gb_l_ignore_node.read(1)
-            
+
             if read_err:
                 error_msg = "❌ 无法读取 COIL_GB_L_IGNORE_CMD 状态！请检查设备连接。"
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
-            
+
             # 提取实际值
             if isinstance(gb_l_ignore_value, (list, tuple)):
                 gb_l_ignore_actual = gb_l_ignore_value[0] if len(gb_l_ignore_value) > 0 else None
             else:
                 gb_l_ignore_actual = gb_l_ignore_value
-            
+
             logger.info(f"  COIL_GB_L_IGNORE_CMD 当前值: {gb_l_ignore_actual}")
-            
+
             if gb_l_ignore_actual != False:
                 error_msg = (
                     "❌ 前置条件检查失败！\n"
@@ -983,10 +995,10 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 )
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
-            
+
             logger.info("  ✓ COIL_GB_L_IGNORE_CMD 检查通过 (值为False，使用左手套箱)")
             logger.info("✓ 所有前置条件检查通过！")
-            
+
         except ValueError as e:
             # 节点未找到
             error_msg = f"❌ 配置错误：{str(e)}\n请检查CSV配置文件是否包含必要的节点。"
@@ -997,7 +1009,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             error_msg = f"❌ 前置条件检查异常：{str(e)}"
             logger.error(error_msg)
             raise
-        
+
         # 步骤1: 设备初始化（包含弹窗检测）
         logger.info("\n【步骤 1/4】设备初始化...")
         try:
@@ -1008,47 +1020,47 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             while (self._sys_hand_status()) == False:
                 logger.debug("waiting for hand_cmd")
                 time.sleep(1)
-            
+
             # 设备初始化命令
             logger.info("发送初始化命令...")
             self._sys_init_cmd(True)
             time.sleep(1)
-            
+
             # 等待初始化完成，同时检测物料搜寻弹窗
             logger.info("等待初始化完成（同时监测物料搜寻弹窗）...")
             dialog_handled = False
             max_wait_time = 120  # 最多等待120秒
             start_wait = time.time()
-            
+
             while (self._sys_init_status()) == False:
                 # 检查是否超时
                 if time.time() - start_wait > max_wait_time:
                     raise RuntimeError(f"初始化超时（超过 {max_wait_time} 秒）")
-                
+
                 # 如果还没处理弹窗，检测弹窗是否出现
                 if not dialog_handled:
                     try:
                         dialog_node = self.client.use_node('COIL_MATERIAL_SEARCH_DIALOG_APPEAR')
                         dialog_state, read_err = dialog_node.read(1)
-                        
+
                         if not read_err:
                             # 提取实际值
                             if isinstance(dialog_state, (list, tuple)):
                                 dialog_actual = dialog_state[0] if len(dialog_state) > 0 else False
                             else:
                                 dialog_actual = dialog_state
-                            
+
                             # 如果弹窗出现，立即处理
                             if dialog_actual:
                                 logger.info("✓ 在初始化过程中检测到物料搜寻确认弹窗！")
                                 logger.info(f"用户选择: {'启用物料搜寻（点击是）' if material_search_enable else '不启用物料搜寻（点击否）'}")
-                                
+
                                 # 执行脉冲按钮点击
                                 button_name = "是" if material_search_enable else "否"
                                 coil_name = "COIL_MATERIAL_SEARCH_CONFIRM_YES" if material_search_enable else "COIL_MATERIAL_SEARCH_CONFIRM_NO"
-                                
+
                                 button_node = self.client.use_node(coil_name)
-                                
+
                                 # 脉冲：True -> 等待 -> False
                                 logger.info(f"  → 按下按钮 '{button_name}'")
                                 button_node.write(True)
@@ -1056,40 +1068,40 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                                 logger.info(f"  → 释放按钮 '{button_name}'")
                                 button_node.write(False)
                                 time.sleep(0.3)
-                                
+
                                 logger.info(f"✓ 成功处理物料搜寻确认弹窗（选择: {button_name}）")
                                 dialog_handled = True
-                                
+
                     except Exception as e:
                         logger.debug(f"检测弹窗时出错: {e}")
-                
+
                 logger.debug("waiting for init_cmd")
                 time.sleep(1)
-            
+
             logger.info("✓ 初始化状态完成")
-            
+
             # 手动按钮置回False
             self._sys_hand_cmd(False)
             time.sleep(1)
             while (self._sys_hand_cmd()) == True:
                 logger.debug("waiting for hand_cmd to False")
                 time.sleep(1)
-            
+
             # 初始化命令置回False
             self._sys_init_cmd(False)
             time.sleep(1)
             while (self._sys_init_cmd()) == True:
                 logger.debug("waiting for init_cmd to False")
                 time.sleep(1)
-            
+
             logger.info("✓ 设备初始化完成")
         except Exception as e:
             logger.error(f"❌ 设备初始化失败: {e}")
             return False
-        
+
         # 步骤1.5已经在步骤1中处理，跳过
         logger.info("\n【步骤 1.5/4】物料搜寻确认已在初始化过程中完成")
-        
+
         # 步骤2: 切换自动模式
         logger.info("\n【步骤 2/4】切换自动模式...")
         try:
@@ -1098,7 +1110,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         except Exception as e:
             logger.error(f"❌ 切换自动模式失败: {e}")
             return False
-        
+
         # 步骤3: 启动设备
         logger.info("\n【步骤 3/4】启动设备...")
         try:
@@ -1107,47 +1119,47 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         except Exception as e:
             logger.error(f"❌ 启动设备失败: {e}")
             return False
-        
+
         logger.info("\n" + "=" * 60)
         logger.info("组合操作完成：设备已成功初始化、确认物料搜寻、切换自动模式并启动")
         logger.info("=" * 60)
-        
+
         return True
 
     def func_pack_send_bottle_num(self, bottle_num):
         bottle_num = int(bottle_num)
-        #发送电解液平台数
+        # 发送电解液平台数
         print("启动")
         while (self._unilab_rece_electrolyte_bottle_num()) == False:
             print("waiting for rece_electrolyte_bottle_num to True")
             # self.client.use_node('8520').write(True)
-            time.sleep(1)     
-        #发送电解液瓶数为2
+            time.sleep(1)
+        # 发送电解液瓶数为2
         self._reg_msg_electrolyte_num(bottle_num)
         time.sleep(1)
-        #完成信号置True
+        # 完成信号置True
         self._unilab_send_electrolyte_bottle_num(True)
         time.sleep(1)
-        #检测到依华已接收
+        # 检测到依华已接收
         while (self._unilab_rece_electrolyte_bottle_num()) == True:
             print("waiting for rece_electrolyte_bottle_num to False")
-            time.sleep(1)    
-        #完成信号置False
-        self._unilab_send_electrolyte_bottle_num(False) 
-        time.sleep(1) 
-        #自动按钮置False
+            time.sleep(1)
+        # 完成信号置False
+        self._unilab_send_electrolyte_bottle_num(False)
+        time.sleep(1)
+        # 自动按钮置False
 
     def func_sendbottle_allpack_multi(
-        self, 
-        elec_num, 
-        elec_use_num, 
+        self,
+        elec_num,
+        elec_use_num,
         elec_vol: int = 50,
         # 电解液双滴模式参数
         dual_drop_mode: bool = False,
         dual_drop_first_volume: int = 25,
         dual_drop_suction_timing: bool = False,
         dual_drop_start_timing: bool = False,
-        assembly_type: int = 7, 
+        assembly_type: int = 7,
         assembly_pressure: int = 4200,
         # 来自原 qiming_coin_cell_code 的参数
         fujipian_panshu: int = 0,
@@ -1162,10 +1174,10 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
     ) -> Dict[str, Any]:
         """
         发送瓶数+简化组装函数（适用于第二批次及后续批次）
-        
+
         合并了发送瓶数和简化组装流程，用于连续批次生产。
         适用场景：设备已完成初始化和启动，仍在自动模式下运行。
-        
+
         Args:
             elec_num: 电解液瓶数
             elec_use_num: 每瓶电解液组装的电池数
@@ -1185,10 +1197,10 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             battery_pressure_mode: 是否启用压力模式
             battery_clean_ignore: 是否忽略电池清洁
             file_path: 实验记录保存路径
-            
+
         Returns:
             dict: 包含组装结果的字典
-            
+
         注意：
             - 第一次启动需先调用 func_pack_device_init_auto_start_combined()
             - 后续批次直接调用此函数即可
@@ -1197,7 +1209,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         logger.info("开始发送瓶数+简化组装流程...")
         logger.info(f"电解液瓶数: {elec_num}, 每瓶电池数: {elec_use_num}")
         logger.info("=" * 60)
-        
+
         # 步骤1: 发送电解液瓶数（触发物料搬运）
         logger.info("步骤1/2: 发送电解液瓶数，触发物料搬运...")
         try:
@@ -1211,7 +1223,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 "total_batteries": 0,
                 "batteries": []
             }
-        
+
         # 步骤2: 执行简化组装流程
         logger.info("步骤2/2: 开始简化组装流程...")
         result = self.func_allpack_cmd_simp(
@@ -1234,19 +1246,18 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             battery_clean_ignore=battery_clean_ignore,
             file_path=file_path
         )
-        
+
         logger.info("=" * 60)
         logger.info("发送瓶数+简化组装流程完成")
         logger.info(f"总组装电池数: {result.get('total_batteries', 0)}")
         logger.info("=" * 60)
-        
+
         return result
 
-
     # 下发参数
-    #def func_pack_send_msg_cmd(self, elec_num: int, elec_use_num: int, elec_vol: float, assembly_type: int, assembly_pressure: int) -> bool:
+    # def func_pack_send_msg_cmd(self, elec_num: int, elec_use_num: int, elec_vol: float, assembly_type: int, assembly_pressure: int) -> bool:
     #    """UNILAB写参数"""
-    #    while (self.request_rec_msg_status) == False: 
+    #    while (self.request_rec_msg_status) == False:
     #        print("wait for res_msg")
     #        time.sleep(1)
     #    self.success = False
@@ -1269,41 +1280,41 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
     #    return self.success
 
     def func_pack_send_msg_cmd(self, elec_use_num, elec_vol, assembly_type, assembly_pressure) -> bool:
-        """UNILAB写参数"""    
-        while (self.request_rec_msg_status) == False: 
+        """UNILAB写参数"""
+        while (self.request_rec_msg_status) == False:
             print("wait for request_rec_msg_status to True")
             time.sleep(1)
         self.success = False
-        #self._unilab_send_msg_electrolyte_num(elec_num)
-        #设置平行样数目
+        # self._unilab_send_msg_electrolyte_num(elec_num)
+        # 设置平行样数目
         self._unilab_send_msg_electrolyte_use_num(elec_use_num)
         time.sleep(1)
-        #发送电解液加注量
+        # 发送电解液加注量
         self._unilab_send_msg_electrolyte_vol(elec_vol)
         time.sleep(1)
-        #发送电解液组装类型
+        # 发送电解液组装类型
         self._unilab_send_msg_assembly_type(assembly_type)
         time.sleep(1)
-        #发送电池压制力
+        # 发送电池压制力
         self._unilab_send_msg_assembly_pressure(assembly_pressure)
         time.sleep(1)
         self._unilab_send_msg_succ_cmd(True)
         time.sleep(1)
-        while (self.request_rec_msg_status) == True: 
+        while (self.request_rec_msg_status) == True:
             print("wait for request_rec_msg_status to False")
             time.sleep(1)
         self._unilab_send_msg_succ_cmd(False)
-        #将允许读取标志位置True
+        # 将允许读取标志位置True
         self.allow_data_read = True
         self.success = True
         return self.success
 
-    def func_pack_get_msg_cmd(self, file_path: str="D:\\coin_cell_data") -> bool:
-        """UNILAB读参数"""    
+    def func_pack_get_msg_cmd(self, file_path: str = "D:\\coin_cell_data") -> bool:
+        """UNILAB读参数"""
         while self.request_send_msg_status == False:
             print("waiting for send_read_msg_status to True")
             time.sleep(1)
-        
+
         # 处理开路电压 - 确保是数值类型
         try:
             data_open_circuit_voltage = self.data_open_circuit_voltage
@@ -1315,7 +1326,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             print(f"读取开路电压失败: {e}")
             logger.error(f"读取开路电压失败: {e}")
             data_open_circuit_voltage = 0.0
-        
+
         # 处理极片质量 - 确保是数值类型
         try:
             data_pole_weight = self.data_pole_weight
@@ -1327,12 +1338,12 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             print(f"读取正极片重量失败: {e}")
             logger.error(f"读取正极片重量失败: {e}")
             data_pole_weight = 0.0
-        
+
         data_assembly_time = self.data_assembly_time
         data_assembly_pressure = self.data_assembly_pressure
         data_electrolyte_volume = self.data_electrolyte_volume
         data_coin_num = self.data_coin_num
-        
+
         # 处理电解液二维码 - 确保是字符串类型
         try:
             data_electrolyte_code = self.data_electrolyte_code
@@ -1344,7 +1355,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             print(f"读取电解液二维码失败: {e}")
             logger.error(f"读取电解液二维码失败: {e}")
             data_electrolyte_code = "N/A"
-        
+
         # 处理电池二维码 - 确保是字符串类型
         try:
             data_coin_cell_code = self.data_coin_cell_code
@@ -1364,13 +1375,13 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         logger.debug(f"data_coin_num: {data_coin_num}")
         logger.debug(f"data_electrolyte_code: {data_electrolyte_code}")
         logger.debug(f"data_coin_cell_code: {data_coin_cell_code}")
-        #接收完信息后，读取完毕标志位置True
-        liaopan3 = self.deck.get_resource("成品弹夹")        
-        
+        # 接收完信息后，读取完毕标志位置True
+        liaopan3 = self.deck.get_resource("成品弹夹")
+
         # 生成唯一的电池名称（使用时间戳确保唯一性）
         timestamp_suffix = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         battery_name = f"battery_{self.coin_num_N}_{timestamp_suffix}"
-        
+
         # 检查目标位置是否已有资源，如果有则先卸载
         target_slot = liaopan3.children[self.coin_num_N]
         if target_slot.children:
@@ -1382,17 +1393,17 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                     logger.info(f"已卸载旧资源: {child.name}")
             except Exception as e:
                 logger.error(f"卸载旧资源时出错: {e}")
-        
+
         # 创建新的电池资源
         battery = ElectrodeSheet(name=battery_name, size_x=14, size_y=14, size_z=2)
         battery._unilabos_state = {
-                            "electrolyte_name": data_coin_cell_code,
-                            "data_electrolyte_code": data_electrolyte_code,
-                            "open_circuit_voltage": data_open_circuit_voltage,
-                            "assembly_pressure": data_assembly_pressure,
-                            "electrolyte_volume": data_electrolyte_volume
-                            }
-        
+            "electrolyte_name": data_coin_cell_code,
+            "data_electrolyte_code": data_electrolyte_code,
+            "open_circuit_voltage": data_open_circuit_voltage,
+            "assembly_pressure": data_assembly_pressure,
+            "electrolyte_volume": data_electrolyte_volume
+        }
+
         # 分配新资源到目标位置
         try:
             target_slot.assign_child_resource(battery, location=None)
@@ -1401,40 +1412,39 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             logger.error(f"分配电池资源失败: {e}")
             # 如果分配失败，尝试使用更简单的方法
             raise
-        
-        #print(jipian2.parent)
+
+        # print(jipian2.parent)
         ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
             "resources": [self.deck]
         })
 
-
         self._unilab_rec_msg_succ_cmd(True)
         time.sleep(1)
-        #等待允许读取标志位置False
+        # 等待允许读取标志位置False
         while self.request_send_msg_status == True:
             print("waiting for send_msg_status to False")
             time.sleep(1)
         self._unilab_rec_msg_succ_cmd(False)
         time.sleep(1)
-        #将允许读取标志位置True
+        # 将允许读取标志位置True
         time_date = datetime.now().strftime("%Y%m%d")
-            #秒级时间戳用于标记每一行电池数据
+        # 秒级时间戳用于标记每一行电池数据
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            #生成输出文件的变量
-        self.csv_export_file = os.path.join(file_path, f"date_{time_date}.csv")   
-        #将数据存入csv文件
+        # 生成输出文件的变量
+        self.csv_export_file = os.path.join(file_path, f"date_{time_date}.csv")
+        # 将数据存入csv文件
         if not os.path.exists(self.csv_export_file):
-            #创建一个表头
+            # 创建一个表头
             with open(self.csv_export_file, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow([
-                    'Time', 'open_circuit_voltage', 'pole_weight', 
-                    'assembly_time', 'assembly_pressure', 'electrolyte_volume', 
+                    'Time', 'open_circuit_voltage', 'pole_weight',
+                    'assembly_time', 'assembly_pressure', 'electrolyte_volume',
                     'coin_num', 'electrolyte_code', 'coin_cell_code'
                 ])
-                #立刻写入磁盘
+                # 立刻写入磁盘
                 csvfile.flush()
-        #开始追加电池信息
+        # 开始追加电池信息
         with open(self.csv_export_file, 'a', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow([
@@ -1442,30 +1452,28 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 data_assembly_time, data_assembly_pressure, data_electrolyte_volume,
                 data_coin_num, data_electrolyte_code, data_coin_cell_code
             ])
-            #立刻写入磁盘
+            # 立刻写入磁盘
             csvfile.flush()
         self.success = True
         return self.success
 
-
-
     def func_pack_send_finished_cmd(self) -> bool:
-        """UNILAB写参数"""    
-        while (self._unilab_rece_finished_cmd()) == False: 
+        """UNILAB写参数"""
+        while (self._unilab_rece_finished_cmd()) == False:
             print("wait for rece_finished_cmd to True")
             time.sleep(1)
         self.success = False
         self._unilab_send_finished_cmd(True)
         time.sleep(1)
-        while (self._unilab_rece_finished_cmd()) == True: 
+        while (self._unilab_rece_finished_cmd()) == True:
             print("wait for rece_finished_cmd to False")
             time.sleep(1)
         self._unilab_send_finished_cmd(False)
-        #将允许读取标志位置True
+        # 将允许读取标志位置True
         self.success = True
         return self.success
 
-    def qiming_coin_cell_code(self, fujipian_panshu:int, fujipian_juzhendianwei:int=0, gemopanshu:int=0, gemo_juzhendianwei:int=0, lvbodian:bool=True, battery_pressure_mode:bool=True, battery_pressure:int=4000, battery_clean_ignore:bool=False) -> bool:
+    def qiming_coin_cell_code(self, fujipian_panshu: int, fujipian_juzhendianwei: int = 0, gemopanshu: int = 0, gemo_juzhendianwei: int = 0, lvbodian: bool = True, battery_pressure_mode: bool = True, battery_pressure: int = 4000, battery_clean_ignore: bool = False) -> bool:
         self.success = False
         self.client.use_node('REG_MSG_NE_PLATE_NUM').write(fujipian_panshu)
         self.client.use_node('REG_MSG_NE_PLATE_MATRIX').write(fujipian_juzhendianwei)
@@ -1476,16 +1484,17 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         # self.client.use_node('REG_MSG_ASSEMBLY_PRESSURE').write(battery_pressure)
         self.client.use_node('REG_MSG_BATTERY_CLEAN_IGNORE').write(battery_clean_ignore)
         self.success = True
-        
+
         return self.success
 
-    def func_allpack_cmd(self, elec_num, elec_use_num, elec_vol:int=50, assembly_type:int=7, assembly_pressure:int=4200, file_path: str="/Users/sml/work") -> Dict[str, Any]:
-        elec_num, elec_use_num, elec_vol, assembly_type, assembly_pressure = int(elec_num), int(elec_use_num), int(elec_vol), int(assembly_type), int(assembly_pressure)
+    def func_allpack_cmd(self, elec_num, elec_use_num, elec_vol: int = 50, assembly_type: int = 7, assembly_pressure: int = 4200, file_path: str = "/Users/sml/work") -> Dict[str, Any]:
+        elec_num, elec_use_num, elec_vol, assembly_type, assembly_pressure = int(elec_num), int(
+            elec_use_num), int(elec_vol), int(assembly_type), int(assembly_pressure)
         summary_csv_file = os.path.join(file_path, "duandian.csv")
-        
+
         # 用于收集所有电池的数据
         battery_data_list = []
-        
+
         # 如果断点文件存在，先读取之前的进度
         if os.path.exists(summary_csv_file):
             read_status_flag = True
@@ -1509,8 +1518,9 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                             "total_batteries": 0,
                             "batteries": []
                         }
-                    print(f"从断点文件读取进度: elec_num_N={elec_num_N}, elec_use_num_N={elec_use_num_N}, coin_num_N={coin_num_N}")
-                     
+                    print(
+                        f"从断点文件读取进度: elec_num_N={elec_num_N}, elec_use_num_N={elec_use_num_N}, coin_num_N={coin_num_N}")
+
         else:
             read_status_flag = False
             print("未找到断点文件，从头开始")
@@ -1521,32 +1531,32 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             print(f"剩余电解液瓶数: {elec_num}, 已组装电池数: {elec_use_num}")
             print(f"剩余电解液瓶数: {type(elec_num)}, 已组装电池数: {type(elec_use_num)}")
             print(f"剩余电解液瓶数: {type(int(elec_num))}, 已组装电池数: {type(int(elec_use_num))}")
-        
-        #如果是第一次运行，则进行初始化、切换自动、启动, 如果是断点重启则跳过。
+
+        # 如果是第一次运行，则进行初始化、切换自动、启动, 如果是断点重启则跳过。
         if read_status_flag == False:
             pass
-            #初始化
-            #self.func_pack_device_init()
-            #切换自动
-            #self.func_pack_device_auto()
-            #启动，小车收回
-            #self.func_pack_device_start()
-            #发送电解液瓶数量，启动搬运,多搬运没事
-            #self.func_pack_send_bottle_num(elec_num)
+            # 初始化
+            # self.func_pack_device_init()
+            # 切换自动
+            # self.func_pack_device_auto()
+            # 启动，小车收回
+            # self.func_pack_device_start()
+            # 发送电解液瓶数量，启动搬运,多搬运没事
+            # self.func_pack_send_bottle_num(elec_num)
         last_i = elec_num_N
         last_j = elec_use_num_N
         for i in range(last_i, elec_num):
             print(f"开始第{last_i+i+1}瓶电解液的组装")
-            #第一个循环从上次断点继续，后续循环从0开始
+            # 第一个循环从上次断点继续，后续循环从0开始
             j_start = last_j if i == last_i else 0
             self.func_pack_send_msg_cmd(elec_use_num-j_start, elec_vol, assembly_type, assembly_pressure)
 
             for j in range(j_start, elec_use_num):
                 print(f"开始第{last_i+i+1}瓶电解液的第{j+j_start+1}个电池组装")
-                
-                #读取电池组装数据并存入csv
+
+                # 读取电池组装数据并存入csv
                 self.func_pack_get_msg_cmd(file_path)
-                
+
                 # 收集当前电池的数据
                 # 处理电池二维码
                 try:
@@ -1554,14 +1564,14 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 except Exception as e:
                     print(f"读取电池二维码失败: {e}")
                     battery_qr_code = "N/A"
-                
+
                 # 处理电解液二维码
                 try:
                     electrolyte_qr_code = self.data_electrolyte_code
                 except Exception as e:
                     print(f"读取电解液二维码失败: {e}")
                     electrolyte_qr_code = "N/A"
-                
+
                 # 处理开路电压 - 确保是数值类型
                 try:
                     open_circuit_voltage = self.data_open_circuit_voltage
@@ -1572,7 +1582,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 except Exception as e:
                     print(f"读取开路电压失败: {e}")
                     open_circuit_voltage = 0.0
-                
+
                 # 处理极片质量 - 确保是数值类型
                 try:
                     pole_weight = self.data_pole_weight
@@ -1583,7 +1593,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 except Exception as e:
                     print(f"读取正极片重量失败: {e}")
                     pole_weight = 0.0
-                
+
                 battery_info = {
                     "battery_index": coin_num_N + 1,
                     "battery_barcode": battery_qr_code,
@@ -1595,8 +1605,9 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                     "electrolyte_volume": self.data_electrolyte_volume
                 }
                 battery_data_list.append(battery_info)
-                print(f"已收集第 {coin_num_N + 1} 个电池数据: 电池码={battery_info['battery_barcode']}, 电解液码={battery_info['electrolyte_barcode']}")
-                
+                print(
+                    f"已收集第 {coin_num_N + 1} 个电池数据: 电池码={battery_info['battery_barcode']}, 电解液码={battery_info['electrolyte_barcode']}")
+
                 time.sleep(1)
                 # TODO:读完再将电池数加一还是进入循环就将电池数加一需要考虑
 
@@ -1605,7 +1616,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(summary_csv_file, 'w', newline='', encoding='utf-8') as csvfile:
                     writer = csv.writer(csvfile)
-                    writer.writerow(['elec_num','elec_use_num', 'elec_num_N', 'elec_use_num_N', 'coin_num_N', 'timestamp'])
+                    writer.writerow(['elec_num', 'elec_use_num', 'elec_num_N',
+                                    'elec_use_num_N', 'coin_num_N', 'timestamp'])
                     writer.writerow([elec_num, elec_use_num, elec_num_N, elec_use_num_N, coin_num_N, timestamp])
                     csvfile.flush()
                 coin_num_N += 1
@@ -1614,11 +1626,11 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             elec_num_N += 1
             elec_use_num_N = 0
 
-        #循环正常结束，则删除断点文件
+        # 循环正常结束，则删除断点文件
         os.remove(summary_csv_file)
-        #全部完成后等待依华发送完成信号
+        # 全部完成后等待依华发送完成信号
         self.func_pack_send_finished_cmd()
-        
+
         # 返回JSON格式数据
         result = {
             "success": True,
@@ -1632,28 +1644,27 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 "assembly_pressure": assembly_pressure
             }
         }
-        
+
         print(f"\n{'='*60}")
         print(f"组装完成统计:")
         print(f"  总组装电池数: {result['total_batteries']}")
         print(f"  使用电解液瓶数: {elec_num}")
         print(f"  每瓶电池数: {elec_use_num}")
         print(f"{'='*60}\n")
-        
+
         return result
 
-
     def func_allpack_cmd_simp(
-        self, 
-        elec_num, 
-        elec_use_num, 
+        self,
+        elec_num,
+        elec_use_num,
         elec_vol: int = 50,
         # 电解液双滴模式参数
         dual_drop_mode: bool = False,
         dual_drop_first_volume: int = 25,
         dual_drop_suction_timing: bool = False,
         dual_drop_start_timing: bool = False,
-        assembly_type: int = 7, 
+        assembly_type: int = 7,
         assembly_pressure: int = 4200,
         # 来自原 qiming_coin_cell_code 的参数
         fujipian_panshu: int = 0,
@@ -1668,14 +1679,14 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
     ) -> Dict[str, Any]:
         """
         简化版电池组装函数，整合了原 qiming_coin_cell_code 的参数设置和双滴模式
-        
+
         此函数是 func_allpack_cmd 的增强版本，自动处理以下配置：
         - 负极片和隔膜的盘数及矩阵点位
         - 枪头盒矩阵点位
         - 铝箔垫片使用设置
         - 压力模式和清洁忽略选项
         - 电解液双滴模式（分两次滴液）
-        
+
         Args:
             elec_num: 电解液瓶数
             elec_use_num: 每瓶电解液组装的电池数
@@ -1695,7 +1706,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             battery_pressure_mode: 是否启用压力模式
             battery_clean_ignore: 是否忽略电池清洁
             file_path: 实验记录保存路径
-        
+
         Returns:
             dict: 包含组装结果的字典
         """
@@ -1711,7 +1722,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         gemopanshu = int(gemopanshu)
         gemo_juzhendianwei = int(gemo_juzhendianwei)
         qiangtou_juzhendianwei = int(qiangtou_juzhendianwei)
-        
+
         # 步骤1: 设置设备参数（原 qiming_coin_cell_code 的功能）
         logger.info("=" * 60)
         logger.info("设置设备参数...")
@@ -1722,7 +1733,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         logger.info(f"  压制力: {assembly_pressure}")
         logger.info(f"  忽略电池清洁: {battery_clean_ignore}")
         logger.info("=" * 60)
-        
+
         # 写入基础参数到PLC
         self.client.use_node('REG_MSG_NE_PLATE_NUM').write(fujipian_panshu)
         self.client.use_node('REG_MSG_NE_PLATE_MATRIX').write(fujipian_juzhendianwei)
@@ -1732,28 +1743,28 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         self.client.use_node('COIL_ALUMINUM_FOIL').write(not lvbodian)
         self.client.use_node('REG_MSG_PRESS_MODE').write(not battery_pressure_mode)
         self.client.use_node('REG_MSG_BATTERY_CLEAN_IGNORE').write(battery_clean_ignore)
-        
+
         # 设置电解液双滴模式参数
         self.client.use_node('COIL_ELECTROLYTE_DUAL_DROP_MODE').write(dual_drop_mode)
         self.client.use_node('REG_MSG_DUAL_DROP_FIRST_VOLUME').write(dual_drop_first_volume)
         self.client.use_node('COIL_DUAL_DROP_SUCTION_TIMING').write(dual_drop_suction_timing)
         self.client.use_node('COIL_DUAL_DROP_START_TIMING').write(dual_drop_start_timing)
-        
+
         if dual_drop_mode:
             logger.info(f"✓ 双滴模式已启用: 第一次排液={dual_drop_first_volume}μL, "
                         f"吸液时机={'先吸液' if dual_drop_suction_timing else '正常吸液'}, "
                         f"滴液时机={'正极片后' if dual_drop_start_timing else '正极片前'}")
         else:
             logger.info("✓ 单次滴液模式")
-        
+
         logger.info("✓ 设备参数设置完成")
-        
+
         # 步骤2: 执行组装流程（复用 func_allpack_cmd 的主体逻辑）
         summary_csv_file = os.path.join(file_path, "duandian.csv")
-        
+
         # 用于收集所有电池的数据
         battery_data_list = []
-        
+
         # 如果断点文件存在，先读取之前的进度
         if os.path.exists(summary_csv_file):
             read_status_flag = True
@@ -1777,20 +1788,21 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                             "total_batteries": 0,
                             "batteries": []
                         }
-                    print(f"从断点文件读取进度: elec_num_N={elec_num_N}, elec_use_num_N={elec_use_num_N}, coin_num_N={coin_num_N}")
-                     
+                    print(
+                        f"从断点文件读取进度: elec_num_N={elec_num_N}, elec_use_num_N={elec_use_num_N}, coin_num_N={coin_num_N}")
+
         else:
             read_status_flag = False
             print("未找到断点文件，从头开始")
             elec_num_N = 0
             elec_use_num_N = 0
             coin_num_N = 0
-        
+
         for i in range(20):
             print(f"剩余电解液瓶数: {elec_num}, 已组装电池数: {elec_use_num}")
             print(f"剩余电解液瓶数: {type(elec_num)}, 已组装电池数: {type(elec_use_num)}")
             print(f"剩余电解液瓶数: {type(int(elec_num))}, 已组装电池数: {type(int(elec_use_num))}")
-        
+
         last_i = elec_num_N
         last_j = elec_use_num_N
         for i in range(last_i, elec_num):
@@ -1801,23 +1813,23 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
 
             for j in range(j_start, elec_use_num):
                 print(f"开始第{last_i+i+1}瓶电解液的第{j+j_start+1}个电池组装")
-                
+
                 # 读取电池组装数据并存入csv
                 self.func_pack_get_msg_cmd(file_path)
-                
+
                 # 收集当前电池的数据
                 try:
                     battery_qr_code = self.data_coin_cell_code
                 except Exception as e:
                     print(f"读取电池二维码失败: {e}")
                     battery_qr_code = "N/A"
-                
+
                 try:
                     electrolyte_qr_code = self.data_electrolyte_code
                 except Exception as e:
                     print(f"读取电解液二维码失败: {e}")
                     electrolyte_qr_code = "N/A"
-                
+
                 try:
                     open_circuit_voltage = self.data_open_circuit_voltage
                     if isinstance(open_circuit_voltage, (list, tuple)) and len(open_circuit_voltage) > 0:
@@ -1827,7 +1839,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 except Exception as e:
                     print(f"读取开路电压失败: {e}")
                     open_circuit_voltage = 0.0
-                
+
                 try:
                     pole_weight = self.data_pole_weight
                     if isinstance(pole_weight, (list, tuple)) and len(pole_weight) > 0:
@@ -1837,7 +1849,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 except Exception as e:
                     print(f"读取正极片重量失败: {e}")
                     pole_weight = 0.0
-                
+
                 battery_info = {
                     "battery_index": coin_num_N + 1,
                     "battery_barcode": battery_qr_code,
@@ -1849,15 +1861,17 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                     "electrolyte_volume": self.data_electrolyte_volume
                 }
                 battery_data_list.append(battery_info)
-                print(f"已收集第 {coin_num_N + 1} 个电池数据: 电池码={battery_info['battery_barcode']}, 电解液码={battery_info['electrolyte_barcode']}")
-                
+                print(
+                    f"已收集第 {coin_num_N + 1} 个电池数据: 电池码={battery_info['battery_barcode']}, 电解液码={battery_info['electrolyte_barcode']}")
+
                 time.sleep(1)
 
                 # 生成断点文件
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(summary_csv_file, 'w', newline='', encoding='utf-8') as csvfile:
                     writer = csv.writer(csvfile)
-                    writer.writerow(['elec_num','elec_use_num', 'elec_num_N', 'elec_use_num_N', 'coin_num_N', 'timestamp'])
+                    writer.writerow(['elec_num', 'elec_use_num', 'elec_num_N',
+                                    'elec_use_num_N', 'coin_num_N', 'timestamp'])
                     writer.writerow([elec_num, elec_use_num, elec_num_N, elec_use_num_N, coin_num_N, timestamp])
                     csvfile.flush()
                 coin_num_N += 1
@@ -1870,7 +1884,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         os.remove(summary_csv_file)
         # 全部完成后等待依华发送完成信号
         self.func_pack_send_finished_cmd()
-        
+
         # 返回JSON格式数据
         result = {
             "success": True,
@@ -1885,7 +1899,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 "dual_drop_mode": dual_drop_mode
             }
         }
-        
+
         print(f"\n{'='*60}")
         print(f"组装完成统计:")
         print(f"  总组装电池数: {result['total_batteries']}")
@@ -1893,7 +1907,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         print(f"  每瓶电池数: {elec_use_num}")
         print(f"  双滴模式: {'启用' if dual_drop_mode else '禁用'}")
         print(f"{'='*60}\n")
-        
+
         return result
 
     def func_pack_device_stop(self) -> bool:
@@ -1901,39 +1915,39 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         for i in range(3):
             time.sleep(2)
             print(f"输出{i}")
-        #print("_sys_hand_cmd", self._sys_hand_cmd())
-        #time.sleep(1)  
-        #print("_sys_hand_status", self._sys_hand_status())
-        #time.sleep(1)  
-        #print("_sys_init_cmd", self._sys_init_cmd())
-        #time.sleep(1)  
-        #print("_sys_init_status", self._sys_init_status())
-        #time.sleep(1)  
-        #print("_sys_auto_status", self._sys_auto_status())
-        #time.sleep(1)  
-        #print("data_axis_y_pos", self.data_axis_y_pos)
-        #time.sleep(1)  
-        #self.success = False
-        #with open('action_device_stop.json', 'r', encoding='utf-8') as f:
+        # print("_sys_hand_cmd", self._sys_hand_cmd())
+        # time.sleep(1)
+        # print("_sys_hand_status", self._sys_hand_status())
+        # time.sleep(1)
+        # print("_sys_init_cmd", self._sys_init_cmd())
+        # time.sleep(1)
+        # print("_sys_init_status", self._sys_init_status())
+        # time.sleep(1)
+        # print("_sys_auto_status", self._sys_auto_status())
+        # time.sleep(1)
+        # print("data_axis_y_pos", self.data_axis_y_pos)
+        # time.sleep(1)
+        # self.success = False
+        # with open('action_device_stop.json', 'r', encoding='utf-8') as f:
         #    action_json = json.load(f)
-        #self.client.execute_procedure_from_json(action_json)
-        #self.success = True
-        #return self.success
-    
-    def fun_wuliao_test(self) -> bool: 
-        #找到data_init中构建的2个物料盘
+        # self.client.execute_procedure_from_json(action_json)
+        # self.success = True
+        # return self.success
+
+    def fun_wuliao_test(self) -> bool:
+        # 找到data_init中构建的2个物料盘
         liaopan3 = self.deck.get_resource("\u7535\u6c60\u6599\u76d8")
-        for i in range(16):            
+        for i in range(16):
             battery = ElectrodeSheet(name=f"battery_{i}", size_x=16, size_y=16, size_z=2)
             battery._unilabos_state = {
-                                "diameter": 20.0,
-                                "height": 20.0,
-                                "assembly_pressure": i,
-                                "electrolyte_volume": 20.0,
-                                "electrolyte_name": f"DP{i}"
-                                }
+                "diameter": 20.0,
+                "height": 20.0,
+                "assembly_pressure": i,
+                "electrolyte_volume": 20.0,
+                "electrolyte_name": f"DP{i}"
+            }
             liaopan3.children[i].assign_child_resource(battery, location=None)
-            
+
             ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
                 "resources": [self.deck]
             })
@@ -1942,12 +1956,13 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             #     time.sleep(1)
             # time.sleep(40)
     # 数据读取与输出
-    def func_read_data_and_output(self, file_path: str="/Users/sml/work"):
+
+    def func_read_data_and_output(self, file_path: str = "/Users/sml/work"):
         # 检查CSV导出是否正在运行，已运行则跳出，防止同时启动两个while循环
         if self.csv_export_running:
             return False, "读取已在运行中"
-        
-        #若不存在该目录则创建
+
+        # 若不存在该目录则创建
         if not os.path.exists(file_path):
             os.makedirs(file_path)
             print(f"创建目录: {file_path}")
@@ -1955,21 +1970,21 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         # 只要允许读取标志位为true，就持续运行该函数，直到触发停止条件
         while self.allow_data_read:
 
-            #函数运行标志位，确保只同时启动一个导出函数
+            # 函数运行标志位，确保只同时启动一个导出函数
             self.csv_export_running = True
 
-            #等待接收结果标志位置True
+            # 等待接收结果标志位置True
             while self.request_send_msg_status == False:
                 print("waiting for send_msg_status to True")
                 time.sleep(1)
-            #日期时间戳用于按天存放csv文件
+            # 日期时间戳用于按天存放csv文件
             time_date = datetime.now().strftime("%Y%m%d")
-            #秒级时间戳用于标记每一行电池数据
+            # 秒级时间戳用于标记每一行电池数据
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            #生成输出文件的变量
-            self.csv_export_file = os.path.join(file_path, f"date_{time_date}.csv")   
-            
-            #接收信息
+            # 生成输出文件的变量
+            self.csv_export_file = os.path.join(file_path, f"date_{time_date}.csv")
+
+            # 接收信息
             data_open_circuit_voltage = self.data_open_circuit_voltage
             data_pole_weight = self.data_pole_weight
             data_assembly_time = self.data_assembly_time
@@ -1985,21 +2000,21 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             Al_elec_site = 0
             Gasket_site = 0
 
-            #接收完信息后，读取完毕标志位置True
-            self._unilab_rec_msg_succ_cmd()# = True
-            #等待允许读取标志位置False
+            # 接收完信息后，读取完毕标志位置True
+            self._unilab_rec_msg_succ_cmd()  # = True
+            # 等待允许读取标志位置False
             while self.request_send_msg_status == True:
                 print("waiting for send_msg_status to False")
                 time.sleep(1)
-            self._unilab_rec_msg_succ_cmd()# = False
+            self._unilab_rec_msg_succ_cmd()  # = False
 
-            #此处操作物料信息（如果中途报错停止，如何）
-            #报错怎么办（加个判断标志位，如果发生错误，则根据停止位置扣除物料）
-            #根据物料光标判断取哪个物料（人工摆盘，电解液瓶，移液枪头都有光标位置，寄存器读即可）
-            
-            #物料读取操作写在这里
-            #在这里进行物料调取
-            #转移物料瓶，elec_bottle_site对应第几瓶电解液（从依华寄存器读取）
+            # 此处操作物料信息（如果中途报错停止，如何）
+            # 报错怎么办（加个判断标志位，如果发生错误，则根据停止位置扣除物料）
+            # 根据物料光标判断取哪个物料（人工摆盘，电解液瓶，移液枪头都有光标位置，寄存器读即可）
+
+            # 物料读取操作写在这里
+            # 在这里进行物料调取
+            # 转移物料瓶，elec_bottle_site对应第几瓶电解液（从依华寄存器读取）
         #    transfer_bottle(deck, elec_bottle_site)
         #    #找到电解液瓶的对象
         #    electrolyte_rack = deck.get_resource("electrolyte_rack")
@@ -2025,7 +2040,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         #    clip_magazine_1_hole = self.deck.get_resource("clip_magazine_1").get_item(Pos_elec_site)
         #    clip_magazine_2_hole = self.deck.get_resource("clip_magazine_2").get_item(Al_elec_site)
         #    clip_magazine_3_hole = self.deck.get_resource("clip_magazine_3").get_item(Gasket_site)
-        #    
+        #
         #    if clip_magazine_1_hole.get_sheet_count() > 0:   # 检查洞位是否有极片
         #        electrode_sheet_1 = clip_magazine_1_hole.take_sheet()  # 从洞位取出极片
         #        test_battery.add_electrode_sheet(electrode_sheet_1)  # 添加到电池中
@@ -2046,7 +2061,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         #        print(f"已将极片 {electrode_sheet_3.name} 从子弹夹转移到电池")
         #    else:
         #        print("子弹夹洞位0没有极片")
-        #  
+        #
         #    # TODO:#把电解液从瓶中取到电池夹子中
         #    battery_site = deck.get_resource("battery_press_1")
         #    clip_magazine_battery = deck.get_resource("clip_magazine_battery")
@@ -2065,25 +2080,20 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         #    self.deck.save_state_to_file("button_battery_station_state.json", indent=2)
         #    print("台面状态已保存到: button_battery_station_state.json")
 
-
-
-
-
-
-            #将数据写入csv中
-            #如当前目录下无同名文件则新建一个csv用于存放数据
+            # 将数据写入csv中
+            # 如当前目录下无同名文件则新建一个csv用于存放数据
             if not os.path.exists(self.csv_export_file):
-                #创建一个表头
+                # 创建一个表头
                 with open(self.csv_export_file, 'w', newline='', encoding='utf-8') as csvfile:
                     writer = csv.writer(csvfile)
                     writer.writerow([
-                        'Time', 'open_circuit_voltage', 'pole_weight', 
-                        'assembly_time', 'assembly_pressure', 'electrolyte_volume', 
+                        'Time', 'open_circuit_voltage', 'pole_weight',
+                        'assembly_time', 'assembly_pressure', 'electrolyte_volume',
                         'coin_num', 'electrolyte_code', 'coin_cell_code'
                     ])
-                    #立刻写入磁盘
+                    # 立刻写入磁盘
                     csvfile.flush()
-            #开始追加电池信息
+            # 开始追加电池信息
             with open(self.csv_export_file, 'a', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow([
@@ -2091,11 +2101,11 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                     data_assembly_time, data_assembly_pressure, data_electrolyte_volume,
                     data_coin_num, data_electrolyte_code, data_coin_cell_code
                 ])
-                #立刻写入磁盘
+                # 立刻写入磁盘
                 csvfile.flush()
 
             # 只要不在自动模式运行中，就将允许标志位置False
-            if self.sys_auto_status  == False or self.sys_start_status == False:
+            if self.sys_auto_status == False or self.sys_start_status == False:
                 self.allow_data_read = False
                 self.csv_export_running = False
             time.sleep(1)
@@ -2104,10 +2114,10 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         """停止CSV导出"""
         if not self.csv_export_running:
             return False, "read data未在运行"
-        
+
         self.csv_export_running = False
         self.allow_data_read = False
-        
+
         if self.csv_export_thread and self.csv_export_thread.is_alive():
             self.csv_export_thread.join(timeout=5)
 
@@ -2119,7 +2129,6 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             'thread_alive': self.csv_export_thread.is_alive() if self.csv_export_thread else False
         }
 
-    
     '''
     # ===================== 物料管理区 ======================
     @property
@@ -2137,7 +2146,6 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
     '''
 
 
-
 if __name__ == "__main__":
     # 简单测试
     workstation = CoinCellAssemblyWorkstation(deck=CoincellDeck(setup=True, name="coin_cell_deck"))
@@ -2148,5 +2156,5 @@ if __name__ == "__main__":
     workstation.func_pack_device_auto()
     workstation.func_pack_device_start()
     workstation.func_pack_send_bottle_num(16)
-    workstation.func_allpack_cmd(elec_num=16, elec_use_num=16, elec_vol=50, assembly_type=7, assembly_pressure=4200, file_path="/Users/calvincao/Desktop/work/Uni-Lab-OS-hhm")
-    
+    workstation.func_allpack_cmd(elec_num=16, elec_use_num=16, elec_vol=50, assembly_type=7,
+                                 assembly_pressure=4200, file_path="/Users/calvincao/Desktop/work/Uni-Lab-OS-hhm")

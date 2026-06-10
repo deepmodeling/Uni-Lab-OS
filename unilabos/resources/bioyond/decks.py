@@ -66,6 +66,7 @@ class BIOYOND_PolymerReactionStation_Deck(Deck):
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
 
+
 class BIOYOND_PolymerPreparationStation_Deck(Deck):
     def __init__(
         self,
@@ -100,6 +101,7 @@ class BIOYOND_PolymerPreparationStation_Deck(Deck):
 
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
+
 
 class BIOYOND_YB_Deck(Deck):
     def __init__(
@@ -150,12 +152,8 @@ class BIOYOND_YB_Deck(Deck):
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
 
+
 def YB_Deck(name: str) -> Deck:
-    by=BIOYOND_YB_Deck(name=name)
+    by = BIOYOND_YB_Deck(name=name)
     by.setup()
     return by
-
-
-
-
-

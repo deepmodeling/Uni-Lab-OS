@@ -35,13 +35,14 @@ def get_pattern_matches(folder, pattern):
                 matches.append(child)
     return matches
 
+
 class ResourceVisualization:
     def __init__(self, device: dict, resource: dict, enable_rviz: bool = True):
         """初始化资源可视化类
-        
+
         该类用于将设备和资源的3D模型可视化展示。通过解析设备和资源的配置信息,
         从注册表中获取对应的3D模型文件,并使用ROS2和RViz进行可视化。
-        
+
         Args:
             device (dict): 设备配置字典,包含设备的类型、位置等信息
             resource (dict): 资源配置字典,包含资源的类型、位置等信息 
@@ -62,14 +63,14 @@ class ResourceVisualization:
 
         </robot>
         '''
-        self.robot_state_str= '''<?xml version="1.0" ?>
+        self.robot_state_str = '''<?xml version="1.0" ?>
         <robot xmlns:xacro="http://ros.org/wiki/xacro" name="full_dev">
         <link name="world"/>
         </robot>
         '''
         self.root = etree.fromstring(self.robot_state_str)
         self.root_srdf = etree.fromstring(self.srdf_str)
-                
+
         xacro_uri = self.root.nsmap["xacro"]
 
         self.moveit_nodes = {}
@@ -121,7 +122,8 @@ class ResourceVisualization:
                     elif model_config['type'] == 'device':
 
                         new_include = etree.SubElement(self.root, f"{{{xacro_uri}}}include")
-                        new_include.set("filename", f"{str(self.mesh_path)}/devices/{model_config['mesh']}/macro_device.xacro")
+                        new_include.set(
+                            "filename", f"{str(self.mesh_path)}/devices/{model_config['mesh']}/macro_device.xacro")
                         new_dev = etree.SubElement(self.root, f"{{{xacro_uri}}}{model_config['mesh']}")
                         new_dev.set("parent_link", "world")
                         new_dev.set("mesh_path", str(self.mesh_path))
@@ -129,35 +131,38 @@ class ResourceVisualization:
                         # if node["parent"] is not None:
                         #     new_dev.set("station_name", node["parent"]+'_')
                         if "position" in node:
-                            new_dev.set("x",str(float(node["position"]["position"]["x"])/1000))
-                            new_dev.set("y",str(float(node["position"]["position"]["y"])/1000))
-                            new_dev.set("z",str(float(node["position"]["position"]["z"])/1000))
+                            new_dev.set("x", str(float(node["position"]["position"]["x"])/1000))
+                            new_dev.set("y", str(float(node["position"]["position"]["y"])/1000))
+                            new_dev.set("z", str(float(node["position"]["position"]["z"])/1000))
                         if "rotation" in node["config"]:
-                            new_dev.set("rx",str(float(node["config"]["rotation"]["x"])))
-                            new_dev.set("ry",str(float(node["config"]["rotation"]["y"])))
-                            new_dev.set("r",str(float(node["config"]["rotation"]["z"])))
+                            new_dev.set("rx", str(float(node["config"]["rotation"]["x"])))
+                            new_dev.set("ry", str(float(node["config"]["rotation"]["y"])))
+                            new_dev.set("r", str(float(node["config"]["rotation"]["z"])))
                         if "pose" in node:
-                            new_dev.set("x",str(float(node["pose"]["position"]["x"])/1000))
-                            new_dev.set("y",str(float(node["pose"]["position"]["y"])/1000))
-                            new_dev.set("z",str(float(node["pose"]["position"]["z"])/1000))
-                            new_dev.set("rx",str(float(node["pose"]["rotation"]["x"])))
-                            new_dev.set("ry",str(float(node["pose"]["rotation"]["y"])))
-                            new_dev.set("r",str(float(node["pose"]["rotation"]["z"])))
+                            new_dev.set("x", str(float(node["pose"]["position"]["x"])/1000))
+                            new_dev.set("y", str(float(node["pose"]["position"]["y"])/1000))
+                            new_dev.set("z", str(float(node["pose"]["position"]["z"])/1000))
+                            new_dev.set("rx", str(float(node["pose"]["rotation"]["x"])))
+                            new_dev.set("ry", str(float(node["pose"]["rotation"]["y"])))
+                            new_dev.set("r", str(float(node["pose"]["rotation"]["z"])))
                         if "device_config" in node["config"]:
                             for key, value in node["config"]["device_config"].items():
                                 new_dev.set(key, str(value))
 
                         # 添加ros2_controller
-                        if node['class'].find('moveit.')!= -1:
+                        if node['class'].find('moveit.') != -1:
                             new_include_controller = etree.SubElement(self.root, f"{{{xacro_uri}}}include")
-                            new_include_controller.set("filename", f"{str(self.mesh_path)}/devices/{model_config['mesh']}/config/macro.ros2_control.xacro")
-                            new_controller = etree.SubElement(self.root, f"{{{xacro_uri}}}{model_config['mesh']}_ros2_control")
+                            new_include_controller.set(
+                                "filename", f"{str(self.mesh_path)}/devices/{model_config['mesh']}/config/macro.ros2_control.xacro")
+                            new_controller = etree.SubElement(
+                                self.root, f"{{{xacro_uri}}}{model_config['mesh']}_ros2_control")
                             new_controller.set("device_name", node["id"]+"_")
                             new_controller.set("mesh_path", str(self.mesh_path))
 
                             # 添加moveit的srdf
                             new_include_srdf = etree.SubElement(self.root_srdf, f"{{{xacro_uri}}}include")
-                            new_include_srdf.set("filename", f"{str(self.mesh_path)}/devices/{model_config['mesh']}/config/macro.srdf.xacro")
+                            new_include_srdf.set(
+                                "filename", f"{str(self.mesh_path)}/devices/{model_config['mesh']}/config/macro.srdf.xacro")
                             new_srdf = etree.SubElement(self.root_srdf, f"{{{xacro_uri}}}{model_config['mesh']}_srdf")
                             new_srdf.set("device_name", node["id"]+"_")
                             self.moveit_nodes[node["id"]] = model_config['mesh']
@@ -168,12 +173,10 @@ class ResourceVisualization:
         xacro.process_doc(doc)
         self.urdf_str = doc.toxml()
 
-
         re_srdf = etree.tostring(self.root_srdf, encoding="unicode")
         doc_srdf = xacro.parse(re_srdf)
         xacro.process_doc(doc_srdf)
         self.urdf_str_srdf = doc_srdf.toxml()
-
 
         if self.moveit_nodes:
             self.moveit_init()
@@ -181,25 +184,31 @@ class ResourceVisualization:
     def moveit_init(self):
 
         for name, config in self.moveit_nodes.items():
-            controller_dict = yaml.safe_load(open(f"{str(self.mesh_path)}/devices/{config}/config/ros2_controllers.yaml", "r"))
-            moveit_dict = yaml.safe_load(open(f"{str(self.mesh_path)}/devices/{config}/config/moveit_controllers.yaml", "r"))
-            kinematics_dict = yaml.safe_load(open(f"{str(self.mesh_path)}/devices/{config}/config/kinematics.yaml", "r"))
-            
+            controller_dict = yaml.safe_load(
+                open(f"{str(self.mesh_path)}/devices/{config}/config/ros2_controllers.yaml", "r"))
+            moveit_dict = yaml.safe_load(
+                open(f"{str(self.mesh_path)}/devices/{config}/config/moveit_controllers.yaml", "r"))
+            kinematics_dict = yaml.safe_load(
+                open(f"{str(self.mesh_path)}/devices/{config}/config/kinematics.yaml", "r"))
+
             for key_kinematics, value_kinematics in kinematics_dict.items():
                 self.moveit_nodes_kinematics[f'{name}_{key_kinematics}'] = value_kinematics
-            
+
             for key, value in controller_dict['controller_manager']['ros__parameters'].items():
                 if key == 'update_rate' or key == 'joint_state_broadcaster':
                     continue
                 self.ros2_controllers_yaml['controller_manager']['ros__parameters'][f"{name}_{key}"] = value
-                controller_dict[key]['ros__parameters']['joints'] = [f"{name}_{joint}" for joint in controller_dict[key]['ros__parameters']['joints']]
+                controller_dict[key]['ros__parameters']['joints'] = [
+                    f"{name}_{joint}" for joint in controller_dict[key]['ros__parameters']['joints']]
                 self.ros2_controllers_yaml[f"{name}_{key}"] = controller_dict[key]
 
             for controller_name in moveit_dict['moveit_simple_controller_manager']['controller_names']:
-                self.moveit_controllers_yaml['moveit_simple_controller_manager']['controller_names'].append(f"{name}_{controller_name}")
-                moveit_dict['moveit_simple_controller_manager'][controller_name]['joints'] = [f"{name}_{joint}" for joint in moveit_dict['moveit_simple_controller_manager'][controller_name]['joints']]
-                self.moveit_controllers_yaml['moveit_simple_controller_manager'][f"{name}_{controller_name}"] = moveit_dict['moveit_simple_controller_manager'][controller_name]
-
+                self.moveit_controllers_yaml['moveit_simple_controller_manager']['controller_names'].append(
+                    f"{name}_{controller_name}")
+                moveit_dict['moveit_simple_controller_manager'][controller_name]['joints'] = [
+                    f"{name}_{joint}" for joint in moveit_dict['moveit_simple_controller_manager'][controller_name]['joints']]
+                self.moveit_controllers_yaml['moveit_simple_controller_manager'][
+                    f"{name}_{controller_name}"] = moveit_dict['moveit_simple_controller_manager'][controller_name]
 
     def create_launch_description(self) -> LaunchDescription:
         """
@@ -249,7 +258,7 @@ class ResourceVisualization:
 
         for pipeline in pipelines:
             planning_pipelines[pipeline] = load_yaml(
-                default_folder /  f"{pipeline}_planning.yaml"
+                default_folder / f"{pipeline}_planning.yaml"
             )
 
         if "ompl" in planning_pipelines:
@@ -263,10 +272,10 @@ class ResourceVisualization:
             "default_velocity_scaling_factor": 0.1,
             "default_acceleration_scaling_factor": 0.1,
             "cartesian_limits": {
-            "max_trans_vel": 1.0,
-            "max_trans_acc": 2.25,
-            "max_trans_dec": -5.0,
-            "max_rot_vel": 1.57
+                "max_trans_vel": 1.0,
+                "max_trans_acc": 2.25,
+                "max_trans_dec": -5.0,
+                "max_rot_vel": 1.57
             }
         }
         # 解析URDF文件
@@ -274,7 +283,6 @@ class ResourceVisualization:
         urdf_str_srdf = self.urdf_str_srdf
 
         kinematics_dict = self.moveit_nodes_kinematics
-
 
         if self.moveit_nodes:
 
@@ -305,11 +313,11 @@ class ResourceVisualization:
                 )
             controllers.append(
                 nd(
-                        package="controller_manager",
-                        executable="spawner",
-                        arguments=["joint_state_broadcaster", "--controller-manager", f"controller_manager"],
-                        output="screen",
-                        env=dict(os.environ)
+                    package="controller_manager",
+                    executable="spawner",
+                    arguments=["joint_state_broadcaster", "--controller-manager", f"controller_manager"],
+                    output="screen",
+                    env=dict(os.environ)
                 )
             )
             for i in controllers:
@@ -327,14 +335,13 @@ class ResourceVisualization:
                 'robot_description': robot_description,
                 'use_sim_time': False
             },
-            # kinematics_dict
+                # kinematics_dict
             ],
             env=dict(os.environ)
         )
 
-
         # 创建move_group节点
-        moveit_params =[{
+        moveit_params = [{
             'allow_trajectory_execution': True,
             'robot_description': robot_description,
             'robot_description_semantic': urdf_str_srdf,
@@ -349,10 +356,10 @@ class ResourceVisualization:
             'publish_state_updates': True,
             'publish_transforms_updates': True,
             # 'robot_description_planning': robot_description_planning,
-            },
+        },
             robot_description_planning,
             planning_pipelines,
-            ]
+        ]
         if self.moveit_controllers_yaml['moveit_simple_controller_manager']['controller_names']:
             moveit_params.append(self.moveit_controllers_yaml)
 
@@ -363,7 +370,6 @@ class ResourceVisualization:
             parameters=moveit_params,
             env=dict(os.environ)
         )
-
 
         # 将节点添加到launch描述中
         self.launch_description.add_action(robot_state_publisher)

@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: autopep8
+        name: autopep8
+        entry: python -m autopep8 --in-place --max-line-length=120
+        language: system
+        types: [python]
+
+      - id: flake8
+        name: flake8
+        entry: python -m flake8
+        language: system
+        types: [python]

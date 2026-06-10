@@ -740,7 +740,8 @@ def generate_pump_protocol_with_rinsing(
         debug_print(f"⏭️ 跳过冲洗操作")
         debug_print(f"  - 溶剂: '{final_rinsing_solvent}'")
         debug_print(f"  - 次数: {final_rinsing_repeats}")
-        debug_print(f"  - 条件满足: {bool(final_rinsing_solvent and final_rinsing_solvent.strip() and final_rinsing_repeats > 0)}")
+        debug_print(
+            f"  - 条件满足: {bool(final_rinsing_solvent and final_rinsing_solvent.strip() and final_rinsing_repeats > 0)}")
 
     # ========== 最终结果 ==========
 

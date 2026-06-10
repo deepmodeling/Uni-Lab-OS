@@ -90,7 +90,6 @@ def get_result_info_str(error: str, suc: bool, return_value=None) -> str:
     return json.dumps(result_info, ensure_ascii=False, cls=ResultInfoEncoder)
 
 
-
 def serialize_result_info(error: str, suc: bool, return_value=None) -> dict:
     """
     序列化任务执行结果信息

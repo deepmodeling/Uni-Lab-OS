@@ -55,6 +55,7 @@ class VideoPublisher(BaseROS2DeviceNode):
             self.cap.release()
         super().destroy_node()
 
+
 def main(args=None):
     rclpy.init(args=args)
     node = VideoPublisher()
@@ -65,6 +66,7 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

@@ -8,12 +8,14 @@ Json = Dict[str, Any]
 
 # ---------------- Converter ----------------
 
+
 class DeviceMethodConverter:
     """
     - 字段统一：resource_name（原 device_class）、template_name（原 action_key）
     - params 单层；inputs 使用 'params.' 前缀
     - SimpleGraph.add_workflow_node 负责变量连线与边
     """
+
     def __init__(self, device_registry: Optional[Dict[str, Any]] = None):
         self.graph = WorkflowGraph()
         self.variable_sources: Dict[str, Dict[str, Any]] = {}        # var -> {node_id, output_name}

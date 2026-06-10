@@ -19,7 +19,7 @@ from unilabos.utils.log import logger
 
 class CoinCellAssemblyWorkstation(WorkstationBase):
     """纽扣电池组装工作站
-    
+
     基于工作站基类，实现纽扣电池制造的特定功能：
     1. 纽扣电池特定的通信协议
     2. 纽扣电池物料管理（料板、极片、电池等）
@@ -48,22 +48,22 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             timeout=modbus_config.get("timeout", 5.0),
             retry_count=modbus_config.get("retry_count", 3)
         )
-        
+
         # 设置台面配置
         self.deck_config = deck_config or {
             "size_x": 1620.0,
             "size_y": 1270.0,
             "size_z": 500.0
         }
-        
+
         # CSV地址映射文件路径
         self.csv_path = csv_path
-        
+
         # 创建资源跟踪器（如果没有提供）
         if resource_tracker is None:
             from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
             resource_tracker = DeviceNodeResourceTracker()
-        
+
         # 初始化基类
         super().__init__(
             device_id=device_id,
@@ -75,7 +75,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             *args,
             **kwargs
         )
-        
+
         logger.info(f"纽扣电池组装工作站 {device_id} 初始化完成")
 
     def _create_communication_module(self) -> WorkstationCommunicationBase:
@@ -130,7 +130,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                         "enum": ["LiFePO4", "LiCoO2", "NCM", "LMO"]
                     },
                     "anode_material": {
-                        "type": "string", 
+                        "type": "string",
                         "description": "负极材料类型",
                         "enum": ["Graphite", "LTO", "Silicon"]
                     }
@@ -138,7 +138,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 "required": ["electrolyte_num", "electrolyte_volume", "assembly_pressure"]
             }
         )
-        
+
         # 质量检查工作流
         self.supported_workflows["quality_inspection"] = WorkflowInfo(
             name="quality_inspection",
@@ -169,10 +169,10 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 }
             }
         )
-        
+
         # 设备初始化工作流
         self.supported_workflows["device_initialization"] = WorkflowInfo(
-            name="device_initialization", 
+            name="device_initialization",
             description="设备初始化工作流",
             estimated_duration=30.0,  # 30秒
             required_materials=[],
@@ -190,19 +190,19 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         )
 
     # ============ 纽扣电池特定方法 ============
-    
+
     def get_electrode_sheet_inventory(self) -> Dict[str, int]:
         """获取极片库存统计"""
         try:
             sheets = self.material_management.find_electrode_sheets()
             inventory = {}
-            
+
             for sheet in sheets:
                 material_type = getattr(sheet, 'material_type', 'unknown')
                 inventory[material_type] = inventory.get(material_type, 0) + 1
-            
+
             return inventory
-            
+
         except Exception as e:
             logger.error(f"获取极片库存失败: {e}")
             return {}
@@ -211,11 +211,11 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         """获取电池生产统计"""
         try:
             production_data = self.communication.get_production_data()
-            
+
             # 添加物料统计
             electrode_inventory = self.get_electrode_sheet_inventory()
             battery_count = len(self.material_management.find_batteries())
-            
+
             return {
                 **production_data,
                 "electrode_inventory": electrode_inventory,
@@ -223,7 +223,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 "material_plates": len(self.material_management.find_material_plates()),
                 "press_slots": len(self.material_management.find_press_slots())
             }
-            
+
         except Exception as e:
             logger.error(f"获取生产统计失败: {e}")
             return {"error": str(e)}
@@ -233,9 +233,9 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         try:
             from unilabos.device_comms.button_battery_station import Battery
             import uuid
-            
+
             battery_id = f"battery_{uuid.uuid4().hex[:8]}"
-            
+
             battery = Battery(
                 name=battery_id,
                 diameter=battery_spec.get("diameter", 20.0),
@@ -243,14 +243,14 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 max_volume=battery_spec.get("max_volume", 100.0),
                 barcode=battery_spec.get("barcode", "")
             )
-            
+
             # 添加到物料管理系统
             self.material_management.plr_resources[battery_id] = battery
             self.material_management.resource_tracker.add_resource(battery)
-            
+
             logger.info(f"创建新电池资源: {battery_id}")
             return battery_id
-            
+
         except Exception as e:
             logger.error(f"创建电池资源失败: {e}")
             return None
@@ -259,13 +259,13 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         """查找可用的压制槽"""
         try:
             press_slots = self.material_management.find_press_slots()
-            
+
             for slot in press_slots:
                 if hasattr(slot, 'has_battery') and not slot.has_battery():
                     return slot.name
-            
+
             return None
-            
+
         except Exception as e:
             logger.error(f"查找可用压制槽失败: {e}")
             return None
@@ -275,7 +275,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         try:
             device_status = self.communication.get_device_status()
             environment = device_status.get("environment", {})
-            
+
             return {
                 "pressure": environment.get("glove_box_pressure", 0.0),
                 "o2_content": environment.get("o2_content", 0.0),
@@ -285,7 +285,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                     environment.get("water_content", 0.0) < 1.0      # 水分含量 < 1ppm
                 )
             }
-            
+
         except Exception as e:
             logger.error(f"获取手套箱环境失败: {e}")
             return {"error": str(e)}
@@ -307,7 +307,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             return False
 
     # ============ 重写基类方法以支持纽扣电池特定功能 ============
-    
+
     def start_workflow(self, workflow_type: str, parameters: Dict[str, Any] = None) -> bool:
         """启动工作流（重写以支持纽扣电池特定预处理）"""
         try:
@@ -318,28 +318,28 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 if not env.get("is_safe", False):
                     logger.error("手套箱环境不安全，无法启动电池制造工作流")
                     return False
-                
+
                 # 检查是否有可用的压制槽
                 available_slot = self.find_available_press_slot()
                 if not available_slot:
                     logger.error("没有可用的压制槽，无法启动电池制造工作流")
                     return False
-                
+
                 # 检查极片库存
                 electrode_inventory = self.get_electrode_sheet_inventory()
                 if not electrode_inventory.get("cathode", 0) > 0 or not electrode_inventory.get("anode", 0) > 0:
                     logger.error("极片库存不足，无法启动电池制造工作流")
                     return False
-            
+
             # 调用基类方法
             return super().start_workflow(workflow_type, parameters)
-            
+
         except Exception as e:
             logger.error(f"启动纽扣电池工作流失败: {e}")
             return False
 
     # ============ 纽扣电池特定状态属性 ============
-    
+
     @property
     def electrode_sheet_count(self) -> int:
         """极片总数"""
@@ -385,28 +385,28 @@ def create_coin_cell_workstation(
     csv_path: str = "./coin_cell_assembly.csv"
 ) -> CoinCellAssemblyWorkstation:
     """工厂函数：创建纽扣电池组装工作站
-    
+
     Args:
         device_id: 设备ID
         config_file: 配置文件路径（JSON格式）
         modbus_host: Modbus主机地址
         modbus_port: Modbus端口
         csv_path: 地址映射CSV文件路径
-    
+
     Returns:
         CoinCellAssemblyWorkstation: 工作站实例
     """
     import json
-    
+
     try:
         # 加载配置文件
         with open(config_file, 'r', encoding='utf-8') as f:
             config = json.load(f)
-        
+
         # 提取配置
         children = config.get("children", {})
         deck_config = config.get("deck_config", {})
-        
+
         # 创建工作站
         workstation = CoinCellAssemblyWorkstation(
             device_id=device_id,
@@ -418,10 +418,10 @@ def create_coin_cell_workstation(
             deck_config=deck_config,
             csv_path=csv_path
         )
-        
+
         logger.info(f"纽扣电池工作站创建成功: {device_id}")
         return workstation
-        
+
     except Exception as e:
         logger.error(f"创建纽扣电池工作站失败: {e}")
         raise
@@ -435,7 +435,7 @@ if __name__ == "__main__":
         modbus_host="127.0.0.1",
         modbus_port=5021
     )
-    
+
     # 启动电池制造工作流
     success = workstation.start_workflow(
         "battery_manufacturing",
@@ -447,7 +447,7 @@ if __name__ == "__main__":
             "anode_material": "Graphite"
         }
     )
-    
+
     if success:
         print("电池制造工作流启动成功")
     else:

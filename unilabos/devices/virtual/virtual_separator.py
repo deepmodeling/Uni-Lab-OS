@@ -7,7 +7,7 @@ from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 class VirtualSeparator:
     """Virtual separator device for SeparateProtocol testing"""
-    
+
     _ros_node: BaseROS2DeviceNode
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
@@ -39,7 +39,7 @@ class VirtualSeparator:
         for key, value in kwargs.items():
             if key not in skip_keys and not hasattr(self, key):
                 setattr(self, key, value)
-    
+
     def post_init(self, ros_node: BaseROS2DeviceNode):
         self._ros_node = ros_node
 

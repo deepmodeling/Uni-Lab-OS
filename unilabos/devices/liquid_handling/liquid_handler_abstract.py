@@ -678,7 +678,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         # 如果 liquid_names 和 volumes 都为空，直接返回 wells
         if not liquid_names and not volumes:
             return SetLiquidReturn(
-                wells=ResourceTreeSet.from_plr_resources(wells, known_newly_created=False).dump(), volumes=res_volumes  # type: ignore
+                # type: ignore
+                wells=ResourceTreeSet.from_plr_resources(wells, known_newly_created=False).dump(), volumes=res_volumes
             )
 
         for well, liquid_name, volume in zip(wells, liquid_names, volumes):
@@ -686,7 +687,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
             res_volumes.append(volume)
 
         return SetLiquidReturn(
-            wells=ResourceTreeSet.from_plr_resources(wells, known_newly_created=False).dump(), volumes=res_volumes  # type: ignore
+            # type: ignore
+            wells=ResourceTreeSet.from_plr_resources(wells, known_newly_created=False).dump(), volumes=res_volumes
         )
 
     def set_liquid_from_plate(
@@ -696,7 +698,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
 
         如果 liquid_names 和 volumes 为空，但 plate 和 well_names 不为空，直接返回 plate 和 wells。
         """
-        assert issubclass(plate.__class__, Plate) or issubclass(plate.__class__, TubeRack) , f"plate must be a Plate, now: {type(plate)}"
+        assert issubclass(plate.__class__, Plate) or issubclass(
+            plate.__class__, TubeRack), f"plate must be a Plate, now: {type(plate)}"
         plate: Union[Plate, TubeRack]
         # 根据 well_names 获取对应的 Well 对象
         if issubclass(plate.__class__, Plate):
@@ -890,25 +893,25 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         for _ in range(len(use_channels)):
                             tip.extend(next(self.current_tip))
                         await self.pick_up_tips(tip)
-                        current_targets = waste_liquid[i : i + 8]
-                        current_reagent_sources = sources[i : i + 8]
-                        current_asp_vols = vols[i : i + 8]
-                        current_dis_vols = vols[i : i + 8]
-                        current_asp_flow_rates = flow_rates[i : i + 8] if flow_rates else [None] * 8
+                        current_targets = waste_liquid[i: i + 8]
+                        current_reagent_sources = sources[i: i + 8]
+                        current_asp_vols = vols[i: i + 8]
+                        current_dis_vols = vols[i: i + 8]
+                        current_asp_flow_rates = flow_rates[i: i + 8] if flow_rates else [None] * 8
                         current_dis_flow_rates = (
-                            flow_rates[-i * 8 - 8 : len(flow_rates) - i * 8] if flow_rates else [None] * 8
+                            flow_rates[-i * 8 - 8: len(flow_rates) - i * 8] if flow_rates else [None] * 8
                         )
-                        current_asp_offset = offsets[i : i + 8] if offsets else [None] * 8
-                        current_dis_offset = offsets[-i * 8 - 8 : len(offsets) - i * 8] if offsets else [None] * 8
-                        current_asp_liquid_height = liquid_height[i : i + 8] if liquid_height else [None] * 8
+                        current_asp_offset = offsets[i: i + 8] if offsets else [None] * 8
+                        current_dis_offset = offsets[-i * 8 - 8: len(offsets) - i * 8] if offsets else [None] * 8
+                        current_asp_liquid_height = liquid_height[i: i + 8] if liquid_height else [None] * 8
                         current_dis_liquid_height = (
-                            liquid_height[-i * 8 - 8 : len(liquid_height) - i * 8] if liquid_height else [None] * 8
+                            liquid_height[-i * 8 - 8: len(liquid_height) - i * 8] if liquid_height else [None] * 8
                         )
                         current_asp_blow_out_air_volume = (
-                            blow_out_air_volume[i : i + 8] if blow_out_air_volume else [None] * 8
+                            blow_out_air_volume[i: i + 8] if blow_out_air_volume else [None] * 8
                         )
                         current_dis_blow_out_air_volume = (
-                            blow_out_air_volume[-i * 8 - 8 : len(blow_out_air_volume) - i * 8]
+                            blow_out_air_volume[-i * 8 - 8: len(blow_out_air_volume) - i * 8]
                             if blow_out_air_volume
                             else [None] * 8
                         )
@@ -1036,25 +1039,25 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     for _ in range(len(use_channels)):
                         tip.extend(next(self.current_tip))
                     await self.pick_up_tips(tip)
-                    current_targets = targets[i : i + 8]
-                    current_reagent_sources = reagent_sources[i : i + 8]
-                    current_asp_vols = asp_vols[i : i + 8]
-                    current_dis_vols = dis_vols[i : i + 8]
-                    current_asp_flow_rates = flow_rates[i : i + 8] if flow_rates else [None] * 8
+                    current_targets = targets[i: i + 8]
+                    current_reagent_sources = reagent_sources[i: i + 8]
+                    current_asp_vols = asp_vols[i: i + 8]
+                    current_dis_vols = dis_vols[i: i + 8]
+                    current_asp_flow_rates = flow_rates[i: i + 8] if flow_rates else [None] * 8
                     current_dis_flow_rates = (
-                        flow_rates[-i * 8 - 8 : len(flow_rates) - i * 8] if flow_rates else [None] * 8
+                        flow_rates[-i * 8 - 8: len(flow_rates) - i * 8] if flow_rates else [None] * 8
                     )
-                    current_asp_offset = offsets[i : i + 8] if offsets else [None] * 8
-                    current_dis_offset = offsets[-i * 8 - 8 : len(offsets) - i * 8] if offsets else [None] * 8
-                    current_asp_liquid_height = liquid_height[i : i + 8] if liquid_height else [None] * 8
+                    current_asp_offset = offsets[i: i + 8] if offsets else [None] * 8
+                    current_dis_offset = offsets[-i * 8 - 8: len(offsets) - i * 8] if offsets else [None] * 8
+                    current_asp_liquid_height = liquid_height[i: i + 8] if liquid_height else [None] * 8
                     current_dis_liquid_height = (
-                        liquid_height[-i * 8 - 8 : len(liquid_height) - i * 8] if liquid_height else [None] * 8
+                        liquid_height[-i * 8 - 8: len(liquid_height) - i * 8] if liquid_height else [None] * 8
                     )
                     current_asp_blow_out_air_volume = (
-                        blow_out_air_volume[i : i + 8] if blow_out_air_volume else [None] * 8
+                        blow_out_air_volume[i: i + 8] if blow_out_air_volume else [None] * 8
                     )
                     current_dis_blow_out_air_volume = (
-                        blow_out_air_volume[-i * 8 - 8 : len(blow_out_air_volume) - i * 8]
+                        blow_out_air_volume[-i * 8 - 8: len(blow_out_air_volume) - i * 8]
                         if blow_out_air_volume
                         else [None] * 8
                     )
@@ -1374,18 +1377,18 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 for _ in range(len(use_channels)):
                     tip.extend(next(self.current_tip))
                 await self.pick_up_tips(tip)
-                current_targets = targets[i : i + 8]
-                current_reagent_sources = sources[i : i + 8]
-                current_asp_vols = asp_vols[i : i + 8]
-                current_dis_vols = dis_vols[i : i + 8]
-                current_asp_flow_rates = asp_flow_rates[i : i + 8] if asp_flow_rates else None
-                current_asp_offset = offsets[i : i + 8] if offsets else [None] * 8
-                current_dis_offset = offsets[i : i + 8] if offsets else [None] * 8
-                current_asp_liquid_height = liquid_height[i : i + 8] if liquid_height else [None] * 8
-                current_dis_liquid_height = liquid_height[i : i + 8] if liquid_height else [None] * 8
-                current_asp_blow_out_air_volume = blow_out_air_volume[i : i + 8] if blow_out_air_volume else [None] * 8
-                current_dis_blow_out_air_volume = blow_out_air_volume[i : i + 8] if blow_out_air_volume else [None] * 8
-                current_dis_flow_rates = dis_flow_rates[i : i + 8] if dis_flow_rates else None
+                current_targets = targets[i: i + 8]
+                current_reagent_sources = sources[i: i + 8]
+                current_asp_vols = asp_vols[i: i + 8]
+                current_dis_vols = dis_vols[i: i + 8]
+                current_asp_flow_rates = asp_flow_rates[i: i + 8] if asp_flow_rates else None
+                current_asp_offset = offsets[i: i + 8] if offsets else [None] * 8
+                current_dis_offset = offsets[i: i + 8] if offsets else [None] * 8
+                current_asp_liquid_height = liquid_height[i: i + 8] if liquid_height else [None] * 8
+                current_dis_liquid_height = liquid_height[i: i + 8] if liquid_height else [None] * 8
+                current_asp_blow_out_air_volume = blow_out_air_volume[i: i + 8] if blow_out_air_volume else [None] * 8
+                current_dis_blow_out_air_volume = blow_out_air_volume[i: i + 8] if blow_out_air_volume else [None] * 8
+                current_dis_flow_rates = dis_flow_rates[i: i + 8] if dis_flow_rates else None
 
                 if mix_stage in ["before", "both"] and mix_times is not None and mix_times > 0:
                     await self.mix(
@@ -1484,7 +1487,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         targets=[target],
                         mix_time=mix_times,
                         mix_vol=mix_vol,
-                        offsets=offsets[idx : idx + 1] if offsets and len(offsets) > idx else None,
+                        offsets=offsets[idx: idx + 1] if offsets and len(offsets) > idx else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
                     )
@@ -1527,7 +1530,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         targets=[target],
                         mix_time=mix_times,
                         mix_vol=mix_vol,
-                        offsets=offsets[idx : idx + 1] if offsets else None,
+                        offsets=offsets[idx: idx + 1] if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
                     )
@@ -1548,8 +1551,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     tip.extend(next(self.current_tip))
                 await self.pick_up_tips(tip)
 
-                current_targets = targets[i : i + 8]
-                current_dis_vols = dis_vols[i : i + 8]
+                current_targets = targets[i: i + 8]
+                current_dis_vols = dis_vols[i: i + 8]
 
                 # 8个通道都从同一个源容器吸液，每个通道的吸液体积等于对应的分液体积
                 current_asp_flow_rates = (
@@ -1570,7 +1573,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         targets=current_targets,
                         mix_time=mix_times,
                         mix_vol=mix_vol,
-                        offsets=offsets[i : i + 8] if offsets else None,
+                        offsets=offsets[i: i + 8] if offsets else None,
                         height_to_bottom=mix_liquid_height if mix_liquid_height else None,
                         mix_rate=mix_rate if mix_rate else None,
                     )
@@ -1591,10 +1594,10 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     await self.custom_delay(seconds=delays[0])
 
                 # 分液到8个目标
-                current_dis_flow_rates = dis_flow_rates[i : i + 8] if dis_flow_rates else None
-                current_dis_offset = offsets[i : i + 8] if offsets else [None] * 8
-                current_dis_liquid_height = liquid_height[i : i + 8] if liquid_height else [None] * 8
-                current_dis_blow_out_air_volume = blow_out_air_volume[i : i + 8] if blow_out_air_volume else [None] * 8
+                current_dis_flow_rates = dis_flow_rates[i: i + 8] if dis_flow_rates else None
+                current_dis_offset = offsets[i: i + 8] if offsets else [None] * 8
+                current_dis_liquid_height = liquid_height[i: i + 8] if liquid_height else [None] * 8
+                current_dis_blow_out_air_volume = blow_out_air_volume[i: i + 8] if blow_out_air_volume else [None] * 8
 
                 await self.dispense(
                     resources=current_targets,
@@ -1777,12 +1780,12 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     tip.extend(next(self.current_tip))
                 await self.pick_up_tips(tip)
 
-                current_sources = sources[i : i + 8]
-                current_asp_vols = asp_vols[i : i + 8]
-                current_asp_flow_rates = asp_flow_rates[i : i + 8] if asp_flow_rates else None
-                current_asp_offset = offsets[i : i + 8] if offsets else [None] * 8
-                current_asp_liquid_height = liquid_height[i : i + 8] if liquid_height else [None] * 8
-                current_asp_blow_out_air_volume = blow_out_air_volume[i : i + 8] if blow_out_air_volume else [None] * 8
+                current_sources = sources[i: i + 8]
+                current_asp_vols = asp_vols[i: i + 8]
+                current_asp_flow_rates = asp_flow_rates[i: i + 8] if asp_flow_rates else None
+                current_asp_offset = offsets[i: i + 8] if offsets else [None] * 8
+                current_asp_liquid_height = liquid_height[i: i + 8] if liquid_height else [None] * 8
+                current_asp_blow_out_air_volume = blow_out_air_volume[i: i + 8] if blow_out_air_volume else [None] * 8
 
                 # 从8个源容器吸液
                 await self.aspirate(
@@ -1802,12 +1805,12 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 # 分液到目标容器（每个通道分液到同一个目标）
                 if use_proportional_mixing:
                     # 按比例混合：使用对应的 dis_vols
-                    current_dis_vols = dis_vols[i : i + 8]
-                    current_dis_flow_rates = dis_flow_rates[i : i + 8] if dis_flow_rates else None
-                    current_dis_offset = offsets[i : i + 8] if offsets else [None] * 8
-                    current_dis_liquid_height = liquid_height[i : i + 8] if liquid_height else [None] * 8
+                    current_dis_vols = dis_vols[i: i + 8]
+                    current_dis_flow_rates = dis_flow_rates[i: i + 8] if dis_flow_rates else None
+                    current_dis_offset = offsets[i: i + 8] if offsets else [None] * 8
+                    current_dis_liquid_height = liquid_height[i: i + 8] if liquid_height else [None] * 8
                     current_dis_blow_out_air_volume = (
-                        blow_out_air_volume[i : i + 8] if blow_out_air_volume else [None] * 8
+                        blow_out_air_volume[i: i + 8] if blow_out_air_volume else [None] * 8
                     )
                 else:
                     # 标准模式：每个通道分液体积等于其吸液体积

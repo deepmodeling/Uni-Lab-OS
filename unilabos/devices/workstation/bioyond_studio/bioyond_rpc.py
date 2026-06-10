@@ -11,9 +11,9 @@ from typing import Optional, List, Dict, Any
 import json
 
 
-
 class SimpleLogger:
     """简单的日志记录器"""
+
     def info(self, msg): print(f"[INFO] {msg}")
     def error(self, msg): print(f"[ERROR] {msg}")
     def debug(self, msg): print(f"[DEBUG] {msg}")
@@ -205,7 +205,7 @@ class BioyondV1RPC(BaseRequest):
             # 有些 API 返回结构可能直接包含 details，或者在 data 字段中
             details = data.get("details", []) if isinstance(data, dict) else []
             if not details and isinstance(data, dict):
-                 details = data.get("detail", [])
+                details = data.get("detail", [])
 
             if details:
                 for detail in details:
@@ -576,7 +576,8 @@ class BioyondV1RPC(BaseRequest):
                                     if not isinstance(param, dict):
                                         workflow_errors.append(f"步骤 {step_id} 模块 {module_name} 参数 {j} 必须是字典类型")
                                     elif "Key" not in param or "DisplayValue" not in param:
-                                        workflow_errors.append(f"步骤 {step_id} 模块 {module_name} 参数 {j} 必须包含 Key 和 DisplayValue")
+                                        workflow_errors.append(
+                                            f"步骤 {step_id} 模块 {module_name} 参数 {j} 必须包含 Key 和 DisplayValue")
 
                 if workflow_errors:
                     validation_errors.append({
@@ -749,7 +750,6 @@ class BioyondV1RPC(BaseRequest):
         if not response or response['code'] != 1:
             return 0
         return response.get("code", 0)
-
 
     def sample_waste_removal(self, order_id: str) -> dict:
         """样品/废料取出

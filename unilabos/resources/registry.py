@@ -40,7 +40,7 @@ resource_schema = {
     "separator_controller": {
         "type": "object",
         "properties": {
-            "sensordata": {"type": "number", "description": "电导传感器数据"}, 
+            "sensordata": {"type": "number", "description": "电导传感器数据"},
             "status": {"type": "string", "description": "设备状态"},
         },
         "required": ["sensordata", "status"],
@@ -127,7 +127,7 @@ def add_schema(resources_config: list[dict]) -> list[dict]:
             resource["schema"] = resource_schema["container"]
         elif resource["type"].lower() == "device":
             resource["schema"] = resource_schema.get(resource["class"], None)
-        
+
         if len(resource["children"]) > 0:
             try:
                 if type(resource["children"][0]) == dict:

@@ -9,7 +9,6 @@ from unilabos.utils.exception import DeviceClassInvalid
 from unilabos.utils.import_manager import default_manager
 
 
-
 def initialize_device_from_dict(device_id, device_config: ResourceDictInstance) -> Optional[ROS2DeviceNode]:
     """Initializes a device based on its configuration.
 
@@ -33,7 +32,8 @@ def initialize_device_from_dict(device_id, device_config: ResourceDictInstance) 
             raise DeviceClassInvalid(f"Device [{device_id}] class {device_class_config} not found. {device_config}")
         device_class_config = lab_registry.device_type_registry[device_class_config]["class"]
     elif isinstance(device_class_config, dict):
-        raise DeviceClassInvalid(f"Device [{device_id}] class config should be type 'str' but 'dict' got. {device_config}")
+        raise DeviceClassInvalid(
+            f"Device [{device_id}] class config should be type 'str' but 'dict' got. {device_config}")
     if isinstance(device_class_config, dict):
         DEVICE = default_manager.get_class(device_class_config["module"])
         # 不管是ros2的实例，还是python的，都必须包一次，除了HostNode

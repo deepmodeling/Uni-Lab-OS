@@ -17,4 +17,3 @@ def POST_PROCESS_PolymerStation_Reagent_Bottle(
         barcode=barcode,
         model="POST_PROCESS_PolymerStation_Reagent_Bottle",
     )
-

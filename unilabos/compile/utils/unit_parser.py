@@ -12,33 +12,33 @@ from .logger_util import debug_print
 def parse_volume_input(volume_input: Union[str, float, int], default_unit: str = "mL") -> float:
     """
     解析带单位的体积输入
-    
+
     Args:
         volume_input: 体积输入（如 "100 mL", "2.5 L", "500", "?", 100.0）
         default_unit: 默认单位（默认为毫升）
-    
+
     Returns:
         float: 体积（毫升）
     """
     if not volume_input:
         return 0.0
-    
+
     # 处理数值输入
     if isinstance(volume_input, (int, float)):
         result = float(volume_input)
         debug_print(f"数值体积输入: {volume_input} → {result}mL（默认单位）")
         return result
-    
+
     # 处理字符串输入
     volume_str = str(volume_input).lower().strip()
     debug_print(f"解析体积字符串: '{volume_str}'")
-    
+
     # 处理特殊值
     if volume_str in ['?', 'unknown', 'tbd', 'to be determined']:
         default_volume = 50.0  # 50mL默认值
         debug_print(f"检测到未知体积，使用默认值: {default_volume}mL")
         return default_volume
-    
+
     # 如果是纯数字，使用默认单位
     try:
         value = float(volume_str)
@@ -54,20 +54,20 @@ def parse_volume_input(volume_input: Union[str, float, int], default_unit: str =
         return result
     except ValueError:
         pass
-    
+
     # 移除空格并提取数字和单位
     volume_clean = re.sub(r'\s+', '', volume_str)
-    
+
     # 匹配数字和单位的正则表达式
     match = re.match(r'([0-9]*\.?[0-9]+)\s*(ml|l|μl|ul|microliter|milliliter|liter)?', volume_clean)
-    
+
     if not match:
         debug_print(f"⚠️ 无法解析体积: '{volume_str}'，使用默认值: 50mL")
         return 50.0
-    
+
     value = float(match.group(1))
     unit = match.group(2) or default_unit.lower()
-    
+
     # 转换为毫升
     if unit in ['l', 'liter']:
         volume = value * 1000.0  # L -> mL
@@ -75,7 +75,7 @@ def parse_volume_input(volume_input: Union[str, float, int], default_unit: str =
         volume = value / 1000.0  # μL -> mL
     else:  # ml, milliliter 或默认
         volume = value  # 已经是mL
-    
+
     debug_print(f"体积解析: '{volume_str}' → {value} {unit} → {volume}mL")
     return volume
 
@@ -185,31 +185,34 @@ def parse_time_input(time_input: Union[str, float]) -> float:
     return time_sec
 
 # 测试函数
+
+
 def test_unit_parser():
     """测试单位解析功能"""
     print("=== 单位解析器测试 ===")
-    
+
     # 测试时间解析
     time_tests = [
         "30 min", "1 h", "300", "5.5 h", "?", 60.0, "2 hours", "30 s"
     ]
-    
+
     print("\n时间解析测试:")
     for time_input in time_tests:
         result = parse_time_input(time_input)
         print(f"  {time_input} → {result}s ({result/60:.1f}min)")
-    
+
     # 测试体积解析
     volume_tests = [
         "100 mL", "2.5 L", "500", "?", 100.0, "500 μL", "1 liter"
     ]
-    
+
     print("\n体积解析测试:")
     for volume_input in volume_tests:
         result = parse_volume_input(volume_input)
         print(f"  {volume_input} → {result}mL")
-    
+
     print("\n✅ 测试完成")
+
 
 if __name__ == "__main__":
     test_unit_parser()

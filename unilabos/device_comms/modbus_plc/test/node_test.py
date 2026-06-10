@@ -20,9 +20,6 @@ while True:
     print(resp[0], resp1[0])
 
 
-
-
-
 # hr = HoldRegister(client, '1', 100)
 # resp = hr.write([666.3, 777.4], data_type=DATATYPE.FLOAT32, word_order=WORDORDER.BIG)
 # print('write ===== hr1', resp)

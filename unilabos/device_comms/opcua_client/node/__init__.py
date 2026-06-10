@@ -7,4 +7,4 @@ __all__ = [
     'NodeType',
     'DataType',
     'Base',
-] 
+]

@@ -17,4 +17,3 @@ def register():
 
     from unilabos.devices.liquid_handling.rviz_backend import UniLiquidHandlerRvizBackend
     from unilabos.devices.liquid_handling.laiyu.backend.laiyu_v_backend import UniLiquidHandlerLaiyuBackend
-

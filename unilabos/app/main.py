@@ -1,3 +1,6 @@
+from unilabos.config.config import load_config, BasicConfig, HTTPConfig
+from unilabos.utils.banner_print import print_status, print_unilab_banner
+from unilabos.app.utils import cleanup_for_restart
 import argparse
 import asyncio
 import json
@@ -28,9 +31,6 @@ unilabos_dir = os.path.dirname(os.path.dirname(current_dir))
 if unilabos_dir not in sys.path:
     sys.path.append(unilabos_dir)
 
-from unilabos.app.utils import cleanup_for_restart
-from unilabos.utils.banner_print import print_status, print_unilab_banner
-from unilabos.config.config import load_config, BasicConfig, HTTPConfig
 
 # Global restart flags (used by ws_client and web/server)
 _restart_requested: bool = False
@@ -136,7 +136,7 @@ def convert_argv_dashes_to_underscores(args: argparse.ArgumentParser):
     for i, arg in enumerate(sys.argv):
         for option_string in option_strings:
             if arg.startswith(option_string):
-                new_arg = arg[:2] + arg[2 : len(option_string)].replace("-", "_") + arg[len(option_string) :]
+                new_arg = arg[:2] + arg[2: len(option_string)].replace("-", "_") + arg[len(option_string):]
                 sys.argv[i] = new_arg
                 break
 

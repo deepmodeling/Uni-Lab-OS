@@ -69,7 +69,6 @@ modbus_tcp_client_test2 = TCPClient('192.168.3.2', 502)
 #         time.sleep(1)
 
 
-
 # def move_2_right_init(use_node: Callable[[str], ModbusNodeBase]) -> bool:
 #     use_node('left_move_coli').write(False)
 #     use_node('right_move_coli').write(True)
@@ -78,7 +77,7 @@ modbus_tcp_client_test2 = TCPClient('192.168.3.2', 502)
 # def move_2_right_start(use_node: Callable[[str], ModbusNodeBase]) -> bool:
 #     judge_position(use_node('position_register'))
 #     return True
-    
+
 # def move_2_right_stop(use_node: Callable[[str], ModbusNodeBase]) -> bool:
 #     use_node('right_move_coli').write(False)
 #     return True
@@ -104,26 +103,30 @@ def idel_init(use_node: Callable[[str], ModbusNodeBase]) -> bool:
     # use_node('M01_idlepos_position_rw').write(35.22)
     return True
 
+
 def idel_position(use_node: Callable[[str], ModbusNodeBase]) -> bool:
     use_node('M01_idlepos_coil_w').write(True)
     while True:
         pos_idel, idel_err = use_node('M01_idlepos_coil_r').read(1)
-        pos_stop, stop_err  = use_node('M01_manual_stop_coil_r').read(1)
+        pos_stop, stop_err = use_node('M01_manual_stop_coil_r').read(1)
         time.sleep(0.5)
-        if not idel_err and not stop_err and  pos_idel[0] and pos_stop[0]:
+        if not idel_err and not stop_err and pos_idel[0] and pos_stop[0]:
             break
 
     return True
-    
+
+
 def idel_stop(use_node: Callable[[str], ModbusNodeBase]) -> bool:
     use_node('M01_idlepos_coil_w').write(False)
     return True
 
-move_idel= ModbusWorkflow(name="测试待机位置", actions=[WorkflowAction(
+
+move_idel = ModbusWorkflow(name="测试待机位置", actions=[WorkflowAction(
     init=idel_init,
     start=idel_position,
     stop=idel_stop,
 )])
+
 
 def pipetter_init(use_node: Callable[[str], ModbusNodeBase]) -> bool:
     # 修改速度
@@ -131,6 +134,7 @@ def pipetter_init(use_node: Callable[[str], ModbusNodeBase]) -> bool:
     # 修改位置
     # use_node('M01_idlepos_position_rw').write(35.22)
     return True
+
 
 def pipetter_position(use_node: Callable[[str], ModbusNodeBase]) -> bool:
     use_node('M01_pipette0_coil_w').write(True)
@@ -142,17 +146,18 @@ def pipetter_position(use_node: Callable[[str], ModbusNodeBase]) -> bool:
             break
 
     return True
-    
+
+
 def pipetter_stop(use_node: Callable[[str], ModbusNodeBase]) -> bool:
     use_node('M01_pipette0_coil_w').write(False)
     return True
 
-move_pipetter= ModbusWorkflow(name="测试待机位置", actions=[WorkflowAction(
+
+move_pipetter = ModbusWorkflow(name="测试待机位置", actions=[WorkflowAction(
     init=None,
     start=pipetter_position,
     stop=pipetter_stop,
 )])
-
 
 
 workflow_test_2 = ModbusWorkflow(name="测试水平移动并停止", actions=[
@@ -165,4 +170,4 @@ nodes = load_csv('/Users/dingshinn/Desktop/lbg/uni-lab/M01.csv')
 modbus_tcp_client_test2 \
     .register_node_list(nodes) \
     .run_modbus_workflow(workflow_test_2)
-    # .run_modbus_workflow(move_2_left_workflow)
+# .run_modbus_workflow(move_2_left_workflow)

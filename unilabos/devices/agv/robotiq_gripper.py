@@ -6,6 +6,7 @@ import time
 from enum import Enum
 from typing import Union, Tuple, OrderedDict
 
+
 class RobotiqGripper:
     """
     Communicates with the gripper directly, via socket with string commands, leveraging string names for variables.
@@ -40,7 +41,7 @@ class RobotiqGripper:
         STOPPED_INNER_OBJECT = 2
         AT_DEST = 3
 
-    def __init__(self ,host):
+    def __init__(self, host):
         """Constructor."""
         self.socket = None
         self.command_lock = threading.Lock()
@@ -109,7 +110,8 @@ class RobotiqGripper:
         # note some special variables (like FLT) may send 2 bytes, instead of an integer. We assume integer here
             var_name, value_str = data.decode(self.ENCODING).split()
             if var_name != variable:
-                raise ValueError(f"Unexpected response {data} ({data.decode(self.ENCODING)}): does not match '{variable}'")
+                raise ValueError(
+                    f"Unexpected response {data} ({data.decode(self.ENCODING)}): does not match '{variable}'")
             value = int(value_str)
         return value
 
@@ -140,7 +142,6 @@ class RobotiqGripper:
             self._set_var(self.ACT, 0)
             self._set_var(self.ATR, 0)
         time.sleep(0.5)
-
 
     def activate(self, auto_calibrate: bool = True):
         """Resets the activation flag in the gripper, and sets it back to one, clearing previous fault flags.
@@ -291,8 +292,9 @@ class RobotiqGripper:
         final_pos = self._get_var(self.POS)
         final_obj = cur_obj
         return final_pos, RobotiqGripper.ObjectStatus(final_obj)
-    
+
+
 if __name__ == '__main__':
     gripper = RobotiqGripper('192.168.1.178')
-    gripper.move(255,0,0)
-    print(gripper.move(255,0,0))
+    gripper.move(255, 0, 0)
+    print(gripper.move(255, 0, 0))

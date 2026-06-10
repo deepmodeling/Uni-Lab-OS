@@ -37,34 +37,35 @@ class iCL42Driver(UniversalDriver):
     @property
     def motor_position(self) -> int:
         return self._motor_position
-    
+
     @property
     def is_executing_run(self) -> bool:
         return self._is_executing_run
-    
+
     @property
     def success(self) -> bool:
         return self._success
-    
+
     def init_device(self):
         # 配置串口参数
         if Config.OPEN_DEVICE:
             self._ser = serial.Serial(
                 port=self._DEVICE_COM,               # 串口号
                 baudrate=38400,            # 波特率
-                bytesize=serial.EIGHTBITS, # 数据位
-                parity=serial.PARITY_NONE, # 校验位 N-无校验
+                bytesize=serial.EIGHTBITS,  # 数据位
+                parity=serial.PARITY_NONE,  # 校验位 N-无校验
                 stopbits=serial.STOPBITS_TWO,  # 停止位
                 timeout=1                  # 超时时间
             )
         else:
             self._ser = FakeSerial()
-    
+
     def run_motor(self, mode: str, position: float, velocity: int):
         if self._ser is None:
             print("Device is not initialized")
             self._success = False
             return False
+
         def post_func(res, _):
             self._success = res
             if not res:
@@ -97,7 +98,6 @@ class iCL42Driver(UniversalDriver):
         # if run_until_status(self._ser, self._DEVICE_ADDRESS, "路径完成"):
         #     pass
 
-
     def __init__(self, device_com: str = "COM9", device_address: int = 0x01):
         self._DEVICE_COM = device_com
         self._DEVICE_ADDRESS = device_address
@@ -109,9 +109,11 @@ class iCL42Driver(UniversalDriver):
         for checker in self.checkers:
             checker.start_monitoring()
 
+
 @abstractmethod
 class DriverChecker(ud.DriverChecker):
     driver: iCL42Driver
+
 
 class PositionChecker(DriverChecker):
     def check(self):
@@ -119,6 +121,7 @@ class PositionChecker(DriverChecker):
         if self.driver._ser is not None:
             # noinspection PyProtectedMember
             self.driver._motor_position = run_get_command_position(self.driver._ser, self.driver._DEVICE_ADDRESS)
+
 
 # 示例用法
 if __name__ == "__main__":

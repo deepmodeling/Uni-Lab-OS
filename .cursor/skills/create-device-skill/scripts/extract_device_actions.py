@@ -24,6 +24,7 @@ from datetime import datetime
 
 REGISTRY_FILENAME = "req_device_registry_upload.json"
 
+
 def find_registry(explicit_path=None):
     """
     查找 req_device_registry_upload.json 文件。
@@ -74,9 +75,11 @@ def find_registry(explicit_path=None):
 
     return None
 
+
 def load_registry(path):
     with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
+
 
 def list_devices(data):
     """列出所有包含 action_value_mappings 的设备，同时返回 module 路径"""
@@ -90,6 +93,7 @@ def list_devices(data):
         if avm:
             devices.append((rid, len(avm), module))
     return devices
+
 
 def flatten_schema_to_goal(action_data):
     """将 schema 中嵌套的 goal 内容提升为顶层 schema，去掉 feedback/result 包装"""
@@ -134,6 +138,7 @@ def extract_actions(data, device_id, output_dir):
 
     print(f"设备 {device_id} 未找到")
     return []
+
 
 def main():
     args = sys.argv[1:]
@@ -195,6 +200,7 @@ def main():
         print("  python extract_device_actions.py [--registry <path>]                # 列出设备")
         print("  python extract_device_actions.py [--registry <path>] <device_id> <dir>  # 提取 actions")
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()

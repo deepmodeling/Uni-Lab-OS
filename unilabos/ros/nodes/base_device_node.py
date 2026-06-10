@@ -759,7 +759,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 logger.warning(f"更新无父节点物料{root_node}，自动以当前设备作为根节点")
                 root_node.res_content.parent_uuid = self.uuid
         r.command = json.dumps({"data": {"data": tree_set.dump()}, "action": "update"})
-        response: SerialCommand_Response = await self._resource_clients["c2s_update_resource_tree"].call_async(r)  # type: ignore
+        # type: ignore
+        response: SerialCommand_Response = await self._resource_clients["c2s_update_resource_tree"].call_async(r)
         try:
             uuid_maps = json.loads(response.response)
             self.resource_tracker.loop_update_uuid(resources, uuid_maps)
@@ -1268,7 +1269,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             if uid is None:
                 raise ValueError(f"目标物料{target_resource}没有unilabos_uuid属性，无法转运")
             target_uids.append(uid)
-        _ns = target_device_id if target_device_id.startswith("/devices/") else f"/devices/{target_device_id.lstrip('/')}"
+        _ns = target_device_id if target_device_id.startswith(
+            "/devices/") else f"/devices/{target_device_id.lstrip('/')}"
         srv_address = f"/srv{_ns}/s2c_resource_tree"
         sclient = self.create_client(SerialCommand, srv_address)
         # 等待服务可用（设置超时）
@@ -1292,7 +1294,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 root_node.res_content.parent_uuid = target_uid
             r = SerialCommand.Request()
             r.command = json.dumps({"data": {"data": tree_set.dump()}, "action": "update"})  # 和Update Resource一致
-            response: SerialCommand_Response = await self._resource_clients["c2s_update_resource_tree"].call_async(r)  # type: ignore
+            # type: ignore
+            response: SerialCommand_Response = await self._resource_clients["c2s_update_resource_tree"].call_async(r)
             self.lab_logger().info(f"资源云端转运到{target_device_id}结果: {response.response}")
 
             # 创建请求
@@ -1463,7 +1466,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                 callback_group=self.callback_group,
             )
         except Exception as e:
-            self.lab_logger().error(f"创建ActionServer失败，Device: {self.device_id}, Action Name: {action_name}, Action Type: {action_type}, Error: {e}")
+            self.lab_logger().error(
+                f"创建ActionServer失败，Device: {self.device_id}, Action Name: {action_name}, Action Type: {action_type}, Error: {e}")
             return
         self.lab_logger().trace(f"发布动作: {action_name}, 类型: {str_action_type}")
 
@@ -1557,7 +1561,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             execution_success = False
             action_return_value = None
 
-            #####    self.lab_logger().info(f"执行动作: {action_name}")
+            # self.lab_logger().info(f"执行动作: {action_name}")
             goal = goal_handle.request
 
             # 从目标消息中提取参数, 并调用对应的方法
@@ -1833,7 +1837,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
 
             # 发布结果
             goal_handle.succeed()
-            ##### self.lab_logger().info(f"设置动作成功: {action_name}")
+            # self.lab_logger().info(f"设置动作成功: {action_name}")
 
             result_values = {}
             for msg_name, attr_name in action_value_mapping["result"].items():

@@ -8,7 +8,7 @@ from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 class VirtualCentrifuge:
     """Virtual centrifuge device - 简化版，只保留核心功能"""
-    
+
     _ros_node: BaseROS2DeviceNode
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
@@ -36,14 +36,14 @@ class VirtualCentrifuge:
         for key, value in kwargs.items():
             if key not in skip_keys and not hasattr(self, key):
                 setattr(self, key, value)
-    
+
     def post_init(self, ros_node: BaseROS2DeviceNode):
         self._ros_node = ros_node
 
     async def initialize(self) -> bool:
         """Initialize virtual centrifuge"""
         self.logger.info(f"Initializing virtual centrifuge {self.device_id}")
-        
+
         # 只保留核心状态
         self.data.update({
             "status": "Idle",
@@ -61,7 +61,7 @@ class VirtualCentrifuge:
     async def cleanup(self) -> bool:
         """Cleanup virtual centrifuge"""
         self.logger.info(f"Cleaning up virtual centrifuge {self.device_id}")
-        
+
         self.data.update({
             "status": "Offline",
             "centrifuge_state": "Offline",
@@ -72,10 +72,10 @@ class VirtualCentrifuge:
         return True
 
     async def centrifuge(
-        self, 
-        vessel: str, 
-        speed: float, 
-        time: float, 
+        self,
+        vessel: str,
+        speed: float,
+        time: float,
         temp: float = 25.0
     ) -> bool:
         """Execute centrifuge action - 简化的离心流程"""
@@ -119,13 +119,13 @@ class VirtualCentrifuge:
             # 离心过程 - 实时更新进度
             start_time = time_module.time()
             total_time = time
-            
+
             while True:
                 current_time = time_module.time()
                 elapsed = current_time - start_time
                 remaining = max(0, total_time - elapsed)
                 progress = min(100.0, (elapsed / total_time) * 100)
-                
+
                 # 更新状态
                 self.data.update({
                     "time_remaining": remaining,
@@ -133,14 +133,14 @@ class VirtualCentrifuge:
                     "status": f"离心中: {vessel} | {speed} rpm | {temp}°C | {progress:.1f}% | 剩余: {remaining:.0f}s",
                     "message": f"Centrifuging: {progress:.1f}% complete, {remaining:.0f}s remaining"
                 })
-                
+
                 # 时间到了，退出循环
                 if remaining <= 0:
                     break
-                
+
                 # 每秒更新一次
                 await self._ros_node.sleep(1.0)
-            
+
             # 离心完成
             self.data.update({
                 "status": f"离心完成: {vessel} | {speed} rpm | {time}s",
@@ -158,7 +158,7 @@ class VirtualCentrifuge:
         except Exception as e:
             # 出错处理
             self.logger.error(f"Error during centrifugation: {str(e)}")
-            
+
             self.data.update({
                 "status": f"离心错误: {str(e)}",
                 "centrifuge_state": "Error",

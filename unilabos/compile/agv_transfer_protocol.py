@@ -18,15 +18,15 @@ def generate_agv_transfer_protocol(
     to_repo_id = to_repo_["id"]
 
     wf_list = {
-        ("AiChemEcoHiWo", "zhixing_agv"): {"nav_command" : '{"target" : "LM14"}',
-                             "arm_command": '{"task_name" : "camera/250111_biaozhi.urp"}'},
-        ("AiChemEcoHiWo", "AGV"): {"nav_command" : '{"target" : "LM14"}',
-                             "arm_command": '{"task_name" : "camera/250111_biaozhi.urp"}'},
+        ("AiChemEcoHiWo", "zhixing_agv"): {"nav_command": '{"target" : "LM14"}',
+                                           "arm_command": '{"task_name" : "camera/250111_biaozhi.urp"}'},
+        ("AiChemEcoHiWo", "AGV"): {"nav_command": '{"target" : "LM14"}',
+                                   "arm_command": '{"task_name" : "camera/250111_biaozhi.urp"}'},
 
-        ("zhixing_agv", "Revvity"): {"nav_command" : '{"target" : "LM13"}',
-                             "arm_command": '{"task_name" : "camera/250111_put_board.urp"}'},
+        ("zhixing_agv", "Revvity"): {"nav_command": '{"target" : "LM13"}',
+                                     "arm_command": '{"task_name" : "camera/250111_put_board.urp"}'},
 
-        ("AGV", "Revvity"): {"nav_command" : '{"target" : "LM13"}',
+        ("AGV", "Revvity"): {"nav_command": '{"target" : "LM13"}',
                              "arm_command": '{"task_name" : "camera/250111_put_board.urp"}'},
 
         ("Revvity", "HPLC"): {"nav_command": '{"target" : "LM13"}',

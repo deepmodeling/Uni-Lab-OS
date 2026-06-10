@@ -11,8 +11,6 @@ from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import MachineState
 from unilabos.ros.msgs.message_converter import convert_to_ros_msg, Float64, String
 
 
-
-
 class BioyondReactor:
     def __init__(self, config: dict = None, deck=None, protocol_type=None, **kwargs):
         self.in_temperature = 0.0
@@ -93,13 +91,13 @@ class BioyondReactionStation(BioyondWorkstation):
                     user_deck.setup()
                     # setup 后重新检查
                     if hasattr(user_deck, "warehouses") and user_deck.warehouses:
-                            print(f"  - setup() 成功，找到 {len(user_deck.warehouses)} 个仓库")
+                        print(f"  - setup() 成功，找到 {len(user_deck.warehouses)} 个仓库")
                 except Exception as e:
                     print(f"  - 调用 setup() 失败: {e}")
 
             # 3. 如果仍然为空，可能需要手动创建 (仅针对特定已知的 Deck 类型进行补救，这里暂时只打印警告)
             if not user_deck.warehouses:
-                    print("  - ⚠️ 仍然无法找到任何 warehouse 资源！")
+                print("  - ⚠️ 仍然无法找到任何 warehouse 资源！")
 
             for wh_name, wh_config in warehouse_mapping.items():
                 target_uuid = wh_config.get("uuid")
@@ -119,7 +117,7 @@ class BioyondReactionStation(BioyondWorkstation):
                         print(f"✅ 更新仓库 '{wh_name}' UUID: {current_uuid} -> {target_uuid}")
                         wh_resource.uuid = target_uuid
                     else:
-                            print(f"⚠️ 仓库 '{wh_name}' 在配置中没有 UUID")
+                        print(f"⚠️ 仓库 '{wh_name}' 在配置中没有 UUID")
                 else:
                     print(f"❌ 在 Deck 中未找到配置的仓库: '{wh_name}'")
 
@@ -202,7 +200,7 @@ class BioyondReactionStation(BioyondWorkstation):
 
         new_ids = {}
 
-        #从配置中获取workflow_to_section_map
+        # 从配置中获取workflow_to_section_map
         workflow_to_section_map = self.bioyond_config.get("workflow_to_section_map", {})
 
         # 2. 遍历映射表
@@ -267,7 +265,6 @@ class BioyondReactionStation(BioyondWorkstation):
 
         print("成功更新工作流步骤ID")
         return new_ids
-
 
     @property
     def workflow_sequence(self) -> str:
@@ -354,7 +351,6 @@ class BioyondReactionStation(BioyondWorkstation):
         if isinstance(temperature, str):
             temperature = float(temperature)
 
-
         step_id = self.workflow_step_ids["reactor_taken_in"]["config"]
         reactor_taken_in_params = {
             "param_values": {
@@ -371,7 +367,8 @@ class BioyondReactionStation(BioyondWorkstation):
         }
 
         self.pending_task_params.append(reactor_taken_in_params)
-        print(f"成功添加反应器放入参数: material={assign_material_name}->ID:{material_id}, cutoff={cutoff}, temp={temperature:.2f}")
+        print(
+            f"成功添加反应器放入参数: material={assign_material_name}->ID:{material_id}, cutoff={cutoff}, temp={temperature:.2f}")
         print(f"当前队列长度: {len(self.pending_task_params)}")
         return json.dumps({"suc": True})
 
@@ -400,7 +397,8 @@ class BioyondReactionStation(BioyondWorkstation):
         mapped_torque_variation = int(torque_map.get(str(torque_variation), "1"))
 
         self.append_to_workflow_sequence('{"web_workflow_name": "Solid_feeding_vials"}')
-        material_id_m = self.hardware_interface._get_material_id_by_name(assign_material_name) if assign_material_name else None
+        material_id_m = self.hardware_interface._get_material_id_by_name(
+            assign_material_name) if assign_material_name else None
 
         if isinstance(temperature, str):
             temperature = float(temperature)
@@ -427,7 +425,8 @@ class BioyondReactionStation(BioyondWorkstation):
         }
 
         self.pending_task_params.append(solid_feeding_vials_params)
-        print(f"成功添加固体进料小瓶参数: material_id={material_id}, time={time}min, torque={torque_variation}, temp={temperature:.2f}C")
+        print(
+            f"成功添加固体进料小瓶参数: material_id={material_id}, time={time}min, torque={torque_variation}, temp={temperature:.2f}C")
         print(f"当前队列长度: {len(self.pending_task_params)}")
         return json.dumps({"suc": True})
 
@@ -496,7 +495,7 @@ class BioyondReactionStation(BioyondWorkstation):
         self,
         assign_material_name: str,
         volume: str = None,
-        solvents = None,
+        solvents=None,
         titration_type: str = "1",
         time: str = "360",
         torque_variation: int = 2,
@@ -700,7 +699,8 @@ class BioyondReactionStation(BioyondWorkstation):
                 v_anhydride_titration = matched_actual.get("actualVolume")       # V二酐滴定
 
                 if m_anhydride_titration is None or v_anhydride_titration is None:
-                    raise ValueError(f"实际加料量数据不完整: actualTargetWeigh={m_anhydride_titration}, actualVolume={v_anhydride_titration}")
+                    raise ValueError(
+                        f"实际加料量数据不完整: actualTargetWeigh={m_anhydride_titration}, actualVolume={v_anhydride_titration}")
 
                 # 3. 构建公式: 1000*(m二酐-x)*V二酐滴定/m二酐滴定
                 # x_value 格式如 "{{1-2-3}}",保留完整格式(包括花括号)直接替换到公式中
@@ -868,12 +868,14 @@ class BioyondReactionStation(BioyondWorkstation):
 
         actuals = []
         for i, r in enumerate(reports):
-            print(f"[DEBUG] 处理 report[{i}]: order_code={r.get('order_code')}, has_extracted={r.get('extracted') is not None}, has_report={r.get('report') is not None}")
+            print(
+                f"[DEBUG] 处理 report[{i}]: order_code={r.get('order_code')}, has_extracted={r.get('extracted') is not None}, has_report={r.get('report') is not None}")
             order_code = r.get("order_code")
             order_id = r.get("order_id")
             ex = r.get("extracted")
             if isinstance(ex, dict) and (ex.get("actualTargetWeigh") is not None or ex.get("actualVolume") is not None):
-                print(f"[DEBUG] 从 extracted 字段提取: actualTargetWeigh={ex.get('actualTargetWeigh')}, actualVolume={ex.get('actualVolume')}")
+                print(
+                    f"[DEBUG] 从 extracted 字段提取: actualTargetWeigh={ex.get('actualTargetWeigh')}, actualVolume={ex.get('actualVolume')}")
                 actuals.append({
                     "order_code": order_code,
                     "order_id": order_id,
@@ -882,7 +884,8 @@ class BioyondReactionStation(BioyondWorkstation):
                 })
                 continue
             report = r.get("report")
-            vals = self._extract_actuals_from_report(report) if report else {"actualTargetWeigh": None, "actualVolume": None}
+            vals = self._extract_actuals_from_report(report) if report else {
+                "actualTargetWeigh": None, "actualVolume": None}
             print(f"[DEBUG] 从 report 字段提取: {vals}")
             actuals.append({
                 "order_code": order_code,
@@ -900,6 +903,7 @@ class BioyondReactionStation(BioyondWorkstation):
     def process_temperature_cutoff_report(self, report_request) -> Dict[str, Any]:
         try:
             data = report_request.data
+
             def _f(v):
                 try:
                     return float(v)
@@ -919,9 +923,9 @@ class BioyondReactionStation(BioyondWorkstation):
             try:
                 if hasattr(self, "_ros_node") and self._ros_node is not None:
                     props = [
-                        "in_temperature","out_temperature","pt100_temperature","sensor_average_temperature",
-                        "target_temperature","setting_temperature","viscosity","average_viscosity",
-                        "speed","force"
+                        "in_temperature", "out_temperature", "pt100_temperature", "sensor_average_temperature",
+                        "target_temperature", "setting_temperature", "viscosity", "average_viscosity",
+                        "speed", "force"
                     ]
                     for name in props:
                         pub = self._ros_node._property_publishers.get(name)
@@ -1015,7 +1019,8 @@ class BioyondReactionStation(BioyondWorkstation):
             try:
                 if isinstance(batch_create_result, str) and '[...]' in batch_create_result:
                     batch_create_result = batch_create_result.replace('[...]', '[]')
-                result_obj = json.loads(batch_create_result) if isinstance(batch_create_result, str) else batch_create_result
+                result_obj = json.loads(batch_create_result) if isinstance(
+                    batch_create_result, str) else batch_create_result
                 if isinstance(result_obj, dict) and "return_value" in result_obj:
                     inner = result_obj.get("return_value")
                     if isinstance(inner, str):
@@ -1299,14 +1304,13 @@ class BioyondReactionStation(BioyondWorkstation):
 
        # 注意:此方法应在添加完起点工作流后,添加终点工作流前调用
 
-
         current_count = len(self._cached_workflow_sequence)
         if current_count == 0:
             print("⚠️ 无法添加时间约束:当前没有工作流")
             return
 
         start_index = current_count - 1
-        end_index = current_count # 指向下一个即将添加的工作流
+        end_index = current_count  # 指向下一个即将添加的工作流
 
         constraint = {
             "start_index": start_index,
@@ -1318,7 +1322,8 @@ class BioyondReactionStation(BioyondWorkstation):
             "end_point": mapped_end_point
         }
         self.pending_time_constraints.append(constraint)
-        print(f"已添加时间约束: Workflow[{start_index}].{start_step_key} -> Workflow[{end_index}].{end_step_key} ({duration}s)")
+        print(
+            f"已添加时间约束: Workflow[{start_index}].{start_step_key} -> Workflow[{end_index}].{end_step_key} ({duration}s)")
         return json.dumps({"suc": True})
 
     # ==================== 工作流管理方法 ====================
@@ -1402,7 +1407,8 @@ class BioyondReactionStation(BioyondWorkstation):
                 workflow_name = workflow.get("name")
                 workflow_status = workflow.get("status")  # 工作流状态
 
-                print(f"  - 工作流: {workflow_name} (ID: {workflow_id[:8] if workflow_id else 'N/A'}..., 状态: {workflow_status})")
+                print(
+                    f"  - 工作流: {workflow_name} (ID: {workflow_id[:8] if workflow_id else 'N/A'}..., 状态: {workflow_status})")
 
                 synced_workflows.append({
                     "id": workflow_id,
@@ -1498,8 +1504,8 @@ class BioyondReactionStation(BioyondWorkstation):
                 workflows = []
 
             if not workflows:
-                 print("无需删除: 服务端无工作流")
-                 return {"code": 1, "message": "服务端无工作流", "timestamp": int(time.time())}
+                print("无需删除: 服务端无工作流")
+                return {"code": 1, "message": "服务端无工作流", "timestamp": int(time.time())}
 
             ids_to_delete = []
             for wf in workflows:
@@ -1928,7 +1934,6 @@ class BioyondReactionStation(BioyondWorkstation):
         tcm_bs_list = []
         if self.pending_time_constraints:
             print(f"\n🔗 处理时间约束 ({len(self.pending_time_constraints)} 个)...")
-
 
             # 建立索引到名称的映射
             workflow_names_by_index = [w["name"] for w in workflows_result]

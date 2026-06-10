@@ -107,7 +107,7 @@ class Base(ABC):
             except Exception as e:
                 print(f"获取节点失败: {self._node_id}, 错误: {e}")
                 # 添加额外提示，帮助定位 BadNodeIdUnknown 问题
-                print("提示: 请确认该 node_id 是否来自当前连接的服务器地址空间，" \
+                print("提示: 请确认该 node_id 是否来自当前连接的服务器地址空间，"
                       "以及 CSV/配置中名称与服务器 BrowseName 是否匹配。")
                 raise
         return self._node

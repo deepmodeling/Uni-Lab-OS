@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 import importlib
 
+
 class ComputeExperimentDesignReturn(TypedDict):
     solutions: list
     titration: dict
@@ -73,13 +74,13 @@ class BioyondDispensingStation(BioyondWorkstation):
                     user_deck.setup()
                     # setup 后重新检查
                     if hasattr(user_deck, "warehouses") and user_deck.warehouses:
-                            print(f"  - setup() 成功，找到 {len(user_deck.warehouses)} 个仓库")
+                        print(f"  - setup() 成功，找到 {len(user_deck.warehouses)} 个仓库")
                 except Exception as e:
                     print(f"  - 调用 setup() 失败: {e}")
 
             # 3. 如果仍然为空，可能需要手动创建 (仅针对特定已知的 Deck 类型进行补救，这里暂时只打印警告)
             if not user_deck.warehouses:
-                    print("  - ⚠️ 仍然无法找到任何 warehouse 资源！")
+                print("  - ⚠️ 仍然无法找到任何 warehouse 资源！")
 
             for wh_name, wh_config in warehouse_mapping.items():
                 target_uuid = wh_config.get("uuid")
@@ -103,7 +104,7 @@ class BioyondDispensingStation(BioyondWorkstation):
                         # 同时也确保 category 正确，避免 graphio 识别错误
                         # wh_resource.category = "warehouse"
                     else:
-                            print(f"⚠️ 仓库 '{wh_name}' 在配置中没有 UUID")
+                        print(f"⚠️ 仓库 '{wh_name}' 在配置中没有 UUID")
                 else:
                     print(f"❌ 在 Deck 中未找到配置的仓库: '{wh_name}'")
 
@@ -311,8 +312,10 @@ class BioyondDispensingStation(BioyondWorkstation):
 
         # 按原始顺序分离二胺和二酐
         ordered_compounds = list(zip(compound_names, compound_ratios, molecular_weights, func_groups))
-        diamine_compounds = [(name, ratio_val, mw, i) for i, (name, ratio_val, mw, fg) in enumerate(ordered_compounds) if fg == "Amine"]
-        anhydride_compounds = [(name, ratio_val, mw, i) for i, (name, ratio_val, mw, fg) in enumerate(ordered_compounds) if fg == "Anhydride"]
+        diamine_compounds = [(name, ratio_val, mw, i) for i, (name, ratio_val, mw, fg)
+                             in enumerate(ordered_compounds) if fg == "Amine"]
+        anhydride_compounds = [(name, ratio_val, mw, i) for i, (name, ratio_val, mw, fg)
+                               in enumerate(ordered_compounds) if fg == "Anhydride"]
 
         if not diamine_compounds or not anhydride_compounds:
             raise ValueError(
@@ -794,15 +797,15 @@ class BioyondDispensingStation(BioyondWorkstation):
 
     # 二胺溶液配置任务创建方法
     def create_diamine_solution_task(self,
-                                    order_name: str = None,
-                                    material_name: str = None,
-                                    target_weigh: str = None,
-                                    volume: str = None,
-                                    liquid_material_name: str = "NMP",
-                                    speed: str = None,
-                                    temperature: str = None,
-                                    delay_time: str = None,
-                                    hold_m_name: str = None) -> dict:
+                                     order_name: str = None,
+                                     material_name: str = None,
+                                     target_weigh: str = None,
+                                     volume: str = None,
+                                     liquid_material_name: str = "NMP",
+                                     speed: str = None,
+                                     temperature: str = None,
+                                     delay_time: str = None,
+                                     hold_m_name: str = None) -> dict:
         """
         创建二胺溶液配置任务
 
@@ -832,7 +835,6 @@ class BioyondDispensingStation(BioyondWorkstation):
                 raise BioyondException("volume 是必填参数")
             if not hold_m_name:
                 raise BioyondException("hold_m_name 是必填参数")
-
 
             # 2. 生成任务编码和设置默认值
             order_code = "task_oda_" + str(int(datetime.now().timestamp()))
@@ -952,11 +954,11 @@ class BioyondDispensingStation(BioyondWorkstation):
 
     # 批量创建二胺溶液配置任务
     def batch_create_diamine_solution_tasks(self,
-                                           solutions,
-                                           liquid_material_name: str = "NMP",
-                                           speed: str = None,
-                                           temperature: str = None,
-                                           delay_time: str = None) -> str:
+                                            solutions,
+                                            liquid_material_name: str = "NMP",
+                                            speed: str = None,
+                                            temperature: str = None,
+                                            delay_time: str = None) -> str:
         """
         批量创建二胺溶液配置任务
 
@@ -1150,8 +1152,8 @@ class BioyondDispensingStation(BioyondWorkstation):
         """
         return self._post_project_api("/api/lims/storage/workflow-sample-locations", workflow_id)
 
-
     # 批量创建90%10%小瓶投料任务
+
     def batch_create_90_10_vial_feeding_tasks(self,
                                               titration,
                                               hold_m_name: str = None,
@@ -1416,9 +1418,9 @@ class BioyondDispensingStation(BioyondWorkstation):
 
     # 等待多个任务完成并获取实验报告
     def wait_for_multiple_orders_and_get_reports(self,
-                                                  batch_create_result: str = None,
-                                                  timeout: int = 7200,
-                                                  check_interval: int = 10) -> Dict[str, Any]:
+                                                 batch_create_result: str = None,
+                                                 timeout: int = 7200,
+                                                 check_interval: int = 10) -> Dict[str, Any]:
         """
         同时等待多个任务完成并获取实验报告
 
@@ -1468,7 +1470,8 @@ class BioyondDispensingStation(BioyondWorkstation):
                 if isinstance(batch_create_result, str) and '[...]' in batch_create_result:
                     batch_create_result = batch_create_result.replace('[...]', '[]')
 
-                result_obj = json.loads(batch_create_result) if isinstance(batch_create_result, str) else batch_create_result
+                result_obj = json.loads(batch_create_result) if isinstance(
+                    batch_create_result, str) else batch_create_result
 
                 # 兼容外层包装格式 {error, suc, return_value}
                 if isinstance(result_obj, dict) and "return_value" in result_obj:
@@ -1523,7 +1526,7 @@ class BioyondDispensingStation(BioyondWorkstation):
             # 初始化跟踪变量
             total = len(codes_list)
             pending_orders = {code: {"order_id": ids_list[i], "completed": False}
-                            for i, code in enumerate(codes_list)}
+                              for i, code in enumerate(codes_list)}
             reports = []
 
             start_time = time.time()
@@ -1891,7 +1894,7 @@ class BioyondDispensingStation(BioyondWorkstation):
                 "target_device_id": target_device_id,
                 "details": results,
                 "message": f"完成 {len(transfer_groups)} 组转移任务到 {target_device_id}: "
-                          f"{successful_count} 成功, {failed_count} 失败"
+                f"{successful_count} 成功, {failed_count} 失败"
             }
 
         except Exception as e:
@@ -1978,7 +1981,7 @@ if __name__ == "__main__":
     workflow_id_1 = "3a15d4a1-3bbe-76f9-a458-292896a338f5"  # 二胺溶液配置工作流ID
     workflow_id_2 = "3a19310d-16b9-9d81-b109-0748e953694b"  # 90%10%小瓶投料工作流ID
 
-    #示例2：创建二胺溶液配置任务 - ODA，指定库位名称
+    # 示例2：创建二胺溶液配置任务 - ODA，指定库位名称
     # bioyond.create_diamine_solution_task(
     #         order_code="task_oda_" + str(int(datetime.now().timestamp())),
     #         order_name="二胺溶液配置-ODA",
@@ -2021,8 +2024,7 @@ if __name__ == "__main__":
     bioyond.material_id_query("3a19310d-16b9-9d81-b109-0748e953694b")
     bioyond.material_id_query("3a15d4a1-3bbe-76f9-a458-292896a338f5")
 
-
-    #示例4：创建90%10%小瓶投料任务
+    # 示例4：创建90%10%小瓶投料任务
     # vial_result = bioyond.create_90_10_vial_feeding_task(
     #     order_code="task_vial_" + str(int(datetime.now().timestamp())),
     #     order_name="90%10%小瓶投料-1",
@@ -2069,11 +2071,11 @@ if __name__ == "__main__":
     #     hold_m_name="8.4分装板-2"
     #     )
 
-    #启动调度器
-    #bioyond.scheduler_start()
+    # 启动调度器
+    # bioyond.scheduler_start()
 
-    #继续调度器
-    #bioyond.scheduler_continue()
+    # 继续调度器
+    # bioyond.scheduler_continue()
 
     result0 = bioyond.stock_material('{"typeMode": 0, "includeDetail": true}')
     result1 = bioyond.stock_material('{"typeMode": 1, "includeDetail": true}')
@@ -2083,271 +2085,271 @@ if __name__ == "__main__":
     matpos2 = bioyond.query_warehouse_by_material_type("3a14196e-5dfe-6e21-0c79-fe2036d052c4")
     matpos3 = bioyond.query_warehouse_by_material_type("3a14196b-24f2-ca49-9081-0cab8021bf1a")
 
-    #样品板（里面有样品瓶）
+    # 样品板（里面有样品瓶）
     material_data_yp = {
-    "typeId": "3a14196e-b7a0-a5da-1931-35f3000281e9",
-    #"code": "物料编码001",
-    #"barCode": "物料条码001",
-    "name": "8.4样品板",
-    "unit": "个",
-    "quantity": 1,
-    "details": [
-        {
-        "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
-        #"code": "物料编码001",
-        "name": "BTDA-1",
-        "quantity": 20,
-        "x": 1,
-        "y": 1,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
-        #"code": "物料编码001",
-        "name": "BPDA-1",
-        "quantity": 20,
-        "x": 2,
-        "y": 1, #x1y2是A02
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
-        #"code": "物料编码001",
-        "name": "BTDA-2",
-        "quantity": 20,
-        "x": 1,
-        "y": 2, #x1y2是A02
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
-        #"code": "物料编码001",
-        "name": "PMDA-1",
-        "quantity": 20,
-        "x": 2,
-        "y": 2, #x1y2是A02
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        }
-    ],
-    "Parameters":"{}"
+        "typeId": "3a14196e-b7a0-a5da-1931-35f3000281e9",
+        # "code": "物料编码001",
+        # "barCode": "物料条码001",
+        "name": "8.4样品板",
+        "unit": "个",
+        "quantity": 1,
+        "details": [
+            {
+                "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
+                # "code": "物料编码001",
+                "name": "BTDA-1",
+                "quantity": 20,
+                "x": 1,
+                "y": 1,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
+                # "code": "物料编码001",
+                "name": "BPDA-1",
+                "quantity": 20,
+                "x": 2,
+                "y": 1,  # x1y2是A02
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
+                # "code": "物料编码001",
+                "name": "BTDA-2",
+                "quantity": 20,
+                "x": 1,
+                "y": 2,  # x1y2是A02
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
+                # "code": "物料编码001",
+                "name": "PMDA-1",
+                "quantity": 20,
+                "x": 2,
+                "y": 2,  # x1y2是A02
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            }
+        ],
+        "Parameters": "{}"
     }
 
     material_data_yp = {
-    "typeId": "3a14196e-b7a0-a5da-1931-35f3000281e9",
-    #"code": "物料编码001",
-    #"barCode": "物料条码001",
-    "name": "8.7样品板",
-    "unit": "个",
-    "quantity": 1,
-    "details": [
-        {
-        "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
-        #"code": "物料编码001",
-        "name": "mianfen",
-        "quantity": 13,
-        "x": 1,
-        "y": 1,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
-        #"code": "物料编码001",
-        "name": "mianfen2",
-        "quantity": 13,
-        "x": 1,
-        "y": 2, #x1y2是A02
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        }
-    ],
-    "Parameters":"{}"
+        "typeId": "3a14196e-b7a0-a5da-1931-35f3000281e9",
+        # "code": "物料编码001",
+        # "barCode": "物料条码001",
+        "name": "8.7样品板",
+        "unit": "个",
+        "quantity": 1,
+        "details": [
+            {
+                "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
+                # "code": "物料编码001",
+                "name": "mianfen",
+                "quantity": 13,
+                "x": 1,
+                "y": 1,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196a-cf7d-8aea-48d8-b9662c7dba94",
+                # "code": "物料编码001",
+                "name": "mianfen2",
+                "quantity": 13,
+                "x": 1,
+                "y": 2,  # x1y2是A02
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            }
+        ],
+        "Parameters": "{}"
     }
 
-    #分装板
+    # 分装板
     material_data_fzb_1 = {
-    "typeId": "3a14196e-5dfe-6e21-0c79-fe2036d052c4",
-    #"code": "物料编码001",
-    #"barCode": "物料条码001",
-    "name": "8.7分装板",
-    "unit": "个",
-    "quantity": 1,
-    "details": [
-        {
-        "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
-        #"code": "物料编码001",
-        "name": "10%小瓶1",
+        "typeId": "3a14196e-5dfe-6e21-0c79-fe2036d052c4",
+        # "code": "物料编码001",
+        # "barCode": "物料条码001",
+        "name": "8.7分装板",
+        "unit": "个",
         "quantity": 1,
-        "x": 1,
-        "y": 1,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
-        #"code": "物料编码001",
-        "name": "10%小瓶2",
-        "quantity": 1,
-        "x": 1,
-        "y": 2,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
-        #"code": "物料编码001",
-        "name": "10%小瓶3",
-        "quantity": 1,
-        "x": 1,
-        "y": 3,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
-        #"code": "物料编码001",
-        "name": "90%小瓶1",
-        "quantity": 1,
-        "x": 2,
-        "y": 1, #x1y2是A02
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
-        #"code": "物料编码001",
-        "name": "90%小瓶2",
-        "quantity": 1,
-        "x": 2,
-        "y": 2,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
-        #"code": "物料编码001",
-        "name": "90%小瓶3",
-        "quantity": 1,
-        "x": 2,
-        "y": 3,
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        }
-    ],
-    "Parameters":"{}"
+        "details": [
+            {
+                "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
+                # "code": "物料编码001",
+                "name": "10%小瓶1",
+                "quantity": 1,
+                "x": 1,
+                "y": 1,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
+                # "code": "物料编码001",
+                "name": "10%小瓶2",
+                "quantity": 1,
+                "x": 1,
+                "y": 2,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
+                # "code": "物料编码001",
+                "name": "10%小瓶3",
+                "quantity": 1,
+                "x": 1,
+                "y": 3,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
+                # "code": "物料编码001",
+                "name": "90%小瓶1",
+                "quantity": 1,
+                "x": 2,
+                "y": 1,  # x1y2是A02
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
+                # "code": "物料编码001",
+                "name": "90%小瓶2",
+                "quantity": 1,
+                "x": 2,
+                "y": 2,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
+                # "code": "物料编码001",
+                "name": "90%小瓶3",
+                "quantity": 1,
+                "x": 2,
+                "y": 3,
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            }
+        ],
+        "Parameters": "{}"
     }
 
     material_data_fzb_2 = {
-    "typeId": "3a14196e-5dfe-6e21-0c79-fe2036d052c4",
-    #"code": "物料编码001",
-    #"barCode": "物料条码001",
-    "name": "8.4分装板-2",
-    "unit": "个",
-    "quantity": 1,
-    "details": [
-        {
-        "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
-        #"code": "物料编码001",
-        "name": "10%小瓶1",
+        "typeId": "3a14196e-5dfe-6e21-0c79-fe2036d052c4",
+        # "code": "物料编码001",
+        # "barCode": "物料条码001",
+        "name": "8.4分装板-2",
+        "unit": "个",
         "quantity": 1,
-        "x": 1,
-        "y": 1,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
-        #"code": "物料编码001",
-        "name": "10%小瓶2",
-        "quantity": 1,
-        "x": 1,
-        "y": 2,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
-        #"code": "物料编码001",
-        "name": "10%小瓶3",
-        "quantity": 1,
-        "x": 1,
-        "y": 3,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
-        #"code": "物料编码001",
-        "name": "90%小瓶1",
-        "quantity": 1,
-        "x": 2,
-        "y": 1, #x1y2是A02
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
-        #"code": "物料编码001",
-        "name": "90%小瓶2",
-        "quantity": 1,
-        "x": 2,
-        "y": 2,
-        #"unit": "单位"
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        },
-        {
-        "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
-        #"code": "物料编码001",
-        "name": "90%小瓶3",
-        "quantity": 1,
-        "x": 2,
-        "y": 3,
-        "molecular": 1,
-        "Parameters":"{\"molecular\": 1}"
-        }
-    ],
-    "Parameters":"{}"
+        "details": [
+            {
+                "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
+                # "code": "物料编码001",
+                "name": "10%小瓶1",
+                "quantity": 1,
+                "x": 1,
+                "y": 1,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
+                # "code": "物料编码001",
+                "name": "10%小瓶2",
+                "quantity": 1,
+                "x": 1,
+                "y": 2,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-76be-2279-4e22-7310d69aed68",
+                # "code": "物料编码001",
+                "name": "10%小瓶3",
+                "quantity": 1,
+                "x": 1,
+                "y": 3,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
+                # "code": "物料编码001",
+                "name": "90%小瓶1",
+                "quantity": 1,
+                "x": 2,
+                "y": 1,  # x1y2是A02
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
+                # "code": "物料编码001",
+                "name": "90%小瓶2",
+                "quantity": 1,
+                "x": 2,
+                "y": 2,
+                # "unit": "单位"
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            },
+            {
+                "typeId": "3a14196c-cdcf-088d-dc7d-5cf38f0ad9ea",
+                # "code": "物料编码001",
+                "name": "90%小瓶3",
+                "quantity": 1,
+                "x": 2,
+                "y": 3,
+                "molecular": 1,
+                "Parameters": "{\"molecular\": 1}"
+            }
+        ],
+        "Parameters": "{}"
     }
 
-    #烧杯
+    # 烧杯
     material_data_sb_oda = {
-    "typeId": "3a14196b-24f2-ca49-9081-0cab8021bf1a",
-    #"code": "物料编码001",
-    #"barCode": "物料条码001",
-    "name": "mianfen1",
-    "unit": "个",
-    "quantity": 1,
-    "Parameters":"{}"
+        "typeId": "3a14196b-24f2-ca49-9081-0cab8021bf1a",
+        # "code": "物料编码001",
+        # "barCode": "物料条码001",
+        "name": "mianfen1",
+        "unit": "个",
+        "quantity": 1,
+        "Parameters": "{}"
     }
 
     material_data_sb_pda_2 = {
-    "typeId": "3a14196b-24f2-ca49-9081-0cab8021bf1a",
-    #"code": "物料编码001",
-    #"barCode": "物料条码001",
-    "name": "mianfen2",
-    "unit": "个",
-    "quantity": 1,
-    "Parameters":"{}"
+        "typeId": "3a14196b-24f2-ca49-9081-0cab8021bf1a",
+        # "code": "物料编码001",
+        # "barCode": "物料条码001",
+        "name": "mianfen2",
+        "unit": "个",
+        "quantity": 1,
+        "Parameters": "{}"
     }
 
     # material_data_sb_mpda = {
@@ -2360,28 +2362,26 @@ if __name__ == "__main__":
     # "Parameters":"{}"
     # }
 
-
-    #result_1 = bioyond.add_material(json.dumps(material_data_yp, ensure_ascii=False))
-    #result_2 = bioyond.add_material(json.dumps(material_data_fzb_1, ensure_ascii=False))
+    # result_1 = bioyond.add_material(json.dumps(material_data_yp, ensure_ascii=False))
+    # result_2 = bioyond.add_material(json.dumps(material_data_fzb_1, ensure_ascii=False))
     # result_3 = bioyond.add_material(json.dumps(material_data_fzb_2, ensure_ascii=False))
     # result_4 = bioyond.add_material(json.dumps(material_data_sb_oda, ensure_ascii=False))
     # result_5 = bioyond.add_material(json.dumps(material_data_sb_pda_2, ensure_ascii=False))
     # #result会返回id
     # #样品板1id：3a1b3e7d-339d-0291-dfd3-13e2a78fe521
 
-
     # #将指定物料入库到指定库位
-    #bioyond.material_inbound(result_1, "3a14198e-6929-31f0-8a22-0f98f72260df")
-    #bioyond.material_inbound(result_2, "3a14198e-6929-46fe-841e-03dd753f1e4a")
+    # bioyond.material_inbound(result_1, "3a14198e-6929-31f0-8a22-0f98f72260df")
+    # bioyond.material_inbound(result_2, "3a14198e-6929-46fe-841e-03dd753f1e4a")
     # bioyond.material_inbound(result_3, "3a14198e-6929-72ac-32ce-9b50245682b8")
     # bioyond.material_inbound(result_4, "3a14198e-d724-e036-afdc-2ae39a7f3383")
     # bioyond.material_inbound(result_5, "3a14198e-d724-d818-6d4f-5725191a24b5")
 
-    #bioyond.material_outbound(result_1, "3a14198e-6929-31f0-8a22-0f98f72260df")
+    # bioyond.material_outbound(result_1, "3a14198e-6929-31f0-8a22-0f98f72260df")
 
     # bioyond.stock_material('{"typeMode": 2, "includeDetail": true}')
 
-    query_order = {"status":"100", "pageCount": "10"}
+    query_order = {"status": "100", "pageCount": "10"}
     bioyond.order_query(json.dumps(query_order, ensure_ascii=False))
 
     # id = "3a1bce3c-4f31-c8f3-5525-f3b273bc34dc"

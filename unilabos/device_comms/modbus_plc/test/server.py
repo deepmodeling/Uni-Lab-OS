@@ -4,7 +4,7 @@ from modbus_tk.modbus import Slave
 
 # 创建一个 Modbus TCP 服务器
 server = modbus_tcp.TcpServer(
-	address="localhost", port=5020, timeout_in_sec=1
+    address="localhost", port=5020, timeout_in_sec=1
 )
 
 # 设置服务器的地址和端口

@@ -206,8 +206,10 @@ def YB_6VialCarrier(name: str) -> BottleCarrier:
     return carrier
 
 # 1瓶载架 - 单个中央位置
+
+
 def YB_ye(name: str) -> BottleCarrier:
-    
+
     # 载架尺寸 (mm)
     carrier_size_x = 127.8
     carrier_size_y = 85.5
@@ -244,7 +246,7 @@ def YB_ye(name: str) -> BottleCarrier:
 
 # 高粘液瓶载架 - 单个中央位置
 def YB_gaonianye(name: str) -> BottleCarrier:
-    
+
     # 载架尺寸 (mm)
     carrier_size_x = 127.8
     carrier_size_y = 85.5
@@ -281,7 +283,7 @@ def YB_gaonianye(name: str) -> BottleCarrier:
 
 # 100ml液体瓶载架 - 单个中央位置
 def YB_100ml_yeti(name: str) -> BottleCarrier:
-    
+
     # 载架尺寸 (mm)
     carrier_size_x = 127.8
     carrier_size_y = 85.5
@@ -316,8 +318,9 @@ def YB_100ml_yeti(name: str) -> BottleCarrier:
     return carrier
 
 # 5ml分液瓶板 - 4x2布局，8个位置
+
+
 def YB_5ml_fenyepingban(name: str) -> BottleCarrier:
-    
 
     # 载架尺寸 (mm)
     carrier_size_x = 127.8
@@ -366,8 +369,9 @@ def YB_5ml_fenyepingban(name: str) -> BottleCarrier:
     return carrier
 
 # 20ml分液瓶板 - 4x2布局，8个位置
-def YB_20ml_fenyepingban(name: str) -> BottleCarrier:
 
+
+def YB_20ml_fenyepingban(name: str) -> BottleCarrier:
 
     # 载架尺寸 (mm)
     carrier_size_x = 127.8
@@ -416,8 +420,9 @@ def YB_20ml_fenyepingban(name: str) -> BottleCarrier:
     return carrier
 
 # 配液瓶(小)板 - 4x2布局，8个位置
+
+
 def YB_peiyepingxiaoban(name: str) -> BottleCarrier:
-    
 
     # 载架尺寸 (mm)
     carrier_size_x = 127.8
@@ -516,8 +521,10 @@ def YB_peiyepingdaban(name: str) -> BottleCarrier:
     return carrier
 
 # 加样头(大)板 - 1x1布局，1个位置
+
+
 def YB_jia_yang_tou_da_Carrier(name: str) -> BottleCarrier:
-    
+
     # 载架尺寸 (mm)
     carrier_size_x = 127.8
     carrier_size_y = 85.5
@@ -650,4 +657,3 @@ def YB_qiang_tou_he(name: str) -> BottleCarrier:
         col = (i % 12) + 1  # 1-12
         carrier[i] = YB_qiang_tou(f"{name}_tip_{row}{col}")
     return carrier
-

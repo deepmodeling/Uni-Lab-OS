@@ -11,39 +11,39 @@ class AgvNavigator:
         self.control_socket.connect((host, 19206))
         self.receive_socket.connect((host, 19204))
         self.rec_cmd_code = {
-            "pose" : "03EC",
-            "status" : "03FC",
-            "nav" : "0BEB"
+            "pose": "03EC",
+            "status": "03FC",
+            "nav": "0BEB"
         }
         self.status_list = ['NONE', 'WAITING', 'RUNNING', 'SUSPENDED', 'COMPLETED', 'FAILED', 'CANCELED']
         self._pose = []
         self._status = 'NONE'
         self.success = False
-    
+
     @property
     def pose(self) -> list:
         data = self.send('pose')
-        
+
         try:
             self._pose = [data['x'], data['y'], data['angle']]
         except:
             print(data)
 
         return self._pose
-    
+
     @property
     def status(self) -> str:
         data = self.send('status')
         self._status = self.status_list[data['task_status']]
-        return self._status 
+        return self._status
 
-    def send(self, cmd, ex_data = '', obj = 'receive_socket'):
+    def send(self, cmd, ex_data='', obj='receive_socket'):
         data = bytearray.fromhex(f"5A 01 00 01 00 00 00 00 {self.rec_cmd_code[cmd]} 00 00 00 00 00 00")
         if ex_data:
             data_ = ex_data
             data[7] = len(data_)
-            data= data + bytearray(data_,"utf-8")
-        
+            data = data + bytearray(data_, "utf-8")
+
         cmd_obj = getattr(self, obj)
         cmd_obj.sendall(data)
         response_data = b""
@@ -67,12 +67,11 @@ class AgvNavigator:
 
         except json.JSONDecodeError as e:
             raise f"JSON Decode Error: {e}"
-        
-        
-    def send_nav_task(self, command:str):
+
+    def send_nav_task(self, command: str):
         self.success = False
         # source,target = cmd.replace(' ','').split("->")
-        
+
         target = json.loads(command)['target']
         json_data = {}
         # json_data["source_id"] = source
@@ -87,13 +86,13 @@ class AgvNavigator:
                         break
                     time.sleep(1)
                 self.success = True
-        except: 
+        except:
             self.success = False
-
 
     def __del__(self):
         self.control_socket.close()
         self.receive_socket.close()
+
 
 if __name__ == "__main__":
     agv = AgvNavigator("192.168.1.42")

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from onvif import ONVIFCamera  # 新增：ONVIF PTZ 控制
 import asyncio
 import json
 import subprocess
@@ -13,7 +14,6 @@ import websockets
 logging.getLogger("zeep").setLevel(logging.WARNING)
 logging.getLogger("zeep.xsd.schema").setLevel(logging.WARNING)
 logging.getLogger("zeep.xsd.schema.schema").setLevel(logging.WARNING)
-from onvif import ONVIFCamera  # 新增：ONVIF PTZ 控制
 
 
 # ======================= 独立的 PTZController =======================
@@ -75,7 +75,8 @@ class PTZController:
         }
 
         try:
-            print(f"[PTZ] ContinuousMove start: pan={pan}, tilt={tilt}, zoom={zoom}, duration={duration}", file=sys.stderr)
+            print(
+                f"[PTZ] ContinuousMove start: pan={pan}, tilt={tilt}, zoom={zoom}, duration={duration}", file=sys.stderr)
             self.ptz_service.ContinuousMove(req)
         except Exception as e:
             print(f"[PTZ] ContinuousMove failed: {e}", file=sys.stderr)
@@ -156,6 +157,7 @@ class PTZController:
         return False
 
 # ======================= CameraController（加入 PTZ） =======================
+
 
 class CameraController:
     """

@@ -7,7 +7,7 @@ from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeRe
 
 
 class ROS2SerialNode(BaseROS2DeviceNode):
-    def __init__(self, device_id, registry_name, port: str, baudrate: int = 9600, resource_tracker: DeviceNodeResourceTracker=None):
+    def __init__(self, device_id, registry_name, port: str, baudrate: int = 9600, resource_tracker: DeviceNodeResourceTracker = None):
         # 保存属性，以便在调用父类初始化前使用
         self.port = port
         self.baudrate = baudrate

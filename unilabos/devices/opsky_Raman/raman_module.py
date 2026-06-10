@@ -14,6 +14,8 @@ except Exception:
     has_clr = False
 
 # 本函数返回 (success: bool, file_prefix: str|None, df: pandas.DataFrame|None)
+
+
 def run_raman_test(integration_time=5000, laser_power=200,
                    save_csv=True, save_plot=True,
                    normalize=False, norm_max=None,
@@ -57,6 +59,7 @@ def run_raman_test(integration_time=5000, laser_power=200,
             # 模拟波数轴 50..1300
             WaveNum = np.linspace(50, max_wavenum, 1024)
             # 合成几条高斯峰 + 噪声
+
             def gauss(x, mu, sig, A):
                 return A * np.exp(-0.5 * ((x - mu) / sig) ** 2)
             Spect_data = (gauss(WaveNum, 200, 8, 1000) +

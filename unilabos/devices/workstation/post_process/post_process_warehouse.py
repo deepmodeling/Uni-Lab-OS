@@ -48,10 +48,10 @@ def warehouse_factory(
 
                 z = dz + (num_items_z - layer - 1) * item_dz
                 locations.append(Coordinate(x, y, z))
-    
+
     if removed_positions:
         locations = [loc for i, loc in enumerate(locations) if i not in removed_positions]
-    
+
     _sites = create_homogeneous_resources(
         klass=ResourceHolder,
         locations=locations,
@@ -60,8 +60,9 @@ def warehouse_factory(
         resource_size_z=resource_size_z,
         name_prefix=name,
     )
-    
-    len_x, len_y = (num_items_x, num_items_y) if num_items_z == 1 else (num_items_y, num_items_z) if num_items_x == 1 else (num_items_x, num_items_z)
+
+    len_x, len_y = (num_items_x, num_items_y) if num_items_z == 1 else (
+        num_items_y, num_items_z) if num_items_x == 1 else (num_items_x, num_items_z)
 
     # 🔑 修改：使用数字命名，最上面是4321，最下面是12,11,10,9
     # 命名顺序必须与坐标生成顺序一致：层 → 行 → 列
@@ -73,12 +74,13 @@ def warehouse_factory(
                 # row=1 应该对应 global_row=1（第2行：8765）
                 # row=2 应该对应 global_row=2（第3行：12,11,10,9）
                 # 但前端显示时 row=2 在最上面，所以需要反转
-                reversed_row = (num_items_y - 1 - row)  # row=0→reversed_row=2, row=1→reversed_row=1, row=2→reversed_row=0
+                # row=0→reversed_row=2, row=1→reversed_row=1, row=2→reversed_row=0
+                reversed_row = (num_items_y - 1 - row)
                 global_row = layer * num_items_y + reversed_row
-                
+
                 # 每行的最大数字 = (global_row + 1) * num_items_x + col_offset
                 base_num = (global_row + 1) * num_items_x + col_offset
-                
+
                 # 从右到左递减：4,3,2,1
                 key = str(base_num - col)
                 keys.append(key)
@@ -90,9 +92,9 @@ def warehouse_factory(
         size_x=dx + item_dx * num_items_x,
         size_y=dy + item_dy * num_items_y,
         size_z=dz + item_dz * num_items_z,
-        num_items_x = num_items_x,
-        num_items_y = num_items_y,
-        num_items_z = num_items_z,
+        num_items_x=num_items_x,
+        num_items_y=num_items_y,
+        num_items_z=num_items_z,
         ordering_layout=layout,  # 传递排序方式到 ordering_layout
         sites=sites,
         category=category,
@@ -102,6 +104,7 @@ def warehouse_factory(
 
 class WareHouse(ItemizedCarrier):
     """堆栈载体类 - 可容纳16个板位的载体（4层x4行x1列）"""
+
     def __init__(
         self,
         name: str,

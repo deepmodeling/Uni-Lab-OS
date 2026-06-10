@@ -3,9 +3,8 @@ from pylabrobot.resources import Deck, Coordinate, Rotation
 
 from unilabos.devices.workstation.post_process.warehouses import (
     post_process_warehouse_4x3x1,
-    post_process_warehouse_4x3x1_2, 
+    post_process_warehouse_4x3x1_2,
 )
-
 
 
 class post_process_deck(Deck):
@@ -27,7 +26,7 @@ class post_process_deck(Deck):
         self.warehouses = {
             "原料罐堆栈": post_process_warehouse_4x3x1("原料罐堆栈"),
             "反应罐堆栈": post_process_warehouse_4x3x1_2("反应罐堆栈"),
-            
+
         }
         # warehouse 的位置
         self.warehouse_locations = {
@@ -38,9 +37,3 @@ class post_process_deck(Deck):
 
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
-
-
-
-
-
-

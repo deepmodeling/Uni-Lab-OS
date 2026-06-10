@@ -35,6 +35,7 @@ class Param:
     editability: ParamEdit
     address: int
 
+
 # 用于存储参数的字典类型
 ParamsDict = Dict[str, Param]
 
@@ -86,7 +87,7 @@ class RMAxis:
         if not self.client.connect():
             raise Exception(f"Modbus Connection failed")
         self.slave_id = slave_id
-        
+
         self._error_event = Event()
         self.device_params = {}  # Assuming some initialization for parameters
         self.command_edited = {}
@@ -235,10 +236,12 @@ class RMAxis:
             int(command['next_command_index'])
         ]
         buffer = int32_to_uint16_list(command_buffer)
-        response = self.client.write_registers(self.device_params["command_address"].address + index * 20, buffer, self.slave_id)
+        response = self.client.write_registers(
+            self.device_params["command_address"].address + index * 20, buffer, self.slave_id)
 
     def get_command(self, index):
-        response = self.client.read_holding_registers(self.device_params["command_address"].address + index * 20, 20, self.slave_id)
+        response = self.client.read_holding_registers(
+            self.device_params["command_address"].address + index * 20, 20, self.slave_id)
         print(response)
         buffer = response.registers
         command_buffer = uint16_list_to_int32_list(buffer)
@@ -287,7 +290,7 @@ class RMAxis:
     @property
     def position(self) -> float:
         return self.get_device_parameter("current_position")
-    
+
     def get_position(self) -> float:
         return self.get_device_parameter("current_position")
 
@@ -386,7 +389,7 @@ class RMAxis:
 
     def soft_reset(self):
         self.client.write_register(186, 0x22205682)
-    
+
     async def wait_error(self):
         await self._error_event.wait()
 

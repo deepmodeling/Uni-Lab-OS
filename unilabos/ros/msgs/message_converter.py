@@ -5,6 +5,8 @@
 使用ImportManager动态导入和管理所需模块。
 """
 
+from typing import Any, Dict, Type, Union, Optional
+from control_msgs.action import *
 import json
 import traceback
 from io import StringIO
@@ -52,7 +54,6 @@ SendCmd = msg_converter_manager.get_class("unilabos_msgs.action:SendCmd")
 imsg = msg_converter_manager.get_module("unilabos.messages")
 Point3D = msg_converter_manager.get_class("unilabos.messages:Point3D")
 
-from control_msgs.action import *
 
 # 基本消息类型映射
 _msg_mapping: Dict[Type, Type] = {
@@ -164,10 +165,12 @@ _msg_converter: Dict[Type, Any] = {
     ),
 }
 
+
 def obtain_data_with_uuid(x: dict):
     data = x.get("data", {})
     data["unilabos_uuid"] = x.get("uuid", None)
     return data
+
 
 def json_or_yaml_loads(data: str) -> Any:
     try:
@@ -624,13 +627,6 @@ ROS Action 到 JSON Schema 转换器
 用于规范化 Action 接口和生成文档。
 """
 
-import json
-import yaml
-from typing import Any, Dict, Type, Union, Optional
-
-from unilabos.utils import logger
-from unilabos.utils.import_manager import ImportManager
-from unilabos.config.config import ROSConfig
 
 basic_type_map = {
     "bool": {"type": "boolean"},
@@ -668,7 +664,8 @@ def ros_field_type_to_json_schema(
         对应的 JSON Schema 类型定义
     """
     if isinstance(type_info, UnboundedSequence):
-        return {"type": "array", "items": ros_field_type_to_json_schema(type_info.value_type, field_name)}  # type: ignore
+        # type: ignore
+        return {"type": "array", "items": ros_field_type_to_json_schema(type_info.value_type, field_name)}
     if isinstance(type_info, NamespacedType):
         cls_name = ".".join(type_info.namespaces) + ":" + type_info.name
         type_class = msg_converter_manager.get_class(cls_name)

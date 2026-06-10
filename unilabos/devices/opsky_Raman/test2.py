@@ -13,6 +13,8 @@ ROBOT_PORT = 502
 SCAN_CSV_FILE = "scan_results.csv"
 
 # =================== 通用函数 ===================
+
+
 def ensure_connected(client, name, ip, port):
     if not client.is_socket_open():
         print(f"{name} 掉线，正在重连...")
@@ -29,6 +31,7 @@ def ensure_connected(client, name, ip, port):
             return None
     return client
 
+
 def safe_read(client, name, func, *args, retries=3, delay=0.3, **kwargs):
     for _ in range(retries):
         try:
@@ -40,6 +43,7 @@ def safe_read(client, name, func, *args, retries=3, delay=0.3, **kwargs):
         time.sleep(delay)
     print(f"{name} 连续读取失败 {retries} 次")
     return None
+
 
 def safe_write(client, name, func, *args, retries=3, delay=0.3, **kwargs):
     for _ in range(retries):
@@ -53,6 +57,7 @@ def safe_write(client, name, func, *args, retries=3, delay=0.3, **kwargs):
     print(f"{name} 连续写入失败 {retries} 次")
     return False
 
+
 def wait_with_quit_check(robot, seconds, addr_quit=270):
     for _ in range(int(seconds / 0.2)):
         rr = safe_read(robot, "机器人", robot.read_holding_registers,
@@ -62,6 +67,7 @@ def wait_with_quit_check(robot, seconds, addr_quit=270):
             return True
         time.sleep(0.2)
     return False
+
 
 # =================== 初始化 ===================
 plc = ModbusTcpClient(PLC_IP, port=PLC_PORT)

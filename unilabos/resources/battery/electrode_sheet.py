@@ -15,6 +15,7 @@ electrode_colors = {
     "Battery": "#00ff00",
 }
 
+
 class ElectrodeSheetState(TypedDict):
     diameter: float  # 直径 (mm)
     thickness: float  # 厚度 (mm)
@@ -71,18 +72,21 @@ class ElectrodeSheet(ResourcePLR):
         """格式不变"""
         super().load_state(state)
         self._unilabos_state = state
-    #序列化
+    # 序列化
+
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         """格式不变"""
         data = super().serialize_state()
-        data.update(self._unilabos_state)  # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        data.update(self._unilabos_state)
         return data
 
 
 def PositiveCan(name: str) -> ElectrodeSheet:
     """创建正极壳"""
     sheet = ElectrodeSheet(name=name, size_x=12, size_y=12, size_z=3.0, model="PositiveCan")
-    sheet.load_state({"diameter": 20.0, "thickness": 0.5, "mass": 0.5, "material_type": "aluminum", "color": electrode_colors["PositiveCan"], "info": None})
+    sheet.load_state({"diameter": 20.0, "thickness": 0.5, "mass": 0.5, "material_type": "aluminum",
+                     "color": electrode_colors["PositiveCan"], "info": None})
     return sheet
 
 
@@ -187,9 +191,10 @@ class Battery(Container):
         super().load_state(state)
         self._unilabos_state = state
 
-    #序列化
+    # 序列化
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         """格式不变"""
         data = super().serialize_state()
-        data.update(self._unilabos_state)  # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        data.update(self._unilabos_state)
         return data

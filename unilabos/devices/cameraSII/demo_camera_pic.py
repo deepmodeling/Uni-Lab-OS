@@ -4,6 +4,7 @@ import cv2
 RTSP_URL = "rtsp://admin:admin123@192.168.31.164:554/stream1"
 OUTPUT_IMAGE = "rtsp_test_frame.jpg"
 
+
 def main():
     print(f"尝试连接 RTSP 流: {RTSP_URL}")
     cap = cv2.VideoCapture(RTSP_URL)
@@ -31,6 +32,7 @@ def main():
         print(f"成功截取一帧并保存为: {OUTPUT_IMAGE}")
     else:
         print("错误：写入图片失败，请检查磁盘权限/路径")
+
 
 if __name__ == "__main__":
     main()

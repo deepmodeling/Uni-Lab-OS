@@ -49,7 +49,7 @@ class SOPAStatusCode(IntEnum):
     AIR_ASPIRATE = 0x0D      # 空吸
     NEEDLE_BLOCK = 0x0E      # 堵针
     FOAM_DETECT = 0x10       # 泡沫
-    EXCEED_TIP_VOLUME = 0x11 # 吸液超过吸头容量
+    EXCEED_TIP_VOLUME = 0x11  # 吸液超过吸头容量
 
 
 class CommunicationType(Enum):
@@ -102,14 +102,14 @@ class SOPAConfig:
     def _validate_address(self):
         """
         验证设备地址是否符合协议要求
-        
+
         协议要求：
         - 地址范围：1~254
         - 禁用地址：47, 69, 91 (对应ASCII字符 '/', 'E', '[')
         """
         if not (1 <= self.address <= 254):
             raise ValueError(f"设备地址必须在1-254范围内，当前地址: {self.address}")
-        
+
         forbidden_addresses = [47, 69, 91]  # '/', 'E', '['
         if self.address in forbidden_addresses:
             forbidden_chars = {47: "'/' (0x2F)", 69: "'E' (0x45)", 91: "'[' (0x5B)"}
@@ -191,7 +191,7 @@ class SOPAPipette:
     def _build_command(self, command: str) -> bytes:
         """
         构建完整命令字节串
-        
+
         根据协议格式：头码 + 地址 + 命令/数据 + 尾码 + 校验和
 
         Args:
@@ -206,13 +206,13 @@ class SOPAPipette:
 
         # 构建基础命令字符串：头码 + 地址 + 命令 + 尾码
         cmd_str = f"{header}{address}{command}{tail}"
-        
+
         # 转换为字节串
         cmd_bytes = cmd_str.encode('ascii')
-        
+
         # 计算校验和（所有字节的累加值）
         checksum = self._calculate_checksum(cmd_bytes)
-        
+
         # 返回完整命令：基础命令字节 + 校验和字节
         return cmd_bytes + bytes([checksum])
 
@@ -743,7 +743,8 @@ class SOPAPipette:
                 # 解析状态字节
                 status_char = response[8] if len(response) > 8 else '0'
                 try:
-                    status_code = int(status_char, 16) if status_char.isdigit() or status_char.lower() in 'abcdef' else 0
+                    status_code = int(status_char, 16) if status_char.isdigit(
+                    ) or status_char.lower() in 'abcdef' else 0
                     self._last_status = SOPAStatusCode(status_code)
                 except ValueError:
                     self._last_status = SOPAStatusCode.NO_ERROR
@@ -776,15 +777,15 @@ class SOPAPipette:
             command = self._build_command("VE")
             logger.debug(f"发送版本查询命令: {command}")
             self.serial_port.write(command)
-            
+
             # 等待响应
             time.sleep(0.3)  # 增加等待时间
-            
+
             # 读取所有可用数据
             all_data = b''
             timeout_count = 0
             max_timeout = 15  # 增加最大等待时间到1.5秒
-            
+
             while timeout_count < max_timeout:
                 if self.serial_port.in_waiting > 0:
                     data = self.serial_port.read(self.serial_port.in_waiting)
@@ -794,7 +795,7 @@ class SOPAPipette:
                 else:
                     time.sleep(0.1)
                     timeout_count += 1
-                    
+
                 # 检查是否收到完整的双响应帧
                 if len(all_data) >= 26:  # 两个13字节的响应帧
                     logger.debug("收到完整的双响应帧")
@@ -804,13 +805,13 @@ class SOPAPipette:
                     if timeout_count > 5:  # 等待0.5秒后如果没有更多数据就停止
                         logger.debug("只收到单响应帧")
                         break
-            
+
             logger.debug(f"总共接收到 {len(all_data)} 字节数据: {all_data.hex().upper()}")
-            
+
             if len(all_data) < 13:
                 logger.warning("接收到的数据不足一个完整响应帧")
                 return "版本信息不可用"
-            
+
             # 解析响应数据
             version_info = self._parse_version_response(all_data)
             logger.info(f"解析得到版本信息: {version_info}")
@@ -823,10 +824,10 @@ class SOPAPipette:
     def _parse_version_response(self, data: bytes) -> str:
         """
         解析版本响应数据
-        
+
         Args:
             data: 原始响应数据
-            
+
         Returns:
             str: 解析后的版本信息
         """
@@ -834,7 +835,7 @@ class SOPAPipette:
             # 将数据转换为十六进制字符串用于调试
             hex_data = data.hex().upper()
             logger.debug(f"收到版本响应数据: {hex_data}")
-            
+
             # 查找响应帧的起始位置
             responses = []
             i = 0
@@ -850,18 +851,18 @@ class SOPAPipette:
                         i += 1
                 else:
                     i += 1
-            
+
             if len(responses) < 2:
                 # 如果只有一个响应帧，尝试解析
                 if len(responses) == 1:
                     return self._extract_version_from_frame(responses[0])
                 else:
                     return f"响应格式异常: {hex_data}"
-            
+
             # 解析第二个响应帧（通常包含版本信息）
             version_frame = responses[1]
             return self._extract_version_from_frame(version_frame)
-            
+
         except Exception as e:
             logger.error(f"解析版本响应失败: {str(e)}")
             return f"解析失败: {data.hex().upper()}"
@@ -869,10 +870,10 @@ class SOPAPipette:
     def _extract_version_from_frame(self, frame: bytes) -> str:
         """
         从响应帧中提取版本信息
-        
+
         Args:
             frame: 13字节的响应帧
-            
+
         Returns:
             str: 版本信息字符串
         """
@@ -880,40 +881,40 @@ class SOPAPipette:
             # 帧格式: 头码(1) + 地址(1) + 数据(9) + 尾码(1) + 校验和(1)
             if len(frame) != 13:
                 return f"帧长度错误: {frame.hex().upper()}"
-            
+
             # 提取数据部分 (索引2-10，共9字节)
             data_part = frame[2:11]
-            
+
             # 尝试不同的解析方法
             version_candidates = []
-            
+
             # 方法1: 查找可打印的ASCII字符
             ascii_chars = []
             for byte in data_part:
                 if 32 <= byte <= 126:  # 可打印ASCII范围
                     ascii_chars.append(chr(byte))
-            
+
             if ascii_chars:
                 version_candidates.append(''.join(ascii_chars))
-            
+
             # 方法2: 解析为版本号格式 (如果前几个字节是版本信息)
             if len(data_part) >= 3:
                 # 检查是否是 V.x.y 格式
                 if data_part[0] == 0x56:  # 'V'
                     version_str = f"V{data_part[1]}.{data_part[2]}"
                     version_candidates.append(version_str)
-            
+
             # 方法3: 十六进制表示
             hex_version = ' '.join(f'{b:02X}' for b in data_part)
             version_candidates.append(f"HEX: {hex_version}")
-            
+
             # 返回最合理的版本信息
             for candidate in version_candidates:
                 if candidate and len(candidate.strip()) > 1:
                     return candidate.strip()
-            
+
             return f"原始数据: {frame.hex().upper()}"
-            
+
         except Exception as e:
             logger.error(f"提取版本信息失败: {str(e)}")
             return f"提取失败: {frame.hex().upper()}"
@@ -967,7 +968,7 @@ class SOPAPipette:
     # ==================== 高级操作方法 ====================
 
     def transfer_liquid(self, source_volume: float, dispense_volume: float = None,
-                       with_detection: bool = True, pre_wet: bool = False) -> bool:
+                        with_detection: bool = True, pre_wet: bool = False) -> bool:
         """
         完整的液体转移操作
 
@@ -1062,7 +1063,7 @@ class SOPAPipette:
 # ==================== 工厂函数和便利方法 ====================
 
 def create_sopa_pipette(port: str = "/dev/ttyUSB0", address: int = 1,
-                       baudrate: int = 115200, **kwargs) -> SOPAPipette:
+                        baudrate: int = 115200, **kwargs) -> SOPAPipette:
     """
     创建SOPA移液器实例的便利函数
 

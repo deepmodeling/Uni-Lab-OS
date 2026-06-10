@@ -6,6 +6,23 @@
 """
 
 # 添加项目根目录到Python路径以解决模块导入问题
+from unilabos.devices.liquid_handling.laiyu.controllers.xyz_controller import (
+    XYZController,
+    MotorAxis,
+    MotorStatus
+)
+from unilabos.devices.liquid_handling.laiyu.drivers.sopa_pipette_driver import (
+    SOPAPipette,
+    SOPAConfig,
+    SOPAStatusCode,
+    DetectionMode,
+    create_sopa_pipette,
+)
+from enum import Enum
+from dataclasses import dataclass
+from typing import Optional, List, Dict, Tuple
+import logging
+import time
 import sys
 import os
 from tkinter import N
@@ -20,19 +37,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 # 强制添加项目根目录到sys.path的开头
 sys.path.insert(0, project_root)
 
-import time
-import logging
-from typing import Optional, List, Dict, Tuple
-from dataclasses import dataclass
-from enum import Enum
 
-from unilabos.devices.liquid_handling.laiyu.drivers.sopa_pipette_driver import (
-    SOPAPipette,
-    SOPAConfig,
-    SOPAStatusCode,
-    DetectionMode,
-    create_sopa_pipette,
-)
 # from unilabos.devices.liquid_handling.laiyu.drivers.xyz_stepper_driver import (
 #     XYZStepperController,
 #     MotorAxis,
@@ -40,11 +45,6 @@ from unilabos.devices.liquid_handling.laiyu.drivers.sopa_pipette_driver import (
 #     ModbusException
 # )
 
-from unilabos.devices.liquid_handling.laiyu.controllers.xyz_controller import (
-    XYZController,
-    MotorAxis,
-    MotorStatus
-)
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ class PipetteController:
                 logger.error("移液器连接失败")
                 return False
             logger.info("移液器连接成功")
-            
+
             # 连接XYZ步进电机控制器（如果提供了端口）
             if self.xyz_port != self.pipette_port:
                 try:
@@ -175,7 +175,7 @@ class PipetteController:
                     self.xyz_controller.is_connected = True
                 except Exception as e:
                     logger.info("未配置XYZ步进电机端口，跳过运动控制器连接")
-            
+
             return True
         except Exception as e:
             logger.error(f"设备连接失败: {e}")
@@ -201,7 +201,7 @@ class PipetteController:
         # 断开移液器连接
         self.pipette.disconnect()
         logger.info("移液器已断开")
-        
+
         # 断开 XYZ 步进电机连接
         if self.xyz_controller and self.xyz_connected:
             try:
@@ -214,40 +214,40 @@ class PipetteController:
     def _check_xyz_safety(self, axis: MotorAxis, target_position: int) -> bool:
         """
         检查 XYZ 轴移动的安全性
-        
+
         Args:
             axis: 电机轴
             target_position: 目标位置(步数)
-            
+
         Returns:
             是否安全
         """
         try:
             # 获取当前电机状态
             motor_position = self.xyz_controller.get_motor_status(axis)
-            
+
             # 检查电机状态是否正常 (不是碰撞停止或限位停止)
-            if motor_position.status in [MotorStatus.COLLISION_STOP, 
-                                       MotorStatus.FORWARD_LIMIT_STOP, 
-                                       MotorStatus.REVERSE_LIMIT_STOP]:
+            if motor_position.status in [MotorStatus.COLLISION_STOP,
+                                         MotorStatus.FORWARD_LIMIT_STOP,
+                                         MotorStatus.REVERSE_LIMIT_STOP]:
                 logger.error(f"{axis.name} 轴电机处于错误状态: {motor_position.status.name}")
                 return False
-                
+
             # 检查位置限制 (扩大安全范围以适应实际硬件)
             # 步进电机的位置范围通常很大，这里设置更合理的范围
             if target_position < -500000 or target_position > 500000:
                 logger.error(f"{axis.name} 轴目标位置超出安全范围: {target_position}")
                 return False
-                
+
             # 检查移动距离是否过大 (单次移动不超过 20000 步，约12mm)
             current_position = motor_position.steps
             move_distance = abs(target_position - current_position)
             if move_distance > 20000:
                 logger.error(f"{axis.name} 轴单次移动距离过大: {move_distance}步")
                 return False
-                
+
             return True
-            
+
         except Exception as e:
             logger.error(f"安全检查失败: {e}")
             return False
@@ -255,48 +255,48 @@ class PipetteController:
     def move_z_relative(self, distance_mm: float, speed: int = 2000, acceleration: int = 500) -> bool:
         """
         Z轴相对移动
-        
+
         Args:
             distance_mm: 移动距离(mm)，正值向下，负值向上
             speed: 移动速度(rpm)
             acceleration: 加速度(rpm/s)
-            
+
         Returns:
             移动是否成功
         """
         if not self.xyz_controller or not self.xyz_connected:
             logger.error("XYZ 步进电机未连接，无法执行移动")
             return False
-            
+
         try:
             # 参数验证
             if abs(distance_mm) > 15.0:
                 logger.error(f"移动距离过大: {distance_mm}mm，最大允许15mm")
                 return False
-                
+
             if speed < 100 or speed > 5000:
                 logger.error(f"速度参数无效: {speed}rpm，范围应为100-5000")
                 return False
-                
+
             # 获取当前 Z 轴位置
             current_status = self.xyz_controller.get_motor_status(MotorAxis.Z)
             current_z_position = current_status.steps
-            
+
             # 计算移动距离对应的步数 (1mm = 1638.4步)
             mm_to_steps = 1638.4
             move_distance_steps = int(distance_mm * mm_to_steps)
-            
+
             # 计算目标位置
             target_z_position = current_z_position + move_distance_steps
-            
+
             # 安全检查
             if not self._check_xyz_safety(MotorAxis.Z, target_z_position):
                 logger.error("Z轴移动安全检查失败")
                 return False
-            
+
             logger.info(f"Z轴相对移动: {distance_mm}mm ({move_distance_steps}步)")
             logger.info(f"当前位置: {current_z_position}步 -> 目标位置: {target_z_position}步")
-            
+
             # 执行移动
             success = self.xyz_controller.move_to_position(
                 axis=MotorAxis.Z,
@@ -305,28 +305,28 @@ class PipetteController:
                 acceleration=acceleration,
                 precision=50
             )
-            
+
             if not success:
                 logger.error("Z轴移动命令发送失败")
                 return False
-                
+
             # 等待移动完成
             if not self.xyz_controller.wait_for_completion(MotorAxis.Z, timeout=10.0):
                 logger.error("Z轴移动超时")
                 return False
-                
+
             # 验证移动结果
             final_status = self.xyz_controller.get_motor_status(MotorAxis.Z)
             final_position = final_status.steps
             position_error = abs(final_position - target_z_position)
-            
+
             logger.info(f"Z轴移动完成，最终位置: {final_position}步，误差: {position_error}步")
-            
+
             if position_error > 100:
                 logger.warning(f"Z轴位置误差较大: {position_error}步")
-                
+
             return True
-            
+
         except ModbusException as e:
             logger.error(f"Modbus通信错误: {e}")
             return False
@@ -337,12 +337,12 @@ class PipetteController:
     def emergency_stop(self) -> bool:
         """
         紧急停止所有运动
-        
+
         Returns:
             停止是否成功
         """
         success = True
-        
+
         # 停止移液器操作
         try:
             if self.pipette and self.connected:
@@ -351,7 +351,7 @@ class PipetteController:
         except Exception as e:
             logger.error(f"移液器紧急停止失败: {e}")
             success = False
-            
+
         # 停止 XYZ 轴运动
         try:
             if self.xyz_controller and self.xyz_connected:
@@ -360,7 +360,7 @@ class PipetteController:
         except Exception as e:
             logger.error(f"XYZ 轴紧急停止失败: {e}")
             success = False
-            
+
         return success
 
     def pickup_tip(self) -> bool:
@@ -376,7 +376,7 @@ class PipetteController:
             return True
 
         logger.info("开始装载枪头 - Z轴向下移动10mm")
-        
+
         # 使用相对移动方法，向下移动10mm
         if self.move_z_relative(distance_mm=10.0, speed=2000, acceleration=500):
             # 更新枪头状态
@@ -387,7 +387,7 @@ class PipetteController:
             if self.tip_status == TipStatus.TIP_ATTACHED:
                 logger.info("枪头装载成功")
                 return True
-            else :
+            else:
                 logger.info("枪头装载失败")
                 return False
         else:
@@ -421,7 +421,7 @@ class PipetteController:
             return False
 
     def aspirate(self, volume: float, liquid_class: Optional[LiquidClass] = None,
-                detection: bool = True) -> bool:
+                 detection: bool = True) -> bool:
         """
         吸液
 
@@ -685,34 +685,35 @@ class PipetteController:
 # 实例化代码块 - 移液控制器使用示例
 # ============================================================================
 
+
 if __name__ == "__main__":
     # 配置日志
     import logging
-    
+
     # 设置日志级别
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    
+
     def interactive_test():
         """交互式测试模式 - 适用于已连接的设备"""
         print("\n" + "=" * 60)
         print("🧪 移液器交互式测试模式")
         print("=" * 60)
-        
+
         # 获取用户输入的连接参数
         print("\n📡 设备连接配置:")
         port = input("请输入移液器串口端口 (默认: /dev/ttyUSB_CH340): ").strip() or "/dev/ttyUSB_CH340"
         address_input = input("请输入移液器设备地址 (默认: 4): ").strip()
         address = int(address_input) if address_input else 4
-        
+
         # 询问是否连接 XYZ 步进电机控制器
         xyz_enable = input("是否连接 XYZ 步进电机控制器? (y/N): ").strip().lower()
         xyz_port = None
         if xyz_enable not in ['n', 'no']:
             xyz_port = input("请输入 XYZ 控制器串口端口 (默认: /dev/ttyUSB_CH340): ").strip() or "/dev/ttyUSB_CH340"
-        
+
         try:
             # 创建移液控制器实例
             if xyz_port:
@@ -721,21 +722,21 @@ if __name__ == "__main__":
             else:
                 print(f"\n🔧 创建移液控制器实例 (端口: {port}, 地址: {address})...")
                 pipette = PipetteController(port=port, address=address)
-            
+
             # 连接设备
             print("\n📞 连接移液器设备...")
             if not pipette.connect():
                 print("❌ 设备连接失败，请检查连接")
                 return
             print("✅ 设备连接成功")
-            
+
             # 初始化设备
             print("\n🚀 初始化设备...")
             if not pipette.initialize():
                 print("❌ 设备初始化失败")
                 return
             print("✅ 设备初始化成功")
-            
+
             # 交互式菜单
             while True:
                 print("\n" + "=" * 50)
@@ -755,9 +756,9 @@ if __name__ == "__main__":
                 print("99. 🚨 紧急停止")
                 print("0. 🚪 退出程序")
                 print("=" * 50)
-                
+
                 choice = input("\n请选择操作 (0-12, 99): ").strip()
-                
+
                 if choice == "0":
                     print("\n👋 退出程序...")
                     break
@@ -773,7 +774,7 @@ if __name__ == "__main__":
                     # print(f"    🔧 枪头使用次数: {status['statistics']['tip_count']}")
                     print(f"    ⬆️  吸液次数: {status['statistics']['aspirate_count']}")
                     print(f"    ⬇️  排液次数: {status['statistics']['dispense_count']}")
-                
+
                 elif choice == "2":
                     # 装载枪头
                     print("\n🔧 装载枪头...")
@@ -781,14 +782,14 @@ if __name__ == "__main__":
                         print("📍 使用 XYZ 控制器进行 Z 轴定位 (下移 10mm)")
                     else:
                         print("⚠️  未连接 XYZ 控制器，仅执行移液器枪头装载")
-                    
+
                     if pipette.pickup_tip():
                         print("✅ 枪头装载成功")
                         if pipette.xyz_connected:
                             print("📍 Z 轴已移动到装载位置")
                     else:
                         print("❌ 枪头装载失败")
-                
+
                 elif choice == "3":
                     # 弹出枪头
                     print("\n🗑️ 弹出枪头...")
@@ -796,7 +797,7 @@ if __name__ == "__main__":
                         print("✅ 枪头弹出成功")
                     else:
                         print("❌ 枪头弹出失败")
-                
+
                 elif choice == "4":
                     # 吸液操作
                     try:
@@ -810,7 +811,7 @@ if __name__ == "__main__":
                             print("❌ 吸液失败")
                     except ValueError:
                         print("❌ 请输入有效的数字")
-                
+
                 elif choice == "5":
                     # 排液操作
                     try:
@@ -824,7 +825,7 @@ if __name__ == "__main__":
                             print("❌ 排液失败")
                     except ValueError:
                         print("❌ 请输入有效的数字")
-                
+
                 elif choice == "6":
                     # 混合操作
                     try:
@@ -838,7 +839,7 @@ if __name__ == "__main__":
                             print("❌ 混合失败")
                     except ValueError:
                         print("❌ 请输入有效的数字")
-                
+
                 elif choice == "7":
                     # 液体转移
                     try:
@@ -846,7 +847,7 @@ if __name__ == "__main__":
                         source = input("源孔位 (可选, 如A1): ").strip() or None
                         dest = input("目标孔位 (可选, 如B1): ").strip() or None
                         new_tip = input("是否使用新枪头? (y/n, 默认y): ").strip().lower() != 'n'
-                        
+
                         print(f"\n🔄 执行液体转移 ({volume}ul)...")
                         if pipette.transfer(volume=volume, source_well=source, dest_well=dest, new_tip=new_tip):
                             print("✅ 液体转移完成")
@@ -854,7 +855,7 @@ if __name__ == "__main__":
                             print("❌ 液体转移失败")
                     except ValueError:
                         print("❌ 请输入有效的数字")
-                
+
                 elif choice == "8":
                     # 设置液体类型
                     print("\n🧪 可用液体类型:")
@@ -864,16 +865,16 @@ if __name__ == "__main__":
                         "3": (LiquidClass.VISCOUS, "粘稠液体"),
                         "4": (LiquidClass.VOLATILE, "挥发性液体")
                     }
-                    
+
                     for key, (liquid_class, description) in liquid_options.items():
                         print(f"  {key}. {description}")
-                    
+
                     liquid_choice = input("请选择液体类型 (1-4): ").strip()
                     if liquid_choice in liquid_options:
                         liquid_class, description = liquid_options[liquid_choice]
                         pipette.set_liquid_class(liquid_class)
                         print(f"✅ 液体类型设置为: {description}")
-                        
+
                         # 显示参数
                         params = pipette.liquid_params
                         print(f"📋 参数设置:")
@@ -883,7 +884,7 @@ if __name__ == "__main__":
                         print(f"  💧 预润湿: {'是' if params.pre_wet else '否'}")
                     else:
                         print("❌ 无效选择")
-                
+
                 elif choice == "9":
                     # 自定义参数
                     try:
@@ -892,19 +893,19 @@ if __name__ == "__main__":
                         dispense_speed = input("排液速度 (默认800): ").strip()
                         air_gap = input("空气间隙 (ul, 默认10.0): ").strip()
                         pre_wet = input("预润湿 (y/n, 默认n): ").strip().lower() == 'y'
-                        
+
                         custom_params = LiquidParameters(
                             aspirate_speed=int(aspirate_speed) if aspirate_speed else 500,
                             dispense_speed=int(dispense_speed) if dispense_speed else 800,
                             air_gap=float(air_gap) if air_gap else 10.0,
                             pre_wet=pre_wet
                         )
-                        
+
                         pipette.set_custom_parameters(custom_params)
                         print("✅ 自定义参数设置完成")
                     except ValueError:
                         print("❌ 请输入有效的数字")
-                
+
                 elif choice == "10":
                     # 校准体积
                     try:
@@ -914,12 +915,12 @@ if __name__ == "__main__":
                         print(f"✅ 校准完成，校准系数: {actual/expected:.3f}")
                     except ValueError:
                         print("❌ 请输入有效的数字")
-                
+
                 elif choice == "11":
                     # 重置统计
                     pipette.reset_statistics()
                     print("✅ 统计信息已重置")
-                
+
                 elif choice == "12":
                     # 液体类型测试
                     print("\n🧪 液体类型参数对比:")
@@ -929,7 +930,7 @@ if __name__ == "__main__":
                         (LiquidClass.VISCOUS, "粘稠液体"),
                         (LiquidClass.VOLATILE, "挥发性液体")
                     ]
-                    
+
                     for liquid_class, description in liquid_tests:
                         params = pipette.LIQUID_PARAMS[liquid_class]
                         print(f"\n📋 {description} ({liquid_class.value}):")
@@ -938,7 +939,7 @@ if __name__ == "__main__":
                         print(f"  💨 空气间隙: {params.air_gap}ul")
                         print(f"  💧 预润湿: {'是' if params.pre_wet else '否'}")
                         print(f"  ⏱️ 吸液后延时: {params.delay_after_aspirate}s")
-                
+
                 elif choice == "99":
                     # 紧急停止
                     print("\n🚨 执行紧急停止...")
@@ -949,19 +950,19 @@ if __name__ == "__main__":
                     else:
                         print("❌ 紧急停止执行失败")
                         print("⚠️ 请手动检查设备状态并采取必要措施")
-                    
+
                     # 紧急停止后询问是否继续
                     continue_choice = input("\n是否继续操作？(y/n): ").strip().lower()
                     if continue_choice != 'y':
                         print("🚪 退出程序")
                         break
-                
+
                 else:
                     print("❌ 无效选择，请重新输入")
-                
+
                 # 等待用户确认继续
                 input("\n按回车键继续...")
-            
+
         except KeyboardInterrupt:
             print("\n\n⚠️ 用户中断操作")
         except Exception as e:
@@ -974,19 +975,19 @@ if __name__ == "__main__":
                 print("✅ 连接已断开")
             except:
                 print("⚠️ 断开连接时出现问题")
-    
+
     def demo_test():
         """演示测试模式 - 完整功能演示"""
         print("\n" + "=" * 60)
         print("🎬 移液控制器演示测试")
         print("=" * 60)
-        
+
         try:
             # 创建移液控制器实例
             print("1. 🔧 创建移液控制器实例...")
             pipette = PipetteController(port="/dev/ttyUSB0", address=4)
             print("✅ 移液控制器实例创建成功")
-            
+
             # 连接设备
             print("\n2. 📞 连接移液器设备...")
             if pipette.connect():
@@ -994,7 +995,7 @@ if __name__ == "__main__":
             else:
                 print("❌ 设备连接失败")
                 return False
-            
+
             # 初始化设备
             print("\n3. 🚀 初始化设备...")
             if pipette.initialize():
@@ -1002,19 +1003,19 @@ if __name__ == "__main__":
             else:
                 print("❌ 设备初始化失败")
                 return False
-            
+
             # 装载枪头
             print("\n4. 🔧 装载枪头...")
             if pipette.pickup_tip():
                 print("✅ 枪头装载成功")
             else:
                 print("❌ 枪头装载失败")
-            
+
             # 设置液体类型
             print("\n5. 🧪 设置液体类型为血清...")
             pipette.set_liquid_class(LiquidClass.SERUM)
             print("✅ 液体类型设置完成")
-            
+
             # 吸液操作
             print("\n6. 💧 执行吸液操作...")
             volume_to_aspirate = 100.0
@@ -1023,7 +1024,7 @@ if __name__ == "__main__":
                 print(f"📊 当前体积: {pipette.current_volume}ul")
             else:
                 print("❌ 吸液失败")
-            
+
             # 排液操作
             print("\n7. 💦 执行排液操作...")
             volume_to_dispense = 50.0
@@ -1032,14 +1033,14 @@ if __name__ == "__main__":
                 print(f"📊 剩余体积: {pipette.current_volume}ul")
             else:
                 print("❌ 排液失败")
-            
+
             # 混合操作
             print("\n8. 🌀 执行混合操作...")
             if pipette.mix(cycles=3, volume=30.0):
                 print("✅ 混合完成")
             else:
                 print("❌ 混合失败")
-            
+
             # 获取状态信息
             print("\n9. 📊 获取设备状态...")
             status = pipette.get_status()
@@ -1052,30 +1053,30 @@ if __name__ == "__main__":
             # print(f"    🔧 枪头使用次数: {status['statistics']['tip_count']}")
             print(f"    ⬆️ 吸液次数: {status['statistics']['aspirate_count']}")
             print(f"    ⬇️ 排液次数: {status['statistics']['dispense_count']}")
-            
+
             # 弹出枪头
             print("\n10. 🗑️ 弹出枪头...")
             if pipette.eject_tip():
                 print("✅ 枪头弹出成功")
             else:
                 print("❌ 枪头弹出失败")
-            
+
             print("\n" + "=" * 60)
             print("✅ 移液控制器演示测试完成")
             print("=" * 60)
-            
+
             return True
-            
+
         except Exception as e:
             print(f"\n❌ 测试过程中发生异常: {e}")
             return False
-            
+
         finally:
             # 断开连接
             print("\n📞 断开连接...")
             pipette.disconnect()
             print("✅ 连接已断开")
-    
+
     # 主程序入口
     print("🧪 移液器控制器测试程序")
     print("=" * 40)
@@ -1083,9 +1084,9 @@ if __name__ == "__main__":
     print("2. 🎬 演示测试")
     print("0. 🚪 退出")
     print("=" * 40)
-    
+
     mode = input("请选择测试模式 (0-2): ").strip()
-    
+
     if mode == "1":
         interactive_test()
     elif mode == "2":
@@ -1094,7 +1095,7 @@ if __name__ == "__main__":
         print("👋 再见！")
     else:
         print("❌ 无效选择")
-    
+
     print("\n🎉 程序结束！")
     print("\n💡 使用说明:")
     print("1. 确保移液器硬件已正确连接")

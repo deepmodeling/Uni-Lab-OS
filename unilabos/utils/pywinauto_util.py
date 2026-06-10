@@ -22,8 +22,10 @@ def connect_application(backend="uia", **kwargs):
     native_window_handle = top_window.handle
     return UIApplication(app, native_window_handle)
 
+
 def get_ui_path_with_window_specification(obj):
     return UIPath(get_wrapper_path(obj))
+
 
 def get_process_pid_by_name(process_name: str, min_memory_mb: float = 0) -> tuple[bool, int]:
     """
@@ -66,6 +68,7 @@ def get_process_pid_by_name(process_name: str, min_memory_mb: float = 0) -> tupl
         print(f"获取进程信息时发生错误: {str(e)}")
 
     return process_found, process_pid
+
 
 def print_wrapper_identifiers(wrapper_object, depth=None, filename=None):
     """
@@ -132,7 +135,7 @@ def print_wrapper_identifiers(wrapper_object, depth=None, filename=None):
                 if control_type:
                     class_name = None  # 如果有control_type就不需要class_name
                 else:
-                    control_type = None # 如果control_type为空,仍使用class_name
+                    control_type = None  # 如果control_type为空,仍使用class_name
 
             criteria_texts = []
             recorder_texts = []
@@ -147,7 +150,8 @@ def print_wrapper_identifiers(wrapper_object, depth=None, filename=None):
                 criteria_texts.append(u'control_type="{}"'.format(control_type))
                 recorder_texts.append(f"||{control_type}")
             if title or class_name or auto_id:
-                output += u'\n' + indent + u'child_window(' + u', '.join(criteria_texts) + u')' + " / " + "".join(recorder_texts)
+                output += u'\n' + indent + \
+                    u'child_window(' + u', '.join(criteria_texts) + u')' + " / " + "".join(recorder_texts)
 
             log_func(output)
             print_identifiers(ctrl.children(), current_depth + 1, log_func)
@@ -157,9 +161,9 @@ def print_wrapper_identifiers(wrapper_object, depth=None, filename=None):
         print_identifiers([wrapper_object, ])
     else:
         log_file = codecs.open(filename, "w", locale.getpreferredencoding())
+
         def log_func(msg):
             log_file.write(str(msg) + os.linesep)
         log_func("Control Identifiers:")
         print_identifiers([wrapper_object, ], log_func=log_func)
         log_file.close()
-

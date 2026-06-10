@@ -13,11 +13,11 @@ class SolenoidValve:
         except serial.SerialException:
             # raise Exception(f"Failed to connect to the device at {io_device_port}")
             self.hardware_interface = str(io_device_port)
-    
+
     @property
     def status(self) -> str:
         return self._status
-    
+
     @property
     def valve_position(self) -> str:
         return self._valve_position
@@ -31,7 +31,7 @@ class SolenoidValve:
     def get_valve_position(self) -> str:
         self._valve_position = "OPEN" if self.read_data() else "CLOSED"
         return self._valve_position
-    
+
     def set_valve_position(self, position):
         self._status = "Busy"
         self.send_command(1 if position == "OPEN" else 0)

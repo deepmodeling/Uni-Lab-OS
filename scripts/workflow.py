@@ -66,10 +66,6 @@ def extract_json_from_markdown(text: str) -> str:
     return text
 
 
-
-
-
-
 def create_workflow(
     steps_info: str,
     labware_info: str,

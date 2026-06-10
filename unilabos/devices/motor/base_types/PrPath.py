@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class PR_PATH(Enum):
     # TYPE (Bit0-3)
     TYPE_NO_ACTION = 0x0000  # 无动作
@@ -25,10 +26,10 @@ class PR_PATH(Enum):
     # 位置定位相关
     ABS_POS = TYPE_POSITIONING | INS_INTERRUPT | OVLP_NO_OVERLAP | POS_ABSOLUTE  # 绝对定位
     REL_POS = TYPE_POSITIONING | INS_INTERRUPT | OVLP_NO_OVERLAP | POS_RELATIVE  # 相对定位
-    
+
     # 速度运行相关
     VELOCITY = TYPE_VELOCITY | INS_INTERRUPT | OVLP_NO_OVERLAP  # 速度模式
-    
+
     # 回零相关
     HOME = TYPE_HOME | INS_INTERRUPT | OVLP_NO_OVERLAP  # 回零模式
 

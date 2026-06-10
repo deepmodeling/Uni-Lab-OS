@@ -12,6 +12,7 @@ from typing import Optional
 
 import serial
 
+
 class SingleRunningExecutor(object):
     """
     异步执行单个任务，不允许重复执行，通过class的函数获得唯一任务名的实例
@@ -37,11 +38,11 @@ class SingleRunningExecutor(object):
     @property
     def is_ended(self):
         return not self.is_running and (self.is_error or self.is_success)
-    
+
     @property
     def is_started(self):
         return self.is_running or self.is_error or self.is_success
-    
+
     def reset(self):
         self.start_time = None
         self.end_time = None
@@ -63,7 +64,7 @@ class SingleRunningExecutor(object):
         res = None
         try:
             for ind, i in enumerate(self._var):
-                self._final_var[list(self._sig.parameters.keys())[ind]] = i  
+                self._final_var[list(self._sig.parameters.keys())[ind]] = i
             for k, v in self._kwargs.items():
                 if k in self._sig.parameters.keys():
                     self._final_var[k] = v
@@ -84,7 +85,7 @@ class SingleRunningExecutor(object):
         self._thread.start()
 
     def join(self):
-        if self.is_running: 
+        if self.is_running:
             self._thread.join()
             self.end_time = time.time()
 
@@ -113,17 +114,17 @@ def command(func):
     return wrapper
 
 
-
 class UniversalDriver(object):
     def _init_logger(self):
         self.logger = logging.getLogger(f"{self.__class__.__name__}_logger")
 
     def __init__(self):
         self._init_logger()
-    
+
     def execute_command_from_outer(self, command: str):
         try:
-            command = json.loads(command.replace("'", '"').replace("False", "false").replace("True", "true"))  # 要求不能出现'作为字符串
+            command = json.loads(command.replace("'", '"').replace(
+                "False", "false").replace("True", "true"))  # 要求不能出现'作为字符串
         except Exception as e:
             print(f"Json解析失败: {e}")
             return False
@@ -136,13 +137,12 @@ class UniversalDriver(object):
                 traceback.print_exc()
                 return False
         return True
-    
+
 
 class TransportDriver(UniversalDriver):
     COMMAND_QUEUE_ENABLE = True
     command_handler_thread: Optional[threading.Thread] = None
     __connection: Optional[serial.Serial | socket] = None
-
 
     def _init_command_queue(self):
         self.command_queue = queue.Queue()
@@ -173,7 +173,8 @@ class TransportDriver(UniversalDriver):
 
     def launch_command_handler(self):
         if self.COMMAND_QUEUE_ENABLE:
-            self.command_handler_thread = threading.Thread(target=self.__command_handler_daemon, name="{0}_command_handler".format(self.device_name), daemon=True)
+            self.command_handler_thread = threading.Thread(
+                target=self.__command_handler_daemon, name="{0}_command_handler".format(self.device_name), daemon=True)
             self.command_handler_thread.start()
 
     @abstractmethod
@@ -224,4 +225,3 @@ class DriverChecker(object):
     def stop_monitoring(self):
         self._stop_event.set()
         self._thread.join()
-

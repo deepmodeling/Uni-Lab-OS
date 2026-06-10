@@ -4,7 +4,7 @@ import time as systime
 
 
 class HeaterStirrer_DaLong:
-    def __init__(self, port: str = 'COM6', temp_warning = 50.0, baudrate: int = 9600):
+    def __init__(self, port: str = 'COM6', temp_warning=50.0, baudrate: int = 9600):
         try:
             self.serial = serial.Serial(port, baudrate, timeout=2)
         except serial.SerialException as e:
@@ -16,18 +16,18 @@ class HeaterStirrer_DaLong:
         self.set_temp_warning(temp_warning)
         self._temp_target = 20.0
         self.success = False
-    
+
     @property
     def status(self) -> str:
         return self._status
 
     def get_status(self) -> str:
         self._status = "Idle" if self.stir_speed == 0 else "Running"
-    
+
     @property
     def stir_speed(self) -> float:
         return self._stir_speed
-    
+
     def set_stir_speed(self, speed: float):
         try:
             # 转换速度为整数
@@ -38,16 +38,16 @@ class HeaterStirrer_DaLong:
         except ValueError as e:
             print("输入错误", str(e))
             return
-        
+
         # 计算高位和低位
         speed_high = speed_int >> 8
         speed_low = speed_int & 0xFF
-        
+
         # 构建搅拌控制指令
         command = bytearray([0xfe, 0xB1, speed_high, speed_low, 0x00])
         # 计算校验和
         command.append(sum(command[1:]) % 256)
-        
+
         # 发送指令
         self.serial.write(command)
         # 检查响应
@@ -59,12 +59,12 @@ class HeaterStirrer_DaLong:
             print("失败", "搅拌速度更新失败")
 
     def heatchill(
-        self, 
-        vessel: str, 
-        temp: float, 
-        time: float = 3600, 
-        stir: bool = True, 
-        stir_speed: float = 300, 
+        self,
+        vessel: str,
+        temp: float,
+        time: float = 3600,
+        stir: bool = True,
+        stir_speed: float = 300,
         purpose: str = "reaction"
     ):
         self.set_temp_target(temp)
@@ -79,12 +79,12 @@ class HeaterStirrer_DaLong:
     def temp(self) -> float:
         self._temp = self.get_temp()
         return self._temp
-    
+
     def get_temp(self):
         # 构建读取温度的指令
         command = bytearray([0xfe, 0xA2, 0x00, 0x00, 0x00])
         command.append(sum(command[1:]) % 256)
-        
+
         # 发送指令
         self.serial.write(command)
         # 读取响应
@@ -101,22 +101,22 @@ class HeaterStirrer_DaLong:
             return temp
         except:
             return None
-    
+
     @property
     def temp_warning(self) -> float:
         return self._temp_warning
-    
+
     def set_temp_warning(self, temp):
         self.success = False
         # temp = round(float(warning_temp), 1)
         if self.set_temp_inner(float(temp), "warning"):
             self._temp_warning = round(float(temp), 1)
             self.success = True
-    
+
     @property
     def temp_target(self) -> float:
         return self._temp_target
-    
+
     def set_temp_target(self, temp):
         self.success = False
         # temp = round(float(target_temp), 1)
@@ -131,11 +131,11 @@ class HeaterStirrer_DaLong:
         except ValueError as e:
             print("输入错误", str(e))
             return
-        
+
         # 计算高位和低位
         temp_high = temp_int >> 8
         temp_low = temp_int & 0xFF
-        
+
         # 构建控制指令
         if type == "warning":
             command = bytearray([0xfe, 0xB4, temp_high, temp_low, 0x00])
@@ -158,7 +158,7 @@ class HeaterStirrer_DaLong:
         else:
             print("失败", "安全温度设置失败")
             return False
-    
+
     def close(self):
         self.serial.close()
 
@@ -166,7 +166,7 @@ class HeaterStirrer_DaLong:
 if __name__ == "__main__":
     import tkinter as tk
     from tkinter import messagebox
-    
+
     heaterstirrer = HeaterStirrer_DaLong()
     # heaterstirrer.set_mix_speed(0)
     heaterstirrer.get_temp()

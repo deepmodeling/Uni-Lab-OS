@@ -7,14 +7,13 @@ class Laiyu:
     @property
     def status(self) -> str:
         return ""
-    
 
     def __init__(self, port, baudrate=115200, timeout=0.5):
         """
         初始化串口参数，默认波特率115200，8位数据位、1位停止位、无校验
         """
         self.ser = serial.Serial(port, baudrate=baudrate, timeout=timeout)
-    
+
     def calculate_crc(self, data: bytes) -> bytes:
         """
         计算Modbus CRC-16，返回低字节和高字节（little-endian）
@@ -28,7 +27,7 @@ class Laiyu:
                 else:
                     crc >>= 1
         return crc.to_bytes(2, byteorder='little')
-    
+
     def send_command(self, command: bytes) -> bytes:
         """
         构造完整指令帧（加上CRC校验），发送指令后一直等待设备响应，直至响应结束或超时（最大3分钟）
@@ -39,7 +38,7 @@ class Laiyu:
         self.ser.reset_input_buffer()
         self.ser.write(full_command)
         print("发送指令：", full_command.hex().upper())  # 打印发送的指令帧
-        
+
         # 持续等待响应，直到连续0.5秒没有新数据或超时（3分钟）
         start_time = time.time()
         last_data_time = time.time()
@@ -73,7 +72,7 @@ class Laiyu:
         data = int_input.to_bytes(2, byteorder='big')
         command = bytes([slave_addr, function_code]) + register_addr.to_bytes(2, byteorder='big') + data
         return self.send_command(command)
-    
+
     def put_powder_tube(self, int_input: int) -> bytes:
         """
         放回粉筒指令：
@@ -97,10 +96,10 @@ class Laiyu:
          - 数据     0x0001
         示例发送：01 06 00 42 00 01 E8 1E
         """
-        slave_addr    = 0x01
+        slave_addr = 0x01
         function_code = 0x06
         register_addr = 0x0042               # 对应示例中的 00 42
-        payload       = (0x0001).to_bytes(2, 'big')  # 重置命令
+        payload = (0x0001).to_bytes(2, 'big')  # 重置命令
 
         cmd = (
             bytes([slave_addr, function_code])
@@ -108,7 +107,6 @@ class Laiyu:
             + payload
         )
         return self.send_command(cmd)
-
 
     def move_to_xyz(self, x: float, y: float, z: float) -> bytes:
         """
@@ -125,20 +123,20 @@ class Laiyu:
         register_addr = 0x0030
         num_registers = 3
         byte_count = num_registers * 2  # 6字节
-        
+
         # 将mm转换为0.1mm单位（乘以10），转换为2字节大端表示
         x_val = int(x * 10)
         y_val = int(y * 10)
         z_val = int(z * 10)
         data = x_val.to_bytes(2, 'big') + y_val.to_bytes(2, 'big') + z_val.to_bytes(2, 'big')
-        
+
         command = (bytes([slave_addr, function_code]) +
                    register_addr.to_bytes(2, 'big') +
                    num_registers.to_bytes(2, 'big') +
                    byte_count.to_bytes(1, 'big') +
                    data)
         return self.send_command(command)
-    
+
     def discharge(self, float_in: float) -> bytes:
         """
         出料指令：
@@ -159,13 +157,12 @@ class Laiyu:
         error_margin = 5                # 固定误差范围，0x0005
 
         command = (bytes([slave_addr, function_code]) +
-                start_register.to_bytes(2, 'big') +
-                quantity.to_bytes(2, 'big') +
-                byte_count.to_bytes(1, 'big') +
-                mass_val.to_bytes(2, 'big') +
-                error_margin.to_bytes(2, 'big'))
+                   start_register.to_bytes(2, 'big') +
+                   quantity.to_bytes(2, 'big') +
+                   byte_count.to_bytes(1, 'big') +
+                   mass_val.to_bytes(2, 'big') +
+                   error_margin.to_bytes(2, 'big'))
         return self.send_command(command)
-
 
     '''
     示例：这个是标智96孔板的坐标转换，但是不同96孔板的坐标可能不同
@@ -173,7 +170,7 @@ class Laiyu:
     '''
 
     def move_to_plate(self, string):
-        #只接受两位数的str，比如a1，a2，b1，b2
+        # 只接受两位数的str，比如a1，a2，b1，b2
         # 解析位置字符串
         if len(string) != 2 and len(string) != 3:
             raise ValueError("Invalid plate position")
@@ -234,6 +231,7 @@ class Laiyu:
         resp_reset = self.reset()
         return actual_mass_mg
 
+
 if __name__ == "__main__":
 
     '''
@@ -244,7 +242,6 @@ if __name__ == "__main__":
 
     mass_test = modbus.add_powder_tube(1, 'h12', 6.0)
     print(f"实际出料质量：{mass_test}mg")
-
 
     '''
     样例: 对一份excel文件记录的化合物进行称量
@@ -301,4 +298,3 @@ if __name__ == "__main__":
     # 关闭串口
     modbus.ser.close()
     print("串口已关闭")
-

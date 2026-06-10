@@ -24,6 +24,7 @@ class DeviceStatusInfo(TypedDict):
     close_btn: UIAWrapper
     sub_item: UIAWrapper
 
+
 class DeviceStatus(TypedDict):
     VWD: DeviceStatusInfo
     JinYangQi: DeviceStatusInfo
@@ -52,11 +53,11 @@ class HPLCDriver(UniversalDriver):
     @property
     def device_status(self) -> str:
         return f", ".join([f"{k}:{v.get('status')}" for k, v in self._device_status.items()])
-    
+
     @property
     def could_run(self) -> bool:
         return self.driver_init_ok and all([v.get('status') == "空闲" for v in self._device_status.values()])
-    
+
     @property
     def driver_init_ok(self) -> bool:
         for k, v in self._device_status.items():
@@ -65,19 +66,19 @@ class HPLCDriver(UniversalDriver):
             if v.get("close_btn") is None:
                 return False
         return len(self._device_status) == 4
-    
+
     @property
     def is_running(self) -> bool:
         return self._is_running
-    
+
     @property
     def success(self) -> bool:
         return self._success
-    
+
     @property
     def finish_status(self) -> str:
         return f"{self._finished}/{self._total_sample_number}"
-    
+
     def try_open_sub_device(self, device_name: str = None):
         if not self.driver_init_ok:
             self._success = False
@@ -146,7 +147,8 @@ class HPLCDriver(UniversalDriver):
         window.allow_magic_lookup = False
         panel_nav_tab = window.child_window(title="panelNavTabChem", auto_id="panelNavTabChem", control_type="Pane")
         first_pane = panel_nav_tab.child_window(auto_id="uctlNavTabChem1", control_type="Pane")
-        panel_control_station = first_pane.child_window(title="panelControlChemStation", auto_id="panelControlChemStation", control_type="Pane")
+        panel_control_station = first_pane.child_window(
+            title="panelControlChemStation", auto_id="panelControlChemStation", control_type="Pane")
         instrument_control_tab: WindowSpecification = panel_control_station.\
             child_window(auto_id="tabControlChem", control_type="Tab").\
             child_window(title="仪器控制", auto_id="tabPage1", control_type="Pane").\
@@ -161,7 +163,8 @@ class HPLCDriver(UniversalDriver):
             child_window(control_type="Custom", found_index=0).\
             child_window(control_type="Custom", found_index=0)
         instrument_control_tab.dump_tree(3)
-        btn: UIAWrapper = instrument_control_tab.child_window(auto_id="methodButtonStartSequence", control_type="Button").wrapper_object()
+        btn: UIAWrapper = instrument_control_tab.child_window(
+            auto_id="methodButtonStartSequence", control_type="Button").wrapper_object()
         self.start_time = datetime.now()
         btn.click()
         self._wf_name = wf_name
@@ -234,7 +237,8 @@ class HPLCDriver(UniversalDriver):
         if after_time is None:
             after_time = self.start_time
         files = [i for i in os.listdir(self.data_file_path) if i.startswith(self.using_method)]
-        time_to_files: list[tuple[datetime, str]] = [(datetime.strptime(i.split(" ", 1)[1], "%Y-%m-%d %H-%M-%S"), i) for i in files]
+        time_to_files: list[tuple[datetime, str]] = [
+            (datetime.strptime(i.split(" ", 1)[1], "%Y-%m-%d %H-%M-%S"), i) for i in files]
         time_to_files.sort(key=lambda x: x[0])
         choose_folder = None
         for i in time_to_files:
@@ -283,9 +287,11 @@ class HPLCDriver(UniversalDriver):
 class DriverChecker(ud.DriverChecker):
     driver: HPLCDriver
 
+
 class InstrumentChecker(DriverChecker):
     _instrument_control_tab = None
     _instrument_control_tab_wrapper = None
+
     def get_instrument_status(self):
         if self._instrument_control_tab is not None:
             return self._instrument_control_tab
@@ -295,7 +301,8 @@ class InstrumentChecker(DriverChecker):
         window.allow_magic_lookup = False
         panel_nav_tab = window.child_window(title="panelNavTabChem", auto_id="panelNavTabChem", control_type="Pane")
         first_pane = panel_nav_tab.child_window(auto_id="uctlNavTabChem1", control_type="Pane")
-        panel_control_station = first_pane.child_window(title="panelControlChemStation", auto_id="panelControlChemStation", control_type="Pane")
+        panel_control_station = first_pane.child_window(
+            title="panelControlChemStation", auto_id="panelControlChemStation", control_type="Pane")
         instrument_control_tab: WindowSpecification = panel_control_station.\
             child_window(auto_id="tabControlChem", control_type="Tab").\
             child_window(title="仪器控制", auto_id="tabPage1", control_type="Pane").\
@@ -315,7 +322,6 @@ class InstrumentChecker(DriverChecker):
             self._instrument_control_tab_wrapper = instrument_control_tab.wrapper_object()
         return self._instrument_control_tab
 
-    
     def check(self):
         self.get_instrument_status()
         if self._instrument_control_tab_wrapper is None or self._instrument_control_tab is None:
@@ -330,7 +336,7 @@ class InstrumentChecker(DriverChecker):
                     child_window(title="Agilent.RapidControl.StatusDashboard.PluginViewModel", control_type="ListItem", found_index=index).\
                     child_window(control_type="Custom", found_index=0)
                 if index < len(keys):
-                    deviceStatusInfo = self.driver._device_status[keys[index]]  
+                    deviceStatusInfo = self.driver._device_status[keys[index]]
                     name = deviceStatusInfo["name"]
                     deviceStatusInfo["status"] = deviceStatusInfo["status_obj"].window_text()
                     print(name, index, deviceStatusInfo["status"], "刷新")
@@ -365,9 +371,11 @@ class InstrumentChecker(DriverChecker):
                 self.driver._device_status[name]["close_btn"] = close_btn
                 index += 1
 
+
 class RunningChecker(DriverChecker):
     def check(self):
         self.driver.check_status()
+
 
 class RunningResultChecker(DriverChecker):
     _finished: UIAWrapper = None
@@ -380,7 +388,8 @@ class RunningResultChecker(DriverChecker):
             window.allow_magic_lookup = False
             panel_nav_tab = window.child_window(title="panelNavTabChem", auto_id="panelNavTabChem", control_type="Pane")
             first_pane = panel_nav_tab.child_window(auto_id="uctlNavTabChem1", control_type="Pane")
-            panel_control_station = first_pane.child_window(title="panelControlChemStation", auto_id="panelControlChemStation", control_type="Pane")
+            panel_control_station = first_pane.child_window(
+                title="panelControlChemStation", auto_id="panelControlChemStation", control_type="Pane")
             instrument_control_tab: WindowSpecification = panel_control_station.\
                 child_window(auto_id="tabControlChem", control_type="Tab").\
                 child_window(title="仪器控制", auto_id="tabPage1", control_type="Pane").\
@@ -406,14 +415,15 @@ class RunningResultChecker(DriverChecker):
                     sample_id = self.driver._get_resource_sample_id(self.driver._wf_name, i)  # 从0开始计数
                     pdf, txt = self.driver.get_data_file(i + 1)
                     # 使用新的OSS上传接口，传入driver_name和exp_type
-                    pdf_result = oss_upload(pdf, filename=os.path.basename(pdf), driver_name="HPLC", exp_type="analysis")
+                    pdf_result = oss_upload(pdf, filename=os.path.basename(pdf),
+                                            driver_name="HPLC", exp_type="analysis")
                     txt_result = oss_upload(txt, filename=os.path.basename(txt), driver_name="HPLC", exp_type="result")
-                    
+
                     if pdf_result["success"]:
                         print(f"PDF上传成功: {pdf_result['oss_path']}")
                     else:
                         print(f"PDF上传失败: {pdf_result['original_path']}")
-                    
+
                     if txt_result["success"]:
                         print(f"TXT上传成功: {txt_result['oss_path']}")
                     else:
@@ -428,8 +438,6 @@ class RunningResultChecker(DriverChecker):
         except Exception as ex:
             self.driver._total_sample_number = 0
             print("转换数字出错", ex)
-
-
 
 
 # 示例用法
@@ -469,7 +477,7 @@ if __name__ == "__main__":
     # 使用新的OSS上传接口，传入driver_name和exp_type
     pdf_result = oss_upload(pdf, filename=os.path.basename(pdf), driver_name="HPLC", exp_type="analysis")
     txt_result = oss_upload(txt, filename=os.path.basename(txt), driver_name="HPLC", exp_type="result")
-    
+
     print(f"PDF上传结果: {pdf_result}")
     print(f"TXT上传结果: {txt_result}")
     # driver = HPLCDriver()

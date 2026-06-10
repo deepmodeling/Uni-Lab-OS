@@ -4,6 +4,10 @@ UniLabOS 应用工具函数
 提供清理、重启等工具函数
 """
 
+from unilabos.utils.banner_print import print_status
+import time
+import threading
+import gc
 import glob
 import os
 import shutil
@@ -177,12 +181,6 @@ def patch_rclpy_dll_windows():
 
 
 patch_rclpy_dll_windows()
-
-import gc
-import threading
-import time
-
-from unilabos.utils.banner_print import print_status
 
 
 def cleanup_for_restart() -> bool:

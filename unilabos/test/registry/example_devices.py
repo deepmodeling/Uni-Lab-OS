@@ -15,10 +15,6 @@ class AnyDevice:
     async def action(self, addr: str) -> bool:
         return True
 
-
-
-
-
     def disconnect_device(self) -> bool:
         """
         断开设备连接

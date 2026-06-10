@@ -6,6 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
+from pathlib import Path
 import os
 import sys
 
@@ -89,9 +90,6 @@ Uni-Lab 生物操作指令集多数来自 [PyLabRobot](https://docs.pylabrobot.o
 Uni-Lab 机械臂、机器人、夹爪和导航指令集沿用 ROS2 的 `control_msgs` 和 `nav2_msgs`：
 """,
 }
-
-import os
-from pathlib import Path
 
 
 def get_conda_share_dir(package_name=None):

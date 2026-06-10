@@ -23,7 +23,7 @@ from .LaiYu_Liquid import (
 
 from .laiyu_liquid_res import (
     LaiYuLiquidDeck,
-    LaiYuLiquidContainer, 
+    LaiYuLiquidContainer,
     LaiYuLiquidTipRack
 )
 
@@ -31,12 +31,12 @@ __all__ = [
     # 主设备类
     'LaiYuLiquid',
     'LaiYuLiquidConfig',
-    
+
     # 设备资源
     'LaiYuLiquidDeck',
     'LaiYuLiquidContainer',
     'LaiYuLiquidTipRack',
-    
+
     # 工具函数
     'create_quick_setup'
 ]

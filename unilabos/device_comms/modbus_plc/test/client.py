@@ -9,12 +9,11 @@ client = ModbusTcpClient('192.168.3.2', port=502)
 
 client.connect()
 
-                                                                                                                
+
 coil1 = Coil(client=client, name='coil_test1', data_type=bool, address=4502*8)
 coil1.write(True)
 time.sleep(3)
 coil1.write(False)
-
 
 
 coil1 = Coil(client=client, name='coil_test1', data_type=bool, address=4503*8)
@@ -24,7 +23,6 @@ coil1.write(False)
 
 
 exit(0)
-
 
 
 register1 = HoldRegister(client=client, name="test-1", address=7040)
@@ -88,7 +86,7 @@ while True:
 #     print(f"Error reading registers: {response}")
 # else:
     # print(f"Read holding registers after write: {response.bits}")
- 
+
 client.close()
 
 # # 写入保持寄存器（地址 0，值为 1234）
@@ -104,4 +102,3 @@ client.close()
 
 # # 关闭连接
 # client.close()
-

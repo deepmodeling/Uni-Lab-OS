@@ -63,7 +63,8 @@ def warehouse_factory(
         resource_size_z=resource_size_z,
         name_prefix=name,
     )
-    len_x, len_y = (num_items_x, num_items_y) if num_items_z == 1 else (num_items_y, num_items_z) if num_items_x == 1 else (num_items_x, num_items_z)
+    len_x, len_y = (num_items_x, num_items_y) if num_items_z == 1 else (
+        num_items_y, num_items_z) if num_items_x == 1 else (num_items_x, num_items_z)
 
     # 根据 layout 参数生成不同的排序方式
     # 注意：物理位置的 y 坐标是倒序的 (row=0 时 y 最大，对应前端显示的顶部)
@@ -82,9 +83,9 @@ def warehouse_factory(
         size_x=dx + item_dx * num_items_x,
         size_y=dy + item_dy * num_items_y,
         size_z=dz + item_dz * num_items_z,
-        num_items_x = num_items_x,
-        num_items_y = num_items_y,
-        num_items_z = num_items_z,
+        num_items_x=num_items_x,
+        num_items_y=num_items_y,
+        num_items_z=num_items_z,
         ordering_layout=layout,  # 传递排序方式到 ordering_layout
         # ordered_items=ordered_items,
         # ordering=ordering,
@@ -96,6 +97,7 @@ def warehouse_factory(
 
 class WareHouse(ItemizedCarrier):
     """堆栈载体类 - 可容纳16个板位的载体（4层x4行x1列）"""
+
     def __init__(
         self,
         name: str,

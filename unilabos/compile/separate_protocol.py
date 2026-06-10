@@ -19,6 +19,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     except:
         pass
 
+
 def debug_print(message):
     """调试输出函数 - 支持中文"""
     try:
@@ -33,6 +34,7 @@ def debug_print(message):
         # 最后的安全措施
         fallback_message = f"日志输出错误: {repr(message)}"
         logger.info(f"[SEPARATE] {fallback_message}")
+
 
 create_action_log = partial(action_log, prefix="[SEPARATE]")
 
@@ -491,46 +493,47 @@ def generate_separate_protocol(
 
     return action_sequence
 
+
 def parse_volume_input(volume_input: Union[str, float]) -> float:
     """
     解析体积输入，支持带单位的字符串
-    
+
     Args:
         volume_input: 体积输入（如 "200 mL", "?", 50.0）
-    
+
     Returns:
         float: 体积（毫升）
     """
     if isinstance(volume_input, (int, float)):
         debug_print(f"📏 体积输入为数值: {volume_input}")
         return float(volume_input)
-    
+
     if not volume_input or not str(volume_input).strip():
         debug_print(f"⚠️ 体积输入为空，返回 0.0mL")
         return 0.0
-    
+
     volume_str = str(volume_input).lower().strip()
     debug_print(f"🔍 解析体积输入: '{volume_str}'")
-    
+
     # 处理未知体积
     if volume_str in ['?', 'unknown', 'tbd', 'to be determined', '未知', '待定']:
         default_volume = 100.0  # 默认100mL
         debug_print(f"❓ 检测到未知体积，使用默认值: {default_volume}mL")
         return default_volume
-    
+
     # 移除空格并提取数字和单位
     volume_clean = re.sub(r'\s+', '', volume_str)
-    
+
     # 匹配数字和单位的正则表达式
     match = re.match(r'([0-9]*\.?[0-9]+)\s*(ml|l|μl|ul|microliter|milliliter|liter|毫升|升|微升)?', volume_clean)
-    
+
     if not match:
         debug_print(f"⚠️ 无法解析体积: '{volume_str}'，使用默认值 100mL")
         return 100.0
-    
+
     value = float(match.group(1))
     unit = match.group(2) or 'ml'  # 默认单位为毫升
-    
+
     # 转换为毫升
     if unit in ['l', 'liter', '升']:
         volume = value * 1000.0  # L -> mL
@@ -541,40 +544,41 @@ def parse_volume_input(volume_input: Union[str, float]) -> float:
     else:  # ml, milliliter, 毫升 或默认
         volume = value  # 已经是mL
         debug_print(f"✅ 体积已为毫升单位: {volume}mL")
-    
+
     return volume
+
 
 def find_solvent_vessel(G: nx.DiGraph, solvent: str) -> str:
     """查找溶剂容器，支持多种匹配模式"""
     if not solvent or not solvent.strip():
         debug_print("⏭️ 未指定溶剂，跳过溶剂容器查找")
         return ""
-    
+
     debug_print(f"🔍 正在查找溶剂 '{solvent}' 的容器...")
-    
+
     # 🔧 方法1：直接搜索 data.reagent_name 和 config.reagent
     debug_print(f"📋 方法1: 搜索试剂字段...")
     for node in G.nodes():
         node_data = G.nodes[node].get('data', {})
         node_type = G.nodes[node].get('type', '')
         config_data = G.nodes[node].get('config', {})
-        
+
         # 只搜索容器类型的节点
         if node_type == 'container':
             reagent_name = node_data.get('reagent_name', '').lower()
             config_reagent = config_data.get('reagent', '').lower()
-            
+
             # 精确匹配
             if reagent_name == solvent.lower() or config_reagent == solvent.lower():
                 debug_print(f"✅ 通过试剂字段精确匹配找到容器: {node}")
                 return node
-            
+
             # 模糊匹配
             if (solvent.lower() in reagent_name and reagent_name) or \
                (solvent.lower() in config_reagent and config_reagent):
                 debug_print(f"✅ 通过试剂字段模糊匹配找到容器: {node}")
                 return node
-    
+
     # 🔧 方法2：常见的容器命名规则
     debug_print(f"📋 方法2: 使用命名规则...")
     solvent_clean = solvent.lower().replace(' ', '_').replace('-', '_')
@@ -591,32 +595,33 @@ def find_solvent_vessel(G: nx.DiGraph, solvent: str) -> str:
         f"reagent_bottle_2",
         f"reagent_bottle_3"
     ]
-    
+
     debug_print(f"🎯 尝试的容器名称: {possible_names[:5]}... (共 {len(possible_names)} 个)")
-    
+
     for name in possible_names:
         if name in G.nodes():
             node_type = G.nodes[name].get('type', '')
             if node_type == 'container':
                 debug_print(f"✅ 通过命名规则找到容器: {name}")
                 return name
-    
+
     # 🔧 方法3：使用第一个试剂瓶作为备选
     debug_print(f"📋 方法3: 查找备用试剂瓶...")
     for node_id in G.nodes():
         node_data = G.nodes[node_id]
-        if (node_data.get('type') == 'container' and 
-            ('reagent' in node_id.lower() or 'bottle' in node_id.lower())):
+        if (node_data.get('type') == 'container' and
+                ('reagent' in node_id.lower() or 'bottle' in node_id.lower())):
             debug_print(f"⚠️ 未找到专用容器，使用备用容器: {node_id}")
             return node_id
-    
+
     debug_print(f"❌ 无法找到溶剂 '{solvent}' 的容器")
     return ""
+
 
 def find_separator_device(G: nx.DiGraph, vessel: str) -> str:
     """查找分离器设备，支持多种查找方式"""
     debug_print(f"🔍 正在查找容器 '{vessel}' 的分离器设备...")
-    
+
     # 方法1：查找连接到容器的分离器设备
     debug_print(f"📋 方法1: 检查连接的分离器...")
     separator_nodes = []
@@ -625,14 +630,14 @@ def find_separator_device(G: nx.DiGraph, vessel: str) -> str:
         if 'separator' in node_class:
             separator_nodes.append(node)
             debug_print(f"📋 发现分离器设备: {node}")
-            
+
             # 检查是否连接到目标容器
             if G.has_edge(node, vessel) or G.has_edge(vessel, node):
                 debug_print(f"✅ 找到连接的分离器: {node}")
                 return node
-    
+
     debug_print(f"📊 找到的分离器总数: {len(separator_nodes)}")
-    
+
     # 方法2：根据命名规则查找
     debug_print(f"📋 方法2: 使用命名规则...")
     possible_names = [
@@ -644,77 +649,79 @@ def find_separator_device(G: nx.DiGraph, vessel: str) -> str:
         "liquid_handler_1",  # 液体处理器也可能用于分离
         "controller_1"
     ]
-    
+
     debug_print(f"🎯 尝试的分离器名称: {possible_names}")
-    
+
     for name in possible_names:
         if name in G.nodes():
             node_class = G.nodes[name].get('class', '').lower()
             if 'separator' in node_class or 'controller' in node_class:
                 debug_print(f"✅ 通过命名规则找到分离器: {name}")
                 return name
-    
+
     # 方法3：查找第一个分离器设备
     debug_print(f"📋 方法3: 使用第一个可用分离器...")
     if separator_nodes:
         debug_print(f"⚠️ 使用第一个分离器设备: {separator_nodes[0]}")
         return separator_nodes[0]
-    
+
     debug_print(f"❌ 未找到分离器设备")
     return ""
+
 
 def find_connected_stirrer(G: nx.DiGraph, vessel: str) -> str:
     """查找连接到指定容器的搅拌器"""
     debug_print(f"🔍 正在查找与容器 {vessel} 连接的搅拌器...")
-    
+
     stirrer_nodes = []
     for node in G.nodes():
         node_data = G.nodes[node]
         node_class = node_data.get('class', '') or ''
-        
+
         if 'stirrer' in node_class.lower():
             stirrer_nodes.append(node)
             debug_print(f"📋 发现搅拌器: {node}")
-    
+
     debug_print(f"📊 找到的搅拌器总数: {len(stirrer_nodes)}")
-    
+
     # 检查哪个搅拌器与目标容器相连
     for stirrer in stirrer_nodes:
         if G.has_edge(stirrer, vessel) or G.has_edge(vessel, stirrer):
             debug_print(f"✅ 找到连接的搅拌器: {stirrer}")
             return stirrer
-    
+
     # 如果没有连接的搅拌器，返回第一个可用的
     if stirrer_nodes:
         debug_print(f"⚠️ 未找到直接连接的搅拌器，使用第一个可用的: {stirrer_nodes[0]}")
         return stirrer_nodes[0]
-    
+
     debug_print("❌ 未找到搅拌器")
     return ""
+
 
 def get_vessel_liquid_volume(vessel: dict) -> float:
     """
     获取容器中的液体体积 - 支持vessel字典
-    
+
     Args:
         vessel: 容器字典
-        
+
     Returns:
         float: 液体体积（mL）
     """
     if not vessel or "data" not in vessel:
         debug_print(f"⚠️ 容器数据为空，返回 0.0mL")
         return 0.0
-    
+
     vessel_data = vessel["data"]
     vessel_id = vessel.get("id", "unknown")
-    
+
     debug_print(f"🔍 读取容器 '{vessel_id}' 体积数据: {vessel_data}")
-    
+
     # 检查liquid_volume字段
     if "liquid_volume" in vessel_data:
         liquid_volume = vessel_data["liquid_volume"]
-        
+
         # 处理列表格式
         if isinstance(liquid_volume, list):
             if len(liquid_volume) > 0:
@@ -722,12 +729,12 @@ def get_vessel_liquid_volume(vessel: dict) -> float:
                 if isinstance(volume, (int, float)):
                     debug_print(f"✅ 容器 '{vessel_id}' 体积: {volume}mL (列表格式)")
                     return float(volume)
-        
+
         # 处理直接数值格式
         elif isinstance(liquid_volume, (int, float)):
             debug_print(f"✅ 容器 '{vessel_id}' 体积: {liquid_volume}mL (数值格式)")
             return float(liquid_volume)
-    
+
     # 检查其他可能的体积字段
     volume_keys = ['current_volume', 'total_volume', 'volume']
     for key in volume_keys:
@@ -739,14 +746,15 @@ def get_vessel_liquid_volume(vessel: dict) -> float:
                     return volume
             except (ValueError, TypeError):
                 continue
-    
+
     debug_print(f"⚠️ 无法获取容器 '{vessel_id}' 的体积，返回默认值 50.0mL")
     return 50.0
+
 
 def update_vessel_volume(vessel: dict, G: nx.DiGraph, new_volume: float, description: str = "") -> None:
     """
     更新容器体积（同时更新vessel字典和图节点）
-    
+
     Args:
         vessel: 容器字典
         G: 网络图
@@ -754,10 +762,10 @@ def update_vessel_volume(vessel: dict, G: nx.DiGraph, new_volume: float, descrip
         description: 更新描述
     """
     vessel_id = vessel.get("id", "unknown")
-    
+
     if description:
         debug_print(f"🔧 更新容器体积 - {description}")
-    
+
     # 更新vessel字典中的体积
     if "data" in vessel:
         if "liquid_volume" in vessel["data"]:
@@ -773,15 +781,15 @@ def update_vessel_volume(vessel: dict, G: nx.DiGraph, new_volume: float, descrip
             vessel["data"]["liquid_volume"] = new_volume
     else:
         vessel["data"] = {"liquid_volume": new_volume}
-    
+
     # 同时更新图中的容器数据
     if vessel_id in G.nodes():
         if 'data' not in G.nodes[vessel_id]:
             G.nodes[vessel_id]['data'] = {}
-        
+
         vessel_node_data = G.nodes[vessel_id]['data']
         current_node_volume = vessel_node_data.get('liquid_volume', 0.0)
-        
+
         if isinstance(current_node_volume, list):
             if len(current_node_volume) > 0:
                 G.nodes[vessel_id]['data']['liquid_volume'][0] = new_volume
@@ -789,23 +797,23 @@ def update_vessel_volume(vessel: dict, G: nx.DiGraph, new_volume: float, descrip
                 G.nodes[vessel_id]['data']['liquid_volume'] = [new_volume]
         else:
             G.nodes[vessel_id]['data']['liquid_volume'] = new_volume
-    
+
     debug_print(f"📊 容器 '{vessel_id}' 体积已更新为: {new_volume:.2f}mL")
 
 
 def find_separation_vessel_bottom(G: nx.DiGraph, vessel_id: str) -> str:
     """
     智能查找分离容器的底部容器（假设为flask或vessel类型）
-    
+
     Args:
         G: 网络图
         vessel_id: 分离容器ID
-        
+
     Returns:
         str: 底部容器ID
     """
     debug_print(f"🔍 查找分离容器 {vessel_id} 的底部容器...")
-    
+
     # 方法1：根据命名规则推测
     possible_bottoms = [
         f"{vessel_id}_bottom",
@@ -814,22 +822,22 @@ def find_separation_vessel_bottom(G: nx.DiGraph, vessel_id: str) -> str:
         f"{vessel_id}_flask",
         f"{vessel_id}_vessel"
     ]
-    
+
     debug_print(f"📋 尝试的底部容器名称: {possible_bottoms}")
-    
+
     for bottom_id in possible_bottoms:
         if bottom_id in G.nodes():
             node_type = G.nodes[bottom_id].get('type', '')
             if node_type == 'container':
                 debug_print(f"✅ 通过命名规则找到底部容器: {bottom_id}")
                 return bottom_id
-    
+
     # 方法2：查找与分离器相连的容器（假设底部容器会与分离器相连）
     debug_print(f"📋 方法2: 查找连接的容器...")
     for node in G.nodes():
         node_data = G.nodes[node]
         node_class = node_data.get('class', '') or ''
-        
+
         if 'separator' in node_class.lower():
             # 检查分离器的输入端
             if G.has_edge(node, vessel_id):
@@ -839,7 +847,6 @@ def find_separation_vessel_bottom(G: nx.DiGraph, vessel_id: str) -> str:
                         if neighbor_type == 'container':
                             debug_print(f"✅ 通过连接找到底部容器: {neighbor}")
                             return neighbor
-    
+
     debug_print(f"❌ 无法找到分离容器 {vessel_id} 的底部容器")
     return ""
-

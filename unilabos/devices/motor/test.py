@@ -21,8 +21,8 @@ if Config.OPEN_DEVICE:
     ser = serial.Serial(
         port='COM11',               # 串口号
         baudrate=38400,            # 波特率
-        bytesize=serial.EIGHTBITS, # 数据位
-        parity=serial.PARITY_NONE, # 校验位 N-无校验
+        bytesize=serial.EIGHTBITS,  # 数据位
+        parity=serial.PARITY_NONE,  # 校验位 N-无校验
         stopbits=serial.STOPBITS_TWO,  # 停止位
         timeout=1                  # 超时时间
     )
@@ -58,9 +58,9 @@ run_commands(
 )
 if run_until_status(ser, DEVICE_ADDRESS, "路径完成"):
     pass
-gripper.gripper_move(210,127,255)
+gripper.gripper_move(210, 127, 255)
 gripper.wait_for_gripper()
-gripper.rotate_move_abs(135,10,255)
+gripper.rotate_move_abs(135, 10, 255)
 gripper.data_reader()
 print(gripper.rot_data)
 run_commands(
@@ -68,9 +68,9 @@ run_commands(
     create_position_commands(DEVICE_ADDRESS, PR, PR_PATH.ABS_POS, 30 * 1000, 300),  # 41.8cm   21.8cm
     create_position_run_command(DEVICE_ADDRESS, PR),
 )
-gripper.gripper_move(210,127,255)
+gripper.gripper_move(210, 127, 255)
 gripper.wait_for_gripper()
-gripper.rotate_move_abs(135,10,255)
+gripper.rotate_move_abs(135, 10, 255)
 gripper.data_reader()
 
 # run_get_command_position(ser, DEVICE_ADDRESS)

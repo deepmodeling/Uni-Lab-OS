@@ -9,8 +9,8 @@ from .add_protocol import generate_add_protocol
 from .centrifuge_protocol import generate_centrifuge_protocol
 from .filter_protocol import generate_filter_protocol
 from .heatchill_protocol import (
-    generate_heat_chill_protocol, 
-    generate_heat_chill_start_protocol, 
+    generate_heat_chill_protocol,
+    generate_heat_chill_start_protocol,
     generate_heat_chill_stop_protocol,
     generate_heat_chill_to_temp_protocol  # 保留导入，但不注册为协议
 )

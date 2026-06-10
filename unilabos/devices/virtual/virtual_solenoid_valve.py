@@ -9,24 +9,24 @@ class VirtualSolenoidValve:
     """
     虚拟电磁阀门 - 简单的开关型阀门，只有开启和关闭两个状态
     """
-    
+
     _ros_node: BaseROS2DeviceNode
-    
+
     def __init__(self, device_id: str = None, config: dict = None, **kwargs):
         # 从配置中获取参数，提供默认值
         if config is None:
             config = {}
-        
+
         self.device_id = device_id
         self.port = config.get("port", "VIRTUAL")
         self.voltage = config.get("voltage", 12.0)
         self.response_time = config.get("response_time", 0.1)
-        
+
         # 状态属性
         self._status = "Idle"
         self._valve_state = "Closed"  # "Open" or "Closed"
         self._is_open = False
-    
+
     def post_init(self, ros_node: BaseROS2DeviceNode):
         self._ros_node = ros_node
 
@@ -59,20 +59,20 @@ class VirtualSolenoidValve:
     async def set_valve_position(self, command: str = None, **kwargs):
         """
         设置阀门位置 - ROS动作接口
-        
+
         Args:
             command: "OPEN"/"CLOSED" 或其他控制命令
         """
         if command is None:
             return {"success": False, "message": "Missing command parameter"}
-        
+
         print(f"SOLENOID_VALVE: {self.device_id} 接收到命令: {command}")
-        
+
         self._status = "Busy"
-        
+
         # 模拟阀门响应时间
         await self._ros_node.sleep(self.response_time)
-        
+
         # 处理不同的命令格式
         if isinstance(command, str):
             cmd_upper = command.upper()
@@ -93,12 +93,12 @@ class VirtualSolenoidValve:
         else:
             self._status = "Error"
             return {"success": False, "message": "Invalid command type"}
-        
+
         self._status = "Idle"
         print(f"SOLENOID_VALVE: {result_msg}")
-        
+
         return {
-            "success": True, 
+            "success": True,
             "message": result_msg,
             "valve_position": self.valve_position
         }
@@ -114,13 +114,13 @@ class VirtualSolenoidValve:
     async def set_status(self, string: str = None, **kwargs):
         """
         设置阀门状态 - 兼容 StrSingleInput 类型
-    
+
         Args:
             string: "ON"/"OFF" 或 "OPEN"/"CLOSED"
         """
         if string is None:
             return {"success": False, "message": "Missing string parameter"}
-        
+
         # 将 string 参数转换为 command 参数
         if string.upper() in ["ON", "OPEN"]:
             command = "OPEN"
@@ -128,7 +128,7 @@ class VirtualSolenoidValve:
             command = "CLOSED"
         else:
             command = string
-        
+
         return await self.set_valve_position(command=command)
 
     def toggle(self):

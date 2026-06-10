@@ -22,7 +22,7 @@ class GrblCNCConnectionError(Exception):
 class GrblCNCInfo:
     port: str
     address: str = "1"
-    
+
     limits: tuple[int, int, int, int, int, int] = (-150, 150, -200, 0, -80, 0)
 
     def create(self):
@@ -33,13 +33,13 @@ class GrblCNC:
     _status: str = "Offline"
     _position: Point3D = Point3D(x=0.0, y=0.0, z=0.0)
     _spindle_speed: float = 0.0
-    
+
     def __init__(self, port: str, address: str = "1", limits: tuple[int, int, int, int, int, int] = (-150, 150, -200, 0, -80, 0)):
         self.port = port
         self.address = address
-        
+
         self.limits = limits
-        
+
         try:
             self._serial = Serial(
                 baudrate=115200,
@@ -51,11 +51,11 @@ class GrblCNC:
         self._busy = False
         self._closing = False
         self._pose_number = self.pose_number_remaining = -1
-        
+
         self._query_lock = Lock()
         self._run_lock = Lock()
         self._error_event = Event()
-    
+
     def _read_all(self):
         data = self._serial.read_until(b"\n")
         data_decoded = data.decode()
@@ -73,7 +73,7 @@ class GrblCNC:
         pass
 
     @overload
-    def _query(self, command: str, dtype = None) -> str:
+    def _query(self, command: str, dtype=None) -> str:
         pass
 
     def _query(self, command: str, dtype: Optional[type] = None):
@@ -85,7 +85,7 @@ class GrblCNC:
             run = ''
             full_command = f"{command}{run}\n"
             full_command_data = bytearray(full_command, 'ascii')
-            
+
             try:
                 # await asyncio.to_thread(lambda: self._serial.write(full_command_data))
                 self._serial.write(full_command_data)
@@ -107,7 +107,7 @@ class GrblCNC:
                 self._query(command)
                 while True:
                     time.sleep(0.2)  # Wait for 0.5 seconds before polling again
-                    
+
                     status = self.get_status()
                     if "Idle" in status:
                         break
@@ -119,11 +119,11 @@ class GrblCNC:
         self._run("G0X0Y0Z0")
         status = self.get_status()
         return status
-    
+
     # Operations
 
     # Status Queries
-    
+
     @property
     def status(self) -> str:
         return self._status
@@ -131,23 +131,23 @@ class GrblCNC:
     def get_status(self):
         __pos_pattern__ = re.compile('.Pos:(\-?\d+\.\d+),(\-?\d+\.\d+),(\-?\d+\.\d+)')
         __status_pattern__ = re.compile('<([a-zA-Z]+),')
-        
+
         response = self._query("?")
         pat = re.search(__pos_pattern__, response)
         if pat is not None:
             pos = pat.group().split(":")[1].split(",")
             self._status = re.search(__status_pattern__, response).group(1).lstrip("<").rstrip(",")
             self._position = Point3D(x=float(pos[0]), y=float(pos[1]), z=float(pos[2]))
-        
+
         return self.status
-    
+
     # Position Setpoint and Queries
-    
+
     @property
     def position(self) -> Point3D:
         # 由于此时一定调用过 get_status，所以 position 一定是被更新过的
         return self._position
-    
+
     def get_position(self):
         return self.position
 
@@ -165,7 +165,7 @@ class GrblCNC:
         y = max(self.limits[2], min(self.limits[3], position.y))
         z = max(self.limits[4], min(self.limits[5], position.z))
         return self._run(f"G0X{x:.3f}Y{y:.3f}Z{z:.3f}")
-    
+
     def move_through_points(self, positions: list[Point3D]):
         for i, point in enumerate(positions):
             self._pose_number = i
@@ -173,15 +173,15 @@ class GrblCNC:
             self.set_position(point)
             time.sleep(0.5)
         self._pose_number = -1
-    
+
     @property
     def spindle_speed(self) -> float:
         return self._spindle_speed
-    
+
     # def get_spindle_speed(self):
     #     self._spindle_speed = float(self._query("M3?"))
     #     return self.spindle_speed
-    
+
     def set_spindle_speed(self, spindle_speed: float, max_velocity: float = 500):
         if spindle_speed < 0:
             spindle_speed = 0
@@ -193,7 +193,7 @@ class GrblCNC:
 
     def stop_operation(self):
         return self._run("T")
-    
+
     # Queries
 
     async def wait_error(self):

@@ -135,7 +135,7 @@ def magazine_factory(
     model: Optional[str] = None,
 ) -> 'MagazineHolder':
     """工厂函数：创建子弹夹
-    
+
     Args:
         name: 子弹夹名称
         size_x: 长度 (mm)
@@ -162,11 +162,11 @@ def magazine_factory(
         name_prefix=name,
         max_sheets=max_sheets_per_hole,
     )
-    
+
     # 生成编号键
     keys = [f"A{i+1}" for i in range(len(locations))]
     sites = dict(zip(keys, _sites.values()))
-    
+
     holder = MagazineHolder(
         name=name,
         size_x=size_x,
@@ -296,7 +296,7 @@ def MagazineHolder_6_Battery(
         size_y=size_y,
         size_z=size_z,
         locations=locations,
-        klasses=None, # 初始化时，不放入装好的电池
+        klasses=None,  # 初始化时，不放入装好的电池
         hole_diameter=hole_diameter,
         hole_depth=hole_depth,
         max_sheets_per_hole=max_sheets_per_hole,
@@ -321,14 +321,14 @@ def MagazineHolder_4_Cathode(
     center_x = size_x / 2
     center_y = size_y / 2
     offset = hole_spacing / 2
-    
+
     locations = [
         Coordinate(center_x - offset, center_y - offset, size_z - hole_depth),  # 左下
         Coordinate(center_x + offset, center_y - offset, size_z - hole_depth),  # 右下
         Coordinate(center_x - offset, center_y + offset, size_z - hole_depth),  # 左上
         Coordinate(center_x + offset, center_y + offset, size_z - hole_depth),  # 右上
     ]
-    
+
     return magazine_factory(
         name=name,
         size_x=size_x,

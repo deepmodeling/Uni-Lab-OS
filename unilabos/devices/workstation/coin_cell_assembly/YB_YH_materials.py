@@ -23,13 +23,13 @@ from unilabos.resources.battery.bottle_carriers import YIHUA_Electrolyte_12VialC
 from unilabos.resources.battery.electrode_sheet import ElectrodeSheet
 
 
-
 # TODO: 这个应该只能放一个极片
 class MaterialHoleState(TypedDict):
     diameter: int
     depth: int
     max_sheets: int
     info: Optional[str]  # 附加信息
+
 
 class MaterialHole(Resource):
     """料板洞位类"""
@@ -63,8 +63,8 @@ class MaterialHole(Resource):
         for sheet in self.children:
             info_list.append(sheet._unilabos_state["info"])
         return info_list
-    
-    #这个函数函数好像没用，一般不会集中赋值质量
+
+    # 这个函数函数好像没用，一般不会集中赋值质量
     def set_all_sheet_mass(self):
         for sheet in self.children:
             sheet._unilabos_state["mass"] = 0.5  # 示例：设置质量为0.5g
@@ -77,9 +77,11 @@ class MaterialHole(Resource):
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         """格式不变"""
         data = super().serialize_state()
-        data.update(self._unilabos_state)  # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        data.update(self._unilabos_state)
         return data
-    #移动极片前先取出对象
+    # 移动极片前先取出对象
+
     def get_sheet_with_name(self, name: str) -> Optional[ElectrodeSheet]:
         for sheet in self.children:
             if sheet.name == name:
@@ -98,9 +100,9 @@ class MaterialHole(Resource):
     ):
         """放置极片"""
         # TODO: 这里要改，diameter找不到，加入._unilabos_state后应该没问题
-        #if resource._unilabos_state["diameter"] > self._unilabos_state["diameter"]:
+        # if resource._unilabos_state["diameter"] > self._unilabos_state["diameter"]:
         #    raise ValueError(f"极片直径 {resource._unilabos_state['diameter']} 超过洞位直径 {self._unilabos_state['diameter']}")
-        #if len(self.children) >= self._unilabos_state["max_sheets"]:
+        # if len(self.children) >= self._unilabos_state["max_sheets"]:
         #    raise ValueError(f"洞位已满，无法放置更多极片")
         super().assign_child_resource(resource, location, reassign)
 
@@ -115,9 +117,10 @@ class MaterialPlateState(TypedDict):
     hole_diameter: float
     info: Optional[str]  # 附加信息
 
+
 class MaterialPlate(ItemizedResource[MaterialHole]):
     """料板类 - 4x4个洞位，每个洞位放1个极片"""
-    
+
     children: List[MaterialHole]
 
     def __init__(
@@ -164,9 +167,9 @@ class MaterialPlate(ItemizedResource[MaterialHole]):
             dz=size_z,
             item_dx=self._unilabos_state["hole_spacing_x"],
             item_dy=self._unilabos_state["hole_spacing_y"],
-            size_x = 16,
-            size_y = 16,
-            size_z = 16,
+            size_x=16,
+            size_y=16,
+            size_z=16,
         )
         if fill:
             super().__init__(
@@ -201,9 +204,9 @@ class MaterialPlate(ItemizedResource[MaterialHole]):
             dz=self._size_z,
             item_dx=self._unilabos_state["hole_spacing_x"],
             item_dy=self._unilabos_state["hole_spacing_y"],
-            size_x = 1,
-            size_y = 1,
-            size_z = 1,
+            size_x=1,
+            size_y=1,
+            size_z=1,
         )
         for item, original_item in zip(holes.items(), self.children):
             original_item.location = item[1].location
@@ -270,7 +273,7 @@ class PlateSlot(ResourceStack):
         }
 
 
-#是一种类型注解，不用self
+# 是一种类型注解，不用self
 class BatteryState(TypedDict):
     """电池状态字典"""
     diameter: float
@@ -278,6 +281,7 @@ class BatteryState(TypedDict):
     assembly_pressure: float
     electrolyte_volume: float
     electrolyte_name: str
+
 
 class Battery(Resource):
     """电池类 - 可容纳极片"""
@@ -310,12 +314,12 @@ class Battery(Resource):
             category=category,
         )
         self._unilabos_state: BatteryState = BatteryState(
-                                 diameter = 1.0,
-                                 height = 1.0,
-                                 assembly_pressure = 1.0,
-                                 electrolyte_volume = 1.0,
-                                 electrolyte_name = "DP001"
-                                 )
+            diameter=1.0,
+            height=1.0,
+            assembly_pressure=1.0,
+            electrolyte_volume=1.0,
+            electrolyte_name="DP001"
+        )
 
     def add_electrolyte_with_bottle(self, bottle: Bottle) -> bool:
         to_add_name = bottle._unilabos_state["electrolyte_name"]
@@ -329,7 +333,8 @@ class Battery(Resource):
         """设置电解液信息"""
         self._unilabos_state["electrolyte_name"] = name
         self._unilabos_state["electrolyte_volume"] = volume
-    #这个应该没用，不会有加了后再加的事情
+    # 这个应该没用，不会有加了后再加的事情
+
     def add_electrolyte(self, name: str, volume: float) -> bool:
         """添加电解液信息"""
         if name != self._unilabos_state["electrolyte_name"]:
@@ -344,15 +349,18 @@ class Battery(Resource):
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         """格式不变"""
         data = super().serialize_state()
-        data.update(self._unilabos_state)  # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        data.update(self._unilabos_state)
         return data
 
 # 电解液作为属性放进去
 
+
 class BatteryPressSlotState(TypedDict):
     """电池状态字典"""
-    diameter: float =20.0
+    diameter: float = 20.0
     depth: float = 4.0
+
 
 class BatteryPressSlot(Resource):
     """电池压制槽类 - 设备，可容纳一个电池"""
@@ -393,9 +401,10 @@ class BatteryPressSlot(Resource):
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         """格式不变"""
         data = super().serialize_state()
-        data.update(self._unilabos_state)  # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        data.update(self._unilabos_state)
         return data
-    
+
     def assign_child_resource(
         self,
         resource: Battery,
@@ -469,7 +478,9 @@ class WasteTipBoxstate(TypedDict):
     max_tips: int = 100
     tip_count: int = 0
 
-#枪头不是一次性的（同一溶液则反复使用），根据寄存器判断
+# 枪头不是一次性的（同一溶液则反复使用），根据寄存器判断
+
+
 class WasteTipBox(Trash):
     """废枪头盒类 - 100个枪头容量"""
 
@@ -521,7 +532,6 @@ class WasteTipBox(Trash):
         """清空废枪头盒"""
         self._unilabos_state["tip_count"] = 0
 
-
     def load_state(self, state: Dict[str, Any]) -> None:
         """格式不变"""
         super().load_state(state)
@@ -530,7 +540,8 @@ class WasteTipBox(Trash):
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         """格式不变"""
         data = super().serialize_state()
-        data.update(self._unilabos_state)  # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        # Container自身的信息，云端物料将保存这一data，本地也通过这里的data进行读写，当前类用来表示这个物料的长宽高大小的属性，而data（state用来表示物料的内容，细节等）
+        data.update(self._unilabos_state)
         return data
 
 
@@ -571,23 +582,23 @@ class CoincellDeck(Deck):
     def setup(self) -> None:
         """设置工作站的标准布局 - 包含子弹夹、料盘、瓶架等完整配置"""
         # ====================================== 子弹夹 ============================================
-        
+
         # 正极片（4个洞位，2x2布局）
         zhengji_zip = MagazineHolder_4_Cathode("正极&铝箔弹夹")
         self.assign_child_resource(zhengji_zip, Coordinate(x=402.0, y=830.0, z=0))
-        
+
         # 正极壳、平垫片（6个洞位，2x2+2布局）
         zhengjike_zip = MagazineHolder_6_Cathode("正极壳&平垫片弹夹")
         self.assign_child_resource(zhengjike_zip, Coordinate(x=566.0, y=272.0, z=0))
-        
+
         # 负极壳、弹垫片（6个洞位，2x2+2布局）
         fujike_zip = MagazineHolder_6_Anode("负极壳&弹垫片弹夹")
         self.assign_child_resource(fujike_zip, Coordinate(x=474.0, y=276.0, z=0))
-        
+
         # 成品弹夹（6个洞位，3x2布局）
         chengpindanjia_zip = MagazineHolder_6_Battery("成品弹夹")
         self.assign_child_resource(chengpindanjia_zip, Coordinate(x=260.0, y=156.0, z=0))
-        
+
         # ====================================== 物料板 ============================================
         # 创建物料板（料盘carrier）- 4x4布局
         # 负极料盘
@@ -607,7 +618,7 @@ class CoincellDeck(Deck):
         # ====================================== 瓶架、移液枪 ============================================
         # 在台面上放置 3x4 瓶架、6x2 瓶架 与 64孔移液枪头盒
         # 奔耀上料5ml分液瓶小板 - 由奔曜跨站转运而来，不单独写，但是这里应该有一个堆栈用于摆放分液瓶小板
-        
+
         # bottle_rack_3x4 = BottleRack(
         #     name="bottle_rack_3x4",
         #     size_x=210.0,
@@ -619,7 +630,7 @@ class CoincellDeck(Deck):
         #     orientation="vertical",
         # )
         # self.assign_child_resource(bottle_rack_3x4, Coordinate(x=1542.0, y=717.0, z=0))
-        
+
         # 电解液缓存位 - 6x2布局
         bottle_rack_6x2 = YIHUA_Electrolyte_12VialCarrier(name="bottle_rack_6x2")
         self.assign_child_resource(bottle_rack_6x2, Coordinate(x=1050.0, y=358.0, z=0))

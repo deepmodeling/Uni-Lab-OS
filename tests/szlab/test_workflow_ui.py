@@ -389,7 +389,10 @@ def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):
 
     monkeypatch.setattr("scripts.workflow_ui.create_local_devices", fake_create_local_devices)
     monkeypatch.setattr("scripts.workflow_ui.run_nodes", fake_run_nodes)
-    monkeypatch.setattr("scripts.workflow_ui._disconnect_devices", lambda devices, log=None: disconnect_calls.append(devices))
+    monkeypatch.setattr(
+        "scripts.workflow_ui._disconnect_devices",
+        lambda devices, log=None: disconnect_calls.append(devices),
+    )
 
     payload = {
         "workflow": build_linear_workflow(

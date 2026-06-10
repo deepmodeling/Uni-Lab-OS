@@ -20,6 +20,8 @@ from unilabos.devices.workstation.AI4C.base_opcua_client import OpcUaClientWithS
 
 # 定义机械臂目标位置的枚举
 from enum import Enum
+
+
 class RoboticArmTargetPosition(int, Enum):
     """
     机械臂目标位置的枚举
@@ -39,6 +41,7 @@ class RoboticArmTargetPosition(int, Enum):
     # 孔板下料架
     PLATE_UNLOADING_RACK = 7
 
+
 class RoboticArmAction(int, Enum):
     """
     机械臂动作的枚举
@@ -51,6 +54,7 @@ class RoboticArmAction(int, Enum):
     ON_POWDER_HEAD = 3
     # 下粉末头
     OFF_POWDER_HEAD = 4
+
 
 # 最大和最小的料架位置
 MIN_RACK_POSITION = 1
@@ -75,12 +79,12 @@ class AI4CDevice(OpcUaClientWithSubscription):
     AI4M 设备类
     继承自 OpcUaClientWithSubscription，实现具体的设备动作函数
     """
-    
+
     def __init__(
-        self, 
-        url: str, 
-        csv_path: str = None, 
-        username: str = None, 
+        self,
+        url: str,
+        csv_path: str = None,
+        username: str = None,
         password: str = None,
         use_subscription: bool = True,
         cache_timeout: float = 5.0,
@@ -90,7 +94,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
     ):
         """
         初始化 AI4C 设备
-        
+
         参数:
             url: OPC UA 服务器地址
             csv_path: 节点配置 CSV 文件路径
@@ -156,7 +160,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
 
             self.m_initialized = True
 
-            self.set_node_value("Hydration_Workstation_PC_Initialization", False) # 初始化完成，复位
+            self.set_node_value("Hydration_Workstation_PC_Initialization", False)  # 初始化完成，复位
             return {
                 "success": True,
                 "message": "水合工站初始化完成",
@@ -169,9 +173,8 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "水合工站初始化失败",
             }
 
-        
     @not_action
-    def is_robotic_arm_initialization_complete(self)-> bool:
+    def is_robotic_arm_initialization_complete(self) -> bool:
         """
         检查机械臂是否初始化完成
 
@@ -179,9 +182,9 @@ class AI4CDevice(OpcUaClientWithSubscription):
             bool: 如果机械臂初始化完成，返回True，否则返回False
         """
         return self.get_node_value("Robotic_Arm_Initialization_Complete")
-    
+
     @not_action
-    def is_solid_weighing_initialization_complete(self)-> bool:
+    def is_solid_weighing_initialization_complete(self) -> bool:
         """
         检查固体称量是否初始化完成
 
@@ -189,9 +192,9 @@ class AI4CDevice(OpcUaClientWithSubscription):
             bool: 如果固体称量初始化完成，返回True，否则返回False
         """
         return self.get_node_value("Solid_Weighing_Initialization_Complete")
-    
+
     @not_action
-    def is_pipetting_station_initialization_complete(self)-> bool:
+    def is_pipetting_station_initialization_complete(self) -> bool:
         """
         检查移液站是否初始化完成
 
@@ -199,9 +202,9 @@ class AI4CDevice(OpcUaClientWithSubscription):
             bool: 如果移液站初始化完成，返回True，否则返回False
         """
         return self.get_node_value("Pipetting_Station_Initialization_Complete")
-    
+
     @not_action
-    def is_magnetic_stirrer_initialization_complete(self)-> bool:
+    def is_magnetic_stirrer_initialization_complete(self) -> bool:
         """
         检查磁搅是否初始化完成
 
@@ -209,9 +212,9 @@ class AI4CDevice(OpcUaClientWithSubscription):
             bool: 如果磁搅初始化完成，返回True，否则返回False
         """
         return self.get_node_value("Magnetic_Stirrer_Initialization_Complete")
-    
+
     @not_action
-    def is_hplc_workstation_initialization_complete(self)-> bool:
+    def is_hplc_workstation_initialization_complete(self) -> bool:
         """
         检查HPLC工站是否初始化完成
 
@@ -239,17 +242,17 @@ class AI4CDevice(OpcUaClientWithSubscription):
             bool: 如果固体称量占位，返回True，否则返回False
         """
         return self.get_node_value("Solid_Weighing_Occupied")
-    
+
     @not_action
     def is_powder_position_in_solid_weighing_occupied(self) -> bool:
         """
         检查粉末头是否在固体称量中占位
-        
+
         Returns:
             bool: 如果粉末头在固体称量中占位，返回True，否则返回False
         """
         return self.get_node_value("Powder_In_Solid_Weighing_Occupied")
-    
+
     @not_action
     def is_pipetting_station_occupied(self) -> bool:
         """
@@ -269,7 +272,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
             bool: 如果磁搅占位，返回True，否则返回False
         """
         return self.get_node_value("Magnetic_Stirrer_Occupied")
-    
+
     @not_action
     def is_hplc_workstation_occupied(self) -> bool:
         """
@@ -279,7 +282,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
             bool: 如果HPLC工站占位，返回True，否则返回False
         """
         return self.get_node_value("HPLC_Pool_Occupied")
-    
+
     @not_action
     def is_loading_rack_position_occupied(self, position: int) -> bool:
         """
@@ -294,11 +297,11 @@ class AI4CDevice(OpcUaClientWithSubscription):
         if position < MIN_RACK_POSITION or position > MAX_RACK_POSITION:
             logger.error(f"上料架位置错误，必须在范围[{MIN_RACK_POSITION}, {MAX_RACK_POSITION}]内")
             return False
-        
+
         position_index = position - 1
         nodeId = f"Well_Plate_Loading_Rack_InPut[{position_index}]"
         return self.get_node_value(nodeId)
-    
+
     @not_action
     def is_unloading_rack_position_occupied(self, position: int) -> bool:
         """
@@ -313,7 +316,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         if position < MIN_RACK_POSITION or position > MAX_RACK_POSITION:
             logger.error(f"下料架位置错误，必须在范围[{MIN_RACK_POSITION}, {MAX_RACK_POSITION}]内")
             return False
-        
+
         position_index = position - 1
         nodeId = f"Well_Plate_Unloading_Rack_InPut[{position_index}]"
         return self.get_node_value(nodeId)
@@ -370,14 +373,14 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "上料架位置错误",
             }
-        
+
         if not self.is_robotic_arm_idle():
             logger.error("机械臂不在空闲状态")
             return {
                 "success": False,
                 "message": "机械臂不在空闲状态",
             }
-        
+
         if not self.is_loading_rack_position_occupied(position):
             logger.error("上料架位置{}没有孔板".format(position))
             return {
@@ -386,13 +389,14 @@ class AI4CDevice(OpcUaClientWithSubscription):
             }
 
         logger.info("从上料架位置{}抓取孔板...".format(position))
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.PLATE_LOADING_RACK) # 设置机械臂目标位置为上料架
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", position) # 设置上料架位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK) # 设置动作类型为抓取
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.PLATE_LOADING_RACK)  # 设置机械臂目标位置为上料架
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", position)  # 设置上料架位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK)  # 设置动作类型为抓取
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="从上料架抓取孔板完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从上料架抓取孔板完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从上料架抓取孔板完成"):  # 等待完成状态复位
                 logger.info("从上料架抓取孔板完成")
                 return {
                     "success": True,
@@ -410,7 +414,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "从上料架抓取孔板失败，机械臂动作未完成",
             }
-        
+
     @action(auto_prefix=True, description="步骤4：将孔板放置到固态称量")
     def place_well_plate_to_solid_weighing(self) -> dict:
         """
@@ -438,14 +442,15 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "固态称重已占位",
             }
-        
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.SOLID_WEIGHING) # 设置机械臂目标位置为称重区
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置称重区位置，1为默认位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE) # 设置动作类型为放置
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.SOLID_WEIGHING)  # 设置机械臂目标位置为称重区
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置称重区位置，1为默认位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE)  # 设置动作类型为放置
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="将孔板放置到固态称重完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到固态称重完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到固态称重完成"):  # 等待完成状态复位
                 logger.info("将孔板放置到固态称重完成")
                 return {
                     "success": True,
@@ -463,7 +468,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "将孔板放置到固态称重失败，机械臂动作未完成",
             }
-        
+
     @action(
         auto_prefix=True,
         description="步骤5：从固体称量堆栈抓取粉桶",
@@ -514,14 +519,15 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "固体称量堆栈位置{}没有粉桶".format(position),
             }
-        
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.SOLID_WEIGHING_STACK) # 设置机械臂目标位置为固态称量堆栈
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", position) # 设置固态称量堆栈位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK) # 设置动作类型为抓取
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.SOLID_WEIGHING_STACK)  # 设置机械臂目标位置为固态称量堆栈
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", position)  # 设置固态称量堆栈位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK)  # 设置动作类型为抓取
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="从固体称量堆栈中取粉桶完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从固体称量堆栈中取粉桶完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从固体称量堆栈中取粉桶完成"):  # 等待完成状态复位
                 logger.info("从固体称量堆栈中取粉桶完成")
                 return {
                     "success": True,
@@ -539,7 +545,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "从固体称量堆栈中取粉桶失败，机械臂动作未完成",
             }
-        
+
     @action(auto_prefix=True, description="步骤6：将粉桶放置到固态称量")
     def place_powder_cylinder_to_solid_weighing(self) -> dict:
         """
@@ -560,21 +566,22 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "机械臂不在空闲状态",
             }
-        
+
         if self.is_powder_position_in_solid_weighing_occupied():
             logger.error("固态称量粉桶位置已经有粉桶")
             return {
                 "success": False,
                 "message": "固态称量粉桶位置已经有粉桶",
             }
-        
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.SOLID_WEIGHING) # 设置机械臂目标位置为固态称量
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置固态称量位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.ON_POWDER_HEAD) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.SOLID_WEIGHING)  # 设置机械臂目标位置为固态称量
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置固态称量位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.ON_POWDER_HEAD)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="将粉桶放置到固态称量完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将粉桶放置到固态称量完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将粉桶放置到固态称量完成"):  # 等待完成状态复位
                 logger.info("将粉桶放置到固态称量完成")
                 return {
                     "success": True,
@@ -589,7 +596,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         else:
             logger.error("将粉桶放置到固态称量失败")
             return {
-                "success": False,        
+                "success": False,
                 "message": "将粉桶放置到固态称量失败，机械臂动作未完成",
             }
 
@@ -620,14 +627,15 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "固态称量粉桶位置没有粉桶",
             }
-        
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.SOLID_WEIGHING) # 设置机械臂目标位置为固态称量
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置固态称量位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.OFF_POWDER_HEAD) # 设置动作类型为下粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.SOLID_WEIGHING)  # 设置机械臂目标位置为固态称量
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置固态称量位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.OFF_POWDER_HEAD)  # 设置动作类型为下粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="从固态称量中取粉桶完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从固态称量中取粉桶完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从固态称量中取粉桶完成"):  # 等待完成状态复位
                 logger.info("从固态称量中取粉桶完成")
                 return {
                     "success": True,
@@ -645,7 +653,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "从固态称量中取粉桶失败，机械臂动作未完成",
             }
-        
+
     @action(
         auto_prefix=True,
         description="步骤11：将粉桶放回固态称量堆栈",
@@ -682,28 +690,29 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "机械臂不在空闲状态",
             }
-        
+
         if position < MIN_SOLID_WEIGHING_STACK_POSITION or position > MAX_SOLID_WEIGHING_STACK_POSITION:
             logger.error(f"固态称量堆栈位置 {position} 超出范围")
             return {
                 "success": False,
                 "message": f"固态称量堆栈位置 {position} 超出范围",
             }
-        
+
         if self.is_solid_weighing_stack_position_occupied(position):
             logger.error(f"固态称量堆栈位置 {position} 已有粉桶")
             return {
                 "success": False,
                 "message": f"固态称量堆栈位置 {position} 已有粉桶",
             }
-        
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.SOLID_WEIGHING_STACK) # 设置机械臂目标位置为固态称量堆栈
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", position) # 设置固态称量堆栈位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.SOLID_WEIGHING_STACK)  # 设置机械臂目标位置为固态称量堆栈
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", position)  # 设置固态称量堆栈位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="将粉桶放置到固态称量堆栈完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将粉桶放置到固态称量堆栈完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将粉桶放置到固态称量堆栈完成"):  # 等待完成状态复位
                 logger.info("将粉桶放置到固态称量堆栈完成")
                 return {
                     "success": True,
@@ -721,7 +730,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "将粉桶放置到固态称量堆栈失败，机械臂动作未完成",
             }
-    
+
     @action(auto_prefix=True, description="步骤12：从固态称量取回孔板")
     def pick_well_plate_from_solid_weighing(self) -> dict:
         """
@@ -750,13 +759,14 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "固态称量位置没有孔板",
             }
 
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.SOLID_WEIGHING) # 设置机械臂目标位置为固态称量
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置固态称量位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.SOLID_WEIGHING)  # 设置机械臂目标位置为固态称量
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置固态称量位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="从固态称量中取孔板完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从固态称量中取孔板完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从固态称量中取孔板完成"):  # 等待完成状态复位
                 logger.info("从固态称量中取孔板完成")
                 return {
                     "success": True,
@@ -774,7 +784,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "从固态称量中取孔板失败，机械臂动作未完成",
             }
-        
+
     @action(auto_prefix=True, description="步骤14/20：将孔板放置到移液站")
     def place_well_plate_to_pipetting_station(self) -> dict:
         """
@@ -801,15 +811,16 @@ class AI4CDevice(OpcUaClientWithSubscription):
             return {
                 "success": False,
                 "message": "移液站位置已有孔板",
-        }
+            }
 
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.PIPETTING_STATION) # 设置机械臂目标位置为移液站
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置移液站位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.PIPETTING_STATION)  # 设置机械臂目标位置为移液站
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置移液站位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="将孔板放置到移液站完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到移液站完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到移液站完成"):  # 等待完成状态复位
                 logger.info("将孔板放置到移液站完成")
                 return {
                     "success": True,
@@ -856,13 +867,14 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "移液站位置没有孔板",
             }
 
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.PIPETTING_STATION) # 设置机械臂目标位置为移液站
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置移液站位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.PIPETTING_STATION)  # 设置机械臂目标位置为移液站
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置移液站位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="从移液站取孔板完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从移液站取孔板完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从移液站取孔板完成"):  # 等待完成状态复位
                 logger.info("从移液站取孔板完成")
                 return {
                     "success": True,
@@ -880,7 +892,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "从移液站取孔板失败，机械臂动作未完成",
             }
-    
+
     @action(auto_prefix=True, description="步骤17：将孔板放置到磁搅")
     def place_well_plate_to_magnetic_stirrer(self) -> dict:
         """
@@ -909,13 +921,14 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "磁搅位置已有孔板",
             }
 
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.MAGNETIC_STIRRER) # 设置机械臂目标位置为磁搅
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置磁搅位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.MAGNETIC_STIRRER)  # 设置机械臂目标位置为磁搅
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置磁搅位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="将孔板放置到磁搅完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到磁搅完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到磁搅完成"):  # 等待完成状态复位
                 logger.info("将孔板放置到磁搅完成")
                 return {
                     "success": True,
@@ -933,7 +946,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "将孔板放置到磁搅失败，机械臂动作未完成",
             }
-        
+
     @action(auto_prefix=True, description="步骤19：从磁搅取回孔板")
     def pick_well_plate_from_magnetic_stirrer(self) -> dict:
         """
@@ -962,13 +975,14 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "磁搅位置没有孔板",
             }
 
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.MAGNETIC_STIRRER) # 设置机械臂目标位置为磁搅
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置磁搅位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.MAGNETIC_STIRRER)  # 设置机械臂目标位置为磁搅
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置磁搅位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="从磁搅取孔板完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从磁搅取孔板完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从磁搅取孔板完成"):  # 等待完成状态复位
                 logger.info("从磁搅取孔板完成")
                 return {
                     "success": True,
@@ -986,7 +1000,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "从磁搅取孔板失败，机械臂动作未完成",
             }
-    
+
     @action(auto_prefix=True, description="步骤22：将孔板放置到 HPLC 站")
     def place_well_plate_to_hplc_station(self) -> dict:
         """
@@ -1015,13 +1029,14 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "HPLC 站位置已有孔板",
             }
 
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.HPLC_STATION) # 设置机械臂目标位置为 HPLC 站
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置 HPLC 站位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.HPLC_STATION)  # 设置机械臂目标位置为 HPLC 站
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置 HPLC 站位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="将孔板放置到 HPLC 站完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到 HPLC 站完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到 HPLC 站完成"):  # 等待完成状态复位
                 logger.info("将孔板放置到 HPLC 站完成")
                 return {
                     "success": True,
@@ -1039,7 +1054,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "将孔板放置到 HPLC 站失败，机械臂动作未完成",
             }
-    
+
     @action(auto_prefix=True, description="步骤24：从 HPLC 站取回孔板")
     def pick_well_plate_from_hplc_station(self) -> dict:
         """
@@ -1067,14 +1082,15 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "HPLC 站位置没有孔板",
             }
-        
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.HPLC_STATION) # 设置机械臂目标位置为 HPLC 站
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1) # 设置 HPLC 站位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK) # 设置动作类型为上粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.HPLC_STATION)  # 设置机械臂目标位置为 HPLC 站
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", 1)  # 设置 HPLC 站位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PICK)  # 设置动作类型为上粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="从 HPLC 站取孔板完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从 HPLC 站取孔板完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="从 HPLC 站取孔板完成"):  # 等待完成状态复位
                 logger.info("从 HPLC 站取孔板完成")
                 return {
                     "success": True,
@@ -1092,7 +1108,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "从 HPLC 站取孔板失败，机械臂动作未完成",
             }
-        
+
     @action(
         auto_prefix=True,
         description="步骤25：将孔板放置到下料架",
@@ -1143,14 +1159,15 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "下料架位置已有孔板",
             }
-        
-        self.set_node_value("Robotic_Arm_Target_Position_Code", RoboticArmTargetPosition.PLATE_UNLOADING_RACK) # 设置机械臂目标位置为下料架
-        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", position) # 设置下料架位置
-        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE) # 设置动作类型为下粉末头
-        self.set_node_value("Robotic_Arm_Action_Trigger", True) # 设置动作触发
+
+        self.set_node_value("Robotic_Arm_Target_Position_Code",
+                            RoboticArmTargetPosition.PLATE_UNLOADING_RACK)  # 设置机械臂目标位置为下料架
+        self.set_node_value("Robotic_Arm_Target_Pick_Place_Code", position)  # 设置下料架位置
+        self.set_node_value("Robotic_Arm_Action_Code", RoboticArmAction.PLACE)  # 设置动作类型为下粉末头
+        self.set_node_value("Robotic_Arm_Action_Trigger", True)  # 设置动作触发
         if self._wait_until_true("Robotic_Arm_Action_Complete", description="将孔板放置到下料架完成"):
-            self.set_node_value("Robotic_Arm_Action_Trigger", False) # 复位动作触发
-            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到下料架完成"): # 等待完成状态复位
+            self.set_node_value("Robotic_Arm_Action_Trigger", False)  # 复位动作触发
+            if self._wait_until_false("Robotic_Arm_Action_Complete", description="将孔板放置到下料架完成"):  # 等待完成状态复位
                 logger.info("将孔板放置到下料架完成")
                 return {
                     "success": True,
@@ -1183,7 +1200,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         """
         logger.info("打开固态称重门...")
         self.set_node_value("Solid_Weighing_Close_Door", False)
-        self.set_node_value("Solid_Weighing_Open_Door", True) # 打开固态称重门
+        self.set_node_value("Solid_Weighing_Open_Door", True)  # 打开固态称重门
         if self._wait_until_true("Solid_Weighing_Open_Door_Complete", description="固态称重门打开完成"):
             return {
                 "success": True,
@@ -1195,7 +1212,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "固态称重门打开失败",
             }
-        
+
     @action(auto_prefix=True, description="步骤7/13：关闭固态称量门")
     def close_solid_weighing_door(self) -> dict:
         """
@@ -1210,7 +1227,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         """
         logger.info("关闭固态称重门...")
         self.set_node_value("Solid_Weighing_Open_Door", False)
-        self.set_node_value("Solid_Weighing_Close_Door", True) # 关闭固态称重门
+        self.set_node_value("Solid_Weighing_Close_Door", True)  # 关闭固态称重门
         if self._wait_until_true("Solid_Weighing_Close_Door_Complete", description="固态称重门关闭完成"):
             return {
                 "success": True,
@@ -1222,7 +1239,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "固态称重门关闭失败",
             }
-        
+
     @action(
         auto_prefix=True,
         description="步骤8：触发固体称量",
@@ -1286,13 +1303,13 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "固态称重位置没有粉桶",
             }
 
-        self.set_node_value("Solid_Weighing_Weight_in_Grams", gram) # 设置称重目标值
-        self.set_node_value("Solid_Weighing_Error", tolerance) # 设置称重误差
-        self.set_node_value("Solid_Weighing_Slot_Position", slot) # 设置称重器穴位
-        self.set_node_value("Solid_Weighing_Processing_Allowed", True) # 设置允许加工
+        self.set_node_value("Solid_Weighing_Weight_in_Grams", gram)  # 设置称重目标值
+        self.set_node_value("Solid_Weighing_Error", tolerance)  # 设置称重误差
+        self.set_node_value("Solid_Weighing_Slot_Position", slot)  # 设置称重器穴位
+        self.set_node_value("Solid_Weighing_Processing_Allowed", True)  # 设置允许加工
         # 等待加工完成
         if self._wait_until_true("Solid_Weighing_Processing_Complete", description="固体称重完成"):
-            self.set_node_value("Solid_Weighing_Processing_Allowed", False) # 复位允许加工
+            self.set_node_value("Solid_Weighing_Processing_Allowed", False)  # 复位允许加工
             if (self._wait_until_false("Solid_Weighing_Processing_Complete", description="固体称重完成")):
                 logger.info("固体称重完成")
                 return {
@@ -1311,7 +1328,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "固体称重失败，动作超时",
             }
-        
+
     @action(
         auto_prefix=True,
         description="步骤18：触发磁力搅拌",
@@ -1375,14 +1392,14 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "磁力搅拌位置没有孔板",
             }
 
-        self.set_node_value("Magnetic_Stirrer_Speed_Parameter", speed) # 设置搅拌速度
-        self.set_node_value("Magnetic_Stirrer_Temperature_Parameter", temperature) # 设置搅拌温度
-        self.set_node_value("Magnetic_Stirrer_Time_Parameter", mins) # 设置搅拌时间
-        self.set_node_value("Magnetic_Stirrer_Parameters_Sent", True) # 触发搅拌参数已下发
+        self.set_node_value("Magnetic_Stirrer_Speed_Parameter", speed)  # 设置搅拌速度
+        self.set_node_value("Magnetic_Stirrer_Temperature_Parameter", temperature)  # 设置搅拌温度
+        self.set_node_value("Magnetic_Stirrer_Time_Parameter", mins)  # 设置搅拌时间
+        self.set_node_value("Magnetic_Stirrer_Parameters_Sent", True)  # 触发搅拌参数已下发
         # 等待参数已执行
         if self._wait_until_true("Magnetic_Stirrer_Parameters_Executed", description="等待搅拌参数已执行"):
             # 复位搅拌参数已下发
-            self.set_node_value("Magnetic_Stirrer_Parameters_Sent", False) # 复位搅拌参数已下发
+            self.set_node_value("Magnetic_Stirrer_Parameters_Sent", False)  # 复位搅拌参数已下发
             logger.info("搅拌参数已执行")
         else:
             logger.error("搅拌参数执行失败")
@@ -1390,7 +1407,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "success": False,
                 "message": "搅拌参数执行失败",
             }
-        
+
         # 等待加工完成
         if self._wait_until_true("Magnetic_Stirrer_Processing_Complete", description="等待搅拌完成", timeout=mins*60.0+100.0):
             logger.info("搅拌完成")
@@ -1493,7 +1510,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "移液失败，动作超时",
             }
         '''
-        
+
     @action(
         auto_prefix=True,
         description="步骤23：触发 HPLC",
@@ -1532,7 +1549,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
             "success": True,
             "message": "HPLC 完成",
         }
-    
+
         '''
         if not self._wait_until_true("HPLC_Processing_Request", description="等待 HPLC 请求加工信号"):
             logger.error("等待 HPLC 请求加工信号超时")
@@ -1583,7 +1600,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 "message": "HPLC 失败，动作超时",
             }
         '''
-    
+
     @not_action
     def trigger_heart_beat(self) -> None:
         """
@@ -1604,7 +1621,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
                 if self.m_solid_weighing_current_step != solid_weighing_current_step:
                     self.m_solid_weighing_current_step = solid_weighing_current_step
                     logger.info(f"固体称量当前步骤更新: {self.m_solid_weighing_current_step}")
-                    
+
                 magnetic_stirrer_current_step = self.get_node_value("Magnetic_Stirrer_Current_Step")
                 if self.m_magnetic_stirrer_current_step != magnetic_stirrer_current_step:
                     self.m_magnetic_stirrer_current_step = magnetic_stirrer_current_step
@@ -1614,7 +1631,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
             timer = threading.Timer(1.0, self.trigger_heart_beat)
             timer.daemon = True
             timer.start()
-    
+
     @not_action
     def start_heart_beat(self) -> None:
         """
@@ -1625,7 +1642,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         timer.daemon = True
         timer.start()
         self.heartbeat_on = True
-    
+
     @not_action
     def stop_heart_beat(self) -> None:
         """
@@ -1634,7 +1651,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         logger.info("停止心跳")
         self.set_node_value("Heart_Beat", False)
         self.heartbeat_on = False
-        
+
     @not_action
     def trigger_all_process(self) -> dict:
         """
@@ -1650,7 +1667,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         ret = self.pick_well_plate_from_loading_rack(1)
         if not ret["success"]:
             return ret
-        
+
         ret = self.open_solid_weighing_door()
         if not ret["success"]:
             return ret
@@ -1658,7 +1675,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         ret = self.place_well_plate_to_solid_weighing()
         if not ret["success"]:
             return ret
-        
+
         ret = self.pick_powder_cylinder_from_stack(6)
         if not ret["success"]:
             return ret
@@ -1666,7 +1683,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         ret = self.place_powder_cylinder_to_solid_weighing()
         if not ret["success"]:
             return ret
-        
+
         ret = self.close_solid_weighing_door()
         if not ret["success"]:
             return ret
@@ -1674,7 +1691,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         ret = self.trigger_solid_weighing(10, 1, 1)
         if not ret["success"]:
             return ret
-        
+
         ret = self.open_solid_weighing_door()
         if not ret["success"]:
             return ret
@@ -1682,43 +1699,43 @@ class AI4CDevice(OpcUaClientWithSubscription):
         ret = self.pick_powder_cylinder_from_solid_weighing()
         if not ret["success"]:
             return ret
-        
+
         ret = self.place_powder_cylinder_to_solid_weighing_stack(6)
         if not ret["success"]:
             return ret
-        
-        #ret = self.pick_powder_cylinder_from_stack(7)
-        #if not ret["success"]:
+
+        # ret = self.pick_powder_cylinder_from_stack(7)
+        # if not ret["success"]:
         #    return ret
 
-        #ret = self.place_powder_cylinder_to_solid_weighing()
-        #if not ret["success"]:
-        #    return ret
-        
-        #ret = self.close_solid_weighing_door()
-        #if not ret["success"]:
+        # ret = self.place_powder_cylinder_to_solid_weighing()
+        # if not ret["success"]:
         #    return ret
 
-        #ret = self.trigger_solid_weighing(10, 1, 2)
-        #if not ret["success"]:
-        #    return ret
-        
-        #ret = self.open_solid_weighing_door()
-        #if not ret["success"]:
+        # ret = self.close_solid_weighing_door()
+        # if not ret["success"]:
         #    return ret
 
-        #ret = self.pick_powder_cylinder_from_solid_weighing()
-        #if not ret["success"]:
+        # ret = self.trigger_solid_weighing(10, 1, 2)
+        # if not ret["success"]:
         #    return ret
-        
-        #ret = self.place_powder_cylinder_to_solid_weighing_stack(7)
-        #if not ret["success"]:
+
+        # ret = self.open_solid_weighing_door()
+        # if not ret["success"]:
         #    return ret
-        
+
+        # ret = self.pick_powder_cylinder_from_solid_weighing()
+        # if not ret["success"]:
+        #    return ret
+
+        # ret = self.place_powder_cylinder_to_solid_weighing_stack(7)
+        # if not ret["success"]:
+        #    return ret
+
         ret = self.pick_well_plate_from_solid_weighing()
         if not ret["success"]:
             return ret
-        
+
         ret = self.close_solid_weighing_door()
         if not ret["success"]:
             return ret
@@ -1730,7 +1747,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         ret = self.trigger_pipetting(1)
         if not ret["success"]:
             return ret
-        
+
         ret = self.pick_well_plate_from_pipetting_station()
         if not ret["success"]:
             return ret
@@ -1746,7 +1763,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         ret = self.pick_well_plate_from_magnetic_stirrer()
         if not ret["success"]:
             return ret
-        
+
         ret = self.place_well_plate_to_pipetting_station()
         if not ret["success"]:
             return ret
@@ -1758,11 +1775,11 @@ class AI4CDevice(OpcUaClientWithSubscription):
         ret = self.place_well_plate_to_hplc_station()
         if not ret["success"]:
             return ret
-        
+
         ret = self.trigger_hplc(1)
         if not ret["success"]:
             return ret
-        
+
         ret = self.pick_well_plate_from_hplc_station()
         if not ret["success"]:
             return ret
@@ -1776,7 +1793,6 @@ class AI4CDevice(OpcUaClientWithSubscription):
             "message": "所有加工完成",
         }
 
-
     def _wait_until_true(
         self,
         node_name: str,
@@ -1787,7 +1803,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         """等待布尔节点变为 True（轮询时强制从 OPC UA 服务器读取，避免订阅缓存过期）"""
         desc = description or node_name
         logger.info(f"等待 {desc} 变为 True（轮询节点: {node_name}）...")
-        
+
         start = time.time()
         while True:
             value = self.get_node_value(node_name, force_read=True)
@@ -1795,13 +1811,13 @@ class AI4CDevice(OpcUaClientWithSubscription):
             if value:
                 logger.info(f"✓ {desc} 已变为 True（节点 [{node_name}]）")
                 return True
-            
+
             if time.time() - start >= timeout:
                 logger.error(f"✗ 等待 {desc} 超时（{timeout}秒，节点 [{node_name}] 仍为 {value!r}）")
                 return False
-            
+
             time.sleep(interval)
-    
+
     def _wait_until_false(
         self,
         node_name: str,
@@ -1812,7 +1828,7 @@ class AI4CDevice(OpcUaClientWithSubscription):
         """等待布尔节点变为 False（轮询时强制从 OPC UA 服务器读取，避免订阅缓存过期）"""
         desc = description or node_name
         logger.info(f"等待 {desc} 变为 False（轮询节点: {node_name}）...")
-        
+
         start = time.time()
         while True:
             value = self.get_node_value(node_name, force_read=True)
@@ -1820,13 +1836,13 @@ class AI4CDevice(OpcUaClientWithSubscription):
             if not value:
                 logger.info(f"✓ {desc} 已变为 False（节点 [{node_name}]）")
                 return True
-            
+
             if time.time() - start >= timeout:
                 logger.error(f"✗ 等待 {desc} 超时（{timeout}秒，节点 [{node_name}] 仍为 {value!r}）")
                 return False
-            
+
             time.sleep(interval)
-    
+
     def _wait_for_nodes(
         self,
         conditions: dict,  # {node_name: target_value, ...}
@@ -1842,10 +1858,10 @@ class AI4CDevice(OpcUaClientWithSubscription):
             )
             if all_met:
                 return True
-            
+
             if time.time() - start >= timeout:
                 return False
-            
+
             time.sleep(interval)
 
 
@@ -1865,7 +1881,7 @@ if __name__ == '__main__':
 
     # 初始化工作站
     A4.init_workstation()
-    
+
     # 显示命令行，让用户通过选择序号来完成相应的操作
     # 如果带有参数，则序号和各参数之间均由空格分隔
     # 具体命令如下：
@@ -1990,6 +2006,3 @@ if __name__ == '__main__':
     A4.disconnect()
 
     print("退出程序。")
-
-
-

@@ -30,6 +30,7 @@ from unilabos.devices.workstation.workstation_http_service import WorkstationHTT
 
 class ConnectionMonitor:
     """Bioyond连接监控器"""
+
     def __init__(self, workstation, check_interval=30):
         self.workstation = workstation
         self.check_interval = check_interval
@@ -336,7 +337,8 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
                 material_params=merged_params
             )[0]
 
-            logger.info(f"[同步→Bioyond] 🔧 准备覆盖locations字段，目标仓库: {parent_name}, 库位: {update_site}, UUID: {target_location_uuid[:8]}...")
+            logger.info(
+                f"[同步→Bioyond] 🔧 准备覆盖locations字段，目标仓库: {parent_name}, 库位: {update_site}, UUID: {target_location_uuid[:8]}...")
 
             # 🔥 强制覆盖 locations 信息，使用正确的目标库位 UUID
             # resource_plr_to_bioyond 可能会生成错误的仓库信息，这里直接覆盖
@@ -395,8 +397,10 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
 
                     # 查询所有物料，检查是否有物料在目标库位
                     try:
-                        all_materials_type1 = self.bioyond_api_client.stock_material('{"typeMode": 1, "includeDetail": true}')
-                        all_materials_type2 = self.bioyond_api_client.stock_material('{"typeMode": 2, "includeDetail": true}')
+                        all_materials_type1 = self.bioyond_api_client.stock_material(
+                            '{"typeMode": 1, "includeDetail": true}')
+                        all_materials_type2 = self.bioyond_api_client.stock_material(
+                            '{"typeMode": 2, "includeDetail": true}')
                         all_materials = (all_materials_type1 or []) + (all_materials_type2 or [])
 
                         # 检查是否有物料已经在目标库位
@@ -416,9 +420,12 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
                                     location_occupied = True
                                     occupying_material = material
                                     logger.warning(f"⚠️ [同步→Bioyond] 库位 {update_site} 已被占用！")
-                                    logger.warning(f"   占用物料: {material.get('name')} (ID: {material.get('id', '')[:8]}...)")
-                                    logger.warning(f"   占用位置: code={loc.get('code')}, x={loc.get('x')}, y={loc.get('y')}")
-                                    logger.warning(f"   🔍 详细信息: location_id={loc.get('id')[:8]}..., 目标UUID={location_id[:8]}...")
+                                    logger.warning(
+                                        f"   占用物料: {material.get('name')} (ID: {material.get('id', '')[:8]}...)")
+                                    logger.warning(
+                                        f"   占用位置: code={loc.get('code')}, x={loc.get('x')}, y={loc.get('y')}")
+                                    logger.warning(
+                                        f"   🔍 详细信息: location_id={loc.get('id')[:8]}..., 目标UUID={location_id[:8]}...")
                                     logger.warning(f"   🔍 完整location数据: {loc}")
                                     break
 
@@ -426,7 +433,8 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
                             if material.get("id") == material_id and locations:
                                 current_material_location = locations[0]
                                 current_location_uuid = current_material_location.get("id")
-                                logger.info(f"📍 [同步→Bioyond] 物料当前位置: {current_material_location.get('whName')}/{current_material_location.get('code')} (UUID: {current_location_uuid[:8]}...)")
+                                logger.info(
+                                    f"📍 [同步→Bioyond] 物料当前位置: {current_material_location.get('whName')}/{current_material_location.get('code')} (UUID: {current_location_uuid[:8]}...)")
 
                             if location_occupied:
                                 break
@@ -479,8 +487,10 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
                         # 入库成功后，重新查询验证物料实际入库位置
                         logger.info(f"[同步→Bioyond] 🔍 验证物料实际入库位置...")
                         try:
-                            all_materials_type1 = self.bioyond_api_client.stock_material('{"typeMode": 1, "includeDetail": true}')
-                            all_materials_type2 = self.bioyond_api_client.stock_material('{"typeMode": 2, "includeDetail": true}')
+                            all_materials_type1 = self.bioyond_api_client.stock_material(
+                                '{"typeMode": 1, "includeDetail": true}')
+                            all_materials_type2 = self.bioyond_api_client.stock_material(
+                                '{"typeMode": 2, "includeDetail": true}')
                             all_materials = (all_materials_type1 or []) + (all_materials_type2 or [])
 
                             for material in all_materials:
@@ -489,8 +499,8 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
                                     if locations:
                                         actual_loc = locations[0]
                                         logger.info(f"📍 [同步→Bioyond] 物料实际位置: code={actual_loc.get('code')}, "
-                                                  f"warehouse={actual_loc.get('whName')}, "
-                                                  f"x={actual_loc.get('x')}, y={actual_loc.get('y')}")
+                                                    f"warehouse={actual_loc.get('whName')}, "
+                                                    f"x={actual_loc.get('x')}, y={actual_loc.get('y')}")
 
                                         # 验证 UUID 是否匹配
                                         if actual_loc.get("id") != location_id:
@@ -784,7 +794,7 @@ class BioyondWorkstation(WorkstationBase):
             "port": http_service_cfg.get("http_service_port", 8080)
         }
         self.http_service = None  # 将在 post_init 启动
-        self.connection_monitor = None # 将在 post_init 启动
+        self.connection_monitor = None  # 将在 post_init 启动
 
         logger.info(f"Bioyond工作站初始化完成")
 
@@ -880,7 +890,8 @@ class BioyondWorkstation(WorkstationBase):
                 if material_bioyond_id:
                     # ⭐ 已有 Bioyond ID，说明 transfer 已经创建了物料
                     # 现在只需要执行入库操作
-                    logger.info(f"✅ [resource_tree_add] 物料 {resource.name} 已有 Bioyond ID ({material_bioyond_id[:8]}...)，执行入库操作")
+                    logger.info(
+                        f"✅ [resource_tree_add] 物料 {resource.name} 已有 Bioyond ID ({material_bioyond_id[:8]}...)，执行入库操作")
                     self.resource_synchronizer._inbound_material_only(resource, material_bioyond_id)
                 else:
                     # ⚠️ 没有 Bioyond ID，说明是直接添加的物料（兜底逻辑）
@@ -999,7 +1010,8 @@ class BioyondWorkstation(WorkstationBase):
                     if mat.get("name") == query_name:
                         matched_material = mat
                         material_bioyond_id = mat.get("id")
-                        logger.info(f"✅ [resource_tree_remove] 找到物料 {query_name} 的 Bioyond ID: {material_bioyond_id[:8]}...")
+                        logger.info(
+                            f"✅ [resource_tree_remove] 找到物料 {query_name} 的 Bioyond ID: {material_bioyond_id[:8]}...")
                         break
 
                 if not matched_material:
@@ -1385,11 +1397,11 @@ class BioyondWorkstation(WorkstationBase):
 
             # 发布任务状态事件 (running/progress update)
             self._publish_task_status(
-                task_id=data.get('orderCode'), # 使用 OrderCode 作为关联 ID
+                task_id=data.get('orderCode'),  # 使用 OrderCode 作为关联 ID
                 task_code=data.get('orderCode'),
                 task_type="bioyond_step",
                 status="running",
-                progress=0.5, # 步骤完成视为任务进行中
+                progress=0.5,  # 步骤完成视为任务进行中
                 result={"step_name": data.get('stepName'), "step_id": data.get('stepId')}
             )
 
@@ -1397,7 +1409,6 @@ class BioyondWorkstation(WorkstationBase):
             # 步骤完成后，物料状态可能发生变化（如位置、用量等），触发同步
             logger.info(f"[步骤完成报送] 触发物料同步...")
             self.resource_synchronizer.sync_from_external()
-
 
             return {
                 "processed": True,
@@ -1442,7 +1453,6 @@ class BioyondWorkstation(WorkstationBase):
                 progress=0.7,
                 result={"sample_id": data.get('sampleId'), "status": status_desc}
             )
-
 
             return {
                 "processed": True,
@@ -1490,7 +1500,7 @@ class BioyondWorkstation(WorkstationBase):
             elif str(data.get('status')) == "30":
                 event_status = "completed"
             else:
-                event_status = "running" # 其他状态视为运行中（或根据实际定义）
+                event_status = "running"  # 其他状态视为运行中（或根据实际定义）
 
             # 发布任务状态事件
             self._publish_task_status(
@@ -1499,7 +1509,8 @@ class BioyondWorkstation(WorkstationBase):
                 task_type="bioyond_order",
                 status=event_status,
                 progress=1.0 if event_status in ["completed", "error"] else 0.9,
-                result={"order_name": data.get('orderName'), "status": status_desc, "materials_count": len(used_materials)}
+                result={"order_name": data.get('orderName'), "status": status_desc,
+                        "materials_count": len(used_materials)}
             )
 
             # 更新物料信息
@@ -1507,7 +1518,6 @@ class BioyondWorkstation(WorkstationBase):
             if event_status == "completed":
                 logger.info(f"[任务完成报送] 触发物料同步...")
                 self.resource_synchronizer.sync_from_external()
-
 
             return {
                 "processed": True,
@@ -1549,7 +1559,6 @@ class BioyondWorkstation(WorkstationBase):
         except Exception as e:
             logger.error(f"处理物料变更报送失败: {e}")
             return {"processed": False, "error": str(e)}
-
 
     def handle_external_error(self, error_data: Dict[str, Any]) -> Dict[str, Any]:
         """处理错误处理报送

@@ -2,6 +2,7 @@ from unilabos.resources.warehouse import WareHouse, warehouse_factory
 
 # ================ 反应站相关堆栈 ================
 
+
 def bioyond_warehouse_1x4x4(name: str) -> WareHouse:
     """创建BioYond 4x4x1仓库 (左侧堆栈: A01～D04)
 
@@ -27,6 +28,7 @@ def bioyond_warehouse_1x4x4(name: str) -> WareHouse:
         layout="row-major",  # ⭐ 改为行优先排序
     )
 
+
 def bioyond_warehouse_1x4x4_right(name: str) -> WareHouse:
     """创建BioYond 4x4x1仓库 (右侧堆栈: A05～D08)"""
     return warehouse_factory(
@@ -44,6 +46,7 @@ def bioyond_warehouse_1x4x4_right(name: str) -> WareHouse:
         col_offset=4,  # 从05开始: A05, A06, A07, A08
         layout="row-major",  # ⭐ 改为行优先排序
     )
+
 
 def bioyond_warehouse_density_vial(name: str) -> WareHouse:
     """创建测量小瓶仓库(测密度) - 竖向排列2列3行
@@ -72,6 +75,7 @@ def bioyond_warehouse_density_vial(name: str) -> WareHouse:
         layout="vertical-col-major",  # ⭐ 竖向warehouse专用布局
     )
 
+
 def bioyond_warehouse_reagent_storage(name: str) -> WareHouse:
     """创建BioYond站内试剂存放堆栈 - 竖向排列1列2行
     布局（竖向，从下到上）：
@@ -97,6 +101,7 @@ def bioyond_warehouse_reagent_storage(name: str) -> WareHouse:
         layout="vertical-col-major",  # ⭐ 竖向warehouse专用布局
     )
 
+
 def bioyond_warehouse_tipbox_storage_left(name: str) -> WareHouse:
     """创建BioYond站内Tip盒堆栈左侧部分（A02～B03），2列2行"""
     return warehouse_factory(
@@ -115,6 +120,7 @@ def bioyond_warehouse_tipbox_storage_left(name: str) -> WareHouse:
         layout="row-major",
     )
 
+
 def bioyond_warehouse_tipbox_storage_right(name: str) -> WareHouse:
     """创建BioYond站内Tip盒堆栈右侧部分（A01～B01），1列2行"""
     return warehouse_factory(
@@ -132,6 +138,7 @@ def bioyond_warehouse_tipbox_storage_right(name: str) -> WareHouse:
         col_offset=0,   # 从01开始: A01
         layout="row-major",
     )
+
 
 def bioyond_warehouse_liquid_preparation(name: str) -> WareHouse:
     """已弃用,创建BioYond移液站内10%分装液体准备仓库（A01～B04）"""
@@ -152,6 +159,7 @@ def bioyond_warehouse_liquid_preparation(name: str) -> WareHouse:
     )
 
 # ================ 配液站相关堆栈 ================
+
 
 def bioyond_warehouse_reagent_stack(name: str) -> WareHouse:
     """创建BioYond 试剂堆栈 2x4x1 (2行×4列: A01-A04, B01-B04)
@@ -180,6 +188,7 @@ def bioyond_warehouse_reagent_stack(name: str) -> WareHouse:
 
 # =================== Other ===================
 
+
 def bioyond_warehouse_1x4x2(name: str) -> WareHouse:
     """创建BioYond 4x2x1仓库"""
     return warehouse_factory(
@@ -197,6 +206,7 @@ def bioyond_warehouse_1x4x2(name: str) -> WareHouse:
         removed_positions=None
     )
 
+
 def bioyond_warehouse_1x2x2(name: str) -> WareHouse:
     """创建BioYond 1x2x2仓库"""
     return warehouse_factory(
@@ -212,6 +222,7 @@ def bioyond_warehouse_1x2x2(name: str) -> WareHouse:
         item_dz=120.0,
         category="warehouse",
     )
+
 
 def bioyond_warehouse_10x1x1(name: str) -> WareHouse:
     """创建BioYond 10x1x1仓库"""
@@ -229,6 +240,7 @@ def bioyond_warehouse_10x1x1(name: str) -> WareHouse:
         category="warehouse",
     )
 
+
 def bioyond_warehouse_1x3x3(name: str) -> WareHouse:
     """创建BioYond 1x3x3仓库"""
     return warehouse_factory(
@@ -244,6 +256,7 @@ def bioyond_warehouse_1x3x3(name: str) -> WareHouse:
         item_dz=120.0,
         category="warehouse",
     )
+
 
 def bioyond_warehouse_2x1x3(name: str) -> WareHouse:
     """创建BioYond 2x1x3仓库"""
@@ -261,6 +274,7 @@ def bioyond_warehouse_2x1x3(name: str) -> WareHouse:
         category="warehouse",
     )
 
+
 def bioyond_warehouse_3x3x1(name: str) -> WareHouse:
     """创建BioYond 3x3x1仓库"""
     return warehouse_factory(
@@ -276,6 +290,7 @@ def bioyond_warehouse_3x3x1(name: str) -> WareHouse:
         item_dz=120.0,
         category="warehouse",
     )
+
 
 def bioyond_warehouse_5x1x1(name: str) -> WareHouse:
     """已弃用：创建BioYond 5x1x1仓库"""
@@ -293,6 +308,7 @@ def bioyond_warehouse_5x1x1(name: str) -> WareHouse:
         category="warehouse",
     )
 
+
 def bioyond_warehouse_3x3x1_2(name: str) -> WareHouse:
     """已弃用：创建BioYond 3x3x1仓库"""
     return warehouse_factory(
@@ -308,6 +324,7 @@ def bioyond_warehouse_3x3x1_2(name: str) -> WareHouse:
         item_dz=120.0,
         category="warehouse",
     )
+
 
 def bioyond_warehouse_liquid_and_lid_handling(name: str) -> WareHouse:
     """创建BioYond开关盖加液模块台面"""
@@ -325,6 +342,7 @@ def bioyond_warehouse_liquid_and_lid_handling(name: str) -> WareHouse:
         category="warehouse",
         removed_positions=None
     )
+
 
 def bioyond_warehouse_1x8x4(name: str) -> WareHouse:
     """创建BioYond 8x4x1反应站堆栈（A01～D08）"""

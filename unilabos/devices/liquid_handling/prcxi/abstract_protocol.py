@@ -1,3 +1,4 @@
+from typing import Dict, Any
 import asyncio
 import collections
 import contextlib
@@ -30,14 +31,13 @@ from traitlets import Int
 from unilabos.devices.liquid_handling.liquid_handler_abstract import LiquidHandlerAbstract
 
 
-
-
 class MaterialResource:
     """统一的液体/反应器资源，支持多孔（wells）场景：
     - wells: 列表，每个元素代表一个物料孔（unit）；
     - units: 与 wells 对齐的列表，每个元素是 {liquid_id: volume}；
     - 若传入 liquid_id + volume 或 composition，总量将**等分**到各 unit；
     """
+
     def __init__(
         self,
         resource_name: str,
@@ -88,23 +88,26 @@ class MaterialResource:
             return
         u = self.units[idx]
         if liquid_id not in u:
-           u[liquid_id] = 0.0
+            u[liquid_id] = 0.0
         if v > 0:
-           u[liquid_id] += v
+            u[liquid_id] += v
 
     def remove_from_unit(self, idx: int, total: Union[float, int]) -> Dict[str, float]:
         take = float(total)
-        if take <= 0: return {}
+        if take <= 0:
+            return {}
         u = self.units[idx]
         avail = sum(u.values())
-        if avail <= 0: return {}
+        if avail <= 0:
+            return {}
         take = min(take, avail)
         ratio = take / avail
         removed: Dict[str, float] = {}
         for k, v in list(u.items()):
             dv = v * ratio
             nv = v - dv
-            if nv < 1e-9: nv = 0.0
+            if nv < 1e-9:
+                nv = 0.0
             u[k] = nv
             removed[k] = dv
 
@@ -126,11 +129,12 @@ class MaterialResource:
             "is_supply": self.is_supply,
         }
 
+
 def transfer_liquid(
     sources: MaterialResource,
     targets: MaterialResource,
     unit_volume: Optional[Union[float, int]] = None,
-    tip: Optional[str] = None, #这里应该是指定种类的
+    tip: Optional[str] = None,  # 这里应该是指定种类的
 ) -> Dict[str, Any]:
     try:
         vol_each = float(unit_volume)
@@ -156,14 +160,16 @@ def transfer_liquid(
         "sources": sources.get_resource(),
         "targets": targets.get_resource(),
         "unit_volume": unit_volume,
-        "tip": tip, 
+        "tip": tip,
     }
+
 
 def plan_transfer(pm: "ProtocolManager", **kwargs) -> Dict[str, Any]:
     """Shorthand to add a non-committing transfer to a ProtocolManager.
     Accepts the same kwargs as ProtocolManager.add_transfer.
     """
     return pm.add_transfer(**kwargs)
+
 
 class ProtocolManager:
     """Plan/track transfers and back‑solve minimum initial volumes.
@@ -199,7 +205,7 @@ class ProtocolManager:
         eligible = [t for t in self.tip_catalog if t["min_aspirate"] <= v and t["capacity"] >= v * safety]
         if not eligible:
             eligible = [t for t in self.tip_catalog if t["capacity"] >= v]
-        return min(eligible or self.tip_catalog, key=lambda t: t["capacity"]) ["name"]
+        return min(eligible or self.tip_catalog, key=lambda t: t["capacity"])["name"]
 
     def get_tip_capacity(self, tip_name: str) -> Optional[float]:
         for t in self.tip_catalog:
@@ -430,13 +436,18 @@ class LabResource:
 
     def add_tipracks(self, tiprack: List[TipRack]):
         self.tipracks.extend(tiprack)
+
     def add_plates(self, plate: List[Plate]):
         self.plates.extend(plate)
+
     def add_trash(self, trash: List[Plate]):
         self.trash.extend(trash)
+
     def get_resources_info(self) -> Dict[str, Any]:
-        tipracks = [{"name": tr.name, "max_volume": tr.children[0].tracker._tip.maximal_volume, "count": len(tr.children)} for tr in self.tipracks]
-        plates = [{"name": pl.name, "max_volume": pl.children[0].max_volume, "count": len(pl.children)} for pl in self.plates]
+        tipracks = [{"name": tr.name, "max_volume": tr.children[0].tracker._tip.maximal_volume,
+                     "count": len(tr.children)} for tr in self.tipracks]
+        plates = [{"name": pl.name, "max_volume": pl.children[0].max_volume,
+                   "count": len(pl.children)} for pl in self.plates]
         trash = [{"name": t.name, "max_volume": t.children[0].max_volume, "count": len(t.children)} for t in self.trash]
         return {
             "tipracks": tipracks,
@@ -444,15 +455,14 @@ class LabResource:
             "trash": trash
         }
 
-from typing import Dict, Any
 
-import time
 class DefaultLayout:
 
     def __init__(self, product_name: str = "PRCXI9300"):
         self.labresource = {}
         if product_name not in ["PRCXI9300", "PRCXI9320"]:
-            raise ValueError(f"Unsupported product_name: {product_name}. Only 'PRCXI9300' and 'PRCXI9320' are supported.")
+            raise ValueError(
+                f"Unsupported product_name: {product_name}. Only 'PRCXI9300' and 'PRCXI9320' are supported.")
 
         if product_name == "PRCXI9300":
             self.rows = 2
@@ -467,25 +477,40 @@ class DefaultLayout:
             self.layout = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
             self.trash_slot = 16
             self.waste_liquid_slot = 12
-            self.default_layout =  {"MatrixId":f"{time.time()}","MatrixName":f"{time.time()}","MatrixCount":16,"WorkTablets":
-            [{"Number": 1, "Code": "T1", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 2, "Code": "T2", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 3, "Code": "T3", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 4, "Code": "T4", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 5, "Code": "T5", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 6, "Code": "T6", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 7, "Code": "T7", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 8, "Code": "T8", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 9, "Code": "T9", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 10, "Code": "T10", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 11, "Code": "T11", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 12, "Code": "T12", "Material": {"uuid": "730067cf07ae43849ddf4034299030e9", "materialEnum": 0}},  # 这个设置成废液槽，用储液槽表示
-  {"Number": 13, "Code": "T13", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 14, "Code": "T14", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 15, "Code": "T15", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
-  {"Number": 16, "Code": "T16", "Material": {"uuid": "730067cf07ae43849ddf4034299030e9", "materialEnum": 0}} # 这个设置成垃圾桶，用储液槽表示
-]
-}
+            self.default_layout = {"MatrixId": f"{time.time()}", "MatrixName": f"{time.time()}", "MatrixCount": 16, "WorkTablets":
+                                   [{"Number": 1, "Code": "T1", "Material": {"uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 2, "Code": "T2", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 3, "Code": "T3", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 4, "Code": "T4", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 5, "Code": "T5", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 6, "Code": "T6", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 7, "Code": "T7", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 8, "Code": "T8", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 9, "Code": "T9", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 10, "Code": "T10", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 11, "Code": "T11", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 12, "Code": "T12", "Material": {
+                                        "uuid": "730067cf07ae43849ddf4034299030e9", "materialEnum": 0}},  # 这个设置成废液槽，用储液槽表示
+                                    {"Number": 13, "Code": "T13", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 14, "Code": "T14", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 15, "Code": "T15", "Material": {
+                                        "uuid": "57b1e4711e9e4a32b529f3132fc5931f", "materialEnum": 0}},
+                                    {"Number": 16, "Code": "T16", "Material": {
+                                        "uuid": "730067cf07ae43849ddf4034299030e9", "materialEnum": 0}}  # 这个设置成垃圾桶，用储液槽表示
+                                    ]
+                                   }
 
     def get_layout(self) -> Dict[str, Any]:
         return {
@@ -498,7 +523,7 @@ class DefaultLayout:
 
     def get_trash_slot(self) -> int:
         return self.trash_slot
-    
+
     def get_waste_liquid_slot(self) -> int:
         return self.waste_liquid_slot
 
@@ -510,26 +535,26 @@ class DefaultLayout:
         for k, v in needs.items():
             if k not in self.labresource:
                 raise ValueError(f"Material {k} not found in lab resources.")
-        
+
         # 预留位置12和16不动
         reserved_positions = {12, 16}
         available_positions = [i for i in range(1, 17) if i not in reserved_positions]
-        
+
         # 计算总需求
         total_needed = sum(needs.values())
         if total_needed > len(available_positions):
             raise ValueError(f"需要 {total_needed} 个位置，但只有 {len(available_positions)} 个可用位置（排除位置12和16）")
-        
+
         # 依次分配位置
         current_pos = 0
         for material_name, count in needs.items():
             material_uuid = self.labresource[material_name]['uuid']
             material_enum = self.labresource[material_name]['materialEnum']
-            
+
             for _ in range(count):
                 if current_pos >= len(available_positions):
                     raise ValueError("位置不足，无法分配更多物料")
-                
+
                 position = available_positions[current_pos]
                 # 找到对应的tablet并更新
                 for tablet in self.default_layout['WorkTablets']:
@@ -537,30 +562,28 @@ class DefaultLayout:
                         tablet['Material']['uuid'] = material_uuid
                         tablet['Material']['materialEnum'] = material_enum
                         break
-                
+
                 current_pos += 1
-        
+
         return self.default_layout
 
 
 if __name__ == "__main__":
     with open("prcxi_material.json", "r") as f:
         material_info = json.load(f)
-    
+
     layout = DefaultLayout("PRCXI9320")
     layout.add_lab_resource(material_info)
     plan = layout.recommend_layout({
         "10μL加长 Tip头": 2,
-        "300μL Tip头": 2, 
+        "300μL Tip头": 2,
         "96深孔板": 2,
     })
-    
-
 
 
 # if __name__ == "__main__":
 #     # ---- 资源：SUP 供液（X），中间板 R1（4 孔空），目标板 R2（4 孔空）----
-# #     sup = MaterialResource("SUP", slot=5, well=[1], liquid_id="X", volume=10000)      
+# #     sup = MaterialResource("SUP", slot=5, well=[1], liquid_id="X", volume=10000)
 # #     r1  = MaterialResource("R1",  slot=6, well=[1,2,3,4,5,6,7,8])
 # #     r2  = MaterialResource("R2",  slot=7, well=[1,2,3,4,5,6,7,8])
 
@@ -616,6 +639,3 @@ if __name__ == "__main__":
 #     #     "300μL Tip头": 2,
 #     #     "96深孔板": 2,
 #     # })
-
-
-

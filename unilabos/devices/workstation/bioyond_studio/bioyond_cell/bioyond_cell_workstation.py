@@ -21,6 +21,7 @@ from unilabos.resources.bioyond.decks import BIOYOND_YB_Deck
 from unilabos.utils.log import logger
 from unilabos.registry.registry import lab_registry
 
+
 def _iso_local_now_ms() -> str:
     # 文档要求：到毫秒 + Z，例如 2025-08-15T05:43:22.814Z
     dt = datetime.now()
@@ -39,7 +40,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
     def __init__(self, bioyond_config: dict = None, deck=None, protocol_type=None, **kwargs):
         """
         初始化 BioyondCellWorkstation
-        
+
         Args:
             bioyond_config: 从 JSON 文件加载的 bioyond 配置字典
                            包含 api_host, api_key, HTTP_host, HTTP_port 等配置
@@ -47,7 +48,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
             protocol_type: 协议类型（可选）
             **kwargs: 其他参数（如 children 等）
         """
-        
+
         # ⚠️ 配置验证：确保传入了必需的配置
         if bioyond_config is None:
             raise ValueError(
@@ -61,43 +62,43 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 "  }\n"
                 "}"
             )
-        
+
         # 验证 bioyond_config 的类型
         if not isinstance(bioyond_config, dict):
             raise ValueError(
                 f"bioyond_config 必须是字典类型，实际类型: {type(bioyond_config).__name__}"
             )
-        
+
         # 保存配置
         self.bioyond_config = bioyond_config
-        
+
         # 验证必需的配置参数
-        required_keys = ['api_host', 'api_key', 'HTTP_host', 'HTTP_port', 
-                        'material_type_mappings', 'warehouse_mapping']
+        required_keys = ['api_host', 'api_key', 'HTTP_host', 'HTTP_port',
+                         'material_type_mappings', 'warehouse_mapping']
         missing_keys = [key for key in required_keys if key not in self.bioyond_config]
         if missing_keys:
             raise ValueError(
                 f"bioyond_config 缺少必需参数: {', '.join(missing_keys)}\n"
                 f"请检查 JSON 配置文件中的 bioyond_config 字段"
             )
-        
+
         logger.info("✅ 从 JSON 配置加载 bioyond_config 成功")
         logger.info(f"   API Host: {self.bioyond_config.get('api_host')}")
         logger.info(f"   HTTP Service: {self.bioyond_config.get('HTTP_host')}:{self.bioyond_config.get('HTTP_port')}")
-        
+
         # 设置调试模式
         self.debug_mode = self.bioyond_config.get("debug_mode", False)
         self.http_service_started = self.debug_mode
         self._device_id = "bioyond_cell_workstation"  # 默认值，后续会从_ros_node获取
-        
+
         # ⚠️ 关键：设置标志位，告诉父类不要在 post_init 中启动 HTTP 服务
         # 因为子类会在这里自己启动 HTTP 服务
         self.bioyond_config["_disable_auto_http_service"] = True
         logger.info("🔧 已设置 _disable_auto_http_service 标志，防止 HTTP 服务重复启动")
-        
+
         # 调用父类初始化（传入完整的 bioyond_config）
         super().__init__(bioyond_config=self.bioyond_config, deck=deck, **kwargs)
-        
+
         # 更新奔耀端的报送 IP 地址
         self.update_push_ip()
         logger.info("已更新奔耀端推送 IP 地址")
@@ -106,12 +107,12 @@ class BioyondCellWorkstation(BioyondWorkstation):
         t = threading.Thread(target=self._start_http_service, daemon=True, name="unilab_http")
         t.start()
         logger.info("HTTP 服务线程已启动")
-        
+
         # 初始化订单报送事件
         self.order_finish_event = threading.Event()
         self.last_order_status = None
         self.last_order_code = None
-        
+
         logger.info(f"✅ BioyondCellWorkstation 初始化完成 (debug_mode={self.debug_mode})")
 
     @property
@@ -131,13 +132,13 @@ class BioyondCellWorkstation(BioyondWorkstation):
             self.http_service_started = True
             logger.info(f"WorkstationHTTPService 成功启动: {host}:{port}")
             while True:
-                time.sleep(1) #一直挂着，直到进程退出
+                time.sleep(1)  # 一直挂着，直到进程退出
         except Exception as e:
             self.http_service_started = False
             logger.error(f"启动 WorkstationHTTPService 失败: {e}", exc_info=True)
 
-
     # http报送服务，返回数据部分
+
     def process_step_finish_report(self, report_request):
         stepId = report_request.data.get("stepId")
         logger.info(f"步骤完成: stepId: {stepId}, stepName:{report_request.data.get('stepName')}")
@@ -150,11 +151,12 @@ class BioyondCellWorkstation(BioyondWorkstation):
     def process_order_finish_report(self, report_request, used_materials=None):
         order_code = report_request.data.get("orderCode")
         status = report_request.data.get("status")
-        
+
         # 🔍 详细调试日志
         logger.info(f"[DEBUG] ========== 收到 order_finish 报送 ==========")
         logger.info(f"[DEBUG] 报送的 orderCode: '{order_code}' (type: {type(order_code).__name__})")
-        logger.info(f"[DEBUG] 当前等待的 last_order_code: '{self.last_order_code}' (type: {type(self.last_order_code).__name__})")
+        logger.info(
+            f"[DEBUG] 当前等待的 last_order_code: '{self.last_order_code}' (type: {type(self.last_order_code).__name__})")
         logger.info(f"[DEBUG] 报送状态: {status}")
         logger.info(f"[DEBUG] orderCode 是否匹配: {self.last_order_code == order_code}")
         logger.info(f"[DEBUG] Event 当前状态 (触发前): is_set={self.order_finish_event.is_set()}")
@@ -163,7 +165,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
         # 保存完整报文
         self.last_order_report = report_request.data
-        
+
         # 如果是当前等待的订单，触发事件
         if self.last_order_code == order_code:
             logger.info(f"[DEBUG] ✅ orderCode 匹配！触发 order_finish_event")
@@ -173,7 +175,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
             logger.warning(f"[DEBUG] ❌ orderCode 不匹配，不触发 event")
             logger.warning(f"[DEBUG]    期望: '{self.last_order_code}'")
             logger.warning(f"[DEBUG]    实际: '{order_code}'")
-        
+
         logger.info(f"[DEBUG] ========================================")
         return {"status": "received"}
 
@@ -225,12 +227,12 @@ class BioyondCellWorkstation(BioyondWorkstation):
     def wait_for_order_finish_polling(self, order_code: str, timeout: int = 36000, poll_interval: float = 0.5) -> Dict[str, Any]:
         """
         等待指定 orderCode 的 /report/order_finish 报送（非阻塞轮询版本）。
-        
+
         与 wait_for_order_finish 的区别：
         - 使用轮询而非阻塞等待，每隔 poll_interval 秒检查一次
         - 允许 ROS2 在等待期间处理 feedback 消息
         - 适用于长时间运行的 ROS2 Action
-        
+
         Args:
             order_code: 任务编号
             timeout: 超时时间（秒）
@@ -255,18 +257,18 @@ class BioyondCellWorkstation(BioyondWorkstation):
         while not self.order_finish_event.is_set():
             poll_count += 1
             elapsed = time.time() - start_time
-            
+
             # 每 10 次轮询（约 5 秒）输出一次状态
             if poll_count % 10 == 0:
                 logger.info(f"[轮询模式] [DEBUG] 轮询中... 已等待 {elapsed:.1f}s (第{poll_count}次检查)")
                 logger.info(f"[轮询模式] [DEBUG] Event.is_set() = {self.order_finish_event.is_set()}")
-            
+
             # 检查是否超时
             if elapsed > timeout:
                 logger.error(f"[轮询模式] 等待任务超时: orderCode={order_code}")
                 logger.error(f"[轮询模式] [DEBUG] 总共轮询了 {poll_count} 次，耗时 {elapsed:.1f}s")
                 return {"status": "timeout", "orderCode": order_code}
-            
+
             # 短暂 sleep，让出控制权给 ROS2 处理 feedback
             time.sleep(poll_interval)
 
@@ -275,7 +277,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
         report = self.last_order_report or {}
         report_code = report.get("orderCode")
         status = str(report.get("status", ""))
-        
+
         logger.info(f"[轮询模式] [DEBUG] 报送数据: orderCode='{report_code}', status={status}")
 
         # 报送数据匹配验证
@@ -297,13 +299,12 @@ class BioyondCellWorkstation(BioyondWorkstation):
             logger.warning(f"[轮询模式] 任务未知状态 ({status}) (orderCode={order_code})")
             return {"status": f"unknown_{status}", "report": report}
 
-
     def get_material_info(self, material_id: str) -> Dict[str, Any]:
         """查询物料详细信息（物料详情接口）
-        
+
         Args:
             material_id: 物料 ID (GUID)
-            
+
         Returns:
             物料详情，包含 name, typeName, locations 等
         """
@@ -312,10 +313,10 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
     def _process_order_reagents(self, report: Dict[str, Any]) -> Dict[str, Any]:
         """处理订单完成报文中的试剂数据，计算质量比
-        
+
         Args:
             report: 订单完成推送的 report 数据
-            
+
         Returns:
             {
                 "real_mass_ratio": {"试剂A": 0.6, "试剂B": 0.4},
@@ -324,10 +325,10 @@ class BioyondCellWorkstation(BioyondWorkstation):
             }
         """
         used_materials = report.get("usedMaterials", [])
-        
+
         # 1. 筛选试剂（typemode="2"，注意是小写且是字符串）
         reagents = [m for m in used_materials if str(m.get("typemode")) == "2"]
-        
+
         if not reagents:
             logger.warning("订单完成报文中没有试剂（typeMode=2）")
             return {
@@ -335,20 +336,20 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 "target_mass_ratio": {},
                 "reagent_details": []
             }
-        
+
         # 2. 查询试剂名称
         reagent_data = []
         for reagent in reagents:
             material_id = reagent.get("materialId")
             if not material_id:
                 continue
-                
+
             try:
                 info = self.get_material_info(material_id)
                 name = info.get("name", f"Unknown_{material_id[:8]}")
                 real_qty = float(reagent.get("realQuantity", 0.0))
                 used_qty = float(reagent.get("usedQuantity", 0.0))
-                
+
                 reagent_data.append({
                     "name": name,
                     "material_id": material_id,
@@ -359,14 +360,14 @@ class BioyondCellWorkstation(BioyondWorkstation):
             except Exception as e:
                 logger.error(f"查询物料信息失败: {material_id}, {e}")
                 continue
-        
+
         if not reagent_data:
             return {
                 "real_mass_ratio": {},
                 "target_mass_ratio": {},
                 "reagent_details": []
             }
-        
+
         # 3. 计算质量比
         def calculate_mass_ratio(items: List[Dict], key: str) -> Dict[str, float]:
             total = sum(item[key] for item in items)
@@ -374,21 +375,21 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 logger.warning(f"总质量为0，无法计算{key}质量比")
                 return {item["name"]: 0.0 for item in items}
             return {item["name"]: round(item[key] / total, 4) for item in items}
-        
+
         real_mass_ratio = calculate_mass_ratio(reagent_data, "real_quantity")
         target_mass_ratio = calculate_mass_ratio(reagent_data, "used_quantity")
-        
+
         logger.info(f"真实质量比: {real_mass_ratio}")
         logger.info(f"目标质量比: {target_mass_ratio}")
-        
+
         return {
             "real_mass_ratio": real_mass_ratio,
             "target_mass_ratio": target_mass_ratio,
             "reagent_details": reagent_data
         }
 
-
     # -------------------- 基础HTTP封装 --------------------
+
     def _url(self, path: str) -> str:
         return f"{self.bioyond_config['api_host'].rstrip('/')}/{path.lstrip('/')}"
 
@@ -404,17 +405,17 @@ class BioyondCellWorkstation(BioyondWorkstation):
         if self.debug_mode:
             # 模拟返回，不发真实请求
             logger.info(f"[DEBUG] POST {path} with payload={payload}")
-            
+
             return {"debug": True, "url": self._url(path), "payload": payload, "status": "ok"}
 
         try:
             logger.info(json.dumps(payload, ensure_ascii=False))
             response = requests.post(
-                self._url(path), 
+                self._url(path),
                 json=payload,
                 timeout=self.bioyond_config.get("timeout", 30),
                 headers={"Content-Type": "application/json"}
-            ) # 拼接网址+post bioyond接口
+            )  # 拼接网址+post bioyond接口
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -478,7 +479,6 @@ class BioyondCellWorkstation(BioyondWorkstation):
         items = [{"materialId": "...", "locationId": "..."}, ...]
         """
         return self._post_lims("/api/lims/storage/batch-inbound", items)
-
 
     def auto_feeding4to3(
         self,
@@ -626,7 +626,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
         print(json.dumps(result, indent=2, ensure_ascii=False))
         print("="*60 + "\n")
         return result
-    
+
     def auto_batch_outbound_from_xlsx(self, xlsx_path: str) -> Dict[str, Any]:
         """
         3.31 自动化下料（Excel -> JSON -> POST /api/lims/storage/auto-batch-out-bound）
@@ -647,11 +647,11 @@ class BioyondCellWorkstation(BioyondWorkstation):
             return None
 
         c_loc = pick(["locationId", "库位ID", "库位Id", "库位id"])
-        c_wh  = pick(["warehouseId", "仓库ID", "仓库Id", "仓库id"])
+        c_wh = pick(["warehouseId", "仓库ID", "仓库Id", "仓库id"])
         c_qty = pick(["数量", "quantity"])
-        c_x   = pick(["x", "X", "posX", "坐标X"])
-        c_y   = pick(["y", "Y", "posY", "坐标Y"])
-        c_z   = pick(["z", "Z", "posZ", "坐标Z"])
+        c_x = pick(["x", "X", "posX", "坐标X"])
+        c_y = pick(["y", "Y", "posY", "坐标Y"])
+        c_z = pick(["z", "Z", "posZ", "坐标Z"])
 
         required = [c_loc, c_wh, c_qty, c_x, c_y, c_z]
         if any(c is None for c in required):
@@ -659,7 +659,8 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
         def as_int(v, d=0):
             try:
-                if pd.isna(v): return d
+                if pd.isna(v):
+                    return d
                 return int(v)
             except Exception:
                 try:
@@ -669,13 +670,15 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
         def as_float(v, d=0.0):
             try:
-                if pd.isna(v): return d
+                if pd.isna(v):
+                    return d
                 return float(v)
             except Exception:
                 return d
 
         def as_str(v, d=""):
-            if v is None or (isinstance(v, float) and pd.isna(v)): return d
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return d
             s = str(v).strip()
             return s if s else d
 
@@ -704,7 +707,8 @@ class BioyondCellWorkstation(BioyondWorkstation):
         - totalMass 自动计算为所有物料质量之和
         - createTime 缺失或为空时自动填充为当前日期（YYYY/M/D）
         """
-        default_path = Path("D:\\UniLab\\Uni-Lab-OS\\unilabos\\devices\\workstation\\bioyond_studio\\bioyond_cell\\2025122301.xlsx")
+        default_path = Path(
+            "D:\\UniLab\\Uni-Lab-OS\\unilabos\\devices\\workstation\\bioyond_studio\\bioyond_cell\\2025122301.xlsx")
         path = Path(xlsx_path) if xlsx_path else default_path
         print(f"[create_orders] 使用 Excel 路径: {path}")
         if path != default_path:
@@ -840,36 +844,36 @@ class BioyondCellWorkstation(BioyondWorkstation):
         print(f"[create_orders] 即将提交订单数量: {len(orders)}")
         response = self._post_lims("/api/lims/order/orders", orders)
         print(f"[create_orders] 接口返回: {response}")
-        
+
         # 提取所有返回的 orderCode
         data_list = response.get("data", [])
         if not data_list:
             logger.error("创建订单未返回有效数据！")
             return response
-        
+
         # 收集所有 orderCode
         order_codes = []
         for order_item in data_list:
             code = order_item.get("orderCode")
             if code:
                 order_codes.append(code)
-        
+
         if not order_codes:
             logger.error("未找到任何有效的 orderCode！")
             return response
-        
+
         print(f"[create_orders] 等待 {len(order_codes)} 个订单完成: {order_codes}")
-        
+
         # 等待所有订单完成并收集报文
         all_reports = []
         for idx, order_code in enumerate(order_codes, 1):
             print(f"[create_orders] 正在等待第 {idx}/{len(order_codes)} 个订单: {order_code}")
             result = self.wait_for_order_finish(order_code)
-            
+
             # 提取报文数据
             if result.get("status") == "success":
                 report = result.get("report", {})
-                
+
                 # [新增] 处理试剂数据，计算质量比
                 try:
                     mass_ratios = self._process_order_reagents(report)
@@ -883,7 +887,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
                         "reagent_details": [],
                         "error": str(e)
                     }
-                
+
                 all_reports.append(report)
                 print(f"[create_orders] ✓ 订单 {order_code} 完成")
             else:
@@ -894,10 +898,10 @@ class BioyondCellWorkstation(BioyondWorkstation):
                     "status": result.get("status"),
                     "error": result.get("message", "未知错误")
                 })
-        
+
         print(f"[create_orders] 所有订单已完成，共收集 {len(all_reports)} 个报文")
         print("实验记录本========================create_orders========================")
-        
+
         # 返回所有订单的完成报文
         final_result = {
             "status": "all_completed",
@@ -905,12 +909,12 @@ class BioyondCellWorkstation(BioyondWorkstation):
             "reports": all_reports,
             "original_response": response
         }
-        
+
         print(f"返回报文数量: {len(all_reports)}")
         for i, report in enumerate(all_reports, 1):
             print(f"报文 {i}: orderCode={report.get('orderCode', 'N/A')}, status={report.get('status', 'N/A')}")
         print("========================")
-        
+
         return final_result
 
     def create_orders_v2(self, xlsx_path: str) -> Dict[str, Any]:
@@ -922,7 +926,8 @@ class BioyondCellWorkstation(BioyondWorkstation):
         - totalMass 自动计算为所有物料质量之和
         - createTime 缺失或为空时自动填充为当前日期（YYYY/M/D）
         """
-        default_path = Path("D:\\UniLab\\Uni-Lab-OS\\unilabos\\devices\\workstation\\bioyond_studio\\bioyond_cell\\2025122301.xlsx")
+        default_path = Path(
+            "D:\\UniLab\\Uni-Lab-OS\\unilabos\\devices\\workstation\\bioyond_studio\\bioyond_cell\\2025122301.xlsx")
         path = Path(xlsx_path) if xlsx_path else default_path
         print(f"[create_orders_v2] 使用 Excel 路径: {path}")
         if path != default_path:
@@ -1058,32 +1063,32 @@ class BioyondCellWorkstation(BioyondWorkstation):
         print(f"[create_orders_v2] 即将提交订单数量: {len(orders)}")
         response = self._post_lims("/api/lims/order/orders", orders)
         print(f"[create_orders_v2] 接口返回: {response}")
-        
+
         # 提取所有返回的 orderCode
         data_list = response.get("data", [])
         if not data_list:
             logger.error("创建订单未返回有效数据！")
             return response
-        
+
         # 收集所有 orderCode
         order_codes = []
         for order_item in data_list:
             code = order_item.get("orderCode")
             if code:
                 order_codes.append(code)
-        
+
         if not order_codes:
             logger.error("未找到任何有效的 orderCode！")
             return response
-        
+
         print(f"[create_orders_v2] 等待 {len(order_codes)} 个订单完成: {order_codes}")
-        
+
         # ========== 步骤1: 等待所有订单完成并收集报文（不计算质量比）==========
         all_reports = []
         for idx, order_code in enumerate(order_codes, 1):
             print(f"[create_orders_v2] 正在等待第 {idx}/{len(order_codes)} 个订单: {order_code}")
             result = self.wait_for_order_finish(order_code)
-            
+
             # 提取报文数据
             if result.get("status") == "success":
                 report = result.get("report", {})
@@ -1097,17 +1102,17 @@ class BioyondCellWorkstation(BioyondWorkstation):
                     "status": result.get("status"),
                     "error": result.get("message", "未知错误")
                 })
-        
+
         print(f"[create_orders_v2] 所有订单已完成，共收集 {len(all_reports)} 个报文")
-        
+
         # ========== 步骤2: 统一计算所有订单的质量比 ==========
         print(f"[create_orders_v2] 开始统一计算 {len(all_reports)} 个订单的质量比...")
         all_mass_ratios = []  # 存储所有订单的质量比，与reports顺序一致
-        
+
         for idx, report in enumerate(all_reports, 1):
             order_code = report.get("orderCode", "N/A")
             print(f"[create_orders_v2] 计算第 {idx}/{len(all_reports)} 个订单 {order_code} 的质量比...")
-            
+
             # 只为成功完成的订单计算质量比
             if "error" not in report:
                 try:
@@ -1138,10 +1143,10 @@ class BioyondCellWorkstation(BioyondWorkstation):
                     "target_mass_ratio": {},
                     "error": "订单未成功完成"
                 })
-        
+
         print(f"[create_orders_v2] 质量比计算完成")
         print("实验记录本========================create_orders_v2========================")
-        
+
         # 返回所有订单的完成报文
         final_result = {
             "status": "all_completed",
@@ -1151,26 +1156,26 @@ class BioyondCellWorkstation(BioyondWorkstation):
             "mass_ratios": all_mass_ratios,  # 所有质量比统一放在这里
             "original_response": response
         }
-        
+
         print(f"返回报文数量: {len(all_reports)}")
         for i, report in enumerate(all_reports, 1):
             print(f"报文 {i}: orderCode={report.get('orderCode', 'N/A')}, status={report.get('status', 'N/A')}")
         print("========================")
-        
+
         return final_result
 
     # 2.7 启动调度
     def scheduler_start(self) -> Dict[str, Any]:
         return self._post_lims("/api/lims/scheduler/start")
     # 3.10 停止调度
-    def scheduler_stop(self) -> Dict[str, Any]:
 
+    def scheduler_stop(self) -> Dict[str, Any]:
         """
         停止调度 (3.10)
         请求体只包含 apiKey 和 requestTime
         """
         return self._post_lims("/api/lims/scheduler/stop")
-         
+
     # 2.9 继续调度
     def scheduler_continue(self) -> Dict[str, Any]:
         """
@@ -1178,6 +1183,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
         请求体只包含 apiKey 和 requestTime
         """
         return self._post_lims("/api/lims/scheduler/continue")
+
     def scheduler_reset(self) -> Dict[str, Any]:
         """
         复位调度 (2.11)
@@ -1233,25 +1239,25 @@ class BioyondCellWorkstation(BioyondWorkstation):
     ) -> Dict[str, Any]:
         """
         组合函数：先启动调度，然后执行自动化上料
-        
+
         此函数简化了工作流操作，将两个有顺序依赖的操作组合在一起：
         1. 启动调度（scheduler_start）
         2. 自动化上料（auto_feeding4to3）
-        
+
         参数与 auto_feeding4to3 完全相同，支持 Excel 和手动参数两种模式
-        
+
         Returns:
             包含调度启动结果和上料结果的字典
         """
         logger.info("=" * 60)
         logger.info("开始执行组合操作：启动调度 + 自动化上料")
         logger.info("=" * 60)
-        
+
         # 步骤1: 启动调度
         logger.info("【步骤 1/2】启动调度...")
         scheduler_result = self.scheduler_start()
         logger.info(f"调度启动结果: {scheduler_result}")
-        
+
         # 检查调度是否启动成功
         if scheduler_result.get("code") != 1:
             logger.error(f"调度启动失败: {scheduler_result}")
@@ -1261,9 +1267,9 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 "scheduler_result": scheduler_result,
                 "error": "调度启动失败"
             }
-        
+
         logger.info("✓ 调度启动成功")
-        
+
         # 步骤2: 执行自动化上料
         logger.info("【步骤 2/2】执行自动化上料...")
         feeding_result = self.auto_feeding4to3(
@@ -1280,23 +1286,23 @@ class BioyondCellWorkstation(BioyondWorkstation):
             WH4_x5_y2_z1_10_materialName=WH4_x5_y2_z1_10_materialName, WH4_x5_y2_z1_10_quantity=WH4_x5_y2_z1_10_quantity,
             WH4_x1_y3_z1_11_materialName=WH4_x1_y3_z1_11_materialName, WH4_x1_y3_z1_11_quantity=WH4_x1_y3_z1_11_quantity,
             WH4_x2_y3_z1_12_materialName=WH4_x2_y3_z1_12_materialName, WH4_x2_y3_z1_12_quantity=WH4_x2_y3_z1_12_quantity,
-            WH4_x1_y1_z2_1_materialName=WH4_x1_y1_z2_1_materialName, WH4_x1_y1_z2_1_quantity=WH4_x1_y1_z2_1_quantity, 
+            WH4_x1_y1_z2_1_materialName=WH4_x1_y1_z2_1_materialName, WH4_x1_y1_z2_1_quantity=WH4_x1_y1_z2_1_quantity,
             WH4_x1_y1_z2_1_materialType=WH4_x1_y1_z2_1_materialType, WH4_x1_y1_z2_1_targetWH=WH4_x1_y1_z2_1_targetWH,
-            WH4_x2_y1_z2_2_materialName=WH4_x2_y1_z2_2_materialName, WH4_x2_y1_z2_2_quantity=WH4_x2_y1_z2_2_quantity, 
+            WH4_x2_y1_z2_2_materialName=WH4_x2_y1_z2_2_materialName, WH4_x2_y1_z2_2_quantity=WH4_x2_y1_z2_2_quantity,
             WH4_x2_y1_z2_2_materialType=WH4_x2_y1_z2_2_materialType, WH4_x2_y1_z2_2_targetWH=WH4_x2_y1_z2_2_targetWH,
-            WH4_x3_y1_z2_3_materialName=WH4_x3_y1_z2_3_materialName, WH4_x3_y1_z2_3_quantity=WH4_x3_y1_z2_3_quantity, 
+            WH4_x3_y1_z2_3_materialName=WH4_x3_y1_z2_3_materialName, WH4_x3_y1_z2_3_quantity=WH4_x3_y1_z2_3_quantity,
             WH4_x3_y1_z2_3_materialType=WH4_x3_y1_z2_3_materialType, WH4_x3_y1_z2_3_targetWH=WH4_x3_y1_z2_3_targetWH,
-            WH4_x1_y2_z2_4_materialName=WH4_x1_y2_z2_4_materialName, WH4_x1_y2_z2_4_quantity=WH4_x1_y2_z2_4_quantity, 
+            WH4_x1_y2_z2_4_materialName=WH4_x1_y2_z2_4_materialName, WH4_x1_y2_z2_4_quantity=WH4_x1_y2_z2_4_quantity,
             WH4_x1_y2_z2_4_materialType=WH4_x1_y2_z2_4_materialType, WH4_x1_y2_z2_4_targetWH=WH4_x1_y2_z2_4_targetWH,
-            WH4_x2_y2_z2_5_materialName=WH4_x2_y2_z2_5_materialName, WH4_x2_y2_z2_5_quantity=WH4_x2_y2_z2_5_quantity, 
+            WH4_x2_y2_z2_5_materialName=WH4_x2_y2_z2_5_materialName, WH4_x2_y2_z2_5_quantity=WH4_x2_y2_z2_5_quantity,
             WH4_x2_y2_z2_5_materialType=WH4_x2_y2_z2_5_materialType, WH4_x2_y2_z2_5_targetWH=WH4_x2_y2_z2_5_targetWH,
-            WH4_x3_y2_z2_6_materialName=WH4_x3_y2_z2_6_materialName, WH4_x3_y2_z2_6_quantity=WH4_x3_y2_z2_6_quantity, 
+            WH4_x3_y2_z2_6_materialName=WH4_x3_y2_z2_6_materialName, WH4_x3_y2_z2_6_quantity=WH4_x3_y2_z2_6_quantity,
             WH4_x3_y2_z2_6_materialType=WH4_x3_y2_z2_6_materialType, WH4_x3_y2_z2_6_targetWH=WH4_x3_y2_z2_6_targetWH,
-            WH4_x1_y3_z2_7_materialName=WH4_x1_y3_z2_7_materialName, WH4_x1_y3_z2_7_quantity=WH4_x1_y3_z2_7_quantity, 
+            WH4_x1_y3_z2_7_materialName=WH4_x1_y3_z2_7_materialName, WH4_x1_y3_z2_7_quantity=WH4_x1_y3_z2_7_quantity,
             WH4_x1_y3_z2_7_materialType=WH4_x1_y3_z2_7_materialType, WH4_x1_y3_z2_7_targetWH=WH4_x1_y3_z2_7_targetWH,
-            WH4_x2_y3_z2_8_materialName=WH4_x2_y3_z2_8_materialName, WH4_x2_y3_z2_8_quantity=WH4_x2_y3_z2_8_quantity, 
+            WH4_x2_y3_z2_8_materialName=WH4_x2_y3_z2_8_materialName, WH4_x2_y3_z2_8_quantity=WH4_x2_y3_z2_8_quantity,
             WH4_x2_y3_z2_8_materialType=WH4_x2_y3_z2_8_materialType, WH4_x2_y3_z2_8_targetWH=WH4_x2_y3_z2_8_targetWH,
-            WH4_x3_y3_z2_9_materialName=WH4_x3_y3_z2_9_materialName, WH4_x3_y3_z2_9_quantity=WH4_x3_y3_z2_9_quantity, 
+            WH4_x3_y3_z2_9_materialName=WH4_x3_y3_z2_9_materialName, WH4_x3_y3_z2_9_quantity=WH4_x3_y3_z2_9_quantity,
             WH4_x3_y3_z2_9_materialType=WH4_x3_y3_z2_9_materialType, WH4_x3_y3_z2_9_targetWH=WH4_x3_y3_z2_9_targetWH,
             WH3_x1_y1_z3_1_materialType=WH3_x1_y1_z3_1_materialType, WH3_x1_y1_z3_1_materialId=WH3_x1_y1_z3_1_materialId, WH3_x1_y1_z3_1_quantity=WH3_x1_y1_z3_1_quantity,
             WH3_x2_y1_z3_2_materialType=WH3_x2_y1_z3_2_materialType, WH3_x2_y1_z3_2_materialId=WH3_x2_y1_z3_2_materialId, WH3_x2_y1_z3_2_quantity=WH3_x2_y1_z3_2_quantity,
@@ -1314,17 +1320,16 @@ class BioyondCellWorkstation(BioyondWorkstation):
             WH3_x2_y5_z3_14_materialType=WH3_x2_y5_z3_14_materialType, WH3_x2_y5_z3_14_materialId=WH3_x2_y5_z3_14_materialId, WH3_x2_y5_z3_14_quantity=WH3_x2_y5_z3_14_quantity,
             WH3_x3_y5_z3_15_materialType=WH3_x3_y5_z3_15_materialType, WH3_x3_y5_z3_15_materialId=WH3_x3_y5_z3_15_materialId, WH3_x3_y5_z3_15_quantity=WH3_x3_y5_z3_15_quantity,
         )
-        
+
         logger.info("=" * 60)
         logger.info("组合操作完成")
         logger.info("=" * 60)
-        
+
         return {
             "success": True,
             "scheduler_result": scheduler_result,
             "feeding_result": feeding_result
         }
-
 
     def scheduler_start_and_auto_feeding_v2(
         self,
@@ -1374,28 +1379,28 @@ class BioyondCellWorkstation(BioyondWorkstation):
     ) -> Dict[str, Any]:
         """
         组合函数 V2 版本（测试版）：先启动调度，然后执行自动化上料
-        
+
         ⚠️ 这是测试版本，使用非阻塞轮询等待方式，避免 ROS2 Action feedback publisher 失效
-        
+
         与 V1 的区别：
         - 使用 wait_for_order_finish_polling 替代原有的阻塞等待
         - 允许 ROS2 在等待期间正常发布 feedback 消息
         - 适用于长时间运行的任务
-        
+
         参数与 scheduler_start_and_auto_feeding 完全相同
-        
+
         Returns:
             包含调度启动结果和上料结果的字典
         """
         logger.info("=" * 60)
         logger.info("[V2测试版本] 开始执行组合操作：启动调度 + 自动化上料")
         logger.info("=" * 60)
-        
+
         # 步骤1: 启动调度
         logger.info("【步骤 1/2】启动调度...")
         scheduler_result = self.scheduler_start()
         logger.info(f"调度启动结果: {scheduler_result}")
-        
+
         # 检查调度是否启动成功
         if scheduler_result.get("code") != 1:
             logger.error(f"调度启动失败: {scheduler_result}")
@@ -1405,16 +1410,16 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 "scheduler_result": scheduler_result,
                 "error": "调度启动失败"
             }
-        
+
         logger.info("✓ 调度启动成功")
-        
+
         # 步骤2: 执行自动化上料（这里会调用 auto_feeding4to3，内部使用轮询等待）
         logger.info("【步骤 2/2】执行自动化上料...")
-        
+
         # 临时替换 wait_for_order_finish 为轮询版本
         original_wait_func = self.wait_for_order_finish
         self.wait_for_order_finish = self.wait_for_order_finish_polling
-        
+
         try:
             feeding_result = self.auto_feeding4to3(
                 xlsx_path=xlsx_path,
@@ -1430,23 +1435,23 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 WH4_x5_y2_z1_10_materialName=WH4_x5_y2_z1_10_materialName, WH4_x5_y2_z1_10_quantity=WH4_x5_y2_z1_10_quantity,
                 WH4_x1_y3_z1_11_materialName=WH4_x1_y3_z1_11_materialName, WH4_x1_y3_z1_11_quantity=WH4_x1_y3_z1_11_quantity,
                 WH4_x2_y3_z1_12_materialName=WH4_x2_y3_z1_12_materialName, WH4_x2_y3_z1_12_quantity=WH4_x2_y3_z1_12_quantity,
-                WH4_x1_y1_z2_1_materialName=WH4_x1_y1_z2_1_materialName, WH4_x1_y1_z2_1_quantity=WH4_x1_y1_z2_1_quantity, 
+                WH4_x1_y1_z2_1_materialName=WH4_x1_y1_z2_1_materialName, WH4_x1_y1_z2_1_quantity=WH4_x1_y1_z2_1_quantity,
                 WH4_x1_y1_z2_1_materialType=WH4_x1_y1_z2_1_materialType, WH4_x1_y1_z2_1_targetWH=WH4_x1_y1_z2_1_targetWH,
-                WH4_x2_y1_z2_2_materialName=WH4_x2_y1_z2_2_materialName, WH4_x2_y1_z2_2_quantity=WH4_x2_y1_z2_2_quantity, 
+                WH4_x2_y1_z2_2_materialName=WH4_x2_y1_z2_2_materialName, WH4_x2_y1_z2_2_quantity=WH4_x2_y1_z2_2_quantity,
                 WH4_x2_y1_z2_2_materialType=WH4_x2_y1_z2_2_materialType, WH4_x2_y1_z2_2_targetWH=WH4_x2_y1_z2_2_targetWH,
-                WH4_x3_y1_z2_3_materialName=WH4_x3_y1_z2_3_materialName, WH4_x3_y1_z2_3_quantity=WH4_x3_y1_z2_3_quantity, 
+                WH4_x3_y1_z2_3_materialName=WH4_x3_y1_z2_3_materialName, WH4_x3_y1_z2_3_quantity=WH4_x3_y1_z2_3_quantity,
                 WH4_x3_y1_z2_3_materialType=WH4_x3_y1_z2_3_materialType, WH4_x3_y1_z2_3_targetWH=WH4_x3_y1_z2_3_targetWH,
-                WH4_x1_y2_z2_4_materialName=WH4_x1_y2_z2_4_materialName, WH4_x1_y2_z2_4_quantity=WH4_x1_y2_z2_4_quantity, 
+                WH4_x1_y2_z2_4_materialName=WH4_x1_y2_z2_4_materialName, WH4_x1_y2_z2_4_quantity=WH4_x1_y2_z2_4_quantity,
                 WH4_x1_y2_z2_4_materialType=WH4_x1_y2_z2_4_materialType, WH4_x1_y2_z2_4_targetWH=WH4_x1_y2_z2_4_targetWH,
-                WH4_x2_y2_z2_5_materialName=WH4_x2_y2_z2_5_materialName, WH4_x2_y2_z2_5_quantity=WH4_x2_y2_z2_5_quantity, 
+                WH4_x2_y2_z2_5_materialName=WH4_x2_y2_z2_5_materialName, WH4_x2_y2_z2_5_quantity=WH4_x2_y2_z2_5_quantity,
                 WH4_x2_y2_z2_5_materialType=WH4_x2_y2_z2_5_materialType, WH4_x2_y2_z2_5_targetWH=WH4_x2_y2_z2_5_targetWH,
-                WH4_x3_y2_z2_6_materialName=WH4_x3_y2_z2_6_materialName, WH4_x3_y2_z2_6_quantity=WH4_x3_y2_z2_6_quantity, 
+                WH4_x3_y2_z2_6_materialName=WH4_x3_y2_z2_6_materialName, WH4_x3_y2_z2_6_quantity=WH4_x3_y2_z2_6_quantity,
                 WH4_x3_y2_z2_6_materialType=WH4_x3_y2_z2_6_materialType, WH4_x3_y2_z2_6_targetWH=WH4_x3_y2_z2_6_targetWH,
-                WH4_x1_y3_z2_7_materialName=WH4_x1_y3_z2_7_materialName, WH4_x1_y3_z2_7_quantity=WH4_x1_y3_z2_7_quantity, 
+                WH4_x1_y3_z2_7_materialName=WH4_x1_y3_z2_7_materialName, WH4_x1_y3_z2_7_quantity=WH4_x1_y3_z2_7_quantity,
                 WH4_x1_y3_z2_7_materialType=WH4_x1_y3_z2_7_materialType, WH4_x1_y3_z2_7_targetWH=WH4_x1_y3_z2_7_targetWH,
-                WH4_x2_y3_z2_8_materialName=WH4_x2_y3_z2_8_materialName, WH4_x2_y3_z2_8_quantity=WH4_x2_y3_z2_8_quantity, 
+                WH4_x2_y3_z2_8_materialName=WH4_x2_y3_z2_8_materialName, WH4_x2_y3_z2_8_quantity=WH4_x2_y3_z2_8_quantity,
                 WH4_x2_y3_z2_8_materialType=WH4_x2_y3_z2_8_materialType, WH4_x2_y3_z2_8_targetWH=WH4_x2_y3_z2_8_targetWH,
-                WH4_x3_y3_z2_9_materialName=WH4_x3_y3_z2_9_materialName, WH4_x3_y3_z2_9_quantity=WH4_x3_y3_z2_9_quantity, 
+                WH4_x3_y3_z2_9_materialName=WH4_x3_y3_z2_9_materialName, WH4_x3_y3_z2_9_quantity=WH4_x3_y3_z2_9_quantity,
                 WH4_x3_y3_z2_9_materialType=WH4_x3_y3_z2_9_materialType, WH4_x3_y3_z2_9_targetWH=WH4_x3_y3_z2_9_targetWH,
                 WH3_x1_y1_z3_1_materialType=WH3_x1_y1_z3_1_materialType, WH3_x1_y1_z3_1_materialId=WH3_x1_y1_z3_1_materialId, WH3_x1_y1_z3_1_quantity=WH3_x1_y1_z3_1_quantity,
                 WH3_x2_y1_z3_2_materialType=WH3_x2_y1_z3_2_materialType, WH3_x2_y1_z3_2_materialId=WH3_x2_y1_z3_2_materialId, WH3_x2_y1_z3_2_quantity=WH3_x2_y1_z3_2_quantity,
@@ -1467,11 +1472,11 @@ class BioyondCellWorkstation(BioyondWorkstation):
         finally:
             # 恢复原有函数
             self.wait_for_order_finish = original_wait_func
-        
+
         logger.info("=" * 60)
         logger.info("[V2测试版本] 组合操作完成")
         logger.info("=" * 60)
-        
+
         return {
             "success": True,
             "scheduler_result": scheduler_result,
@@ -1479,8 +1484,8 @@ class BioyondCellWorkstation(BioyondWorkstation):
             "version": "v2_polling"
         }
 
-
     # 2.24 物料变更推送
+
     def report_material_change(self, material_obj: Dict[str, Any]) -> Dict[str, Any]:
         """
         material_obj 按 2.24 的裸对象格式（包含 id/typeName/locations/detail 等）
@@ -1489,8 +1494,8 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
     # 2.32 3-2-1 物料转运
     def transfer_3_to_2_to_1(self,
-                            #  source_wh_id: Optional[str] = None,
-                            source_wh_id: Optional[str] = '3a19debc-84b4-0359-e2d4-b3beea49348b',
+                             #  source_wh_id: Optional[str] = None,
+                             source_wh_id: Optional[str] = '3a19debc-84b4-0359-e2d4-b3beea49348b',
                              source_x: int = 1, source_y: int = 1, source_z: int = 1) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "sourcePosX": source_x, "sourcePosY": source_y, "sourcePosZ": source_z
@@ -1510,26 +1515,26 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
     def transfer_3_to_2(self,
                         source_wh_id: Optional[str] = '3a19debc-84b4-0359-e2d4-b3beea49348b',
-                        source_x: int = 1, 
-                        source_y: int = 1, 
+                        source_x: int = 1,
+                        source_y: int = 1,
                         source_z: int = 1) -> Dict[str, Any]:
         """
         2.34 3-2 物料转运接口
-        
+
         新建从 3 -> 2 的搬运任务
-        
+
         Args:
             source_wh_id: 来源仓库 Id (默认为3号仓库)
             source_x: 来源位置 X 坐标
             source_y: 来源位置 Y 坐标
             source_z: 来源位置 Z 坐标
-            
+
         Returns:
             dict: 包含任务 orderId 和 orderCode 的响应
         """
         payload: Dict[str, Any] = {
-            "sourcePosX": source_x, 
-            "sourcePosY": source_y, 
+            "sourcePosX": source_x,
+            "sourcePosY": source_y,
             "sourcePosZ": source_z
         }
         if source_wh_id:
@@ -1537,13 +1542,13 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
         logger.info(f"[transfer_3_to_2] 开始转运: 仓库={source_wh_id}, 位置=({source_x}, {source_y}, {source_z})")
         response = self._post_lims("/api/lims/order/transfer-task3To2", payload)
-        
+
         # 等待任务报送成功
         order_code = response.get("data", {}).get("orderCode")
         if not order_code:
             logger.error("[transfer_3_to_2] 转运任务未返回有效 orderCode！")
             return response
-        
+
         logger.info(f"[transfer_3_to_2] 转运任务已创建: {order_code}")
         # 等待完成报送
         result = self.wait_for_order_finish(order_code)
@@ -1560,36 +1565,36 @@ class BioyondCellWorkstation(BioyondWorkstation):
         logger.info("[transfer_1_to_2] 开始 1→2 物料转运")
         response = self._post_lims("/api/lims/order/transfer-task1To2")
         logger.info(f"[transfer_1_to_2] API Response: {response}")
-        
+
         # 等待任务报送成功 - 处理不同的响应格式
         order_code = None
         data_field = response.get("data")
-        
+
         if isinstance(data_field, dict):
             order_code = data_field.get("orderCode")
         elif isinstance(data_field, str):
             # 某些接口可能直接返回 orderCode 字符串
             order_code = data_field
-        
+
         if not order_code:
             logger.error(f"[transfer_1_to_2] 转运任务未返回有效 orderCode！响应: {response}")
             return response
-        
+
         logger.info(f"[transfer_1_to_2] 转运任务已创建: {order_code}")
         # 等待完成报送
         result = self.wait_for_order_finish(order_code)
         logger.info(f"[transfer_1_to_2] 转运任务完成: {order_code}")
         return result
-   
+
     # 2.5 批量查询实验报告(post过滤关键字查询)
     def order_list_v2(self,
                       timeType: str = "",
                       beginTime: str = "",
                       endTime: str = "",
-                      status: str = "", # 60表示正在运行,80表示完成，90表示失败
+                      status: str = "",  # 60表示正在运行,80表示完成，90表示失败
                       filter: str = "",
                       skipCount: int = 0,
-                      pageCount: int = 1, # 显示多少页数据
+                      pageCount: int = 1,  # 显示多少页数据
                       sorting: str = "") -> Dict[str, Any]:
         """
         批量查询实验报告的详细信息 (2.5)
@@ -1669,10 +1674,10 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 "warningQuantity": data.get("warningQuantity", ""),
                 "details": data.get("details", [])
             }
-            
+
             logger.info(f"正在创建第 {i}/{total} 个固体物料: {name}")
             result = self._post_lims("/api/lims/storage/material", material_data)
-            
+
             if result and result.get("code") == 1:
                 # data 字段可能是字符串（物料ID）或字典（包含id字段）
                 data = result.get("data")
@@ -1684,7 +1689,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
                     material_id = data.get("id")
                 else:
                     material_id = None
-                
+
                 if material_id:
                     created_materials.append({
                         "name": name,
@@ -1700,10 +1705,10 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 logger.error(f"✗ 创建物料失败: {name}")
                 logger.error(f"  错误信息: {error_msg}")
                 logger.error(f"  完整响应: {result}")
-                
+
             # 避免请求过快
             time.sleep(0.3)
-        
+
         logger.info(f"物料创建完成，成功创建 {len(created_materials)}/{total} 个固体物料")
         return created_materials
 
@@ -1720,31 +1725,30 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
     def _load_warehouse_locations(self, warehouse_name: str) -> tuple[List[str], List[str]]:
         """从配置加载仓库位置信息
-        
+
         Args:
             warehouse_name: 仓库名称
-            
+
         Returns:
             (location_ids, position_names) 元组
         """
         warehouse_mapping = self.bioyond_config.get("warehouse_mapping", WAREHOUSE_MAPPING)
-        
+
         if warehouse_name not in warehouse_mapping:
             raise ValueError(f"配置中未找到仓库: {warehouse_name}。可用: {list(warehouse_mapping.keys())}")
-        
+
         site_uuids = warehouse_mapping[warehouse_name].get("site_uuids", {})
         if not site_uuids:
             raise ValueError(f"仓库 {warehouse_name} 没有配置位置")
-        
+
         # 按顺序获取位置ID和名称
         location_ids = []
         position_names = []
         for key in sorted(site_uuids.keys()):
             location_ids.append(site_uuids[key])
             position_names.append(key)
-        
-        return location_ids, position_names
 
+        return location_ids, position_names
 
     def create_and_inbound_materials(
         self,
@@ -1864,6 +1868,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
             material_data["typeId"] = resolved_type_id
         material_data["name"] = material_name
         # 生成唯一编码
+
         def _generate_code(prefix: str) -> str:
             normalized = re.sub(r"\W+", "_", prefix)
             normalized = normalized.strip("_") or "material"
@@ -1873,6 +1878,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
         if not material_data.get("barCode"):
             material_data["barCode"] = ""
         # 处理数量字段类型
+
         def _to_number(value: Any, default: float = 0.0) -> float:
             try:
                 if value is None:
@@ -1945,6 +1951,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
             "create_result": create_result,
             "inbound_result": inbound_result,
         }
+
     def resource_tree_transfer(self, old_parent: ResourcePLR, plr_resource: ResourcePLR, parent_resource: ResourcePLR):
         # ROS2DeviceNode.run_async_func(self._ros_node.resource_tree_transfer, True, **{
         #     "old_parent": old_parent,
@@ -1957,7 +1964,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 site = plr_resource.unilabos_extra["update_resource_site"]
                 plr_model = plr_resource.model
                 board_type = None
-                for key, (moudle_name,moudle_uuid) in self.bioyond_config['material_type_mappings'].items():
+                for key, (moudle_name, moudle_uuid) in self.bioyond_config['material_type_mappings'].items():
                     if plr_model == moudle_name:
                         board_type = key
                         break
@@ -1971,11 +1978,11 @@ class BioyondCellWorkstation(BioyondWorkstation):
                     if bottle_moudle == moudle_name:
                         bottle_type = key
                         break
-                
+
                 # 从 parent_resource 获取仓库名称
                 warehouse_name = parent_resource.name if parent_resource else "手动堆栈"
                 logger.info(f"拖拽上料: {plr_resource.name} -> {warehouse_name} / {site}")
-                
+
                 self.create_sample(plr_resource.name, board_type, bottle_type, site, warehouse_name)
                 return
         self.lab_logger().warning(f"无库位的上料，不处理，{plr_resource} 挂载到 {parent_resource}")
@@ -1997,17 +2004,17 @@ class BioyondCellWorkstation(BioyondWorkstation):
             warehouse_name: 仓库名称，默认为 "手动堆栈"，支持 "自动堆栈-左"、"自动堆栈-右" 等
         """
         carrier_type_id = self.bioyond_config['material_type_mappings'][board_type][1]
-        bottle_type_id  = self.bioyond_config['material_type_mappings'][bottle_type][1]
-        
+        bottle_type_id = self.bioyond_config['material_type_mappings'][bottle_type][1]
+
         # 从指定仓库获取库位UUID
         if warehouse_name not in self.bioyond_config['warehouse_mapping']:
             logger.error(f"未找到仓库: {warehouse_name}，回退到手动堆栈")
             warehouse_name = "手动堆栈"
-        
+
         if location_code not in self.bioyond_config['warehouse_mapping'][warehouse_name]["site_uuids"]:
             logger.error(f"仓库 {warehouse_name} 中未找到库位 {location_code}")
             raise ValueError(f"库位 {location_code} 在仓库 {warehouse_name} 中不存在")
-        
+
         location_id = self.bioyond_config['warehouse_mapping'][warehouse_name]["site_uuids"][location_code]
         logger.info(f"创建样品入库: {name} -> {warehouse_name}/{location_code} (UUID: {location_id})")
 
@@ -2028,15 +2035,15 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 })
 
         data = {
-                "typeId": carrier_type_id,
-                "code": "",
-                "barCode": "",
-                "name": name,
-                "unit": "块",
-                "parameters": json.dumps({"unit": "块"}, ensure_ascii=False),
-                "quantity": "1",
-                "details": details,
-            }
+            "typeId": carrier_type_id,
+            "code": "",
+            "barCode": "",
+            "name": name,
+            "unit": "块",
+            "parameters": json.dumps({"unit": "块"}, ensure_ascii=False),
+            "quantity": "1",
+            "details": details,
+        }
         # print("xxx:",data)
         create_result = self._post_lims("/api/lims/storage/material", data)
         sample_uuid = create_result.get("data")
@@ -2048,8 +2055,6 @@ class BioyondCellWorkstation(BioyondWorkstation):
         return final_result
 
 
-
-
 if __name__ == "__main__":
     lab_registry.setup()
     deck = BIOYOND_YB_Deck(setup=True)
@@ -2057,9 +2062,9 @@ if __name__ == "__main__":
     # ws.create_sample(name="test", board_type="配液瓶(小)板", bottle_type="配液瓶(小)", location_code="B01")
     # logger.info(ws.scheduler_stop())
     # logger.info(ws.scheduler_start())
-    
+
     # 继续后续流程
-    logger.info(ws.auto_feeding4to3()) #搬运物料到3号箱
+    logger.info(ws.auto_feeding4to3())  # 搬运物料到3号箱
     # # # 使用正斜杠或 Path 对象来指定文件路径
     # excel_path = Path("unilabos\\devices\\workstation\\bioyond_studio\\bioyond_cell\\2025092701.xlsx")
     # logger.info(ws.create_orders(excel_path))
@@ -2067,7 +2072,6 @@ if __name__ == "__main__":
 
     # logger.info(ws.transfer_1_to_2())
     # logger.info(ws.scheduler_start())
-
 
     while True:
         time.sleep(1)
@@ -2101,7 +2105,7 @@ if __name__ == "__main__":
     # ws.wait_for_transfer_task(filter_text="物料转移任务")
     # logger.info("3号站向2号站向1号站转移任务完成")
         # r321 = self.wait_for_transfer_task()
-    #1号站启动
+    # 1号站启动
     # ws.transfer_1_to_2()
     # ws.wait_for_transfer_task(filter_text="物料转移任务")
     # logger.info("1号站向2号站转移任务完成")

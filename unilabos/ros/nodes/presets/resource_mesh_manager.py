@@ -1,9 +1,10 @@
 from pathlib import Path
 import time
 import uuid
-import rclpy,json
+import rclpy
+import json
 from rclpy.node import Node
-from std_msgs.msg import String,Header
+from std_msgs.msg import String, Header
 import numpy as np
 from moveit_msgs.srv import GetPlanningScene, ApplyPlanningScene
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -17,18 +18,19 @@ from rclpy.task import Future
 import copy
 from typing import Tuple, Optional, Union, Any, List
 from tf_transformations import quaternion_from_euler
-from tf2_ros import TransformBroadcaster, Buffer, TransformListener 
+from tf2_ros import TransformBroadcaster, Buffer, TransformListener
 from rclpy.action import ActionServer
 from unilabos_msgs.action import SendCmd
 from rclpy.action.server import ServerGoalHandle
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode,DeviceNodeResourceTracker
+from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
 from unilabos.resources.graphio import initialize_resources
 from unilabos.registry.registry import lab_registry
 
+
 class ResourceMeshManager(BaseROS2DeviceNode):
-    def __init__(self, resource_model: dict, resource_config: list,resource_tracker, device_id: str = "resource_mesh_manager", registry_name: str = "", rate=50, **kwargs):
+    def __init__(self, resource_model: dict, resource_config: list, resource_tracker, device_id: str = "resource_mesh_manager", registry_name: str = "", rate=50, **kwargs):
         """初始化资源网格管理器节点
-        
+
         Args:
             resource_model (dict): 资源模型字典,包含资源的3D模型信息
             resource_config (dict): 资源配置字典,包含资源的配置信息
@@ -42,28 +44,28 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             action_value_mappings={},
             hardware_interface={},
             print_publish=False,
-            resource_tracker=resource_tracker, 
+            resource_tracker=resource_tracker,
             device_uuid=kwargs.get("uuid", str(uuid.uuid4())),
-        ) 
+        )
 
-        self.resource_model         = resource_model
-        self.resource_config_dict   = {item['uuid']: item for item in resource_config}
-        self.move_group_ready       = False
-        self.resource_tf_dict       = {}
-        self.tf_broadcaster         = TransformBroadcaster(self)
-        self.tf_buffer              = Buffer()
-        self.tf_listener            = TransformListener(self.tf_buffer, self)
-        self.rate                   = rate
-        self.zero_count             = 0
+        self.resource_model = resource_model
+        self.resource_config_dict = {item['uuid']: item for item in resource_config}
+        self.move_group_ready = False
+        self.resource_tf_dict = {}
+        self.tf_broadcaster = TransformBroadcaster(self)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.rate = rate
+        self.zero_count = 0
 
-        self.old_resource_pose      = {}
-        self.__planning_scene       = PlanningScene()
-        self.__old_planning_scene   = None
+        self.old_resource_pose = {}
+        self.__planning_scene = PlanningScene()
+        self.__old_planning_scene = None
         self.__old_allowed_collision_matrix = None
         self.mesh_path = Path(__file__).parent.parent.parent.parent.absolute()
         self.msg_type = 'resource_status'
         self.resource_status_dict = {}
-        
+
         callback_group = ReentrantCallbackGroup()
         self._get_planning_scene_service = self.create_client(
             srv_type=GetPlanningScene,
@@ -76,7 +78,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             ),
             callback_group=callback_group,
         )
-        
+
         # Create a service for applying the planning scene
         self._apply_planning_scene_service = self.create_client(
             srv_type=ApplyPlanningScene,
@@ -131,18 +133,18 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         # 获取当前可用的节点列表
         if len(self.resource_tf_dict) == 0:
             return
-        tf_ready = self.tf_buffer.can_transform("world", next(iter(self.resource_tf_dict.keys())), rclpy.time.Time(),rclpy.duration.Duration(seconds=2))
-        
+        tf_ready = self.tf_buffer.can_transform("world", next(
+            iter(self.resource_tf_dict.keys())), rclpy.time.Time(), rclpy.duration.Duration(seconds=2))
+
         # if tf_ready:
         if self._get_planning_scene_service.service_is_ready() and self._apply_planning_scene_service.service_is_ready() and tf_ready:
             self.move_group_ready = True
             self.publish_resource_tf()
             self.add_resource_collision_meshes(self.resource_tf_dict)
 
-       
-    def add_resource_mesh_callback(self, goal_handle : ServerGoalHandle):
+    def add_resource_mesh_callback(self, goal_handle: ServerGoalHandle):
         tf_update_msg = goal_handle.request
-        try:    
+        try:
             self.add_resource_mesh(tf_update_msg.command)
         except Exception as e:
             self.get_logger().error(f"添加资源失败: {e}")
@@ -150,13 +152,13 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             return SendCmd.Result(success=False)
         goal_handle.succeed()
         return SendCmd.Result(success=True)
-    
-    def add_resource_mesh(self,resource_config_str:str):
+
+    def add_resource_mesh(self, resource_config_str: str):
         """刷新资源配置"""
 
         registry = lab_registry
-        resource_config = json.loads(resource_config_str.replace("'",'"'))
-        
+        resource_config = json.loads(resource_config_str.replace("'", '"'))
+
         if resource_config['id'] in self.resource_config_dict:
             self.get_logger().info(f'资源 {resource_config["id"]} 已存在')
             return
@@ -173,17 +175,16 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                     }
         resources = initialize_resources([resource_config])
         resource_dict = {item['id']: item for item in resources}
-        self.resource_config_dict = {**self.resource_config_dict,**resource_dict}
+        self.resource_config_dict = {**self.resource_config_dict, **resource_dict}
         tf_dict = self.resource_mesh_setup(resource_dict)
-        self.resource_tf_dict = {**self.resource_tf_dict,**tf_dict}
+        self.resource_tf_dict = {**self.resource_tf_dict, **tf_dict}
         self.publish_resource_tf()
         self.add_resource_collision_meshes(tf_dict)
 
-
-    def resource_mesh_setup(self, resource_config_dict:dict):
+    def resource_mesh_setup(self, resource_config_dict: dict):
         """move_group初始化完成后的设置"""
         self.get_logger().info('开始设置资源网格管理器')
-        #遍历resource_config中的资源配置，判断panent是否在resource_model中，
+        # 遍历resource_config中的资源配置，判断panent是否在resource_model中，
         resource_tf_dict = {}
         for resource_uuid, resource_config in resource_config_dict.items():
             parent = None
@@ -198,7 +199,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 pass
             elif parent is not None and resource_id in self.resource_model:
                 # parent_link = f"{self.resource_config_dict[parent]['parent']}_{parent}_device_link".replace("None_","")
-                parent_link = f"{parent}_device_link".replace("None_","")
+                parent_link = f"{parent}_device_link".replace("None_", "")
 
             else:
                 continue
@@ -208,7 +209,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 "y": float(resource_config['pose']['position']['y'])/1000,
                 "z": float(resource_config['pose']['position']['z'])/1000
             }
-            
+
             rotation_dict = {
                 "x": 0,
                 "y": 0,
@@ -216,12 +217,12 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             }
 
             if 'rotation' in resource_config['pose']:
-                rotation_dict = resource_config['pose']['rotation']   
-                
+                rotation_dict = resource_config['pose']['rotation']
+
             # 从欧拉角转换为四元数
             q = quaternion_from_euler(
-                float(rotation_dict['x']), 
-                float(rotation_dict['y']), 
+                float(rotation_dict['x']),
+                float(rotation_dict['y']),
                 float(rotation_dict['z'])
             )
 
@@ -241,56 +242,54 @@ class ResourceMeshManager(BaseROS2DeviceNode):
 
         return resource_tf_dict
 
-
     def publish_resource_tf(self):
         """
         发布资源之间的TF关系
-        
+
         遍历self.resource_tf_dict中的每个元素，根据key，parent，以及position和rotation，
         发布key和parent之间的tf关系
         """
 
         transforms = []
-        
+
         # 遍历资源TF字典
         resource_tf_dict = copy.deepcopy(self.resource_tf_dict)
         for resource_id, tf_info in resource_tf_dict.items():
             parent = tf_info['parent']
             position = tf_info['position']
             rotation = tf_info['rotation']
-            
+
             # 创建静态变换消息
-            
+
             transform = TransformStamped()
             transform.header.stamp = self.get_clock().now().to_msg()
             transform.header.frame_id = parent
             transform.child_frame_id = resource_id
-            
+
             # 设置位置
             transform.transform.translation.x = float(position['x'])
             transform.transform.translation.y = float(position['y'])
             transform.transform.translation.z = float(position['z'])
-            
+
             # 设置旋转
             transform.transform.rotation.x = rotation['x']
             transform.transform.rotation.y = rotation['y']
             transform.transform.rotation.z = rotation['z']
             transform.transform.rotation.w = rotation['w']
-            
+
             transforms.append(transform)
-            
+
         # 一次性发布所有静态变换
         if transforms:
             self.tf_broadcaster.sendTransform(transforms)
             # self.check_resource_pose_changes()
             # self.get_logger().info(f'已发布 {len(transforms)} 个资源TF关系')
 
-
     def check_resource_pose_changes(self):
         """
         遍历资源TF字典，计算每个资源相对于world的变换，
         与旧的位姿比较，记录发生变化的资源，并更新旧位姿记录。
-        
+
         Returns:
             dict: 包含发生位姿变化的资源ID及其新位姿
         """
@@ -310,7 +309,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                         rclpy.time.Time(seconds=0),
                         # rclpy.duration.Duration(seconds=5)
                     )
-                    
+
                     # 提取当前位姿信息
                     current_pose = {
                         "position": {
@@ -325,7 +324,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                             "w": transform.transform.rotation.w
                         }
                     }
-                    
+
                     # 检查是否存在旧位姿记录
                     if resource_id not in self.old_resource_pose:
                         # 如果没有旧记录，则认为是新资源，记录变化
@@ -338,10 +337,10 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                             # 如果位姿发生变化，记录新位姿
                             changed_poses[resource_id] = current_pose
                             self.old_resource_pose[resource_id] = current_pose
-                            
+
                 except Exception as e:
                     self.get_logger().warning(f"获取资源 {resource_id} 的世界坐标变换失败: {e}")
-                    
+
         elif self.msg_type == 'resource_status':
             for resource_id, resource_status in resource_tf_dict.items():
                 if resource_id not in self.old_resource_pose:
@@ -355,8 +354,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                         # 如果位姿发生变化，记录新位姿
                         changed_poses[resource_id] = resource_status['parent']
                         self.old_resource_pose[resource_id] = resource_status['parent']
-                    
-                    
+
         if changed_poses != {}:
             self.zero_count = 0
             changed_poses_msg = String()
@@ -369,17 +367,16 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 changed_poses_msg.data = json.dumps(changed_poses)
                 self.resource_pose_publisher.publish(changed_poses_msg)
             self.zero_count += 1
-            
 
     def _is_pose_equal(self, pose1, pose2, tolerance=1e-7):
         """
         比较两个位姿是否相等（考虑浮点数精度）
-        
+
         Args:
             pose1: 第一个位姿
             pose2: 第二个位姿
             tolerance: 浮点数比较的容差
-            
+
         Returns:
             bool: 如果位姿相等返回True，否则返回False
         """
@@ -388,28 +385,28 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         pos2 = pose2["position"]
         if (abs(pos1["x"] - pos2["x"]) > tolerance or
             abs(pos1["y"] - pos2["y"]) > tolerance or
-            abs(pos1["z"] - pos2["z"]) > tolerance):
+                abs(pos1["z"] - pos2["z"]) > tolerance):
             return False
-            
+
         # 比较旋转
         rot1 = pose1["rotation"]
         rot2 = pose2["rotation"]
         if (abs(rot1["x"] - rot2["x"]) > tolerance or
             abs(rot1["y"] - rot2["y"]) > tolerance or
             abs(rot1["z"] - rot2["z"]) > tolerance or
-            abs(rot1["w"] - rot2["w"]) > tolerance):
+                abs(rot1["w"] - rot2["w"]) > tolerance):
             return False
-            
+
         return True
 
-    def tf_update(self, goal_handle : ServerGoalHandle):
+    def tf_update(self, goal_handle: ServerGoalHandle):
         tf_update_msg = goal_handle.request
-        
+
         try:
-            cmd_dict = json.loads(tf_update_msg.command.replace("'",'"'))
+            cmd_dict = json.loads(tf_update_msg.command.replace("'", '"'))
             self.__planning_scene = self._get_planning_scene_service.call(
                 GetPlanningScene.Request()
-                ).scene
+            ).scene
             self.__planning_scene.is_diff = True
             planning_scene = PlanningScene()
             planning_scene.is_diff = True
@@ -429,28 +426,27 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                     time_start,
                     timeout=rclpy.duration.Duration(seconds=10)
                 )
-                
+
                 # 提取转换中的位置和旋转信息
                 position = {
                     "x": transform.transform.translation.x,
                     "y": transform.transform.translation.y,
                     "z": transform.transform.translation.z
                 }
-                
+
                 rotation = {
                     "x": transform.transform.rotation.x,
                     "y": transform.transform.rotation.y,
                     "z": transform.transform.rotation.z,
                     "w": transform.transform.rotation.w
                 }
-                
+
                 self.resource_tf_dict[resource_id] = {
                     "parent": parent_id,
                     "position": position,
                     "rotation": rotation
                 }
-                
-                
+
                 # self.attach_collision_object(id=resource_id,link_name=target_parent)
                 # time.sleep(0.02)
                 operation_attach = CollisionObject.ADD
@@ -468,11 +464,10 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 if target_parent != '__trash':
                     planning_scene.world.collision_objects.append(world_object)
 
-
                 collision_object = AttachedCollisionObject(
                     object=CollisionObject(
                         id=resource_id,
-                        operation=operation_attach   
+                        operation=operation_attach
                     )
                 )
                 if target_parent != 'world' and target_parent != '__trash':
@@ -501,7 +496,6 @@ class ResourceMeshManager(BaseROS2DeviceNode):
 
             # self.__collision_object_publisher.publish(CollisionObject())
 
-            
         except Exception as e:
             self.get_logger().error(f"更新资源TF字典失败: {e}")
             goal_handle.abort()
@@ -509,14 +503,12 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         goal_handle.succeed()
         return SendCmd.Result(success=True)
 
-
-
-    def add_resource_collision_meshes(self,resource_tf_dict:dict):
+    def add_resource_collision_meshes(self, resource_tf_dict: dict):
         """
         遍历资源配置字典，为每个在resource_model中有对应模型的资源添加碰撞网格
-        
+
         该方法检查每个资源ID是否在self.resource_model中有对应的3D模型文件路径，
-        
+
         """
         self.get_logger().info('开始添加资源碰撞网格')
 
@@ -527,7 +519,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         planning_scene.is_diff = True
         count = 0
         for resource_id, tf_info in resource_tf_dict.items():
-            
+
             if resource_id in self.resource_model:
                 # 获取位置信息
 
@@ -536,15 +528,15 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                     float(self.resource_model[resource_id]['mesh_tf'][1]),
                     float(self.resource_model[resource_id]['mesh_tf'][2])
                 ]
-                
+
                 # 获取旋转信息并转换为四元数
 
                 q = quaternion_from_euler(
-                    float(self.resource_model[resource_id]['mesh_tf'][3]), 
-                    float(self.resource_model[resource_id]['mesh_tf'][4]), 
+                    float(self.resource_model[resource_id]['mesh_tf'][3]),
+                    float(self.resource_model[resource_id]['mesh_tf'][4]),
                     float(self.resource_model[resource_id]['mesh_tf'][5])
                 )
-                
+
                 # 添加碰撞网格
                 collision_object = self.get_collision_mesh(
                     filepath=self.resource_model[resource_id]['mesh'],
@@ -558,22 +550,22 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             elif f"{tf_info['parent']}_" in self.resource_model:
                 # 获取资源的父级框架ID
                 id_ = f"{tf_info['parent']}_"
-                
+
                 # 获取位置信息
                 position = [
                     float(self.resource_model[id_]['mesh_tf'][0]),
                     float(self.resource_model[id_]['mesh_tf'][1]),
                     float(self.resource_model[id_]['mesh_tf'][2])
                 ]
-                
+
                 # 获取旋转信息并转换为四元数
 
                 q = quaternion_from_euler(
-                    float(self.resource_model[id_]['mesh_tf'][3]), 
-                    float(self.resource_model[id_]['mesh_tf'][4]), 
+                    float(self.resource_model[id_]['mesh_tf'][3]),
+                    float(self.resource_model[id_]['mesh_tf'][4]),
                     float(self.resource_model[id_]['mesh_tf'][5])
                 )
-                
+
                 # 添加碰撞网格
                 collision_object = self.get_collision_mesh(
                     filepath=self.resource_model[id_]['mesh'],
@@ -592,7 +584,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 self._apply_planning_scene_service.call(req)
                 self.__planning_scene_publisher.publish(planning_scene)
                 count = 0
-                
+
                 planning_scene = PlanningScene()
                 planning_scene.is_diff = True
 
@@ -603,7 +595,6 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         self.__planning_scene_publisher.publish(planning_scene)
 
         self.get_logger().info('资源碰撞网格添加完成')
-
 
     def add_collision_primitive(
         self,
@@ -903,7 +894,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 ],
             )
         )
-        
+
         # self.__collision_object_publisher.publish(msg)
         return msg
 
@@ -1013,7 +1004,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                 ],
             )
         )
-        
+
         self.__collision_object_publisher.publish(msg)
 
     def remove_collision_object(self, id: str):

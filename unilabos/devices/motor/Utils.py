@@ -4,6 +4,7 @@ from typing import Union
 
 from .Consts import Config
 
+
 def calculate_modbus_crc16(data: bytes) -> tuple[int, int]:
     """
     计算 Modbus RTU 的 CRC16 校验码，返回 (low_byte, high_byte)。
@@ -19,7 +20,7 @@ def calculate_modbus_crc16(data: bytes) -> tuple[int, int]:
                 crc >>= 1
 
     # 低字节在前、高字节在后
-    low_byte  = crc & 0xFF
+    low_byte = crc & 0xFF
     high_byte = (crc >> 8) & 0xFF
     return low_byte, high_byte
 
@@ -70,11 +71,14 @@ def send_command(ser, command) -> Union[bytes, str]:
     print()
     return response
 
+
 def get_result_byte_int(data: bytes, byte_start: int = 6, byte_end: int = 10) -> int:
     return int(data.hex()[byte_start:byte_end], 16)
 
+
 def get_result_byte_str(data: bytes, byte_start: int = 6, byte_end: int = 10) -> str:
     return data.hex()[byte_start:byte_end]
+
 
 def run_commands(ser, duration=0.1, *commands):
     for cmd in commands:

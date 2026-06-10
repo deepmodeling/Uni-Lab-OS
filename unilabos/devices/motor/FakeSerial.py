@@ -16,6 +16,6 @@ class FakeSerial:
     def read(self, n):
         # 这里可返回预设的响应，例如 b'\x01\x03\x02\x00\x19\x79\x8E'
         return b'\x01\x03\x02\x00\x19\x79\x8E'
-    
+
     def close(self):
         pass

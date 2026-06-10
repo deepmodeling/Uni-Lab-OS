@@ -24,22 +24,22 @@ class MockCNCAsync:
 
     def post_create(self, ros_node):
         self._ros_node = ros_node
-    
+
     @property
     def position(self) -> Point3D:
         return self._position
-    
+
     async def get_position(self):
         return self.position
-    
+
     @property
     def status(self) -> str:
         return self._status
-    
+
     async def set_position(self, position: Point3D, velocity: float = 10.0):
         self._status = "Running"
         current_pos = self.position
-        
+
         move_time = d(position, current_pos) / velocity
         for i in range(20):
             self._position.x = current_pos.x + (position.x - current_pos.x) / 20 * (i+1)

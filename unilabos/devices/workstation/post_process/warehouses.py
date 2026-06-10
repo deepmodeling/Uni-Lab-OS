@@ -1,7 +1,6 @@
 from unilabos.devices.workstation.post_process.post_process_warehouse import WareHouse, warehouse_factory
 
 
-
 # =================== Other ===================
 
 
@@ -20,6 +19,7 @@ def post_process_warehouse_4x3x1(name: str) -> WareHouse:
         item_dz=120.0,
         category="warehouse",
     )
+
 
 def post_process_warehouse_4x3x1_2(name: str) -> WareHouse:
     """已弃用：创建post_process 4x3x1仓库"""

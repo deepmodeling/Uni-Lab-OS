@@ -128,7 +128,8 @@ def find_solvent_vessel(G: nx.DiGraph, solvent: str) -> str:
     # 第四步：通过数据中的试剂信息匹配
     debug_print("  🧪 步骤1: 数据试剂信息匹配...")
     for node_id in G.nodes():
-        debug_print(f"查找 id {node_id}, type={G.nodes[node_id].get('type')}, data={G.nodes[node_id].get('data', {})} 的容器...")
+        debug_print(
+            f"查找 id {node_id}, type={G.nodes[node_id].get('type')}, data={G.nodes[node_id].get('data', {})} 的容器...")
         if G.nodes[node_id].get('type') == 'container':
             vessel_data = G.nodes[node_id].get('data', {})
 

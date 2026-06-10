@@ -6,17 +6,17 @@ from sensor_msgs.msg import JointState
 
 
 class EliteRobot:
-    def __init__(self,device_id, host, **kwargs):
+    def __init__(self, device_id, host, **kwargs):
         self.host = host
         self.node = Node(f"{device_id}")
         self.joint_state_msg = JointState()
         self.joint_state_msg.name = [f"{device_id}_shoulder_pan_joint",
-                                     f"{device_id}_shoulder_lift_joint", 
-                                     f"{device_id}_elbow_joint", 
-                                     f"{device_id}_wrist_1_joint", 
-                                     f"{device_id}_wrist_2_joint", 
+                                     f"{device_id}_shoulder_lift_joint",
+                                     f"{device_id}_elbow_joint",
+                                     f"{device_id}_wrist_1_joint",
+                                     f"{device_id}_wrist_2_joint",
                                      f"{device_id}_wrist_3_joint"]
-        
+
         self.job_id = 0
         self.joint_state_pub = self.node.create_publisher(JointState, "/joint_states", 10)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -37,12 +37,10 @@ class EliteRobot:
 
     def modbus_close(self):
         self.modbus_sock.close()
-        
 
     @property
     def arm_pose(self) -> list[float]:
         return self.get_actual_joint_positions()
-    
 
     def modbus_write_single_register(self, unit_id, register_addr, value):
         """
@@ -133,7 +131,6 @@ class EliteRobot:
             job = self.modbus_read_holding_registers(1, 257, 1)[0]
             self.get_actual_joint_positions()
 
-            
     def modbus_task_cmd(self, command):
 
         if command == "lh2hplc":
@@ -144,7 +141,7 @@ class EliteRobot:
             self.modbus_task(3)
             self.modbus_task(4)
             self.modbus_task(0)
-        
+
     def send_command(self, command):
         self.sock.sendall(command.encode('utf-8'))
         response = self.sock.recv(1024).decode('utf-8')
@@ -184,11 +181,10 @@ class EliteRobot:
         return None
 
 
-
 if __name__ == "__main__":
     import rclpy
     rclpy.init()
-    client = EliteRobot('aa',"192.168.1.200")
+    client = EliteRobot('aa', "192.168.1.200")
     print(client.parse_success_response(client.send_command("req 1 get_actual_joint_positions()\n")))
     client.modbus_write_single_register(1, 256, 4)
     print(client.modbus_read_holding_registers(1, 257, 1))

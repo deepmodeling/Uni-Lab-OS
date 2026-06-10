@@ -59,7 +59,8 @@ def canonicalize_nodes_data(
             print_status(f"Warning: Node {node.get('id', 'unknown')} missing 'type', defaulting to 'device'", "warning")
         if node.get("name", None) is None:
             node["name"] = node.get("id")
-            print_status(f"Warning: Node {node.get('id', 'unknown')} missing 'name', defaulting to {node['name']}", "warning")
+            print_status(
+                f"Warning: Node {node.get('id', 'unknown')} missing 'name', defaulting to {node['name']}", "warning")
         if not isinstance(node.get("position"), dict):
             node["pose"] = {"position": {}}
             x = node.pop("x", None)
@@ -700,7 +701,6 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
 
     logger.debug(f"[反向映射表] 共 {len(reverse_type_mapping)} 个条目: {list(reverse_type_mapping.keys())}")
 
-
     # 用于跟踪同名物料的计数器
     name_counter = {}
 
@@ -833,11 +833,13 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                 original_y = plr_material.size_y
                 plr_material.size_x = original_y
                 plr_material.size_y = original_x
-                logger.debug(f"   物料 {unique_name} 将放入竖向warehouse，预先交换尺寸: {original_x}×{original_y} → {plr_material.size_x}×{plr_material.size_y}")
+                logger.debug(
+                    f"   物料 {unique_name} 将放入竖向warehouse，预先交换尺寸: {original_x}×{original_y} → {plr_material.size_x}×{plr_material.size_y}")
 
             for loc in locations:
                 wh_name = loc.get("whName")
-                logger.debug(f"[物料位置] {unique_name} 尝试放置到 warehouse: {wh_name} (Bioyond坐标: x={loc.get('x')}, y={loc.get('y')}, z={loc.get('z')})")
+                logger.debug(
+                    f"[物料位置] {unique_name} 尝试放置到 warehouse: {wh_name} (Bioyond坐标: x={loc.get('x')}, y={loc.get('y')}, z={loc.get('z')})")
 
                 # 特殊处理: Bioyond的"堆栈1"需要映射到"堆栈1左"或"堆栈1右"
                 # 根据列号(x)判断: 1-4映射到左侧, 5-8映射到右侧
@@ -862,7 +864,8 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
 
                 if hasattr(deck, "warehouses") and wh_name in deck.warehouses:
                     warehouse = deck.warehouses[wh_name]
-                    logger.debug(f"[Warehouse匹配] 找到warehouse: {wh_name} (容量: {warehouse.capacity}, 行×列: {warehouse.num_items_x}×{warehouse.num_items_y})")
+                    logger.debug(
+                        f"[Warehouse匹配] 找到warehouse: {wh_name} (容量: {warehouse.capacity}, 行×列: {warehouse.num_items_x}×{warehouse.num_items_y})")
 
                     # Bioyond坐标映射 (重要！): x→行(1=A,2=B...), y→列(1=01,2=02...), z→层(通常=1)
                     x = loc.get("x", 1)  # 行号 (1-based: 1=A, 2=B, 3=C, 4=D)
@@ -886,8 +889,10 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                         row_idx = y - 1  # Bioyond的y(01,02,03) → row索引(0,1,2)
                         layer_idx = z - 1
 
-                        idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + row_idx * warehouse.num_items_y + col_idx
-                        logger.debug(f"🔍 竖向warehouse {wh_name}: Bioyond(x={x},y={y},z={z}) → warehouse(col={col_idx},row={row_idx},layer={layer_idx}) → idx={idx}, capacity={warehouse.capacity}")
+                        idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + \
+                            row_idx * warehouse.num_items_y + col_idx
+                        logger.debug(
+                            f"🔍 竖向warehouse {wh_name}: Bioyond(x={x},y={y},z={z}) → warehouse(col={col_idx},row={row_idx},layer={layer_idx}) → idx={idx}, capacity={warehouse.capacity}")
 
                     # 普通横向warehouse的处理
                     else:
@@ -898,29 +903,36 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
 
                         # 检查 warehouse 的排序方式属性
                         ordering_layout = getattr(warehouse, 'ordering_layout', 'col-major')
-                        logger.debug(f"🔍 Warehouse {wh_name} layout检测: hasattr={hasattr(warehouse, 'ordering_layout')}, ordering_layout值='{ordering_layout}', warehouse类型={type(warehouse).__name__}")
+                        logger.debug(
+                            f"🔍 Warehouse {wh_name} layout检测: hasattr={hasattr(warehouse, 'ordering_layout')}, ordering_layout值='{ordering_layout}', warehouse类型={type(warehouse).__name__}")
 
                         if ordering_layout == "row-major":
                             # 行优先: A01,A02,A03,A04, B01,B02,B03,B04 (所有Bioyond堆栈)
                             # 索引计算: idx = (row) * num_cols + (col) + (layer) * (rows * cols)
-                            idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + row_idx * warehouse.num_items_x + col_idx
-                            logger.debug(f"行优先warehouse {wh_name}: x={x}(行),y={y}(列) → row={row_idx},col={col_idx} → idx={idx}")
+                            idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + \
+                                row_idx * warehouse.num_items_x + col_idx
+                            logger.debug(
+                                f"行优先warehouse {wh_name}: x={x}(行),y={y}(列) → row={row_idx},col={col_idx} → idx={idx}")
                         else:
                             # 列优先 (后备): A01,B01,C01,D01, A02,B02,C02,D02
                             # 索引计算: idx = (col) * num_rows + (row) + (layer) * (rows * cols)
-                            idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + col_idx * warehouse.num_items_y + row_idx
-                            logger.debug(f"列优先warehouse {wh_name}: x={x}(行),y={y}(列) → row={row_idx},col={col_idx} → idx={idx}")
+                            idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + \
+                                col_idx * warehouse.num_items_y + row_idx
+                            logger.debug(
+                                f"列优先warehouse {wh_name}: x={x}(行),y={y}(列) → row={row_idx},col={col_idx} → idx={idx}")
 
                     if 0 <= idx < warehouse.capacity:
                         if warehouse[idx] is None or isinstance(warehouse[idx], ResourceHolder):
                             # 物料尺寸已在放入warehouse前根据需要进行了交换
                             warehouse[idx] = plr_material
-                            logger.debug(f"✅ 物料 {unique_name} 放置到 {wh_name}[{idx}] (Bioyond坐标: x={loc.get('x')}, y={loc.get('y')})")
+                            logger.debug(
+                                f"✅ 物料 {unique_name} 放置到 {wh_name}[{idx}] (Bioyond坐标: x={loc.get('x')}, y={loc.get('y')})")
                     else:
                         logger.warning(f"❌ 物料 {unique_name} 的索引 {idx} 超出仓库 {wh_name} 容量 {warehouse.capacity}")
                 else:
                     if wh_name:
-                        logger.warning(f"❌ 物料 {unique_name} 的warehouse '{wh_name}' 在deck中不存在。可用warehouses: {list(deck.warehouses.keys()) if hasattr(deck, 'warehouses') else '无'}")
+                        logger.warning(
+                            f"❌ 物料 {unique_name} 的warehouse '{wh_name}' 在deck中不存在。可用warehouses: {list(deck.warehouses.keys()) if hasattr(deck, 'warehouses') else '无'}")
 
     return plr_materials
 
@@ -952,7 +964,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
             # 获取 BottleCarrier 的类型映射
             type_info = type_mapping.get(resource.model)
             if not type_info:
-                logger.error(f"❌ [PLR→Bioyond] BottleCarrier 资源 '{resource.name}' 的 model '{resource.model}' 不在 type_mapping 中")
+                logger.error(
+                    f"❌ [PLR→Bioyond] BottleCarrier 资源 '{resource.name}' 的 model '{resource.model}' 不在 type_mapping 中")
                 logger.debug(f"[PLR→Bioyond] 可用的 type_mapping 键: {list(type_mapping.keys())}")
                 raise ValueError(f"资源 model '{resource.model}' 未在 MATERIAL_TYPE_MAPPINGS 中配置")
 
@@ -991,7 +1004,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                                 try:
                                     x_idx, y_idx, z_idx = resource._parse_identifier_to_indices(bottle_identifier, 0)
                                     site = {"x": x_idx, "y": y_idx, "z": z_idx, "identifier": bottle_identifier}
-                                    logger.debug(f"  🔧 [坐标修正-方法1] 从名称 {bottle.name} 解析标识符 {bottle_identifier} → ({x_idx}, {y_idx})")
+                                    logger.debug(
+                                        f"  🔧 [坐标修正-方法1] 从名称 {bottle.name} 解析标识符 {bottle_identifier} → ({x_idx}, {y_idx})")
                                 except Exception as e:
                                     logger.warning(f"  ⚠️ [坐标解析] 标识符 {bottle_identifier} 解析失败: {e}")
 
@@ -1007,7 +1021,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                                             col_idx = idx // resource.num_items_y  # 列索引 (0-based)
                                             row_idx = idx % resource.num_items_y   # 行索引 (0-based)
                                             site = {"x": col_idx, "y": row_idx, "z": 0, "identifier": str(idx)}
-                                            logger.debug(f"  🔧 [坐标修正-方法2] {bottle.name} 在索引 {idx} → 列={col_idx}, 行={row_idx}")
+                                            logger.debug(
+                                                f"  🔧 [坐标修正-方法2] {bottle.name} 在索引 {idx} → 列={col_idx}, 行={row_idx}")
                                             break
                                 except Exception as e:
                                     logger.error(f"  ❌ [坐标计算失败] {bottle.name}: {e}")
@@ -1030,7 +1045,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                     bioyond_y = site["x"] + 1  # 列索引 → Bioyond的y (列号)
 
                     # 🐛 调试日志
-                    logger.debug(f"🔍 [PLR→Bioyond] detail转换: {bottle.name} → PLR(x={site['x']},y={site['y']},id={site.get('identifier','?')}) → Bioyond(x={bioyond_x},y={bioyond_y})")
+                    logger.debug(
+                        f"🔍 [PLR→Bioyond] detail转换: {bottle.name} → PLR(x={site['x']},y={site['y']},id={site.get('identifier','?')}) → Bioyond(x={bioyond_x},y={bioyond_y})")
 
                     # 🔥 提取物料名称：从 tracker.liquids 中获取第一个液体的名称（去除PLR系统添加的后缀）
                     # tracker.liquids 格式: [(物料名称, 数量, 单位), ...]
@@ -1069,7 +1085,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                 type_id = type_info[1]
             else:
                 # 如果找不到映射，记录警告并使用默认值
-                logger.warning(f"[PLR→Bioyond] 资源 {resource.name} 的 model '{resource.model}' 不在 type_mapping 中，使用默认烧杯类型")
+                logger.warning(
+                    f"[PLR→Bioyond] 资源 {resource.name} 的 model '{resource.model}' 不在 type_mapping 中，使用默认烧杯类型")
                 type_id = "3a14196b-24f2-ca49-9081-0cab8021bf1a"  # 默认使用烧杯类型
 
             # 🔥 提取物料名称：优先使用液体名称，否则使用资源名称
@@ -1102,7 +1119,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
 
                 # 剩余的字段放入 Parameters
                 material_parameters = params_config
-                logger.debug(f"  🔧 [物料参数-按typeId] 为 typeId={type_id[:8]}... 应用配置: unit={default_unit}, parameters={material_parameters}")
+                logger.debug(
+                    f"  🔧 [物料参数-按typeId] 为 typeId={type_id[:8]}... 应用配置: unit={default_unit}, parameters={material_parameters}")
             # 2️⃣ 其次检查是否有该物料名称的默认参数配置
             elif material_name in material_params:
                 params_config = material_params[material_name].copy()
@@ -1113,7 +1131,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
 
                 # 剩余的字段放入 Parameters
                 material_parameters = params_config
-                logger.debug(f"  🔧 [物料参数-按名称] 为 {material_name} 应用配置: unit={default_unit}, parameters={material_parameters}")
+                logger.debug(
+                    f"  🔧 [物料参数-按名称] 为 {material_name} 应用配置: unit={default_unit}, parameters={material_parameters}")
 
             # 转换为 JSON 字符串
             parameters_json = json.dumps(material_parameters) if material_parameters else "{}"
@@ -1170,7 +1189,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                             "quantity": 0
                         }
                     ]
-                    logger.debug(f"✅ [PLR→Bioyond] 位置更新: {resource.name} → {target_warehouse_name}/{update_site} (x={bioyond_x}, y={bioyond_y})")
+                    logger.debug(
+                        f"✅ [PLR→Bioyond] 位置更新: {resource.name} → {target_warehouse_name}/{update_site} (x={bioyond_x}, y={bioyond_y})")
                 except Exception as e:
                     logger.error(f"❌ [PLR→Bioyond] 解析库位代码失败: {update_site}, 错误: {e}")
             else:
@@ -1198,7 +1218,8 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                     "quantity": 0
                 }
             ]
-            logger.debug(f"🔄 [PLR→Bioyond] 坐标转换: {resource.name} 在 {resource.parent.name}[{site_in_parent['identifier']}] → UniLab(列={site_in_parent['x']},行={site_in_parent['y']}) → Bioyond(x={bioyond_x},y={bioyond_y})")
+            logger.debug(
+                f"🔄 [PLR→Bioyond] 坐标转换: {resource.name} 在 {resource.parent.name}[{site_in_parent['identifier']}] → UniLab(列={site_in_parent['x']},行={site_in_parent['y']}) → Bioyond(x={bioyond_x},y={bioyond_y})")
 
         bioyond_materials.append(material)
     return bioyond_materials

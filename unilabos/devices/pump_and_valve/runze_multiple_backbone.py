@@ -185,7 +185,6 @@ class RunzeMultiplePump:
             output = self.send_command(full_command)[3:-3]
         return output
 
-
     def _run(self, address: str, command: str) -> str:
         """
         Run command and wait for completion

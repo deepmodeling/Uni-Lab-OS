@@ -30,7 +30,6 @@ from unilabos.devices.liquid_handling.rviz_backend import UniLiquidHandlerRvizBa
 from unilabos.devices.liquid_handling.laiyu.backend.laiyu_v_backend import UniLiquidHandlerLaiyuBackend
 
 
-
 class TransformXYZDeck(Deck):
     """Laiyu 的专用 Deck 类，继承自 Deck。
 
@@ -41,12 +40,14 @@ class TransformXYZDeck(Deck):
         super().__init__(name, size_x, size_y, size_z)
         self.name = name
 
+
 class TransformXYZBackend(LiquidHandlerBackend):
     def __init__(self, name: str, host: str, port: int, timeout: float):
         super().__init__()
         self.host = host
         self.port = port
         self.timeout = timeout
+
 
 class TransformXYZRvizBackend(UniLiquidHandlerRvizBackend):
     def __init__(self, name: str, channel_num: int):
@@ -83,6 +84,7 @@ class TransformXYZContainer(Plate, TipRack):
         data.update(self._unilabos_state)
         return data
 
+
 class TransformXYZHandler(LiquidHandlerAbstract):
     support_touch_tip = False
 
@@ -102,9 +104,9 @@ class TransformXYZHandler(LiquidHandlerAbstract):
                 deck = TransformXYZDeck(name='deck', size_x=100, size_y=100, size_z=100)
 
         if simulator:
-            self._unilabos_backend = TransformXYZRvizBackend(name="laiyu",channel_num=channel_num)
+            self._unilabos_backend = TransformXYZRvizBackend(name="laiyu", channel_num=channel_num)
         else:
-            self._unilabos_backend = TransformXYZBackend(name="laiyu",host=host, port=port, timeout=timeout)
+            self._unilabos_backend = TransformXYZBackend(name="laiyu", host=host, port=port, timeout=timeout)
         super().__init__(backend=self._unilabos_backend, deck=deck, simulator=simulator, channel_num=channel_num)
 
     async def add_liquid(
@@ -215,4 +217,3 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         none_keys: List[str] = [],
     ):
         pass
-    

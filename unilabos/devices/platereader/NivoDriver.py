@@ -66,6 +66,7 @@ class NivoDriver(UniversalDriver):
             print("Instrument is not initialized")
             self._success = False
             return False
+
         def post_func(res, _):
             self._success = res
             if not res:
@@ -77,12 +78,12 @@ class NivoDriver(UniversalDriver):
             return False
         elif not ins.is_started:
             print("Function started")
-            ins.start() # 开始执行
+            ins.start()  # 开始执行
         else:
             print("Function reset and started")
             ins.reset()
             ins.start()
-    
+
     def execute_run_instrument(self):
         process_found, process_pid = get_process_pid_by_name("Guide.exe", min_memory_mb=20)
         if not process_found:
@@ -93,7 +94,7 @@ class NivoDriver(UniversalDriver):
                 title="Standard", class_name="XTPToolBar").child_window(title="Protocol", control_type="Button")
             click(button.wrapper_object())
             for _ in range(5):
-                time.sleep(1)   
+                time.sleep(1)
                 process_found, process_pid = get_process_pid_by_name("Guide.exe", min_memory_mb=20)
                 if process_found:
                     break
@@ -183,7 +184,8 @@ class NivoDriver(UniversalDriver):
             print("Already Initialized")
             self._success = True
             return True
-        ins: SingleRunningExecutor = SingleRunningExecutor.get_instance(self.execute_initialize, lambda res, _: setattr(self, '_success', res))
+        ins: SingleRunningExecutor = SingleRunningExecutor.get_instance(
+            self.execute_initialize, lambda res, _: setattr(self, '_success', res))
         if not ins.is_ended and ins.is_started:
             print("Initialize is running")
             self._success = False
@@ -242,6 +244,7 @@ class NivoDriver(UniversalDriver):
 class DriverChecker(ud.DriverChecker):
     driver: NivoDriver
 
+
 class ProcessChecker(DriverChecker):
     def check(self):
         process_found, process_pid = get_process_pid_by_name("JANUS.exe", min_memory_mb=20)
@@ -271,6 +274,7 @@ class RunStatusChecker(DriverChecker):
             return
         self.driver.check_execute_run_status()
 
+
 class OkButtonChecker(DriverChecker):
     def check(self):
         if not self.driver._is_executing_run or self.driver._guide_app is None:
@@ -287,6 +291,7 @@ class OkButtonChecker(DriverChecker):
         except Exception as e:
             # traceback.print_exc()
             pass
+
 
 # 示例用法
 if __name__ == "__main__":

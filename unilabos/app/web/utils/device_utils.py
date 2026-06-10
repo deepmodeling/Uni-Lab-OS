@@ -12,7 +12,6 @@ from typing import Dict, Any
 # from unilabos.web.utils.action_utils import process_device_actions
 
 
-
 def get_registry_info() -> Dict[str, Any]:
     """获取Registry相关路径信息
 

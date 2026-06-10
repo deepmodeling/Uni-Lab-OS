@@ -525,7 +525,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
         action_client = self._action_clients[action_id]
         goal_msg = convert_to_ros_msg(action_client._action_type.Goal(), action_kwargs)
 
-        ##### self.lab_logger().info(f"发送动作请求到: {action_id}")
+        # self.lab_logger().info(f"发送动作请求到: {action_id}")
         action_client.wait_for_server()
 
         # 等待动作完成
@@ -537,7 +537,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
             return None
 
         result_future = await handle.get_result_async()
-        ##### self.lab_logger().info(f"动作完成: {action_name}")
+        # self.lab_logger().info(f"动作完成: {action_name}")
 
         return result_future.result
 

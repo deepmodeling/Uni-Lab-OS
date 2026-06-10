@@ -1,0 +1,44 @@
+name: CI Check
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: registry.dp.tech/dptech/dp/native/prod-925614/unilabos-lite:1.0
+      # If the registry is private from GitHub Actions, add these repository secrets:
+      # credentials:
+      #   username: ${{ secrets.DP_REGISTRY_USERNAME }}
+      #   password: ${{ secrets.DP_REGISTRY_PASSWORD }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show runtime environment
+        run: |
+          python --version
+          which python
+          which pip
+          which mamba || true
+          which uv || true
+
+      - name: Install Uni-Lab-OS in editable mode
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install uv pytest
+          python -m pip install -e .
+          uv pip install --system --no-cache -r unilabos/utils/requirements.txt
+
+      - name: Run tests
+        run: |
+          python -m pytest \
+            tests/resources \
+            tests/ros/msgs \
+            tests/szlab

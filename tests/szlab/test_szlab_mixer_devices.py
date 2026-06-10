@@ -5,9 +5,9 @@ from unilabos.registry.ast_registry_scanner import scan_directory
 from unilabos.devices.workstation.szlab_mixer.opcua_client import SzlabMixerOpcUaClient
 from unilabos.devices.workstation.szlab_mixer.pump import SzlabMixerPumpDevice
 from unilabos.devices.workstation.szlab_mixer.stirrer import SzlabMixerStirrerDevice
-from unilabos.szlab.run_workflow_local import create_local_devices, load_runtime_config
-from unilabos.szlab.run_workflow_local import WorkflowLogger, WorkflowNode, run_nodes
-from unilabos.szlab.workflow_ui import _load_preset_runtime_config, build_graph_workflow, load_preset
+from scripts.run_workflow_local import create_local_devices, load_runtime_config
+from scripts.run_workflow_local import WorkflowLogger, WorkflowNode, run_nodes
+from scripts.workflow_ui import _load_preset_runtime_config, build_graph_workflow, load_preset
 
 
 def test_szlab_mixer_devices_are_ast_scannable():
@@ -93,12 +93,12 @@ def test_szlab_mixer_device_creation_ignores_csv_path(monkeypatch, tmp_path):
         def __init__(self, **kwargs):
             created[len(created)] = kwargs
 
-    monkeypatch.setattr("unilabos.szlab.run_workflow_local._load_class", lambda class_path: FakeDevice)
+    monkeypatch.setattr("scripts.run_workflow_local._load_class", lambda class_path: FakeDevice)
 
     devices = create_local_devices(
         graph_file=graph_path,
         csv_path=Path("/tmp/invalid.csv"),
-        runtime_config=load_runtime_config("unilabos/szlab/runtime_configs/szlab_mixer_runtime.json"),
+        runtime_config=load_runtime_config("tests/szlab/runtime_configs/szlab_mixer_runtime.json"),
     )
 
     assert set(devices) == {"szlab_mixer_stirrer", "szlab_mixer_pump"}
@@ -135,7 +135,7 @@ def test_szlab_mixer_run_nodes_samples_current_device_variables():
 
     pump = FakePump()
     events = []
-    runtime_config = load_runtime_config("unilabos/szlab/runtime_configs/szlab_mixer_runtime.json")
+    runtime_config = load_runtime_config("tests/szlab/runtime_configs/szlab_mixer_runtime.json")
 
     run_nodes(
         [

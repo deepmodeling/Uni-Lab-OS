@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from unilabos.registry.ast_registry_scanner import scan_directory
-from unilabos.szlab.run_workflow_local import (
+from scripts.run_workflow_local import (
     ROBOT_ARM_DEVICE_ID,
     RuntimeConfig,
     WorkflowLogger,
@@ -30,9 +30,10 @@ from unilabos.szlab.run_workflow_local import (
 )
 
 
-SZLAB_DIR = Path(__file__).parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SZLAB_DIR = REPO_ROOT / "tests" / "szlab"
 PRESET_DIR = SZLAB_DIR / "presets"
-FRONTEND_DIR = SZLAB_DIR.parent.parent / "unilabos_local_ui"
+FRONTEND_DIR = REPO_ROOT / "unilabos_local_ui"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
 GENERATED_GRAPH_SENTINEL = "__generated__"
@@ -75,7 +76,7 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
     data = json.loads(preset_path.read_text(encoding="utf-8"))
     target_device_id = data.get("target_device_id", ROBOT_ARM_DEVICE_ID)
     target_device_ids = list(data.get("target_device_ids") or [target_device_id])
-    path_roots = data.get("path_roots", ["unilabos/szlab"])
+    path_roots = data.get("path_roots", ["tests/szlab"])
     if data.get("actions_source") == "registry":
         actions = _load_registry_actions(target_device_ids, path_roots, preset_path.parent)
     else:
@@ -105,7 +106,7 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
 
 
 def _load_registry_actions(device_ids: list[str], path_roots: list[str], base_dir: Path) -> dict[str, ActionSpec]:
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = REPO_ROOT
     pending = set(device_ids)
     actions_by_device: dict[str, dict[str, ActionSpec]] = {}
     with ThreadPoolExecutor(max_workers=4, thread_name_prefix="SzlabRegistryScan") as executor:
@@ -788,7 +789,7 @@ def _resolve_ui_path(path: str | Path, preset: WorkflowPreset = DEFAULT_PRESET) 
         return candidate
 
     root_candidates = [preset.base_dir / candidate]
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = REPO_ROOT
     for root in preset.path_roots:
         root_path = Path(root)
         if not root_path.is_absolute():

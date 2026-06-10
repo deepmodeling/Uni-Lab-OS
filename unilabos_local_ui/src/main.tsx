@@ -607,6 +607,7 @@ function OpcChangePanel({ changes, nodes }: { changes: OpcChange[]; nodes: Node<
                 <th>NodeID</th>
                 <th>Name</th>
                 <th>Value Begin</th>
+                <th>Value Goal</th>
                 <th>Value End</th>
               </tr>
             </thead>
@@ -621,6 +622,7 @@ function OpcChangePanel({ changes, nodes }: { changes: OpcChange[]; nodes: Node<
                 <code>{change.name}</code>
               </td>
               <td>{formatOpcValue(change.valueBegin)}</td>
+              <td>{formatOpcValue(change.valueGoal)}</td>
               <td>{formatOpcValue(change.valueEnd)}</td>
             </tr>
           ))}

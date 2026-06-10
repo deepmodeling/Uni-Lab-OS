@@ -1,6 +1,6 @@
 # szlab 本地调试教学示例
 
-这个目录是一套自包含的 AI4C 本地调试 UI 示例。新增动作调试时，可以先复制或修改这里的文件，不需要先改 `unilabos/szlab/presets/` 或 `unilabos/szlab/runtime_configs/`。
+这个目录是一套自包含的 AI4C 本地调试 UI 示例。新增动作调试时，可以先复制或修改这里的文件，不需要先改 `tests/szlab/presets/` 或 `tests/szlab/runtime_configs/`。
 
 ## 文件说明
 
@@ -16,7 +16,7 @@
 在仓库根目录执行：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+PYTHONPATH=. python -m scripts.run_workflow_local \
   --ui \
   --port 8014 \
   --preset example/ai4c_preset.json
@@ -25,7 +25,7 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
 如果只想启动 UI 服务但不自动打开浏览器：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+PYTHONPATH=. python -m scripts.run_workflow_local \
   --ui \
   --no-browser \
   --port 8014 \
@@ -35,12 +35,12 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
 如果完全不启动 UI，直接在命令行执行示例 workflow：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
-  --runtime-config unilabos/szlab/example/ai4c_runtime.json \
-  --graph unilabos/szlab/example/ai4c_graph.json \
-  --workflow unilabos/szlab/example/ai4c_workflow.json \
+PYTHONPATH=. python -m scripts.run_workflow_local \
+  --runtime-config tests/szlab/example/ai4c_runtime.json \
+  --graph tests/szlab/example/ai4c_graph.json \
+  --workflow tests/szlab/example/ai4c_workflow.json \
   --url opc.tcp://127.0.0.1:49320 \
-  --csv unilabos/szlab/example/ai4c_sim_updated.csv \
+  --csv tests/szlab/example/ai4c_sim_updated.csv \
   --no-subscription \
   --timeout 60
 ```
@@ -61,7 +61,7 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
 `ai4c_runtime.json` 中的 `target_class` 指向 `ExampleAI4CActions`：
 
 ```json
-"target_class": "unilabos.szlab.example.ai4c_actions.ExampleAI4CActions"
+"target_class": "tests.szlab.example.ai4c_actions.ExampleAI4CActions"
 ```
 
 如果以后要切回生产设备类，可以把它改成生产类路径。

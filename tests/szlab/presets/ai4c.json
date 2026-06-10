@@ -12,7 +12,7 @@
     "no_subscription": true
   },
   "path_roots": [
-    "unilabos/szlab",
+    "tests/szlab",
     "unilabos/devices/workstation/AI4C"
   ],
   "device_graph": {

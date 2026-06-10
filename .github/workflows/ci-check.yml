@@ -11,11 +11,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: registry.dp.tech/dptech/dp/native/prod-925614/unilabos-lite:1.0
-      # If the registry is private from GitHub Actions, add these repository secrets:
-      # credentials:
-      #   username: ${{ secrets.DP_REGISTRY_USERNAME }}
-      #   password: ${{ secrets.DP_REGISTRY_PASSWORD }}
+      image: styxhuang/unilabos-lite:tagname
 
     steps:
       - name: Check out repository

@@ -1,6 +1,6 @@
 """AI4C local debug actions used by the szlab example preset.
 
-This file intentionally lives under ``unilabos/szlab/example`` so new actions
+This file intentionally lives under ``tests/szlab/example`` so new actions
 can be taught and debugged without editing the production AI4C device class.
 """
 
@@ -28,7 +28,7 @@ class RoboticArmAction(IntEnum):
 class ExampleAI4CActions:
     """Minimal local action class for the example workflow UI.
 
-    ``run_workflow_local.py`` patches ``_call_plc_command`` at runtime so these
+    ``scripts/run_workflow_local.py`` patches ``_call_plc_command`` at runtime so these
     methods can reuse the configured PLC client without ROS.
     """
 
@@ -118,11 +118,11 @@ class ExampleAI4CActions:
             success_message="将孔板放置到移液站完成",
         )
 
-# PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
-#   --runtime-config unilabos/szlab/example/ai4c_runtime.json \
-#   --graph unilabos/szlab/example/ai4c_graph.json \
-#   --workflow unilabos/szlab/example/ai4c_workflow.json \
+# PYTHONPATH=. python -m scripts.run_workflow_local \
+#   --runtime-config tests/szlab/example/ai4c_runtime.json \
+#   --graph tests/szlab/example/ai4c_graph.json \
+#   --workflow tests/szlab/example/ai4c_workflow.json \
 #   --url opc.tcp://jdht1471820.bohrium.tech:50003 \
-#   --csv unilabos/szlab/example/ai4c_sim_updated.csv \
+#   --csv tests/szlab/example/ai4c_sim_updated.csv \
 #   --no-subscription \
 #   --timeout 60

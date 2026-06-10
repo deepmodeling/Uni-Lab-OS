@@ -15,7 +15,7 @@
     "show_csv": false
   },
   "path_roots": [
-    "unilabos/szlab",
+    "tests/szlab",
     "unilabos/devices/workstation/szlab_mixer"
   ],
   "device_graph": {

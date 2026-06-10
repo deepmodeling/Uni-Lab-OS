@@ -15,6 +15,7 @@ export type OpcChange = {
   label: string;
   name: string;
   valueBegin: unknown;
+  valueGoal: unknown;
   valueEnd: unknown;
 };
 
@@ -31,6 +32,7 @@ export function collectOpcChanges(events: LogEvent[]): OpcChange[] {
         eventSequence: event.sequence,
         workflowNodeId: event.node_id || null,
         valueBegin: snapshot.value,
+        valueGoal: snapshot.valueGoal ?? current?.valueGoal,
         valueEnd: current?.valueEnd,
       });
     });
@@ -44,6 +46,7 @@ export function collectOpcChanges(events: LogEvent[]): OpcChange[] {
         eventSequence: event.sequence,
         workflowNodeId: event.node_id || null,
         valueBegin: current?.valueBegin,
+        valueGoal: snapshot.valueGoal ?? current?.valueGoal,
         valueEnd: snapshot.value,
       });
     });
@@ -65,6 +68,7 @@ export function collectOpcChanges(events: LogEvent[]): OpcChange[] {
         label: typeof change.label === 'string' ? change.label : current?.label || name,
         name,
         valueBegin: change.before,
+        valueGoal: getValueGoal(change, current?.valueGoal),
         valueEnd: change.after,
       });
     });
@@ -98,9 +102,17 @@ function collectSnapshotRows(event: LogEvent, field: 'before' | 'after') {
         label: typeof value.label === 'string' ? value.label : name,
         name,
         value: value.value,
+        valueGoal: getValueGoal(value),
       },
     ];
   });
+}
+
+function getValueGoal(record: Record<string, unknown>, fallback?: unknown): unknown {
+  if ('value_goal' in record) return record.value_goal;
+  if ('valueGoal' in record) return record.valueGoal;
+  if ('goal' in record) return record.goal;
+  return fallback;
 }
 
 function unwrapOpcValue(value: unknown): unknown {

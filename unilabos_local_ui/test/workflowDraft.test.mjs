@@ -102,6 +102,7 @@ const opcRowsWhileRunning = collectOpcChanges([
           display_name: 'S06允许加工',
           node_id: 'ns=2;i=269',
           value: { success: true, value: true, node_id: 'ns=2;i=269' },
+          value_goal: { success: true, value: false, node_id: 'ns=2;i=269' },
         },
         S06加工完成: {
           name: 'S06加工完成',
@@ -116,6 +117,7 @@ const opcRowsWhileRunning = collectOpcChanges([
 ]);
 assert.equal(opcRowsWhileRunning.length, 2, '运行中应显示执行前采样到的等待变量');
 assert.equal(opcRowsWhileRunning[0].valueBegin.value, true);
+assert.equal(opcRowsWhileRunning[0].valueGoal.value, false);
 assert.equal(opcRowsWhileRunning[0].valueEnd, undefined);
 
 assert.equal(formatOpcValue({ success: true, value: false, node_id: 'ns=2;i=270' }), 'false');

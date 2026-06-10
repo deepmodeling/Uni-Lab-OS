@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Callable, TextIO
 
 
-SZLAB_DIR = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SZLAB_DIR = REPO_ROOT / "tests" / "szlab"
 DEFAULT_RUNTIME_CONFIG = SZLAB_DIR / "runtime_configs" / "ai4c_runtime.json"
 ROBOT_ARM_DEVICE_ID = "AI4C_robot_arm"
 
@@ -202,6 +203,7 @@ def build_snapshot_diff_detail(before: dict[str, Any], after: dict[str, Any], pl
                 "display_name": display_name,
                 "node_id": node_id,
                 "before": before_value,
+                "value_goal": after_value,
                 "after": after_value,
             }
         )
@@ -441,7 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     if args.ui:
-        from unilabos.szlab.workflow_ui import start_ui
+        from scripts.workflow_ui import start_ui
 
         start_ui(
             host=args.host,
@@ -479,4 +481,4 @@ if __name__ == "__main__":
     sys.exit(main())
 
     # 使用命令：
-    # python -m unilabos.szlab.run_workflow_local --graph AI4C.json --workflow robot.json --url opc.tcp://jdht1471820.bohrium.tech:50003 --csv ai4c_sim_updated.csv --no-subscription --timeout 60 --log-file tmp.log
+    # python -m scripts.run_workflow_local --graph AI4C.json --workflow robot.json --url opc.tcp://jdht1471820.bohrium.tech:50003 --csv ai4c_sim_updated.csv --no-subscription --timeout 60 --log-file tmp.log

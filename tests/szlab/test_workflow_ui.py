@@ -1,6 +1,6 @@
 import pytest
 
-from unilabos.szlab.run_workflow_local import (
+from scripts.run_workflow_local import (
     WorkflowLogger,
     WorkflowNode,
     _load_class,
@@ -8,7 +8,7 @@ from unilabos.szlab.run_workflow_local import (
     load_runtime_config,
     run_nodes,
 )
-from unilabos.szlab.workflow_ui import (
+from scripts.workflow_ui import (
     RunRecord,
     WorkflowRunManager,
     _load_preset_runtime_config,
@@ -101,7 +101,7 @@ def test_example_preset_uses_szlab_local_action_class():
     preset = load_preset("example/ai4c_preset.json")
     runtime_config = _load_preset_runtime_config(preset)
 
-    assert runtime_config.device_factory.target_class == "unilabos.szlab.example.ai4c_actions.ExampleAI4CActions"
+    assert runtime_config.device_factory.target_class == "tests.szlab.example.ai4c_actions.ExampleAI4CActions"
     assert "pick_well_plate_from_loading_rack" in preset.actions
 
 
@@ -387,9 +387,9 @@ def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):
         assert devices is created_devices[0]
         return [{"uuid": ordered_nodes[0].uuid, "result": {"success": True}}]
 
-    monkeypatch.setattr("unilabos.szlab.workflow_ui.create_local_devices", fake_create_local_devices)
-    monkeypatch.setattr("unilabos.szlab.workflow_ui.run_nodes", fake_run_nodes)
-    monkeypatch.setattr("unilabos.szlab.workflow_ui._disconnect_devices", lambda devices, log=None: disconnect_calls.append(devices))
+    monkeypatch.setattr("scripts.workflow_ui.create_local_devices", fake_create_local_devices)
+    monkeypatch.setattr("scripts.workflow_ui.run_nodes", fake_run_nodes)
+    monkeypatch.setattr("scripts.workflow_ui._disconnect_devices", lambda devices, log=None: disconnect_calls.append(devices))
 
     payload = {
         "workflow": build_linear_workflow(
@@ -459,5 +459,6 @@ def test_run_nodes_logs_opc_summary_with_detail_instead_of_full_snapshots():
         "display_name": "Robotic_Arm_Idle",
         "node_id": None,
         "before": {"success": True, "value": True},
+        "value_goal": {"success": True, "value": False},
         "after": {"success": True, "value": False},
     }

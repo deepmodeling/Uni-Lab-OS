@@ -1,11 +1,11 @@
 # szlab 本地调试 UI 新动作接入教程
 
-本教程使用 `unilabos/szlab/example/` 接入一个本地调试动作。动作实现、UI 配置、运行配置、OPC 节点表都在 `example/` 目录内。
+本教程使用 `tests/szlab/example/` 接入一个本地调试动作。动作实现、UI 配置、运行配置、OPC 节点表都在 `example/` 目录内。
 
 ## 1. 示例目录
 
 ```text
-unilabos/szlab/example/
+tests/szlab/example/
 ├── README.md
 ├── __init__.py
 ├── ai4c_actions.py
@@ -38,7 +38,7 @@ cd ..
 在仓库根目录执行：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+PYTHONPATH=. python -m scripts.run_workflow_local \
   --ui \
   --port 8014 \
   --preset example/ai4c_preset.json
@@ -75,7 +75,7 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
 
 打开：
 
-`unilabos/szlab/example/ai4c_actions.py`
+`tests/szlab/example/ai4c_actions.py`
 
 在 `RoboticArmTargetPosition` 中加入新工位枚举：
 
@@ -115,7 +115,7 @@ def place_well_plate_to_new_station(self) -> dict[str, Any]:
 
 打开：
 
-`unilabos/szlab/example/ai4c_preset.json`
+`tests/szlab/example/ai4c_preset.json`
 
 在 `actions` 数组中加入：
 
@@ -139,7 +139,7 @@ def place_well_plate_to_new_station(self) -> dict[str, Any]:
 
 打开：
 
-`unilabos/szlab/example/ai4c_runtime.json`
+`tests/szlab/example/ai4c_runtime.json`
 
 在 `opc_snapshot.action_variables` 中加入：
 
@@ -185,7 +185,7 @@ def place_well_plate_to_new_station(self) -> dict[str, Any]:
 
 打开：
 
-`unilabos/szlab/example/ai4c_sim_updated.csv`
+`tests/szlab/example/ai4c_sim_updated.csv`
 
 加入：
 
@@ -206,12 +206,12 @@ def place_well_plate_to_new_station(self) -> dict[str, Any]:
 
 打开：
 
-`unilabos/szlab/example/ai4c_runtime.json`
+`tests/szlab/example/ai4c_runtime.json`
 
 确认 `target_class`：
 
 ```json
-"target_class": "unilabos.szlab.example.ai4c_actions.ExampleAI4CActions"
+"target_class": "tests.szlab.example.ai4c_actions.ExampleAI4CActions"
 ```
 
 确认 `direct_plc_command_method`：
@@ -232,7 +232,7 @@ def place_well_plate_to_new_station(self) -> dict[str, Any]:
 执行：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+PYTHONPATH=. python -m scripts.run_workflow_local \
   --ui \
   --port 8014 \
   --preset example/ai4c_preset.json
@@ -317,7 +317,7 @@ CSV：
 
 ## 11. 已有正式 `@device` 后的命令行测试
 
-如果设备已经按 `add-device` 流程写成正式 `@device` 类，就不需要再把动作手写到 `unilabos/szlab/example/`。本地测试时应让 preset 从 registry/AST 读取设备和 action。
+如果设备已经按 `add-device` 流程写成正式 `@device` 类，就不需要再把动作手写到 `tests/szlab/example/`。本地测试时应让 preset 从 registry/AST 读取设备和 action。
 
 ### 11.1 先确认设备类可导入
 
@@ -345,7 +345,7 @@ preset 需要包含：
   "target_device_ids": ["szlab_mixer_stirrer", "szlab_mixer_pump"],
   "runtime_config": "runtime_configs/szlab_mixer_runtime.json",
   "path_roots": [
-    "unilabos/szlab",
+    "tests/szlab",
     "unilabos/devices/workstation/szlab_mixer"
   ]
 }
@@ -367,7 +367,7 @@ runtime config 需要把设备实例 id 映射到正式设备类：
 启动 UI：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+PYTHONPATH=. python -m scripts.run_workflow_local \
   --ui \
   --port 8014 \
   --preset szlab_mixer
@@ -378,7 +378,7 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
 如果是 AI4C 正式 preset：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+PYTHONPATH=. python -m scripts.run_workflow_local \
   --ui \
   --port 8014 \
   --preset ai4c
@@ -391,10 +391,10 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
 已有 workflow JSON 和设备图 JSON 时，可以直接从命令行执行：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
+PYTHONPATH=. python -m scripts.run_workflow_local \
   --workflow path/to/workflow.json \
   --graph path/to/device_graph.json \
-  --runtime-config unilabos/szlab/runtime_configs/szlab_mixer_runtime.json \
+  --runtime-config tests/szlab/runtime_configs/szlab_mixer_runtime.json \
   --url opc.tcp://jdht1471820.bohrium.tech:50001 \
   --timeout 300 \
   --log-file /tmp/szlab_mixer_run.log
@@ -411,12 +411,12 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
 AI4C 这类 `PLC + target device` 的旧 runtime 仍可用：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local \
-  --workflow unilabos/szlab/robot.json \
-  --graph unilabos/szlab/AI4C.json \
-  --runtime-config unilabos/szlab/runtime_configs/ai4c_runtime.json \
+PYTHONPATH=. python -m scripts.run_workflow_local \
+  --workflow tests/szlab/robot.json \
+  --graph tests/szlab/AI4C.json \
+  --runtime-config tests/szlab/runtime_configs/ai4c_runtime.json \
   --url opc.tcp://jdht1471820.bohrium.tech:50003 \
-  --csv unilabos/szlab/example/ai4c_sim_updated.csv \
+  --csv tests/szlab/example/ai4c_sim_updated.csv \
   --no-subscription \
   --timeout 60 \
   --log-file /tmp/ai4c_run.log
@@ -463,7 +463,7 @@ npm run build
 
 ```bash
 PYTHONPATH=. python - <<'PY'
-from unilabos.szlab.example.ai4c_actions import ExampleAI4CActions
+from tests.szlab.example.ai4c_actions import ExampleAI4CActions
 
 actions = ExampleAI4CActions()
 assert hasattr(actions, "pick_well_plate_from_loading_rack")
@@ -476,14 +476,14 @@ PY
 
 教学示例调试完成后执行：
 
-1. 将 `unilabos/szlab/example/ai4c_actions.py` 中的动作方法同步到正式设备类。
-2. 将 `unilabos/szlab/example/ai4c_preset.json` 中的 action 同步到 `unilabos/szlab/presets/ai4c.json`。
-3. 将 `unilabos/szlab/example/ai4c_runtime.json` 中的 OPC 快照配置同步到 `unilabos/szlab/runtime_configs/ai4c_runtime.json`。
+1. 将 `tests/szlab/example/ai4c_actions.py` 中的动作方法同步到正式设备类。
+2. 将 `tests/szlab/example/ai4c_preset.json` 中的 action 同步到 `tests/szlab/presets/ai4c.json`。
+3. 将 `tests/szlab/example/ai4c_runtime.json` 中的 OPC 快照配置同步到 `tests/szlab/runtime_configs/ai4c_runtime.json`。
 4. 将新增 OPC 节点同步到正式 CSV。
 5. 启动正式 UI：
 
 ```bash
-PYTHONPATH=. python -m unilabos.szlab.run_workflow_local --ui --port 8014 --preset ai4c
+PYTHONPATH=. python -m scripts.run_workflow_local --ui --port 8014 --preset ai4c
 ```
 
 ## 14. 排查表
@@ -496,4 +496,4 @@ PYTHONPATH=. python -m unilabos.szlab.run_workflow_local --ui --port 8014 --pres
 | 运行时报 PLC bridge 未初始化 | `ai4c_runtime.json` 的 `direct_plc_command_method` 为 `_call_plc_command` |
 | OPC 表格没有新变量 | `ai4c_runtime.json` 的 `action_variables` 或 `param_variables` 包含变量 |
 | OPC 读取失败 | `ai4c_sim_updated.csv` 中存在对应 `EnglishName` |
-| 页面显示旧代码 | 重启 `run_workflow_local.py` UI 进程 |
+| 页面显示旧代码 | 重启 `scripts/run_workflow_local.py` UI 进程 |

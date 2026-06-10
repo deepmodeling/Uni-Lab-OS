@@ -4,7 +4,7 @@
     "target_device_id": "AI4C_robot_arm",
     "route_aliases": ["AI4C_station", "AI4C_robot_arm"],
     "plc_class": "unilabos.devices.workstation.AI4C.AI4C_plc.AI4CPLCDevice",
-    "target_class": "unilabos.szlab.example.ai4c_actions.ExampleAI4CActions",
+    "target_class": "tests.szlab.example.ai4c_actions.ExampleAI4CActions",
     "target_config": {
       "plc_device_id": "AI4C_plc"
     },

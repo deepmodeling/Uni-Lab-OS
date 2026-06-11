@@ -1,4 +1,12 @@
 ARG BASE_IMAGE=public.ecr.aws/ubuntu/ubuntu:22.04
+
+FROM node:22-alpine AS frontend-builder
+WORKDIR /ui
+COPY unilabos_local_ui/package*.json ./
+RUN npm ci
+COPY unilabos_local_ui/ ./
+RUN npm run build
+
 FROM ${BASE_IMAGE}
 
 ARG MINIFORGE_URL=""
@@ -59,6 +67,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
     && uv pip install --python /opt/conda/envs/unilab/bin/python --no-cache -r unilabos/utils/requirements.txt
 
 COPY . .
+COPY --from=frontend-builder /ui/dist ./unilabos_local_ui/dist
 
 RUN python -m pip install --no-cache-dir . \
     && mamba clean -a -y \
@@ -77,5 +86,7 @@ RUN printf '%s\n' \
         > /usr/local/bin/docker-entrypoint.sh \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
+EXPOSE 8000
+
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
-CMD ["bash"]
+CMD ["python", "-m", "scripts.workflow_ui", "--host", "0.0.0.0", "--port", "8000"]

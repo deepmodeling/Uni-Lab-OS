@@ -1,0 +1,9 @@
+services:
+  unilabos:
+    image: ${UNILABOS_IMAGE:-styxhuang/unilabos:latest}
+    container_name: unilabos
+    ports:
+      - "${UNILABOS_PORT:-50001}:8000"
+    restart: unless-stopped
+    environment:
+      PYTHONUNBUFFERED: "1"

@@ -261,5 +261,3 @@ unilabos_local_ui/dist/
 unilabos_local_ui/*.tsbuildinfo
 unilabos_local_ui/vite.config.d.ts
 unilabos_local_ui/vite.config.js
-
-Dockerfile

@@ -7,9 +7,10 @@
   "default_workflow_name": "szlab_canvas_workflow",
   "default_config": {
     "graph": "__generated__",
-    "csv": "ai4c_sim_updated.csv",
+    "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
     "timeout": 300,
-    "no_subscription": true
+    "no_subscription": true,
+    "show_csv": false
   },
   "path_roots": [
     "tests/szlab",
@@ -27,7 +28,6 @@
         "position": { "x": 0, "y": 0, "z": 0 },
         "config": {
           "url": "${opcua_url}",
-          "csv_path": "${csv_path}",
           "use_subscription": "${use_subscription}"
         },
         "data": {}

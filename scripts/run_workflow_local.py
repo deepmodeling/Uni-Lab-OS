@@ -316,20 +316,21 @@ def create_local_devices(
         raise ValueError("缺少 OPC UA url，请在设备图或 --url 中指定")
 
     csv = csv_path.resolve() if csv_path else _resolve_path(plc_config.get("csv_path"), graph_file.parent)
-    if csv is None:
-        raise ValueError("缺少 CSV 节点文件，请在设备图或 --csv 中指定")
 
     if use_subscription is None:
         use_subscription = bool(plc_config.get("use_subscription", False))
 
     plc_class = _load_class(device_factory.plc_class)
     target_class = _load_class(device_factory.target_class)
+    plc_kwargs = {
+        "url": url,
+        "csv_path": str(csv) if csv is not None else None,
+        "username": plc_config.get("username"),
+        "password": plc_config.get("password"),
+        "use_subscription": use_subscription,
+    }
     plc = plc_class(
-        url=url,
-        csv_path=str(csv),
-        username=plc_config.get("username"),
-        password=plc_config.get("password"),
-        use_subscription=use_subscription,
+        **plc_kwargs,
     )
     target_config = dict(device_factory.target_config)
     target_config.update(target_graph_config)

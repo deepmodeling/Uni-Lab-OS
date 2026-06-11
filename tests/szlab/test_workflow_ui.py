@@ -28,6 +28,9 @@ def test_load_ai4c_preset():
     assert preset.title == "szlab 本地调试工具"
     assert preset.target_device_id == "AI4C_robot_arm"
     assert preset.default_config["graph"] == "__generated__"
+    assert preset.default_config["url"] == "opc.tcp://jdht1471820.bohrium.tech:50001"
+    assert preset.default_config["show_csv"] is False
+    assert "csv" not in preset.default_config
     assert "pick_well_plate_from_loading_rack" in preset.actions
 
 
@@ -258,7 +261,22 @@ def test_build_graph_workflow_rejects_invalid_node_position_param():
         )
 
 
-def test_build_local_device_graph_uses_runtime_config():
+def test_build_local_device_graph_uses_runtime_config_without_csv_by_default():
+    graph = build_local_device_graph(
+        opcua_url="opc.tcp://example:4840",
+        use_subscription=False,
+    )
+
+    nodes = {node["id"]: node for node in graph["nodes"]}
+    assert nodes["AI4C_plc"]["config"] == {
+        "url": "opc.tcp://example:4840",
+        "use_subscription": False,
+    }
+    assert nodes["AI4C_robot_arm"]["config"] == {"plc_device_id": "AI4C_plc"}
+    assert graph["links"] == []
+
+
+def test_build_local_device_graph_keeps_csv_when_explicitly_configured():
     graph = build_local_device_graph(
         opcua_url="opc.tcp://example:4840",
         csv_path="ai4c_sim_updated.csv",
@@ -266,13 +284,7 @@ def test_build_local_device_graph_uses_runtime_config():
     )
 
     nodes = {node["id"]: node for node in graph["nodes"]}
-    assert nodes["AI4C_plc"]["config"] == {
-        "url": "opc.tcp://example:4840",
-        "csv_path": "ai4c_sim_updated.csv",
-        "use_subscription": False,
-    }
-    assert nodes["AI4C_robot_arm"]["config"] == {"plc_device_id": "AI4C_plc"}
-    assert graph["links"] == []
+    assert nodes["AI4C_plc"]["config"]["csv_path"] == "ai4c_sim_updated.csv"
 
 
 def test_runtime_config_collects_common_action_and_param_variables(tmp_path):
@@ -401,7 +413,6 @@ def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):
         ),
         "graph": "__generated__",
         "url": "opc.tcp://example:4840",
-        "csv": "ai4c_sim_updated.csv",
         "no_subscription": True,
         "timeout": 60,
     }

@@ -16,4 +16,5 @@ pandas
 crcmod-plus
 pymodbus
 matplotlib
+pylabrobot
 pylibftdi

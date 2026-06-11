@@ -399,12 +399,13 @@ class WorkflowRunManager:
             timeout = float(payload.get("timeout") or default_config.get("timeout") or 300.0)
             no_subscription = bool(payload.get("no_subscription", default_config.get("no_subscription", True)))
             graph_value = str(payload.get("graph") or default_config.get("graph") or GENERATED_GRAPH_SENTINEL).strip()
+            opcua_url = str(payload.get("url") or default_config.get("url") or "").strip()
 
             if graph_value == GENERATED_GRAPH_SENTINEL:
-                if not payload.get("url"):
+                if not opcua_url:
                     raise ValueError("生成设备图需要填写 OPC UA URL，或指定已有 graph JSON")
                 generated_graph = build_local_device_graph(
-                    opcua_url=str(payload.get("url")),
+                    opcua_url=opcua_url,
                     csv_path=str(csv_path or csv_value or default_config.get("csv") or ""),
                     use_subscription=not no_subscription,
                     preset=self._preset,
@@ -422,7 +423,7 @@ class WorkflowRunManager:
             device_key = (
                 self._preset.id,
                 graph_value,
-                str(payload.get("url") or ""),
+                opcua_url,
                 str(csv_path or ""),
                 no_subscription,
                 timeout,
@@ -431,7 +432,7 @@ class WorkflowRunManager:
                 device_key,
                 {
                     "graph_file": graph_file,
-                    "opcua_url": payload.get("url") or None,
+                    "opcua_url": opcua_url or None,
                     "csv_path": csv_path,
                     "use_subscription": False if no_subscription else None,
                     "plc_action_timeout": timeout,
@@ -601,7 +602,7 @@ def build_graph_workflow(
 
 def build_local_device_graph(
     opcua_url: str,
-    csv_path: str,
+    csv_path: str = "",
     use_subscription: bool = True,
     preset: WorkflowPreset = DEFAULT_PRESET,
 ) -> dict[str, Any]:
@@ -609,7 +610,7 @@ def build_local_device_graph(
     if not opcua_url:
         raise ValueError("缺少 OPC UA URL")
 
-    return _render_template_value(
+    graph = _render_template_value(
         preset.device_graph,
         {
             "opcua_url": opcua_url,
@@ -617,6 +618,18 @@ def build_local_device_graph(
             "use_subscription": use_subscription,
         },
     )
+    if not csv_path:
+        for node in graph.get("nodes", []):
+            config = node.get("config")
+            if isinstance(config, dict):
+                config.pop("csv_path", None)
+    else:
+        for node in graph.get("nodes", []):
+            config = node.get("config")
+            if isinstance(config, dict) and config.get("url") == opcua_url:
+                config["csv_path"] = csv_path
+                break
+    return graph
 
 
 def _load_preset_runtime_config(preset: WorkflowPreset) -> RuntimeConfig:

@@ -75,11 +75,11 @@ type ActionNodeData = {
 
 const DEFAULT_CONFIG = {
   graph: '__generated__',
-  url: '',
-  csv: 'ai4c_sim_updated.csv',
+  url: 'opc.tcp://jdht1471820.bohrium.tech:50001',
+  csv: '',
   timeout: 300,
   no_subscription: true,
-  show_csv: true,
+  show_csv: false,
 };
 
 function App() {
@@ -437,7 +437,11 @@ function App() {
             </label>
             <label>
               OPC UA URL
-              <input value={config.url} onChange={(event) => setConfig({ ...config, url: event.target.value })} placeholder="例如 opc.tcp://192.168.1.88:4840" />
+              <input
+                value={config.url}
+                onChange={(event) => setConfig({ ...config, url: event.target.value })}
+                placeholder="opc.tcp://jdht1471820.bohrium.tech:50001"
+              />
             </label>
             {config.show_csv && (
               <label>

@@ -122,7 +122,6 @@ class ExampleAI4CActions:
 #   --runtime-config tests/szlab/example/ai4c_runtime.json \
 #   --graph tests/szlab/example/ai4c_graph.json \
 #   --workflow tests/szlab/example/ai4c_workflow.json \
-#   --url opc.tcp://jdht1471820.bohrium.tech:50003 \
-#   --csv tests/szlab/example/ai4c_sim_updated.csv \
+#   --url opc.tcp://jdht1471820.bohrium.tech:50001 \
 #   --no-subscription \
 #   --timeout 60

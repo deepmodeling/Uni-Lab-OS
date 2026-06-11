@@ -7,7 +7,7 @@
 - `ai4c_preset.json`：UI 示例 preset，定义左侧动作卡片、默认运行配置和临时设备图。
 - `ai4c_runtime.json`：本地运行配置，定义设备工厂、设备路由、OPC 快照变量。
 - `ai4c_actions.py`：教学用本地动作类，示例动作可以先写在这里，不需要改生产设备类。
-- `ai4c_sim_updated.csv`：示例 OPC UA 节点表，preset 默认会引用这个文件。
+- `ai4c_sim_updated.csv`：历史示例 OPC UA 节点表；当前 UI 默认不再要求填写 CSV。
 - `ai4c_graph.json`：命令行直跑用的最小设备图。
 - `ai4c_workflow.json`：命令行直跑用的最小 workflow。
 
@@ -39,8 +39,7 @@ PYTHONPATH=. python -m scripts.run_workflow_local \
   --runtime-config tests/szlab/example/ai4c_runtime.json \
   --graph tests/szlab/example/ai4c_graph.json \
   --workflow tests/szlab/example/ai4c_workflow.json \
-  --url opc.tcp://127.0.0.1:49320 \
-  --csv tests/szlab/example/ai4c_sim_updated.csv \
+  --url opc.tcp://jdht1471820.bohrium.tech:50001 \
   --no-subscription \
   --timeout 60
 ```
@@ -48,9 +47,8 @@ PYTHONPATH=. python -m scripts.run_workflow_local \
 页面打开后：
 
 1. 点击 `运行配置`。
-2. 填入 OPC UA URL。
-3. 确认 CSV 是 `ai4c_sim_updated.csv`。
-4. 从左侧添加动作节点，连线后点击 `运行`。
+2. 确认 OPC UA URL 默认为 `opc.tcp://jdht1471820.bohrium.tech:50001`，必要时再覆盖。
+3. 从左侧添加动作节点，连线后点击 `运行`。
 
 ## 新增动作时改哪里
 

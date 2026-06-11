@@ -405,7 +405,7 @@ PYTHONPATH=. python -m scripts.run_workflow_local \
 - `workflow.json` 的节点 `device_name` 必须能路由到 runtime config 中的设备实例 id，例如 `szlab_mixer_pump`。
 - `device_graph.json` 的节点 `id` 要和 runtime config 的 `devices` key 一致。
 - `device_graph.json` 的节点 `class` 要和 `@device(id=...)` 一致。
-- OPC UA 这类不需要 CSV 的设备可以不传 `--csv`；AI4C 这类 CSV 驱动的 PLC 仍需要传 `--csv` 或在 graph config 里配置 `csv_path`。
+- OPC UA 设备默认不需要传 `--csv`；仅在需要覆盖 graph config 的节点表时再传。
 - `--url` 会覆盖设备图里的 OPC UA 地址，便于同一套 graph 在不同环境测试。
 
 AI4C 这类 `PLC + target device` 的旧 runtime 仍可用：
@@ -415,8 +415,7 @@ PYTHONPATH=. python -m scripts.run_workflow_local \
   --workflow tests/szlab/robot.json \
   --graph tests/szlab/AI4C.json \
   --runtime-config tests/szlab/runtime_configs/ai4c_runtime.json \
-  --url opc.tcp://jdht1471820.bohrium.tech:50003 \
-  --csv tests/szlab/example/ai4c_sim_updated.csv \
+  --url opc.tcp://jdht1471820.bohrium.tech:50001 \
   --no-subscription \
   --timeout 60 \
   --log-file /tmp/ai4c_run.log

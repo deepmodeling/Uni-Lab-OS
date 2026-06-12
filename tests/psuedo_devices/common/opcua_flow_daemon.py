@@ -34,11 +34,13 @@ def describe_flow(flow_path: str | Path) -> None:
             print(f"  Observe: {', '.join(log_nodes)}")
         print("  Actions:")
         for action_index, action in enumerate(rule.get("actions", []), 1):
+            condition = action.get("when")
+            condition_text = f" when {condition}" if condition else ""
             if "write" in action:
                 write = action["write"]
-                print(f"    {action_index}. write {write.get('node')} = {write.get('value')!r}")
+                print(f"    {action_index}. write {write.get('node')} = {write.get('value')!r}{condition_text}")
             elif "sleep" in action:
-                print(f"    {action_index}. sleep {action['sleep']}s")
+                print(f"    {action_index}. sleep {action['sleep']}s{condition_text}")
             else:
                 print(f"    {action_index}. unsupported action: {action}")
 
@@ -92,14 +94,14 @@ class FlowDaemon:
         try:
             rules = self.flow.get("rules", [])
             self._validate_rules(rules, nodes)
-            for rule in rules:
+            for rule_index, rule in enumerate(rules):
                 trigger_node = rule["trigger"]["node"]
-                self.previous_values[trigger_node] = nodes[trigger_node].get_value()
+                self.previous_values[self._rule_key(rule_index, rule)] = nodes[trigger_node].get_value()
             LOGGER.info("daemon 启动监听: flow=%s rules=%s", self.flow_path, [rule.get("name") for rule in rules])
 
             while not self.stop_requested():
-                for rule in rules:
-                    self._run_rule_if_triggered(rule, nodes)
+                for rule_index, rule in enumerate(rules):
+                    self._run_rule_if_triggered(rule_index, rule, nodes)
                 time.sleep(self.poll_interval)
         finally:
             with suppress(Exception):
@@ -121,13 +123,15 @@ class FlowDaemon:
         for action in rule.get("actions", []):
             if "write" in action:
                 node_names.add(action["write"]["node"])
+            node_names.update(FlowDaemon._condition_nodes(action.get("when")))
         return node_names
 
-    def _run_rule_if_triggered(self, rule: dict[str, Any], nodes: dict[str, Any]) -> None:
+    def _run_rule_if_triggered(self, rule_index: int, rule: dict[str, Any], nodes: dict[str, Any]) -> None:
         trigger = rule["trigger"]
         trigger_node = trigger["node"]
         expected = trigger.get("value", True)
         edge = trigger.get("edge", "rising")
+        rule_key = self._rule_key(rule_index, rule)
 
         try:
             current = nodes[trigger_node].get_value()
@@ -137,8 +141,8 @@ class FlowDaemon:
             LOGGER.warning("读取 trigger 失败，跳过本轮: node=%s error=%s", trigger_node, exc)
             return
 
-        previous = self.previous_values.get(trigger_node)
-        self.previous_values[trigger_node] = current
+        previous = self.previous_values.get(rule_key)
+        self.previous_values[rule_key] = current
         if not self._triggered(current=current, previous=previous, expected=expected, edge=edge):
             return
 
@@ -146,6 +150,9 @@ class FlowDaemon:
         LOGGER.info("触发 flow 规则: name=%s trigger=%s values=%s", rule.get("name"), trigger_node, log_values)
 
         for action in rule.get("actions", []):
+            if not self._conditions_match(action.get("when"), nodes):
+                LOGGER.info("跳过未满足条件的 action: when=%s action=%s", action.get("when"), action)
+                continue
             if "sleep" in action:
                 time.sleep(float(action["sleep"]))
                 continue
@@ -153,6 +160,38 @@ class FlowDaemon:
                 write = action["write"]
                 nodes[write["node"]].set_value(write.get("value"))
                 LOGGER.info("写入 OPC UA 变量: node=%s value=%s", write["node"], write.get("value"))
+
+    @staticmethod
+    def _condition_nodes(condition: Any) -> set[str]:
+        if not condition:
+            return set()
+        if isinstance(condition, dict):
+            return {str(condition["node"])} if "node" in condition else set()
+        if isinstance(condition, list):
+            return {
+                str(item["node"])
+                for item in condition
+                if isinstance(item, dict) and "node" in item
+            }
+        raise ValueError(f"不支持的 when 条件: {condition}")
+
+    @classmethod
+    def _conditions_match(cls, condition: Any, nodes: dict[str, Any]) -> bool:
+        if not condition:
+            return True
+        conditions = condition if isinstance(condition, list) else [condition]
+        for item in conditions:
+            if not isinstance(item, dict) or "node" not in item:
+                raise ValueError(f"不支持的 when 条件: {condition}")
+            node_name = item["node"]
+            expected = item.get("value", True)
+            if nodes[node_name].get_value() != expected:
+                return False
+        return True
+
+    @staticmethod
+    def _rule_key(rule_index: int, rule: dict[str, Any]) -> str:
+        return f"{rule_index}:{rule.get('name', '')}:{rule['trigger']['node']}"
 
     @staticmethod
     def _triggered(current: Any, previous: Any, expected: Any, edge: str) -> bool:

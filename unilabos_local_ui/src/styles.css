@@ -133,9 +133,19 @@ code {
 }
 
 .palette {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
   min-height: 0;
   overflow: hidden;
   font-size: 12px;
+}
+
+.palette-actions {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .action-card {
@@ -172,11 +182,28 @@ code {
   min-height: 0;
 }
 
-.canvas-summary {
+.canvas-toolbar {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-toolbar button {
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1d4ed8;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+  font-size: 12px;
+  padding: 7px 11px;
+  backdrop-filter: blur(6px);
+}
+
+.canvas-summary {
   border: 1px solid #bfdbfe;
   border-radius: 999px;
   background: rgba(239, 246, 255, 0.92);

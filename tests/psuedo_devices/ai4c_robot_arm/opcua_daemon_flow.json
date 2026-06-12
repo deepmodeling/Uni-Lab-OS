@@ -1,0 +1,88 @@
+{
+  "name": "ai4c_robot_arm_opcua_daemon",
+  "rules": [
+    {
+      "name": "complete robot arm action after trigger",
+      "trigger": {
+        "node": "机械臂动作触发",
+        "value": true,
+        "edge": "rising"
+      },
+      "log_nodes": [
+        "机械臂目标位置代码",
+        "机械臂目标取放料代码",
+        "机械臂动作代码",
+        "孔板上料架_InPut[0]",
+        "移液站占位"
+      ],
+      "actions": [
+        {
+          "write": {
+            "node": "机械臂动作完成",
+            "value": false
+          }
+        },
+        {
+          "sleep": 0.2
+        },
+        {
+          "when": [
+            {
+              "node": "机械臂目标位置代码",
+              "value": 6
+            },
+            {
+              "node": "机械臂动作代码",
+              "value": 1
+            }
+          ],
+          "write": {
+            "node": "孔板上料架_InPut[0]",
+            "value": false
+          }
+        },
+        {
+          "when": [
+            {
+              "node": "机械臂目标位置代码",
+              "value": 3
+            },
+            {
+              "node": "机械臂动作代码",
+              "value": 2
+            }
+          ],
+          "write": {
+            "node": "移液站占位",
+            "value": true
+          }
+        },
+        {
+          "write": {
+            "node": "机械臂动作完成",
+            "value": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "reset robot arm completion after trigger reset",
+      "trigger": {
+        "node": "机械臂动作触发",
+        "value": true,
+        "edge": "falling"
+      },
+      "log_nodes": [
+        "机械臂动作完成"
+      ],
+      "actions": [
+        {
+          "write": {
+            "node": "机械臂动作完成",
+            "value": false
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -35,6 +35,7 @@ class NodeDefinition:
     name: str
     variant_type: ua.VariantType
     initial_value: Any
+    node_id: str | None = None
 
 
 class CsvOpcUaServer:
@@ -48,6 +49,7 @@ class CsvOpcUaServer:
         name_column: str,
         data_type_column: str,
         initial_value_column: str,
+        node_id_column: str,
         initial_values: dict[str, Any],
     ) -> None:
         self.endpoint = endpoint
@@ -57,6 +59,7 @@ class CsvOpcUaServer:
         self.name_column = name_column
         self.data_type_column = data_type_column
         self.initial_value_column = initial_value_column
+        self.node_id_column = node_id_column
 
         self.server = Server()
         self.server.set_endpoint(endpoint)
@@ -84,11 +87,13 @@ class CsvOpcUaServer:
                     continue
 
                 raw_initial_value = self.initial_values.get(name, row.get(self.initial_value_column))
+                node_id = (row.get(self.node_id_column) or "").strip() if self.node_id_column else ""
                 definitions.append(
                     NodeDefinition(
                         name=name,
                         variant_type=variant_type,
                         initial_value=self._coerce_value(raw_initial_value, variant_type),
+                        node_id=node_id or None,
                     )
                 )
 
@@ -98,8 +103,13 @@ class CsvOpcUaServer:
 
     def _create_nodes(self, definitions: list[NodeDefinition]) -> None:
         for definition in definitions:
-            node = self.device.add_variable(self.idx, definition.name,
-                                            definition.initial_value, definition.variant_type)
+            node_id = ua.NodeId.from_string(definition.node_id) if definition.node_id else self.idx
+            node = self.device.add_variable(
+                node_id,
+                definition.name,
+                definition.initial_value,
+                definition.variant_type,
+            )
             node.set_writable()
             self.nodes[definition.name] = node
             self.variant_by_name[definition.name] = definition.variant_type
@@ -145,6 +155,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--name-column", default="变量名")
     parser.add_argument("--data-type-column", default="数据类型")
     parser.add_argument("--initial-value-column", default="初始值")
+    parser.add_argument("--node-id-column", default="")
     parser.add_argument("--initial-values-json", default="{}")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     return parser.parse_args()
@@ -165,6 +176,7 @@ def main() -> None:
         name_column=args.name_column,
         data_type_column=args.data_type_column,
         initial_value_column=args.initial_value_column,
+        node_id_column=args.node_id_column,
         initial_values=json.loads(args.initial_values_json),
     )
     stop_event = threading.Event()

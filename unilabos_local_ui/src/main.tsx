@@ -52,6 +52,11 @@ type WorkflowJson = {
   edges: Array<Record<string, unknown>>;
 };
 
+type PseudoFlowJson = {
+  name: string;
+  rules: Array<Record<string, unknown>>;
+};
+
 type RunStatus = {
   run_id: string;
   status: string;
@@ -217,6 +222,16 @@ function App() {
     return payload as WorkflowJson;
   }, [edges, nodes, workflowName]);
 
+  const exportPseudoFlow = () => {
+    try {
+      const flow = createPseudoFlowJson(workflowName, nodes, edges);
+      downloadJson(`${workflowName || 'workflow'}_flow.json`, flow);
+      setMessage(`已导出 ${flow.rules.length} 条 pseudo flow 规则`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   useEffect(() => {
     if (!nodes.length) {
       setWorkflow(null);
@@ -324,21 +339,26 @@ function App() {
       <div className="layout">
         <aside className="panel palette">
           <h2>动作面板</h2>
-          {actions.map((action) => (
-            <button key={action.method} className="action-card" onClick={() => addActionNode(action)}>
-              <strong>{action.label}</strong>
-              <span>{action.description}</span>
-            </button>
-          ))}
+          <div className="palette-actions">
+            {actions.map((action) => (
+              <button key={action.method} className="action-card" onClick={() => addActionNode(action)}>
+                <strong>{action.label}</strong>
+                <span>{action.description}</span>
+              </button>
+            ))}
+          </div>
         </aside>
 
         <main className="canvas-panel">
           <div className="flow-canvas">
-            {workflow && (
-              <div className="canvas-summary">
-                已生成流程：{workflow.nodes.length} 个节点，{workflow.edges.length} 条连线
-              </div>
-            )}
+            <div className="canvas-toolbar">
+              {workflow && (
+                <div className="canvas-summary">
+                  已生成流程：{workflow.nodes.length} 个节点，{workflow.edges.length} 条连线
+                </div>
+              )}
+              <button onClick={exportPseudoFlow} disabled={!nodes.length}>导出 Flow JSON</button>
+            </div>
             <ReactFlow
               nodes={nodes.map((node) => ({
                 ...node,
@@ -469,6 +489,81 @@ function App() {
       )}
     </div>
   );
+}
+
+function createPseudoFlowJson(
+  name: string,
+  nodes: Node<ActionNodeData>[],
+  edges: Edge[],
+): PseudoFlowJson {
+  const orderedNodes = orderFlowNodes(nodes, edges);
+  const flowName = name || 'pseudo_flow';
+  return {
+    name: flowName,
+    rules: [
+      {
+        name: flowName,
+        trigger: {
+          node: orderedNodes[0]?.data.label || flowName,
+          value: true,
+          edge: 'rising',
+        },
+        log_nodes: orderedNodes.map((node) => node.data.label),
+        actions: orderedNodes.map((node, index) => ({
+          action: {
+            index: index + 1,
+            node: node.data.label,
+            workflow_node_id: node.id,
+            device_id: node.data.deviceId,
+            method: node.data.method,
+            params: node.data.params,
+          },
+        })),
+      },
+    ],
+  };
+}
+
+function orderFlowNodes(nodes: Node<ActionNodeData>[], edges: Edge[]) {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const originalIndex = new Map(nodes.map((node, index) => [node.id, index]));
+  const incoming = new Map(nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(nodes.map((node) => [node.id, [] as string[]]));
+
+  edges.forEach((edge) => {
+    if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) return;
+    outgoing.get(edge.source)?.push(edge.target);
+    incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
+  });
+
+  const ready = nodes
+    .filter((node) => (incoming.get(node.id) || 0) === 0)
+    .map((node) => node.id);
+  const orderedIds: string[] = [];
+  while (ready.length) {
+    ready.sort((left, right) => (originalIndex.get(left) || 0) - (originalIndex.get(right) || 0));
+    const current = ready.shift()!;
+    orderedIds.push(current);
+    (outgoing.get(current) || []).forEach((target) => {
+      incoming.set(target, (incoming.get(target) || 0) - 1);
+      if ((incoming.get(target) || 0) === 0) ready.push(target);
+    });
+  }
+
+  if (orderedIds.length !== nodes.length) {
+    throw new Error('当前画布存在循环连线，无法导出线性 flow.json');
+  }
+  return orderedIds.map((id) => nodesById.get(id)!);
+}
+
+function downloadJson(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function statusText(status?: string) {

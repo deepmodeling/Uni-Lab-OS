@@ -1,0 +1,41 @@
+{
+  "name": "ai4c_robot_arm_pick_place",
+  "rules": [
+    {
+      "name": "ai4c_robot_arm_pick_place",
+      "trigger": {
+        "node": "步骤2：从上料架抓取孔板",
+        "value": true,
+        "edge": "rising"
+      },
+      "log_nodes": [
+        "步骤2：从上料架抓取孔板",
+        "步骤14/20：将孔板放置到移液站"
+      ],
+      "actions": [
+        {
+          "action": {
+            "index": 1,
+            "node": "步骤2：从上料架抓取孔板",
+            "workflow_node_id": "ai4c-pick-well-plate-from-loading-rack",
+            "device_id": "AI4C_robot_arm",
+            "method": "pick_well_plate_from_loading_rack",
+            "params": {
+              "position": 1
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 2,
+            "node": "步骤14/20：将孔板放置到移液站",
+            "workflow_node_id": "ai4c-place-well-plate-to-pipetting-station",
+            "device_id": "AI4C_robot_arm",
+            "method": "place_well_plate_to_pipetting_station",
+            "params": {}
+          }
+        }
+      ]
+    }
+  ]
+}

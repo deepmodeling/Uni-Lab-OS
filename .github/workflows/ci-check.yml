@@ -3,10 +3,12 @@ name: CI Check
 on:
   push:
     branches:
-      - main
-      - master
       - dev
+      - feat/hm
   pull_request:
+    branches:
+      - dev
+      - main
 
 jobs:
   test:
@@ -44,3 +46,60 @@ jobs:
       - name: Run tests
         run: |
           mamba run -n unilab python -m pytest tests
+
+      - name: Run SZLab mixer pump OPC UA integration test
+        run: |
+          set -euo pipefail
+          WORKSPACE="${GITHUB_WORKSPACE:-$PWD}"
+          VIRTUAL_MIXER_LOG="${RUNNER_TEMP:-/tmp}/virtual_mixer_opcua.log"
+          VIRTUAL_MIXER_CSV="${WORKSPACE}/tests/szlab/fixtures/szlab_mixer_pump_ci_nodes.csv"
+          VIRTUAL_MIXER_SCRIPT="/root/Uni-Lab-OS/psuedo_devices/virtual_mixer_opcua.py"
+
+          echo "Starting virtual mixer OPC UA server"
+          echo "Script: ${VIRTUAL_MIXER_SCRIPT}"
+          echo "CSV: ${VIRTUAL_MIXER_CSV}"
+          echo "Endpoint: opc.tcp://localhost:50101/"
+
+          mamba run -n unilab python "${VIRTUAL_MIXER_SCRIPT}" \
+            --host 0.0.0.0 \
+            --port 50101 \
+            --path / \
+            --csv "${VIRTUAL_MIXER_CSV}" \
+            --tick-interval 0.02 \
+            --process-delay 0.5 \
+            --log-level DEBUG \
+            >"${VIRTUAL_MIXER_LOG}" 2>&1 &
+          VIRTUAL_MIXER_PID=$!
+
+          cleanup() {
+            status=$?
+            echo "---- virtual mixer OPC UA log ----"
+            if [ -f "${VIRTUAL_MIXER_LOG}" ]; then
+              python - "${VIRTUAL_MIXER_LOG}" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+print(path.read_text(encoding="utf-8", errors="replace"))
+PY
+            else
+              echo "Log file not found: ${VIRTUAL_MIXER_LOG}"
+            fi
+            if kill -0 "${VIRTUAL_MIXER_PID}" 2>/dev/null; then
+              kill "${VIRTUAL_MIXER_PID}" 2>/dev/null || true
+              wait "${VIRTUAL_MIXER_PID}" 2>/dev/null || true
+            fi
+            exit "${status}"
+          }
+          trap cleanup EXIT
+
+          sleep 1
+          if ! kill -0 "${VIRTUAL_MIXER_PID}" 2>/dev/null; then
+            echo "Virtual mixer OPC UA server exited before tests"
+            exit 1
+          fi
+
+          UNILABOS_TEST_SZLAB_MIXER_OPCUA_URL="opc.tcp://localhost:50101/" \
+            mamba run -n unilab python -m pytest \
+              tests/szlab/test_szlab_mixer_pump_opcua_ci.py \
+              -q -s -o log_cli=true --log-cli-level=INFO

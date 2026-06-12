@@ -48,6 +48,7 @@ jobs:
           mamba run -n unilab python -m pytest tests
 
       - name: Run SZLab mixer pump OPC UA integration test
+        shell: bash
         run: |
           set -euo pipefail
           WORKSPACE="${GITHUB_WORKSPACE:-$PWD}"

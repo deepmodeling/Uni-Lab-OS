@@ -65,27 +65,34 @@ def _wait_for_virtual_mixer(url: str, timeout: float = 15.0) -> None:
     raise TimeoutError(f"等待 VirtualMixer 超时: {last_error}")
 
 
-def test_szlab_mixer_pump_transfer_liquid_against_virtual_opcua() -> None:
-    url = os.environ.get("UNILABOS_TEST_SZLAB_MIXER_OPCUA_URL")
-    if not url:
-        pytest.skip("需要设置 UNILABOS_TEST_SZLAB_MIXER_OPCUA_URL 才运行虚拟 OPC UA 集成测试")
+class TestSzlabMixerPumpOpcUaDevice:
+    """CI 中针对 szlab_mixer_pump device 的真实 OPC UA 闭环测试。"""
 
-    _ci_log("开始 szlab_mixer pump OPC UA 集成测试: url=%s", url)
-    _wait_for_virtual_mixer(url)
+    @staticmethod
+    def opcua_url() -> str:
+        url = os.environ.get("UNILABOS_TEST_SZLAB_MIXER_OPCUA_URL")
+        if not url:
+            pytest.skip("需要设置 UNILABOS_TEST_SZLAB_MIXER_OPCUA_URL 才运行虚拟 OPC UA 集成测试")
+        return url
 
-    device = SzlabMixerPumpDevice(url=url, timeout=8.0)
-    try:
-        before = device.get_variables(PUMP_VARIABLES)
-        _ci_log("pump action 前 OPC 状态: %s", before)
+    def test_transfer_liquid_against_virtual_opcua(self) -> None:
+        url = self.opcua_url()
+        _ci_log("开始 szlab_mixer pump OPC UA 集成测试: url=%s", url)
+        _wait_for_virtual_mixer(url)
 
-        result = device.transfer_liquid(pump=1, volume=10, direction="aspirate")
+        device = SzlabMixerPumpDevice(url=url, timeout=8.0)
+        try:
+            before = device.get_variables(PUMP_VARIABLES)
+            _ci_log("pump action 前 OPC 状态: %s", before)
 
-        after = device.get_variables(PUMP_VARIABLES)
-        _ci_log("pump action 后 OPC 状态: %s", after)
-        _ci_log("pump action 返回: %s", result)
+            result = device.transfer_liquid(pump=1, volume=10, direction="aspirate")
 
-        assert result["success"] is True
-        assert after["S06注射泵选择"]["value"] == 1
-        assert after["S06注射泵1抽液"]["value"] == 10
-    finally:
-        device.disconnect()
+            after = device.get_variables(PUMP_VARIABLES)
+            _ci_log("pump action 后 OPC 状态: %s", after)
+            _ci_log("pump action 返回: %s", result)
+
+            assert result["success"] is True
+            assert after["S06注射泵选择"]["value"] == 1
+            assert after["S06注射泵1抽液"]["value"] == 10
+        finally:
+            device.disconnect()

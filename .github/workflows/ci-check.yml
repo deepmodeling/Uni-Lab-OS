@@ -53,44 +53,80 @@ jobs:
           set -euo pipefail
           WORKSPACE="${GITHUB_WORKSPACE:-$PWD}"
           VIRTUAL_MIXER_LOG="${RUNNER_TEMP:-/tmp}/virtual_mixer_opcua.log"
+          PUMP_DAEMON_LOG="${RUNNER_TEMP:-/tmp}/szlab_mixer_pump_daemon.log"
           VIRTUAL_MIXER_CSV="${WORKSPACE}/tests/szlab/fixtures/szlab_mixer_pump_ci_nodes.csv"
-          VIRTUAL_MIXER_SCRIPT="/root/Uni-Lab-OS/psuedo_devices/virtual_mixer_opcua.py"
+          PUMP_DAEMON_FLOW="${WORKSPACE}/tests/psuedo_devices/szlab_mixer/pump_flow.json"
+          OPCUA_SERVER_SCRIPT="${WORKSPACE}/tests/psuedo_devices/common/opcua_csv_server.py"
+          OPCUA_DAEMON_SCRIPT="${WORKSPACE}/tests/psuedo_devices/common/opcua_flow_daemon.py"
+          VIRTUAL_MIXER_PID=""
+          PUMP_DAEMON_PID=""
 
           echo "Starting virtual mixer OPC UA server"
-          echo "Script: ${VIRTUAL_MIXER_SCRIPT}"
+          echo "Script: ${OPCUA_SERVER_SCRIPT}"
           echo "CSV: ${VIRTUAL_MIXER_CSV}"
           echo "Endpoint: opc.tcp://localhost:50101/"
 
-          mamba run -n unilab python "${VIRTUAL_MIXER_SCRIPT}" \
+          mamba run -n unilab python "${OPCUA_SERVER_SCRIPT}" \
             --host 0.0.0.0 \
             --port 50101 \
             --path / \
             --csv "${VIRTUAL_MIXER_CSV}" \
-            --tick-interval 0.02 \
-            --process-delay 0.5 \
+            --object-name "VirtualMixer" \
+            --initial-values-json '{"S06允许加工": true}' \
             --log-level DEBUG \
             >"${VIRTUAL_MIXER_LOG}" 2>&1 &
           VIRTUAL_MIXER_PID=$!
 
           cleanup() {
-            status=$?
+            exit_status=$?
             echo "---- virtual mixer OPC UA log ----"
             if [ -f "${VIRTUAL_MIXER_LOG}" ]; then
               python -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace"))' "${VIRTUAL_MIXER_LOG}"
             else
               echo "Log file not found: ${VIRTUAL_MIXER_LOG}"
             fi
-            if kill -0 "${VIRTUAL_MIXER_PID}" 2>/dev/null; then
+            echo "---- szlab mixer pump daemon log ----"
+            if [ -f "${PUMP_DAEMON_LOG}" ]; then
+              python -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace"))' "${PUMP_DAEMON_LOG}"
+            else
+              echo "Log file not found: ${PUMP_DAEMON_LOG}"
+            fi
+            if [ -n "${PUMP_DAEMON_PID}" ] && kill -0 "${PUMP_DAEMON_PID}" 2>/dev/null; then
+              kill "${PUMP_DAEMON_PID}" 2>/dev/null || true
+              wait "${PUMP_DAEMON_PID}" 2>/dev/null || true
+            fi
+            if [ -n "${VIRTUAL_MIXER_PID}" ] && kill -0 "${VIRTUAL_MIXER_PID}" 2>/dev/null; then
               kill "${VIRTUAL_MIXER_PID}" 2>/dev/null || true
               wait "${VIRTUAL_MIXER_PID}" 2>/dev/null || true
             fi
-            exit "${status}"
+            exit "${exit_status}"
           }
           trap cleanup EXIT
 
           sleep 1
           if ! kill -0 "${VIRTUAL_MIXER_PID}" 2>/dev/null; then
             echo "Virtual mixer OPC UA server exited before tests"
+            exit 1
+          fi
+
+          echo "---- szlab mixer pump flow summary ----"
+          python -c 'import json, sys; flow=json.load(open(sys.argv[1], encoding="utf-8")); print("flow: {}".format(flow.get("name", "<unnamed>"))); [print("rule[{}]: {} | trigger={} | log_nodes={} | actions={}".format(idx, rule.get("name", "<unnamed>"), rule.get("trigger"), rule.get("log_nodes", []), rule.get("actions", []))) for idx, rule in enumerate(flow.get("rules", []), 1)]' "${PUMP_DAEMON_FLOW}"
+
+          echo "Starting szlab mixer pump daemon"
+          echo "Script: ${OPCUA_DAEMON_SCRIPT}"
+          echo "Flow: ${PUMP_DAEMON_FLOW}"
+          mamba run -n unilab python "${OPCUA_DAEMON_SCRIPT}" \
+            --url "opc.tcp://localhost:50101/" \
+            --object-name "VirtualMixer" \
+            --flow "${PUMP_DAEMON_FLOW}" \
+            --poll-interval 0.02 \
+            --log-level DEBUG \
+            >"${PUMP_DAEMON_LOG}" 2>&1 &
+          PUMP_DAEMON_PID=$!
+
+          sleep 1
+          if ! kill -0 "${PUMP_DAEMON_PID}" 2>/dev/null; then
+            echo "SZLab mixer pump daemon exited before tests"
             exit 1
           fi
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
 import time
 from typing import Any
 
@@ -66,44 +65,6 @@ def _wait_for_virtual_mixer(url: str, timeout: float = 15.0) -> None:
     raise TimeoutError(f"等待 VirtualMixer 超时: {last_error}")
 
 
-def _start_completion_daemon(url: str, hold_seconds: float = 1.0) -> tuple[threading.Event, threading.Thread]:
-    stop_event = threading.Event()
-
-    def run() -> None:
-        client: Client | None = None
-        try:
-            client, nodes = _browse_virtual_mixer_nodes(url)
-            trigger = nodes["S06参数写入完成"]
-            complete = nodes["S06加工完成"]
-            _ci_log("pump 完成守护进程已连接: url=%s", url)
-            while not stop_event.is_set():
-                if bool(trigger.get_value()):
-                    pump = nodes["S06注射泵选择"].get_value()
-                    aspirate = nodes["S06注射泵1抽液"].get_value()
-                    dispense = nodes["S06注射泵1排液"].get_value()
-                    _ci_log(
-                        "检测到 S06参数写入完成: pump=%s pump1_aspirate=%s pump1_dispense=%s",
-                        pump,
-                        aspirate,
-                        dispense,
-                    )
-                    time.sleep(0.25)
-                    complete.set_value(True)
-                    _ci_log("写入 S06加工完成=True，保持 %.1fs", hold_seconds)
-                    time.sleep(hold_seconds)
-                    return
-                time.sleep(0.02)
-        except Exception:
-            LOGGER.exception("pump 完成守护进程异常")
-        finally:
-            if client is not None:
-                client.disconnect()
-
-    thread = threading.Thread(target=run, name="szlab-mixer-pump-ci-daemon", daemon=True)
-    thread.start()
-    return stop_event, thread
-
-
 def test_szlab_mixer_pump_transfer_liquid_against_virtual_opcua() -> None:
     url = os.environ.get("UNILABOS_TEST_SZLAB_MIXER_OPCUA_URL")
     if not url:
@@ -112,7 +73,6 @@ def test_szlab_mixer_pump_transfer_liquid_against_virtual_opcua() -> None:
     _ci_log("开始 szlab_mixer pump OPC UA 集成测试: url=%s", url)
     _wait_for_virtual_mixer(url)
 
-    stop_daemon, daemon_thread = _start_completion_daemon(url)
     device = SzlabMixerPumpDevice(url=url, timeout=8.0)
     try:
         before = device.get_variables(PUMP_VARIABLES)
@@ -128,6 +88,4 @@ def test_szlab_mixer_pump_transfer_liquid_against_virtual_opcua() -> None:
         assert after["S06注射泵选择"]["value"] == 1
         assert after["S06注射泵1抽液"]["value"] == 10
     finally:
-        stop_daemon.set()
-        daemon_thread.join(timeout=2)
         device.disconnect()

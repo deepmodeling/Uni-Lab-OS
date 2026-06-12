@@ -66,7 +66,7 @@ jobs:
           echo "CSV: ${VIRTUAL_MIXER_CSV}"
           echo "Endpoint: opc.tcp://localhost:50101/"
 
-          mamba run -n unilab python "${OPCUA_SERVER_SCRIPT}" \
+          mamba run -n unilab python -u "${OPCUA_SERVER_SCRIPT}" \
             --host 0.0.0.0 \
             --port 50101 \
             --path / \
@@ -79,6 +79,14 @@ jobs:
 
           cleanup() {
             exit_status=$?
+            if [ -n "${PUMP_DAEMON_PID}" ] && kill -0 "${PUMP_DAEMON_PID}" 2>/dev/null; then
+              kill "${PUMP_DAEMON_PID}" 2>/dev/null || true
+              wait "${PUMP_DAEMON_PID}" 2>/dev/null || true
+            fi
+            if [ -n "${VIRTUAL_MIXER_PID}" ] && kill -0 "${VIRTUAL_MIXER_PID}" 2>/dev/null; then
+              kill "${VIRTUAL_MIXER_PID}" 2>/dev/null || true
+              wait "${VIRTUAL_MIXER_PID}" 2>/dev/null || true
+            fi
             echo "---- virtual mixer OPC UA log ----"
             if [ -f "${VIRTUAL_MIXER_LOG}" ]; then
               python -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace"))' "${VIRTUAL_MIXER_LOG}"
@@ -91,14 +99,6 @@ jobs:
             else
               echo "Log file not found: ${PUMP_DAEMON_LOG}"
             fi
-            if [ -n "${PUMP_DAEMON_PID}" ] && kill -0 "${PUMP_DAEMON_PID}" 2>/dev/null; then
-              kill "${PUMP_DAEMON_PID}" 2>/dev/null || true
-              wait "${PUMP_DAEMON_PID}" 2>/dev/null || true
-            fi
-            if [ -n "${VIRTUAL_MIXER_PID}" ] && kill -0 "${VIRTUAL_MIXER_PID}" 2>/dev/null; then
-              kill "${VIRTUAL_MIXER_PID}" 2>/dev/null || true
-              wait "${VIRTUAL_MIXER_PID}" 2>/dev/null || true
-            fi
             exit "${exit_status}"
           }
           trap cleanup EXIT
@@ -110,12 +110,14 @@ jobs:
           fi
 
           echo "---- szlab mixer pump flow summary ----"
-          python -c 'import json, sys; flow=json.load(open(sys.argv[1], encoding="utf-8")); print("flow: {}".format(flow.get("name", "<unnamed>"))); [print("rule[{}]: {} | trigger={} | log_nodes={} | actions={}".format(idx, rule.get("name", "<unnamed>"), rule.get("trigger"), rule.get("log_nodes", []), rule.get("actions", []))) for idx, rule in enumerate(flow.get("rules", []), 1)]' "${PUMP_DAEMON_FLOW}"
+          mamba run -n unilab python "${OPCUA_DAEMON_SCRIPT}" \
+            --flow "${PUMP_DAEMON_FLOW}" \
+            --describe-only
 
           echo "Starting szlab mixer pump daemon"
           echo "Script: ${OPCUA_DAEMON_SCRIPT}"
           echo "Flow: ${PUMP_DAEMON_FLOW}"
-          mamba run -n unilab python "${OPCUA_DAEMON_SCRIPT}" \
+          mamba run -n unilab python -u "${OPCUA_DAEMON_SCRIPT}" \
             --url "opc.tcp://localhost:50101/" \
             --object-name "VirtualMixer" \
             --flow "${PUMP_DAEMON_FLOW}" \

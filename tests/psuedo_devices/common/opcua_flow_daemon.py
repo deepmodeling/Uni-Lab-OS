@@ -16,6 +16,33 @@ from opcua import Client
 LOGGER = logging.getLogger("pseudo-opcua-flow-daemon")
 
 
+def describe_flow(flow_path: str | Path) -> None:
+    flow = json.loads(Path(flow_path).read_text(encoding="utf-8"))
+    print(f"Flow: {flow.get('name', '<unnamed>')}")
+    for rule_index, rule in enumerate(flow.get("rules", []), 1):
+        trigger = rule.get("trigger", {})
+        print(f"Rule {rule_index}: {rule.get('name', '<unnamed>')}")
+        print(
+            "  Trigger: {node} == {value!r} on {edge} edge".format(
+                node=trigger.get("node"),
+                value=trigger.get("value", True),
+                edge=trigger.get("edge", "rising"),
+            )
+        )
+        log_nodes = rule.get("log_nodes", [])
+        if log_nodes:
+            print(f"  Observe: {', '.join(log_nodes)}")
+        print("  Actions:")
+        for action_index, action in enumerate(rule.get("actions", []), 1):
+            if "write" in action:
+                write = action["write"]
+                print(f"    {action_index}. write {write.get('node')} = {write.get('value')!r}")
+            elif "sleep" in action:
+                print(f"    {action_index}. sleep {action['sleep']}s")
+            else:
+                print(f"    {action_index}. unsupported action: {action}")
+
+
 def browse_object_nodes(url: str, object_name: str) -> tuple[Client, dict[str, Any]]:
     client = Client(url)
     client.connect()
@@ -142,9 +169,10 @@ class FlowDaemon:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="启动 JSON flow 驱动的测试 OPC UA 守护进程")
-    parser.add_argument("--url", required=True)
-    parser.add_argument("--object-name", required=True)
+    parser.add_argument("--url")
+    parser.add_argument("--object-name")
     parser.add_argument("--flow", required=True)
+    parser.add_argument("--describe-only", action="store_true")
     parser.add_argument("--poll-interval", type=float, default=0.02)
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     return parser.parse_args()
@@ -154,6 +182,12 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level), format="%(asctime)s - %(levelname)s - %(message)s")
     logging.getLogger("opcua").setLevel(logging.WARNING)
+
+    if args.describe_only:
+        describe_flow(args.flow)
+        return
+    if not args.url or not args.object_name:
+        raise SystemExit("--url and --object-name are required unless --describe-only is used")
 
     stopped = False
 

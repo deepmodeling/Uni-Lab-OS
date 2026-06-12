@@ -75,13 +75,7 @@ jobs:
             status=$?
             echo "---- virtual mixer OPC UA log ----"
             if [ -f "${VIRTUAL_MIXER_LOG}" ]; then
-              python - "${VIRTUAL_MIXER_LOG}" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-print(path.read_text(encoding="utf-8", errors="replace"))
-PY
+              python -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace"))' "${VIRTUAL_MIXER_LOG}"
             else
               echo "Log file not found: ${VIRTUAL_MIXER_LOG}"
             fi

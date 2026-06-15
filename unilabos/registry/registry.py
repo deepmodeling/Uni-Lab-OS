@@ -127,6 +127,9 @@ class Registry:
         # 1. AST 静态扫描 (快速, 无需 import)
         self._run_ast_scan(devices_dirs, upload_registry=upload_registry, external_only=external_only)
 
+        # 社区包根目录可只放一个 registry.yaml 声明设备（device_id -> 条目），
+        self._load_community_device_registries(devices_dirs)
+
         # 2. Host node 内置设备
         self._setup_host_node()
 
@@ -2181,6 +2184,53 @@ class Registry:
             f"{len(uncached_files)} 重新加载 "
             f"(耗时 {time.time() - t0:.2f}s){extra}"
         )
+
+    def _load_community_device_registries(self, devices_dirs=None):
+        """加载社区设备包根目录下的 registry.yaml（device_id -> 条目）。
+        """
+        if not devices_dirs:
+            return
+
+        loaded_total = 0
+        for d in devices_dirs:
+            d_path = Path(d).resolve()
+            if not d_path.is_dir():
+                continue
+            reg_file = None
+            for name in ("registry.yaml", "registry.yml"):
+                candidate = d_path / name
+                if candidate.is_file():
+                    reg_file = candidate
+                    break
+            if reg_file is None:
+                continue
+
+            try:
+                data, _complete_data, is_valid, device_ids = self._load_single_device_file(
+                    reg_file, complete_registry=False
+                )
+            except Exception as e:
+                logger.warning(f"[UniLab Registry] 社区包 registry.yaml 加载失败: {reg_file}, 错误: {e}")
+                continue
+            if not is_valid:
+                continue
+
+            runtime_data = {did: data[did] for did in device_ids if did in data}
+            for cfg in runtime_data.values():
+                # _load_single_device_file 会按 file.stem 追加分类，这里去掉无意义的 "registry"
+                category = cfg.get("category")
+                if isinstance(category, list) and reg_file.stem in category and len(category) > 1:
+                    category.remove(reg_file.stem)
+            if runtime_data:
+                self.device_type_registry.update(runtime_data)
+                loaded_total += len(runtime_data)
+                logger.info(
+                    f"[UniLab Registry] 社区包 registry.yaml 设备加载: {reg_file} -> "
+                    f"{', '.join(sorted(runtime_data))}"
+                )
+
+        if loaded_total:
+            logger.info(f"[UniLab Registry] 社区包 registry.yaml 设备加载完成: 共 {loaded_total} 个")
 
     # ------------------------------------------------------------------
     # 注册表信息输出

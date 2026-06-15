@@ -214,7 +214,10 @@ def install_requirements_txt(req_path: str | Path, label: str = "") -> bool:
         return True
 
     print_status(f"[{tag}] 缺失 {len(missing)} 个依赖: {', '.join(missing)}", "warning")
-    return _install_packages(missing, label=tag)
+    ok = _install_packages(missing, label=tag)
+    # 运行时新装的包必须刷新 import 缓存：进程启动时 FileFinder 已缓存各 site-packages
+    importlib.invalidate_caches()
+    return ok
 
 
 def check_device_package_requirements(devices_dirs: list[str]) -> bool:

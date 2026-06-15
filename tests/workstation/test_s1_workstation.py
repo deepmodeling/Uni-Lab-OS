@@ -1,4 +1,6 @@
-from unilabos.devices.workstation.s1.s1_workstation import S1Workstation
+import pytest
+
+from unilabos.devices.workstation.szlab_poly_studio.s1.s1_workstation import S1Workstation
 
 
 class FakeTransport:
@@ -22,6 +24,12 @@ def test_s1_workstation_builds_configurable_base_url():
     device = S1Workstation(host="10.0.0.8", port=18055, api_prefix="/api/v1/", transport=transport)
 
     assert device.base_url == "http://10.0.0.8:18055/api/v1"
+
+
+def test_old_s1_workstation_package_path_is_removed():
+    old_module_path = ".".join(["unilabos", "devices", "workstation", "s1"])
+    with pytest.raises(ModuleNotFoundError):
+        __import__(old_module_path)
 
 
 def test_s1_login_caches_token_and_reuses_authorization_header():

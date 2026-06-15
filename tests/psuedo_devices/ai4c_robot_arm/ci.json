@@ -2,10 +2,10 @@
   "name": "ai4c_robot_arm",
   "port": 50103,
   "object_name": "AI4C",
-  "csv": "tests/szlab/fixtures/ai4c_robot_arm_ci_nodes.csv",
+  "csv": "tests/szlab_poly_studio/fixtures/ai4c_robot_arm_ci_nodes.csv",
   "action_flow": "tests/psuedo_devices/ai4c_robot_arm/pick_place_flow.json",
   "daemon_flow": "tests/psuedo_devices/ai4c_robot_arm/opcua_daemon_flow.json",
-  "pytest": "tests/szlab/test_ai4c_robot_arm_opcua_ci.py",
+  "pytest": "tests/szlab_poly_studio/test_ai4c_robot_arm_opcua_ci.py",
   "server": {
     "name_column": "Name",
     "data_type_column": "DataType",

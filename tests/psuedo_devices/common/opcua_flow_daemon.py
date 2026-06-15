@@ -163,6 +163,7 @@ class FlowDaemon:
                 node.set_value(write.get("value"))
                 after_value = node.get_value()
                 LOGGER.info("写入 OPC UA 变量: node=%s %r -> %r", write["node"], before_value, after_value)
+                LOGGER.info("%s 变量已经转成 %r", write["node"], after_value)
 
     @staticmethod
     def _condition_nodes(condition: Any) -> set[str]:

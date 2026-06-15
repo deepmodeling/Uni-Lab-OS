@@ -15,8 +15,8 @@
     "show_csv": false
   },
   "path_roots": [
-    "tests/szlab",
-    "unilabos/devices/workstation/szlab_mixer"
+    "tests/szlab_poly_studio",
+    "unilabos/devices/workstation/szlab_poly_studio/szlab_mixer"
   ],
   "device_graph": {
     "nodes": [

@@ -24,8 +24,8 @@ LOGGER = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AI4C_FLOW_PATH = REPO_ROOT / "tests" / "psuedo_devices" / "ai4c_robot_arm" / "pick_place_flow.json"
-AI4C_CSV_PATH = REPO_ROOT / "tests" / "szlab" / "fixtures" / "ai4c_robot_arm_ci_nodes.csv"
-AI4C_RUNTIME_CONFIG = REPO_ROOT / "tests" / "szlab" / "runtime_configs" / "ai4c_runtime.json"
+AI4C_CSV_PATH = REPO_ROOT / "tests" / "szlab_poly_studio" / "fixtures" / "ai4c_robot_arm_ci_nodes.csv"
+AI4C_RUNTIME_CONFIG = REPO_ROOT / "tests" / "szlab_poly_studio" / "runtime_configs" / "ai4c_runtime.json"
 
 AI4C_VARIABLES = [
     "Robotic_Arm_Idle",

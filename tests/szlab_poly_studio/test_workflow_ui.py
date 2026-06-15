@@ -100,23 +100,26 @@ def test_load_preset_accepts_json_path(tmp_path):
     assert "move_plate" in preset.actions
 
 
-def test_example_preset_uses_szlab_local_action_class():
-    preset = load_preset("example/ai4c_preset.json")
+def test_ai4c_preset_uses_formal_device_class():
+    preset = load_preset("ai4c")
     runtime_config = _load_preset_runtime_config(preset)
 
-    assert runtime_config.device_factory.target_class == "tests.szlab.example.ai4c_actions.ExampleAI4CActions"
+    assert (
+        runtime_config.device_factory.target_class
+        == "unilabos.devices.workstation.AI4C.AI4C_robot_arm.AI4CRobotArmDevice"
+    )
     assert "pick_well_plate_from_loading_rack" in preset.actions
 
 
-def test_example_runtime_device_classes_are_importable():
-    preset = load_preset("example/ai4c_preset.json")
+def test_ai4c_runtime_device_classes_are_importable():
+    preset = load_preset("ai4c")
     runtime_config = _load_preset_runtime_config(preset)
 
     plc_class = _load_class(runtime_config.device_factory.plc_class)
     target_class = _load_class(runtime_config.device_factory.target_class)
 
     assert plc_class.__name__ == "AI4CPLCDevice"
-    assert target_class.__name__ == "ExampleAI4CActions"
+    assert target_class.__name__ == "AI4CRobotArmDevice"
 
 
 def test_build_linear_workflow_creates_nodes_and_ordered_edges():

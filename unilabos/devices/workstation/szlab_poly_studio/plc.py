@@ -239,12 +239,87 @@ class SZLabPolyPLCDevice(BaseClient):
         return True
 
     @not_action
-    def get_variables(self, node_names: Optional[List[str]] = None) -> Dict[str, Any]:
+    def disconnect(self) -> None:
+        self.heartbeat_on = False
+        if self._heartbeat_timer:
+            self._heartbeat_timer.cancel()
+            self._heartbeat_timer = None
+        if self.client:
+            self.client.disconnect()
+
+    @not_action
+    def read(self, node_name: str, use_cache: bool = True) -> Any:
+        return self.read_variable(node_name, use_cache=use_cache)
+
+    @not_action
+    def write(self, node_name: str, value: Any) -> None:
+        self.write_variable(node_name, value)
+
+    @not_action
+    def pulse(
+        self,
+        node_name: str,
+        value: Any = True,
+        reset_value: Any = False,
+        reset_delay: float = 0.1,
+    ) -> None:
+        self.write(node_name, value)
+        time.sleep(reset_delay)
+        self.write(node_name, reset_value)
+
+    @not_action
+    def wait_equal(
+        self,
+        node_name: str,
+        expected: Any,
+        timeout: float = 300.0,
+        interval: float = 0.2,
+    ) -> bool:
+        start = time.time()
+        while time.time() - start < timeout:
+            if self.read(node_name) == expected:
+                return True
+            time.sleep(interval)
+        return False
+
+    @not_action
+    def wait_new_cycle_done(
+        self,
+        node_name: str,
+        timeout: float = 300.0,
+        interval: float = 0.2,
+    ) -> bool:
+        start = time.time()
+        if bool(self.read(node_name)):
+            if not self.wait_equal(node_name, False, timeout=timeout, interval=interval):
+                return False
+        elapsed = time.time() - start
+        return self.wait_equal(node_name, True, timeout=max(timeout - elapsed, 0.0), interval=interval)
+
+    @not_action
+    def get_opc_variable_metadata(self, node_name: str) -> tuple[str, str | None]:
+        try:
+            return node_name, self.use_node(node_name).node_id
+        except Exception:
+            return node_name, None
+
+    @not_action
+    def get_variables(self, node_names: Optional[List[str]] = None, use_cache: bool = False) -> Dict[str, Any]:
+        del use_cache
         names = node_names or list(self._variables_to_find)
         result: Dict[str, Any] = {}
         for name in names:
             try:
-                result[name] = self.read_variable(name)
+                node = self.use_node(name)
+                value, error = node.read()
+                if error:
+                    result[name] = {"success": False, "error": f"读取 PLC 变量失败: {name}"}
+                else:
+                    result[name] = {
+                        "success": True,
+                        "value": value,
+                        "node_id": node.node_id,
+                    }
             except Exception as exc:
                 result[name] = {"success": False, "error": str(exc)}
         return result

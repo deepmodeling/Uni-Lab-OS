@@ -6,7 +6,7 @@ python -m autopep8 \
   --recursive \
   --max-line-length=120 \
   scripts \
-  tests/szlab \
+  tests/szlab_poly_studio \
   unilabos \
   unilabos_local_ui \
   unilabos_msgs

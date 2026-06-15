@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from opcua import Client
 
-from unilabos.devices.workstation.szlab_mixer.pump import SzlabMixerPumpDevice
+from unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.pump import SzlabMixerPumpDevice
 
 
 LOGGER = logging.getLogger(__name__)

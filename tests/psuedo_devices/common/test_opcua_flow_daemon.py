@@ -47,3 +47,4 @@ def test_write_action_logs_value_change(tmp_path, monkeypatch):
     daemon._run_rule_if_triggered(0, rule, nodes)
 
     assert "写入 OPC UA 变量: node=done False -> True" in log_messages
+    assert "done 变量已经转成 True" in log_messages

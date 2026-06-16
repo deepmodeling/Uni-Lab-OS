@@ -1,0 +1,147 @@
+{
+  "ready": true,
+  "reagents": [
+    {
+      "substance": "2-溴吡啶",
+      "need_mg": 0.0,
+      "need_ml": 1.2,
+      "available_mg": 0.0,
+      "available_ml": 5.488,
+      "status": "冗余满足",
+      "diff": "4.288mL",
+      "base_need_mg": 0.0,
+      "base_need_ml": 0.2
+    }
+  ],
+  "consumables": [
+    {
+      "code": 220000304,
+      "name": "50uL枪头",
+      "need": 0,
+      "available": 0,
+      "diff": 0,
+      "status": "satisfy"
+    },
+    {
+      "code": 220000308,
+      "name": "1mL枪头",
+      "need": 1,
+      "available": 93,
+      "diff": 92,
+      "status": "satisfy"
+    },
+    {
+      "code": 214000037,
+      "name": "5mL枪头",
+      "need": 0,
+      "available": 24,
+      "diff": 24,
+      "status": "satisfy"
+    },
+    {
+      "code": 220000322,
+      "name": "2mL反应管磁子",
+      "need": 0,
+      "available": 36,
+      "diff": 36,
+      "status": "satisfy"
+    },
+    {
+      "code": 551000502,
+      "name": "2mL反应管",
+      "need": 2,
+      "available": 24,
+      "diff": 22,
+      "status": "satisfy"
+    },
+    {
+      "code": 211009427,
+      "name": "反应盖板",
+      "need": 0,
+      "available": 0,
+      "diff": 0,
+      "status": "satisfy"
+    },
+    {
+      "code": 220000320,
+      "name": "闪滤内瓶",
+      "need": 0,
+      "available": 12,
+      "diff": 12,
+      "status": "satisfy"
+    },
+    {
+      "code": 220000321,
+      "name": "闪滤外瓶",
+      "need": 0,
+      "available": 0,
+      "diff": 0,
+      "status": "satisfy"
+    }
+  ],
+  "need_reagents": [
+    {
+      "substance": "2-溴吡啶",
+      "need_mg": 0.0,
+      "need_ml": 1.2,
+      "base_need_mg": 0.0,
+      "base_need_ml": 0.2
+    }
+  ],
+  "need_consumables": [
+    {
+      "code": 220000304,
+      "name": "50uL枪头",
+      "need": 0
+    },
+    {
+      "code": 220000308,
+      "name": "1mL枪头",
+      "need": 1
+    },
+    {
+      "code": 214000037,
+      "name": "5mL枪头",
+      "need": 0
+    },
+    {
+      "code": 220000322,
+      "name": "2mL反应管磁子",
+      "need": 0
+    },
+    {
+      "code": 551000502,
+      "name": "2mL反应管",
+      "need": 2
+    },
+    {
+      "code": 211009427,
+      "name": "反应盖板",
+      "need": 0
+    },
+    {
+      "code": 220000320,
+      "name": "闪滤内瓶",
+      "need": 0
+    },
+    {
+      "code": 220000321,
+      "name": "闪滤外瓶",
+      "need": 0
+    }
+  ],
+  "missing": [],
+  "redundant": [
+    "2-溴吡啶:4.288mL",
+    "50uL枪头:0件",
+    "1mL枪头:92件",
+    "5mL枪头:24件",
+    "2mL反应管磁子:36件",
+    "2mL反应管:22件",
+    "反应盖板:0件",
+    "闪滤内瓶:12件",
+    "闪滤外瓶:0件"
+  ],
+  "timestamp": "2026-01-21T17:59:58.606854",
+  "task_id": "671"
+}

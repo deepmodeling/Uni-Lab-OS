@@ -1,0 +1,62 @@
+{
+  "task_id": 0,
+  "task_name": "test_20260121",
+  "layout_list": [
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 0,
+      "unit_row": 0,
+      "unit_id": "unit-52843c05",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "2-溴吡啶",
+        "chemical_id": 647,
+        "add_volume": 0.1
+      }
+    },
+    {
+      "layout_code": "",
+      "src_layout_code": "",
+      "resource_type": "551000502",
+      "status": 0,
+      "tray_QR_code": "",
+      "QR_code": "",
+      "unit_column": 1,
+      "unit_row": 0,
+      "unit_id": "unit-717e2ad3",
+      "unit_type": "exp_pipetting",
+      "process_json": {
+        "custom": {
+          "unit": "mL",
+          "unitOptions": [
+            "mL",
+            "L"
+          ]
+        },
+        "substance": "2-溴吡啶",
+        "chemical_id": 647,
+        "add_volume": 0.1
+      }
+    }
+  ],
+  "task_setup": {
+    "subtype": null,
+    "experiment_num": 2,
+    "vessel": "551000502",
+    "added_slots": ""
+  },
+  "is_audit_log": 1,
+  "is_copy": false
+}

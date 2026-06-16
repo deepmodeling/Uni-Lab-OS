@@ -1,0 +1,167 @@
+{
+  "ready": false,
+  "reagents": [
+    {
+      "substance": "1,4-二氧六环",
+      "need_mg": 0.0,
+      "need_ml": 0.2,
+      "available_mg": 0.0,
+      "available_ml": 0.0,
+      "status": "缺少",
+      "diff": "-0.200mL",
+      "base_need_mg": 0.0,
+      "base_need_ml": 0.2
+    },
+    {
+      "substance": "水",
+      "need_mg": 0.0,
+      "need_ml": 14.2,
+      "available_mg": 0.0,
+      "available_ml": 25.97,
+      "status": "冗余满足",
+      "diff": "11.770mL",
+      "base_need_mg": 0.0,
+      "base_need_ml": 0.2
+    }
+  ],
+  "consumables": [
+    {
+      "code": 220000304,
+      "name": "50uL枪头",
+      "need": 0,
+      "available": 0,
+      "diff": 0,
+      "status": "satisfy"
+    },
+    {
+      "code": 220000308,
+      "name": "1mL枪头",
+      "need": 2,
+      "available": 0,
+      "diff": -2,
+      "status": "lack"
+    },
+    {
+      "code": 214000037,
+      "name": "5mL枪头",
+      "need": 0,
+      "available": 24,
+      "diff": 24,
+      "status": "satisfy"
+    },
+    {
+      "code": 220000322,
+      "name": "2mL反应管磁子",
+      "need": 2,
+      "available": 36,
+      "diff": 34,
+      "status": "satisfy"
+    },
+    {
+      "code": 551000502,
+      "name": "2mL反应管",
+      "need": 2,
+      "available": 0,
+      "diff": -2,
+      "status": "lack"
+    },
+    {
+      "code": 211009427,
+      "name": "反应盖板",
+      "need": 0,
+      "available": 0,
+      "diff": 0,
+      "status": "satisfy"
+    },
+    {
+      "code": 220000320,
+      "name": "闪滤内瓶",
+      "need": 0,
+      "available": 12,
+      "diff": 12,
+      "status": "satisfy"
+    },
+    {
+      "code": 220000321,
+      "name": "闪滤外瓶",
+      "need": 0,
+      "available": 0,
+      "diff": 0,
+      "status": "satisfy"
+    }
+  ],
+  "need_reagents": [
+    {
+      "substance": "1,4-二氧六环",
+      "need_mg": 0.0,
+      "need_ml": 0.2,
+      "base_need_mg": 0.0,
+      "base_need_ml": 0.2
+    },
+    {
+      "substance": "水",
+      "need_mg": 0.0,
+      "need_ml": 14.2,
+      "base_need_mg": 0.0,
+      "base_need_ml": 0.2
+    }
+  ],
+  "need_consumables": [
+    {
+      "code": 220000304,
+      "name": "50uL枪头",
+      "need": 0
+    },
+    {
+      "code": 220000308,
+      "name": "1mL枪头",
+      "need": 2
+    },
+    {
+      "code": 214000037,
+      "name": "5mL枪头",
+      "need": 0
+    },
+    {
+      "code": 220000322,
+      "name": "2mL反应管磁子",
+      "need": 2
+    },
+    {
+      "code": 551000502,
+      "name": "2mL反应管",
+      "need": 2
+    },
+    {
+      "code": 211009427,
+      "name": "反应盖板",
+      "need": 0
+    },
+    {
+      "code": 220000320,
+      "name": "闪滤内瓶",
+      "need": 0
+    },
+    {
+      "code": 220000321,
+      "name": "闪滤外瓶",
+      "need": 0
+    }
+  ],
+  "missing": [
+    "1,4-二氧六环:0.200mL",
+    "1mL枪头:2件",
+    "2mL反应管:2件"
+  ],
+  "redundant": [
+    "水:11.770mL",
+    "50uL枪头:0件",
+    "5mL枪头:24件",
+    "2mL反应管磁子:34件",
+    "反应盖板:0件",
+    "闪滤内瓶:12件",
+    "闪滤外瓶:0件"
+  ],
+  "timestamp": "2026-01-20T17:18:48.619442",
+  "task_id": "668"
+}

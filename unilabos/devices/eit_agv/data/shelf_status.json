@@ -1,0 +1,22 @@
+{
+  "last_updated": "2026-03-13T22:49:50.784894",
+  "slots": {
+    "shelf_tray_1-1": {
+      "material_type": "FLASH_FILTER_OUTER_BOTTLE_TRAY",
+      "source": "analysis_station_tray_1-2",
+      "description": "分析完成样品(自动转运)",
+      "placed_at": "2026-03-13T22:49:50.784894"
+    },
+    "shelf_tray_1-2": null,
+    "shelf_tray_1-3": null,
+    "shelf_tray_1-4": null,
+    "shelf_tray_2-1": null,
+    "shelf_tray_2-2": null,
+    "shelf_tray_2-3": null,
+    "shelf_tray_2-4": null,
+    "shelf_tray_3-1": null,
+    "shelf_tray_3-2": null,
+    "shelf_tray_3-3": null,
+    "shelf_tray_3-4": null
+  }
+}

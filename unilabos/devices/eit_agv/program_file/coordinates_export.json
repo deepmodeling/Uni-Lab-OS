@@ -1,0 +1,126 @@
+{
+  "agv_get_bg4.json": [
+    {
+      "file": "agv_get_bg4.json",
+      "module": "Main",
+      "task_id": "8pWgx_FfmoZr",
+      "motion_type": "MoveJ2",
+      "coordinate_type": "pose",
+      "point_name": "wp1",
+      "original_values": [-0.56604033, 0.19143068, 0.37644481, -3.14154505, 3.011e-05, -0.06976842],
+      "joint_values": [-0.048617786464671645, 0.06705366739438279, -2.163213336133411, 0.5270208121484441, 1.5687163687561494, 1.5949375598416589],
+      "pose_values": [-566.0403299999999, 191.43068, 376.44481, -3.14154505, 3.011e-05, -0.06976842],
+      "comment": ""
+    },
+    {
+      "file": "agv_get_bg4.json",
+      "module": "Main",
+      "task_id": "GDBgc8XE-xO0",
+      "motion_type": "MoveJ2",
+      "coordinate_type": "pose",
+      "point_name": "wp2",
+      "original_values": [-0.68082439, 0.43859979, 0.19124405, -3.14153742, -1.43e-06, -0.03048259],
+      "joint_values": [-0.3685845782057751, -0.4655253426249802, -1.9046056892587984, 0.8009802328117164, 1.5682608058399132, 1.2347277520369864],
+      "pose_values": [-680.82439, 438.59979, 191.24405, -3.14153742, -1.43e-06, -0.03048259],
+      "comment": ""
+    },
+    {
+      "file": "agv_get_bg4.json",
+      "module": "Main",
+      "task_id": "tMaa1fPTC4HU",
+      "motion_type": "MoveL",
+      "coordinate_type": "variable",
+      "variable_name": "g_bg4",
+      "point_name": "wp3",
+      "joint_values": null,
+      "pose_values": null,
+      "comment": ""
+    },
+    {
+      "file": "agv_get_bg4.json",
+      "module": "Main",
+      "task_id": "vIwq9sGFv19W",
+      "motion_type": "MoveJ2",
+      "coordinate_type": "variable",
+      "variable_name": "g_ybg4",
+      "point_name": "wp4",
+      "joint_values": null,
+      "pose_values": null,
+      "comment": ""
+    },
+    {
+      "file": "agv_get_bg4.json",
+      "module": "Main",
+      "task_id": "udWboKg_6hyp",
+      "motion_type": "MoveJ2",
+      "coordinate_type": "joint",
+      "point_name": "wp2",
+      "original_values": [-0.04861779, 0.06705363, -2.16323733, 0.52702081, 1.56872832, 1.59493756],
+      "joint_values": [-0.04861779, 0.06705363, -2.16323733, 0.52702081, 1.56872832, 1.59493756],
+      "pose_values": [-566.0309346041028, 191.42888797524637, 376.4300093659625, -3.1415564525657915, 5.7943065643071945e-06, -0.06976837173083164],
+      "comment": ""
+    }
+  ],
+  "agv_get_bg4.jspf": [
+    {
+      "file": "agv_get_bg4.jspf",
+      "module": "Main",
+      "task_id": "8pWgx_FfmoZr",
+      "motion_type": "MoveJ2",
+      "coordinate_type": "pose",
+      "point_name": "wp1",
+      "original_values": [-0.56604033, 0.19143068, 0.37644481, -3.14154505, 3.011e-05, -0.06976842],
+      "joint_values": [-0.048617786464671645, 0.06705366739438279, -2.163213336133411, 0.5270208121484441, 1.5687163687561494, 1.5949375598416589],
+      "pose_values": [-566.0403299999999, 191.43068, 376.44481, -3.14154505, 3.011e-05, -0.06976842],
+      "comment": ""
+    },
+    {
+      "file": "agv_get_bg4.jspf",
+      "module": "Main",
+      "task_id": "GDBgc8XE-xO0",
+      "motion_type": "MoveJ2",
+      "coordinate_type": "pose",
+      "point_name": "wp2",
+      "original_values": [-0.68082439, 0.43859979, 0.19124405, -3.14153742, -1.43e-06, -0.03048259],
+      "joint_values": [-0.3685845782057751, -0.4655253426249802, -1.9046056892587984, 0.8009802328117164, 1.5682608058399132, 1.2347277520369864],
+      "pose_values": [-680.82439, 438.59979, 191.24405, -3.14153742, -1.43e-06, -0.03048259],
+      "comment": ""
+    },
+    {
+      "file": "agv_get_bg4.jspf",
+      "module": "Main",
+      "task_id": "tMaa1fPTC4HU",
+      "motion_type": "MoveL",
+      "coordinate_type": "variable",
+      "variable_name": "g_bg4",
+      "point_name": "wp3",
+      "joint_values": null,
+      "pose_values": null,
+      "comment": ""
+    },
+    {
+      "file": "agv_get_bg4.jspf",
+      "module": "Main",
+      "task_id": "vIwq9sGFv19W",
+      "motion_type": "MoveJ2",
+      "coordinate_type": "variable",
+      "variable_name": "g_ybg4",
+      "point_name": "wp4",
+      "joint_values": null,
+      "pose_values": null,
+      "comment": ""
+    },
+    {
+      "file": "agv_get_bg4.jspf",
+      "module": "Main",
+      "task_id": "udWboKg_6hyp",
+      "motion_type": "MoveJ2",
+      "coordinate_type": "joint",
+      "point_name": "wp2",
+      "original_values": [-0.04861779, 0.06705363, -2.16323733, 0.52702081, 1.56872832, 1.59493756],
+      "joint_values": [-0.04861779, 0.06705363, -2.16323733, 0.52702081, 1.56872832, 1.59493756],
+      "pose_values": [-566.0309346041028, 191.42888797524637, 376.4300093659625, -3.1415564525657915, 5.7943065643071945e-06, -0.06976837173083164],
+      "comment": ""
+    }
+  ]
+}

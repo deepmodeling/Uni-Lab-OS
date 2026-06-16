@@ -28,9 +28,9 @@ def test_load_ai4c_preset():
     assert preset.title == "szlab 本地调试工具"
     assert preset.target_device_id == "AI4C_robot_arm"
     assert preset.default_config["graph"] == "__generated__"
-    assert preset.default_config["url"] == "opc.tcp://jdht1471820.bohrium.tech:50001"
+    assert preset.default_config["url"] == "opc.tcp://jdht1471820.bohrium.tech:50003"
     assert preset.default_config["show_csv"] is False
-    assert "csv" not in preset.default_config
+    assert preset.default_config["csv"] == "ai4c_sim_updated.csv"
     assert "pick_well_plate_from_loading_rack" in preset.actions
 
 
@@ -426,6 +426,7 @@ def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):
     manager._run_payload("run-2", payload)
 
     assert len(create_calls) == 1
+    assert create_calls[0]["csv_path"].name == "ai4c_sim_updated.csv"
     assert disconnect_calls == []
     assert manager._records["run-1"].status == "completed"
     assert manager._records["run-2"].status == "completed"

@@ -3,10 +3,10 @@ name: CI Check
 on:
   push:
     branches:
-      - main
-      - master
-      - dev
+      - "**"
   pull_request:
+    branches:
+      - dev
 
 jobs:
   test:
@@ -44,3 +44,9 @@ jobs:
       - name: Run tests
         run: |
           mamba run -n unilab python -m pytest tests
+
+      - name: Run OPC UA integration manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mamba run -n unilab python tests/psuedo_devices/common/run_opcua_ci.py

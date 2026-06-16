@@ -31,7 +31,7 @@ from scripts.run_workflow_local import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SZLAB_DIR = REPO_ROOT / "tests" / "szlab"
+SZLAB_DIR = REPO_ROOT / "tests" / "szlab_poly_studio"
 PRESET_DIR = SZLAB_DIR / "presets"
 FRONTEND_DIR = REPO_ROOT / "unilabos_local_ui"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
@@ -76,7 +76,7 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
     data = json.loads(preset_path.read_text(encoding="utf-8"))
     target_device_id = data.get("target_device_id", ROBOT_ARM_DEVICE_ID)
     target_device_ids = list(data.get("target_device_ids") or [target_device_id])
-    path_roots = data.get("path_roots", ["tests/szlab"])
+    path_roots = data.get("path_roots", ["tests/szlab_poly_studio"])
     if data.get("actions_source") == "registry":
         actions = _load_registry_actions(target_device_ids, path_roots, preset_path.parent)
     else:

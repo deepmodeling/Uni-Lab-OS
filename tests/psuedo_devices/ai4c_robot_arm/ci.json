@@ -1,0 +1,25 @@
+{
+  "name": "ai4c_robot_arm",
+  "port": 50103,
+  "object_name": "AI4C",
+  "csv": "tests/szlab_poly_studio/fixtures/ai4c_robot_arm_ci_nodes.csv",
+  "action_flow": "tests/psuedo_devices/ai4c_robot_arm/pick_place_flow.json",
+  "daemon_flow": "tests/psuedo_devices/ai4c_robot_arm/opcua_daemon_flow.json",
+  "pytest": "tests/szlab_poly_studio/test_ai4c_robot_arm_opcua_ci.py",
+  "server": {
+    "name_column": "Name",
+    "data_type_column": "DataType",
+    "initial_value_column": "InitialValue",
+    "node_id_column": "NodeId",
+    "initial_values": {
+      "机械臂空闲": true,
+      "机械臂动作完成": false,
+      "机械臂动作触发": false,
+      "孔板上料架_InPut[0]": true,
+      "移液站占位": false
+    }
+  },
+  "env": {
+    "UNILABOS_TEST_AI4C_OPCUA_URL": "{endpoint}"
+  }
+}

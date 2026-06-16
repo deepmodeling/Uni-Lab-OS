@@ -2,22 +2,30 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from unilabos.registry.ast_registry_scanner import scan_directory
-from unilabos.devices.workstation.szlab_mixer.opcua_client import SzlabMixerOpcUaClient
-from unilabos.devices.workstation.szlab_mixer.pump import SzlabMixerPumpDevice
-from unilabos.devices.workstation.szlab_mixer.stirrer import SzlabMixerStirrerDevice
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
+from unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.pump import SzlabMixerPumpDevice
+from unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.stirrer import SzlabMixerStirrerDevice
 from scripts.run_workflow_local import create_local_devices, load_runtime_config
 from scripts.run_workflow_local import WorkflowLogger, WorkflowNode, run_nodes
 from scripts.workflow_ui import _load_preset_runtime_config, build_graph_workflow, load_preset
 
 
 def test_szlab_mixer_devices_are_ast_scannable():
-    root = Path("unilabos/devices/workstation/szlab_mixer")
+    root = Path("unilabos/devices/workstation/szlab_poly_studio/szlab_mixer")
     with ThreadPoolExecutor(max_workers=2) as executor:
         result = scan_directory(root, python_path=Path(".").resolve(), executor=executor)
 
     assert set(result["devices"]) == {"szlab_mixer_stirrer", "szlab_mixer_pump"}
     assert "run_stirring" in result["devices"]["szlab_mixer_stirrer"]["actions"]
     assert "transfer_liquid" in result["devices"]["szlab_mixer_pump"]["actions"]
+
+
+def test_szlab_mixer_does_not_keep_dedicated_opcua_client():
+    assert not Path("unilabos/devices/workstation/szlab_poly_studio/szlab_mixer/opcua_client.py").exists()
+
+
+def test_poly_studio_plc_client_exposes_disconnect_for_action_devices():
+    assert "disconnect" in SZLabPolyPLCDevice.__dict__
 
 
 def test_szlab_mixer_registry_actions_can_chain_two_devices():
@@ -98,7 +106,7 @@ def test_szlab_mixer_device_creation_ignores_csv_path(monkeypatch, tmp_path):
     devices = create_local_devices(
         graph_file=graph_path,
         csv_path=Path("/tmp/invalid.csv"),
-        runtime_config=load_runtime_config("tests/szlab/runtime_configs/szlab_mixer_runtime.json"),
+        runtime_config=load_runtime_config("tests/szlab_poly_studio/runtime_configs/szlab_mixer_runtime.json"),
     )
 
     assert set(devices) == {"szlab_mixer_stirrer", "szlab_mixer_pump"}
@@ -108,12 +116,63 @@ def test_szlab_mixer_device_creation_ignores_csv_path(monkeypatch, tmp_path):
     }
 
 
+def test_szlab_mixer_devices_use_poly_studio_plc_client(monkeypatch):
+    created = []
+
+    class FakePolyPLCClient:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.pump.SZLabPolyPLCDevice",
+        FakePolyPLCClient,
+    )
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.stirrer.SZLabPolyPLCDevice",
+        FakePolyPLCClient,
+    )
+
+    pump = SzlabMixerPumpDevice(
+        url="opc.tcp://example:50001",
+        username="user",
+        password="secret",
+        timeout=7.0,
+        auto_connect=False,
+    )
+    stirrer = SzlabMixerStirrerDevice(
+        url="opc.tcp://example:50001",
+        username="user",
+        password="secret",
+        timeout=8.0,
+        auto_connect=False,
+    )
+
+    assert isinstance(pump._client, FakePolyPLCClient)
+    assert isinstance(stirrer._client, FakePolyPLCClient)
+    assert created == [
+        {
+            "url": "opc.tcp://example:50001",
+            "username": "user",
+            "password": "secret",
+            "timeout": 7.0,
+            "auto_connect": False,
+        },
+        {
+            "url": "opc.tcp://example:50001",
+            "username": "user",
+            "password": "secret",
+            "timeout": 8.0,
+            "auto_connect": False,
+        },
+    ]
+
+
 def test_szlab_mixer_preset_loads_own_runtime_config():
     runtime_config = _load_preset_runtime_config(load_preset("szlab_mixer"))
 
     assert runtime_config.device_factory.devices == {
-        "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_mixer.stirrer.SzlabMixerStirrerDevice",
-        "szlab_mixer_pump": "unilabos.devices.workstation.szlab_mixer.pump.SzlabMixerPumpDevice",
+        "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.stirrer.SzlabMixerStirrerDevice",
+        "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.pump.SzlabMixerPumpDevice",
     }
     assert runtime_config.device_factory.plc_class == ""
 
@@ -135,7 +194,7 @@ def test_szlab_mixer_run_nodes_samples_current_device_variables():
 
     pump = FakePump()
     events = []
-    runtime_config = load_runtime_config("tests/szlab/runtime_configs/szlab_mixer_runtime.json")
+    runtime_config = load_runtime_config("tests/szlab_poly_studio/runtime_configs/szlab_mixer_runtime.json")
 
     run_nodes(
         [
@@ -166,7 +225,7 @@ def test_szlab_mixer_run_nodes_samples_current_device_variables():
 
 
 def test_szlab_mixer_pump_waits_for_new_completion_cycle_when_done_is_stale():
-    class FakeClient(SzlabMixerOpcUaClient):
+    class FakeClient:
         def __init__(self):
             self.waits = []
             self.writes = []
@@ -185,6 +244,11 @@ def test_szlab_mixer_pump_waits_for_new_completion_cycle_when_done_is_stale():
             self.waits.append((name, expected))
             return True
 
+        def wait_new_cycle_done(self, name, timeout=300.0, interval=0.2):
+            if self.read(name):
+                self.wait_equal(name, False, timeout=timeout, interval=interval)
+            return self.wait_equal(name, True, timeout=timeout, interval=interval)
+
     device = SzlabMixerPumpDevice.__new__(SzlabMixerPumpDevice)
     device.timeout = 300.0
     device._status = "Idle"
@@ -197,7 +261,7 @@ def test_szlab_mixer_pump_waits_for_new_completion_cycle_when_done_is_stale():
 
 
 def test_szlab_mixer_stirrer_waits_for_new_completion_cycle_when_done_is_stale():
-    class FakeClient(SzlabMixerOpcUaClient):
+    class FakeClient:
         def __init__(self):
             self.waits = []
 
@@ -213,6 +277,11 @@ def test_szlab_mixer_stirrer_waits_for_new_completion_cycle_when_done_is_stale()
         def wait_equal(self, name, expected, timeout=300.0, interval=0.2):
             self.waits.append((name, expected))
             return True
+
+        def wait_new_cycle_done(self, name, timeout=300.0, interval=0.2):
+            if self.read(name):
+                self.wait_equal(name, False, timeout=timeout, interval=interval)
+            return self.wait_equal(name, True, timeout=timeout, interval=interval)
 
     device = SzlabMixerStirrerDevice.__new__(SzlabMixerStirrerDevice)
     device.timeout = 300.0

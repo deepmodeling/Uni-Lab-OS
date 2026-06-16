@@ -1,0 +1,19 @@
+{
+  "name": "szlab_mixer_pump",
+  "port": 50101,
+  "object_name": "VirtualMixer",
+  "csv": "tests/szlab_poly_studio/fixtures/szlab_mixer_pump_ci_nodes.csv",
+  "daemon_flow": "tests/psuedo_devices/szlab_mixer/pump_flow.json",
+  "pytest": "tests/szlab_poly_studio/test_szlab_mixer_pump_opcua_ci.py",
+  "server": {
+    "name_column": "变量名",
+    "data_type_column": "数据类型",
+    "initial_value_column": "初始值",
+    "initial_values": {
+      "S06允许加工": true
+    }
+  },
+  "env": {
+    "UNILABOS_TEST_SZLAB_MIXER_OPCUA_URL": "{endpoint}"
+  }
+}

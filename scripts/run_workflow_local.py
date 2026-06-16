@@ -12,7 +12,7 @@ from typing import Any, Callable, TextIO
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SZLAB_DIR = REPO_ROOT / "tests" / "szlab"
+SZLAB_DIR = REPO_ROOT / "tests" / "szlab_poly_studio"
 DEFAULT_RUNTIME_CONFIG = SZLAB_DIR / "runtime_configs" / "ai4c_runtime.json"
 ROBOT_ARM_DEVICE_ID = "AI4C_robot_arm"
 

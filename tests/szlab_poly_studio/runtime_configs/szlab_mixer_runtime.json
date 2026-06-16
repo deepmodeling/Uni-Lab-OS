@@ -1,8 +1,8 @@
 {
   "device_factory": {
     "devices": {
-      "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_mixer.stirrer.SzlabMixerStirrerDevice",
-      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_mixer.pump.SzlabMixerPumpDevice"
+      "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.stirrer.SzlabMixerStirrerDevice",
+      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.pump.SzlabMixerPumpDevice"
     }
   },
   "opc_snapshot": {

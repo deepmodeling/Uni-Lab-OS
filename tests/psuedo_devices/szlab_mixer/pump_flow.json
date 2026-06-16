@@ -1,0 +1,37 @@
+{
+  "name": "szlab_mixer_pump",
+  "rules": [
+    {
+      "name": "complete S06 pump action after params are written",
+      "trigger": {
+        "node": "S06参数写入完成",
+        "value": true,
+        "edge": "rising"
+      },
+      "log_nodes": [
+        "S06注射泵选择",
+        "S06注射泵1抽液",
+        "S06注射泵1排液",
+        "S06注射泵2抽液",
+        "S06注射泵2排液"
+      ],
+      "actions": [
+        {
+          "write": {
+            "node": "S06加工完成",
+            "value": false
+          }
+        },
+        {
+          "sleep": 0.5
+        },
+        {
+          "write": {
+            "node": "S06加工完成",
+            "value": true
+          }
+        }
+      ]
+    }
+  ]
+}

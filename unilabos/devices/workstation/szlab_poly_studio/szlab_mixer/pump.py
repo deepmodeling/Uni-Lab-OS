@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from unilabos.registry.decorators import ActionInputHandle, DataSource, action, device, not_action, topic_config
-
-from .opcua_client import SzlabMixerOpcUaClient
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
 
 
 @device(
@@ -19,12 +18,23 @@ class SzlabMixerPumpDevice:
         url: str,
         username: str | None = None,
         password: str | None = None,
+        csv_path: str | None = None,
         timeout: float = 300.0,
+        auto_connect: bool = True,
         **kwargs,
     ):
         self.url = url
         self.timeout = timeout
-        self._client = SzlabMixerOpcUaClient(url=url, username=username, password=password)
+        client_kwargs: dict[str, Any] = {
+            "url": url,
+            "username": username,
+            "password": password,
+            "timeout": timeout,
+            "auto_connect": auto_connect,
+        }
+        if csv_path is not None:
+            client_kwargs["csv_path"] = csv_path
+        self._client = SZLabPolyPLCDevice(**client_kwargs)
         self._status = "Idle"
 
     @property

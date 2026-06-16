@@ -7,13 +7,14 @@
   "default_workflow_name": "szlab_canvas_workflow",
   "default_config": {
     "graph": "__generated__",
-    "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
+    "url": "opc.tcp://jdht1471820.bohrium.tech:50003",
+    "csv": "ai4c_sim_updated.csv",
     "timeout": 300,
     "no_subscription": true,
     "show_csv": false
   },
   "path_roots": [
-    "tests/szlab",
+    "tests/szlab_poly_studio",
     "unilabos/devices/workstation/AI4C"
   ],
   "device_graph": {

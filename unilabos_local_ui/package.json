@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5174",
-    "test": "node test/workflowDraft.test.mjs",
+    "test": "node test/workflowDraft.test.mjs && node test/workflowExport.test.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4174"
   },

@@ -1,3 +1,5 @@
+import csv
+
 import pytest
 
 from scripts.run_workflow_local import (
@@ -14,6 +16,8 @@ from scripts.workflow_ui import (
     _load_preset_runtime_config,
     _record_to_dict,
     _register_shutdown_handler,
+    _resolve_ui_path,
+    build_parser,
     build_graph_workflow,
     build_linear_workflow,
     build_local_device_graph,
@@ -32,6 +36,28 @@ def test_load_ai4c_preset():
     assert preset.default_config["show_csv"] is False
     assert preset.default_config["csv"] == "ai4c_sim_updated.csv"
     assert "pick_well_plate_from_loading_rack" in preset.actions
+
+
+def test_ai4c_preset_csv_matches_default_opc_namespace():
+    preset = load_preset("ai4c")
+    runtime_config = _load_preset_runtime_config(preset)
+    csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
+
+    with csv_path.open(encoding="utf-8", newline="") as handle:
+        rows_by_english_name = {
+            row["EnglishName"]: row
+            for row in csv.DictReader(handle)
+        }
+
+    variables = collect_snapshot_variables(
+        "pick_well_plate_from_loading_rack",
+        {"position": 1},
+        runtime_config,
+    )
+
+    assert preset.default_config["url"] == "opc.tcp://jdht1471820.bohrium.tech:50003"
+    for variable in variables:
+        assert rows_by_english_name[variable]["NodeId"].startswith("ns=4;s=UniLab|")
 
 
 def test_load_ai4c_preset_uses_registry_actions_from_formal_device():
@@ -384,6 +410,16 @@ def test_register_shutdown_handler_supports_fastapi_on_event_only():
     registered["shutdown"]()
 
     assert registered["called"] is True
+
+
+def test_workflow_ui_parser_defaults_to_container_service():
+    args = build_parser().parse_args([])
+
+    assert args.host == "0.0.0.0"
+    assert args.port == 8000
+    assert args.preset == "ai4c"
+    assert args.runtime_config is None
+    assert args.open_browser is False
 
 
 def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):

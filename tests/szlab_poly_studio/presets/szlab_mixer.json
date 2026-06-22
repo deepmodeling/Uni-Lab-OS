@@ -2,7 +2,7 @@
   "id": "szlab_mixer",
   "title": "SZLab Mixer 本地调试工具",
   "target_device_id": "szlab_mixer_stirrer",
-  "target_device_ids": ["szlab_mixer_stirrer", "szlab_mixer_pump"],
+  "target_device_ids": ["szlab_mixer_stirrer", "szlab_mixer_photoshotting", "szlab_mixer_robot", "szlab_mixer_pump"],
   "actions_source": "registry",
   "runtime_config": "runtime_configs/szlab_mixer_runtime.json",
   "default_workflow_name": "szlab_mixer_workflow",
@@ -16,10 +16,24 @@
   },
   "path_roots": [
     "tests/szlab_poly_studio",
-    "unilabos/devices/workstation/szlab_poly_studio/szlab_mixer"
+    "unilabos/devices/workstation/szlab_poly_studio"
   ],
   "device_graph": {
     "nodes": [
+      {
+        "id": "szlab_poly_plc",
+        "name": "szlab_poly_plc",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_poly_plc",
+        "position": {"x": -120, "y": 0, "z": 0},
+        "config": {
+          "url": "${opcua_url}",
+          "csv_path": "苏州实验室_0610.csv"
+        },
+        "data": {}
+      },
       {
         "id": "szlab_mixer_stirrer",
         "name": "szlab_mixer_stirrer",
@@ -30,7 +44,8 @@
         "position": {"x": 0, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}"
+          "timeout": "${timeout}",
+          "use_plc_gateway": true
         },
         "data": {}
       },
@@ -44,7 +59,36 @@
         "position": {"x": 120, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}"
+          "timeout": "${timeout}",
+          "use_plc_gateway": true
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_mixer_photoshotting",
+        "name": "szlab_mixer_photoshotting",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_mixer_photoshotting",
+        "position": {"x": 240, "y": 0, "z": 0},
+        "config": {
+          "url": "${opcua_url}",
+          "timeout": "${timeout}",
+          "use_plc_gateway": true
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_mixer_robot",
+        "name": "szlab_mixer_robot",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_mixer_robot",
+        "position": {"x": 360, "y": 0, "z": 0},
+        "config": {
+          "plc_device_id": "szlab_poly_plc"
         },
         "data": {}
       }

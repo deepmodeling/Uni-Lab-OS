@@ -1,4 +1,5 @@
 import csv
+import fnmatch
 import logging
 import os
 import threading
@@ -147,6 +148,40 @@ SENSOR_GROUPS: Dict[str, Dict[str, str]] = {
     "powder_container": POWDER_CONTAINER_SENSORS,
 }
 
+WRITABLE_VARIABLE_PATTERNS = {
+    "Heart_Beat",
+    "PLC_R任务号",
+    "S01取料编号",
+    "S01入料产品",
+    "S04取放料编号",
+    "S041参数写入完成",
+    "S041磁搅工艺选择",
+    "S042参数写入完成",
+    "S042磁搅工艺选择",
+    "S043参数写入完成",
+    "S043磁搅工艺选择",
+    "S044参数写入完成",
+    "S044磁搅工艺选择",
+    "S045参数写入完成",
+    "S045磁搅工艺选择",
+    "S046参数写入完成",
+    "S046磁搅工艺选择",
+    "磁搅速度设置_上位机*",
+    "磁搅温度设置_上位机*",
+    "磁搅时间设置_上位机*",
+    "磁搅安全温度设置_上位机*",
+    "S06参数写入完成",
+    "S06注射泵选择",
+    "S06注射泵1控制阀",
+    "S06注射泵1绝对位置控制",
+    "S06注射泵1抽液",
+    "S06注射泵1排液",
+    "S06注射泵2控制阀",
+    "S06注射泵2绝对位置控制",
+    "S06注射泵2抽液",
+    "S06注射泵2排液",
+}
+
 
 def _resolve_csv_path(csv_path: Optional[str]) -> str:
     if csv_path is None:
@@ -161,10 +196,16 @@ def load_variable_names_from_csv(csv_path: str) -> List[str]:
     names: List[str] = []
     seen = set()
     last_error: Optional[UnicodeDecodeError] = None
-    for encoding in ("utf-8-sig", "gb18030", "gbk"):
+    for encoding in ("utf-8-sig", "utf-16", "gb18030", "gbk"):
         try:
             with open(csv_path, newline="", encoding=encoding) as csv_file:
-                reader = csv.DictReader(csv_file)
+                sample = csv_file.read(4096)
+                csv_file.seek(0)
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters=",\t")
+                except csv.Error:
+                    dialect = csv.excel_tab if "\t" in sample else csv.excel
+                reader = csv.DictReader(csv_file, dialect=dialect)
                 if "变量名" not in (reader.fieldnames or []):
                     raise ValueError("CSV 文件缺少 '变量名' 列")
                 for row in reader:
@@ -233,6 +274,8 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def write_variable(self, node_name: str, value: Any) -> bool:
+        if not self.is_writable_variable(node_name):
+            raise PermissionError(f"禁止写入非 PC-PLC 变量: {node_name}")
         error = self.use_node(node_name).write(value)
         if error:
             raise RuntimeError(f"写入 PLC 变量失败: {node_name}")
@@ -254,6 +297,23 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def write(self, node_name: str, value: Any) -> None:
         self.write_variable(node_name, value)
+
+    @not_action
+    def is_writable_variable(self, node_name: str) -> bool:
+        return any(fnmatch.fnmatchcase(node_name, pattern) for pattern in WRITABLE_VARIABLE_PATTERNS)
+
+    @not_action
+    def read_variables(self, node_names: List[str], use_cache: bool = True) -> Dict[str, Any]:
+        return {name: self.read_variable(name, use_cache=use_cache) for name in node_names}
+
+    @not_action
+    def write_variables(self, variables: Dict[str, Any]) -> bool:
+        for name in variables:
+            if not self.is_writable_variable(name):
+                raise PermissionError(f"禁止写入非 PC-PLC 变量: {name}")
+        for name, value in variables.items():
+            self.write_variable(name, value)
+        return True
 
     @not_action
     def pulse(

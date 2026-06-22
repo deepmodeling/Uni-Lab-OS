@@ -1,7 +1,11 @@
 {
   "device_factory": {
+    "plc_device_id": "szlab_poly_plc",
     "devices": {
+      "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
       "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.stirrer.SzlabMixerStirrerDevice",
+      "szlab_mixer_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.photoshotting.SzlabMixerPhotoShottingDevice",
+      "szlab_mixer_robot": "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.robot.SzlabMixerRobotDevice",
       "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.pump.SzlabMixerPumpDevice"
     }
   },
@@ -9,22 +13,40 @@
     "common_variables": [],
     "action_variables": {
       "run_stirring": [
+        "S041准备信号",
+        "S041磁搅状态",
         "S041允许加工",
+        "S041磁搅工艺选择",
         "S041参数写入完成",
         "S041加工完成",
+        "S042准备信号",
+        "S042磁搅状态",
         "S042允许加工",
+        "S042磁搅工艺选择",
         "S042参数写入完成",
         "S042加工完成",
+        "S043准备信号",
+        "S043磁搅状态",
         "S043允许加工",
+        "S043磁搅工艺选择",
         "S043参数写入完成",
         "S043加工完成",
+        "S044准备信号",
+        "S044磁搅状态",
         "S044允许加工",
+        "S044磁搅工艺选择",
         "S044参数写入完成",
         "S044加工完成",
+        "S045准备信号",
+        "S045磁搅状态",
         "S045允许加工",
+        "S045磁搅工艺选择",
         "S045参数写入完成",
         "S045加工完成",
+        "S046准备信号",
+        "S046磁搅状态",
         "S046允许加工",
+        "S046磁搅工艺选择",
         "S046参数写入完成",
         "S046加工完成"
       ],
@@ -37,12 +59,37 @@
         "S06注射泵2抽液",
         "S06注射泵2排液",
         "S06加工完成"
+      ],
+      "take_photo": [
+        "S05准备信号",
+        "传感器状态_上位机[3].NO[0]",
+        "S05拍照结果",
+        "S05加工完成"
+      ],
+      "take_dual_view_photos": [
+        "S05准备信号",
+        "传感器状态_上位机[3].NO[0]",
+        "S05拍照结果",
+        "S05加工完成"
+      ],
+      "submit_pick_from_magnetic_stirrer": [
+        "S04取放料编号",
+        "PLC_R任务号"
+      ],
+      "submit_place_to_magnetic_stirrer": [
+        "S04取放料编号",
+        "PLC_R任务号"
+      ],
+      "submit_pick_from_photo_station": [
+        "PLC_R任务号"
+      ],
+      "submit_place_to_photo_station": [
+        "PLC_R任务号"
       ]
     },
     "param_variables": {
       "run_stirring": [
-        {"param": "position", "template": "磁搅搅拌_上位机[{position_minus_1}]"},
-        {"param": "position", "template": "磁搅加热_上位机[{position_minus_1}]"},
+        {"param": "position", "template": "磁搅温度反馈_上位机[{position_minus_1}]"},
         {"param": "position", "template": "磁搅速度设置_上位机[{position_minus_1}]"},
         {"param": "position", "template": "磁搅温度设置_上位机[{position_minus_1}]"},
         {"param": "position", "template": "磁搅时间设置_上位机[{position_minus_1}]"},

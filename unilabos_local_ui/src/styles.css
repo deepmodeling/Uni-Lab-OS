@@ -145,7 +145,29 @@ code {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px;
+  padding-right: 8px;
+  scrollbar-gutter: stable;
+  scrollbar-color: #94a3b8 #edf2f7;
+  scrollbar-width: thin;
+}
+
+.palette-actions::-webkit-scrollbar {
+  width: 10px;
+}
+
+.palette-actions::-webkit-scrollbar-track {
+  background: #edf2f7;
+  border-radius: 999px;
+}
+
+.palette-actions::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border: 2px solid #edf2f7;
+  border-radius: 999px;
+}
+
+.palette-actions::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 .action-card {

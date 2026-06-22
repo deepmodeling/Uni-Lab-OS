@@ -306,6 +306,12 @@ def create_local_devices(
                 device_config["timeout"] = plc_action_timeout
             device_class = _load_class(class_path)
             devices[device_id] = device_class(**device_config)
+        for device in devices.values():
+            plc_device_id = getattr(device, "plc_device_id", "")
+            if plc_device_id and hasattr(device, "set_plc_gateway"):
+                plc = devices.get(plc_device_id)
+                if plc is not None:
+                    device.set_plc_gateway(plc)
         return devices
 
     plc_config = dict(graph_config.get(device_factory.plc_device_id, {}))

@@ -8,6 +8,7 @@ import re
 import sys
 import tempfile
 import threading
+import traceback
 import uuid
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
@@ -474,7 +475,12 @@ class WorkflowRunManager:
                     results.extend(run_nodes([node], devices, logger=logger, runtime_config=self._runtime_config))
                 except Exception as exc:
                     record.node_statuses[node.uuid] = "failed"
-                    record.append_log(f"节点执行失败: {exc}", node_id=node.uuid, level="error")
+                    record.append_log(
+                        f"节点执行失败: {_format_exception(exc)}",
+                        node_id=node.uuid,
+                        level="error",
+                        detail={"traceback": traceback.format_exc()},
+                    )
                     raise
                 record.node_statuses[node.uuid] = "success"
                 record.append_log(f"节点执行完成 {node.uuid}", node_id=node.uuid)
@@ -490,8 +496,8 @@ class WorkflowRunManager:
             with self._lock:
                 record.status = "cancelled"
         except Exception as exc:
-            record.error = str(exc)
-            record.append_log(f"执行失败: {exc}")
+            record.error = _format_exception(exc)
+            record.append_log(f"执行失败: {record.error}", detail={"traceback": traceback.format_exc()})
             with self._lock:
                 record.status = "failed"
         finally:
@@ -509,6 +515,13 @@ class WorkflowRunManager:
 
 class WorkflowCancelled(RuntimeError):
     pass
+
+
+def _format_exception(exc: Exception) -> str:
+    message = str(exc)
+    if message:
+        return message
+    return type(exc).__name__
 
 
 def build_linear_workflow(

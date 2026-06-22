@@ -1,10 +1,10 @@
 from unilabos.devices.workstation.szlab_poly_studio.decks import SZLabPolyStudioDeck
 from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
 from unilabos.devices.workstation.szlab_poly_studio.s1 import S1Workstation
-from unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.pump import (
+from unilabos.devices.workstation.szlab_poly_studio.szlab_mixer import (
+    SzlabMixerPhotoShottingDevice,
     SzlabMixerPumpDevice,
-)
-from unilabos.devices.workstation.szlab_poly_studio.szlab_mixer.stirrer import (
+    SzlabMixerRobotDevice,
     SzlabMixerStirrerDevice,
 )
 from unilabos.devices.workstation.szlab_poly_studio.warehouses import (
@@ -22,7 +22,9 @@ __all__ = [
     "SZLabPolyPLCDevice",
     "SZLabPolyStudioDeck",
     "S1Workstation",
+    "SzlabMixerPhotoShottingDevice",
     "SzlabMixerPumpDevice",
+    "SzlabMixerRobotDevice",
     "SzlabMixerStirrerDevice",
     "powder_container_placeholder_warehouse",
     "s1_loading_buffer_warehouse",

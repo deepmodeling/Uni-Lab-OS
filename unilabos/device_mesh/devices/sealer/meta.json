@@ -1,0 +1,93 @@
+{
+  "fileName": "sealer",
+  "related": [
+    "sealer",
+    "plate_sealer",
+    "generic_plate_sealer",
+    "automated_roll_heat_sealer",
+    "4ti_0665"
+  ],
+  "model_strategy": "fallback_composite_stl_from_official_dimensions_and_product_imagery",
+  "representative_form_factor": {
+    "vendor": "Azenta / 4titude",
+    "model": "Automated Roll Heat Sealer",
+    "aliases": [
+      "4ti-0665",
+      "a4S"
+    ],
+    "reason": "A directly usable public CAD/STL/STEP model was not located during web search, so this mesh package uses the Azenta automated roll heat sealer as the representative front-loading plate sealer form factor."
+  },
+  "sources": [
+    {
+      "title": "Azenta Automated Roll Heat Sealer product page",
+      "url": "https://www.azenta.com/products/automated-roll-heat-sealer-formerly-a4s",
+      "kind": "official_product_page",
+      "notes": "Used for exterior styling cues including the compact benchtop housing, sloped front operator panel, and front-loading tray presentation."
+    },
+    {
+      "title": "Automated Roll Heat Sealer Technical Drawing",
+      "url": "https://web.azenta.com/hubfs/azenta-files/resources/tech-drawings/TD-automated-roll-heat-sealer.pdf",
+      "kind": "official_technical_drawing",
+      "notes": "Provides the representative envelope dimensions used here: 230 mm width, 507 mm closed depth, 276 mm height, and 665 mm depth when the front tray is open."
+    },
+    {
+      "title": "Microplate Sealer User Guide",
+      "url": "https://web.azenta.com/hubfs/azenta-files/resources/manuals-guides/347598-Microplate-Sealer.pdf",
+      "kind": "official_user_manual",
+      "notes": "Used to confirm the machine is operated from the front drawer side and that the film roll is serviced from the upper housing."
+    }
+  ],
+  "dimensions_m": {
+    "width": 0.23,
+    "depth": 0.507,
+    "height": 0.276,
+    "open_depth": 0.665
+  },
+  "access_points": [
+    {
+      "name": "front_loading_access_link",
+      "face": "front",
+      "collision_strategy": "fixed_extended_tray",
+      "xyz_m": [0.0, 0.3475, 0.103],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Approximate approach point for loading or unloading an SBS-format microplate on the extended front tray."
+    },
+    {
+      "name": "sealing_slot_access_link",
+      "face": "front_internal",
+      "collision_strategy": "fixed_extended_tray",
+      "xyz_m": [0.0, 0.188, 0.104],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Estimated center of the sealing slot / heated platen region after the tray enters the instrument."
+    },
+    {
+      "name": "touchscreen_access_link",
+      "face": "front_upper",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, 0.2815, 0.194],
+      "rpy_rad": [-0.349066, 0.0, 0.0],
+      "description": "Approximate front operator control location on the sloped touchscreen console."
+    },
+    {
+      "name": "top_roll_access_link",
+      "face": "top",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, -0.094, 0.276],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Estimated top-side service position for loading or replacing the sealing film roll."
+    },
+    {
+      "name": "rear_service_access_link",
+      "face": "rear",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, -0.3035, 0.16],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "description": "Approximate rear service point for power and cable access."
+    }
+  ],
+  "notes": [
+    "No public manufacturer or distributor CAD/STL/STEP file for this exact sealer was found during web search, so this package intentionally uses a documented representative fallback instead of claiming exact factory geometry.",
+    "Positive Y is treated as the operator-facing front because the Azenta product page and user manual both show the loading drawer and touchscreen on that side.",
+    "The tray extension, sealing slot center, and top roll access location are estimated from the technical drawing and exterior imagery, so precise internal platen coordinates remain uncertain."
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "fileName": "incubator",
+  "related": [
+    "incubator",
+    "_phage_display_incubator",
+    "generic_automated_microplate_incubator"
+  ],
+  "representation": {
+    "type": "fallback-composite-stl",
+    "representativeModel": {
+      "vendor": "LiCONiC",
+      "model": "StoreX STX220-SA",
+      "formFactor": "stand-alone automated microplate incubator with a full front user door, upper robotic gate, and nominal 1000 mm transfer/loading tray height"
+    },
+    "dimensionsMm": {
+      "width": 744,
+      "depth": 716,
+      "height": 1203,
+      "transferHeight": 1000
+    },
+    "sourceUrls": [
+      "https://legacysite.liconic.com/old/products/automated-incubators/stx/cad-files/stx220-sa_step.zip",
+      "https://legacysite.liconic.com/old/products/automated-incubators/stx/stx220sa_dimensions.php",
+      "https://legacysite.liconic.com/old/products/automated-incubators/stx/cad-files/stx220-sa.pdf",
+      "https://legacysite.liconic.com/old/products/automated-incubators/stx/stx220sa_description.php",
+      "https://legacysite.liconic.com/old/support/flyer/flyer_new-stx220.pdf",
+      "https://legacysite.liconic.com/old/products/automated-incubators/stx/stx220sa_drawings.php"
+    ],
+    "notes": [
+      "A vendor STEP download was found for the representative STX220-SA, but no practical STEP-to-STL conversion toolchain is available in this workspace, so the delivered mesh is a composite STL fallback.",
+      "The fallback follows the official STX220-SA outer envelope and uses vendor imagery plus flush-gate/transfer-height documentation to estimate the upper robotic gate and protruding loading tray."
+    ]
+  },
+  "accessFrames": [
+    {
+      "name": "front-user-door",
+      "linkSuffix": "front_user_access_link",
+      "description": "Estimated manual front access point centered on the full-sized user door for plate loading and service access.",
+      "collision_strategy": "opening_cutout",
+      "collision_notes": "The simplified cabinet collision leaves a front body cutout through the main door region so approach to this body-mounted access frame is not blocked by a solid front wall.",
+      "poseMeters": {
+        "x": 0.0,
+        "y": 0.398,
+        "z": 0.78,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "loading-tray",
+      "linkSuffix": "loading_tray_access_link",
+      "description": "Estimated robotic tray handoff point aligned with the representative upper flush gate and 1000 mm transfer height.",
+      "collision_strategy": "fixed_extended_tray",
+      "collision_notes": "This access frame is mounted on a dedicated loading tray link, with the tray collision modeled in a fixed fully extended pose outside the body shell.",
+      "poseMeters": {
+        "x": 0.0,
+        "y": 0.513,
+        "z": 1.0,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "lower-control-panel",
+      "linkSuffix": "control_panel_access_link",
+      "description": "Estimated operator access point for the lower-right display and control cluster visible in the representative STX220-SA front image.",
+      "collision_strategy": "opening_cutout",
+      "collision_notes": "The front cutout used for body access keeps this main-body service/control approach reachable without routing through the simplified cabinet shell.",
+      "poseMeters": {
+        "x": 0.275,
+        "y": 0.393,
+        "z": 0.2,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    }
+  ]
+}

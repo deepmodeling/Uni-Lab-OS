@@ -7,11 +7,12 @@ Panels:
         - /TF1/Tree1
         - /PlanningScene1
         - /PlanningScene1/Scene Geometry1
+        - /MotionPlanning1
         - /MotionPlanning1/Scene Geometry1
         - /MotionPlanning1/Scene Robot1
         - /MotionPlanning1/Planning Request1
       Splitter Ratio: 0.5016146302223206
-    Tree Height: 563
+    Tree Height: 276
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -107,97 +108,415 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          arm_slider_arm_base:
+          agilent_biotek_406_fx_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_1:
+          agilent_biotek_406_fx_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_left_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_plate_carrier_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_2:
+          agilent_biotek_406_fx_right_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_3:
+          applied_biosystems_seqstudio_genetic_analyzer_cartridge_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_sample_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_screen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_slideway:
+          bd_facsmelody_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_flow_cell_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_sample_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_sort_output_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_akta_pure_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_device_link:
+          cytiva_akta_pure_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          arm_slider_gripper_base:
+          cytiva_akta_pure_front_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-            Value: true
-          arm_slider_gripper_left:
+          cytiva_akta_pure_rear_service_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-            Value: true
-          arm_slider_gripper_right:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          deck_device_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          deck_first_link:
+          cytiva_biacore_8k_plus_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_fourth_link:
+          cytiva_biacore_8k_plus_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sample_compartment_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sample_hotel_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sensor_chip_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_main_link:
+          cytomat_backend_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_loading_tray_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_loading_tray_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_second_link:
+          cytomat_backend_transfer_opening_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_socketTypeGenericSbsFootprint:
+          hettich_rotanta_460_robotic_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          deck_socketTypeHEPAModule:
+          hettich_rotanta_460_robotic_front_lid_hatch_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          deck_third_link:
+          hettich_rotanta_460_robotic_rear_lid_hatch_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_top_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          hotel_base_link:
+          molecular_devices_qpix_420_control_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_deck_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_front_door_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_imaging_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_body_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          hotel_device_link:
+          qiagen_qiacube_connect_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          hotel_socketTypeGenericSbsFootprint:
+          qiagen_qiacube_connect_hood_handle_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_touchscreen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_waste_drawer_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_waste_drawer_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_slideway:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_slideway:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_left:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_right:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_left:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_right:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          tecan_resolvex_a200_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          tecan_resolvex_a200_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_rack_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_screen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          telesis_bio_bioxp_3250_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_touchscreen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          vantage_backend_deck_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_front_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_loading_tray_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_loading_tray_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          vantage_backend_logistics_cabinet_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_socketTypeGenericSbsFootprint:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -258,97 +577,415 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          arm_slider_arm_base:
+          agilent_biotek_406_fx_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_1:
+          agilent_biotek_406_fx_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_left_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_plate_carrier_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_2:
+          agilent_biotek_406_fx_right_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_3:
+          applied_biosystems_seqstudio_genetic_analyzer_cartridge_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_sample_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_screen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_slideway:
+          bd_facsmelody_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_flow_cell_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_sample_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_sort_output_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_akta_pure_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_device_link:
+          cytiva_akta_pure_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          arm_slider_gripper_base:
+          cytiva_akta_pure_front_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-            Value: true
-          arm_slider_gripper_left:
+          cytiva_akta_pure_rear_service_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-            Value: true
-          arm_slider_gripper_right:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          deck_device_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          deck_first_link:
+          cytiva_biacore_8k_plus_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_fourth_link:
+          cytiva_biacore_8k_plus_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sample_compartment_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sample_hotel_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sensor_chip_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_main_link:
+          cytomat_backend_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_loading_tray_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_loading_tray_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_second_link:
+          cytomat_backend_transfer_opening_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_socketTypeGenericSbsFootprint:
+          hettich_rotanta_460_robotic_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          deck_socketTypeHEPAModule:
+          hettich_rotanta_460_robotic_front_lid_hatch_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          deck_third_link:
+          hettich_rotanta_460_robotic_rear_lid_hatch_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_top_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          hotel_base_link:
+          molecular_devices_qpix_420_control_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_deck_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_front_door_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_imaging_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_body_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          hotel_device_link:
+          qiagen_qiacube_connect_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          hotel_socketTypeGenericSbsFootprint:
+          qiagen_qiacube_connect_hood_handle_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_touchscreen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_waste_drawer_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_waste_drawer_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_slideway:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_slideway:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_left:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_right:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_left:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_right:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          tecan_resolvex_a200_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          tecan_resolvex_a200_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_rack_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_screen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          telesis_bio_bioxp_3250_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_touchscreen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          vantage_backend_deck_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_front_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_loading_tray_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_loading_tray_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          vantage_backend_logistics_cabinet_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_socketTypeGenericSbsFootprint:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -379,8 +1016,8 @@ Visualization Manager:
         Goal State Color: 250; 128; 0
         Interactive Marker Size: 0
         Joint Violation Color: 255; 0; 255
-        Planning Group: arm_slider_arm
-        Query Goal State: false
+        Planning Group: robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm
+        Query Goal State: true
         Query Start State: false
         Show Workspace: false
         Start State Alpha: 1
@@ -402,97 +1039,415 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          arm_slider_arm_base:
+          agilent_biotek_406_fx_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_1:
+          agilent_biotek_406_fx_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_left_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_plate_carrier_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_2:
+          agilent_biotek_406_fx_right_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          agilent_biotek_406_fx_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_link_3:
+          applied_biosystems_seqstudio_genetic_analyzer_cartridge_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_sample_plate_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_screen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          applied_biosystems_seqstudio_genetic_analyzer_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_arm_slideway:
+          bd_facsmelody_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_flow_cell_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_sample_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          bd_facsmelody_sort_output_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_akta_pure_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          arm_slider_device_link:
+          cytiva_akta_pure_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          arm_slider_gripper_base:
+          cytiva_akta_pure_front_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-            Value: true
-          arm_slider_gripper_left:
+          cytiva_akta_pure_rear_service_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-            Value: true
-          arm_slider_gripper_right:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          deck_device_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          deck_first_link:
+          cytiva_biacore_8k_plus_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_fourth_link:
+          cytiva_biacore_8k_plus_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sample_compartment_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sample_hotel_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytiva_biacore_8k_plus_sensor_chip_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_main_link:
+          cytomat_backend_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_loading_tray_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          cytomat_backend_loading_tray_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_second_link:
+          cytomat_backend_transfer_opening_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          deck_socketTypeGenericSbsFootprint:
+          hettich_rotanta_460_robotic_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          deck_socketTypeHEPAModule:
+          hettich_rotanta_460_robotic_front_lid_hatch_access_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          deck_third_link:
+          hettich_rotanta_460_robotic_rear_lid_hatch_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          hettich_rotanta_460_robotic_top_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          hotel_base_link:
+          molecular_devices_qpix_420_control_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_deck_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_front_door_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_imaging_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          molecular_devices_qpix_420_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_body_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          hotel_device_link:
+          qiagen_qiacube_connect_device_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          hotel_socketTypeGenericSbsFootprint:
+          qiagen_qiacube_connect_hood_handle_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_touchscreen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_waste_drawer_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          qiagen_qiacube_connect_waste_drawer_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_arm_slideway:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_arm_slideway:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_left:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_copy_gripper_right:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_left:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          robotic_arm_SCARA_with_slider_moveit_virtual_gripper_right:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          tecan_resolvex_a200_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          tecan_resolvex_a200_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_rack_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_screen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tecan_resolvex_a200_socketTypeGenericSbsFootprint:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          telesis_bio_bioxp_3250_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          telesis_bio_bioxp_3250_touchscreen_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          vantage_backend_deck_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_device_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_front_loading_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_front_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_loading_tray_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_loading_tray_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          vantage_backend_logistics_cabinet_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_rear_service_access_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          vantage_backend_socketTypeGenericSbsFootprint:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -551,37 +1506,37 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.622864246368408
+      Distance: 12.818230628967285
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.2880733013153076
-        Y: -0.16004444658756256
-        Z: -0.16730672121047974
+        X: 0.6061106324195862
+        Y: -1.7148518562316895
+        Z: 1.1465555429458618
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4297958016395569
+      Pitch: 0.804795503616333
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.36756160855293274
+      Yaw: 1.3875614404678345
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1088
+  Height: 1210
   Hide Left Dock: false
   Hide Right Dock: true
   MotionPlanning:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000400000000000003a30000040bfc020000000bfb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000001700000271000000ca00fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb000000280020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000000000000000fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004200fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000028e000001940000018900ffffff000000010000010f00000387fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003b00000387000000a600fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004420000003efc0100000002fb0000000800540069006d00650100000000000004420000000000000000fb0000000800540069006d00650100000000000004500000000000000000000004110000040b00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730000000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000400000000000003a300000463fc020000000bfb0000001200530065006c0065006300740069006f006e00000001e10000009b000000b100fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c0061007900730100000028000001840000018400fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb000000280020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000000000000000fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000007c00fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001b8000002d3000002c200ffffff000000010000010f00000387fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003b000003870000013500fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004420000003efc0100000002fb0000000800540069006d00650100000000000004420000000000000000fb0000000800540069006d006501000000000000045000000000000000000000040b0000046300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730000000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Tool Properties:
@@ -589,5 +1544,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1978
-  X: 70
-  Y: 27
+  X: 140
+  Y: 54

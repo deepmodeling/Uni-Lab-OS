@@ -1,0 +1,125 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="access2_backend"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.327 depth:=0.711 height:=0.251 mesh_file:='access2_backend_box.stl'">
+
+    <xacro:property name="body_shell_depth" value="0.457" />
+    <xacro:property name="loader_stage_depth" value="${depth - body_shell_depth}" />
+    <xacro:property name="body_front_y" value="${-depth / 2.0 + loader_stage_depth}" />
+    <xacro:property name="front_opening_depth" value="0.140" />
+    <xacro:property name="front_opening_width" value="0.205" />
+    <xacro:property name="front_opening_height" value="0.165" />
+    <xacro:property name="front_side_wall_width" value="${(width - front_opening_width) / 2.0}" />
+    <xacro:property name="loader_stage_width" value="0.180" />
+    <xacro:property name="loader_stage_height" value="0.020" />
+    <xacro:property name="loader_stage_center_y" value="${body_front_y - (loader_stage_depth / 2.0)}" />
+    <xacro:property name="loader_stage_center_z" value="${0.095 - (loader_stage_height / 2.0)}" />
+
+    <!-- Fallback geometry: no downloadable CAD/STL was located for the Agilent Microplate
+         Centrifuge with Access2 loader, so the mesh is a measured box using Agilent manual
+         dimensions for the combined unit (25.1 cm H x 32.7 cm W x 71.1 cm D). -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/access2_backend/meshes/${mesh_file}"/>
+        </geometry>
+        <material name="access2_backend_white">
+          <color rgba="0.92 0.92 0.92 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 ${(body_front_y + front_opening_depth + (depth / 2.0)) / 2.0} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${body_shell_depth - front_opening_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${body_front_y + (front_opening_depth / 2.0)} ${(front_opening_height + height) / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_opening_depth} ${height - front_opening_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(-width / 2.0) + (front_side_wall_width / 2.0)} ${body_front_y + (front_opening_depth / 2.0)} ${front_opening_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_wall_width} ${front_opening_depth} ${front_opening_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(width / 2.0) - (front_side_wall_width / 2.0)} ${body_front_y + (front_opening_depth / 2.0)} ${front_opening_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_wall_width} ${front_opening_depth} ${front_opening_height}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}loader_stage_link">
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${loader_stage_width} ${loader_stage_depth} ${loader_stage_height}"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}loader_stage_joint" type="fixed">
+      <origin xyz="0 ${loader_stage_center_y} ${loader_stage_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loader_stage_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- Access frames are inferred from Agilent front/top figures: the centrifuge door sits on
+         the front face of the main body and the loader stage projects forward from that door. -->
+    <link name="${station_name}${device_name}front_door_access_link"/>
+    <joint name="${station_name}${device_name}front_door_access_joint" type="fixed">
+      <origin xyz="0 ${-depth / 2.0 + 0.240} ${height * 0.50}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_door_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}loader_stage_access_link"/>
+    <joint name="${station_name}${device_name}loader_stage_access_joint" type="fixed">
+      <origin xyz="0 ${(-depth / 2.0 + 0.100) - loader_stage_center_y} ${loader_stage_height / 2.0}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}loader_stage_link"/>
+      <child link="${station_name}${device_name}loader_stage_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}hover_access_link"/>
+    <joint name="${station_name}${device_name}hover_access_joint" type="fixed">
+      <origin xyz="0 ${-depth / 2.0 + 0.180} 0.120" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}hover_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- Rear services are power, serial, and compressed air according to the user guide. -->
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 + 0.030} ${height * 0.48}" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

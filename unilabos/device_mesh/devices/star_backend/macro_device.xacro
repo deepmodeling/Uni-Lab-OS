@@ -1,0 +1,217 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="star_backend"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=1.664 depth:=0.781 height:=0.903
+            deck_surface_z:=0.118 loading_tray_y:=-0.315
+            loading_tray_access_y:=-0.470 left_deck_access_x:=-0.892 right_deck_access_x:=0.892
+            rear_deck_access_y:=0.506">
+
+    <!-- 基于 Hamilton Microlab STAR 官方规格和产品图构建的近似外形：
+         STAR 宽 1664 mm、深 781 mm（manual load）、高 903 mm。
+         访问点参考官方对 deck 手工干预和 side/back panel 集成的描述做近似布置。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <origin xyz="0 -0.305 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/base_plinth.stl"/>
+        </geometry>
+        <material name="star_shell_silver">
+          <color rgba="0.89 0.90 0.91 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${-width / 2.0 + 0.075} -0.334 0.060" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/side_pillar.stl"/>
+        </geometry>
+        <material name="star_frame_blue">
+          <color rgba="0.10 0.16 0.29 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${width / 2.0 - 0.075} -0.334 0.060" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/side_pillar.stl"/>
+        </geometry>
+        <material name="star_frame_blue"/>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.334 0.715" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/top_fascia.stl"/>
+        </geometry>
+        <material name="star_frame_blue"/>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.334 0.500" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/front_crossbar.stl"/>
+        </geometry>
+        <material name="star_frame_blue"/>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.305 0.756" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/status_light.stl"/>
+        </geometry>
+        <material name="star_status_light_green">
+          <color rgba="0.15 0.82 0.33 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.055 ${deck_surface_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/deck_surface.stl"/>
+        </geometry>
+        <material name="star_deck_dark">
+          <color rgba="0.18 0.18 0.19 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.120 0.100" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/rear_service_tower.stl"/>
+        </geometry>
+        <material name="star_gantry_graphite">
+          <color rgba="0.24 0.25 0.27 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.035 0.245" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/pipetting_carriage.stl"/>
+        </geometry>
+        <material name="star_carriage_dark">
+          <color rgba="0.20 0.21 0.23 1"/>
+        </material>
+      </visual>
+      <!-- 碰撞仅保留真实阻挡的外壳/框架，保持 deck 上方与前侧装载开口可达。 -->
+      <collision>
+        <origin xyz="${-width / 2.0 + 0.075} -0.334 0.452" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.110 0.110 0.904"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${width / 2.0 - 0.075} -0.334 0.452" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.110 0.110 0.904"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 0.120 0.240" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width - 0.100} 0.250 0.480"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 -0.334 0.500" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width - 0.180} 0.050 0.090"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 -0.334 0.715" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width - 0.120} 0.080 0.120"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 0.020 0.060" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width - 0.120} 0.180 0.120"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}loading_tray_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/star_backend/meshes/front_loading_tray.stl"/>
+        </geometry>
+        <material name="star_tray_silver">
+          <color rgba="0.82 0.83 0.84 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.015" rpy="0 0 0"/>
+        <geometry>
+          <box size="1.500 0.110 0.030"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}loading_tray_joint" type="fixed">
+      <origin xyz="0 ${loading_tray_y} 0.085" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loading_tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}loading_tray_access_link"/>
+    <joint name="${station_name}${device_name}loading_tray_access_joint" type="fixed">
+      <origin xyz="0 ${loading_tray_access_y - loading_tray_y} ${deck_surface_z + 0.015 - 0.085}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}loading_tray_link"/>
+      <child link="${station_name}${device_name}loading_tray_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}left_deck_access_link"/>
+    <joint name="${station_name}${device_name}left_deck_access_joint" type="fixed">
+      <origin xyz="${left_deck_access_x} -0.055 ${deck_surface_z + 0.015}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}left_deck_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}right_deck_access_link"/>
+    <joint name="${station_name}${device_name}right_deck_access_joint" type="fixed">
+      <origin xyz="${right_deck_access_x} -0.055 ${deck_surface_z + 0.015}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}right_deck_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_deck_access_link"/>
+    <joint name="${station_name}${device_name}rear_deck_access_joint" type="fixed">
+      <origin xyz="0 ${rear_deck_access_y} ${deck_surface_z + 0.015}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_deck_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+
+    <!-- Deck 中部的通用 SBS 放置参考位。 -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="0 -0.055 ${deck_surface_z + 0.015}"/>
+    </joint>
+
+    <!-- 前侧 loading tray 近似装载参考位。 -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_2_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="0 ${loading_tray_access_y} ${deck_surface_z + 0.015}"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

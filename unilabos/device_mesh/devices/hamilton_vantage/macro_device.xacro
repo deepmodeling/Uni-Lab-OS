@@ -1,0 +1,259 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="hamilton_vantage"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=1.33 depth:=0.98 height:=1.82 mesh_file:='vantage_1_3.stl'
+            body_depth:=0.42 lower_body_height:=0.78 upper_body_height:=0.82
+            deck_surface_z:=0.965 front_access_y:=-0.245 rear_service_access_y:=0.390
+            loading_tray_x_factor:=0.34 loading_tray_y:=-0.295 loading_tray_z:=0.250">
+
+    <!-- 基于 Hamilton 官方规格和产品渲染图构建的分段近似外形。
+         1.3 m 与 2.0 m 共用同一套比例，宽度由 width 参数驱动。
+         保留 legacy `mesh_file` 参数以兼容旧调用，但默认视觉改为更可识别的分段 fallback。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <origin xyz="0 0 0.015" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.97} ${body_depth} ${lower_body_height}"/>
+        </geometry>
+        <material name="hamilton_vantage_shell_silver">
+          <color rgba="0.91 0.92 0.93 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 ${0.83}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.97} ${body_depth} ${upper_body_height}"/>
+        </geometry>
+        <material name="hamilton_vantage_shell_silver"/>
+      </visual>
+      <visual>
+        <origin xyz="0 ${-(body_depth / 2.0) - 0.006} 1.39" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.86} 0.012 0.18"/>
+        </geometry>
+        <material name="hamilton_vantage_trim_blue">
+          <color rgba="0.24 0.28 0.36 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${-(body_depth / 2.0) - 0.006} 1.18" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.82} 0.010 0.28"/>
+        </geometry>
+        <material name="hamilton_vantage_window_blue">
+          <color rgba="0.56 0.82 0.94 0.45"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${-(body_depth / 2.0) - 0.006} 0.34" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.84} 0.010 0.32"/>
+        </geometry>
+        <material name="hamilton_vantage_window_blue"/>
+      </visual>
+      <visual>
+        <origin xyz="0 ${-(body_depth / 2.0) - 0.008} 1.08" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.24} 0.016 0.028"/>
+        </geometry>
+        <material name="hamilton_vantage_handle_silver">
+          <color rgba="0.83 0.84 0.86 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${-(body_depth / 2.0) - 0.008} 1.14" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.24} 0.016 0.028"/>
+        </geometry>
+        <material name="hamilton_vantage_handle_silver"/>
+      </visual>
+      <visual>
+        <origin xyz="0 ${-(body_depth / 2.0) - 0.004} 1.50" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.56} 0.006 0.008"/>
+        </geometry>
+        <material name="hamilton_vantage_status_green">
+          <color rgba="0.20 0.83 0.36 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.000 ${deck_surface_z - 0.010}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="${width * 0.82} 0.60 0.020"/>
+        </geometry>
+        <material name="hamilton_vantage_deck_dark">
+          <color rgba="0.20 0.21 0.23 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.020 1.08" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="0.18 0.16 0.26"/>
+        </geometry>
+        <material name="hamilton_vantage_gantry_gray">
+          <color rgba="0.67 0.70 0.74 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${width * 0.10} 0.040 0.12" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="0.10 0.18 0.46"/>
+        </geometry>
+        <material name="hamilton_vantage_internal_dark">
+          <color rgba="0.23 0.25 0.29 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${width * 0.34} 0.060 0.10" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="0.14 0.16 0.34"/>
+        </geometry>
+        <material name="hamilton_vantage_internal_dark"/>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0.080 ${lower_body_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width * 0.97} 0.260 ${lower_body_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-(width * 0.34)} 0.000 ${lower_body_height + (upper_body_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width * 0.24} ${body_depth} ${upper_body_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${width * 0.34} 0.000 ${lower_body_height + (upper_body_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width * 0.24} ${body_depth} ${upper_body_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${(body_depth / 2.0) - 0.060} ${lower_body_height + (upper_body_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width * 0.72} 0.120 ${upper_body_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <link name="${station_name}${device_name}loading_tray_link">
+      <visual>
+        <origin xyz="0 0 0.015" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hamilton_vantage/meshes/unit_box.stl"
+                scale="0.18 0.14 0.030"/>
+        </geometry>
+        <material name="hamilton_vantage_tray_silver">
+          <color rgba="0.84 0.85 0.87 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 0.015" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.18 0.14 0.030"/>
+        </geometry>
+      </collision> -->
+    </link>
+    <joint name="${station_name}${device_name}loading_tray_joint" type="fixed">
+      <origin xyz="${width * loading_tray_x_factor} ${loading_tray_y} ${loading_tray_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loading_tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}deck_access_link"/>
+    <joint name="${station_name}${device_name}deck_access_joint" type="fixed">
+      <origin xyz="0 0.000 ${deck_surface_z + 0.015}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}deck_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}front_loading_access_link"/>
+    <joint name="${station_name}${device_name}front_loading_access_joint" type="fixed">
+      <origin xyz="0 ${front_access_y} ${deck_surface_z + 0.015}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}loading_tray_access_link"/>
+    <joint name="${station_name}${device_name}loading_tray_access_joint" type="fixed">
+      <origin xyz="0 ${front_access_y - loading_tray_y} ${0.265 - loading_tray_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}loading_tray_link"/>
+      <child link="${station_name}${device_name}loading_tray_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}front_service_access_link"/>
+    <joint name="${station_name}${device_name}front_service_access_joint" type="fixed">
+      <origin xyz="0 ${front_access_y} 1.125" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}logistics_cabinet_access_link"/>
+    <joint name="${station_name}${device_name}logistics_cabinet_access_joint" type="fixed">
+      <origin xyz="0 ${front_access_y} 0.345" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}logistics_cabinet_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${rear_service_access_y} 0.920" rpy="0 0 3.141592653589793"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+
+    <!-- 上层主 deck 的通用 SBS 放置参考位。 -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="0 0.000 ${deck_surface_z + 0.015}"/>
+    </joint>
+
+    <!-- 右下 Entry/Exit / autoload 区域的近似手off参考位。 -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_2_60_1" type="fixed">
+      <parent link="${station_name}${device_name}loading_tray_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="0 ${front_access_y - loading_tray_y} ${0.265 - loading_tray_z}"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

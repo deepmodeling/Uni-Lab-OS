@@ -91,7 +91,7 @@ class JobInfo:
         """更新最后更新时间"""
         self.last_update_time = time.time()
 
-    def set_ready_timeout(self, timeout_seconds: int = 10):
+    def set_ready_timeout(self, timeout_seconds: int = 30):
         """设置READY状态超时时间"""
         self.ready_timeout = time.time() + timeout_seconds
 
@@ -1865,6 +1865,21 @@ class WebSocketClient(BaseCommunicationClient):
         }
         self.message_processor.send_message(message)
         # logger.trace(f"[WebSocketClient] Device status published: {device_id}.{property_name}")
+
+    def publish_joint_state(self, node_uuid: str, joint_states: dict, resource_poses: dict = None) -> None:
+        """发布高频关节状态（push_joint_state，不写 DB）"""
+        if self.is_disabled or not self.is_connected():
+            return
+
+        message = {
+            "action": "push_joint_state",
+            "data": {
+                "node_uuid": node_uuid,
+                "joint_states": joint_states or {},
+                "resource_poses": resource_poses or {},
+            },
+        }
+        self.message_processor.send_message(message)
 
     def publish_job_status(
         self, feedback_data: dict, item: QueueItem, status: str, return_info: Optional[dict] = None

@@ -1,0 +1,77 @@
+{
+  "fileName": "eppendorf_centrifuge_5910_ri",
+  "related": [
+    "eppendorf_centrifuge_5910_ri"
+  ],
+  "model_strategy": "fallback_box_assembly",
+  "sources": [
+    "https://www.eppendorf.com/us-en/Products/Centrifugation/Multipurpose-Centrifuges/Centrifuge-5910Ri-p-PF-963296",
+    "https://www.eppendorf.com/product-media/doc/en/996680/Centrifugation_Brochure_Centrifuge-5910-Ri_Accelerate-Your-Results.pdf",
+    "https://www.eppendorf.com/product-media/img/global/966241/Eppendorf_Centrifugation_Centrifuge-5910-Ri_side-view-open_product.jpg?imwidth=540",
+    "https://www.eppendorf.com/product-media/img/global/966312/Eppendorf_Centrifugation_Centrifuge-5910-Ri_side-view-closed_product.jpg?imwidth=540"
+  ],
+  "dimensions_m": {
+    "width": 0.72,
+    "depth": 0.68,
+    "height": 0.37,
+    "footprint_depth_without_front_panel": 0.62,
+    "height_with_open_lid": 0.85
+  },
+  "access_points": [
+    {
+      "name": "lid_handle_access",
+      "description": "Estimated front-center latch and lift position for the top lid, based on the official closed-unit product photo and the documented 6 cm front-panel protrusion.",
+      "face": "front",
+      "collision_strategy": "opening_cutout",
+      "center_m": {
+        "x": 0.0,
+        "y": -0.37,
+        "z": 0.355
+      },
+      "size_m": {
+        "x": 0.18,
+        "y": 0.06,
+        "z": 0.05
+      }
+    },
+    {
+      "name": "loading_access",
+      "description": "Estimated top-loading clearance above the rotor chamber center, using the official open-lid height of 85 cm and the open-lid product image.",
+      "face": "top",
+      "collision_strategy": "opening_cutout",
+      "center_m": {
+        "x": 0.0,
+        "y": 0.03,
+        "z": 0.586
+      },
+      "size_m": {
+        "x": 0.36,
+        "y": 0.30,
+        "z": 0.18
+      }
+    },
+    {
+      "name": "rear_service_access",
+      "description": "Estimated rear service zone for cable, power, and network access, positioned just outside the simplified rear shell so it is reachable without intersecting the body collision.",
+      "face": "rear",
+      "collision_strategy": "opening_cutout",
+      "center_m": {
+        "x": 0.0,
+        "y": 0.38,
+        "z": 0.204
+      },
+      "size_m": {
+        "x": 0.18,
+        "y": 0.06,
+        "z": 0.10
+      }
+    }
+  ],
+  "notes": [
+    "No usable public CAD, STL, OBJ, GLB, or similar 3D model for the Eppendorf Centrifuge 5910 Ri was found during web search, so this package uses generated fallback geometry.",
+    "The mesh assembly uses the official dimensions of 72 x 68 x 37 cm, the official footprint without front panel of 72 x 62 cm, and official closed/open product photos to approximate the recessed body, front control fascia, and top lid proportions.",
+    "The front fascia depth is inferred as 6 cm from the difference between the overall depth and the footprint depth without the front panel.",
+    "The loading-access and lid-handle frames are estimated from official imagery and should be treated as integration aids rather than measured mechanical datums.",
+    "Collision geometry is intentionally modeled as a lower body plus upper shell with a top/front opening corridor, and the rear service access is placed just behind the rear shell to avoid embedding service approaches inside the simplified collision volume."
+  ]
+}

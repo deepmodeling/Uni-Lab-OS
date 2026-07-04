@@ -1,0 +1,88 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="centrifuge"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.327 depth:=0.458 height:=0.200">
+
+    <xacro:property name="plinth_height" value="0.010" />
+    <xacro:property name="body_height" value="${height - 0.062}" />
+    <xacro:property name="top_cap_height" value="${height - plinth_height - body_height}" />
+    <xacro:property name="door_width" value="0.144" />
+    <xacro:property name="door_height" value="0.0686" />
+    <xacro:property name="door_depth" value="0.012" />
+    <xacro:property name="door_bottom_z" value="0.045" />
+    <xacro:property name="loading_access_z" value="${door_bottom_z + (door_height / 2.0)}" />
+    <xacro:property name="loading_access_y" value="${-(depth / 2.0) - 0.080}" />
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/centrifuge/meshes/plinth.stl"/>
+        </geometry>
+        <material name="centrifuge_plinth_gray">
+          <color rgba="0.73 0.75 0.77 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 ${plinth_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/centrifuge/meshes/body.stl"/>
+        </geometry>
+        <material name="centrifuge_body_white">
+          <color rgba="0.96 0.97 0.97 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 ${plinth_height + body_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/centrifuge/meshes/top_cap.stl"/>
+        </geometry>
+        <material name="centrifuge_cap_white">
+          <color rgba="0.98 0.99 0.99 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${-(depth / 2.0) - (door_depth / 2.0)} ${door_bottom_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/centrifuge/meshes/door_panel.stl"/>
+        </geometry>
+        <material name="centrifuge_door_black">
+          <color rgba="0.12 0.13 0.15 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <link name="${station_name}${device_name}loading_access_link"/>
+    <joint name="${station_name}${device_name}loading_access_joint" type="fixed">
+      <origin xyz="0 ${loading_access_y} ${loading_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

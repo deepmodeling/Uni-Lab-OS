@@ -262,6 +262,12 @@ class ResourceDictInstance(object):
                     height= content["config"].get("size_y", 0),
                     depth= content["config"].get("size_z", 0),
                 )
+            if "rotation" not in pose:
+                pose["rotation"] = ResourceDictPositionObjectType(
+                    x=content["config"].get("rotation", {}).get("x", 0), 
+                    y=content["config"].get("rotation", {}).get("y", 0), 
+                    z=content["config"].get("rotation", {}).get("z", 0),
+                )
             content["pose"] = pose
         try:
             res_dict = ResourceDict.model_validate(content)

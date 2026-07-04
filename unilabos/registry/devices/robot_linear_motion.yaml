@@ -684,50 +684,64 @@ linear_motion.toyo_xyz.sim:
           type: object
         type: UniLabJsonCommand
       pick_and_place:
-        feedback:
-          status: status
-        goal:
-          command: command
+        feedback: {}
+        goal: {}
         goal_default:
-          command: ''
+          constraints: []
+          lift_height: 0
+          move_group: ""
+          option: ""
+          resource: ""
+          retry: 0
+          speed: 0
+          status: ""
+          target: ""
+          x_distance: 0
+          y_distance: 0
         handles: {}
         placeholder_keys: {}
-        result:
-          return_info: return_info
-          success: success
+        result: {}
         schema:
-          description: ''
+          description: pick_and_place 显式参数（UniLabJsonCommand）
           properties:
-            feedback:
-              additionalProperties: false
+            feedback: {}
+            goal:
               properties:
+                constraints:
+                  items:
+                    type: number
+                  type: array
+                lift_height:
+                  type: number
+                move_group:
+                  type: string
+                option:
+                  type: string
+                resource:
+                  type: string
+                retry:
+                  type: number
+                speed:
+                  type: number
                 status:
                   type: string
-              title: SendCmd_Feedback
-              type: object
-            goal:
-              additionalProperties: false
-              properties:
-                command:
-                  description: A JSON-formatted string that includes option, target,
-                    speed, lift_height, mt_height
+                target:
                   type: string
-              title: SendCmd_Goal
+                x_distance:
+                  type: number
+                y_distance:
+                  type: number
+              required:
+              - option
+              - move_group
+              - status
               type: object
-            result:
-              additionalProperties: false
-              properties:
-                return_info:
-                  type: string
-                success:
-                  type: boolean
-              title: SendCmd_Result
-              type: object
+            result: {}
           required:
           - goal
-          title: SendCmd
+          title: pick_and_place参数
           type: object
-        type: SendCmd
+        type: UniLabJsonCommand
       set_position:
         feedback:
           status: status

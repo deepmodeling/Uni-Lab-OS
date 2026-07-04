@@ -1,0 +1,175 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="peeler"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.349 depth:=0.278 height:=0.349
+            tray_center_x:=-0.117 tray_center_y:=0.111 tray_center_z:=0.072 tray_access_z:=0.082
+            slot_center_x:=-0.102 slot_center_y:=0.069 slot_access_z:=0.131
+            operator_access_x:=0.015 operator_access_y:=0.159 operator_access_z:=0.052">
+
+    <!-- 基于 Azenta / Brooks XPeel 自动揭膜机的公开产品图与用户手册构建的代表性回退模型。
+         未找到可直接复用的公开 CAD/STL，因此用多段 box STL 表达机身、前部揭膜槽与取板托盘。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/base_plinth.stl"/>
+        </geometry>
+        <material name="peeler_base_white">
+          <color rgba="0.92 0.93 0.94 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.131 0 0.088" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/chamber_left_wall.stl"/>
+        </geometry>
+        <material name="peeler_shell_tinted">
+          <color rgba="0.34 0.26 0.62 0.72"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.131 0 0.088" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/chamber_right_wall.stl"/>
+        </geometry>
+        <material name="peeler_shell_tinted_right">
+          <color rgba="0.34 0.26 0.62 0.72"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0.284" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/chamber_roof.stl"/>
+        </geometry>
+        <material name="peeler_shell_top">
+          <color rgba="0.33 0.25 0.60 0.72"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.092 0.088" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/chamber_back_panel.stl"/>
+        </geometry>
+        <material name="peeler_shell_back">
+          <color rgba="0.38 0.30 0.66 0.72"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.102 0.060 0.118" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/feed_bridge.stl"/>
+        </geometry>
+        <material name="peeler_bridge_dark">
+          <color rgba="0.16 0.17 0.19 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${operator_access_x} ${operator_access_y} 0.010" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/control_pod.stl"/>
+        </geometry>
+        <material name="peeler_control_white">
+          <color rgba="0.96 0.97 0.98 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 -0.040 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} 0.198 ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.082 0.069 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.184 0.140 ${height}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- 当前将出板托盘视为固定在完全伸出位置，单独建模以保留前部进板走廊。 -->
+    <link name="${station_name}${device_name}tray_link">
+      <visual>
+        <origin xyz="0 -0.018 ${0.0 - tray_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/tray_pedestal.stl"/>
+        </geometry>
+        <material name="peeler_pedestal_white">
+          <color rgba="0.91 0.92 0.94 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/peeler/meshes/tray_stage.stl"/>
+        </geometry>
+        <material name="peeler_tray_black">
+          <color rgba="0.12 0.13 0.15 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 -0.018 -0.036" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.148 0.072 0.072"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.136 0.096 0.020"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}tray_joint" type="fixed">
+      <origin xyz="${tray_center_x} ${tray_center_y} ${tray_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 托盘上的 SBS 取放位，按代表机型左出板方向放置。 -->
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <origin xyz="0 0 ${tray_access_z - tray_center_z}" rpy="0 0 ${pi / 2.0}" />
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 前部揭膜槽中心，用于机器人或仿真表达工作入口面。 -->
+    <link name="${station_name}${device_name}front_loading_slot_access_link"/>
+    <joint name="${station_name}${device_name}front_loading_slot_access_joint" type="fixed">
+      <origin xyz="${slot_center_x} ${slot_center_y} ${slot_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_loading_slot_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 操作面板近似中心，便于表达人工维护或示教接近区域。 -->
+    <link name="${station_name}${device_name}operator_panel_access_link"/>
+    <joint name="${station_name}${device_name}operator_panel_access_joint" type="fixed">
+      <origin xyz="${operator_access_x} ${operator_access_y} ${operator_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}operator_panel_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

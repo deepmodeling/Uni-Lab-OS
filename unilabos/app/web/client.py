@@ -602,6 +602,63 @@ class HTTPClient:
             logger.error(f"发布工作流失败: {response.status_code}, {response.text}")
             return {"code": response.status_code, "message": response.text}
 
+    # ──────────────────── 模型资产管理 ────────────────────
+
+    def get_model_upload_urls(
+        self, template_uuid: str, files: list[dict],
+    ) -> dict | None:
+        """获取模型文件预签名上传 URL。
+
+        Args:
+            template_uuid: 设备模板 UUID
+            files: 文件列表 [{"name": "...", "version": "1.0.0"}]
+
+        Returns:
+            {"files": [{"name": "...", "upload_url": "...", "path": "..."}]}
+        """
+        try:
+            response = requests.post(
+                f"{self.remote_addr}/lab/square/template/{template_uuid}/model/upload-urls",
+                json={"files": files},
+                headers={"Authorization": f"Lab {self.auth}"},
+                timeout=30,
+            )
+            if response.status_code == 200:
+                data = response.json().get("data")
+                return data
+            logger.error(f"获取模型上传 URL 失败: {response.status_code}, {response.text}")
+        except Exception as e:
+            logger.error(f"获取模型上传 URL 异常: {e}")
+        return None
+
+    def publish_model(
+        self, template_uuid: str, version: str, entry_file: str,
+    ) -> dict | None:
+        """确认模型上传完成，发布新版本。
+
+        Args:
+            template_uuid: 设备模板 UUID
+            version: 模型版本
+            entry_file: 入口文件名
+
+        Returns:
+            {"path": "...", "oss_dir": "...", "version": "..."}
+        """
+        try:
+            response = requests.post(
+                f"{self.remote_addr}/lab/square/template/{template_uuid}/model/publish",
+                json={"version": version, "entry_file": entry_file},
+                headers={"Authorization": f"Lab {self.auth}"},
+                timeout=30,
+            )
+            if response.status_code == 200:
+                data = response.json().get("data")
+                return data
+            logger.error(f"发布模型失败: {response.status_code}, {response.text}")
+        except Exception as e:
+            logger.error(f"发布模型异常: {e}")
+        return None
+
 
 # 创建默认客户端实例
 http_client = HTTPClient()

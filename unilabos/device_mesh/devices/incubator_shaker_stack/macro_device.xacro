@@ -1,0 +1,323 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="incubator_shaker_stack"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.149 depth:=0.2685 height:=0.2655 unit_height:=0.0885">
+
+    <!-- 基于 INHECO 官方网页/宣传册/规格数据构建的代表性 3 层 Incubator Shaker MP 堆叠。
+         公开检索未发现可直接复用的 CAD/STL/STEP，因此使用组合式 fallback 网格：
+         3 个单元壳体 + 3 个前部门面 + 3 个装载托盘。 -->
+    <xacro:property name="front_face_depth" value="0.008" />
+    <xacro:property name="front_face_height" value="0.034" />
+    <xacro:property name="front_face_center_y" value="${depth / 2.0 + (front_face_depth / 2.0)}" />
+    <xacro:property name="front_face_center_z" value="0.041" />
+    <xacro:property name="tray_height" value="0.006" />
+    <xacro:property name="tray_center_y" value="${depth / 2.0 + 0.030}" />
+    <xacro:property name="tray_center_z" value="0.0512" />
+    <xacro:property name="front_access_y" value="${depth / 2.0 + 0.016}" />
+    <xacro:property name="rear_service_y" value="${-(depth / 2.0) - 0.050}" />
+    <xacro:property name="front_cutout_depth" value="0.090" />
+    <xacro:property name="front_cutout_width" value="0.118" />
+    <xacro:property name="front_cutout_min_z" value="0.020" />
+    <xacro:property name="front_cutout_max_z" value="0.070" />
+    <xacro:property name="rear_shell_depth" value="${depth - front_cutout_depth}" />
+    <xacro:property name="rear_shell_center_y" value="${-front_cutout_depth / 2.0}" />
+    <xacro:property name="front_shell_center_y" value="${depth / 2.0 - front_cutout_depth / 2.0}" />
+    <xacro:property name="front_shell_side_width" value="${(width - front_cutout_width) / 2.0}" />
+    <xacro:property name="front_shell_side_x" value="${width / 2.0 - front_shell_side_width / 2.0}" />
+    <xacro:property name="front_lower_shell_height" value="${front_cutout_min_z}" />
+    <xacro:property name="front_lower_shell_center_z" value="${front_lower_shell_height / 2.0}" />
+    <xacro:property name="front_upper_shell_height" value="${unit_height - front_cutout_max_z}" />
+    <xacro:property name="front_upper_shell_center_z" value="${front_cutout_max_z + (front_upper_shell_height / 2.0)}" />
+    <xacro:property name="front_cutout_height" value="${front_cutout_max_z - front_cutout_min_z}" />
+    <xacro:property name="front_cutout_center_z" value="${front_cutout_min_z + (front_cutout_height / 2.0)}" />
+    <xacro:property name="tray_collision_width" value="0.118" />
+    <xacro:property name="tray_collision_depth" value="0.090" />
+    <xacro:property name="tray_collision_height" value="0.008" />
+    <xacro:property name="tray_collision_forward_offset" value="${tray_collision_depth / 2.0}" />
+    <xacro:property name="tray_collision_z_offset" value="${-tray_collision_height / 2.0}" />
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/unit_body.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_body_gray">
+          <color rgba="0.90 0.91 0.93 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 ${unit_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/unit_body.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_body_gray">
+          <color rgba="0.90 0.91 0.93 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 ${unit_height * 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/unit_body.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_body_gray">
+          <color rgba="0.90 0.91 0.93 1"/>
+        </material>
+      </visual>
+
+      <visual>
+        <origin xyz="0 ${front_face_center_y} ${front_face_center_z - (front_face_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/front_access_face.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_front_face_dark">
+          <color rgba="0.23 0.25 0.28 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${front_face_center_y} ${unit_height + front_face_center_z - (front_face_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/front_access_face.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_front_face_dark">
+          <color rgba="0.23 0.25 0.28 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${front_face_center_y} ${unit_height * 2.0 + front_face_center_z - (front_face_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/front_access_face.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_front_face_dark">
+          <color rgba="0.23 0.25 0.28 1"/>
+        </material>
+      </visual>
+
+      <collision>
+        <origin xyz="0 ${rear_shell_center_y} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${rear_shell_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_shell_center_y} ${front_lower_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_lower_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_shell_center_y} ${front_upper_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_upper_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${front_shell_side_x} ${front_shell_center_y} ${front_cutout_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_shell_side_width} ${front_cutout_depth} ${front_cutout_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-front_shell_side_x} ${front_shell_center_y} ${front_cutout_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_shell_side_width} ${front_cutout_depth} ${front_cutout_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_shell_center_y} ${unit_height + front_lower_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_lower_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_shell_center_y} ${unit_height + front_upper_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_upper_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${front_shell_side_x} ${front_shell_center_y} ${unit_height + front_cutout_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_shell_side_width} ${front_cutout_depth} ${front_cutout_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-front_shell_side_x} ${front_shell_center_y} ${unit_height + front_cutout_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_shell_side_width} ${front_cutout_depth} ${front_cutout_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_shell_center_y} ${unit_height * 2.0 + front_lower_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_lower_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_shell_center_y} ${unit_height * 2.0 + front_upper_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_upper_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${front_shell_side_x} ${front_shell_center_y} ${unit_height * 2.0 + front_cutout_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_shell_side_width} ${front_cutout_depth} ${front_cutout_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-front_shell_side_x} ${front_shell_center_y} ${unit_height * 2.0 + front_cutout_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_shell_side_width} ${front_cutout_depth} ${front_cutout_height}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}lower_unit_loading_tray_link">
+      <visual>
+        <origin xyz="0 0 ${-(tray_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/loading_tray.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_loading_tray">
+          <color rgba="0.74 0.77 0.80 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 ${tray_collision_forward_offset} ${tray_collision_z_offset}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${tray_collision_width} ${tray_collision_depth} ${tray_collision_height}"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}lower_unit_loading_tray_link_joint" type="fixed">
+      <origin xyz="0 ${tray_center_y} ${tray_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}lower_unit_loading_tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}middle_unit_loading_tray_link">
+      <visual>
+        <origin xyz="0 0 ${-(tray_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/loading_tray.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_loading_tray">
+          <color rgba="0.74 0.77 0.80 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 ${tray_collision_forward_offset} ${tray_collision_z_offset}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${tray_collision_width} ${tray_collision_depth} ${tray_collision_height}"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}middle_unit_loading_tray_link_joint" type="fixed">
+      <origin xyz="0 ${tray_center_y} ${unit_height + tray_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}middle_unit_loading_tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}upper_unit_loading_tray_link">
+      <visual>
+        <origin xyz="0 0 ${-(tray_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator_shaker_stack/meshes/loading_tray.stl"/>
+        </geometry>
+        <material name="incubator_shaker_stack_loading_tray">
+          <color rgba="0.74 0.77 0.80 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 ${tray_collision_forward_offset} ${tray_collision_z_offset}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${tray_collision_width} ${tray_collision_depth} ${tray_collision_height}"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}upper_unit_loading_tray_link_joint" type="fixed">
+      <origin xyz="0 ${tray_center_y} ${unit_height * 2.0 + tray_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}upper_unit_loading_tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 每层单元保留两个参考点：门面中心与托盘抓取/放板中心。 -->
+    <link name="${station_name}${device_name}lower_unit_front_access_link"/>
+    <joint name="${station_name}${device_name}lower_unit_front_access_joint" type="fixed">
+      <origin xyz="0 ${front_access_y} ${front_face_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}lower_unit_front_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}middle_unit_front_access_link"/>
+    <joint name="${station_name}${device_name}middle_unit_front_access_joint" type="fixed">
+      <origin xyz="0 ${front_access_y} ${unit_height + front_face_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}middle_unit_front_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}upper_unit_front_access_link"/>
+    <joint name="${station_name}${device_name}upper_unit_front_access_joint" type="fixed">
+      <origin xyz="0 ${front_access_y} ${unit_height * 2.0 + front_face_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}upper_unit_front_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}lower_unit_loading_tray_access_link"/>
+    <joint name="${station_name}${device_name}lower_unit_loading_tray_access_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}lower_unit_loading_tray_link"/>
+      <child link="${station_name}${device_name}lower_unit_loading_tray_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}middle_unit_loading_tray_access_link"/>
+    <joint name="${station_name}${device_name}middle_unit_loading_tray_access_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}middle_unit_loading_tray_link"/>
+      <child link="${station_name}${device_name}middle_unit_loading_tray_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}upper_unit_loading_tray_access_link"/>
+    <joint name="${station_name}${device_name}upper_unit_loading_tray_access_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}upper_unit_loading_tray_link"/>
+      <child link="${station_name}${device_name}upper_unit_loading_tray_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${rear_service_y} ${height / 2.0}" rpy="0 0 3.141592653589793" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

@@ -1,0 +1,260 @@
+{
+  "fileName": "hamilton_vantage",
+  "related": [
+    "vantage_backend",
+    "hamilton_vantage",
+    "microlab_vantage",
+    "hamilton_vantage_1_3",
+    "hamilton_vantage_2_0"
+  ],
+  "model_strategy": "fallback_segmented_box_from_official_dimensions_and_official_product_renders",
+  "sources": [
+    {
+      "title": "Hamilton Microlab VANTAGE product page",
+      "url": "https://www.hamiltoncompany.com/microlab-vantage",
+      "kind": "official_product_page",
+      "notes": "Provides the official 1.3 m and 2.0 m system dimensions, deck capacities, sample-loading wording, and confirms 360-degree device integration around the platform."
+    },
+    {
+      "title": "Hamilton Microlab VANTAGE site requirements PDF",
+      "url": "https://robotics.hamiltoncompany.com/hubfs/ROB_US%20Microlab%20VANTAGE%20Site%20Requirements%20%28HAR0287%29/VANTAGE-Site-Requirements.pdf?hsLang=en-us",
+      "kind": "official_site_requirements_pdf",
+      "notes": "Provides shipping-crate footprints and configuration weights for the 1.3 m and 2.0 m pipettor, logistics cabinet, rear integration cabinet, and track gripper."
+    },
+    {
+      "title": "Hamilton official Microlab VANTAGE 1.3 front-closed render",
+      "url": "https://assets-robotics.hamiltoncompany.com/1_Platforms/Microlab-VANTAGE/250530_VANTAGE-13AB_front-closed.png?v=1748872499",
+      "kind": "official_render",
+      "notes": "Primary visual reference for the stacked upper pipetting enclosure, lower logistics cabinet glazing, dual front handle bars, and central pipetting head silhouette."
+    },
+    {
+      "title": "Hamilton official Microlab VANTAGE 2.0 front-closed render",
+      "url": "https://assets-robotics.hamiltoncompany.com/1_Platforms/Microlab-VANTAGE/221213_VANTAGE-20AB_front-closed_statuslight-green-40.png?v=1747897714",
+      "kind": "official_render",
+      "notes": "Used to verify that the 2.0 m system preserves the same stacked front silhouette while extending the deck width and status-light span."
+    },
+    {
+      "title": "Hamilton official Optional Track Gripper exploded render",
+      "url": "https://assets-robotics.hamiltoncompany.com/1_Platforms/Microlab-VANTAGE/4-Optional-Track-Gripper.png?v=1749542466",
+      "kind": "official_render",
+      "notes": "Used to estimate the open-top deck depth, the lower logistics-cabinet volume, and the right-side handoff / under-deck access region."
+    }
+  ],
+  "dimensions_m": {
+    "vantage_1_3": {
+      "width": 1.33,
+      "depth": 0.98,
+      "height": 1.82,
+      "weight_kg": 273,
+      "deck_tracks": 54,
+      "ansi_slas_positions": 35
+    },
+    "vantage_2_0": {
+      "width": 2.01,
+      "depth": 0.98,
+      "height": 1.82,
+      "weight_kg": 451,
+      "deck_tracks": 80,
+      "ansi_slas_positions": 60
+    },
+    "site_requirements": {
+      "pipettor_1_3_shipping_crate": {
+        "length": 1.201,
+        "width": 1.473,
+        "height": 1.316
+      },
+      "pipettor_2_0_shipping_crate": {
+        "length": 1.201,
+        "width": 2.146,
+        "height": 1.316
+      }
+    }
+  },
+  "collision_model": {
+    "strategy": "segmented_hybrid_open_deck_with_fixed_extended_loading_tray",
+    "blocked_parts": [
+      "lower_rear_body_shell",
+      "upper_left_body_shell",
+      "upper_right_body_shell",
+      "upper_rear_body_shell",
+      "fixed_extended_loading_tray"
+    ],
+    "notes": "The simplified collision intentionally removes the single full-body envelope. The upper deck remains reachable from above and from the front, while the lower loading tray is modeled as a separate fixed, extended collision outside the body shell."
+  },
+  "mesh_assets": {
+    "visual_stl_parts": [
+      "meshes/unit_box.stl"
+    ],
+    "legacy_fallback_meshes": [
+      "meshes/vantage_1_3.stl",
+      "meshes/vantage_2_0.stl"
+    ]
+  },
+  "access_points": [
+    {
+      "name": "deck_access_link",
+      "description": "Approximate center of the primary pipetting deck / work surface inside the upper enclosure.",
+      "collision_strategy": "exposed_work_surface",
+      "collision_notes": "This access frame is intentionally positioned over the collision-free main work surface so vertical approach and front approach onto the deck remain valid.",
+      "variants": {
+        "vantage_1_3": {
+          "face": "internal_top_deck",
+          "center_m": [0.0, 0.0, 0.98],
+          "size_m": [1.09, 0.60, 0.001],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        },
+        "vantage_2_0": {
+          "face": "internal_top_deck",
+          "center_m": [0.0, 0.0, 0.98],
+          "size_m": [1.65, 0.60, 0.001],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "name": "front_loading_access_link",
+      "description": "Approximate robot-facing access point immediately outside the upper front enclosure where manual front service or front-facing loading interactions would occur.",
+      "collision_strategy": "opening_cutout",
+      "collision_notes": "This access face sits in front of the open front cutout of the upper enclosure rather than inside the segmented shell collision.",
+      "variants": {
+        "vantage_1_3": {
+          "face": "front_upper",
+          "center_m": [0.0, -0.245, 0.98],
+          "size_m": [1.09, 0.001, 0.24],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        },
+        "vantage_2_0": {
+          "face": "front_upper",
+          "center_m": [0.0, -0.245, 0.98],
+          "size_m": [1.65, 0.001, 0.24],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "name": "loading_tray_access_link",
+      "description": "Estimated right-front handoff point for the lower Entry/Exit / autoload region visible in official front and exploded renders.",
+      "collision_strategy": "fixed_extended_tray",
+      "collision_notes": "This access frame is tray-backed by the fixed, extended lower loading tray and is intentionally kept outside the body-shell collision volumes.",
+      "variants": {
+        "vantage_1_3": {
+          "face": "front_lower_right",
+          "center_m": [0.4522, -0.245, 0.265],
+          "size_m": [0.16, 0.001, 0.12],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        },
+        "vantage_2_0": {
+          "face": "front_lower_right",
+          "center_m": [0.6834, -0.245, 0.265],
+          "size_m": [0.16, 0.001, 0.12],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "name": "front_service_access_link",
+      "description": "Approximate center of the upper front service face aligned with the dual handle bars and service window.",
+      "collision_strategy": "opening_cutout",
+      "collision_notes": "This service face is aligned to the segmented front opening and remains forward of the upper shell collision.",
+      "variants": {
+        "vantage_1_3": {
+          "face": "front_upper_service",
+          "center_m": [0.0, -0.245, 1.125],
+          "size_m": [0.50, 0.001, 0.12],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        },
+        "vantage_2_0": {
+          "face": "front_upper_service",
+          "center_m": [0.0, -0.245, 1.125],
+          "size_m": [0.76, 0.001, 0.12],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "name": "logistics_cabinet_access_link",
+      "description": "Approximate center of the lower logistics-cabinet front glazing used for under-deck consumable access.",
+      "collision_strategy": "opening_cutout",
+      "collision_notes": "This lower-front access face is kept in the front glazing cutout zone so it is not embedded in the lower body shell collision.",
+      "variants": {
+        "vantage_1_3": {
+          "face": "front_lower",
+          "center_m": [0.0, -0.245, 0.345],
+          "size_m": [1.12, 0.001, 0.30],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        },
+        "vantage_2_0": {
+          "face": "front_lower",
+          "center_m": [0.0, -0.245, 0.345],
+          "size_m": [1.69, 0.001, 0.30],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "name": "rear_service_access_link",
+      "description": "Approximate rear utility and maintenance region for cables, services, and rear-side integrations.",
+      "collision_strategy": "opening_cutout",
+      "collision_notes": "This rear service frame is placed behind the shortened rear shell collision so back-side utility access remains reachable.",
+      "variants": {
+        "vantage_1_3": {
+          "face": "rear",
+          "center_m": [0.0, 0.39, 0.92],
+          "size_m": [0.40, 0.001, 0.25],
+          "rpy_rad": [0.0, 0.0, 3.141592653589793]
+        },
+        "vantage_2_0": {
+          "face": "rear",
+          "center_m": [0.0, 0.39, 0.92],
+          "size_m": [0.40, 0.001, 0.25],
+          "rpy_rad": [0.0, 0.0, 3.141592653589793]
+        }
+      }
+    },
+    {
+      "name": "socketTypeGenericSbsFootprint_1_60_1",
+      "description": "Representative SBS work reference on the exposed upper pipetting deck.",
+      "collision_strategy": "exposed_work_surface",
+      "collision_notes": "This SBS work reference stays on the collision-free upper deck opening and is not embedded in the segmented shell.",
+      "variants": {
+        "vantage_1_3": {
+          "face": "internal_top_deck",
+          "center_m": [0.0, 0.0, 0.98],
+          "size_m": [0.12776, 0.08548, 0.015],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        },
+        "vantage_2_0": {
+          "face": "internal_top_deck",
+          "center_m": [0.0, 0.0, 0.98],
+          "size_m": [0.12776, 0.08548, 0.015],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "name": "socketTypeGenericSbsFootprint_2_60_1",
+      "description": "Representative SBS handoff reference on the fixed, extended lower loading tray.",
+      "collision_strategy": "fixed_extended_tray",
+      "collision_notes": "This SBS handoff reference is anchored to the tray-backed loading region rather than the body shell, keeping the loading zone reachable.",
+      "variants": {
+        "vantage_1_3": {
+          "face": "front_lower_right_tray",
+          "center_m": [0.4522, -0.245, 0.265],
+          "size_m": [0.12776, 0.08548, 0.015],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        },
+        "vantage_2_0": {
+          "face": "front_lower_right_tray",
+          "center_m": [0.6834, -0.245, 0.265],
+          "size_m": [0.12776, 0.08548, 0.015],
+          "rpy_rad": [0.0, 0.0, 0.0]
+        }
+      }
+    }
+  ],
+  "notes": [
+    "No public Hamilton CAD, STL, STEP, OBJ, GLB, or similar directly reusable 3D model was located during web search on official public pages, so this package remains a fallback representation rather than an OEM mesh import.",
+    "The mesh is now a segmented official-image-guided proxy instead of a single envelope box: it distinguishes the upper pipetting enclosure, lower logistics cabinet, glazing, front handle bars, deck surface, and approximate internal handoff structures.",
+    "Access points are integration-oriented estimates derived from official front renders, product-page wording about sample loading and 360-degree device integration, and the exploded track-gripper render; they should not be treated as factory metrology."
+  ]
+}

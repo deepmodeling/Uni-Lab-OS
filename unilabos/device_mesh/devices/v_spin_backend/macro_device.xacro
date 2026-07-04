@@ -1,0 +1,198 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="v_spin_backend"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.327 depth:=0.711 height:=0.251 centrifuge_depth:=0.457">
+
+    <!-- Fallback geometry based on Agilent official dimensions and hardware drawings for the
+         VSpin / Microplate Centrifuge with Access2 automated loader. No usable public CAD or
+         mesh download was available during web search, so this model uses a simple multi-part
+         assembly that preserves the main body, door, and loader handoff region. -->
+    <xacro:property name="loader_depth" value="${depth - centrifuge_depth}" />
+    <xacro:property name="body_center_y" value="${(depth - centrifuge_depth) / 2.0}" />
+    <xacro:property name="loader_center_y" value="${-(depth / 2.0) + (loader_depth / 2.0)}" />
+    <xacro:property name="plinth_height" value="0.010" />
+    <xacro:property name="body_height" value="0.192" />
+    <xacro:property name="top_cap_height" value="${height - plinth_height - body_height}" />
+    <xacro:property name="door_width" value="0.146" />
+    <xacro:property name="door_height" value="0.072" />
+    <xacro:property name="door_depth" value="0.010" />
+    <xacro:property name="door_bottom_z" value="0.060" />
+    <xacro:property name="door_center_y" value="${-(depth / 2.0) + loader_depth - (door_depth / 2.0)}" />
+    <xacro:property name="bridge_center_y" value="${-(depth / 2.0) + (loader_depth * 0.69)}" />
+    <xacro:property name="stage_center_y" value="${-(depth / 2.0) + (loader_depth * 0.61)}" />
+    <xacro:property name="gripper_center_y" value="${-(depth / 2.0) + (loader_depth * 0.33)}" />
+    <xacro:property name="bridge_bottom_z" value="0.022" />
+    <xacro:property name="stage_bottom_z" value="0.040" />
+    <xacro:property name="gripper_bottom_z" value="0.022" />
+    <xacro:property name="body_front_y" value="${loader_depth - (depth / 2.0)}" />
+    <xacro:property name="front_cutout_depth" value="0.110" />
+    <xacro:property name="front_cutout_width" value="0.186" />
+    <xacro:property name="front_cutout_bottom_z" value="0.040" />
+    <xacro:property name="front_cutout_height" value="0.135" />
+    <xacro:property name="front_side_wall_width" value="${(width - front_cutout_width) / 2.0}" />
+    <xacro:property name="front_upper_wall_height" value="${height - front_cutout_bottom_z - front_cutout_height}" />
+    <xacro:property name="door_access_y" value="${door_center_y - 0.060}" />
+    <xacro:property name="door_access_z" value="${door_bottom_z + (door_height / 2.0)}" />
+    <xacro:property name="loading_access_y" value="${stage_center_y}" />
+    <xacro:property name="loading_access_z" value="0.105" />
+    <xacro:property name="hover_access_y" value="${door_center_y - 0.010}" />
+    <xacro:property name="hover_access_z" value="0.120" />
+    <xacro:property name="rear_service_y" value="${(depth / 2.0) + 0.030}" />
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <origin xyz="0 ${body_center_y} 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/v_spin_backend/meshes/plinth.stl"/>
+        </geometry>
+        <material name="v_spin_plinth_gray">
+          <color rgba="0.70 0.72 0.75 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${body_center_y} ${plinth_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/v_spin_backend/meshes/body_core.stl"/>
+        </geometry>
+        <material name="v_spin_body_white">
+          <color rgba="0.95 0.96 0.97 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${body_center_y} ${plinth_height + body_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/v_spin_backend/meshes/top_cap.stl"/>
+        </geometry>
+        <material name="v_spin_cap_white">
+          <color rgba="0.92 0.93 0.94 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${door_center_y} ${door_bottom_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/v_spin_backend/meshes/door_panel.stl"/>
+        </geometry>
+        <material name="v_spin_door_gray">
+          <color rgba="0.55 0.58 0.62 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${loader_center_y} 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/v_spin_backend/meshes/loader_base.stl"/>
+        </geometry>
+        <material name="v_spin_loader_white">
+          <color rgba="0.94 0.95 0.95 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${bridge_center_y} ${bridge_bottom_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/v_spin_backend/meshes/loader_bridge.stl"/>
+        </geometry>
+        <material name="v_spin_bridge_light_gray">
+          <color rgba="0.83 0.85 0.87 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${stage_center_y} ${stage_bottom_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/v_spin_backend/meshes/loader_stage.stl"/>
+        </geometry>
+        <material name="v_spin_stage_white">
+          <color rgba="0.98 0.99 0.99 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${gripper_center_y} ${gripper_bottom_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/v_spin_backend/meshes/gripper_housing.stl"/>
+        </geometry>
+        <material name="v_spin_gripper_white">
+          <color rgba="0.91 0.92 0.93 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 ${body_front_y + front_cutout_depth + ((centrifuge_depth - front_cutout_depth) / 2.0)} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${centrifuge_depth - front_cutout_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${body_front_y + (front_cutout_depth / 2.0)} ${front_cutout_bottom_z / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_cutout_bottom_z}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${body_front_y + (front_cutout_depth / 2.0)} ${front_cutout_bottom_z + front_cutout_height + (front_upper_wall_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_upper_wall_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(-width / 2.0) + (front_side_wall_width / 2.0)} ${body_front_y + (front_cutout_depth / 2.0)} ${front_cutout_bottom_z + (front_cutout_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_wall_width} ${front_cutout_depth} ${front_cutout_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(width / 2.0) - (front_side_wall_width / 2.0)} ${body_front_y + (front_cutout_depth / 2.0)} ${front_cutout_bottom_z + (front_cutout_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_wall_width} ${front_cutout_depth} ${front_cutout_height}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}door_access_link"/>
+    <joint name="${station_name}${device_name}door_access_joint" type="fixed">
+      <origin xyz="0 ${door_access_y} ${door_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}door_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}loading_access_link"/>
+    <joint name="${station_name}${device_name}loading_access_joint" type="fixed">
+      <origin xyz="0 ${loading_access_y} ${loading_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}hover_access_link"/>
+    <joint name="${station_name}${device_name}hover_access_joint" type="fixed">
+      <origin xyz="0 ${hover_access_y} ${hover_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}hover_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${rear_service_y} ${height * 0.52}" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

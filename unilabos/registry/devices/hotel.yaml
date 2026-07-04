@@ -5,7 +5,7 @@ hotel.thermo_orbitor_rs2_hotel:
     action_value_mappings: {}
     module: unilabos.devices.resource_container.container:HotelContainer
     status_types:
-      rotation: ''
+      get_rotation: geometry_msgs.msg:Point
     type: python
   config_info: []
   description: Thermo Orbitor RS2 Hotel容器设备，用于实验室样品的存储和管理。该设备通过HotelContainer类实现容器的旋转控制和状态监控，主要用于存储实验样品、试剂瓶或其他实验器具，支持旋转功能以便于样品的自动化存取。适用于需要有序存储和快速访问大量样品的实验室自动化场景。
@@ -17,6 +17,17 @@ hotel.thermo_orbitor_rs2_hotel:
         device_config:
           type: object
         rotation:
+          properties:
+            x:
+              type: number
+            y:
+              type: number
+            z:
+              type: number
+          required:
+          - x
+          - y
+          - z
           type: object
       required:
       - rotation
@@ -25,7 +36,18 @@ hotel.thermo_orbitor_rs2_hotel:
     data:
       properties:
         rotation:
-          type: string
+          properties:
+            x:
+              type: number
+            y:
+              type: number
+            z:
+              type: number
+          required:
+          - x
+          - y
+          - z
+          type: object
       required:
       - rotation
       type: object

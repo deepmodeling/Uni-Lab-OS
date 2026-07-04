@@ -1,0 +1,121 @@
+{
+  "fileName": "v_spin_backend",
+  "related": [
+    "v_spin_backend",
+    "vspin_backend",
+    "agilent_microplate_centrifuge",
+    "agilent_vspin",
+    "velocity11_vspin"
+  ],
+  "model_strategy": "fallback_box_assembly_from_official_dimensions",
+  "sources": [
+    {
+      "title": "Agilent Microplate Centrifuge data sheet",
+      "url": "https://www.agilent.com/cs/library/datasheets/Public/5990-3484EN_LO.pdf",
+      "kind": "datasheet",
+      "notes": "Provides official dimensions for the centrifuge alone and for the centrifuge with the automated loader."
+    },
+    {
+      "title": "Agilent Microplate Centrifuge with Loader User Guide",
+      "url": "https://www.agilent.com/cs/library/usermanuals/public/G5405-90002C_Centrifuge_wLoaderUG_EN.pdf",
+      "kind": "user_guide",
+      "notes": "Provides front-feature drawings, loader component naming, and overall dimensions for the combined unit."
+    },
+    {
+      "title": "Agilent VSpin User Guide",
+      "url": "https://www.agilent.com/Library/usermanuals/Public/G5405-90001C_CentrifugeUG_P_EN.pdf",
+      "kind": "user_guide",
+      "notes": "Provides front and rear hardware drawings for the standalone VSpin door and rear connection panel."
+    }
+  ],
+  "dimensions_m": {
+    "centrifuge_only": {
+      "width": 0.328,
+      "depth": 0.457,
+      "height": 0.206
+    },
+    "overall_with_loader": {
+      "width": 0.327,
+      "depth": 0.711,
+      "height": 0.251
+    },
+    "overall_with_loader_datasheet_variant": {
+      "width": 0.328,
+      "depth": 0.714,
+      "height": 0.248
+    }
+  },
+  "access_points": [
+    {
+      "name": "door_access",
+      "description": "Estimated robot-facing center of the centrifuge door opening, based on the front hardware drawings in the VSpin guides.",
+      "collision_strategy": "opening_cutout",
+      "face": "front",
+      "center_m": {
+        "x": 0.0,
+        "y": -0.167,
+        "z": 0.096
+      },
+      "size_m": {
+        "x": 0.16,
+        "y": 0.08,
+        "z": 0.08
+      }
+    },
+    {
+      "name": "loading_access",
+      "description": "Estimated loader handoff zone above the plate stage immediately in front of the centrifuge door.",
+      "collision_strategy": "opening_cutout",
+      "face": "front_top",
+      "center_m": {
+        "x": 0.0,
+        "y": -0.198,
+        "z": 0.105
+      },
+      "size_m": {
+        "x": 0.16,
+        "y": 0.12,
+        "z": 0.06
+      }
+    },
+    {
+      "name": "hover_access",
+      "description": "Approach pose just outside the door-stage transition for plate transfer.",
+      "collision_strategy": "opening_cutout",
+      "face": "front",
+      "center_m": {
+        "x": 0.0,
+        "y": -0.117,
+        "z": 0.12
+      },
+      "size_m": {
+        "x": 0.16,
+        "y": 0.10,
+        "z": 0.08
+      }
+    },
+    {
+      "name": "rear_service_access",
+      "description": "Estimated rear service zone aligned with the documented power, serial, and air connections, placed just outside the simplified rear face.",
+      "collision_strategy": "opening_cutout",
+      "face": "rear",
+      "center_m": {
+        "x": 0.0,
+        "y": 0.386,
+        "z": 0.131
+      },
+      "size_m": {
+        "x": 0.18,
+        "y": 0.06,
+        "z": 0.10
+      }
+    }
+  ],
+  "notes": [
+    "No usable public CAD, STL, OBJ, GLB, STEP, or similar download for the Agilent / Velocity11 VSpin with Access2 automated loader was located during this task, so this package uses a generated fallback mesh assembly.",
+    "The visible assembly is intentionally simple: separate meshes capture the main centrifuge envelope, front door, loader bridge, plate stage, and gripper housing so the robot-facing geometry is more informative than a single box.",
+    "Agilent official documents differ slightly on the combined-unit dimensions: the loader user guide lists 32.7 x 71.1 x 25.1 cm, while the datasheet lists 32.8 x 71.4 x 24.8 cm. The mesh uses the user-guide footprint and height because that document also contains the component drawings used to place the access frames.",
+    "Door and loading access frames are estimated from official imagery and diagrams and should be treated as integration-friendly approximations rather than mechanical metrology.",
+    "Collision access semantics were refactored to opening-cutout behavior: the simplified body collision leaves the loader/front door approach open, and the rear service reference sits just beyond the rear face instead of inside the body envelope."
+  ]
+}

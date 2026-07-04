@@ -1,0 +1,809 @@
+      {
+        "nodes": [
+          {
+            "uuid": "c6695028-5ead-4a0d-9679-3fd55bde041e",
+            "parent_uuid": "",
+            "id": "cytomat_backend",
+            "name": "cytomat_backend",
+            "type": "device",
+            "class": "cytomat_backend",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 1200,
+                "y": -150,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 3.1416
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "cytomat_backend",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/cytomat_backend/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 1200,
+              "y": -150,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "1b4f9f79-ce50-4273-aa1e-89fb0bc32473",
+            "parent_uuid": "",
+            "id": "molecular_devices_qpix_420",
+            "name": "molecular_devices_qpix_420",
+            "type": "device",
+            "class": "molecular_devices_qpix_420",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 3400,
+                "y": -50,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "molecular_devices_qpix_420",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/molecular_devices_qpix_420/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 3400,
+              "y": -50,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "12de9fe9-f15d-47d3-9e93-a79d958967ed",
+            "parent_uuid": "",
+            "id": "tecan_resolvex_a200",
+            "name": "tecan_resolvex_a200",
+            "type": "device",
+            "class": "tecan_resolvex_a200",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 2350,
+                "y": -150,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "tecan_resolvex_a200",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/tecan_resolvex_a200/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 2350,
+              "y": -150,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "c9084fe2-0ae4-4adf-885a-705525241343",
+            "parent_uuid": "",
+            "id": "host_node",
+            "name": "host_node",
+            "type": "device",
+            "class": "host_node",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": null,
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "a7f68f3f-87ad-4ee2-80cd-6078e8ed4f5a",
+            "parent_uuid": "",
+            "id": "cytiva_biacore_8k_plus",
+            "name": "cytiva_biacore_8k_plus",
+            "type": "device",
+            "class": "cytiva_biacore_8k_plus",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 1850,
+                "y": -1450,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "cytiva_biacore_8k_plus",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/cytiva_biacore_8k_plus/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 1850,
+              "y": -1450,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "c5161468-e991-4824-82a9-f6ef277a4a8a",
+            "parent_uuid": "",
+            "id": "telesis_bio_bioxp_3250",
+            "name": "telesis_bio_bioxp_3250",
+            "type": "device",
+            "class": "telesis_bio_bioxp_3250",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 360,
+                "y": -1580,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "telesis_bio_bioxp_3250",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/telesis_bio_bioxp_3250/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 360,
+              "y": -1580,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "adecc6e6-a53a-48c2-9390-36de662cd864",
+            "parent_uuid": "",
+            "id": "robotic_arm_SCARA_with_slider_moveit_virtual",
+            "name": "robotic_arm_SCARA_with_slider",
+            "type": "device",
+            "class": "robotic_arm.SCARA_with_slider.moveit.virtual",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": -700,
+                "y": -800,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": -1.5708,
+                "type": "Rotation"
+              },
+              "joint_poses": {
+                "arm": {
+                  "home": [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "home_1": [
+                    1,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "home_2": [
+                    2,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "home_3": [
+                    3,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "home_4": [
+                    4,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  "bd_facsmelody": [4.156, 0.1, -1.0472, -1.0472, 0.5236],
+                  "qiagen_qiacube_connect": [3.52, 0.1, -0.5236, -1.5708, 0.5236],
+                  "applied_biosystems_seqstudio_genetic_analyzer": [2.86, 0.1, -1.0472, -1.0472, 0.5236],
+                  "cytiva_biacore_8k_plus": [2.12, 0.445, -1.0472, -1.0472, 0.5236],
+                  "cytiva_akta_pure": [1.28, 0.15, -1.0472, -1.0472, 0.5236],
+                  "molecular_devices_qpix_420": [3.499, 0.291, 1.0472, 1.0472, -0.5236],
+                  "tecan_resolvex_a200": [2.639, 0.247, 1.0472, 1.0472, -0.5236],
+                  "agilent_biotek_406_fx": [2.219, 0.148, 1.2741, 1.2741, -0.9599],
+                  "cytomat_backend": [1.236, 0.364, -0.4189, 1.7104, 0.2618],
+                  "vantage_backend": [0.61, 0.211, -0.4189, 1.7104, 0.2618],
+                  "hettich_rotanta_460_robotic": [0.108, 0.148, -1.6581, -1.3788, 1.4835],
+                  "telesis_bio_bioxp_3250": [0.636, 0.224, -1.0472, -1.0472, 0.576],
+                  "hotel": [3.051, 0.176, 0.2967, 1.1519, 0.1396],
+                  "plate_peeler": [3.651, 0.008, 0.6981, 1.4486, -0.5934],
+                  "plate_sealer": [4.063, 0.039, -0.3316, 1.8326, 0.0349]
+                }
+              },
+              "moveit_type": "arm_slider",
+              "device_config": {}
+            },
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "arm_slider",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/arm_slider/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": -700,
+              "y": -800,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "cdee2d7c-a09f-46ef-84e5-a81275c1a0e4",
+            "parent_uuid": "",
+            "id": "cytiva_akta_pure",
+            "name": "cytiva_akta_pure",
+            "type": "device",
+            "class": "cytiva_akta_pure",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 1050,
+                "y": -1450,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "cytiva_akta_pure",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/cytiva_akta_pure/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 1050,
+              "y": -1450,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "ee00901a-1e0b-4fd7-9a8e-78432d8b8a4c",
+            "parent_uuid": "",
+            "id": "qiagen_qiacube_connect",
+            "name": "qiagen_qiacube_connect",
+            "type": "device",
+            "class": "qiagen_qiacube_connect",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 3230,
+                "y": -1450,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "qiagen_qiacube_connect",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/qiagen_qiacube_connect/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 3230,
+              "y": -1450,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "90887021-ad3a-45e8-9729-6ae98f859800",
+            "parent_uuid": "",
+            "id": "hettich_rotanta_460_robotic",
+            "name": "hettich_rotanta_460_robotic",
+            "type": "device",
+            "class": "hettich_rotanta_460_robotic",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": -350,
+                "y": -1550,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 3.1415927
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "hettich_rotanta_460_robotic",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/hettich_rotanta_460_robotic/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": -350,
+              "y": -1550,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "42f1b39d-a219-4898-a458-f906a6114009",
+            "parent_uuid": "",
+            "id": "applied_biosystems_seqstudio_genetic_analyzer",
+            "name": "applied_biosystems_seqstudio_genetic_analyzer",
+            "type": "device",
+            "class": "applied_biosystems_seqstudio_genetic_analyzer",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 2600,
+                "y": -1450,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 3.1416
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "applied_biosystems_seqstudio_genetic_analyzer",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/applied_biosystems_seqstudio_genetic_analyzer/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 2600,
+              "y": -1450,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "a613ef85-24a0-441f-ba3e-8b250d11f5f9",
+            "parent_uuid": "",
+            "id": "vantage_backend",
+            "name": "vantage_backend",
+            "type": "device",
+            "class": "vantage_backend",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 130.29459,
+                "y": -200,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {
+              "num_channels": 8,
+              "module_id_length": 4
+            },
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "hamilton_vantage",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/hamilton_vantage/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 130.29459,
+              "y": -200,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "7f00d52a-637d-4184-953b-2824072ac764",
+            "parent_uuid": "",
+            "id": "agilent_biotek_406_fx",
+            "name": "agilent_biotek_406_fx",
+            "type": "device",
+            "class": "agilent_biotek_406_fx",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 1830,
+                "y": -150,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 4.7124
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "agilent_biotek_406_fx",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/agilent_biotek_406_fx/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 1830,
+              "y": -150,
+              "z": 0
+            }
+          },
+          {
+            "uuid": "6ff9327b-8440-47d8-b638-3cc21691ac9c",
+            "parent_uuid": "",
+            "id": "bd_facsmelody",
+            "name": "bd_facsmelody",
+            "type": "device",
+            "class": "bd_facsmelody",
+            "parent": "",
+            "pose": {
+              "layout": "x-y",
+              "position": {
+                "x": 3900,
+                "y": -1450,
+                "z": 0
+              },
+              "position_3d": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              },
+              "size": {
+                "width": 0,
+                "height": 0,
+                "depth": 0
+              },
+              "scale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+              },
+              "rotation": {
+                "x": 0,
+                "y": 0,
+                "z": 3.1415927
+              },
+              "extra": null,
+              "cross_section_type": "rectangle"
+            },
+            "config": {},
+            "data": {},
+            "schema": {},
+            "description": "",
+            "model": {
+              "mesh": "bd_facsmelody",
+              "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/bd_facsmelody/macro_device.xacro",
+              "type": "device"
+            },
+            "position": {
+              "x": 3900,
+              "y": -1450,
+              "z": 0
+            }
+          }
+        ],
+        "edges": []
+      }

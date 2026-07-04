@@ -1,0 +1,560 @@
+{
+  "nodes": [
+    {
+      "uuid": "f976256b-1c24-4bbb-a8a3-e5dcf16572ab",
+      "parent_uuid": "",
+      "id": "agilent_biotek_406_fx",
+      "name": "agilent_biotek_406_fx",
+      "type": "device",
+      "class": "agilent_biotek_406_fx",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": 1830,
+          "y": -150,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 4.7124
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {},
+      "data": {},
+      "schema": {},
+      "description": "",
+      "model": {
+        "mesh": "agilent_biotek_406_fx",
+        "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/agilent_biotek_406_fx/macro_device.xacro",
+        "type": "device",
+        "format": "xacro"
+      },
+      "position": {
+        "x": 1830,
+        "y": -150,
+        "z": 0
+      }
+    },
+    {
+      "uuid": "2a2bb86f-7b14-407c-87a1-675d4f25bf69",
+      "parent_uuid": "",
+      "id": "cytomat_backend",
+      "name": "cytomat_backend",
+      "type": "device",
+      "class": "cytomat_backend",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": 1200,
+          "y": -150,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 3.1416
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {},
+      "data": {},
+      "schema": {},
+      "description": "",
+      "model": {
+        "mesh": "cytomat_backend",
+        "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/cytomat_backend/macro_device.xacro",
+        "type": "device",
+        "format": "xacro"
+      },
+      "position": {
+        "x": 1200,
+        "y": -150,
+        "z": 0
+      }
+    },
+    {
+      "uuid": "1c04f3e7-5f13-4102-9b29-0250fea4fd4b",
+      "parent_uuid": "",
+      "id": "robotic_arm_SCARA_with_slider_moveit_virtual",
+      "name": "robotic_arm_SCARA_with_slider",
+      "type": "device",
+      "class": "robotic_arm.SCARA_with_slider.moveit.virtual",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": -700,
+          "y": -800,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": -1.5708,
+          "type": "Rotation"
+        },
+        "joint_poses": {
+          "arm": {
+            "home": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "home_1": [
+              1,
+              0,
+              0,
+              0,
+              0
+            ],
+            "home_2": [
+              2,
+              0,
+              0,
+              0,
+              0
+            ],
+            "home_3": [
+              3,
+              0,
+              0,
+              0,
+              0
+            ],
+            "home_4": [
+              4,
+              0,
+              0,
+              0,
+              0
+            ],
+            "bd_facsmelody": [4.156, 0.1, -1.0472, -1.0472, 0.5236],
+            "qiagen_qiacube_connect": [3.52, 0.1, -0.5236, -1.5708, 0.5236],
+            "applied_biosystems_seqstudio_genetic_analyzer": [2.86, 0.1, -1.0472, -1.0472, 0.5236],
+            "cytiva_biacore_8k_plus": [2.12, 0.445, -1.0472, -1.0472, 0.5236],
+            "cytiva_akta_pure": [1.28, 0.15, -1.0472, -1.0472, 0.5236],
+            "molecular_devices_qpix_420": [3.499, 0.291, 1.0472, 1.0472, -0.5236],
+            "tecan_resolvex_a200": [2.639, 0.247, 1.0472, 1.0472, -0.5236],
+            "agilent_biotek_406_fx": [2.219, 0.148, 1.2741, 1.2741, -0.9599],
+            "cytomat_backend": [1.236, 0.364, -0.4189, 1.7104, 0.2618],
+            "vantage_backend": [0.61, 0.211, -0.4189, 1.7104, 0.2618],
+            "hettich_rotanta_460_robotic": [0.108, 0.148, -1.6581, -1.3788, 1.4835],
+            "telesis_bio_bioxp_3250": [0.636, 0.224, -1.0472, -1.0472, 0.576],
+            "hotel.thermo_orbitor_rs2_hotel": [3.051, 0.176, 0.2967, 1.1519, 0.1396],
+            "peeler": [3.651, 0.008, 0.6981, 1.4486, -0.5934],
+            "sealer": [4.063, 0.039, -0.3316, 1.8326, 0.0349]
+          }
+        },
+        "moveit_type": "arm_slider",
+        "device_config": {}
+      },
+      "data": {},
+      "schema": {},
+      "description": "",
+      "model": {
+        "mesh": "arm_slider",
+        "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/arm_slider/macro_device.xacro",
+        "type": "device",
+        "format": "xacro"
+      },
+      "position": {
+        "x": -700,
+        "y": -800,
+        "z": 0
+      }
+    },
+    {
+      "uuid": "e4c42e82-2b88-4722-912b-6e59c13be802",
+      "parent_uuid": "",
+      "id": "vantage_backend",
+      "name": "vantage_backend",
+      "type": "device",
+      "class": "vantage_backend",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": 130.29459,
+          "y": -200,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {},
+      "data": {
+        "num_channels": 8,
+        "module_id_length": 4
+      },
+      "schema": {},
+      "description": "",
+      "model": {
+        "mesh": "hamilton_vantage",
+        "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/hamilton_vantage/macro_device.xacro",
+        "type": "device",
+        "format": "xacro"
+      },
+      "position": {
+        "x": 130.29459,
+        "y": -200,
+        "z": 0
+      }
+    },
+    {
+      "uuid": "0ab03208-9853-4c73-8e87-137104b757f4",
+      "parent_uuid": "",
+      "id": "host_node",
+      "name": "host_node",
+      "type": "device",
+      "class": "host_node",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {},
+      "data": {},
+      "schema": {},
+      "description": "",
+      "model": null,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "uuid": "6328814d-0f66-445d-938e-e41a24456fd7",
+      "parent_uuid": "",
+      "id": "tecan_resolvex_a200",
+      "name": "tecan_resolvex_a200",
+      "type": "device",
+      "class": "tecan_resolvex_a200",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": 2350,
+          "y": -150,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {},
+      "data": {},
+      "schema": {},
+      "description": "",
+      "model": {
+        "mesh": "tecan_resolvex_a200",
+        "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/tecan_resolvex_a200/macro_device.xacro",
+        "type": "device",
+        "format": "xacro"
+      },
+      "position": {
+        "x": 2350,
+        "y": -150,
+        "z": 0
+      }
+    },
+    {
+      "uuid": "0e544ee2-eda4-48e6-a150-9dd4b23ce594",
+      "parent_uuid": "",
+      "id": "peeler",
+      "name": "peeler",
+      "type": "device",
+      "class": "peeler",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": 3450,
+          "y": -280,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 3.1415927
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {
+        "backend":{}
+      },
+      "data": null,
+      "schema": null,
+      "model": {
+        "mesh": "peeler",
+        "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/peeler/macro_device.xacro",
+        "type": "device",
+        "format": "xacro"
+      },
+      "position": {
+        "x": 3450,
+        "y": -280,
+        "z": 0
+      }
+    },
+    {
+      "uuid": "b3f672d4-4ccb-458c-82fa-18d8b1495037",
+      "parent_uuid": "",
+      "id": "sealer",
+      "name": "sealer",
+      "type": "device",
+      "class": "sealer",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": 4000,
+          "y": -200,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 3.1415927
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {
+        "backend":{}
+      },
+      "data": null,
+      "schema": null,
+      "model": {
+        "mesh": "sealer",
+        "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/sealer/macro_device.xacro",
+        "type": "device",
+        "format": "xacro"
+      },
+      "position": {
+        "x": 4000,
+        "y": -200,
+        "z": 0
+      }
+    },
+    {
+      "uuid": "e892d6d6-0982-4253-a664-95ada1628e25",
+      "parent_uuid": "",
+      "id": "hotel_thermo_orbitor_rs2_hotel",
+      "name": "hotel.thermo_orbitor_rs2_hotel",
+      "type": "device",
+      "class": "hotel.thermo_orbitor_rs2_hotel",
+      "parent": "",
+      "pose": {
+        "layout": "x-y",
+        "position": {
+          "x": 3000,
+          "y": -350,
+          "z": 0
+        },
+        "position_3d": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "width": 0,
+          "height": 0,
+          "depth": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 3.1415927
+        },
+        "extra": null,
+        "cross_section_type": "rectangle"
+      },
+      "config": {
+        "rotation":{
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "device_config":{}
+      },
+      "data": null,
+      "schema": null,
+      "model": {
+        "mesh": "thermo_orbitor_rs2_hotel",
+        "path": "https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/thermo_orbitor_rs2_hotel/macro_device.xacro",
+        "type": "device",
+        "format": "xacro"
+      },
+      "position": {
+        "x": 3000,
+        "y": -350,
+        "z": 0
+      }
+    }
+  ],
+  "edges": []
+}

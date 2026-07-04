@@ -1,0 +1,178 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="bd_facsmelody"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.495 depth:=0.559 height:=0.483">
+
+    <xacro:property name="front_panel_depth" value="0.010" />
+    <xacro:property name="front_panel_y" value="${-(depth / 2.0) - (front_panel_depth / 2.0)}" />
+    <xacro:property name="front_corridor_width" value="0.430" />
+    <xacro:property name="front_corridor_depth" value="0.170" />
+    <xacro:property name="front_corridor_height" value="0.305" />
+    <xacro:property name="front_side_wall_width" value="${(width - front_corridor_width) / 2.0}" />
+    <xacro:property name="front_side_wall_center_x" value="${(front_corridor_width / 2.0) + (front_side_wall_width / 2.0)}" />
+    <xacro:property name="front_corridor_center_y" value="${(-depth / 2.0) + (front_corridor_depth / 2.0)}" />
+    <xacro:property name="rear_corridor_width" value="0.240" />
+    <xacro:property name="rear_corridor_depth" value="0.080" />
+    <xacro:property name="rear_corridor_bottom_z" value="0.150" />
+    <xacro:property name="rear_corridor_height" value="0.190" />
+    <xacro:property name="rear_side_wall_width" value="${(width - rear_corridor_width) / 2.0}" />
+    <xacro:property name="rear_side_wall_center_x" value="${(rear_corridor_width / 2.0) + (rear_side_wall_width / 2.0)}" />
+    <xacro:property name="rear_corridor_center_y" value="${(depth / 2.0) - (rear_corridor_depth / 2.0)}" />
+    <xacro:property name="middle_body_depth" value="${depth - front_corridor_depth - rear_corridor_depth}" />
+    <xacro:property name="middle_body_center_y" value="${(-depth / 2.0) + front_corridor_depth + (middle_body_depth / 2.0)}" />
+
+    <!-- Fallback geometry for the BD FACSMelody cell sorter.
+         Dimensions come from BD technical specifications (49.5 W x 55.9 D x 48.3 H cm).
+         Front access links are estimated from the BD user guide and official product images
+         showing the sample chamber, sort collection area, and lower flow-cell door. -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bd_facsmelody/meshes/body_shell.stl"/>
+        </geometry>
+        <material name="bd_facsmelody_body_white">
+          <color rgba="0.95 0.96 0.97 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.020 ${front_panel_y} 0.165" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bd_facsmelody/meshes/center_panel.stl"/>
+        </geometry>
+        <material name="bd_facsmelody_panel_purple">
+          <color rgba="0.21 0.18 0.51 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.162 ${front_panel_y} 0.082" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bd_facsmelody/meshes/left_chamber_door.stl"/>
+        </geometry>
+        <material name="bd_facsmelody_door_purple">
+          <color rgba="0.22 0.19 0.53 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.160 ${front_panel_y} 0.050" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bd_facsmelody/meshes/right_front_panel.stl"/>
+        </geometry>
+        <material name="bd_facsmelody_frame_purple">
+          <color rgba="0.24 0.21 0.56 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.160 ${front_panel_y - 0.001} 0.018" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bd_facsmelody/meshes/lower_window_panel.stl"/>
+        </geometry>
+        <material name="bd_facsmelody_window_gray">
+          <color rgba="0.48 0.52 0.56 0.65"/>
+        </material>
+      </visual>
+      <!-- Keep the sorter shell conservative while leaving the front chamber and rear service hatch open. -->
+      <!-- <collision>
+        <origin xyz="0 ${middle_body_center_y} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${middle_body_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-front_side_wall_center_x} ${front_corridor_center_y} ${front_corridor_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_wall_width} ${front_corridor_depth} ${front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${front_side_wall_center_x} ${front_corridor_center_y} ${front_corridor_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_wall_width} ${front_corridor_depth} ${front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_corridor_center_y} ${(front_corridor_height + height) / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_corridor_depth} ${height - front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-rear_side_wall_center_x} ${rear_corridor_center_y} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${rear_side_wall_width} ${rear_corridor_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${rear_side_wall_center_x} ${rear_corridor_center_y} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${rear_side_wall_width} ${rear_corridor_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${rear_corridor_center_y} ${rear_corridor_bottom_z / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${rear_corridor_width} ${rear_corridor_depth} ${rear_corridor_bottom_z}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${rear_corridor_center_y} ${(rear_corridor_bottom_z + rear_corridor_height + height) / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${rear_corridor_width} ${rear_corridor_depth} ${height - rear_corridor_bottom_z - rear_corridor_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <!-- Estimated front-left sample loading region for 5 mL tubes. -->
+    <link name="${station_name}${device_name}sample_loading_access_link"/>
+    <joint name="${station_name}${device_name}sample_loading_access_joint" type="fixed">
+      <origin xyz="-0.155 ${-(depth / 2.0) - 0.095} 0.225" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}sample_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- Estimated front collection position for tube rack or plate handoff. -->
+    <link name="${station_name}${device_name}sort_output_access_link"/>
+    <joint name="${station_name}${device_name}sort_output_access_joint" type="fixed">
+      <origin xyz="-0.045 ${-(depth / 2.0) - 0.135} 0.145" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}sort_output_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- Lower front-right service area for flow-cell and nozzle maintenance. -->
+    <link name="${station_name}${device_name}flow_cell_access_link"/>
+    <joint name="${station_name}${device_name}flow_cell_access_joint" type="fixed">
+      <origin xyz="0.155 ${-(depth / 2.0) - 0.070} 0.125" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}flow_cell_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 - 0.025} 0.245" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

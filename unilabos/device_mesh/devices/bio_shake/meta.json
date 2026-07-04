@@ -1,0 +1,87 @@
+{
+  "fileName": "bio_shake",
+  "related": [
+    "bio_shake",
+    "bioshake",
+    "inheco_thermoshake_ac"
+  ],
+  "model_strategy": "fallback_box",
+  "sources": [
+    "https://www.inheco.com/thermoshake-ac.html",
+    "https://www.inheco.com/data/pdf/manual-thermoshake-ac-1019-0731-02.pdf",
+    "https://www.inheco.com/data/images/uploads/slider/1005-1254_d_thermoshake-ac-2.jpg",
+    "https://www.inheco.com/data/images/uploads/slider/1005-1255_d_thermoshake-ac-3.jpg"
+  ],
+  "dimensions_m": {
+    "width": 0.104,
+    "depth": 0.147,
+    "height": 0.1159
+  },
+  "collision_model": {
+    "strategy": "opening_cutout",
+    "body_m": {
+      "width": 0.104,
+      "depth": 0.147,
+      "height": 0.1159
+    },
+    "opening_m": {
+      "width": 0.09,
+      "depth": 0.132,
+      "recess_depth": 0.008,
+      "floor_z": 0.1079
+    },
+    "notes": "Simplified collision is split into a lower body block plus shallow top rim blocks so the centered SBS pickup zone remains open from above while the access frames stay attached to base_link."
+  },
+  "access_points": [
+    {
+      "name": "socketTypeGenericSbsFootprint",
+      "description": "Primary SBS microplate pickup/drop-off frame at the centered top contact zone.",
+      "face": "top",
+      "center_m": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.1099
+      },
+      "size_m": {
+        "x": 0.08548,
+        "y": 0.12776,
+        "z": 0.012
+      },
+      "collision_strategy": "opening_cutout",
+      "collision_opening_m": {
+        "x": 0.09,
+        "y": 0.132,
+        "z": 0.008
+      },
+      "collision_notes": "The access frame remains on base_link and sits inside the shallow top opening, above the cutout floor and outside the simplified collision rim."
+    },
+    {
+      "name": "plate_slot_access",
+      "description": "Top SBS microplate pickup/drop-off position on the shaker table in the documented zero position for robotic gripping.",
+      "face": "top",
+      "center_m": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.1099
+      },
+      "size_m": {
+        "x": 0.08548,
+        "y": 0.12776,
+        "z": 0.012
+      },
+      "collision_strategy": "opening_cutout",
+      "collision_opening_m": {
+        "x": 0.09,
+        "y": 0.132,
+        "z": 0.008
+      },
+      "collision_notes": "This access point uses the same centered opening-cutout recess as socketTypeGenericSbsFootprint so vertical plate approach remains clear of the simplified body collision."
+    }
+  ],
+  "notes": [
+    "No openly accessible vendor CAD/STL/GLB for the BioShake or an INHECO Thermoshake AC was found during web search, so the mesh uses a generated fallback box based on official dimensions.",
+    "The bio_shake backend appears generic/QInstruments-derived; per task guidance this package uses an INHECO-style single-plate thermoshaker as the closest representative physical model.",
+    "The access frame is centered on the top contact surface height from the official spec; clamp pins, vents, and side panel details are not modeled in the STL.",
+    "Collision was refactored from a single solid box to a lower block plus top perimeter rim blocks so the recessed plate contact area is genuinely reachable from above."
+  ]
+}

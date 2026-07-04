@@ -40,7 +40,7 @@
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_slideway.STL"/>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_slideway.STL" scale="2.7 1 1"/>
         </geometry>
         <material name="">
           <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1"/>
@@ -49,16 +49,16 @@
       <collision>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_slideway.STL"/>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_slideway.STL" scale="2.7 1 1"/>
         </geometry>
       </collision>
     </link>
 
     <joint name="${station_name}${device_name}arm_base_joint" type="prismatic">
-      <origin rpy="0 0 0" xyz="0.307 0 0.1225"/>
+      <origin rpy="0 0 -1.5708" xyz="0.307 0 0.1225"/>
       <parent link="${station_name}${device_name}arm_slideway"/>
       <child link="${station_name}${device_name}arm_base"/>
-      <axis xyz="1 0 0"/>
+      <axis xyz="0 1 0"/>
       <limit 
         effort="${limit_arm_base_joint['effort']}" 
         lower="${limit_arm_base_joint['lower']}" 

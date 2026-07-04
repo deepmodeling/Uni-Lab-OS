@@ -1,0 +1,67 @@
+{
+  "fileName": "cytiva_biacore_8k_plus",
+  "related": [
+    "cytiva_biacore_8k_plus"
+  ],
+  "representation": {
+    "type": "fallback-composite-stl",
+    "dimensionsMm": {
+      "width": 900,
+      "depth": 614,
+      "height": 865
+    },
+    "sourceUrls": [
+      "https://d3.cytivalifesciences.com/prod/IFU/29338851.pdf",
+      "https://cdn.cytivalifesciences.com/api/public/content/digi-18215-original",
+      "https://www.cytivalifesciences.com/en/sg/solutions/protein-research/products-and-technologies/spr-systems"
+    ],
+    "notes": [
+      "No reusable vendor CAD/STL surfaced in web search results.",
+      "Outer envelope follows Cytiva installation/operating-document dimensions; front geometry is estimated from official Biacore 8K+ manual illustrations."
+    ]
+  },
+  "accessFrames": [
+    {
+      "name": "sample-hotel-door",
+      "linkSuffix": "sample_hotel_access_link",
+      "description": "Estimated front access point centered on the Biacore 8K+ sample hotel door/window used for tray loading.",
+      "collision_strategy": "opening_cutout",
+      "poseMeters": {
+        "x": -0.34,
+        "y": 0.362,
+        "z": 0.38,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "sample-compartment-window",
+      "linkSuffix": "sample_compartment_access_link",
+      "description": "Estimated front access point aligned to the sample compartment/loading carriage zone behind the sample compartment window.",
+      "collision_strategy": "opening_cutout",
+      "poseMeters": {
+        "x": 0.04,
+        "y": 0.362,
+        "z": 0.555,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "sensor-chip-port",
+      "linkSuffix": "sensor_chip_access_link",
+      "description": "Estimated front access point for the automated sensor chip port on the upper housing.",
+      "collision_strategy": "opening_cutout",
+      "poseMeters": {
+        "x": 0.12,
+        "y": 0.392,
+        "z": 0.675,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    }
+  ]
+}

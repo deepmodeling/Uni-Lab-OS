@@ -1,0 +1,157 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="bio_tek_plate_reader_backend"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.375 depth:=0.464 height:=0.33
+            tray_center_x:=0.03 tray_center_y:=0.282 tray_center_z:=0.06">
+
+    <xacro:property name="front_opening_depth" value="0.150" />
+    <xacro:property name="front_opening_height" value="0.140" />
+    <xacro:property name="front_shell_depth" value="${front_opening_depth}" />
+    <xacro:property name="rear_shell_depth" value="${depth - front_opening_depth}" />
+    <xacro:property name="rear_shell_center_y" value="${-front_opening_depth / 2.0}" />
+    <xacro:property name="front_shell_center_y" value="${depth / 2.0 - front_opening_depth / 2.0}" />
+    <xacro:property name="front_upper_height" value="${height - front_opening_height}" />
+    <xacro:property name="front_upper_center_z" value="${front_opening_height + front_upper_height / 2.0}" />
+    <xacro:property name="front_side_shell_width" value="0.118" />
+    <xacro:property name="front_side_shell_center_x" value="${(width / 2.0) - (front_side_shell_width / 2.0)}" />
+
+    <!-- 近似 Agilent BioTek Synergy H1:
+         官方技术参数给出整机尺寸 375 mm(W) x 464 mm(D) x 330 mm(H)，
+         IFU 外观图显示前部为微孔板抽屉门和上部服务门。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bio_tek_plate_reader_backend/meshes/synergy_h1_body.stl"/>
+        </geometry>
+        <material name="synergy_h1_body">
+          <color rgba="0.95 0.96 0.97 1"/>
+        </material>
+      </visual>
+      <!-- 主体碰撞拆成后壳、前上壳和左右前侧立柱，避免前部抽屉通道被整块实体封死。 -->
+      <!-- <collision>
+        <origin xyz="0 ${rear_shell_center_y} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${rear_shell_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_shell_center_y} ${front_upper_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_shell_depth} ${front_upper_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${front_side_shell_center_x} ${front_shell_center_y} ${front_opening_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_shell_width} ${front_shell_depth} ${front_opening_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-front_side_shell_center_x} ${front_shell_center_y} ${front_opening_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_shell_width} ${front_shell_depth} ${front_opening_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <link name="${station_name}${device_name}service_door_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bio_tek_plate_reader_backend/meshes/synergy_h1_service_door.stl"/>
+        </geometry>
+        <material name="synergy_h1_panel">
+          <color rgba="0.9 0.91 0.92 1"/>
+        </material>
+      </visual>
+    </link>
+    <joint name="${station_name}${device_name}service_door_joint" type="fixed">
+      <origin xyz="0.055 ${depth / 2.0 + 0.002} 0.16" rpy="${pi / 2.0} 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}service_door_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}service_access_point"/>
+    <joint name="${station_name}${device_name}service_access_point_joint" type="fixed">
+      <origin xyz="0.055 ${depth / 2.0 + 0.04} 0.16" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}service_access_point"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}tray_door_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bio_tek_plate_reader_backend/meshes/synergy_h1_tray_door.stl"/>
+        </geometry>
+        <material name="synergy_h1_panel">
+          <color rgba="0.9 0.91 0.92 1"/>
+        </material>
+      </visual>
+    </link>
+    <joint name="${station_name}${device_name}tray_door_joint" type="fixed">
+      <origin xyz="${tray_center_x} ${depth / 2.0 + 0.002} 0.055" rpy="${pi / 2.0} 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}tray_door_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}tray_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/bio_tek_plate_reader_backend/meshes/synergy_h1_tray.stl"/>
+        </geometry>
+        <material name="synergy_h1_tray">
+          <color rgba="0.78 0.8 0.82 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 0.005" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.136 0.093 0.01"/>
+        </geometry>
+      </collision> -->
+    </link>
+    <joint name="${station_name}${device_name}tray_joint" type="fixed">
+      <origin xyz="${tray_center_x} ${tray_center_y} ${tray_center_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}drawer_access_point"/>
+    <joint name="${station_name}${device_name}drawer_access_point_joint" type="fixed">
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}drawer_access_point"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}drawer_access_point"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

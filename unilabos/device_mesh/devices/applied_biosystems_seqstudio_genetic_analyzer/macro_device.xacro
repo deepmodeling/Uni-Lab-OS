@@ -1,0 +1,119 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="applied_biosystems_seqstudio_genetic_analyzer"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.495 depth:=0.648 height:=0.442
+            plate_center_x:=-0.0568 plate_center_y:=-0.1888 plate_center_z:=0.1794
+            cartridge_access_x:=-0.1321 cartridge_access_y:=-0.1493 cartridge_access_z:=0.2896
+            front_loading_x:=-0.1755 front_loading_y:=-0.3182 front_loading_z:=0.0947
+            screen_access_x:=0.0439 screen_access_y:=-0.2423 screen_access_z:=0.3033">
+
+    <xacro:property name="front_corridor_width" value="0.405" />
+    <xacro:property name="front_corridor_depth" value="0.220" />
+    <xacro:property name="front_corridor_height" value="0.340" />
+    <xacro:property name="front_side_wall_width" value="${(width - front_corridor_width) / 2.0}" />
+    <xacro:property name="front_side_wall_center_x" value="${(width + front_corridor_width) / 4.0}" />
+    <xacro:property name="front_opening_center_y" value="${(-depth / 2.0) + (front_corridor_depth / 2.0)}" />
+    <xacro:property name="rear_body_center_y" value="${front_corridor_depth / 2.0}" />
+
+    <!-- 可视网格来自 Thermo Fisher 官方 SeqStudio 3D Tour 的公开 AR GLB，
+         已重采样为 STL，并按规格书外形尺寸（49.5 x 64.8 x 44.2 cm）缩放到 Uni-Lab-OS 设备坐标系。
+         采样板位、卡匣位和前舱访问点根据官方 3D Tour 热点估算，适合作为集成参考而非工厂标定值。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/applied_biosystems_seqstudio_genetic_analyzer/meshes/seqstudio_visual.stl"/>
+        </geometry>
+        <material name="seqstudio_light_gray">
+          <color rgba="0.90 0.91 0.92 1"/>
+        </material>
+      </visual>
+      <!-- 将机身碰撞拆分为后壳、前侧壁和前上罩，保持前向 sample/cartridge 装载走廊敞开。 -->
+      <!-- <collision>
+        <origin xyz="0 ${rear_body_center_y} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth - front_corridor_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-front_side_wall_center_x} ${front_opening_center_y} ${front_corridor_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_wall_width} ${front_corridor_depth} ${front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${front_side_wall_center_x} ${front_opening_center_y} ${front_corridor_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_side_wall_width} ${front_corridor_depth} ${front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_opening_center_y} ${(front_corridor_height + height) / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_corridor_depth} ${height - front_corridor_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <!-- 内部样本板中心位；SeqStudio 支持 96 孔板和 8 联管。 -->
+    <link name="${station_name}${device_name}sample_plate_access_link"/>
+    <joint name="${station_name}${device_name}sample_plate_access_joint" type="fixed">
+      <origin xyz="${plate_center_x} ${plate_center_y} ${plate_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}sample_plate_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin xyz="${plate_center_x} ${plate_center_y} ${plate_center_z + 0.008}" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 一体式卡匣点击安装区域。 -->
+    <link name="${station_name}${device_name}cartridge_access_link"/>
+    <joint name="${station_name}${device_name}cartridge_access_joint" type="fixed">
+      <origin xyz="${cartridge_access_x} ${cartridge_access_y} ${cartridge_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}cartridge_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 前舱门开口附近的取放/观察参考点。 -->
+    <link name="${station_name}${device_name}front_loading_access_link"/>
+    <joint name="${station_name}${device_name}front_loading_access_joint" type="fixed">
+      <origin xyz="${front_loading_x} ${front_loading_y} ${front_loading_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 触摸屏/上位机面板位置，便于后续交互或观察规划。 -->
+    <link name="${station_name}${device_name}screen_access_link"/>
+    <joint name="${station_name}${device_name}screen_access_joint" type="fixed">
+      <origin xyz="${screen_access_x} ${screen_access_y} ${screen_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}screen_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

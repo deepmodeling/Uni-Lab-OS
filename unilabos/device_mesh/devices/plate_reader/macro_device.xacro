@@ -1,0 +1,172 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="plate_reader"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.375 depth:=0.464 height:=0.33
+            hood_x:=0.0 hood_y:=-0.03 hood_z:=0.255
+            tray_center_x:=0.03 tray_center_y:=0.282 tray_center_z:=0.06
+            front_panel_access_x:=0.03 front_panel_access_y:=0.242 front_panel_access_z:=0.08
+            service_access_x:=0.055 service_access_y:=0.242 service_access_z:=0.195
+            front_corridor_width:=0.17 front_corridor_depth:=0.12 front_corridor_height:=0.13">
+
+    <!-- 代表性回退模型：参考 Agilent BioTek Synergy H1 外形尺寸构建的通用酶标仪。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/plate_reader/meshes/body_shell.stl"/>
+        </geometry>
+        <material name="plate_reader_body">
+          <color rgba="0.95 0.96 0.97 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 ${-front_corridor_depth / 2.0} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth - front_corridor_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${(depth / 2.0) - (front_corridor_depth / 2.0)} ${(front_corridor_height + height) / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_corridor_depth} ${height - front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${((-width / 2.0) + (tray_center_x - (front_corridor_width / 2.0))) / 2.0} ${(depth / 2.0) - (front_corridor_depth / 2.0)} ${front_corridor_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${(width / 2.0) + tray_center_x - (front_corridor_width / 2.0)} ${front_corridor_depth} ${front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${((tray_center_x + (front_corridor_width / 2.0)) + (width / 2.0)) / 2.0} ${(depth / 2.0) - (front_corridor_depth / 2.0)} ${front_corridor_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${(width / 2.0) - tray_center_x - (front_corridor_width / 2.0)} ${front_corridor_depth} ${front_corridor_height}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}optic_hood_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/plate_reader/meshes/optic_hood.stl"/>
+        </geometry>
+        <material name="plate_reader_hood">
+          <color rgba="0.16 0.17 0.18 1"/>
+        </material>
+      </visual>
+    </link>
+    <joint name="${station_name}${device_name}optic_hood_joint" type="fixed">
+      <origin xyz="${hood_x} ${hood_y} ${hood_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}optic_hood_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}service_panel_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/plate_reader/meshes/service_panel.stl"/>
+        </geometry>
+        <material name="plate_reader_panel">
+          <color rgba="0.90 0.91 0.92 1"/>
+        </material>
+      </visual>
+    </link>
+    <joint name="${station_name}${device_name}service_panel_joint" type="fixed">
+      <origin xyz="0.055 ${depth / 2.0 + 0.004} 0.145" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}service_panel_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}drawer_face_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/plate_reader/meshes/drawer_face.stl"/>
+        </geometry>
+        <material name="plate_reader_panel">
+          <color rgba="0.88 0.89 0.9 1"/>
+        </material>
+      </visual>
+    </link>
+    <joint name="${station_name}${device_name}drawer_face_joint" type="fixed">
+      <origin xyz="${tray_center_x} ${depth / 2.0 + 0.004} 0.038" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}drawer_face_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}tray_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/plate_reader/meshes/tray.stl"/>
+        </geometry>
+        <material name="plate_reader_tray">
+          <color rgba="0.78 0.80 0.82 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.005" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.136 0.093 0.01"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}tray_joint" type="fixed">
+      <origin xyz="${tray_center_x} ${tray_center_y} ${tray_center_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}drawer_access_link"/>
+    <joint name="${station_name}${device_name}drawer_access_joint" type="fixed">
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}drawer_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}front_panel_access_link"/>
+    <joint name="${station_name}${device_name}front_panel_access_joint" type="fixed">
+      <origin xyz="${front_panel_access_x} ${front_panel_access_y} ${front_panel_access_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_panel_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}service_access_link"/>
+    <joint name="${station_name}${device_name}service_access_joint" type="fixed">
+      <origin xyz="${service_access_x} ${service_access_y} ${service_access_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}drawer_access_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

@@ -2,4 +2,30 @@ controller_manager:
   ros__parameters:
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
+    robotic_arm_SCARA_with_slider_moveit_virtual_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    robotic_arm_SCARA_with_slider_moveit_virtual_gripper_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
     update_rate: 100
+robotic_arm_SCARA_with_slider_moveit_virtual_arm_controller:
+  ros__parameters:
+    command_interfaces:
+    - position
+    joints:
+    - robotic_arm_SCARA_with_slider_moveit_virtual_arm_base_joint
+    - robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_1_joint
+    - robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_2_joint
+    - robotic_arm_SCARA_with_slider_moveit_virtual_arm_link_3_joint
+    - robotic_arm_SCARA_with_slider_moveit_virtual_gripper_base_joint
+    state_interfaces:
+    - position
+    - velocity
+robotic_arm_SCARA_with_slider_moveit_virtual_gripper_controller:
+  ros__parameters:
+    command_interfaces:
+    - position
+    joints:
+    - robotic_arm_SCARA_with_slider_moveit_virtual_gripper_right_joint
+    state_interfaces:
+    - position
+    - velocity

@@ -1,0 +1,134 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="cytiva_biacore_8k_plus"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.900 depth:=0.614 height:=0.865
+            hotel_access_x:=-0.340 hotel_access_y_offset:=0.055 hotel_access_z:=0.380
+            sample_access_x:=0.040 sample_access_y_offset:=0.055 sample_access_z:=0.555
+            sensor_chip_access_x:=0.120 sensor_chip_access_y_offset:=0.085 sensor_chip_access_z:=0.675">
+
+    <!-- 基于 Cytiva Biacore 8 系列官方尺寸与 Biacore 8K/8K+ User Manual 外观/剖视图
+         构建的近似组合 STL。重点表达前侧 sample hotel、sample compartment 与 sensor chip port。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_biacore_8k_plus/meshes/main_chassis.stl"/>
+        </geometry>
+        <material name="biacore_body">
+          <color rgba="0.95 0.96 0.97 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.340 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_biacore_8k_plus/meshes/hotel_column.stl"/>
+        </geometry>
+        <material name="biacore_hotel_column">
+          <color rgba="0.94 0.95 0.96 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.115 -0.110 0.615" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_biacore_8k_plus/meshes/upper_housing.stl"/>
+        </geometry>
+        <material name="biacore_upper_housing">
+          <color rgba="0.90 0.91 0.93 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.045 0.035 0.435" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_biacore_8k_plus/meshes/sample_compartment.stl"/>
+        </geometry>
+        <material name="biacore_sample_compartment">
+          <color rgba="0.92 0.93 0.95 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.115 0.065 0.605" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_biacore_8k_plus/meshes/sensor_chip_port.stl"/>
+        </geometry>
+        <material name="biacore_sensor_chip_port">
+          <color rgba="0.62 0.65 0.70 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.020 0.240 0.018" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_biacore_8k_plus/meshes/drip_tray.stl"/>
+        </geometry>
+        <material name="biacore_drip_tray">
+          <color rgba="0.66 0.69 0.73 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.340 0.313 0.215" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_biacore_8k_plus/meshes/hotel_window.stl"/>
+        </geometry>
+        <material name="biacore_window_dark">
+          <color rgba="0.18 0.22 0.27 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.000 0.241 0.545" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_biacore_8k_plus/meshes/sample_window.stl"/>
+        </geometry>
+        <material name="biacore_window_blue">
+          <color rgba="0.28 0.40 0.46 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <link name="${station_name}${device_name}sample_hotel_access_link"/>
+    <joint name="${station_name}${device_name}sample_hotel_access_joint" type="fixed">
+      <origin xyz="${hotel_access_x} ${depth / 2.0 + hotel_access_y_offset} ${hotel_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}sample_hotel_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}sample_compartment_access_link"/>
+    <joint name="${station_name}${device_name}sample_compartment_access_joint" type="fixed">
+      <origin xyz="${sample_access_x} ${depth / 2.0 + sample_access_y_offset} ${sample_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}sample_compartment_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}sensor_chip_access_link"/>
+    <joint name="${station_name}${device_name}sensor_chip_access_joint" type="fixed">
+      <origin xyz="${sensor_chip_access_x} ${depth / 2.0 + sensor_chip_access_y_offset} ${sensor_chip_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}sensor_chip_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

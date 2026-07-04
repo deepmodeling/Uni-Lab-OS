@@ -1,0 +1,71 @@
+{
+  "fileName": "plate_reader",
+  "related": [
+    "plate_reader",
+    "generic_plate_reader",
+    "_phage_display_plate_reader"
+  ],
+  "representation": {
+    "type": "fallback-composite-stl",
+    "representativeFormFactor": "Compact front-drawer multimode microplate reader based on the Agilent BioTek Synergy H1 envelope and public front-panel imagery.",
+    "dimensionsMm": {
+      "width": 375,
+      "depth": 464,
+      "height": 330
+    },
+    "sourceUrls": [
+      "https://www.agilent.com/cs/library/packageinsert/public/SynergyH1_IFU_8041005IAW.E.pdf",
+      "https://www.biospx.com/wp-content/uploads/2021/10/biotek-synergy-h1-brochure-en-web.pdf",
+      "https://cheshirelabs.io/3d-models/"
+    ],
+    "notes": [
+      "No public reusable vendor CAD, STEP, or STL for a generic plate reader surfaced during web search.",
+      "Representative form factor chosen: a Synergy H1-class bench-top reader with a single front SBS microplate drawer and an upper front service/access panel.",
+      "The composite fallback mesh uses simple STL boxes sized from official dimensions, with hood, drawer, and service-panel placement estimated from public product imagery and IFU front-panel references."
+    ]
+  },
+  "accessFrames": [
+    {
+      "name": "drawer-loading-zone",
+      "linkSuffix": "drawer_access_link",
+      "description": "Estimated center of the extended front tray used to load or retrieve an SBS microplate.",
+      "collision_strategy": "fixed_extended_tray",
+      "poseMeters": {
+        "x": 0.03,
+        "y": 0.282,
+        "z": 0.07,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "front-drawer-face",
+      "linkSuffix": "front_panel_access_link",
+      "description": "Estimated operator approach point centered on the plate drawer opening in the front fascia.",
+      "collision_strategy": "opening_cutout",
+      "poseMeters": {
+        "x": 0.03,
+        "y": 0.242,
+        "z": 0.08,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "upper-service-panel",
+      "linkSuffix": "service_access_link",
+      "description": "Estimated front access point for the upper optics or service panel above the drawer.",
+      "collision_strategy": "opening_cutout",
+      "poseMeters": {
+        "x": 0.055,
+        "y": 0.242,
+        "z": 0.195,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    }
+  ]
+}

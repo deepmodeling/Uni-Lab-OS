@@ -1,0 +1,118 @@
+{
+  "fileName": "incubator_shaker_stack",
+  "related": [
+    "incubator_shaker_stack",
+    "inheco_incubator_shaker_stack",
+    "inheco_single_plate_incubator_shaker"
+  ],
+  "model_strategy": "fallback_composite_stl_from_inheco_dimensions_and_official_product_imagery",
+  "representative_form_factor": {
+    "vendor": "INHECO",
+    "series": "Single Plate Incubator Shaker",
+    "chosen_model": "3-unit stack of Single Plate Incubator Shaker MP modules",
+    "product_part_number": "7300013",
+    "reason": "The official INHECO brochure documents the MP shaker variant as stackable up to three units and shows the per-unit drawer/door behavior used by this driver family."
+  },
+  "sources": [
+    {
+      "title": "INHECO Single Plate Incubator Shaker product page",
+      "url": "https://www.inheco.com/incubator-shaker.html",
+      "kind": "product_page",
+      "notes": "Provides the external envelope for the shaker MP module (149 x 268.5 x 88.5 mm) and the open-drawer depth figure of 209 mm."
+    },
+    {
+      "title": "INHECO Single Plate Incubators brochure",
+      "url": "https://www.inheco.com/data/pdf/bro-incubator-10-2022-1026-0919-32.pdf",
+      "kind": "brochure",
+      "notes": "Confirms the stackable tower concept, the 7300013 shaker MP identity, the 149 x 268 x 87 mm rounded dimensions, and the 90-degree door rotation after drawer opening."
+    },
+    {
+      "title": "INHECO Single Plate Incubator Shaker feature overview",
+      "url": "https://www.inheco.com/index.php?id=259",
+      "kind": "feature_page",
+      "notes": "Secondary visual reference for the stacked thermoshaker silhouette and operator-facing drawer arrangement."
+    }
+  ],
+  "dimensions_m": {
+    "representative_stack": {
+      "width": 0.149,
+      "depth": 0.2685,
+      "height": 0.2655
+    },
+    "single_unit": {
+      "width": 0.149,
+      "depth": 0.2685,
+      "height": 0.0885
+    },
+    "open_drawer_depth": 0.209
+  },
+  "mesh_assets": {
+    "unit_body": "meshes/unit_body.stl",
+    "front_access_face": "meshes/front_access_face.stl",
+    "loading_tray": "meshes/loading_tray.stl"
+  },
+  "access_points": [
+    {
+      "name": "lower_unit_front_access_link",
+      "face": "front",
+      "xyz_m": [0.0, 0.15025, 0.041],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated center of the lower unit front access face / door area."
+    },
+    {
+      "name": "middle_unit_front_access_link",
+      "face": "front",
+      "xyz_m": [0.0, 0.15025, 0.1295],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated center of the middle unit front access face / door area."
+    },
+    {
+      "name": "upper_unit_front_access_link",
+      "face": "front",
+      "xyz_m": [0.0, 0.15025, 0.218],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated center of the upper unit front access face / door area."
+    },
+    {
+      "name": "lower_unit_loading_tray_access_link",
+      "face": "front",
+      "xyz_m": [0.0, 0.16425, 0.0512],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "fixed_extended_tray",
+      "description": "Representative plate handoff point above the lower unit loading tray."
+    },
+    {
+      "name": "middle_unit_loading_tray_access_link",
+      "face": "front",
+      "xyz_m": [0.0, 0.16425, 0.1397],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "fixed_extended_tray",
+      "description": "Representative plate handoff point above the middle unit loading tray."
+    },
+    {
+      "name": "upper_unit_loading_tray_access_link",
+      "face": "front",
+      "xyz_m": [0.0, 0.16425, 0.2282],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "fixed_extended_tray",
+      "description": "Representative plate handoff point above the upper unit loading tray."
+    },
+    {
+      "name": "rear_service_access_link",
+      "face": "rear",
+      "xyz_m": [0.0, -0.18425, 0.13275],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "collision_strategy": "opening_cutout",
+      "description": "Approximate rear-side service reference for power and communications cabling."
+    }
+  ],
+  "notes": [
+    "No public vendor CAD, STL, STEP, GLB, or USDZ model for the INHECO Single Plate Incubator Shaker stack surfaced in web search, so this package uses a representative fallback mesh instead of implying factory-exact geometry.",
+    "The fallback chooses a three-unit stack of the shaker MP module because it is the most explicitly documented stack form and best matches the driver's stacked thermoshaker/incubator intent.",
+    "Per-unit tray heights are anchored to the driver's `incubator_shaker_mp` loading-tray z reference of 51.2 mm; front/tray x positions are centered because the official sources do not publish a left-right tray-center offset.",
+    "The tray and front-face access frames are integration-friendly estimates derived from official dimensions and brochure imagery and should be refined if service drawings or direct measurements become available."
+  ]
+}

@@ -1,0 +1,150 @@
+sealer:
+  category:
+  - sealer
+  class:
+    action_value_mappings:
+      auto-close:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 关闭封膜机机构。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: close参数
+          type: object
+        type: UniLabJsonCommandAsync
+      auto-get_temperature:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 获取封膜机温度。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result:
+              type: number
+          required:
+          - goal
+          title: get_temperature参数
+          type: object
+        type: UniLabJsonCommandAsync
+      auto-open:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 打开封膜机机构。
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: open参数
+          type: object
+        type: UniLabJsonCommandAsync
+      auto-seal:
+        feedback: {}
+        goal: {}
+        goal_default:
+          duration: 3.0
+          temperature: 100
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 按设定温度和持续时间执行微孔板封膜。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                duration:
+                  default: 3.0
+                  type: number
+                temperature:
+                  default: 100
+                  type: integer
+              required:
+              - temperature
+              - duration
+              type: object
+            result: {}
+          required:
+          - goal
+          title: seal参数
+          type: object
+        type: UniLabJsonCommandAsync
+      auto-set_temperature:
+        feedback: {}
+        goal: {}
+        goal_default:
+          temperature: 100.0
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: 设置封膜机温度。
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                temperature:
+                  default: 100.0
+                  type: number
+              required:
+              - temperature
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_temperature参数
+          type: object
+        type: UniLabJsonCommandAsync
+    module: unilabos.devices._phage_display.sealer:Sealer
+    status_types: {}
+    type: python
+  config_info: []
+  description: 用于实验室自动化中对微孔板进行封膜的设备，可执行封膜、开合机构控制，以及温度设置与读取。
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        backend:
+          type: object
+      required:
+      - backend
+      type: object
+    data:
+      properties: {}
+      required: []
+      type: object
+  model:
+    mesh: sealer
+    path: https://uni-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/sealer/macro_device.xacro
+    type: device
+  version: 1.0.0

@@ -1,0 +1,52 @@
+{
+  "fileName": "qiagen_qiacube_connect",
+  "related": [
+    "qiagen_qiacube_connect",
+    "qiacube_connect",
+    "qiacube connect",
+    "qiagen qiacube connect",
+    "QIAGEN QIAcube Connect"
+  ],
+  "access_points": [
+    {
+      "name": "hood_handle_access_link",
+      "face": "front_upper",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, 0.365, 0.365],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Front handle approach used to open the transparent hood."
+    },
+    {
+      "name": "loading_access_link",
+      "face": "top_front_internal",
+      "collision_strategy": "exposed_work_surface",
+      "xyz_m": [0.0, 0.09, 0.692],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Estimated center of the worktable loading zone once the hood is opened."
+    },
+    {
+      "name": "touchscreen_access_link",
+      "face": "front_left_upper",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [-0.205, 0.385, 0.345],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Left-front touchscreen and nearby USB interaction area."
+    },
+    {
+      "name": "waste_drawer_access_link",
+      "face": "front_lower",
+      "collision_strategy": "fixed_extended_tray",
+      "xyz_m": [0.0, 0.325, 0.08],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Access point centered on the fixed, extended waste drawer used for waste handling."
+    },
+    {
+      "name": "rear_service_access_link",
+      "face": "rear",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, -0.365, 0.32],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "description": "Rear service side for power, network, and ventilation access."
+    }
+  ]
+}

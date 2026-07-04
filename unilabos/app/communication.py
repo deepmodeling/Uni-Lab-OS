@@ -50,6 +50,17 @@ class BaseCommunicationClient(ABC):
         """
         pass
 
+    def publish_joint_state(self, node_uuid: str, joint_states: dict, resource_poses: dict = None) -> None:
+        """
+        发布高频关节状态数据（push_joint_state action，不写 DB）
+
+        Args:
+            node_uuid: 设备节点的云端 UUID
+            joint_states: 关节名 → 角度/位置 的映射
+            resource_poses: 物料附着映射（可选）
+        """
+        pass
+
     @abstractmethod
     def publish_job_status(
         self, feedback_data: dict, job_id: str, status: str, return_info: Optional[dict] = None

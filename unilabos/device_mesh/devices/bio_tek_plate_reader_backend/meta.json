@@ -1,0 +1,26 @@
+{
+  "fileName": "bio_tek_plate_reader_backend",
+  "related": [
+    "bio_tek_plate_reader_backend",
+    "agilent_biotek_synergy_h1",
+    "synergy_h1_backend"
+  ],
+  "access_points": [
+    {
+      "name": "drawer_access_point",
+      "face": "front",
+      "xyz_m": [0.03, 0.282, 0.07],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "fixed_extended_tray",
+      "description": "Tray-backed SBS handoff frame on the fixed extended tray, kept outside the body shell for robot plate transfers."
+    },
+    {
+      "name": "service_access_point",
+      "face": "front",
+      "xyz_m": [0.055, 0.272, 0.16],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Front service access frame aligned with the upper service door area and approached from outside the front shell."
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="hettich_rotanta_460_robotic"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.554 depth:=0.697 height:=0.684 cable_depth:=0.762">
+
+    <!-- Fallback geometry based on official Hettich ROTANTA 460 Robotic dimensions and
+         product imagery. No public vendor CAD/mesh model was located during web search. -->
+    <xacro:property name="plinth_height" value="0.040" />
+    <xacro:property name="body_height" value="0.300" />
+    <xacro:property name="lid_height" value="${height - plinth_height - body_height}" />
+    <xacro:property name="body_offset_y" value="0.008" />
+    <xacro:property name="lid_offset_y" value="0.006" />
+    <xacro:property name="front_panel_y" value="${-(depth / 2.0) - 0.002}" />
+    <xacro:property name="front_panel_z" value="0.145" />
+    <xacro:property name="front_hatch_y" value="${-(depth / 2.0) + 0.160}" />
+    <xacro:property name="rear_hatch_y" value="${(depth / 2.0) - 0.160}" />
+    <xacro:property name="hatch_frame_z" value="${height - 0.030}" />
+    <xacro:property name="top_loading_access_z" value="${height + 0.045}" />
+    <xacro:property name="top_opening_floor_z" value="${plinth_height + body_height}" />
+    <xacro:property name="top_opening_height" value="${height - top_opening_floor_z}" />
+    <xacro:property name="top_opening_width" value="0.360" />
+    <xacro:property name="top_opening_depth" value="0.430" />
+    <xacro:property name="top_side_rim_width" value="${(width - top_opening_width) / 2.0}" />
+    <xacro:property name="top_front_rim_depth" value="${(depth - top_opening_depth) / 2.0}" />
+    <xacro:property name="top_opening_center_z" value="${top_opening_floor_z + (top_opening_height / 2.0)}" />
+    <xacro:property name="rear_service_access_y" value="${(depth / 2.0) + 0.022}" />
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hettich_rotanta_460_robotic/meshes/plinth.stl"/>
+        </geometry>
+        <material name="hettich_rotanta_460_robotic_plinth_gray">
+          <color rgba="0.22 0.24 0.26 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${body_offset_y} ${plinth_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hettich_rotanta_460_robotic/meshes/body_core.stl"/>
+        </geometry>
+        <material name="hettich_rotanta_460_robotic_body_gray">
+          <color rgba="0.80 0.82 0.84 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${lid_offset_y} ${plinth_height + body_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hettich_rotanta_460_robotic/meshes/lid_shell.stl"/>
+        </geometry>
+        <material name="hettich_rotanta_460_robotic_lid_gray">
+          <color rgba="0.90 0.92 0.94 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${front_panel_y} ${front_panel_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hettich_rotanta_460_robotic/meshes/front_control_panel.stl"/>
+        </geometry>
+        <material name="hettich_rotanta_460_robotic_panel_black">
+          <color rgba="0.10 0.11 0.12 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${front_hatch_y} ${hatch_frame_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hettich_rotanta_460_robotic/meshes/front_hatch_frame.stl"/>
+        </geometry>
+        <material name="hettich_rotanta_460_robotic_hatch_dark">
+          <color rgba="0.18 0.19 0.20 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${rear_hatch_y} ${hatch_frame_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hettich_rotanta_460_robotic/meshes/rear_hatch_frame.stl"/>
+        </geometry>
+        <material name="hettich_rotanta_460_robotic_hatch_dark_2">
+          <color rgba="0.18 0.19 0.20 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 ${top_opening_floor_z / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${top_opening_floor_z}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${-(depth / 2.0) + (top_front_rim_depth / 2.0)} ${top_opening_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${top_front_rim_depth} ${top_opening_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${(depth / 2.0) - (top_front_rim_depth / 2.0)} ${top_opening_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${top_front_rim_depth} ${top_opening_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-(width / 2.0) + (top_side_rim_width / 2.0)} 0 ${top_opening_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${top_side_rim_width} ${top_opening_depth} ${top_opening_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(width / 2.0) - (top_side_rim_width / 2.0)} 0 ${top_opening_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${top_side_rim_width} ${top_opening_depth} ${top_opening_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <!-- Access frames are estimated from official datasheet wording and product imagery:
+         the robotic loading/unloading hatch is available at the front or rear of the lid.
+         Collision is split into a lower body and upper perimeter rim so the loading frames
+         sit over a real top opening, while rear service is placed just behind the shell. -->
+    <link name="${station_name}${device_name}front_lid_hatch_access_link"/>
+    <joint name="${station_name}${device_name}front_lid_hatch_access_joint" type="fixed">
+      <origin xyz="0 ${front_hatch_y} ${top_loading_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_lid_hatch_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_lid_hatch_access_link"/>
+    <joint name="${station_name}${device_name}rear_lid_hatch_access_joint" type="fixed">
+      <origin xyz="0 ${rear_hatch_y} ${top_loading_access_z}" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_lid_hatch_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}top_loading_access_link"/>
+    <joint name="${station_name}${device_name}top_loading_access_joint" type="fixed">
+      <origin xyz="0 0 ${top_loading_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}top_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${rear_service_access_y} ${height * 0.45}" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

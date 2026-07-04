@@ -1,0 +1,144 @@
+{
+  "fileName": "li_ha",
+  "related": [
+    "li_ha",
+    "_phage_display_li_ha",
+    "tecan_liha",
+    "freedom_evo_150"
+  ],
+  "model_strategy": "fallback_segmented_box",
+  "representative_form_factor": {
+    "chosen_model": "Tecan Freedom EVO 150 liquid handling workstation",
+    "reason": "The driver is based on a Tecan EVO LiHa backend, and web search did not surface a clearly reusable public STL/STEP/GLB with repo-safe licensing. The fallback therefore uses the Freedom EVO 150 as a documented real-world reference for the cabinet, open deck, and front safety-panel opening."
+  },
+  "sources": [
+    {
+      "title": "Tecan Freedom EVO brochure",
+      "url": "https://www.tecan.com/hubfs/HubDB/Te-DocDB/pdf/BR_Freedom_EVO_392956_V7.pdf",
+      "kind": "brochure",
+      "notes": "Provides the clearest official front and angled product imagery used to estimate the open worktable, side columns, X-axis beam, and right-front control console proportions."
+    },
+    {
+      "title": "Tecan Freedom EVO operating manual (overall dimensions)",
+      "url": "https://www.tecan.com/hubfs/Knowledgebase/Manuals/Freedom_EVO/392886_EVO%20OpM_it_V10_1.pdf?hsLang=en",
+      "kind": "operating_manual",
+      "notes": "Web search snippet exposes the overall Freedom EVO 150 envelope used here: 1450 mm width, 980 mm depth, and 1120 mm height."
+    },
+    {
+      "title": "Tecan Freedom EVO operating manual (front safety-panel opening)",
+      "url": "https://www.tecan.com/hubfs/Knowledgebase/Manuals/Freedom_EVO/392886_EVO%20OpM_nl_V10_1.pdf",
+      "kind": "operating_manual",
+      "notes": "Web search snippet exposes the Freedom EVO 150 front safety-panel opening as 1130 x 170 mm, which is used for the front-loading access face."
+    }
+  ],
+  "dimensions_m": {
+    "width": 1.45,
+    "depth": 0.98,
+    "height": 1.12,
+    "worktable_height": 0.78,
+    "front_safety_panel_opening_width": 1.13,
+    "front_safety_panel_opening_height": 0.17
+  },
+  "collision_model": {
+    "strategy": "segmented_structural_blocks_with_open_deck",
+    "blocked_parts": [
+      "rear_cabinet",
+      "left_side_column",
+      "right_side_column",
+      "x_rail_beam",
+      "front_guard_lower_bar",
+      "console_pedestal"
+    ],
+    "notes": "The simplified collision intentionally leaves the central worktable and the front safety-panel opening clear so the pipetting deck and representative SBS handoff positions remain reachable from above and from the front."
+  },
+  "mesh_assets": {
+    "visual_stl_parts": [
+      "meshes/base_plinth.stl",
+      "meshes/rear_cabinet.stl",
+      "meshes/side_column.stl",
+      "meshes/x_rail_beam.stl",
+      "meshes/worktable_deck.stl",
+      "meshes/front_guard.stl",
+      "meshes/pipetting_head.stl",
+      "meshes/console_pedestal.stl",
+      "meshes/console_screen.stl"
+    ]
+  },
+  "access_points": [
+    {
+      "name": "pipetting_deck_access_link",
+      "description": "Approximate center of the open pipetting deck / worktable surface below the LiHa gantry.",
+      "face": "top_open_deck",
+      "collision_strategy": "exposed_work_surface",
+      "center_m": [0.0, -0.02, 0.821],
+      "size_m": [1.13, 0.54, 0.001],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_notes": "This frame sits over the intentionally open worktable span between the side columns, in front of the rear cabinet, and below the real gantry beam."
+    },
+    {
+      "name": "socketTypeGenericSbsFootprint_1_60_1",
+      "description": "Left-side representative SBS work position on the exposed pipetting deck.",
+      "face": "top_open_deck",
+      "collision_strategy": "exposed_work_surface",
+      "center_m": [-0.34, -0.02, 0.824],
+      "size_m": [0.12776, 0.08548, 0.015],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_notes": "This SBS handoff position stays outside the segmented cabinet, side-column, and front-guard collision volumes so vertical approach onto the open deck remains valid."
+    },
+    {
+      "name": "socketTypeGenericSbsFootprint_2_60_1",
+      "description": "Center representative SBS work position on the exposed pipetting deck.",
+      "face": "top_open_deck",
+      "collision_strategy": "exposed_work_surface",
+      "center_m": [0.0, -0.02, 0.824],
+      "size_m": [0.12776, 0.08548, 0.015],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_notes": "This centered SBS handoff position shares the same open-deck clearance envelope as the pipetting_deck_access_link."
+    },
+    {
+      "name": "socketTypeGenericSbsFootprint_3_60_1",
+      "description": "Right-side representative SBS work position on the exposed pipetting deck.",
+      "face": "top_open_deck",
+      "collision_strategy": "exposed_work_surface",
+      "center_m": [0.34, -0.02, 0.824],
+      "size_m": [0.12776, 0.08548, 0.015],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_notes": "This SBS handoff position remains forward of the rear cabinet and above the collision-free worktable opening."
+    },
+    {
+      "name": "front_loading_access_link",
+      "description": "Approximate center of the front safety-panel opening used for manual deck access and front loading.",
+      "face": "front",
+      "collision_strategy": "opening_cutout",
+      "center_m": [0.0, -0.535, 0.865],
+      "size_m": [1.13, 0.001, 0.17],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_notes": "This access face represents the front safety-panel opening and sits in front of the lower front guard collision bar."
+    },
+    {
+      "name": "control_console_access_link",
+      "description": "Approximate center of the right-front console / display interaction area.",
+      "face": "front_right",
+      "collision_strategy": "opening_cutout",
+      "center_m": [0.58, -0.395, 0.905],
+      "size_m": [0.10, 0.001, 0.14],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_notes": "The access frame is intentionally above and slightly forward of the console pedestal collision so the operator interaction zone is not embedded in structure."
+    },
+    {
+      "name": "rear_service_access_link",
+      "description": "Approximate rear service region for utilities and maintenance access.",
+      "face": "rear",
+      "collision_strategy": "opening_cutout",
+      "center_m": [0.2, 0.53, 0.62],
+      "size_m": [0.25, 0.001, 0.2],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "collision_notes": "The rear service frame is placed just outside the rear cabinet collision envelope for cable, power, and pneumatic access."
+    }
+  ],
+  "notes": [
+    "No clearly reusable public vendor 3D model for the Freedom EVO / generic Tecan LiHa workstation was found during web search, so this is a segmented fallback mesh rather than an exact OEM model.",
+    "The shape is intentionally open at the front and top so the pipetting deck remains visible and the access frames can represent manual loading semantics.",
+    "Console placement, deck depth, and rear service center are estimated from official brochure imagery and should be treated as integration references, not factory metrology."
+  ]
+}

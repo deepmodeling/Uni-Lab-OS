@@ -1,0 +1,112 @@
+{
+  "fileName": "peeler",
+  "related": [
+    "peeler",
+    "plate_desealer",
+    "plate_seal_remover",
+    "azenta_xpeel",
+    "brooks_xpeel"
+  ],
+  "representative_form_factor": {
+    "vendor": "Azenta Life Sciences / Brooks Life Sciences",
+    "model": "Automated Plate Seal Remover (XPeel)",
+    "variant": "left-side output tray representation based on official product imagery",
+    "reason": "The Uni-Lab-OS driver is generic, and no public CAD/STL/STEP asset was located during web search. XPeel provides a close, automation-oriented plate desealer form factor with a visible front loading slot and exposed SBS tray."
+  },
+  "model_strategy": "fallback_box_assembly_from_official_imagery_and_product_dimensions",
+  "sources": [
+    {
+      "title": "Azenta Automated Plate Seal Remover product page",
+      "url": "https://www.azenta.com/products/automated-plate-seal-remover-formerly-xpeel",
+      "kind": "product_page",
+      "notes": "Provides throughput, motion-parameter notes, and the official user-manual link."
+    },
+    {
+      "title": "Azenta Automated Plate Seal Remover User Manual",
+      "url": "https://web.azenta.com/hubfs/azenta-files/resources/manuals-guides/440140-Xpeel-Manual.pdf",
+      "kind": "user_manual",
+      "notes": "Used with the product page as the primary dimensional reference for the representative envelope when wiring the fallback mesh."
+    },
+    {
+      "title": "Brooks Anatomy of XPeel brochure",
+      "url": "https://web.azenta.com/hubfs/azenta-files/resources/brochures-flyers/B2070-20-Anatomy-of-XPeel.pdf",
+      "kind": "brochure",
+      "notes": "Shows the exposed tray, front slot, and peel-head area used to position access faces."
+    },
+    {
+      "title": "Azenta product image teaser_seal-remover-1",
+      "url": "https://www.azenta.com/wp-content/uploads/2024/08/teaser_seal-remover-1.jpg",
+      "kind": "image",
+      "notes": "Confirms the broad cabinet proportions and the left-side tray presentation used in this representative mesh."
+    },
+    {
+      "title": "Azenta product image car1_seal-remover-1",
+      "url": "https://www.azenta.com/wp-content/uploads/2024/08/car1_seal-remover-1.jpg",
+      "kind": "image",
+      "notes": "Provides a clearer front three-quarter view of the loading tray and chamber opening."
+    }
+  ],
+  "dimensions_m": {
+    "width": 0.349,
+    "depth": 0.278,
+    "height": 0.349
+  },
+  "access_points": [
+    {
+      "name": "socketTypeGenericSbsFootprint",
+      "description": "Representative SBS microplate handoff position on the fixed, fully extended output tray, using the left-output orientation shown in official imagery.",
+      "face": "front_left",
+      "collision_strategy": "fixed_extended_tray",
+      "center_m": {
+        "x": -0.117,
+        "y": 0.111,
+        "z": 0.082
+      },
+      "size_m": {
+        "x": 0.12776,
+        "y": 0.08548,
+        "z": 0.02
+      }
+    },
+    {
+      "name": "front_loading_slot_access",
+      "description": "Estimated center of the robot-facing front loading slot where the plate transitions into the peeling chamber.",
+      "face": "front",
+      "collision_strategy": "opening_cutout",
+      "center_m": {
+        "x": -0.102,
+        "y": 0.069,
+        "z": 0.131
+      },
+      "size_m": {
+        "x": 0.07,
+        "y": 0.10,
+        "z": 0.06
+      }
+    },
+    {
+      "name": "operator_panel_access",
+      "description": "Approximate center of the front operator panel for maintenance and manual interaction clearance.",
+      "face": "front",
+      "collision_strategy": "opening_cutout",
+      "center_m": {
+        "x": 0.015,
+        "y": 0.159,
+        "z": 0.052
+      },
+      "size_m": {
+        "x": 0.14,
+        "y": 0.06,
+        "z": 0.05
+      }
+    }
+  ],
+  "notes": [
+    "No usable public CAD, STL, OBJ, GLB, STEP, or similar 3D asset for the XPeel was found during web search, so this package uses a generated fallback STL assembly.",
+    "The mesh intentionally keeps the upper chamber open at the front and adds a dedicated tray pedestal plus feed bridge so the desealer reads as a front-loading instrument rather than a generic cuboid.",
+    "For collision-safe access planning, the tray is modeled as fixed in its fully extended pose and the main cabinet collision leaves the front-left tray corridor open.",
+    "Because the upstream Uni-Lab-OS driver is generic, the left-side tray and slot placement should be treated as a representative automation-friendly pose, not mechanical metrology for every possible plate desealer.",
+    "The operator-panel access frame is intentionally placed just outside the front face so it remains reachable without intersecting the simplified cabinet collision.",
+    "The 349 x 278 x 349 mm envelope is modeled as a representative overall footprint from Azenta product materials; if a site uses another desealer variant or the alternate right-output orientation, the access frames may need refinement."
+  ]
+}

@@ -1,0 +1,215 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="li_ha"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=1.450 depth:=0.980 height:=1.120
+            deck_center_y:=-0.020 deck_center_z:=0.780
+            front_loading_y:=-0.535 front_loading_z:=0.865
+            console_access_x:=0.580 console_access_y:=-0.395 console_access_z:=0.905
+            rear_service_x:=0.200 rear_service_y:=0.530 rear_service_z:=0.620">
+
+    <!-- 该设备没有找到可直接复用且许可清晰的公开 3D CAD/STL，
+         因此按 Tecan Freedom EVO 150 的官方尺寸与产品图，构建一个
+         代表性的 LiHa 开放式移液工作站外形。重点保留开放 worktable、
+         前侧 safety-panel 开口，以及上方 X 轴移液横梁。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/base_plinth.stl"/>
+        </geometry>
+        <material name="li_ha_base_dark">
+          <color rgba="0.15 0.16 0.18 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.320 0.080" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/rear_cabinet.stl"/>
+        </geometry>
+        <material name="li_ha_body_silver">
+          <color rgba="0.86 0.87 0.89 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.685 0.000 0.080" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/side_column.stl"/>
+        </geometry>
+        <material name="li_ha_frame_dark">
+          <color rgba="0.25 0.27 0.30 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.685 0.000 0.080" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/side_column.stl"/>
+        </geometry>
+        <material name="li_ha_frame_dark"/>
+      </visual>
+      <visual>
+        <origin xyz="0 0.050 1.020" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/x_rail_beam.stl"/>
+        </geometry>
+        <material name="li_ha_beam_dark">
+          <color rgba="0.30 0.32 0.35 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${deck_center_y} ${deck_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/worktable_deck.stl"/>
+        </geometry>
+        <material name="li_ha_deck_white">
+          <color rgba="0.94 0.95 0.96 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.445 0.760" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/front_guard.stl"/>
+        </geometry>
+        <material name="li_ha_front_guard_dark">
+          <color rgba="0.22 0.24 0.27 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.030 0.880" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/pipetting_head.stl"/>
+        </geometry>
+        <material name="li_ha_head_gray">
+          <color rgba="0.72 0.74 0.77 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.580 -0.320 0.760" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/console_pedestal.stl"/>
+        </geometry>
+        <material name="li_ha_console_dark"/>
+      </visual>
+      <visual>
+        <origin xyz="0.580 -0.390 0.835" rpy="0 -0.20 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/li_ha/meshes/console_screen.stl"/>
+        </geometry>
+        <material name="li_ha_screen_blue">
+          <color rgba="0.20 0.34 0.52 0.85"/>
+        </material>
+      </visual>
+      <!-- 碰撞仅覆盖真实阻挡的结构件，保持开放式 deck 的上方和前方可达。 -->
+      <collision>
+        <origin xyz="0 0.305 0.405" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width - 0.040} 0.330 0.730"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="-0.685 0.000 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.080 0.200 ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.685 0.000 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.080 0.200 ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 0.050 1.020" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width - 0.080} 0.130 0.100"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 -0.445 0.745" rpy="0 0 0"/>
+        <geometry>
+          <box size="1.130 0.050 0.060"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.580 -0.320 0.385" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.180 0.180 0.770"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- 开放式 pipetting deck 中心参考面。 -->
+    <link name="${station_name}${device_name}pipetting_deck_access_link"/>
+    <joint name="${station_name}${device_name}pipetting_deck_access_joint" type="fixed">
+      <origin xyz="0 ${deck_center_y} ${deck_center_z + 0.041}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}pipetting_deck_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 前部 safety-panel / 上样开口参考面，按 Freedom EVO 150 1130 x 170 mm 开口估算。 -->
+    <link name="${station_name}${device_name}front_loading_access_link"/>
+    <joint name="${station_name}${device_name}front_loading_access_joint" type="fixed">
+      <origin xyz="0 ${front_loading_y} ${front_loading_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 右前侧控制面板位置。 -->
+    <link name="${station_name}${device_name}control_console_access_link"/>
+    <joint name="${station_name}${device_name}control_console_access_joint" type="fixed">
+      <origin xyz="${console_access_x} ${console_access_y} ${console_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}control_console_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 后部电源 / 通讯 / 气路服务区，位置来自官方 rear-view 形态估算。 -->
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="${rear_service_x} ${rear_service_y} ${rear_service_z}" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+
+    <!-- 开放 deck 上的 3 个代表性 SBS 工作位，供集成和视觉定位参考。 -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin xyz="-0.340 ${deck_center_y} ${deck_center_z + 0.044}" rpy="0 0 0"/>
+    </joint>
+
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_2_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin xyz="0 ${deck_center_y} ${deck_center_z + 0.044}" rpy="0 0 0"/>
+    </joint>
+
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_3_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin xyz="0.340 ${deck_center_y} ${deck_center_z + 0.044}" rpy="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

@@ -1,0 +1,77 @@
+{
+  "fileName": "access2_backend",
+  "related": [
+    "access2_backend",
+    "vspin_backend",
+    "agilent_microplate_centrifuge",
+    "agilent_centrifuge_loader"
+  ],
+  "model_strategy": "fallback_box_from_manual_dimensions",
+  "sources": [
+    {
+      "title": "Agilent Microplate Centrifuge data sheet",
+      "url": "https://www.agilent.com/cs/library/datasheets/Public/5990-3484EN_LO.pdf",
+      "kind": "datasheet",
+      "notes": "Provides exact dimensions for the centrifuge without loader and confirms front-door access."
+    },
+    {
+      "title": "Agilent Microplate Centrifuge with Loader User Guide",
+      "url": "https://www.agilent.com/cs/library/usermanuals/public/G5405-90002C_Centrifuge_wLoaderUG_EN.pdf",
+      "kind": "user_guide",
+      "notes": "Provides exact overall dimensions for the centrifuge with loader plus front and top figures used to place access frames."
+    },
+    {
+      "title": "Wotol listing: Agilent VSpin with Access2",
+      "url": "https://www.wotol.com/product/agilent-vspin-with-access2-automated-microplate-centrifuge-with-microplate-loade/2783053",
+      "kind": "secondary_reference",
+      "notes": "Used only to link the Access2 name in the driver to the VSpin / Agilent centrifuge-loader product naming."
+    }
+  ],
+  "dimensions_m": {
+    "overall_with_loader": {
+      "width": 0.327,
+      "depth": 0.711,
+      "height": 0.251
+    },
+    "centrifuge_only": {
+      "width": 0.328,
+      "depth": 0.457,
+      "height": 0.206
+    }
+  },
+  "access_points": [
+    {
+      "name": "front_door_access_link",
+      "xyz_m": [0.0, -0.1155, 0.1255],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Approximate center of the front door opening on the centrifuge body, approached through the front opening corridor."
+    },
+    {
+      "name": "loader_stage_access_link",
+      "xyz_m": [0.0, -0.2555, 0.095],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "fixed_extended_tray",
+      "description": "Approximate robotic handoff point above the fixed extended loader stage."
+    },
+    {
+      "name": "hover_access_link",
+      "xyz_m": [0.0, -0.1755, 0.12],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Approximate hover point just outside the centrifuge door, aligned with the open front-door approach corridor."
+    },
+    {
+      "name": "rear_service_access_link",
+      "xyz_m": [0.0, 0.3855, 0.12048],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "collision_strategy": "opening_cutout",
+      "description": "Rear-side service reference for power, serial, and compressed-air connections on the exposed rear service face, positioned just outside the simplified body shell."
+    }
+  ],
+  "notes": [
+    "No exact downloadable CAD/STL/GLB for the Agilent Microplate Centrifuge with Access2 loader was located during web search.",
+    "The STL is an intentionally simple meter-based box generated from the documented overall dimensions of the combined centrifuge-plus-loader unit.",
+    "Access frame positions are inferred from Agilent front and top-view figures and should be treated as integration-friendly approximations, not factory metrology."
+  ]
+}

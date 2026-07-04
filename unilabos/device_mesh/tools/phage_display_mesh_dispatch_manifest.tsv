@@ -1,0 +1,28 @@
+driver_path	device_id	mesh_folder	notes
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/access2_backend.py	access2_backend	access2_backend	generic microplate centrifuge backend; choose closest representative automated plate centrifuge if exact model unclear
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/bio_shake.py	bio_shake	bio_shake	representative INHECO-style microplate thermoshaker if exact unit unclear
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/bio_tek_plate_reader_backend.py	bio_tek_plate_reader_backend	bio_tek_plate_reader_backend	prefer exact Agilent BioTek reader model if recoverable from docs
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/centrifuge.py	centrifuge	centrifuge	generic centrifuge frontend; use representative automated plate centrifuge
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/clari_ostar_backend.py	clari_ostar_backend	clari_ostar_backend	prefer exact BMG CLARIOstar family model if recoverable
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/cytomat_backend.py	cytomat_backend	cytomat_backend	prioritize loading-tray and transfer opening access points
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_agilent_biotek_406_fx.py	agilent_biotek_406_fx	agilent_biotek_406_fx	target Agilent BioTek 406 FX specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_applied_biosystems_seqstudio_genetic_analyzer.py	applied_biosystems_seqstudio_genetic_analyzer	applied_biosystems_seqstudio_genetic_analyzer	target Applied Biosystems SeqStudio specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_bd_facsmelody.py	bd_facsmelody	bd_facsmelody	target BD FACSMelody specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_cytiva_akta_pure.py	cytiva_akta_pure	cytiva_akta_pure	target Cytiva AKTA pure specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_cytiva_biacore_8k_plus.py	cytiva_biacore_8k_plus	cytiva_biacore_8k_plus	target Cytiva Biacore 8K+ specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_eppendorf_centrifuge_5910_ri.py	eppendorf_centrifuge_5910_ri	eppendorf_centrifuge_5910_ri	target Eppendorf 5910 Ri specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_hettich_rotanta_460_robotic.py	hettich_rotanta_460_robotic	hettich_rotanta_460_robotic	target Hettich Rotanta 460 Robotic specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_molecular_devices_qpix_420.py	molecular_devices_qpix_420	molecular_devices_qpix_420	target Molecular Devices QPix 420 specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_qiagen_qiacube_connect.py	qiagen_qiacube_connect	qiagen_qiacube_connect	target QIAGEN QIAcube Connect specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_tecan_resolvex_a200.py	tecan_resolvex_a200	tecan_resolvex_a200	target Tecan Resolvex A200 specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/guessed_telesis_bio_bioxp_3250.py	telesis_bio_bioxp_3250	telesis_bio_bioxp_3250	target Telesis BIO BIOXp 3250 specifically
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/incubator.py	incubator	incubator	generic automated microplate incubator; emphasize loading tray
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/incubator_shaker_stack.py	incubator_shaker_stack	incubator_shaker_stack	stacked thermoshaker/incubator with per-unit loading trays
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/li_ha.py	li_ha	li_ha	generic liquid-handling workstation with pipetting deck opening
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/molecular_devices_backend.py	molecular_devices_backend	molecular_devices_backend	generic Molecular Devices reader backend; choose representative plate reader
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/peeler.py	peeler	peeler	generic plate desealer; include front loading slot
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/plate_reader.py	plate_reader	plate_reader	generic plate reader; include tray/drawer access point
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/sealer.py	sealer	sealer	generic plate sealer; include front loading slot
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/star_backend.py	star_backend	star_backend	prefer Hamilton STAR canonical slug if clearly supported
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/v_spin_backend.py	v_spin_backend	v_spin_backend	automated centrifuge backend; include primary door/loading access point
+/home/xzye/projects/DPTech/LeapLab/Uni-Lab-OS/unilabos/devices/_phage_display/vantage_backend.py	vantage_backend	hamilton_vantage	existing example already present; improve sources and add access-point frames if possible

@@ -1,0 +1,44 @@
+{
+  "fileName": "hettich_rotanta_460_robotic",
+  "related": [
+    "hettich_rotanta_460_robotic"
+  ],
+  "access_points": [
+    {
+      "name": "front_lid_hatch_access_link",
+      "face": "top_front",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, -0.1885, 0.729],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Front robotic lid-hatch loading point positioned over the front portion of the top opening."
+    },
+    {
+      "name": "rear_lid_hatch_access_link",
+      "face": "top_rear",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, 0.1885, 0.729],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "description": "Rear robotic lid-hatch loading point positioned over the rear portion of the same top opening."
+    },
+    {
+      "name": "top_loading_access_link",
+      "face": "top_center",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, 0.0, 0.729],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Centered loading approach above the large top cutout left open through the upper collision shell."
+    },
+    {
+      "name": "rear_service_access_link",
+      "face": "rear",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, 0.3705, 0.3078],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "description": "Rear utilities and service approach placed just behind the rear face so cabling access is not embedded inside the body collision."
+    }
+  ],
+  "notes": [
+    "Collision was refactored from one solid device box into a lower body block plus an upper perimeter rim, leaving a genuine top opening corridor for the front, rear, and centered loading access frames.",
+    "The rear service access frame was moved to sit slightly behind the rear shell so service approach no longer intersects the simplified body collision."
+  ]
+}

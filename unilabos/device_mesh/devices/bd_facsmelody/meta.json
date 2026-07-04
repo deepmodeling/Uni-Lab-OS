@@ -1,0 +1,92 @@
+{
+  "fileName": "bd_facsmelody",
+  "related": [
+    "bd_facsmelody",
+    "bd_facsmelody_br_4way",
+    "bd_facsmelody_cell_sorter"
+  ],
+  "model_strategy": "fallback_segmented_box_from_official_dimensions_and_imagery",
+  "sources": [
+    {
+      "title": "BD FACSMelody Technical Specifications",
+      "url": "https://www.bdbiosciences.com/content/dam/bdb/marketing-documents/BD-FACSMelody-TS.pdf",
+      "kind": "technical_spec",
+      "notes": "Provides official sorter dimensions and distinguishes the main sorter from the separate electronics box."
+    },
+    {
+      "title": "BD FACSMelody Cell Sorter User's Guide",
+      "url": "https://www.bdbiosciences.com/content/dam/bdb/marketing-documents/FACSMelody-ug-ruo.pdf",
+      "kind": "user_guide",
+      "notes": "Describes sample loading, sort collection chamber access, automated stage loading, and flow-cell maintenance doors."
+    },
+    {
+      "title": "BD FACSMelody product page",
+      "url": "https://www.bdbiosciences.com/en-us/products/instruments/flow-cytometers/research-cell-sorters/bd-facsmelody",
+      "kind": "product_page",
+      "notes": "Primary official product page used to verify current branding and access to brochure resources."
+    },
+    {
+      "title": "BD FACSMelody official product image",
+      "url": "https://www.bdbiosciences.com/content/dam/bdb/products/instruments/flow-cytometers/research-cell-sorters/facsmelody/Melody-Feature-Slide-1.png",
+      "kind": "official_image",
+      "notes": "Open-door front view used to estimate sample-loading and sort-output access regions."
+    },
+    {
+      "title": "BD FACSMelody overview image",
+      "url": "https://www.bdbiosciences.com/content/dam/bdb/products/instruments/flow-cytometers/research-cell-sorters/facsmelody/Melody-Overview.png",
+      "kind": "official_image",
+      "notes": "Shows plate-stage access and confirms the lower front-right flow-cell service door location."
+    }
+  ],
+  "dimensions_m": {
+    "cell_sorter": {
+      "width": 0.495,
+      "depth": 0.559,
+      "height": 0.483,
+      "weight_kg": 40.75
+    },
+    "electronics_box": {
+      "width": 0.508,
+      "depth": 0.559,
+      "height": 0.483,
+      "weight_kg": 36.25
+    }
+  },
+  "access_points": [
+    {
+      "name": "sample_loading_access_link",
+      "xyz_m": [-0.155, -0.3745, 0.225],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated front-left sample loading point for the sample chamber and 5 mL tube insertion."
+    },
+    {
+      "name": "sort_output_access_link",
+      "xyz_m": [-0.045, -0.4145, 0.145],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated front collection handoff point for tube racks or optional automated-stage plate loading."
+    },
+    {
+      "name": "flow_cell_access_link",
+      "xyz_m": [0.155, -0.3495, 0.125],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated lower front-right service point for nozzle and flow-cell maintenance."
+    },
+    {
+      "name": "rear_service_access_link",
+      "xyz_m": [0.0, 0.2545, 0.245],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "collision_strategy": "opening_cutout",
+      "description": "Rear-side service reference for utilities and cabling."
+    }
+  ],
+  "notes": [
+    "No public CAD, STL, GLB, or USDZ model for the BD FACSMelody was located from official BD pages or search results during this task.",
+    "A 2024 BD brochure advertises an AR 3D model view, but the public asset URL was not extractable from the brochure or product page HTML.",
+    "The mesh is therefore a segmented fallback proxy built from official dimensions and front-view imagery so the sorter stays recognizable in layout scenes while keeping collision geometry conservative.",
+    "Collision geometry intentionally leaves a front loading corridor and a rear service cutout open so access links are not embedded in a solid body volume.",
+    "Access point positions are integration-friendly estimates and should be treated as approximate until a service drawing or direct measurement is available."
+  ]
+}

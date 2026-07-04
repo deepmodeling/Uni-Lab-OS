@@ -1,0 +1,182 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="molecular_devices_backend"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.532 depth:=0.598 height:=0.401
+            tray_center_x:=0.112 tray_center_y:=0.214 tray_center_z:=0.072
+            front_corridor_width:=0.170 front_corridor_depth:=0.228 front_corridor_height:=0.140">
+
+    <!-- Fallback composite geometry based on the official SpectraMax iD5 dimensions
+         (53.2 cm W x 59.8 cm D x 40.1 cm H) and current SpectraMax iD5e product imagery.
+         The generic Molecular Devices backend is represented as a front-loading multimode reader
+         with a lower drawer, right optics housing, and left touchscreen console. -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_backend/meshes/id5_base_plinth.stl"/>
+        </geometry>
+        <material name="molecular_devices_orange_base">
+          <color rgba="0.79 0.31 0.08 1"/>
+        </material>
+      </visual>
+
+      <visual>
+        <origin xyz="0.118 -0.012 0.145" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_backend/meshes/id5_right_housing.stl"/>
+        </geometry>
+        <material name="molecular_devices_shell_white">
+          <color rgba="0.95 0.95 0.93 1"/>
+        </material>
+      </visual>
+
+      <visual>
+        <origin xyz="-0.144 -0.066 0.145" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_backend/meshes/id5_left_console.stl"/>
+        </geometry>
+        <material name="molecular_devices_shell_white">
+          <color rgba="0.95 0.95 0.93 1"/>
+        </material>
+      </visual>
+
+      <visual>
+        <origin xyz="-0.144 0.024 0.212" rpy="-0.296706 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_backend/meshes/id5_screen_panel.stl"/>
+        </geometry>
+        <material name="molecular_devices_screen_dark">
+          <color rgba="0.15 0.17 0.19 1"/>
+        </material>
+      </visual>
+
+      <visual>
+        <origin xyz="${tray_center_x} ${depth / 2.0 + 0.005} 0.028" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_backend/meshes/id5_drawer_face.stl"/>
+        </geometry>
+        <material name="molecular_devices_drawer_face">
+          <color rgba="0.97 0.97 0.96 1"/>
+        </material>
+      </visual>
+
+      <collision>
+        <origin xyz="0 ${((-depth / 2.0) + (tray_center_y - (front_corridor_depth / 2.0))) / 2.0} ${0.180 / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${(depth / 2.0) + tray_center_y - (front_corridor_depth / 2.0)} ${0.180}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${((-width / 2.0) + (tray_center_x - (front_corridor_width / 2.0))) / 2.0} ${tray_center_y + (front_corridor_depth / 4.0)} ${front_corridor_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${(width / 2.0) + tray_center_x - (front_corridor_width / 2.0)} ${front_corridor_depth / 2.0} ${front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${((tray_center_x + (front_corridor_width / 2.0)) + (width / 2.0)) / 2.0} ${tray_center_y + (front_corridor_depth / 4.0)} ${front_corridor_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${(width / 2.0) - tray_center_x - (front_corridor_width / 2.0)} ${front_corridor_depth / 2.0} ${front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="-0.187 ${-0.169} ${front_corridor_height + ((height - front_corridor_height) / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.158 0.200 ${height - front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.178 ${-0.169} ${front_corridor_height + ((height - front_corridor_height) / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.176 0.200 ${height - front_corridor_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.0795 ${tray_center_y + (front_corridor_depth / 4.0)} ${front_corridor_height + ((height - front_corridor_height) / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.373 ${front_corridor_depth / 2.0} ${height - front_corridor_height}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}tray_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_backend/meshes/id5_plate_tray.stl"/>
+        </geometry>
+        <material name="molecular_devices_tray_gray">
+          <color rgba="0.77 0.79 0.81 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.006" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.136 0.093 0.012"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}tray_joint" type="fixed">
+      <origin xyz="${tray_center_x} ${tray_center_y} ${tray_center_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}drawer_internal_access_link"/>
+    <joint name="${station_name}${device_name}drawer_internal_access_joint" type="fixed">
+      <origin xyz="0 0 0.012" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}drawer_internal_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}drawer_loading_access_link"/>
+    <joint name="${station_name}${device_name}drawer_loading_access_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 + 0.058 - tray_center_y} 0.012" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}drawer_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}touchscreen_access_link"/>
+    <joint name="${station_name}${device_name}touchscreen_access_joint" type="fixed">
+      <origin xyz="-0.144 0.020 0.272" rpy="-0.296706 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}touchscreen_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 -0.255 0.235" rpy="0 0 ${pi}"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <origin xyz="0 0 0.012" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

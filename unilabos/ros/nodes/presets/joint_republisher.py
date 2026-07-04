@@ -41,7 +41,7 @@ class JointRepublisher(BaseROS2DeviceNode):
             json_dict["velocity"]       = list(msg.velocity)
             json_dict["effort"]         = list(msg.effort)
 
-            self.msg.data = str(json_dict)
+            self.msg.data = json.dumps(json_dict)
             self.joint_repub.publish(self.msg)
             # print('-'*20)
             # print(self.msg.data)

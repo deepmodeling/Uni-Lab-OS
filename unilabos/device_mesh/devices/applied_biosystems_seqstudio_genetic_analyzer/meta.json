@@ -1,0 +1,86 @@
+{
+  "fileName": "applied_biosystems_seqstudio_genetic_analyzer",
+  "related": [
+    "applied_biosystems_seqstudio_genetic_analyzer",
+    "seqstudio_genetic_analyzer",
+    "applied_biosystems_seqstudio"
+  ],
+  "model_strategy": "official_glb_converted_to_stl",
+  "sources": [
+    {
+      "title": "SeqStudio Genetic Analyzer product page",
+      "url": "https://www.thermofisher.com/us/en/home/life-science/sequencing/sanger-sequencing/genetic-analyzers/models/seqstudio.html",
+      "kind": "product_page",
+      "notes": "Confirms the instrument identity, the all-in-one cartridge workflow, and links to the 3D tour and brochure."
+    },
+    {
+      "title": "SeqStudio Genetic Analyzer 3D Tour",
+      "url": "https://www.thermofisher.com/us/en/home/virtual/seqstudio-3d-tour.html",
+      "kind": "interactive_tour",
+      "notes": "Official Thermo Fisher 3D tour page used to confirm the public 3D asset and named hotspots for plate, cartridge, compartment, and screen locations."
+    },
+    {
+      "title": "SeqStudio 3D tour manifest",
+      "url": "https://www.thermofisher.com/content/dam/LifeTech/virtual/seqstudio-genetic-analyzer/seqstudio-ga-manifest-28.json",
+      "kind": "3d_manifest",
+      "notes": "Provides the official GLB part list and hotspot coordinates used to estimate access points."
+    },
+    {
+      "title": "SeqStudio AR GLB source asset",
+      "url": "https://www.thermofisher.com/content/dam/LifeTech/virtual/seqstudio-genetic-analyzer/models/seqStudioGeneticAnalyzer_vX_ar.glb",
+      "kind": "3d_model",
+      "notes": "Static vendor GLB used as the source mesh for the converted STL visual."
+    },
+    {
+      "title": "SeqStudio specification sheet",
+      "url": "https://assets.thermofisher.com/TFS-Assets/GSD/Specification-Sheets/SeqStudio-Specification-Sheet.pdf.pdf",
+      "kind": "specification_sheet",
+      "notes": "Provides official dimensions of 49.5 x 64.8 x 44.2 cm and confirms 96-well plate / 8-strip tube compatibility."
+    }
+  ],
+  "dimensions_m": {
+    "width": 0.495,
+    "depth": 0.648,
+    "height": 0.442,
+    "weight_kg": 53.6
+  },
+  "mesh_assets": {
+    "visual_stl": "meshes/seqstudio_visual.stl",
+    "source_glb": "meshes/seqstudio_ar_source.glb"
+  },
+  "access_points": [
+    {
+      "name": "sample_plate_access_link",
+      "xyz_m": [-0.0568, -0.1888, 0.1794],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Approximate center of the internal sample plate position inferred from the official 3D tour Plate hotspot."
+    },
+    {
+      "name": "cartridge_access_link",
+      "xyz_m": [-0.1321, -0.1493, 0.2896],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Approximate center of the all-in-one cartridge click-in location inferred from the official 3D tour Cartridge hotspot."
+    },
+    {
+      "name": "front_loading_access_link",
+      "xyz_m": [-0.1755, -0.3182, 0.0947],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Approximate reference point near the front compartment opening, based on the official 3D tour Internal Compartment hotspot."
+    },
+    {
+      "name": "screen_access_link",
+      "xyz_m": [0.0439, -0.2423, 0.3033],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Approximate touchscreen / on-board computer reference point based on the official 3D tour On-board Computer hotspot."
+    }
+  ],
+  "notes": [
+    "The visible mesh is derived from Thermo Fisher's public AR GLB, not from a vendor-supplied CAD/STL package.",
+    "The converted STL was rescaled to match the official specification-sheet envelope before being added to the device mesh library.",
+    "Access frame poses are integration-friendly estimates from the official 3D tour hotspot coordinates and should not be treated as service-manual metrology."
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "fileName": "molecular_devices_backend",
+  "related": [
+    "molecular_devices_backend",
+    "molecular_devices_plate_reader",
+    "spectramax_id5",
+    "spectramax_id5e"
+  ],
+  "representation": {
+    "type": "fallback-composite-stl",
+    "representativeModel": "Molecular Devices SpectraMax iD5 Multi-Mode Microplate Reader",
+    "dimensionsMm": {
+      "width": 532,
+      "depth": 598,
+      "height": 401,
+      "weight": 40
+    },
+    "sourceUrls": [
+      "https://www.moleculardevices.com/products/microplate-readers/multi-mode-readers/spectramax-id3s-id5e-readers",
+      "https://www.moleculardevices.com/sites/default/files/en/assets/brochures/br/spectramax-id5-multi-mode-microplate-reader.pdf",
+      "https://www.moleculardevices.com/sites/default/files/en/assets/user-guide/br/spectramax-id5-user-guide-5059784h.pdf",
+      "https://www.moleculardevices.com/products/microplate-readers/multi-mode-readers/media_1ae5c1fe6d7c220c0304c6523fdb7d78884804fa8.jpg"
+    ],
+    "notes": [
+      "No openly reusable Molecular Devices CAD, GLB, STL, or STEP model for a compatible SpectraMax plate reader was found during web search, so this package uses generated fallback meshes.",
+      "The chosen representative form factor is the SpectraMax iD5 enclosure family because the generic backend exposes multimode/TRF/FP capabilities that align more closely with the iD5 than with simpler Molecular Devices readers.",
+      "Visual proportions for the touchscreen console, right optics housing, and lower plate drawer were estimated from current SpectraMax iD5e product imagery while the outer envelope follows the published SpectraMax iD5 dimensions."
+    ]
+  },
+  "accessFrames": [
+    {
+      "name": "drawer-loading-front",
+      "linkSuffix": "drawer_loading_access_link",
+      "description": "Estimated front-of-drawer loading position for an SBS plate just outside the lower plate carrier opening.",
+      "collision_strategy": "fixed_extended_tray",
+      "face": "front",
+      "centerMeters": {
+        "x": 0.112,
+        "y": 0.357,
+        "z": 0.084
+      },
+      "sizeMeters": {
+        "x": 0.136,
+        "y": 0.040,
+        "z": 0.012
+      }
+    },
+    {
+      "name": "drawer-closed-carrier",
+      "linkSuffix": "drawer_internal_access_link",
+      "description": "Estimated closed carrier position for the internal microplate stage.",
+      "collision_strategy": "fixed_extended_tray",
+      "face": "interior",
+      "centerMeters": {
+        "x": 0.112,
+        "y": 0.214,
+        "z": 0.084
+      },
+      "sizeMeters": {
+        "x": 0.12776,
+        "y": 0.08548,
+        "z": 0.012
+      }
+    },
+    {
+      "name": "touchscreen-console",
+      "linkSuffix": "touchscreen_access_link",
+      "description": "Approximate operator interaction plane centered on the slanted touchscreen.",
+      "collision_strategy": "opening_cutout",
+      "face": "front-left",
+      "centerMeters": {
+        "x": -0.144,
+        "y": 0.020,
+        "z": 0.272
+      },
+      "sizeMeters": {
+        "x": 0.172,
+        "y": 0.008,
+        "z": 0.118
+      }
+    },
+    {
+      "name": "rear-service-zone",
+      "linkSuffix": "rear_service_access_link",
+      "description": "Estimated rear service clearance reference for utilities and preventive maintenance.",
+      "collision_strategy": "opening_cutout",
+      "face": "rear",
+      "centerMeters": {
+        "x": 0.0,
+        "y": -0.255,
+        "z": 0.235
+      },
+      "sizeMeters": {
+        "x": 0.276,
+        "y": 0.010,
+        "z": 0.180
+      }
+    }
+  ]
+}

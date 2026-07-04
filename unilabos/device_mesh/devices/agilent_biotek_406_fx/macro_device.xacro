@@ -1,0 +1,150 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="agilent_biotek_406_fx"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.635 depth:=0.406 height:=0.476
+            plate_closed_x:=0.238 plate_center_y:=0.060 plate_center_z:=0.094
+            left_access_x:=-0.378 right_access_x:=0.378">
+
+    <!-- 基于 Agilent 406 FX 官方技术参数和产品图构建的近似外形：
+         25 x 16 x 18.75 in（63.5 x 40.6 x 47.6 cm，双注射泵堆叠配置），
+         且官方说明载板可从左右两侧进行自动化访问。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/agilent_biotek_406_fx/meshes/base_frame.stl"/>
+        </geometry>
+        <material name="agilent_406_fx_base_gray">
+          <color rgba="0.76 0.77 0.79 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.105 -0.018 0.080" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/agilent_biotek_406_fx/meshes/wash_module.stl"/>
+        </geometry>
+        <material name="agilent_406_fx_upper_white">
+          <color rgba="0.95 0.96 0.97 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.105 -0.018 0.285" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/agilent_biotek_406_fx/meshes/syringe_tower.stl"/>
+        </geometry>
+        <material name="agilent_406_fx_upper_white"/>
+      </visual>
+      <visual>
+        <origin xyz="0.185 -0.015 0.080" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/agilent_biotek_406_fx/meshes/control_console.stl"/>
+        </geometry>
+        <material name="agilent_406_fx_upper_white"/>
+      </visual>
+      <visual>
+        <origin xyz="0.055 0.055 0.125" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/agilent_biotek_406_fx/meshes/manifold_guard.stl"/>
+        </geometry>
+        <material name="agilent_406_fx_manifold_dark">
+          <color rgba="0.30 0.32 0.35 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.248 0.088 0.125" rpy="0 -0.30 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/agilent_biotek_406_fx/meshes/touch_panel.stl"/>
+        </geometry>
+        <material name="agilent_406_fx_screen_blue">
+          <color rgba="0.46 0.60 0.80 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <link name="${station_name}${device_name}plate_carrier_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/agilent_biotek_406_fx/meshes/plate_carrier.stl"/>
+        </geometry>
+        <material name="agilent_406_fx_carrier_dark">
+          <color rgba="0.17 0.18 0.20 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.006" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.160 0.105 0.012"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}plate_carrier_joint" type="fixed">
+      <origin xyz="${plate_closed_x} ${plate_center_y} ${plate_center_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}plate_carrier_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}left_plate_access_link"/>
+    <joint name="${station_name}${device_name}left_plate_access_joint" type="fixed">
+      <origin xyz="${left_access_x} ${plate_center_y} ${plate_center_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}left_plate_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}right_plate_access_link"/>
+    <joint name="${station_name}${device_name}right_plate_access_joint" type="fixed">
+      <origin xyz="${right_access_x} ${plate_center_y} ${plate_center_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}right_plate_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+
+    <!-- 托板关闭时的 SBS 位置。 -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="${plate_closed_x} ${plate_center_y} ${plate_center_z + 0.012}"/>
+    </joint>
+
+    <!-- 左侧机械臂取放板位。 -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_2_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="${left_access_x} ${plate_center_y} ${plate_center_z + 0.012}"/>
+    </joint>
+
+    <!-- 右侧机械臂取放板位。 -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_3_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="${right_access_x} ${plate_center_y} ${plate_center_z + 0.012}"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

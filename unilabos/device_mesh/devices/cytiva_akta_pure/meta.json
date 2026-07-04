@@ -1,0 +1,58 @@
+{
+  "fileName": "cytiva_akta_pure",
+  "related": [
+    "cytiva_akta_pure",
+    "akta_pure",
+    "akta_pure_25",
+    "akta_pure_150"
+  ],
+  "model_strategy": "fallback_composite_stl_from_official_dimensions_and_manual_imagery",
+  "sources": [
+    {
+      "title": "Cytiva ÄKTA pure 25 Product Documentation 29020658",
+      "url": "https://d3.cytivalifesciences.com/prod/IFU/29020658.pdf",
+      "kind": "official_product_documentation",
+      "notes": "Provides the documented instrument envelope dimensions of 535 x 470 x 630 mm and product configuration context."
+    },
+    {
+      "title": "ÄKTA pure User Manual mirror",
+      "url": "https://dnas.dukekunshan.edu.cn/wp-content/uploads/2024/06/AKTA_pure_user_manual.pdf",
+      "kind": "user_manual",
+      "notes": "Used to place the operator-facing front side and rear service side based on references to the top rails, front-side valve/tubing clips, and rear waste-tubing clips."
+    },
+    {
+      "title": "Wikimedia Commons: Äkta Pure",
+      "url": "https://commons.wikimedia.org/wiki/File:%C3%84kta_Pure.jpg",
+      "kind": "reference_image",
+      "notes": "Used only as a visual reference to approximate the raised top deck, front fluidics zone, and right-front control panel silhouette."
+    }
+  ],
+  "dimensions_m": {
+    "width": 0.535,
+    "depth": 0.470,
+    "height": 0.630
+  },
+  "access_points": [
+    {
+      "name": "front_access_link",
+      "face": "front",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, 0.3, 0.36],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "description": "Approximate operator/robot access frame for the front fluidics face where the documented rails, valves, sample pump, and control panel are presented."
+    },
+    {
+      "name": "rear_service_access_link",
+      "face": "rear",
+      "collision_strategy": "opening_cutout",
+      "xyz_m": [0.0, -0.29, 0.285],
+      "rpy_rad": [0.0, 0.0, 3.141592653589793],
+      "description": "Approximate rear service frame for waste tubing and general service/cable access."
+    }
+  ],
+  "notes": [
+    "A directly usable official Cytiva CAD/STL/STEP asset for ÄKTA pure was not located during web search, so this package uses a measured fallback composite mesh instead of claiming exact factory geometry.",
+    "The front side is defined as positive Y in the xacro because the manual describes the rails, column holder, inlet/outlet valves, sample pump, and front tubing clips on the operator-facing side.",
+    "The rear service frame is estimated from manual references to rear waste-tubing clips and general cabling/service routing; exact connector locations remain uncertain."
+  ]
+}

@@ -1,0 +1,191 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="qiagen_qiacube_connect"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.650 depth:=0.620 height:=0.580 open_height:=0.860">
+
+    <!-- 基于 QIAGEN 官方规格和 QIAcube Connect 用户手册建立的 fallback 外形。
+         当前仓库内未找到可直接复用的公开 CAD/STL，因此采用组合式盒体网格：
+         下部机柜 + 后部主机壳体 + 前部透明罩 + 左前触摸屏 + 前部废弃抽屉。 -->
+    <xacro:property name="rear_housing_y" value="-0.130" />
+    <xacro:property name="hood_shell_y" value="0.180" />
+    <xacro:property name="screen_arm_x" value="-0.210" />
+    <xacro:property name="screen_arm_y" value="0.235" />
+    <xacro:property name="screen_panel_x" value="-0.205" />
+    <xacro:property name="screen_panel_y" value="0.304" />
+    <xacro:property name="screen_panel_z" value="0.250" />
+    <xacro:property name="hood_handle_y" value="${(depth / 2.0) + 0.055}" />
+    <xacro:property name="worktable_loading_y" value="0.090" />
+    <xacro:property name="worktable_loading_z" value="${height + ((open_height - height) * 0.40)}" />
+    <xacro:property name="touchscreen_access_y" value="${(depth / 2.0) + 0.075}" />
+    <xacro:property name="rear_service_y" value="${-(depth / 2.0) - 0.055}" />
+    <xacro:property name="drawer_origin_y" value="0.325" />
+    <xacro:property name="drawer_origin_z" value="0.000" />
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link"/>
+
+    <link name="${station_name}${device_name}body_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/qiagen_qiacube_connect/meshes/lower_cabinet.stl"/>
+        </geometry>
+        <material name="qiacube_connect_lower_white">
+          <color rgba="0.93 0.94 0.95 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${rear_housing_y} 0.180" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/qiagen_qiacube_connect/meshes/rear_housing.stl"/>
+        </geometry>
+        <material name="qiacube_connect_body_white">
+          <color rgba="0.96 0.97 0.98 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${hood_shell_y} 0.180" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/qiagen_qiacube_connect/meshes/hood_shell.stl"/>
+        </geometry>
+        <material name="qiacube_connect_hood_tint">
+          <color rgba="0.69 0.78 0.84 0.40"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${screen_arm_x} ${screen_arm_y} 0.180" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/qiagen_qiacube_connect/meshes/touchscreen_arm.stl"/>
+        </geometry>
+        <material name="qiacube_connect_screen_arm_dark">
+          <color rgba="0.64 0.67 0.70 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${screen_panel_x} ${screen_panel_y} ${screen_panel_z}" rpy="-0.20 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/qiagen_qiacube_connect/meshes/touchscreen_panel.stl"/>
+        </geometry>
+        <material name="qiacube_connect_screen_black">
+          <color rgba="0.13 0.15 0.18 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 0.145" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} 0.290"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 -0.115 0.435" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} 0.390 0.290"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="-0.235 0.120 0.405" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.180 0.240 0.230"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.235 0.120 0.405" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.180 0.240 0.230"/>
+        </geometry>
+      </collision> -->
+    </link>
+    <joint name="${station_name}${device_name}body_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}body_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}waste_drawer_link">
+      <visual>
+        <origin xyz="0 0 0.030" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/qiagen_qiacube_connect/meshes/waste_drawer.stl"/>
+        </geometry>
+        <material name="qiacube_connect_drawer_gray">
+          <color rgba="0.72 0.74 0.77 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 0.040" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.420 0.180 0.080"/>
+        </geometry>
+      </collision> -->
+    </link>
+    <joint name="${station_name}${device_name}waste_drawer_link_joint" type="fixed">
+      <origin xyz="0 ${drawer_origin_y} ${drawer_origin_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}waste_drawer_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 前部罩门把手位置；手册说明该处为人工开启 hood 的主要触达区。 -->
+    <link name="${station_name}${device_name}hood_handle_access_link"/>
+    <joint name="${station_name}${device_name}hood_handle_access_joint" type="fixed">
+      <origin xyz="0 ${hood_handle_y} 0.365" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}body_link"/>
+      <child link="${station_name}${device_name}hood_handle_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 前部装载位估计为开启 hood 后的 worktable 进入中心。 -->
+    <link name="${station_name}${device_name}loading_access_link"/>
+    <joint name="${station_name}${device_name}loading_access_joint" type="fixed">
+      <origin xyz="0 ${worktable_loading_y} ${worktable_loading_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}body_link"/>
+      <child link="${station_name}${device_name}loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 左前触摸屏/USB 交互区。 -->
+    <link name="${station_name}${device_name}touchscreen_access_link"/>
+    <joint name="${station_name}${device_name}touchscreen_access_joint" type="fixed">
+      <origin xyz="${screen_panel_x} ${touchscreen_access_y} 0.345" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}body_link"/>
+      <child link="${station_name}${device_name}touchscreen_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 废弃抽屉位于前部下方，是另一处常用前向维护/清理接近点。 -->
+    <link name="${station_name}${device_name}waste_drawer_access_link"/>
+    <joint name="${station_name}${device_name}waste_drawer_access_joint" type="fixed">
+      <origin xyz="0 0 0.080" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}waste_drawer_link"/>
+      <child link="${station_name}${device_name}waste_drawer_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 后部以电源、RJ-45、散热口为主，作为服务面建模。 -->
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${rear_service_y} 0.320" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}body_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

@@ -1,0 +1,229 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="sealer"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.230 depth:=0.507 height:=0.276
+            tray_center_x:=0.0 tray_center_y:=0.255 tray_center_z:=0.091">
+
+    <!-- 基于 Azenta / 4titude Automated Roll Heat Sealer (4ti-0665, a4S) 官方技术图纸
+         建立的回退组合网格。当前未找到可直接复用的公开 CAD/STL，因此使用分段盒体近似：
+         主机壳体 + 顶部卷膜罩 + 前部斜面控制台 + 前抽拉装载托盘。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <origin xyz="0 -0.020 0.012" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_lower_body.stl"/>
+        </geometry>
+        <material name="sealer_shell_white">
+          <color rgba="0.95 0.96 0.97 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.040 0.182" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_upper_body.stl"/>
+        </geometry>
+        <material name="sealer_shell_white"/>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.100 0.228" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_top_roll_cover.stl"/>
+        </geometry>
+        <material name="sealer_roll_cover_gray">
+          <color rgba="0.79 0.81 0.83 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.205 0.150" rpy="-0.349066 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_front_console.stl"/>
+        </geometry>
+        <material name="sealer_console_charcoal">
+          <color rgba="0.18 0.20 0.22 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.241 0.187" rpy="-0.349066 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_touch_panel.stl"/>
+        </geometry>
+        <material name="sealer_touchscreen_blue">
+          <color rgba="0.22 0.34 0.46 0.88"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.252 0.020" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_lower_fascia.stl"/>
+        </geometry>
+        <material name="sealer_shell_white"/>
+      </visual>
+      <!-- 将机身碰撞拆分为后壳、前侧壁与上罩，保持前部 tray/slot 进板走廊敞开。 -->
+      <collision>
+        <origin xyz="0 -0.0865 0.090" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} 0.334 0.180"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="-0.0925 0.132 0.090" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.045 0.200 0.180"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.0925 0.132 0.090" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.045 0.200 0.180"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 -0.060 0.223" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} 0.300 0.106"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 0.176 0.168" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.210 0.120 0.088"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}tray_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_tray_platform.stl"/>
+        </geometry>
+        <material name="sealer_tray_gray">
+          <color rgba="0.74 0.76 0.78 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.098 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_tray_face.stl"/>
+        </geometry>
+        <material name="sealer_shell_white"/>
+      </visual>
+      <visual>
+        <origin xyz="-0.069 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_tray_rail.stl"/>
+        </geometry>
+        <material name="sealer_tray_gray"/>
+      </visual>
+      <visual>
+        <origin xyz="0.069 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_tray_rail.stl"/>
+        </geometry>
+        <material name="sealer_tray_gray"/>
+      </visual>
+      <visual>
+        <origin xyz="0 0.108 0.014" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/sealer/meshes/sealer_handle_bar.stl"/>
+        </geometry>
+        <material name="sealer_handle_dark">
+          <color rgba="0.15 0.16 0.17 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.016" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.162 0.186 0.032"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}tray_joint" type="fixed">
+      <origin xyz="${tray_center_x} ${tray_center_y} ${tray_center_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 托盘上方的实际 SBS 板位。 -->
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <origin xyz="0 0 0.006" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 抽拉托盘内部工作位中心。 -->
+    <link name="${station_name}${device_name}tray_internal_access_link"/>
+    <joint name="${station_name}${device_name}tray_internal_access_joint" type="fixed">
+      <origin xyz="0 0 0.012" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}tray_internal_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 前部装载点，对应固定为伸出状态的托盘取放路径。 -->
+    <link name="${station_name}${device_name}front_loading_access_link"/>
+    <joint name="${station_name}${device_name}front_loading_access_joint" type="fixed">
+      <origin xyz="0 ${(depth / 2.0 + 0.094) - tray_center_y} 0.012" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}front_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 封膜工位中心，沿固定伸出托盘的送板轴线表达 slot 内部 handoff 位置。 -->
+    <link name="${station_name}${device_name}sealing_slot_access_link"/>
+    <joint name="${station_name}${device_name}sealing_slot_access_joint" type="fixed">
+      <origin xyz="0 ${0.188 - tray_center_y} ${0.104 - tray_center_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}tray_link"/>
+      <child link="${station_name}${device_name}sealing_slot_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 前上方触摸控制区。 -->
+    <link name="${station_name}${device_name}touchscreen_access_link"/>
+    <joint name="${station_name}${device_name}touchscreen_access_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 + 0.028} 0.194" rpy="-0.349066 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}touchscreen_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 顶部卷膜装载/维护位置。 -->
+    <link name="${station_name}${device_name}top_roll_access_link"/>
+    <joint name="${station_name}${device_name}top_roll_access_joint" type="fixed">
+      <origin xyz="0 -0.094 0.276" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}top_roll_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 后部电源与线缆服务面。 -->
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${-(depth / 2.0) - 0.050} 0.160" rpy="0 0 ${pi}"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

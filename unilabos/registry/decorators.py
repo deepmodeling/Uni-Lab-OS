@@ -45,6 +45,7 @@ Usage:
             ...
 """
 
+import asyncio
 from enum import Enum
 from functools import wraps
 import re

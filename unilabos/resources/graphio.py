@@ -42,7 +42,7 @@ def canonicalize_nodes_data(
     Returns:
         ResourceTreeSet: 标准化后的资源树集合
     """
-    print_status(f"{len(nodes)} Resources loaded", "info")
+    print_status(f"{len(nodes)} Resources loaded:", "info")
 
     # 第一步：基本预处理（处理graphml的label字段）
     outer_host_node_id = None
@@ -593,7 +593,7 @@ def resource_ulab_to_plr(resource: dict, plr_model=False) -> "ResourcePLR":
             "size_y": resource["config"].get("size_y", 0),
             "size_z": resource["config"].get("size_z", 0),
             "location": {**resource["position"], "type": "Coordinate"},
-            "rotation": {"x": 0, "y": 0, "z": 0, "type": "Rotation"},  # Resource如果没有rotation，是plr版本太低
+            "rotation": {resource["config"].get("rotation", {"x": 0, "y": 0, "z": 0, "type": "Rotation"})},  # Resource如果没有rotation，是plr版本太低
             "category": resource["type"],
             "model": resource["config"].get("model", None),  # resource中deck没有model
             "children": (

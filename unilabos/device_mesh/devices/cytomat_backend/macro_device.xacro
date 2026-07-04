@@ -1,0 +1,146 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="cytomat_backend"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.572 depth:=0.511 height:=0.905
+            plate_center_z:=0.460 transfer_opening_y_offset:=0.055 loading_tray_y_offset:=0.135">
+
+    <xacro:property name="transfer_opening_width" value="0.240"/>
+    <xacro:property name="transfer_opening_height" value="0.180"/>
+    <xacro:property name="transfer_opening_depth" value="0.120"/>
+    <xacro:property name="front_collision_y" value="${depth / 2.0 - transfer_opening_depth / 2.0}"/>
+    <xacro:property name="front_collision_depth" value="${transfer_opening_depth}"/>
+    <xacro:property name="rear_collision_depth" value="${depth - transfer_opening_depth}"/>
+    <xacro:property name="rear_collision_y" value="${-transfer_opening_depth / 2.0}"/>
+    <xacro:property name="transfer_opening_lower_height" value="${plate_center_z - transfer_opening_height / 2.0}"/>
+    <xacro:property name="transfer_opening_upper_height" value="${height - (plate_center_z + transfer_opening_height / 2.0)}"/>
+    <xacro:property name="transfer_opening_side_width" value="${(width - transfer_opening_width) / 2.0}"/>
+    <xacro:property name="transfer_opening_side_x" value="${transfer_opening_width / 2.0 + transfer_opening_side_width / 2.0}"/>
+    <xacro:property name="loading_tray_visual_y" value="${depth / 2.0 + 0.085}"/>
+    <xacro:property name="loading_tray_visual_z" value="${plate_center_z - 0.006}"/>
+    <xacro:property name="loading_tray_collision_width" value="0.320"/>
+    <xacro:property name="loading_tray_collision_depth" value="0.140"/>
+    <xacro:property name="loading_tray_collision_height" value="0.018"/>
+    <xacro:property name="loading_tray_collision_y" value="${loading_tray_visual_y - (depth / 2.0 + loading_tray_y_offset)}"/>
+    <xacro:property name="loading_tray_collision_z" value="-0.020"/>
+
+    <!-- 基于 Thermo Scientific Cytomat 2 C-LiN 官方尺寸（572 x 511 x 905 mm）
+         和官方 transfer-station / gate 资料构建的近似外形。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytomat_backend/meshes/cabinet_body.stl"/>
+        </geometry>
+        <material name="cytomat_body">
+          <color rgba="0.90 0.91 0.92 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${depth / 2.0 + 0.020} ${plate_center_z - 0.065}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytomat_backend/meshes/transfer_opening_module.stl"/>
+        </geometry>
+        <material name="cytomat_transfer_opening">
+          <color rgba="0.76 0.78 0.81 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${width / 2.0 - 0.135} ${depth / 2.0 - 0.060} ${height - 0.145}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytomat_backend/meshes/control_panel.stl"/>
+        </geometry>
+        <material name="cytomat_control_panel">
+          <color rgba="0.15 0.18 0.22 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 ${rear_collision_y} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${rear_collision_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_collision_y} ${transfer_opening_lower_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_collision_depth} ${transfer_opening_lower_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_collision_y} ${plate_center_z + transfer_opening_height / 2.0 + transfer_opening_upper_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_collision_depth} ${transfer_opening_upper_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-transfer_opening_side_x} ${front_collision_y} ${plate_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${transfer_opening_side_width} ${front_collision_depth} ${transfer_opening_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${transfer_opening_side_x} ${front_collision_y} ${plate_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${transfer_opening_side_width} ${front_collision_depth} ${transfer_opening_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <link name="${station_name}${device_name}loading_tray_link">
+      <visual>
+        <origin xyz="0 ${loading_tray_visual_y - (depth / 2.0 + loading_tray_y_offset)} ${loading_tray_visual_z - plate_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytomat_backend/meshes/loading_tray.stl"/>
+        </geometry>
+        <material name="cytomat_loading_tray">
+          <color rgba="0.58 0.61 0.66 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 ${loading_tray_collision_y} ${loading_tray_collision_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${loading_tray_collision_width} ${loading_tray_collision_depth} ${loading_tray_collision_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+    <joint name="${station_name}${device_name}loading_tray_link_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 + loading_tray_y_offset} ${plate_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loading_tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}transfer_opening_access_link"/>
+    <joint name="${station_name}${device_name}transfer_opening_access_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 + transfer_opening_y_offset} ${plate_center_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}transfer_opening_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}loading_tray_access_link"/>
+    <joint name="${station_name}${device_name}loading_tray_access_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}loading_tray_link"/>
+      <child link="${station_name}${device_name}loading_tray_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

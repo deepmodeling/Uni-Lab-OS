@@ -1,0 +1,53 @@
+{
+  "fileName": "cytomat_backend",
+  "related": [
+    "cytomat_backend",
+    "thermo_cytomat_2_c_lin",
+    "thermo_cytomat_2_c450_lin",
+    "thermo_cytomat_2_c6000",
+    "thermo_cytomat_2_c6002"
+  ],
+  "representation": {
+    "type": "fallback-composite-stl",
+    "dimensionsMm": {
+      "width": 572,
+      "depth": 511,
+      "height": 905,
+      "plateCenterZ": 460
+    },
+    "sourceUrls": [
+      "https://assets.thermofisher.com/TFS-Assets/CMD/Specification-Sheets/PS-50118298-Cytomat-2-C4xx-LIN-UB-Dimensions-PS50118298-EN.pdf",
+      "https://documents.thermofisher.com/TFS-Assets/CMD/brochures/br-90468-cytomat-2-c-lin-br90468-en.pdf"
+    ]
+  },
+  "accessFrames": [
+    {
+      "name": "transfer-opening",
+      "linkSuffix": "transfer_opening_access_link",
+      "description": "Front automatic gate / transfer opening aligned to the nominal SBS plate center.",
+      "collision_strategy": "opening_cutout",
+      "poseMeters": {
+        "x": 0.0,
+        "y": 0.3105,
+        "z": 0.46,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "loading-tray",
+      "linkSuffix": "loading_tray_access_link",
+      "description": "Front loading tray handoff point aligned to the nominal SBS plate center.",
+      "collision_strategy": "fixed_extended_tray",
+      "poseMeters": {
+        "x": 0.0,
+        "y": 0.3905,
+        "z": 0.46,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    }
+  ]
+}

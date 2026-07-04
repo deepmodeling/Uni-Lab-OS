@@ -1,0 +1,112 @@
+{
+  "fileName": "molecular_devices_qpix_420",
+  "related": [
+    "molecular_devices_qpix_420",
+    "qpix_420",
+    "qpix_400_series"
+  ],
+  "representation": {
+    "type": "fallback-composite-stl",
+    "dimensionsMm": {
+      "width": 1440,
+      "depth": 790,
+      "height": 780
+    },
+    "sourceUrls": [
+      "https://www.moleculardevices.com/products/specifications/qpix-400-series-microbial-colony-pickers.json",
+      "https://www.moleculardevices.com/sites/default/files/en/assets/user-guide/bpd/qpix-family-preinstall-guide-5083796b.pdf",
+      "https://www.moleculardevices.com/products/clone-screening/microbial-screening/qpix-400-series-microbial-colony-pickers",
+      "https://view.ceros.com/molecular-devices/qpix-lh/p/1?heightOverride=960"
+    ],
+    "notes": [
+      "No public reusable Molecular Devices QPix 420 CAD, STEP, or STL asset was found during web search.",
+      "The mesh package is a composite box-model fallback using the official QPix 420 envelope plus front/side imagery from Molecular Devices product materials."
+    ]
+  },
+  "accessFrames": [
+    {
+      "name": "front-door-opening",
+      "linkSuffix": "front_door_access_link",
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated main front opening centered on the acrylic safety door used to access the picking chamber.",
+      "poseMeters": {
+        "x": -0.05,
+        "y": -0.44,
+        "z": 0.57,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "deck-loading-zone",
+      "linkSuffix": "deck_access_link",
+      "collision_strategy": "exposed_work_surface",
+      "description": "Estimated left-front deck access point aligned to the petri-dish loading stage under the front door.",
+      "poseMeters": {
+        "x": -0.12,
+        "y": -0.28,
+        "z": 0.31,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "multi-plate-loading-zone",
+      "linkSuffix": "loading_access_link",
+      "collision_strategy": "exposed_work_surface",
+      "description": "Estimated right-front loading point aligned to the multi-position plate lane visible in Molecular Devices imagery.",
+      "poseMeters": {
+        "x": 0.2,
+        "y": -0.31,
+        "z": 0.31,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "imaging-and-picking-head",
+      "linkSuffix": "imaging_access_link",
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated access point directly in front of the imaging/picking head carriage based on official open-door product images.",
+      "poseMeters": {
+        "x": 0.16,
+        "y": -0.14,
+        "z": 0.55,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "right-control-pod",
+      "linkSuffix": "control_access_link",
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated operator access point for the right-side touchscreen and emergency stop area.",
+      "poseMeters": {
+        "x": 0.61,
+        "y": -0.23,
+        "z": 0.55,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      }
+    },
+    {
+      "name": "rear-service-zone",
+      "linkSuffix": "rear_service_access_link",
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated rear service access for utilities and preventive-maintenance access noted in the pre-install guide.",
+      "poseMeters": {
+        "x": 0.0,
+        "y": 0.44,
+        "z": 0.38,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 3.141592653589793
+      }
+    }
+  ]
+}

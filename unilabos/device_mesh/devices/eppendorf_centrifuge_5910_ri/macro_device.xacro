@@ -1,0 +1,147 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="eppendorf_centrifuge_5910_ri"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.72 depth:=0.68 height:=0.37 footprint_depth:=0.62 open_height:=0.85">
+
+    <!-- Fallback geometry based on official Eppendorf 5910 Ri dimensions and closed/open
+         product imagery. No public vendor CAD/mesh model was located during web search. -->
+    <xacro:property name="plinth_height" value="0.020" />
+    <xacro:property name="body_height" value="0.170" />
+    <xacro:property name="lid_height" value="${height - plinth_height - body_height}" />
+    <xacro:property name="front_panel_depth" value="${depth - footprint_depth}" />
+    <xacro:property name="recess_offset_y" value="${front_panel_depth / 2.0}" />
+    <xacro:property name="front_panel_y" value="${-(depth / 2.0) + (front_panel_depth / 2.0)}" />
+    <xacro:property name="lid_bottom_z" value="${plinth_height + body_height}" />
+    <xacro:property name="display_x" value="0.120" />
+    <xacro:property name="display_y" value="${-(depth / 2.0) - 0.005}" />
+    <xacro:property name="display_z" value="0.190" />
+    <xacro:property name="lid_handle_y" value="${-(depth / 2.0) - 0.030}" />
+    <xacro:property name="lid_handle_z" value="${height - 0.015}" />
+    <xacro:property name="loading_access_z" value="${height + ((open_height - height) * 0.45)}" />
+    <xacro:property name="lower_body_collision_height" value="${lid_bottom_z}" />
+    <xacro:property name="upper_shell_height" value="${height - lower_body_collision_height}" />
+    <xacro:property name="top_opening_width" value="${width - 0.240}" />
+    <xacro:property name="upper_side_wall_width" value="${(width - top_opening_width) / 2.0}" />
+    <xacro:property name="upper_rear_wall_depth" value="0.180" />
+    <xacro:property name="rear_service_y" value="${(depth / 2.0) + 0.040}" />
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/eppendorf_centrifuge_5910_ri/meshes/plinth.stl"/>
+        </geometry>
+        <material name="eppendorf_5910_ri_plinth_gray">
+          <color rgba="0.56 0.58 0.60 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${recess_offset_y} ${plinth_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/eppendorf_centrifuge_5910_ri/meshes/body_core.stl"/>
+        </geometry>
+        <material name="eppendorf_5910_ri_body_white">
+          <color rgba="0.91 0.93 0.94 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${recess_offset_y} ${lid_bottom_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/eppendorf_centrifuge_5910_ri/meshes/lid_shell.stl"/>
+        </geometry>
+        <material name="eppendorf_5910_ri_lid_white">
+          <color rgba="0.95 0.96 0.97 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${front_panel_y} ${plinth_height}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/eppendorf_centrifuge_5910_ri/meshes/front_panel.stl"/>
+        </geometry>
+        <material name="eppendorf_5910_ri_front_panel_white">
+          <color rgba="0.86 0.88 0.89 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${display_x} ${display_y} ${display_z}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/eppendorf_centrifuge_5910_ri/meshes/display_bezel.stl"/>
+        </geometry>
+        <material name="eppendorf_5910_ri_display_gray">
+          <color rgba="0.54 0.58 0.61 1"/>
+        </material>
+      </visual>
+      <!-- Collision shell leaves the open lid corridor and front-center handle approach
+           reachable without embedding those access frames inside solid body geometry. -->
+      <collision>
+        <origin xyz="0 0 ${lower_body_collision_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${lower_body_collision_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(-width / 2.0) + (upper_side_wall_width / 2.0)} 0 ${lower_body_collision_height + (upper_shell_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${upper_side_wall_width} ${depth} ${upper_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(width / 2.0) - (upper_side_wall_width / 2.0)} 0 ${lower_body_collision_height + (upper_shell_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${upper_side_wall_width} ${depth} ${upper_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${(depth / 2.0) - (upper_rear_wall_depth / 2.0)} ${lower_body_collision_height + (upper_shell_height / 2.0)}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${top_opening_width} ${upper_rear_wall_depth} ${upper_shell_height}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- Access frames are estimated from official closed/open product imagery and the
+         documented open-lid height. -->
+    <link name="${station_name}${device_name}lid_handle_access_link"/>
+    <joint name="${station_name}${device_name}lid_handle_access_joint" type="fixed">
+      <origin xyz="0 ${lid_handle_y} ${lid_handle_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}lid_handle_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}loading_access_link"/>
+    <joint name="${station_name}${device_name}loading_access_joint" type="fixed">
+      <origin xyz="0 ${recess_offset_y} ${loading_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${rear_service_y} ${height * 0.55}" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

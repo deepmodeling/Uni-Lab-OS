@@ -1,0 +1,70 @@
+{
+  "fileName": "telesis_bio_bioxp_3250",
+  "related": [
+    "telesis_bio_bioxp_3250",
+    "bioxp_3250",
+    "codex_dna_bioxp_3250"
+  ],
+  "model_strategy": "fallback_composite_stl_from_official_dimensions_and_user_guide_imagery",
+  "sources": [
+    {
+      "title": "BioXp 3250 system product page",
+      "url": "https://telesisbio.com/products/bioxp-system/bioxp-3250-system/",
+      "kind": "product_page",
+      "notes": "Confirms the current product identity and publishes the external footprint of 69 cm x 77 cm x 53 cm."
+    },
+    {
+      "title": "BioXp 3250 system product flyer",
+      "url": "https://files.telesisbio.com/docs/45050_BioXp_3250_prod_flyer.pdf",
+      "kind": "product_flyer",
+      "notes": "Official marketing collateral used to corroborate the benchtop footprint and front-facing industrial design."
+    },
+    {
+      "title": "BioXp 3250 system user guide",
+      "url": "https://files.telesisbio.com/docs/43029_v2.2_BioXp%C2%AE%203250%20system%20%E2%80%94%20User%20guide%20Effective%2029NOV2022.pdf",
+      "kind": "user_guide",
+      "notes": "Provides the front-view hardware overview, deck image, and wording around door-based job-material loading."
+    },
+    {
+      "title": "Meet the BioXp 3250 system",
+      "url": "https://telesisbio.com/2020/08/26/meet-the-bioxp-3250-system-our-new-automated-synthetic-biology-workstation",
+      "kind": "announcement",
+      "notes": "Official launch post used as a secondary visual cross-check for the recognizable front silhouette and operator-facing screen."
+    }
+  ],
+  "dimensions_m": {
+    "width": 0.690,
+    "depth": 0.770,
+    "height": 0.530
+  },
+  "mesh_assets": {
+    "body_shell": "meshes/body_shell.stl",
+    "upper_access_door": "meshes/upper_access_door.stl",
+    "lower_service_panel": "meshes/lower_service_panel.stl",
+    "touchscreen_bezel": "meshes/touchscreen_bezel.stl",
+    "touchscreen_glass": "meshes/touchscreen_glass.stl"
+  },
+  "access_points": [
+    {
+      "name": "front_loading_access_link",
+      "face": "front",
+      "xyz_m": [0.0, 0.47, 0.255],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated primary consumable-loading access point centered on the front door opening shown in the user-guide hardware overview."
+    },
+    {
+      "name": "touchscreen_access_link",
+      "face": "front-right",
+      "xyz_m": [0.19, 0.445, 0.115],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "opening_cutout",
+      "description": "Estimated operator touchscreen center on the smaller front-right control bay."
+    }
+  ],
+  "notes": [
+    "No public vendor CAD, STL, STEP, GLB, or USDZ model for the Telesis BIO BIOXp 3250 was located during web search, so this package intentionally uses a fallback mesh rather than implying exact factory geometry.",
+    "The fallback mesh preserves the official overall envelope and the visible separation between the large upper loading door, the lower front panel, and the right-front touchscreen module.",
+    "Access frame locations are integration-oriented estimates from official imagery and user-guide wording; they should be treated as approximate until a service drawing or direct measurement is available."
+  ]
+}

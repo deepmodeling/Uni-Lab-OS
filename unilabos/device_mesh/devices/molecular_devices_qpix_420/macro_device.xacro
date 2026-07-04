@@ -1,0 +1,276 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="molecular_devices_qpix_420"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=1.44 depth:=0.79 height:=0.78
+            deck_access_x:=-0.12 deck_access_y:=-0.28 deck_access_z:=0.31
+            loading_access_x:=0.20 loading_access_y:=-0.31 loading_access_z:=0.31
+            imaging_access_x:=0.16 imaging_access_y:=-0.14 imaging_access_z:=0.55
+            front_door_access_x:=-0.05 front_door_access_y:=-0.44 front_door_access_z:=0.57
+            control_access_x:=0.61 control_access_y:=-0.23 control_access_z:=0.55
+            rear_service_access_x:=0.00 rear_service_access_y:=0.44 rear_service_access_z:=0.38">
+
+    <xacro:property name="plinth_height" value="0.16"/>
+    <xacro:property name="rear_shell_width" value="1.18"/>
+    <xacro:property name="rear_shell_depth" value="0.37"/>
+    <xacro:property name="rear_shell_height" value="0.44"/>
+    <xacro:property name="rear_shell_center_x" value="-0.03"/>
+    <xacro:property name="rear_shell_center_y" value="${depth / 2.0 - rear_shell_depth / 2.0}"/>
+    <xacro:property name="rear_shell_center_z" value="${plinth_height + rear_shell_height / 2.0}"/>
+    <xacro:property name="left_shell_width" value="0.08"/>
+    <xacro:property name="left_shell_depth" value="0.62"/>
+    <xacro:property name="left_shell_height" value="${height - plinth_height}"/>
+    <xacro:property name="left_shell_center_x" value="${-width / 2.0 + left_shell_width / 2.0}"/>
+    <xacro:property name="left_shell_center_y" value="-0.06"/>
+    <xacro:property name="left_shell_center_z" value="${plinth_height + left_shell_height / 2.0}"/>
+    <xacro:property name="right_shell_width" value="0.08"/>
+    <xacro:property name="right_shell_depth" value="0.48"/>
+    <xacro:property name="right_shell_height" value="${height - plinth_height}"/>
+    <xacro:property name="right_shell_center_x" value="${width / 2.0 - right_shell_width / 2.0}"/>
+    <xacro:property name="right_shell_center_y" value="0.05"/>
+    <xacro:property name="right_shell_center_z" value="${plinth_height + right_shell_height / 2.0}"/>
+    <xacro:property name="canopy_width" value="1.08"/>
+    <xacro:property name="canopy_depth" value="0.46"/>
+    <xacro:property name="canopy_height" value="0.10"/>
+    <xacro:property name="canopy_center_x" value="-0.02"/>
+    <xacro:property name="canopy_center_y" value="0.05"/>
+    <xacro:property name="canopy_center_z" value="${height - canopy_height / 2.0}"/>
+    <xacro:property name="front_header_width" value="0.92"/>
+    <xacro:property name="front_header_depth" value="0.08"/>
+    <xacro:property name="front_header_height" value="0.12"/>
+    <xacro:property name="front_header_center_x" value="-0.05"/>
+    <xacro:property name="front_header_center_y" value="${-depth / 2.0 + front_header_depth / 2.0}"/>
+    <xacro:property name="front_header_center_z" value="${height - front_header_height / 2.0 - 0.02}"/>
+    <xacro:property name="control_console_width" value="0.20"/>
+    <xacro:property name="control_console_depth" value="0.10"/>
+    <xacro:property name="control_console_height" value="0.22"/>
+    <xacro:property name="control_console_center_x" value="0.60"/>
+    <xacro:property name="control_console_center_y" value="-0.17"/>
+    <xacro:property name="control_console_center_z" value="0.42"/>
+
+    <!-- 基于 Molecular Devices 官方尺寸与预安装指南图示构建的近似复合外形：
+         QPix 420 本体 1440 x 790 x 780 mm；前侧为亚克力上翻门，右前方为触控/急停控制仓。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/lower_chassis.stl"/>
+        </geometry>
+        <material name="qpix420_body_white">
+          <color rgba="0.92 0.92 0.92 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.06 0.08 0.40" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/upper_canopy.stl"/>
+        </geometry>
+        <material name="qpix420_canopy_white">
+          <color rgba="0.90 0.91 0.93 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.06 -0.37 0.40" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/front_door.stl"/>
+        </geometry>
+        <material name="qpix420_door_smoke">
+          <color rgba="0.32 0.36 0.40 0.35"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.68 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/left_side_cover.stl"/>
+        </geometry>
+        <material name="qpix420_side_blue">
+          <color rgba="0.18 0.27 0.67 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.61 -0.23 0.32" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/control_console.stl"/>
+        </geometry>
+        <material name="qpix420_console_white">
+          <color rgba="0.95 0.95 0.95 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.08 -0.02 0.29" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/deck_table.stl"/>
+        </geometry>
+        <material name="qpix420_deck_light">
+          <color rgba="0.90 0.92 0.93 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.36 -0.05 0.305" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/petri_stage.stl"/>
+        </geometry>
+        <material name="qpix420_stage_clear">
+          <color rgba="0.76 0.88 0.92 0.55"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.18 0.16 0.305" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/lane_tray.stl"/>
+        </geometry>
+        <material name="qpix420_lane_dark">
+          <color rgba="0.18 0.18 0.19 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.18 0.00 0.305" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/lane_tray.stl"/>
+        </geometry>
+        <material name="qpix420_lane_dark_mid">
+          <color rgba="0.18 0.18 0.19 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.18 -0.16 0.305" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/lane_tray.stl"/>
+        </geometry>
+        <material name="qpix420_lane_dark_low">
+          <color rgba="0.18 0.18 0.19 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.02 0.14 0.63" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/gantry_beam.stl"/>
+        </geometry>
+        <material name="qpix420_gantry_dark">
+          <color rgba="0.12 0.12 0.14 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.15 0.03 0.43" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/molecular_devices_qpix_420/meshes/picker_head.stl"/>
+        </geometry>
+        <material name="qpix420_picker_dark">
+          <color rgba="0.16 0.17 0.19 1"/>
+        </material>
+      </visual>
+      <!-- 碰撞几何只保留真实阻挡外壳：开放前工位、deck/worktable 与 SBS 取放区域不再被整机包络盒吞没。 -->
+      <!-- <collision>
+        <origin xyz="0 0 ${plinth_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${plinth_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${rear_shell_center_x} ${rear_shell_center_y} ${rear_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${rear_shell_width} ${rear_shell_depth} ${rear_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${left_shell_center_x} ${left_shell_center_y} ${left_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${left_shell_width} ${left_shell_depth} ${left_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${right_shell_center_x} ${right_shell_center_y} ${right_shell_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${right_shell_width} ${right_shell_depth} ${right_shell_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${canopy_center_x} ${canopy_center_y} ${canopy_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${canopy_width} ${canopy_depth} ${canopy_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${front_header_center_x} ${front_header_center_y} ${front_header_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_header_width} ${front_header_depth} ${front_header_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${control_console_center_x} ${control_console_center_y} ${control_console_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${control_console_width} ${control_console_depth} ${control_console_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <!-- 前门对应主要人工开盖访问区域。 -->
+    <link name="${station_name}${device_name}front_door_access_link"/>
+    <joint name="${station_name}${device_name}front_door_access_joint" type="fixed">
+      <origin xyz="${front_door_access_x} ${front_door_access_y} ${front_door_access_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_door_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 左前区域为培养皿/托盘上料与取放区域。 -->
+    <link name="${station_name}${device_name}deck_access_link"/>
+    <joint name="${station_name}${device_name}deck_access_joint" type="fixed">
+      <origin xyz="${deck_access_x} ${deck_access_y} ${deck_access_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}deck_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 右前条形工位为多板位加载/卸载区域。 -->
+    <link name="${station_name}${device_name}loading_access_link"/>
+    <joint name="${station_name}${device_name}loading_access_joint" type="fixed">
+      <origin xyz="${loading_access_x} ${loading_access_y} ${loading_access_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 取菌/成像头位于右中部上方，位置取自官方开盖图估计。 -->
+    <link name="${station_name}${device_name}imaging_access_link"/>
+    <joint name="${station_name}${device_name}imaging_access_joint" type="fixed">
+      <origin xyz="${imaging_access_x} ${imaging_access_y} ${imaging_access_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}imaging_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}control_access_link"/>
+    <joint name="${station_name}${device_name}control_access_joint" type="fixed">
+      <origin xyz="${control_access_x} ${control_access_y} ${control_access_z}" rpy="0 0 0"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}control_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="${rear_service_access_x} ${rear_service_access_y} ${rear_service_access_z}" rpy="0 0 ${pi}"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

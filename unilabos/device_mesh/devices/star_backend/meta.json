@@ -1,0 +1,42 @@
+{
+  "fileName": "star_backend",
+  "related": [
+    "star_backend",
+    "hamilton_star",
+    "microlab_star"
+  ],
+  "access_points": [
+    {
+      "name": "loading_tray_access_link",
+      "face": "front",
+      "xyz_m": [0.0, -0.47, 0.133],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "fixed_extended_tray",
+      "description": "Tray-backed handoff point above the fixed extended loading tray, kept outside the body shell for robot approach."
+    },
+    {
+      "name": "left_deck_access_link",
+      "face": "left_top_deck",
+      "xyz_m": [-0.892, -0.055, 0.133],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "exposed_work_surface",
+      "description": "Left-side approach to the exposed main deck work surface without embedding the access frame in body collision."
+    },
+    {
+      "name": "right_deck_access_link",
+      "face": "right_top_deck",
+      "xyz_m": [0.892, -0.055, 0.133],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "exposed_work_surface",
+      "description": "Right-side approach to the exposed main deck work surface without embedding the access frame in body collision."
+    },
+    {
+      "name": "rear_deck_access_link",
+      "face": "rear_top_deck",
+      "xyz_m": [0.0, 0.506, 0.133],
+      "rpy_rad": [0.0, 0.0, 0.0],
+      "collision_strategy": "exposed_work_surface",
+      "description": "Rear-side approach to the exposed main deck work surface for integrations that access the deck from behind."
+    }
+  ]
+}

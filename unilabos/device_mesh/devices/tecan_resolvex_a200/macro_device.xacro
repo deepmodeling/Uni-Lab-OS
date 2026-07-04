@@ -1,0 +1,256 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="tecan_resolvex_a200"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.378 depth:=0.542 height:=0.600
+            front_loading_x:=0.0 front_loading_y:=-0.356 front_loading_z:=0.355
+            rack_access_x:=0.0 rack_access_y:=-0.015 rack_access_z:=0.292
+            screen_access_x:=-0.038 screen_access_y:=-0.301 screen_access_z:=0.167
+            rear_service_x:=0.105 rear_service_y:=0.251 rear_service_z:=0.455">
+
+    <xacro:property name="lower_body_height" value="0.265" />
+    <xacro:property name="upper_side_wall_width" value="0.074" />
+    <xacro:property name="upper_side_wall_depth" value="0.430" />
+    <xacro:property name="upper_side_wall_center_y" value="-0.020" />
+    <xacro:property name="upper_side_wall_height" value="0.270" />
+    <xacro:property name="upper_side_wall_center_z" value="0.395" />
+    <xacro:property name="upper_rear_depth" value="0.190" />
+    <xacro:property name="upper_rear_center_y" value="0.135" />
+    <xacro:property name="upper_rear_height" value="0.210" />
+    <xacro:property name="upper_rear_center_z" value="0.495" />
+    <xacro:property name="front_lintel_width" value="0.306" />
+    <xacro:property name="front_lintel_depth" value="0.018" />
+    <xacro:property name="front_lintel_center_y" value="${(-depth / 2.0) + (front_lintel_depth / 2.0)}" />
+    <xacro:property name="front_lintel_height" value="0.080" />
+    <xacro:property name="front_lintel_center_z" value="0.535" />
+
+    <!-- 基于 Tecan Resolvex A200 官方操作手册尺寸
+         378 mm W x 542 mm D x 600 mm H 构建的分段式回退网格。
+         外观比例来自官方 brochure / manual 图片：下半部为触控柜体，上半部为开口式正压工作腔。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/base_plinth.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_base_black">
+          <color rgba="0.16 0.17 0.18 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0.030" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/lower_body.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_body_silver">
+          <color rgba="0.82 0.84 0.86 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0.570" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/roof_canopy.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_frame_dark">
+          <color rgba="0.20 0.22 0.24 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.178 0 0.320" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/side_frame.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_frame_dark"/>
+      </visual>
+      <visual>
+        <origin xyz="0.178 0 0.320" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/side_frame.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_frame_dark"/>
+      </visual>
+      <visual>
+        <origin xyz="-0.183 0.010 0.355" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/side_window_panel.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_window_smoke">
+          <color rgba="0.22 0.25 0.28 0.35"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.183 0.010 0.355" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/side_window_panel.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_window_smoke"/>
+      </visual>
+      <visual>
+        <origin xyz="0 0.2635 0.320" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/back_panel.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_window_smoke"/>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.2635 0.535" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/front_lintel.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_frame_dark"/>
+      </visual>
+      <visual>
+        <origin xyz="-0.038 -0.278 0.045" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/touchscreen_bezel.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_bezel_black">
+          <color rgba="0.08 0.09 0.10 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.038 -0.288 0.058" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/touchscreen_glass.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_screen_blue">
+          <color rgba="0.18 0.28 0.40 0.85"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.020 0.500" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/manifold_block.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_manifold_dark">
+          <color rgba="0.28 0.29 0.31 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.020 0.440" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/dispense_head.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_head_gray">
+          <color rgba="0.72 0.74 0.76 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 -0.015 0.220" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/rack_stage.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_rack_white">
+          <color rgba="0.90 0.91 0.92 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.153 -0.210 0.325" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/light_curtain_post.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_light_curtain">
+          <color rgba="0.95 0.97 0.98 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.153 -0.210 0.325" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/tecan_resolvex_a200/meshes/light_curtain_post.stl"/>
+        </geometry>
+        <material name="tecan_resolvex_a200_light_curtain"/>
+      </visual>
+      <!-- 将碰撞拆为下部柜体、上部侧框、后上壳体和前上横梁，保留前部开口与工作平面。 -->
+      <!-- <collision>
+        <origin xyz="0 0 ${lower_body_height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${lower_body_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(-width / 2.0) + (upper_side_wall_width / 2.0)} ${upper_side_wall_center_y} ${upper_side_wall_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${upper_side_wall_width} ${upper_side_wall_depth} ${upper_side_wall_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${(width / 2.0) - (upper_side_wall_width / 2.0)} ${upper_side_wall_center_y} ${upper_side_wall_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${upper_side_wall_width} ${upper_side_wall_depth} ${upper_side_wall_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${upper_rear_center_y} ${upper_rear_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${upper_rear_depth} ${upper_rear_height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${front_lintel_center_y} ${front_lintel_center_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_lintel_width} ${front_lintel_depth} ${front_lintel_height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <!-- 前部主开口，用于装卸 SPE 板 / 柱架。 -->
+    <link name="${station_name}${device_name}front_loading_access_link"/>
+    <joint name="${station_name}${device_name}front_loading_access_joint" type="fixed">
+      <origin xyz="${front_loading_x} ${front_loading_y} ${front_loading_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 工作位中心，近似对应 96 孔板 / SPE 架所处平面。 -->
+    <link name="${station_name}${device_name}rack_access_link"/>
+    <joint name="${station_name}${device_name}rack_access_joint" type="fixed">
+      <origin xyz="${rack_access_x} ${rack_access_y} ${rack_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rack_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin xyz="${rack_access_x} ${rack_access_y} ${rack_access_z + 0.004}" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 触控屏交互区。 -->
+    <link name="${station_name}${device_name}screen_access_link"/>
+    <joint name="${station_name}${device_name}screen_access_joint" type="fixed">
+      <origin xyz="${screen_access_x} ${screen_access_y} ${screen_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}screen_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 后部气路 / 电源 / 以太网服务区来自官方 rear-view 示意图。 -->
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="${rear_service_x} ${rear_service_y} ${rear_service_z}" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

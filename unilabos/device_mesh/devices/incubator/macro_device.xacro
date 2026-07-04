@@ -1,0 +1,187 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="incubator"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.744 depth:=0.716 height:=1.203
+            front_access_y_offset:=0.040 front_access_z:=0.780
+            loading_tray_y_offset:=0.155 loading_tray_z:=1.000
+            control_access_x:=0.275 control_access_y_offset:=0.035 control_access_z:=0.200">
+
+    <xacro:property name="front_cutout_depth" value="0.220"/>
+    <xacro:property name="front_cutout_min_z" value="0.120"/>
+    <xacro:property name="front_cutout_max_z" value="1.063"/>
+    <xacro:property name="front_shell_side_width" value="0.082"/>
+    <xacro:property name="tray_visual_y_offset" value="0.020"/>
+    <xacro:property name="tray_visual_z_offset" value="0.024"/>
+    <xacro:property name="tray_collision_width" value="0.320"/>
+    <xacro:property name="tray_collision_depth" value="0.180"/>
+    <xacro:property name="tray_collision_height" value="0.045"/>
+    <xacro:property name="tray_collision_forward_offset" value="0.035"/>
+
+    <!-- 代表性外形选用 LiCONiC StoreX STX220-SA 自动微孔板培养箱。
+         外包络尺寸来自官方尺寸/图纸，前侧小型 robotic gate 与装载托盘位置依据
+         1000 mm transfer height、官方产品图与 “flush gate” 描述做近似表达。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator/meshes/cabinet_body.stl"/>
+        </geometry>
+        <material name="incubator_body_white">
+          <color rgba="0.93 0.94 0.95 1"/>
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator/meshes/base_plinth.stl"/>
+        </geometry>
+        <material name="incubator_plinth_dark">
+          <color rgba="0.10 0.10 0.12 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${depth / 2.0 + 0.018} 0.085" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator/meshes/lower_service_panel.stl"/>
+        </geometry>
+        <material name="incubator_service_panel">
+          <color rgba="0.89 0.90 0.91 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.028 ${depth / 2.0 + 0.018} 0.400" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator/meshes/upper_door_panel.stl"/>
+        </geometry>
+        <material name="incubator_door_panel">
+          <color rgba="0.96 0.97 0.98 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.305 ${depth / 2.0 + 0.028} 0.265" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator/meshes/door_handle.stl"/>
+        </geometry>
+        <material name="incubator_handle_dark">
+          <color rgba="0.16 0.17 0.19 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 ${depth / 2.0 + 0.025} 0.925" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator/meshes/robotic_gate_bezel.stl"/>
+        </geometry>
+        <material name="incubator_gate_dark">
+          <color rgba="0.28 0.31 0.35 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.275 ${depth / 2.0 + 0.029} 0.118" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator/meshes/control_display.stl"/>
+        </geometry>
+        <material name="incubator_display_dark">
+          <color rgba="0.08 0.08 0.10 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 ${-front_cutout_depth / 2.0} ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth - front_cutout_depth} ${height}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${depth / 2.0 - front_cutout_depth / 2.0} ${front_cutout_min_z / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${front_cutout_min_z}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 ${depth / 2.0 - front_cutout_depth / 2.0} ${(height + front_cutout_max_z) / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${front_cutout_depth} ${height - front_cutout_max_z}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${width / 2.0 - front_shell_side_width / 2.0} ${depth / 2.0 - front_cutout_depth / 2.0} ${(front_cutout_min_z + front_cutout_max_z) / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_shell_side_width} ${front_cutout_depth} ${front_cutout_max_z - front_cutout_min_z}"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="${-width / 2.0 + front_shell_side_width / 2.0} ${depth / 2.0 - front_cutout_depth / 2.0} ${(front_cutout_min_z + front_cutout_max_z) / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${front_shell_side_width} ${front_cutout_depth} ${front_cutout_max_z - front_cutout_min_z}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- 托盘在碰撞模型中固定为完全伸出姿态，访问点挂接到托盘本体。 -->
+    <link name="${station_name}${device_name}loading_tray_link">
+      <visual>
+        <origin xyz="0 ${-tray_visual_y_offset} ${-tray_visual_z_offset}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/incubator/meshes/loading_tray.stl"/>
+        </geometry>
+        <material name="incubator_tray_metal">
+          <color rgba="0.68 0.71 0.74 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 ${tray_collision_forward_offset} 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${tray_collision_width} ${tray_collision_depth} ${tray_collision_height}"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}loading_tray_link_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 + loading_tray_y_offset} ${loading_tray_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}loading_tray_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 前侧大门对应人工装卸和维护访问面。 -->
+    <link name="${station_name}${device_name}front_user_access_link"/>
+    <joint name="${station_name}${device_name}front_user_access_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 + front_access_y_offset} ${front_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_user_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 上部 robotic gate / tray handoff 点，按 1000 mm transfer height 近似。 -->
+    <link name="${station_name}${device_name}loading_tray_access_link"/>
+    <joint name="${station_name}${device_name}loading_tray_access_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}loading_tray_link"/>
+      <child link="${station_name}${device_name}loading_tray_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}control_panel_access_link"/>
+    <joint name="${station_name}${device_name}control_panel_access_joint" type="fixed">
+      <origin xyz="${control_access_x} ${depth / 2.0 + control_access_y_offset} ${control_access_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}control_panel_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

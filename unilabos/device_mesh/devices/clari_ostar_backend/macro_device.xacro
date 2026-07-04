@@ -1,0 +1,76 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="clari_ostar_backend"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.45 depth:=0.51 height:=0.40">
+
+    <!-- Fallback geometry based on BMG LABTECH CLARIOstar Plus official dimensions:
+         width 45 cm, depth 51 cm, height 40 cm. -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/clari_ostar_backend/meshes/body_shell.stl"/>
+        </geometry>
+        <material name="clariostar_body_white">
+          <color rgba="0.96 0.96 0.94 1"/>
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/clari_ostar_backend/meshes/optic_hood.stl"/>
+        </geometry>
+        <material name="clariostar_hood_black">
+          <color rgba="0.16 0.17 0.18 1"/>
+        </material>
+      </visual>
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/clari_ostar_backend/meshes/plate_drawer.stl"/>
+        </geometry>
+        <material name="clariostar_drawer_dark">
+          <color rgba="0.12 0.12 0.13 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <link name="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+
+    <!-- Closed carrier position inside the reader. -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="0 -0.145 0.090"/>
+    </joint>
+
+    <!-- Front loading access point on the drawer. -->
+    <joint name="${station_name}${device_name}socketTypeGenericSbsFootprint_2_60_1" type="fixed">
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 0" xyz="0 -0.260 0.090"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

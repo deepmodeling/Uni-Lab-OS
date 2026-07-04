@@ -8,7 +8,31 @@ from launch import LaunchService
 from launch import LaunchDescription
 from launch_ros.actions import Node as nd
 import xacro
+import xml.dom.minidom as _minidom
 from lxml import etree
+
+
+def _xacro_parse_utf8(inp, filename=None):
+    """UTF-8 安全版本的 xacro.parse，修复 Windows 上 GBK 解码 xacro 文件失败的问题。"""
+    f = None
+    if inp is None:
+        try:
+            inp = f = open(filename, encoding="utf-8")
+        except IOError as e:
+            xacro.filestack.pop()
+            raise xacro.XacroException(e.strerror + ": " + e.filename, exc=e)
+    try:
+        if isinstance(inp, str):
+            return _minidom.parseString(inp)
+        elif hasattr(inp, "read"):
+            return _minidom.parse(inp)
+        return inp
+    finally:
+        if f:
+            f.close()
+
+
+xacro.parse = _xacro_parse_utf8
 from launch_param_builder import load_yaml
 from launch_ros.parameter_descriptions import ParameterFile
 from unilabos.registry.registry import lab_registry

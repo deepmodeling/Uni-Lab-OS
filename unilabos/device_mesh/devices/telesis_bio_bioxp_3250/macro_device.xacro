@@ -1,0 +1,101 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="telesis_bio_bioxp_3250"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.690 depth:=0.770 height:=0.530
+            front_loading_x:=0.000 front_loading_y:=0.470 front_loading_z:=0.255
+            touchscreen_x:=0.190 touchscreen_y:=0.445 touchscreen_z:=0.115">
+
+    <!-- 基于 Telesis Bio 官方资料构建的 fallback 组合网格。
+         外形尺寸采用产品页/规格资料的 69 x 77 x 53 cm，
+         前部开门加载区域与右前触控屏位置则依据用户指南硬件总览图估算。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/telesis_bio_bioxp_3250/meshes/body_shell.stl"/>
+        </geometry>
+        <material name="bioxp3250_body_gray">
+          <color rgba="0.33 0.34 0.36 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.010 ${depth / 2.0 + 0.011} 0.290" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/telesis_bio_bioxp_3250/meshes/upper_access_door.stl"/>
+        </geometry>
+        <material name="bioxp3250_window_glass">
+          <color rgba="0.08 0.09 0.10 0.82"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.130 ${depth / 2.0 + 0.011} 0.050" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/telesis_bio_bioxp_3250/meshes/lower_service_panel.stl"/>
+        </geometry>
+        <material name="bioxp3250_panel_gray">
+          <color rgba="0.40 0.41 0.43 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.190 ${depth / 2.0 + 0.011} 0.060" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/telesis_bio_bioxp_3250/meshes/touchscreen_bezel.stl"/>
+        </geometry>
+        <material name="bioxp3250_touch_bezel">
+          <color rgba="0.28 0.29 0.31 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0.190 ${depth / 2.0 + 0.021} 0.084" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/telesis_bio_bioxp_3250/meshes/touchscreen_glass.stl"/>
+        </geometry>
+        <material name="bioxp3250_touchscreen">
+          <color rgba="0.88 0.22 0.49 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <!-- 前门中央附近的主要装载开口参考点。 -->
+    <link name="${station_name}${device_name}front_loading_access_link"/>
+    <joint name="${station_name}${device_name}front_loading_access_joint" type="fixed">
+      <origin xyz="${front_loading_x} ${front_loading_y} ${front_loading_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_loading_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 右前触控屏位置，便于后续人机交互或观察位姿规划。 -->
+    <link name="${station_name}${device_name}touchscreen_access_link"/>
+    <joint name="${station_name}${device_name}touchscreen_access_joint" type="fixed">
+      <origin xyz="${touchscreen_x} ${touchscreen_y} ${touchscreen_z}" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}touchscreen_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

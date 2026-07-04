@@ -1,0 +1,91 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro
+    name="cytiva_akta_pure"
+    params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+            mesh_path:='' width:=0.535 depth:=0.470 height:=0.630
+            front_access_offset:=0.065 rear_service_offset:=0.055">
+
+    <!-- 基于 Cytiva ÄKTA pure 25 官方外形尺寸（535 x 470 x 630 mm）构建的近似外形。
+         当前仓库内未找到可直接复用的官方 CAD/STL，因此采用组合式 fallback STL：
+         主机柜体 + 顶部导轨平台 + 前部流路/阀区 + 右前控制面板。 -->
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_akta_pure/meshes/cabinet_body.stl"/>
+        </geometry>
+        <material name="akta_pure_body">
+          <color rgba="0.90 0.91 0.92 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="0 0.010 ${height - 0.028}" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_akta_pure/meshes/top_rail_deck.stl"/>
+        </geometry>
+        <material name="akta_pure_top">
+          <color rgba="0.77 0.80 0.83 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="-0.030 ${depth / 2.0 - 0.010} 0.215" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_akta_pure/meshes/front_fluidics_panel.stl"/>
+        </geometry>
+        <material name="akta_pure_front">
+          <color rgba="0.74 0.79 0.84 1"/>
+        </material>
+      </visual>
+      <visual>
+        <origin xyz="${width / 2.0 - 0.085} ${depth / 2.0} 0.395" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/cytiva_akta_pure/meshes/control_panel.stl"/>
+        </geometry>
+        <material name="akta_pure_control">
+          <color rgba="0.16 0.19 0.23 1"/>
+        </material>
+      </visual>
+      <!-- <collision>
+        <origin xyz="0 0 ${height / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${width} ${depth} ${height}"/>
+        </geometry>
+      </collision> -->
+    </link>
+
+    <!-- 前侧为主要人工/机械操作面：柱位、阀组件、样品泵、触控面板均位于此侧。 -->
+    <link name="${station_name}${device_name}front_access_link"/>
+    <joint name="${station_name}${device_name}front_access_joint" type="fixed">
+      <origin xyz="0 ${depth / 2.0 + front_access_offset} 0.360" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}front_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- 后侧作为服务面：废液管夹、线缆和其余维护操作参考该侧。 -->
+    <link name="${station_name}${device_name}rear_service_access_link"/>
+    <joint name="${station_name}${device_name}rear_service_access_joint" type="fixed">
+      <origin xyz="0 ${-depth / 2.0 - rear_service_offset} 0.285" rpy="0 0 ${pi}" />
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}rear_service_access_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

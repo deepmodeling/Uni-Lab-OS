@@ -3,20 +3,13 @@
     "plc_device_id": "szlab_poly_plc",
     "devices": {
       "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
-      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice",
-      "szlab_mixer_robot": "unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot.SzlabMixerRobotDevice"
+      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice"
     }
   },
   "opc_snapshot": {
     "common_variables": [],
     "action_variables": {
-      "submit_place_to_s06": [
-        "PLC_R任务号"
-      ],
-      "submit_pick_from_s06": [
-        "PLC_R任务号"
-      ],
-      "run_solvent_addition": [
+      "transfer_liquid": [
         "S06准备信号",
         "S06允许加工",
         "S06工艺选择",
@@ -28,7 +21,7 @@
         "传感器状态_上位机[4].NO[12]",
         "传感器状态_上位机[5].NO[1]"
       ],
-      "transfer_liquid": [
+      "run_solvent_addition": [
         "S06准备信号",
         "S06允许加工",
         "S06工艺选择",

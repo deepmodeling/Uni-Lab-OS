@@ -1,0 +1,67 @@
+{
+  "id": "debug_s06_pump",
+  "title": "SZLab S06 注射泵本地调试工具",
+  "target_device_id": "szlab_mixer_pump",
+  "target_device_ids": ["szlab_mixer_pump"],
+  "actions_source": "registry",
+  "runtime_config": "../runtime_configs/debug_s06_pump_runtime.json",
+  "default_workflow_name": "szlab_s06_pump_workflow",
+  "default_config": {
+    "graph": "__generated__",
+    "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
+    "csv": "pump_nodes.csv",
+    "timeout": 300,
+    "no_subscription": true,
+    "show_csv": false,
+    "stack_status_groups": []
+  },
+  "path_roots": [
+    "unilabos/devices/workstation/szlab_poly_studio/s06_pump"
+  ],
+  "device_graph": {
+    "nodes": [
+      {
+        "id": "szlab_poly_plc",
+        "name": "szlab_poly_plc",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_poly_plc",
+        "position": {"x": 0, "y": 0, "z": 0},
+        "config": {
+          "url": "${opcua_url}",
+          "csv_path": "${csv_path}",
+          "timeout": "${timeout}",
+          "no_subscription": true,
+          "opcua_node_id_prefix": "ns=4;s=上位机通讯|"
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_mixer_pump",
+        "name": "szlab_mixer_pump",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_mixer_pump",
+        "position": {"x": 160, "y": 0, "z": 0},
+        "config": {
+          "url": "${opcua_url}",
+          "timeout": "${timeout}",
+          "robot_addition_position": 7,
+          "robot_stirrer_position": 2,
+          "pipeline_route_specs": [
+            {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
+            {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
+            {"pump": 1, "pipeline": "air", "control_valve": 13, "absolute_position": 23},
+            {"pump": 2, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
+            {"pump": 2, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
+            {"pump": 2, "pipeline": "air", "control_valve": 13, "absolute_position": 23}
+          ]
+        },
+        "data": {}
+      }
+    ],
+    "links": []
+  }
+}

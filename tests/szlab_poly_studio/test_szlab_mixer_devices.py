@@ -104,6 +104,18 @@ def test_szlab_plc_wait_variable_equal_records_start_and_finish_events(monkeypat
     assert device.drain_opc_wait_events() == []
 
 
+def test_szlab_plc_empty_stack_status_group_list_reads_no_sensors():
+    device = object.__new__(SZLabPolyPLCDevice)
+    device.stack_sensor_groups = {"s10_liquid_reagent": {"1-1": "传感器状态_上位机[4].NO[12]"}}
+
+    def fail_read_sensor_group(_sensors):
+        raise AssertionError("空 stack_status_groups 不应读取任何传感器")
+
+    device._read_sensor_group = fail_read_sensor_group
+
+    assert device._read_stack_sensor_groups(group_names=[]) == {}
+
+
 def test_clear_pc_to_plc_variables_treats_failed_write_as_success_when_already_clear():
     class FakePlcGateway:
         def __init__(self):
@@ -1390,7 +1402,7 @@ def test_szlab_mixer_run_nodes_samples_current_device_variables():
         def get_opc_variable_metadata(self, variable_name):
             return variable_name, f"ns=2;s={variable_name}"
 
-        def run_solvent_addition(self, pump=1, volume=1, skip_robot=True):
+        def run_solvent_addition(self, process=1, volume=1, skip_robot=True):
             return {"success": True}
 
     pump = FakePump()
@@ -1403,7 +1415,7 @@ def test_szlab_mixer_run_nodes_samples_current_device_variables():
                 uuid="pump",
                 name="auto-run_solvent_addition",
                 device_name="szlab_mixer_pump",
-                param={"pump": 1, "volume": 1, "skip_robot": True},
+                param={"process": 1, "volume": 1, "skip_robot": True},
             )
         ],
         {"szlab_mixer_pump": pump},

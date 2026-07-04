@@ -57,7 +57,7 @@ class TestSzlabMixerPumpOpcUaDevice:
             timeout=8.0,
         )
         try:
-            result = device.run_solvent_addition(pump=1, volume=10, skip_robot=True)
+            result = device.run_solvent_addition(process=1, volume=10, skip_robot=True)
             assert result["success"] is True
         finally:
             device.disconnect()

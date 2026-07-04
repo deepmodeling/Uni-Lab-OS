@@ -24,15 +24,19 @@ class PseudoSzlabMixerOpcUaClient:
             **(initial_values or {}),
         }
         self.writes: list[tuple[str, Any]] = []
+        self.events: list[tuple[Any, ...]] = []
         self.pulses: list[str] = []
         self.wait_equal_calls: list[tuple[str, Any]] = []
+        self.force_done_timeout = False
 
     def read(self, name: str) -> Any:
+        self.events.append(("read", name))
         if name not in self.values:
             raise KeyError(f"未找到 OPC UA 节点: {name}")
         return self.values[name]
 
     def write(self, name: str, value: Any) -> None:
+        self.events.append(("write", name, value))
         self.values[name] = value
         self.writes.append((name, value))
 
@@ -45,11 +49,15 @@ class PseudoSzlabMixerOpcUaClient:
 
     def wait_equal(self, name: str, expected: Any, timeout: float = 300.0, interval: float = 0.2) -> bool:
         del timeout, interval
+        self.events.append(("wait", name, expected))
         self.wait_equal_calls.append((name, expected))
         return self.values.get(name) == expected
 
     def wait_new_cycle_done(self, name: str, timeout: float = 300.0, interval: float = 0.2) -> bool:
         del timeout, interval
+        self.events.append(("wait_new_cycle_done", name))
+        if self.force_done_timeout:
+            return False
         if bool(self.read(name)):
             self.wait_equal_calls.append((name, False))
             self.values[name] = False

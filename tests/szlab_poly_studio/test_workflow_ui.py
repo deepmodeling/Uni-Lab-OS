@@ -294,6 +294,53 @@ def test_s07_robot_runtime_binds_solid_addition_to_plc_gateway(monkeypatch, tmp_
     assert devices["szlab_s07_solid_addition"].config["use_plc_gateway"] is True
 
 
+def test_s06_debug_runtime_creates_only_plc_and_pump(monkeypatch, tmp_path):
+    class FakePlcDevice:
+        def __init__(self, **config):
+            self.config = config
+
+    class FakePumpDevice:
+        def __init__(self, **config):
+            self.config = config
+
+    def fake_load_class(class_path):
+        if class_path.endswith("SZLabPolyPLCDevice"):
+            return FakePlcDevice
+        if class_path.endswith("SzlabMixerPumpDevice"):
+            return FakePumpDevice
+        raise AssertionError(class_path)
+
+    monkeypatch.setattr(
+        run_workflow_local,
+        "load_ai4c_graph_config",
+        lambda _graph_file: {
+            "szlab_poly_plc": {"url": "opc.tcp://127.0.0.1:48506/", "csv_path": "pump_nodes.csv"},
+            "szlab_mixer_pump": {
+                "url": "opc.tcp://127.0.0.1:48506/",
+                "timeout": 300,
+                "pipeline_route_specs": [
+                    {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21}
+                ],
+            },
+        },
+    )
+    monkeypatch.setattr(run_workflow_local, "_load_class", fake_load_class)
+    runtime_config = load_runtime_config("tests/szlab_poly_studio/runtime_configs/debug_s06_pump_runtime.json")
+
+    devices = create_local_devices(
+        tmp_path / "graph.json",
+        csv_path=Path("unilabos/devices/workstation/szlab_poly_studio/s06_pump/pump_nodes.csv"),
+        runtime_config=runtime_config,
+    )
+
+    assert set(devices) == {"szlab_poly_plc", "szlab_mixer_pump"}
+    assert devices["szlab_poly_plc"].config["csv_path"].endswith("s06_pump/pump_nodes.csv")
+    assert devices["szlab_mixer_pump"].config["csv_path"].endswith("s06_pump/pump_nodes.csv")
+    assert devices["szlab_mixer_pump"].config["pipeline_route_specs"] == [
+        {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21}
+    ]
+
+
 def test_szlab_mixer_ui_preset_uses_0623_csv_and_s04_s05_actions():
     preset = load_preset("szlab_mixer")
     runtime_config = _load_preset_runtime_config(preset)
@@ -398,6 +445,52 @@ def test_s07_debug_preset_uses_debug_file_name():
     assert preset.id == "debug_s07_solid_addition"
     assert preset.target_device_ids == ["szlab_s07_solid_addition"]
     assert not Path("tests/szlab_poly_studio/presets/solid_addition_s07.json").exists()
+
+
+def test_s06_debug_preset_uses_debug_file_name_and_only_pump_device():
+    preset = load_preset("debug_s06_pump")
+    runtime_config = _load_preset_runtime_config(preset)
+    graph_nodes = {node["id"]: node for node in preset.device_graph["nodes"]}
+    csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
+
+    assert preset.id == "debug_s06_pump"
+    assert preset.target_device_ids == ["szlab_mixer_pump"]
+    assert preset.default_config["csv"] == "pump_nodes.csv"
+    assert csv_path.name == "pump_nodes.csv"
+    assert csv_path.exists()
+    assert set(graph_nodes) == {"szlab_poly_plc", "szlab_mixer_pump"}
+    assert graph_nodes["szlab_mixer_pump"]["config"] == {
+        "url": "${opcua_url}",
+        "timeout": "${timeout}",
+        "robot_addition_position": 7,
+        "robot_stirrer_position": 2,
+        "pipeline_route_specs": [
+            {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
+            {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
+            {"pump": 1, "pipeline": "air", "control_valve": 13, "absolute_position": 23},
+            {"pump": 2, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
+            {"pump": 2, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
+            {"pump": 2, "pipeline": "air", "control_valve": 13, "absolute_position": 23},
+        ],
+    }
+    assert runtime_config.device_factory.devices == {
+        "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
+        "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice",
+    }
+    assert preset.actions["transfer_liquid"].device_id == "szlab_mixer_pump"
+    assert preset.actions["run_solvent_addition"].device_id == "szlab_mixer_pump"
+    assert collect_snapshot_variables("run_solvent_addition", {"process": 1}, runtime_config) == [
+        "S06准备信号",
+        "S06允许加工",
+        "S06工艺选择",
+        "S06_1号溶液添加量",
+        "S06_2号溶液添加量",
+        "S06参数写入完成",
+        "S06加工完成",
+        "传感器状态_上位机[3].NO[1]",
+        "传感器状态_上位机[4].NO[12]",
+        "传感器状态_上位机[5].NO[1]",
+    ]
 
 
 def test_ai4c_runtime_device_classes_are_importable():
@@ -1151,6 +1244,40 @@ def test_stack_status_api_returns_live_plc_stack_status(monkeypatch):
     assert payload["stacks"]["s10_liquid_reagent"]["slots"]["1-1"]["occupied"] is True
     assert second_response["success"] is True
     assert fake_plc.calls == [["s10_liquid_reagent", "powder_container"]]
+
+
+def test_s06_debug_stack_status_is_disabled_with_empty_group_list(monkeypatch):
+    class FakePLC:
+        def __init__(self):
+            self.calls = []
+
+        def get_stack_status(self, group_names=None):
+            self.calls.append(group_names)
+            return {
+                "success": True,
+                "schema": "szlab_poly_studio.stack_status.v1",
+                "stacks": {},
+            }
+
+    fake_plc = FakePLC()
+
+    def fake_get_live_devices(self):
+        return {"szlab_poly_plc": fake_plc}
+
+    monkeypatch.setattr(WorkflowRunManager, "get_live_devices", fake_get_live_devices)
+
+    app = create_app("debug_s06_pump")
+    stack_status_endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/stack-status"
+    )
+
+    response = asyncio.run(stack_status_endpoint())
+
+    assert response["success"] is True
+    assert response["stacks"] == {}
+    assert fake_plc.calls == [[]]
 
 
 def test_stack_s05_s06_preset_uses_trimmed_csv_for_stack_camera_and_pump():

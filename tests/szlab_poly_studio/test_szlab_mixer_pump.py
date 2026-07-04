@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+from unilabos.registry.ast_registry_scanner import scan_directory
 from unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump import SzlabMixerPumpDevice
 from unilabos.devices.workstation.szlab_poly_studio.s06_pump.sensors import S06PipelineRoute, parse_pipeline_route_specs
 from tests.szlab_poly_studio.pseudo_clients.s06_pump import PseudoSzlabMixerOpcUaClient
@@ -30,16 +34,31 @@ def make_pump_device(
     )
 
 
+def test_szlab_mixer_pump_actions_use_process_parameter_name():
+    root = Path("unilabos/devices/workstation/szlab_poly_studio/s06_pump")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        result = scan_directory(root, python_path=Path(".").resolve(), executor=executor)
+
+    actions = result["devices"]["szlab_mixer_pump"]["actions"]
+    transfer_params = {param["name"] for param in actions["transfer_liquid"]["params"]}
+    solvent_params = {param["name"] for param in actions["run_solvent_addition"]["params"]}
+
+    assert "process" in transfer_params
+    assert "process" in solvent_params
+    assert "pump" not in transfer_params
+    assert "pump" not in solvent_params
+
+
 def test_szlab_mixer_pump_rejects_invalid_process_index():
     device = make_pump_device()
-    result = device.run_solvent_addition(pump=4, volume=1)
+    result = device.run_solvent_addition(process=4, volume=1)
     assert result["success"] is False
     assert "1、2 或 3" in result["message"]
 
 
 def test_szlab_mixer_pump_rejects_non_positive_volume():
     device = make_pump_device()
-    result = device.run_solvent_addition(pump=1, volume=0)
+    result = device.run_solvent_addition(process=1, volume=0)
     assert result["success"] is False
     assert "体积" in result["message"]
 
@@ -47,7 +66,7 @@ def test_szlab_mixer_pump_rejects_non_positive_volume():
 def test_szlab_mixer_pump_rejects_when_not_allowed():
     client = PseudoSzlabMixerOpcUaClient({"S06允许加工": False})
     device = make_pump_device(client)
-    result = device.run_solvent_addition(pump=1, volume=5)
+    result = device.run_solvent_addition(process=1, volume=5)
     assert result["success"] is False
     assert "允许加工超时" in result["message"]
 
@@ -56,7 +75,7 @@ def test_szlab_mixer_pump_run_solvent_addition_writes_expected_variables():
     client = PseudoSzlabMixerOpcUaClient()
     device = make_pump_device(client)
 
-    result = device.run_solvent_addition(pump=1, volume=5, skip_robot=True)
+    result = device.run_solvent_addition(process=1, volume=5, skip_robot=True)
 
     assert result["success"] is True
     assert ("S06工艺选择", 1) in client.writes
@@ -69,9 +88,10 @@ def test_szlab_mixer_pump_transfer_liquid_uses_published_s06_process_variables()
     client = PseudoSzlabMixerOpcUaClient()
     device = make_pump_device(client)
 
-    result = device.transfer_liquid(pump=1, volume=5, direction="aspirate", pipeline="aspirate")
+    result = device.transfer_liquid(process=1, volume=5, direction="aspirate", pipeline="aspirate")
 
     assert result["success"] is True
+    assert client.wait_equal_calls[:2] == [("S06允许加工", True), ("S06准备信号", True)]
     assert ("S06工艺选择", 1) in client.writes
     assert ("S06_1号溶液添加量", 5) in client.writes
     assert not any(name.startswith("S06注射泵") for name, _value in client.writes)
@@ -83,10 +103,15 @@ def test_szlab_mixer_pump_waits_for_new_completion_cycle_when_done_is_stale():
     client = PseudoSzlabMixerOpcUaClient({"S06加工完成": True})
     device = make_pump_device(client)
 
-    result = device.run_solvent_addition(pump=1, volume=10, skip_robot=True)
+    result = device.run_solvent_addition(process=1, volume=10, skip_robot=True)
 
     assert result["success"] is True
-    assert client.wait_equal_calls == [("S06加工完成", False), ("S06加工完成", True)]
+    assert client.wait_equal_calls == [
+        ("S06允许加工", True),
+        ("S06准备信号", True),
+        ("S06加工完成", False),
+        ("S06加工完成", True),
+    ]
 
 
 def test_szlab_mixer_pump_run_solvent_addition_writes_both_solution_amounts():
@@ -94,7 +119,7 @@ def test_szlab_mixer_pump_run_solvent_addition_writes_both_solution_amounts():
     device = make_pump_device(client)
 
     result = device.run_solvent_addition(
-        pump=3,
+        process=3,
         volume=10,
         volume_pump_1=8,
         volume_pump_2=6,
@@ -111,17 +136,44 @@ def test_szlab_mixer_pump_run_solvent_addition_fails_when_not_ready():
     client = PseudoSzlabMixerOpcUaClient({"S06准备信号": False})
     device = make_pump_device(client)
 
-    result = device.run_solvent_addition(pump=1, skip_robot=True)
+    result = device.run_solvent_addition(process=1, skip_robot=True)
 
     assert result["success"] is False
-    assert "未就绪" in result["message"]
+    assert "准备信号超时" in result["message"]
+    assert client.wait_equal_calls == [("S06允许加工", True), ("S06准备信号", True)]
+
+
+def test_szlab_mixer_pump_resets_params_only_after_process_complete():
+    client = PseudoSzlabMixerOpcUaClient()
+    device = make_pump_device(client)
+
+    result = device.transfer_liquid(process=1, volume=5, direction="aspirate", pipeline="aspirate")
+
+    assert result["success"] is True
+    done_wait = client.events.index(("wait_new_cycle_done", "S06加工完成"))
+    reset_written = client.events.index(("write", "S06参数写入完成", False))
+    assert reset_written > done_wait
+
+
+def test_szlab_mixer_pump_does_not_reset_params_before_process_complete_timeout():
+    client = PseudoSzlabMixerOpcUaClient()
+    client.force_done_timeout = True
+    device = make_pump_device(client)
+
+    result = device.transfer_liquid(process=1, volume=5, direction="aspirate", pipeline="aspirate")
+
+    assert result["success"] is False
+    assert "加工完成等待超时" in result["message"]
+    assert ("wait_new_cycle_done", "S06加工完成") in client.events
+    assert ("write", "S06参数写入完成", False) not in client.events
+    assert ("write", "S06工艺选择", 0) not in client.events
 
 
 def test_szlab_mixer_pump_run_solvent_addition_checks_storage_bottle_present():
     client = PseudoSzlabMixerOpcUaClient({"传感器状态_上位机[4].NO[12]": False})
     device = make_pump_device(client)
 
-    result = device.run_solvent_addition(pump=1, skip_robot=True)
+    result = device.run_solvent_addition(process=1, skip_robot=True)
 
     assert result["success"] is False
     assert "储液瓶 1" in result["message"]
@@ -132,7 +184,7 @@ def test_szlab_mixer_pump_transport_beaker_writes_robot_positions():
     device = make_pump_device(client, robot_addition_position=12, robot_stirrer_position=3)
 
     result = device.run_solvent_addition(
-        pump=1,
+        process=1,
         volume=1,
         skip_robot=False,
     )

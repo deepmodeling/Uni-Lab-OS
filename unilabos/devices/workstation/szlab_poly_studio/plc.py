@@ -721,7 +721,7 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def _read_stack_sensor_groups(self, group_names: Optional[List[str]] = None) -> Dict[str, Dict[str, Optional[bool]]]:
-        selected_groups = group_names or list(self.stack_sensor_groups)
+        selected_groups = list(self.stack_sensor_groups) if group_names is None else group_names
         return {
             group_name: self._read_sensor_group(sensors)
             for group_name, sensors in self.stack_sensor_groups.items()

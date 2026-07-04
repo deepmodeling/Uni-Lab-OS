@@ -6,11 +6,11 @@
       "name": "auto-run_solvent_addition",
       "device_name": "szlab_mixer_pump",
       "param": {
-        "pump": 1,
         "volume": 8,
         "skip_level_check": false,
         "skip_robot": false,
-        "beaker_true_means_present": true
+        "beaker_true_means_present": true,
+        "process": 1
       }
     }
   ],

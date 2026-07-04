@@ -8,12 +8,12 @@ import pytest
 
 from tests.pseudo_devices.common.opcua_csv_server import OpcUaCsvServer
 from tests.pseudo_devices.common.opcua_flow_daemon import OpcUaFlowDaemon
-from unilabos.devices.workstation.szlab_poly_studio.pump.pump import SzlabMixerPumpDevice
+from unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump import SzlabMixerPumpDevice
 
 SZLAB_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SZLAB_DIR.parents[1]
-PUMP_CSV = REPO_ROOT / "unilabos/devices/workstation/szlab_poly_studio/pump/pump_nodes.csv"
-PUMP_FLOW = REPO_ROOT / "unilabos/devices/workstation/szlab_poly_studio/pump/pump_flow.json"
+PUMP_CSV = REPO_ROOT / "unilabos/devices/workstation/szlab_poly_studio/s06_pump/pump_nodes.csv"
+PUMP_FLOW = REPO_ROOT / "unilabos/devices/workstation/szlab_poly_studio/s06_pump/pump_flow.json"
 DEFAULT_ENDPOINT = "opc.tcp://127.0.0.1:48506/"
 
 

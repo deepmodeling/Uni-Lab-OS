@@ -1,7 +1,7 @@
 {
   "device_factory": {
     "devices": {
-      "szlab_s08_cap_station": "unilabos.devices.workstation.szlab_poly_studio.decap_s08.decap_s08_cap_station.SZLabS08CapStationDevice"
+      "szlab_s08_cap_station": "unilabos.devices.workstation.szlab_poly_studio.s08_decap.decap_s08_cap_station.SZLabS08CapStationDevice"
     }
   },
   "opc_snapshot": {

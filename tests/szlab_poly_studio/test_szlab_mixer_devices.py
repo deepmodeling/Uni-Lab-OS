@@ -5,26 +5,26 @@ from pathlib import Path
 import pytest
 
 from unilabos.registry.ast_registry_scanner import scan_directory
-from unilabos.devices.workstation.szlab_poly_studio.pump.sensors import (
+from unilabos.devices.workstation.szlab_poly_studio.s06_pump.sensors import (
     S06PipelineRoute,
     default_s06_pipeline_routes,
     s06_pump_valve_var,
 )
 from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice, wait_variable_true
-from unilabos.devices.workstation.szlab_poly_studio.magnetic_stirring.magnetic_stirring import (
+from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring import (
     SzlabMixerMagneticStirrerDevice,
 )
-from unilabos.devices.workstation.szlab_poly_studio.photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
-from unilabos.devices.workstation.szlab_poly_studio.robot.robot import SzlabMixerRobotDevice
-from unilabos.devices.workstation.szlab_poly_studio.robot.robot_S04 import S04_SENSOR_BY_POSITION
-from unilabos.devices.workstation.szlab_poly_studio.robot.robot_tasks import ROBOT_ACTION_SPECS
+from unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
+from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import SzlabMixerRobotDevice
+from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S04 import S04_SENSOR_BY_POSITION
+from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import ROBOT_ACTION_SPECS
 from scripts.run_workflow_local import clear_pc_to_plc_variables, create_local_devices, load_runtime_config
 from scripts.run_workflow_local import WorkflowLogger, WorkflowNode, run_nodes
 from scripts.workflow_ui import _load_preset_runtime_config, build_graph_workflow, load_preset
 
 
 def test_szlab_mixer_devices_are_ast_scannable():
-    root = Path("unilabos/devices/workstation/szlab_poly_studio/pump")
+    root = Path("unilabos/devices/workstation/szlab_poly_studio/s06_pump")
     with ThreadPoolExecutor(max_workers=2) as executor:
         result = scan_directory(root, python_path=Path(".").resolve(), executor=executor)
 
@@ -120,7 +120,7 @@ def test_szlab_plc_write_reports_direct_node_id_unknown_without_browse_retry(mon
 
 
 def test_szlab_photoshotting_device_is_ast_scannable_from_own_package():
-    root = Path("unilabos/devices/workstation/szlab_poly_studio/photoshotting")
+    root = Path("unilabos/devices/workstation/szlab_poly_studio/s05_photoshotting")
     with ThreadPoolExecutor(max_workers=2) as executor:
         result = scan_directory(root, python_path=Path(".").resolve(), executor=executor)
 
@@ -130,7 +130,7 @@ def test_szlab_photoshotting_device_is_ast_scannable_from_own_package():
 
 
 def test_szlab_magnetic_stirrer_device_is_ast_scannable_from_own_package():
-    root = Path("unilabos/devices/workstation/szlab_poly_studio/magnetic_stirring")
+    root = Path("unilabos/devices/workstation/szlab_poly_studio/s04_magnetic_stirring")
     with ThreadPoolExecutor(max_workers=2) as executor:
         result = scan_directory(root, python_path=Path(".").resolve(), executor=executor)
 
@@ -140,7 +140,7 @@ def test_szlab_magnetic_stirrer_device_is_ast_scannable_from_own_package():
 
 
 def test_szlab_robot_device_is_ast_scannable_from_own_package():
-    root = Path("unilabos/devices/workstation/szlab_poly_studio/robot")
+    root = Path("unilabos/devices/workstation/szlab_poly_studio/s12_robot")
     with ThreadPoolExecutor(max_workers=2) as executor:
         result = scan_directory(root, python_path=Path(".").resolve(), executor=executor)
 
@@ -379,7 +379,7 @@ def test_szlab_magnetic_stirrer_rejects_invalid_mode():
 
 
 def test_szlab_photoshotting_debug_assets_use_0623_s05_variables():
-    device_dir = Path("unilabos/devices/workstation/szlab_poly_studio/photoshotting")
+    device_dir = Path("unilabos/devices/workstation/szlab_poly_studio/s05_photoshotting")
     latest_csv = Path("unilabos/devices/workstation/szlab_poly_studio/szlab_plc_0623.csv")
     nodes_csv = device_dir / "photoshotting_nodes.csv"
     flow_path = device_dir / "photoshotting_flow.json"
@@ -404,8 +404,8 @@ def test_szlab_photoshotting_debug_assets_use_0623_s05_variables():
     assert flow["rules"] == []
 
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    assert config["virtual_opcua"]["csv"].endswith("photoshotting/photoshotting_nodes.csv")
-    assert config["device"]["csv_path"] == "photoshotting/photoshotting_nodes.csv"
+    assert config["virtual_opcua"]["csv"].endswith("s05_photoshotting/photoshotting_nodes.csv")
+    assert config["device"]["csv_path"] == "s05_photoshotting/photoshotting_nodes.csv"
     assert config["device"]["opcua_node_id_map"] == {
         "S05加工完成": "ns=4;s=上位机通讯|S05加工完成",
         "S05拍照结果": "ns=4;s=上位机通讯|S05拍照结果",
@@ -1176,9 +1176,9 @@ def test_szlab_mixer_preset_loads_own_runtime_config():
 
     assert runtime_config.device_factory.devices == {
         "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
-        "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_poly_studio.magnetic_stirring.magnetic_stirring.SzlabMixerMagneticStirrerDevice",
-        "szlab_mixer_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.photoshotting.photoshotting.SzlabMixerPhotoShottingDevice",
-        "szlab_mixer_robot": "unilabos.devices.workstation.szlab_poly_studio.robot.robot.SzlabMixerRobotDevice",
+        "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring.SzlabMixerMagneticStirrerDevice",
+        "szlab_mixer_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.SzlabMixerPhotoShottingDevice",
+        "szlab_mixer_robot": "unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot.SzlabMixerRobotDevice",
     }
     assert runtime_config.device_factory.plc_device_id == "szlab_poly_plc"
 

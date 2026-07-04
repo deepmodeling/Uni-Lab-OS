@@ -1,157 +1,307 @@
-"""根据 flow JSON 监听 OPC UA 变量并写回伪 PLC 响应。"""
-
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
 import json
 import logging
+import signal
 import threading
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 from opcua import Client
 
-logger = logging.getLogger(__name__)
+
+LOGGER = logging.getLogger("pseudo-opcua-flow-daemon")
 
 
-def _format_flow_summary(flow: dict[str, Any]) -> str:
-    lines = [f"flow={flow.get('name', 'unknown')}"]
-    for rule in flow.get("rules", []):
+def describe_flow(flow_path: str | Path) -> None:
+    flow = json.loads(Path(flow_path).read_text(encoding="utf-8"))
+    print(f"Flow: {flow.get('name', '<unnamed>')}")
+    for rule_index, rule in enumerate(flow.get("rules", []), 1):
         trigger = rule.get("trigger", {})
-        lines.append(
-            f"rule={rule.get('name')}: trigger {trigger.get('node')} == {trigger.get('value')} ({trigger.get('edge')})"
+        print(f"Rule {rule_index}: {rule.get('name', '<unnamed>')}")
+        print(
+            "  Trigger: {node} == {value!r} on {edge} edge".format(
+                node=trigger.get("node"),
+                value=trigger.get("value", True),
+                edge=trigger.get("edge", "rising"),
+            )
         )
+        log_nodes = rule.get("log_nodes", [])
+        if log_nodes:
+            print(f"  Observe: {', '.join(log_nodes)}")
+        print("  Actions:")
+        for action_index, action in enumerate(rule.get("actions", []), 1):
+            condition = action.get("when")
+            condition_text = f" when {condition}" if condition else ""
+            if "write" in action:
+                node_name, value = FlowDaemon._write_action_parts(action["write"])
+                print(f"    {action_index}. write {node_name} = {value!r}{condition_text}")
+            elif "sleep" in action:
+                print(f"    {action_index}. sleep {action['sleep']}s{condition_text}")
+            else:
+                print(f"    {action_index}. unsupported action: {action}")
+
+
+def browse_object_nodes(url: str, object_name: str) -> tuple[Client, dict[str, Any]]:
+    client = Client(url)
+    client.connect()
+    objects = client.get_objects_node()
+    for child in objects.get_children():
+        if child.get_browse_name().Name == object_name:
+            nodes = {node.get_browse_name().Name: node for node in child.get_children()}
+            return client, nodes
+    client.disconnect()
+    raise RuntimeError(f"OPC UA 中未找到对象: {object_name}")
+
+
+def connect_with_retry(url: str, object_name: str, timeout: float, interval: float) -> tuple[Client, dict[str, Any]]:
+    started_at = time.time()
+    last_error = ""
+    while time.time() - started_at < timeout:
+        try:
+            client, nodes = browse_object_nodes(url, object_name)
+            LOGGER.info("daemon 已连接 OPC UA: url=%s object=%s variables=%s", url, object_name, sorted(nodes))
+            return client, nodes
+        except Exception as exc:
+            last_error = str(exc)
+            LOGGER.info("等待 OPC UA: url=%s object=%s error=%s", url, object_name, last_error)
+            time.sleep(interval)
+    raise TimeoutError(f"等待 OPC UA 对象超时: {last_error}")
+
+
+class FlowDaemon:
+    def __init__(
+        self,
+        url: str,
+        object_name: str,
+        flow_path: str | Path,
+        poll_interval: float,
+        stop_requested,
+    ) -> None:
+        self.url = url
+        self.object_name = object_name
+        self.flow_path = Path(flow_path)
+        self.poll_interval = poll_interval
+        self.stop_requested = stop_requested
+        self.flow = json.loads(self.flow_path.read_text(encoding="utf-8"))
+        self.previous_values: dict[str, Any] = {}
+
+    def run(self) -> None:
+        client, nodes = connect_with_retry(url=self.url, object_name=self.object_name, timeout=20.0, interval=0.5)
+        try:
+            rules = self.flow.get("rules", [])
+            self._validate_rules(rules, nodes)
+            for rule_index, rule in enumerate(rules):
+                trigger_node = rule["trigger"]["node"]
+                self.previous_values[self._rule_key(rule_index, rule)] = nodes[trigger_node].get_value()
+            LOGGER.info("daemon 启动监听: flow=%s rules=%s", self.flow_path, [rule.get("name") for rule in rules])
+
+            while not self.stop_requested():
+                for rule_index, rule in enumerate(rules):
+                    self._run_rule_if_triggered(rule_index, rule, nodes)
+                time.sleep(self.poll_interval)
+        finally:
+            with suppress(Exception):
+                client.disconnect()
+            LOGGER.info("daemon 已断开 OPC UA 连接")
+
+    def _validate_rules(self, rules: list[dict[str, Any]], nodes: dict[str, Any]) -> None:
+        missing: set[str] = set()
+        for rule in rules:
+            missing.update(self._referenced_nodes(rule) - set(nodes))
+        if missing:
+            raise RuntimeError(f"flow 引用了不存在的 OPC UA 节点: {sorted(missing)}")
+
+    @staticmethod
+    def _referenced_nodes(rule: dict[str, Any]) -> set[str]:
+        node_names = {rule["trigger"]["node"]}
+        for node_name in rule.get("log_nodes", []):
+            node_names.add(node_name)
         for action in rule.get("actions", []):
             if "write" in action:
-                node, value = action["write"]
-                lines.append(f"  action: write {node} = {value}")
-            elif "sleep" in action:
-                lines.append(f"  action: sleep {action['sleep']}s")
-    return "\n".join(lines)
+                node_name, _value = FlowDaemon._write_action_parts(action["write"])
+                node_names.add(node_name)
+            node_names.update(FlowDaemon._condition_nodes(action.get("when")))
+        return node_names
+
+    def _run_rule_if_triggered(self, rule_index: int, rule: dict[str, Any], nodes: dict[str, Any]) -> None:
+        trigger = rule["trigger"]
+        trigger_node = trigger["node"]
+        expected = trigger.get("value", True)
+        edge = trigger.get("edge", "rising")
+        rule_key = self._rule_key(rule_index, rule)
+
+        try:
+            current = nodes[trigger_node].get_value()
+        except Exception as exc:
+            if self.stop_requested():
+                return
+            LOGGER.warning("读取 trigger 失败，跳过本轮: node=%s error=%s", trigger_node, exc)
+            return
+
+        previous = self.previous_values.get(rule_key)
+        self.previous_values[rule_key] = current
+        if not self._triggered(current=current, previous=previous, expected=expected, edge=edge):
+            return
+
+        log_values = {node_name: nodes[node_name].get_value() for node_name in rule.get("log_nodes", [])}
+        LOGGER.info("触发 flow 规则: name=%s trigger=%s values=%s", rule.get("name"), trigger_node, log_values)
+
+        for action in rule.get("actions", []):
+            if not self._conditions_match(action.get("when"), nodes):
+                LOGGER.info("跳过未满足条件的 action: when=%s action=%s", action.get("when"), action)
+                continue
+            if "sleep" in action:
+                time.sleep(float(action["sleep"]))
+                continue
+            if "write" in action:
+                node_name, value = self._write_action_parts(action["write"])
+                node = nodes[node_name]
+                before_value = node.get_value()
+                node.set_value(value)
+                after_value = node.get_value()
+                LOGGER.info("写入 OPC UA 变量: node=%s %r -> %r", node_name, before_value, after_value)
+                LOGGER.info("%s 变量已经转成 %r", node_name, after_value)
+
+    @staticmethod
+    def _write_action_parts(write_action: Any) -> tuple[str, Any]:
+        if isinstance(write_action, dict):
+            return str(write_action["node"]), write_action.get("value")
+        if isinstance(write_action, (list, tuple)) and len(write_action) == 2:
+            node_name, value = write_action
+            return str(node_name), value
+        raise ValueError(f"不支持的 write action: {write_action}")
+
+    @staticmethod
+    def _condition_nodes(condition: Any) -> set[str]:
+        if not condition:
+            return set()
+        if isinstance(condition, dict):
+            return {str(condition["node"])} if "node" in condition else set()
+        if isinstance(condition, list):
+            return {
+                str(item["node"])
+                for item in condition
+                if isinstance(item, dict) and "node" in item
+            }
+        raise ValueError(f"不支持的 when 条件: {condition}")
+
+    @classmethod
+    def _conditions_match(cls, condition: Any, nodes: dict[str, Any]) -> bool:
+        if not condition:
+            return True
+        conditions = condition if isinstance(condition, list) else [condition]
+        for item in conditions:
+            if not isinstance(item, dict) or "node" not in item:
+                raise ValueError(f"不支持的 when 条件: {condition}")
+            node_name = item["node"]
+            expected = item.get("value", True)
+            if nodes[node_name].get_value() != expected:
+                return False
+        return True
+
+    @staticmethod
+    def _rule_key(rule_index: int, rule: dict[str, Any]) -> str:
+        return f"{rule_index}:{rule.get('name', '')}:{rule['trigger']['node']}"
+
+    @staticmethod
+    def _triggered(current: Any, previous: Any, expected: Any, edge: str) -> bool:
+        current_matches = current == expected
+        previous_matches = previous == expected
+        if edge == "rising":
+            return current_matches and not previous_matches
+        if edge == "falling":
+            return (not current_matches) and previous_matches
+        if edge == "level":
+            return current_matches
+        raise ValueError(f"不支持的 trigger edge: {edge}")
 
 
 class OpcUaFlowDaemon:
-    def __init__(self, url: str, flow_path: Path, poll_interval: float = 0.05):
+    """兼容旧调试脚本的 VirtualMixer flow daemon 封装。"""
+
+    def __init__(self, url: str, flow_path: str | Path, poll_interval: float = 0.05):
         self.url = url
-        self.flow_path = flow_path
+        self.flow_path = Path(flow_path)
         self.poll_interval = poll_interval
-        self.flow = json.loads(flow_path.read_text(encoding="utf-8"))
-        self._client = Client(url)
-        self._nodes: dict[str, Any] = {}
-        self._last_values: dict[str, Any] = {}
-        self._running = False
+        self.flow = json.loads(self.flow_path.read_text(encoding="utf-8"))
+        self._stopped = True
         self._thread: threading.Thread | None = None
+        self._daemon = FlowDaemon(
+            url=url,
+            object_name="VirtualMixer",
+            flow_path=self.flow_path,
+            poll_interval=poll_interval,
+            stop_requested=lambda: self._stopped,
+        )
 
     @property
     def summary(self) -> str:
-        return _format_flow_summary(self.flow)
-
-    def connect(self) -> None:
-        logging.getLogger("opcua").setLevel(logging.WARNING)
-        try:
-            self._client.connect()
-        except ConnectionRefusedError as exc:
-            raise ConnectionRefusedError(
-                f"无法连接 {self.url}。请先另开终端启动 OPC CSV 服务器，例如:\n"
-                "  PYTHONPATH=. python tests/pseudo_devices/common/opcua_csv_server.py \\\n"
-                "    --csv unilabos/devices/workstation/szlab_poly_studio/pump/pump_nodes.csv \\\n"
-                f"    --endpoint {self.url}"
-            ) from exc
-        objects = self._client.get_objects_node()
-        virtual_mixer = None
-        for child in objects.get_children():
-            if child.get_browse_name().Name == "VirtualMixer":
-                virtual_mixer = child
-                break
-        if virtual_mixer is None:
-            raise RuntimeError("OPC UA 中未找到 VirtualMixer 对象")
-        for child in virtual_mixer.get_children():
-            self._nodes[child.get_browse_name().Name] = child
+        lines = [f"flow={self.flow.get('name', 'unknown')}"]
         for rule in self.flow.get("rules", []):
-            trigger_name = rule.get("trigger", {}).get("node")
-            if trigger_name:
-                self._last_values[trigger_name] = self.read(trigger_name)
-
-    def disconnect(self) -> None:
-        self._client.disconnect()
-
-    def read(self, name: str) -> Any:
-        return self._nodes[name].get_value()
-
-    def write(self, name: str, value: Any) -> None:
-        self._nodes[name].set_value(value)
-
-    def _is_rising(self, name: str, expected: Any) -> bool:
-        previous = self._last_values.get(name)
-        current = self.read(name)
-        self._last_values[name] = current
-        return previous != expected and current == expected
-
-    def _run_rule(self, rule: dict[str, Any]) -> None:
-        trigger = rule.get("trigger", {})
-        node = trigger.get("node")
-        expected = trigger.get("value")
-        edge = trigger.get("edge", "rising")
-        if edge != "rising" or not self._is_rising(node, expected):
-            return
-
-        observed = {name: self.read(name) for name in rule.get("log_nodes", [])}
-        logger.info("flow trigger %s observed=%s", rule.get("name"), observed)
-
-        for action in rule.get("actions", []):
-            if "write" in action:
-                target, value = action["write"]
-                self.write(target, value)
-                logger.info("flow write %s=%r", target, value)
-            elif "sleep" in action:
-                time.sleep(float(action["sleep"]))
-
-    def run_once(self) -> None:
-        for rule in self.flow.get("rules", []):
-            self._run_rule(rule)
+            trigger = rule.get("trigger", {})
+            lines.append(
+                f"rule={rule.get('name')}: trigger {trigger.get('node')} == {trigger.get('value')} ({trigger.get('edge')})"
+            )
+        return "\n".join(lines)
 
     def start(self) -> None:
-        if self._running:
+        if self._thread and self._thread.is_alive():
             return
-        self.connect()
-        self._running = True
-        logger.info("flow daemon 已启动\n%s", self.summary)
-
-        def _loop() -> None:
-            while self._running:
-                try:
-                    self.run_once()
-                except Exception as exc:
-                    logger.error("flow daemon 循环异常: %s", exc)
-                time.sleep(self.poll_interval)
-
-        self._thread = threading.Thread(target=_loop, daemon=True)
+        self._stopped = False
+        self._thread = threading.Thread(target=self._daemon.run, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
-        self._running = False
+        self._stopped = True
         if self._thread:
             self._thread.join(timeout=2)
-        self.disconnect()
-        logger.info("flow daemon 已停止")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="启动 JSON flow 驱动的测试 OPC UA 守护进程")
+    parser.add_argument("--url")
+    parser.add_argument("--object-name")
+    parser.add_argument("--flow", required=True)
+    parser.add_argument("--describe-only", action="store_true")
+    parser.add_argument("--poll-interval", type=float, default=0.02)
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    return parser.parse_args()
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    parser = argparse.ArgumentParser(description="OPC UA flow daemon")
-    parser.add_argument("--url", required=True)
-    parser.add_argument("--flow", type=Path, required=True)
-    args = parser.parse_args()
+    args = parse_args()
+    logging.basicConfig(level=getattr(logging, args.log_level), format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.getLogger("opcua").setLevel(logging.WARNING)
 
-    daemon = OpcUaFlowDaemon(url=args.url, flow_path=args.flow)
-    daemon.start()
-    logger.info("按 Ctrl+C 停止")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        daemon.stop()
+    if args.describe_only:
+        describe_flow(args.flow)
+        return
+    if not args.url or not args.object_name:
+        raise SystemExit("--url and --object-name are required unless --describe-only is used")
+
+    stopped = False
+
+    def request_stop(signum, frame) -> None:
+        nonlocal stopped
+        del frame
+        LOGGER.info("收到停止信号 %s，正在关闭 daemon", signum)
+        stopped = True
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+
+    FlowDaemon(
+        url=args.url,
+        object_name=args.object_name,
+        flow_path=args.flow,
+        poll_interval=args.poll_interval,
+        stop_requested=lambda: stopped,
+    ).run()
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from unilabos.devices.workstation.szlab_poly_studio.decap_s08 import decap_s08_cap_station as _s08_module
+from unilabos.devices.workstation.szlab_poly_studio.s08_decap import decap_s08_cap_station as _s08_module
 
 CAP_CACHE_LENGTH = _s08_module.CAP_CACHE_LENGTH
 CAP_STORAGE_SLOT_SENSORS = _s08_module.CAP_STORAGE_SLOT_SENSORS

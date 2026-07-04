@@ -57,4 +57,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mamba run -n unilab python tests/psuedo_devices/common/run_opcua_ci.py
+          mamba run -n unilab python tests/pseudo_devices/common/run_opcua_ci.py

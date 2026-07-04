@@ -68,7 +68,7 @@
           "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true,
-          "save_dir": "unilabos_data/szlab_poly_studio/photoshotting/photos"
+          "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
         },
         "data": {}
       },

@@ -10,7 +10,7 @@ from opcua import Client
 
 DEFAULT_URL = "opc.tcp://127.0.0.1:48506/"
 
-# 与 unilabos/devices/workstation/szlab_poly_studio/pump/pump_nodes.csv 初始值一致
+# 与 unilabos/devices/workstation/szlab_poly_studio/s06_pump/pump_nodes.csv 初始值一致
 RESET_VALUES: dict[str, object] = {
     "S06准备信号": True,
     "S06允许加工": True,

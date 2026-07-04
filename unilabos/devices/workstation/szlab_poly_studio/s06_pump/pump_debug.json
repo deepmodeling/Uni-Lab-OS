@@ -1,0 +1,46 @@
+{
+  "opcua": {
+    "virtual_url": "opc.tcp://127.0.0.1:48506/",
+    "production_url": "opc.tcp://192.168.1.10:4840/"
+  },
+  "virtual_opcua": {
+    "csv": "unilabos/devices/workstation/szlab_poly_studio/s06_pump/pump_nodes.csv",
+    "flow": "unilabos/devices/workstation/szlab_poly_studio/s06_pump/pump_flow.json",
+    "endpoint": "opc.tcp://127.0.0.1:48506/"
+  },
+  "device": {
+    "timeout": 300.0,
+    "robot_addition_position": 7,
+    "robot_stirrer_position": 2,
+    "pipeline_route_specs": [
+      {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
+      {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
+      {"pump": 1, "pipeline": "air", "control_valve": 13, "absolute_position": 23},
+      {"pump": 2, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
+      {"pump": 2, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
+      {"pump": 2, "pipeline": "air", "control_valve": 13, "absolute_position": 23}
+    ],
+    "opcua_allow_recursive_browse": false,
+    "opcua_node_id_map": {
+      "S06准备信号": "ns=4;s=上位机通讯|S06准备信号",
+      "S06允许加工": "ns=4;s=上位机通讯|S06允许加工",
+      "S06工艺选择": "ns=4;s=上位机通讯|S06工艺选择",
+      "S06_1号溶液添加量": "ns=4;s=上位机通讯|S06_1号溶液添加量",
+      "S06_2号溶液添加量": "ns=4;s=上位机通讯|S06_2号溶液添加量",
+      "S06参数写入完成": "ns=4;s=上位机通讯|S06参数写入完成",
+      "S06加工完成": "ns=4;s=上位机通讯|S06加工完成"
+    }
+  },
+  "action": {
+    "name": "run_solvent_addition",
+    "pump": 3,
+    "volume": 10,
+    "volume_pump_1": 18,
+    "volume_pump_2": 12,
+    "direction": "aspirate",
+    "pipeline": "aspirate",
+    "skip_level_check": true,
+    "skip_robot": true,
+    "beaker_true_means_present": true
+  }
+}

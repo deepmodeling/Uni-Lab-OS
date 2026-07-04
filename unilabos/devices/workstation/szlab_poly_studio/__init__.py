@@ -20,10 +20,10 @@ __all__ = [
 
 if TYPE_CHECKING:
     from unilabos.devices.workstation.szlab_poly_studio.decks import SZLabPolyStudioDeck
-    from unilabos.devices.workstation.szlab_poly_studio.magnetic_stirring.magnetic_stirring import SzlabMixerMagneticStirrerDevice
-    from unilabos.devices.workstation.szlab_poly_studio.photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
+    from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring import SzlabMixerMagneticStirrerDevice
+    from unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
     from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
-    from unilabos.devices.workstation.szlab_poly_studio.pump.pump import SzlabMixerPumpDevice
+    from unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump import SzlabMixerPumpDevice
     from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.pipetting_station import (
         SzlabMixerPipettingStationDevice,
     )
@@ -54,15 +54,15 @@ def __getattr__(name: str):
 
         return S1Workstation
     if name == "SzlabMixerPumpDevice":
-        from unilabos.devices.workstation.szlab_poly_studio.pump.pump import SzlabMixerPumpDevice
+        from unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump import SzlabMixerPumpDevice
 
         return SzlabMixerPumpDevice
     if name == "SzlabMixerPhotoShottingDevice":
-        from unilabos.devices.workstation.szlab_poly_studio.photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
+        from unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
 
         return SzlabMixerPhotoShottingDevice
     if name == "SzlabMixerMagneticStirrerDevice":
-        from unilabos.devices.workstation.szlab_poly_studio.magnetic_stirring.magnetic_stirring import (
+        from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring import (
             SzlabMixerMagneticStirrerDevice,
         )
 

@@ -9,7 +9,7 @@
   "default_config": {
     "graph": "__generated__",
     "url": "opc.tcp://127.0.0.1:50102/",
-    "csv": "decap_s08/decap_s08_nodes.csv",
+    "csv": "s08_decap/decap_s08_nodes.csv",
     "timeout": 300,
     "no_subscription": true,
     "show_csv": true

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from unilabos.devices.workstation.szlab_poly_studio.decap_s08 import decap_s08_cap_station as _s08_module
-from unilabos.devices.workstation.szlab_poly_studio.decap_s08.decap_s08_cap_station import (
+from unilabos.devices.workstation.szlab_poly_studio.s08_decap import decap_s08_cap_station as _s08_module
+from unilabos.devices.workstation.szlab_poly_studio.s08_decap.decap_s08_cap_station import (
     SZLabS08CapStationDevice,
 )
 
@@ -22,18 +22,18 @@ S08_CSV_PATH = (
     / "devices"
     / "workstation"
     / "szlab_poly_studio"
-    / "decap_s08"
+    / "s08_decap"
     / "decap_s08_nodes.csv"
 )
-S08_FLOW_PATH = REPO_ROOT / "tests" / "psuedo_devices" / "szlab_s08_cap_station" / "open_liquid_cap_flow.json"
+S08_FLOW_PATH = REPO_ROOT / "tests" / "pseudo_devices" / "szlab_s08_cap_station" / "open_liquid_cap_flow.json"
 DEFAULT_ENDPOINT = "opc.tcp://127.0.0.1:50102/"
 SAMPLE_ID = [101, 102, 103]
 
 
 @pytest.fixture(scope="module")
 def opcua_pseudo_stack():
-    from tests.psuedo_devices.common.opcua_csv_server import CsvOpcUaServer
-    from tests.psuedo_devices.common.opcua_flow_daemon import FlowDaemon
+    from tests.pseudo_devices.common.opcua_csv_server import CsvOpcUaServer
+    from tests.pseudo_devices.common.opcua_flow_daemon import FlowDaemon
 
     url = os.environ.get("UNILABOS_TEST_SZLAB_S08_OPCUA_URL")
     external = bool(url)

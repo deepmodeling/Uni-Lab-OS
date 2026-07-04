@@ -11,7 +11,7 @@ from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensor
     s09_remaining_volume_var,
     validate_process,
 )
-from unilabos.devices.workstation.szlab_poly_studio.robot.robot import SzlabMixerRobotDevice
+from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import SzlabMixerRobotDevice
 from unilabos.registry.ast_registry_scanner import scan_directory
 from scripts.run_workflow_local import (
     RuntimeConfig,

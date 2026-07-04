@@ -3,8 +3,8 @@
     "plc_device_id": "szlab_poly_plc",
     "devices": {
       "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
-      "szlab_mixer_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.photoshotting.photoshotting.SzlabMixerPhotoShottingDevice",
-      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.pump.pump.SzlabMixerPumpDevice"
+      "szlab_mixer_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.SzlabMixerPhotoShottingDevice",
+      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice"
     }
   },
   "opc_snapshot": {

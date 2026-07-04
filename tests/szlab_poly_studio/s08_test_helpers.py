@@ -5,7 +5,7 @@ from __future__ import annotations
 from tests.szlab_poly_studio.pseudo_clients.decap_s08_pseudo_opcua_client import (
     PseudoSzlabS08OpcUaClient,
 )
-from unilabos.devices.workstation.szlab_poly_studio.decap_s08 import decap_s08_cap_station as s08_module
+from unilabos.devices.workstation.szlab_poly_studio.s08_decap import decap_s08_cap_station as s08_module
 
 NODE_PARAMS_WRITTEN = s08_module.NODE_PARAMS_WRITTEN
 NODE_PROCESS_SELECT = s08_module.NODE_PROCESS_SELECT

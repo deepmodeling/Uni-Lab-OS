@@ -139,4 +139,4 @@ auto-trigger_station_process:
 | `always_free` 装饰器 | `unilabos/registry/decorators.py` |
 | Job 排队与 `always_free` | `unilabos/app/ws_client.py` |
 | Registry YAML 示例 | `docs/developer_guide/add_PLC.md` |
-| S04 磁搅动作 | `unilabos/devices/workstation/szlab_poly_studio/magnetic_stirring/magnetic_stirring.py` |
+| S04 磁搅动作 | `unilabos/devices/workstation/szlab_poly_studio/s04_magnetic_stirring/magnetic_stirring.py` |

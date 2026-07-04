@@ -346,7 +346,7 @@ def ignore_opcua_token_time_drift() -> None:
 
 
 def pc_to_plc_clear_values() -> dict[str, int]:
-    from unilabos.devices.workstation.szlab_poly_studio.robot.robot_tasks import (
+    from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
         ROBOT_TASK_NUMBER_VARIABLE,
         ROBOT_WRITE_DONE_VARIABLE,
         ROBOT_ACTION_SPECS,

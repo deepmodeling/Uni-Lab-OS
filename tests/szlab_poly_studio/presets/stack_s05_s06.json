@@ -22,8 +22,8 @@
     ]
   },
   "path_roots": [
-    "unilabos/devices/workstation/szlab_poly_studio/photoshotting",
-    "unilabos/devices/workstation/szlab_poly_studio/pump"
+    "unilabos/devices/workstation/szlab_poly_studio/s05_photoshotting",
+    "unilabos/devices/workstation/szlab_poly_studio/s06_pump"
   ],
   "device_graph": {
     "nodes": [
@@ -85,7 +85,7 @@
           "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true,
-          "save_dir": "unilabos_data/szlab_poly_studio/photoshotting/photos",
+          "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos",
           "opcua_node_id_map": {
             "S05加工完成": "ns=4;s=上位机通讯|S05加工完成",
             "S05拍照结果": "ns=4;s=上位机通讯|S05拍照结果"

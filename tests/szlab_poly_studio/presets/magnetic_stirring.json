@@ -15,7 +15,7 @@
     "show_csv": false
   },
   "path_roots": [
-    "unilabos/devices/workstation/szlab_poly_studio/magnetic_stirring"
+    "unilabos/devices/workstation/szlab_poly_studio/s04_magnetic_stirring"
   ],
   "device_graph": {
     "nodes": [

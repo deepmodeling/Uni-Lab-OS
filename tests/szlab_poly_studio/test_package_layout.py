@@ -56,6 +56,29 @@ def test_temporary_top_level_workstation_package_path_is_removed():
         __import__(removed_module_path)
 
 
+def test_szlab_poly_studio_station_folders_use_station_prefixes():
+    root = Path("unilabos/devices/workstation/szlab_poly_studio")
+    expected_dirs = {
+        "s04_magnetic_stirring",
+        "s05_photoshotting",
+        "s06_pump",
+        "s08_decap",
+        "s12_robot",
+    }
+    removed_dirs = {
+        "magnetic_stirring",
+        "photoshotting",
+        "pump",
+        "decap_s08",
+        "robot",
+    }
+
+    for name in expected_dirs:
+        assert (root / name).is_dir()
+    for name in removed_dirs:
+        assert not (root / name).exists()
+
+
 def test_szlab_poly_studio_deck_builds_frontend_stack_status_from_sensor_groups():
     from unilabos.devices.workstation.szlab_poly_studio.stack_status import (
         build_stack_status,

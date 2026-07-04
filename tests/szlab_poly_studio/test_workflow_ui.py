@@ -164,7 +164,7 @@ def test_photoshotting_preset_uses_s05_camera_config():
     assert list(preset.actions) == ["take_photo"]
     assert runtime_config.device_factory.devices == {
         "szlab_mixer_photoshotting": (
-            "unilabos.devices.workstation.szlab_poly_studio.photoshotting.photoshotting."
+            "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting."
             "SzlabMixerPhotoShottingDevice"
         )
     }
@@ -175,8 +175,8 @@ def test_photoshotting_preset_uses_s05_camera_config():
 
     camera_node = next(node for node in graph["nodes"] if node["id"] == "szlab_mixer_photoshotting")
     assert camera_node["config"]["url"] == "opc.tcp://127.0.0.1:48405/"
-    assert camera_node["config"]["csv_path"].endswith("photoshotting/photoshotting_nodes.csv")
-    assert camera_node["config"]["save_dir"] == "unilabos_data/szlab_poly_studio/photoshotting/photos"
+    assert camera_node["config"]["csv_path"].endswith("s05_photoshotting/photoshotting_nodes.csv")
+    assert camera_node["config"]["save_dir"] == "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
     assert camera_node["config"]["opcua_node_id_map"] == {
         "S05加工完成": "ns=4;s=上位机通讯|S05加工完成",
         "S05拍照结果": "ns=4;s=上位机通讯|S05拍照结果",
@@ -203,7 +203,7 @@ def test_magnetic_stirring_preset_uses_s04_stirrer_config():
     assert list(preset.actions) == ["run_stirring"]
     assert runtime_config.device_factory.devices == {
         "szlab_mixer_stirrer": (
-            "unilabos.devices.workstation.szlab_poly_studio.magnetic_stirring."
+            "unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring."
             "magnetic_stirring.SzlabMixerMagneticStirrerDevice"
         )
     }
@@ -221,7 +221,7 @@ def test_magnetic_stirring_preset_uses_s04_stirrer_config():
 
     stirrer_node = next(node for node in graph["nodes"] if node["id"] == "szlab_mixer_stirrer")
     assert stirrer_node["config"]["url"] == "opc.tcp://127.0.0.1:48405/"
-    assert stirrer_node["config"]["csv_path"].endswith("magnetic_stirring/magnetic_stirring_nodes.csv")
+    assert stirrer_node["config"]["csv_path"].endswith("s04_magnetic_stirring/magnetic_stirring_nodes.csv")
     assert stirrer_node["config"]["opcua_node_id_map"]["S041允许加工"] == "ns=2;i=205"
     assert stirrer_node["config"]["opcua_node_id_map"]["S041磁搅工艺选择"] == "ns=2;i=206"
     assert stirrer_node["config"]["opcua_node_id_map"]["S041参数写入完成"] == "ns=2;i=207"

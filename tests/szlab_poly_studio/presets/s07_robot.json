@@ -3,7 +3,8 @@
   "title": "SZLab 机械臂 + S07 联调",
   "target_device_id": "szlab_mixer_robot",
   "target_device_ids": [
-    "szlab_mixer_robot"
+    "szlab_mixer_robot",
+    "szlab_s07_solid_addition"
   ],
   "actions_source": "registry",
   "runtime_config": "../runtime_configs/s07_robot_runtime.json",
@@ -11,7 +12,7 @@
   "default_config": {
     "graph": "__generated__",
     "url": "opc.tcp://192.168.1.10:4840",
-    "csv": "/Users/dp/Ming/softwares/unilab/Uni-Lab-OS/unilabos/devices/workstation/szlab_poly_studio/szlab_plc_0701.csv",
+    "csv": "szlab_plc_0702.csv",
     "timeout": 300,
     "write_allowed_timeout": 60,
     "no_subscription": true,
@@ -182,6 +183,21 @@
           "busy_variable_name": "机器人Busy信号",
           "timeout": "${timeout}",
           "write_allowed_timeout": "${write_allowed_timeout}"
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_s07_solid_addition",
+        "name": "szlab_s07_solid_addition",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_s07_solid_addition",
+        "position": {"x": 220, "y": 0, "z": 0},
+        "config": {
+          "plc_device_id": "szlab_poly_plc",
+          "process_timeout": "${timeout}",
+          "poll_interval": 0.2
         },
         "data": {}
       }

@@ -249,6 +249,51 @@ def test_single_device_runtime_does_not_force_missing_plc_gateway(monkeypatch, t
     assert devices["szlab_mixer_stirrer"].config.get("use_plc_gateway") is not True
 
 
+def test_s07_robot_runtime_binds_solid_addition_to_plc_gateway(monkeypatch, tmp_path):
+    class FakePlcDevice:
+        def __init__(self, **config):
+            self.config = config
+
+    class FakeRobotDevice:
+        def __init__(self, **config):
+            self.config = config
+
+    class FakeS07Device:
+        def __init__(self, **config):
+            self.config = config
+            self.plc_device_id = config.get("plc_device_id", "szlab_poly_plc")
+            self.plc_gateway = None
+
+        def set_plc_gateway(self, plc_gateway):
+            self.plc_gateway = plc_gateway
+
+    def fake_load_class(class_path):
+        if class_path.endswith("SZLabPolyPLCDevice"):
+            return FakePlcDevice
+        if class_path.endswith("SzlabMixerRobotDevice"):
+            return FakeRobotDevice
+        if class_path.endswith("SZLabS07SolidAdditionDevice"):
+            return FakeS07Device
+        raise AssertionError(class_path)
+
+    monkeypatch.setattr(
+        run_workflow_local,
+        "load_ai4c_graph_config",
+        lambda _graph_file: {
+            "szlab_poly_plc": {"url": "opc.tcp://127.0.0.1:48405/", "csv_path": "szlab_plc_0702.csv"},
+            "szlab_mixer_robot": {"plc_device_id": "szlab_poly_plc"},
+            "szlab_s07_solid_addition": {"plc_device_id": "szlab_poly_plc"},
+        },
+    )
+    monkeypatch.setattr(run_workflow_local, "_load_class", fake_load_class)
+    runtime_config = load_runtime_config("tests/szlab_poly_studio/runtime_configs/s07_robot_runtime.json")
+
+    devices = create_local_devices(tmp_path / "graph.json", runtime_config=runtime_config)
+
+    assert devices["szlab_s07_solid_addition"].plc_gateway is devices["szlab_poly_plc"]
+    assert devices["szlab_s07_solid_addition"].config["use_plc_gateway"] is True
+
+
 def test_szlab_mixer_ui_preset_uses_0623_csv_and_s04_s05_actions():
     preset = load_preset("szlab_mixer")
     runtime_config = _load_preset_runtime_config(preset)
@@ -304,6 +349,55 @@ def test_szlab_mixer_ui_preset_uses_0623_csv_and_s04_s05_actions():
         {"source_node_uuid": "stir", "target_node_uuid": "place_photo"},
         {"source_node_uuid": "place_photo", "target_node_uuid": "photo"},
     ]
+
+
+def test_s07_robot_preset_includes_robot_and_solid_addition_station():
+    preset = load_preset("s07_robot")
+    runtime_config = _load_preset_runtime_config(preset)
+    graph_nodes = {node["id"]: node for node in preset.device_graph["nodes"]}
+    csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
+
+    assert preset.target_device_ids == ["szlab_mixer_robot", "szlab_s07_solid_addition"]
+    assert preset.default_config["csv"] == "szlab_plc_0702.csv"
+    assert csv_path.exists()
+    assert set(graph_nodes) == {"szlab_poly_plc", "szlab_mixer_robot", "szlab_s07_solid_addition"}
+    assert graph_nodes["szlab_s07_solid_addition"]["config"] == {
+        "plc_device_id": "szlab_poly_plc",
+        "process_timeout": "${timeout}",
+        "poll_interval": 0.2,
+    }
+    assert runtime_config.device_factory.devices == {
+        "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
+        "szlab_mixer_robot": (
+            "unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot.SzlabMixerRobotDevice"
+        ),
+        "szlab_s07_solid_addition": (
+            "unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07."
+            "SZLabS07SolidAdditionDevice"
+        ),
+    }
+    assert preset.actions["submit_place_to_s071"].device_id == "szlab_mixer_robot"
+    assert preset.actions["scan_powder_cartridges"].device_id == "szlab_s07_solid_addition"
+    assert preset.actions["rotate_powder_cartridge_to_feed"].device_id == "szlab_s07_solid_addition"
+    assert preset.actions["dose_powder"].device_id == "szlab_s07_solid_addition"
+    assert collect_snapshot_variables("dose_powder", {}, runtime_config) == [
+        "S07原点信号",
+        "S07允许加工",
+        "S07工艺选择",
+        "S07参数写入完成",
+        "S07工艺完成",
+        "S07粗注粉位置号",
+        "S07精注粉位置号",
+        "S07注粉重量",
+    ]
+
+
+def test_s07_debug_preset_uses_debug_file_name():
+    preset = load_preset("debug_s07_solid_addition")
+
+    assert preset.id == "debug_s07_solid_addition"
+    assert preset.target_device_ids == ["szlab_s07_solid_addition"]
+    assert not Path("tests/szlab_poly_studio/presets/solid_addition_s07.json").exists()
 
 
 def test_ai4c_runtime_device_classes_are_importable():

@@ -22,24 +22,37 @@ class FakeS07Plc:
             sensors.NODE_PROCESS_COMPLETE: 0,
         }
         self.writes: list[tuple[str, Any]] = []
+        self.events: list[tuple[Any, ...]] = []
+        self.waits: list[tuple[str, Any, float, float]] = []
+        self.force_process_timeout = False
 
-    def read(self, node_name: str) -> Any:
+    def read_variable(self, node_name: str, use_cache: bool = False) -> Any:
+        self.events.append(("read", node_name))
         if node_name == sensors.NODE_PROCESS_COMPLETE:
             return self.values.get(sensors.NODE_PROCESS_SELECT, 0)
         if node_name.startswith("S07位置") and "二维码" in node_name:
             return 0
         return self.values[node_name]
 
-    def write(self, node_name: str, value: Any) -> None:
+    def write_variable(self, node_name: str, value: Any) -> None:
+        self.events.append(("write", node_name, value))
         self.values[node_name] = value
         self.writes.append((node_name, value))
+
+    def wait_variable_equal(self, node_name: str, expected: Any, timeout: float = 300.0, interval: float = 0.2) -> bool:
+        self.events.append(("wait", node_name, expected))
+        self.waits.append((node_name, expected, timeout, interval))
+        if node_name == sensors.NODE_PROCESS_COMPLETE:
+            if self.force_process_timeout:
+                return False
+            return self.values.get(sensors.NODE_PROCESS_SELECT, 0) == expected
+        return self.values.get(node_name) == expected
 
 
 def make_s07_device(plc: FakeS07Plc | None = None) -> SZLabS07SolidAdditionDevice:
     plc = plc or FakeS07Plc()
     device = SZLabS07SolidAdditionDevice(process_timeout=0.05, poll_interval=0.001)
-    device._read_plc_variable = plc.read
-    device._write_plc_variable = plc.write
+    device.set_plc_gateway(plc)
     return device
 
 
@@ -56,6 +69,10 @@ def test_s07_solid_addition_device_is_ast_scannable_from_own_package():
         "dose_powder",
     ]
     assert all(action["action_args"]["auto_prefix"] for action in actions.values())
+    dose_params = {param["name"] for param in actions["dose_powder"]["params"]}
+    assert "coarse_params" not in dose_params
+    assert "fine_params" not in dose_params
+    assert {"coarse_position", "fine_position", "target_weight", "timeout", "params_json", "recipe_name"} <= dose_params
 
 
 def test_s07_debug_config_references_existing_local_files():
@@ -84,9 +101,10 @@ def test_s07_scan_powder_cartridges_writes_process_and_reads_qr_codes():
     assert result["success"] is True
     assert result["process_type"] == sensors.PROCESS_SCAN_CARTRIDGES
     assert set(result["qr_codes"]) == set(sensors.POSITION_RANGE)
-    assert plc.writes.index((sensors.NODE_PROCESS_SELECT, 0)) < plc.writes.index(
-        (sensors.NODE_PROCESS_SELECT, sensors.PROCESS_SCAN_CARTRIDGES)
-    )
+    assert plc.waits[:2] == [
+        (sensors.NODE_HOME, True, 0.05, 0.001),
+        (sensors.NODE_ALLOW_PROCESS, True, 0.05, 0.001),
+    ]
     assert (sensors.NODE_PROCESS_SELECT, sensors.PROCESS_SCAN_CARTRIDGES) in plc.writes
     assert (sensors.NODE_PARAMS_WRITTEN, True) in plc.writes
     assert (sensors.NODE_PARAMS_WRITTEN, False) in plc.writes
@@ -112,8 +130,6 @@ def test_s07_dose_powder_writes_positions_weight_and_powder_params():
         coarse_position=2,
         fine_position=5,
         target_weight=12.5,
-        coarse_params={"opening": [1, 2, 3, 4, 5], "shake_max_speed": 80},
-        fine_params={"feed_speed": [0.1, 0.2, 0.3, 0.4, 0.5]},
         timeout=0.05,
     )
 
@@ -122,31 +138,54 @@ def test_s07_dose_powder_writes_positions_weight_and_powder_params():
     assert (sensors.NODE_COARSE_POSITION, 2) in plc.writes
     assert (sensors.NODE_FINE_POSITION, 5) in plc.writes
     assert (sensors.NODE_TARGET_WEIGHT, 12.5) in plc.writes
-    assert (sensors.s07_powder_param_var("粗注粉", "开口量", 0), 1) in plc.writes
-    assert (sensors.NODE_COARSE_SHAKE_MAX_SPEED, 80) in plc.writes
-    assert (sensors.s07_powder_param_var("精注粉", "落粉匀速", 1), 0.2) in plc.writes
+    assert (sensors.s07_powder_param_var("粗注粉", "开口量", 0), 1000) in plc.writes
+    assert (sensors.NODE_COARSE_SHAKE_MAX_SPEED, 900) in plc.writes
+    assert (sensors.s07_powder_param_var("精注粉", "落粉匀速", 1), 0.01) in plc.writes
     assert (sensors.NODE_PROCESS_SELECT, sensors.PROCESS_DOSE_POWDER) in plc.writes
 
 
-def test_s07_resets_all_unilab_written_params_before_dose():
+def test_s07_resets_all_unilab_written_params_after_dose_complete():
     plc = FakeS07Plc()
     device = make_s07_device(plc)
 
     device.dose_powder(coarse_position=2, fine_position=5, target_weight=12.5, timeout=0.05)
 
     first_process_write = plc.writes.index((sensors.NODE_PROCESS_SELECT, sensors.PROCESS_DOSE_POWDER))
+    process_complete_wait = plc.events.index(("wait", sensors.NODE_PROCESS_COMPLETE, sensors.PROCESS_DOSE_POWDER))
+    reset_params_written_event = plc.events.index(("write", sensors.NODE_PARAMS_WRITTEN, False))
+    reset_params_written = plc.writes.index((sensors.NODE_PARAMS_WRITTEN, False))
     initial_writes = plc.writes[:first_process_write]
-    assert (sensors.NODE_LOAD_POSITION, 0) in initial_writes
-    assert (sensors.NODE_COARSE_POSITION, 0) in initial_writes
-    assert (sensors.NODE_FINE_POSITION, 0) in initial_writes
-    assert (sensors.NODE_TARGET_WEIGHT, 0.0) in initial_writes
-    assert (sensors.s07_powder_param_var("粗注粉", "开口量", 0), 0) in initial_writes
-    assert (sensors.s07_powder_param_var("精注粉", "落粉匀速", 0), 0.0) in initial_writes
-    assert (sensors.NODE_COARSE_SHAKE_MAX_SPEED, 0) in initial_writes
-    assert (sensors.NODE_FINE_SHAKE_MAX_SPEED, 0) in initial_writes
+
+    assert (sensors.NODE_LOAD_POSITION, 0) not in initial_writes
+    assert (sensors.NODE_COARSE_POSITION, 0) not in initial_writes
+    assert (sensors.NODE_FINE_POSITION, 0) not in initial_writes
+    assert (sensors.NODE_TARGET_WEIGHT, 0.0) not in initial_writes
+    assert (sensors.s07_powder_param_var("粗注粉", "开口量", 0), 0) not in initial_writes
+    assert (sensors.s07_powder_param_var("精注粉", "落粉匀速", 0), 0.0) not in initial_writes
+    assert (sensors.NODE_COARSE_SHAKE_MAX_SPEED, 0) not in initial_writes
+    assert (sensors.NODE_FINE_SHAKE_MAX_SPEED, 0) not in initial_writes
+    assert reset_params_written_event > process_complete_wait
+    assert (sensors.NODE_LOAD_POSITION, 0) in plc.writes[reset_params_written:]
+    assert (sensors.NODE_COARSE_POSITION, 0) in plc.writes[reset_params_written:]
+    assert (sensors.NODE_FINE_POSITION, 0) in plc.writes[reset_params_written:]
+    assert (sensors.NODE_TARGET_WEIGHT, 0.0) in plc.writes[reset_params_written:]
 
 
-def test_s07_dose_powder_loads_recipe_params_and_allows_overrides(tmp_path):
+def test_s07_does_not_reset_params_before_process_complete_timeout():
+    plc = FakeS07Plc()
+    plc.force_process_timeout = True
+    device = make_s07_device(plc)
+
+    result = device.rotate_powder_cartridge_to_feed(position=4, timeout=0.05)
+
+    assert result["success"] is False
+    assert ("wait", sensors.NODE_PROCESS_COMPLETE, sensors.PROCESS_ROTATE_TO_FEED) in plc.events
+    assert (sensors.NODE_LOAD_POSITION, 4) in plc.writes
+    assert (sensors.NODE_PARAMS_WRITTEN, False) not in plc.writes
+    assert (sensors.NODE_LOAD_POSITION, 0) not in plc.writes
+
+
+def test_s07_dose_powder_loads_recipe_params_from_json_without_ui_overrides(tmp_path):
     params_path = tmp_path / "powder_params.json"
     params_path.write_text(
         json.dumps(
@@ -167,7 +206,6 @@ def test_s07_dose_powder_loads_recipe_params_and_allows_overrides(tmp_path):
         coarse_position=2,
         fine_position=5,
         target_weight=12.5,
-        coarse_params={"opening": [5, 4, 3, 2, 1]},
         params_json=str(params_path),
         recipe_name="test_recipe",
         timeout=0.05,
@@ -175,7 +213,7 @@ def test_s07_dose_powder_loads_recipe_params_and_allows_overrides(tmp_path):
 
     assert result["success"] is True
     assert result["recipe_name"] == "test_recipe"
-    assert (sensors.s07_powder_param_var("粗注粉", "开口量", 0), 5) in plc.writes
+    assert (sensors.s07_powder_param_var("粗注粉", "开口量", 0), 1) in plc.writes
     assert (sensors.s07_powder_param_var("精注粉", "落粉匀速", 4), 0.5) in plc.writes
     assert (sensors.NODE_COARSE_SHAKE_MAX_SPEED, 90) in plc.writes
     assert (sensors.NODE_FINE_SHAKE_MAX_SPEED, 30) in plc.writes

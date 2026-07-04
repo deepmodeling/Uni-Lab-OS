@@ -119,6 +119,68 @@ def iter_action_logs(result: Any) -> list[dict[str, Any]]:
     return entries
 
 
+def iter_opc_wait_logs(*sources: Any) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    seen_source_ids: set[int] = set()
+    for source in sources:
+        for candidate in _iter_opc_wait_sources(source):
+            if candidate is None or id(candidate) in seen_source_ids:
+                continue
+            seen_source_ids.add(id(candidate))
+            drain = getattr(candidate, "drain_opc_wait_events", None)
+            if not callable(drain):
+                continue
+            for item in drain() or []:
+                if not isinstance(item, dict):
+                    continue
+                message = item.get("message")
+                if message:
+                    entries.append({"message": str(message), "detail": item.get("detail") or {}})
+    return entries
+
+
+def bind_opc_wait_logger(logger: WorkflowLogger, *sources: Any) -> Callable[[], None]:
+    bound_sources: list[Any] = []
+
+    def write_wait_event(event: dict[str, Any]) -> None:
+        if not isinstance(event, dict):
+            return
+        message = event.get("message")
+        if message:
+            logger.log(str(message), detail=event.get("detail") or {})
+
+    seen_source_ids: set[int] = set()
+    for source in sources:
+        for candidate in _iter_opc_wait_sources(source):
+            if candidate is None or id(candidate) in seen_source_ids:
+                continue
+            seen_source_ids.add(id(candidate))
+            setter = getattr(candidate, "set_opc_wait_event_writer", None)
+            if not callable(setter):
+                continue
+            setter(write_wait_event)
+            bound_sources.append(candidate)
+
+    def unbind() -> None:
+        for candidate in bound_sources:
+            setter = getattr(candidate, "set_opc_wait_event_writer", None)
+            if callable(setter):
+                setter(None)
+
+    return unbind
+
+
+def _iter_opc_wait_sources(source: Any) -> list[Any]:
+    if source is None:
+        return []
+    candidates = [source]
+    for attr in ("_client", "_plc_gateway"):
+        nested = getattr(source, attr, None)
+        if nested is not None:
+            candidates.append(nested)
+    return candidates
+
+
 def method_name_from_template(template_name: str) -> str:
     """网页 workflow 中的 auto-* 节点名映射到 Python 方法名。"""
     return template_name.removeprefix("auto-")
@@ -223,7 +285,6 @@ def build_snapshot_diff_detail(before: dict[str, Any], after: dict[str, Any], pl
                 "display_name": display_name,
                 "node_id": node_id,
                 "before": before_value,
-                "value_goal": after_value,
                 "after": after_value,
             }
         )
@@ -510,7 +571,11 @@ def run_nodes(
                 f"OPC状态采样: {len(before)} 个变量",
                 detail={"before": format_snapshot_detail(before, snapshot_client)},
             )
-        result = getattr(device, method_name)(**node.param)
+        unbind_wait_logger = bind_opc_wait_logger(logger, default_plc, device, snapshot_client)
+        try:
+            result = getattr(device, method_name)(**node.param)
+        finally:
+            unbind_wait_logger()
         after = snapshot_opc_state(snapshot_client, snapshot_variables) if snapshot_client is not None else {}
         if after:
             diff_detail = build_snapshot_diff_detail(before, after, plc=snapshot_client)
@@ -523,6 +588,8 @@ def run_nodes(
                 action_log["message"],
                 detail={"node_uuid": node.uuid, "action_log": action_log.get("detail")},
             )
+        for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
+            logger.log(wait_log["message"], detail=wait_log.get("detail"))
         logger.log(f"动作结果: {result}", detail={"result": result})
         results.append(
             {

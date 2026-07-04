@@ -3,18 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from unilabos.devices.workstation.szlab_poly_studio.plc import (
-    POWDER_CONTAINER_SENSORS,
-    S11_USED_BEAKER_SENSORS,
-    S11_USED_SAMPLE_VIAL_SENSORS,
-    S2_TIP_SENSORS,
-    S3_UNUSED_BEAKER_SENSORS,
-    S3_UNUSED_SAMPLE_VIAL_SENSORS,
-    S10_LIQUID_REAGENT_SENSORS,
-)
+from unilabos.devices.workstation.szlab_poly_studio.plc import load_stack_sensor_groups_from_json
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S04 import S04_SENSOR_BY_POSITION
 
 GateKind = Literal["pick", "place", "pour"]
+STACK_SENSOR_GROUPS = load_stack_sensor_groups_from_json()
 
 ROBOT_HOME_VARIABLE = "Robot_Home"
 ROBOT_WRITE_ALLOWED_VARIABLE = "Robot_任务允许写入"
@@ -139,7 +132,7 @@ def numbered_position(position: int, *, min_value: int, max_value: int, label: s
 
 
 def s02_sensor(position: int) -> str:
-    return S2_TIP_SENSORS[str(numbered_position(position, min_value=1, max_value=6, label="S02 TIP位置"))]
+    return STACK_SENSOR_GROUPS["s2_tip"][str(numbered_position(position, min_value=1, max_value=6, label="S02 TIP位置"))]
 
 
 def s04_sensor(position: int) -> str:
@@ -161,7 +154,7 @@ def s09_sensor(product_type: int, position: int) -> str:
 
 
 def s10_sensor(position: int) -> str:
-    values = list(S10_LIQUID_REAGENT_SENSORS.values())
+    values = list(STACK_SENSOR_GROUPS["s10_liquid_reagent"].values())
     position = numbered_position(position, min_value=1, max_value=len(values), label="S10试剂瓶位置")
     return values[position - 1]
 
@@ -170,10 +163,10 @@ def product_slot_sensor(product_type: int, position: str | int, *, used: bool) -
     product_type = int(product_type)
     key = str(position)
     if product_type == 1:
-        sensors = S11_USED_BEAKER_SENSORS if used else S3_UNUSED_BEAKER_SENSORS
+        sensors = STACK_SENSOR_GROUPS["s11_used_beaker"] if used else STACK_SENSOR_GROUPS["s3_unused_beaker"]
         label = "烧杯"
     elif product_type in (2, 3):
-        sensors = S11_USED_SAMPLE_VIAL_SENSORS if used else S3_UNUSED_SAMPLE_VIAL_SENSORS
+        sensors = STACK_SENSOR_GROUPS["s11_used_sample_vial"] if used else STACK_SENSOR_GROUPS["s3_unused_sample_vial"]
         label = "样品瓶"
     else:
         raise ValueError("产品类型必须是 1(烧杯)、2(样品瓶250ml) 或 3(样品瓶500ml)")
@@ -184,9 +177,10 @@ def product_slot_sensor(product_type: int, position: str | int, *, used: bool) -
 
 def powder_container_sensor(position: str | int) -> str:
     key = str(position)
-    if key not in POWDER_CONTAINER_SENSORS:
+    sensors = STACK_SENSOR_GROUPS["powder_container"]
+    if key not in sensors:
         raise ValueError(f"固体粉末容器位置不存在: {key}")
-    return POWDER_CONTAINER_SENSORS[key]
+    return sensors[key]
 
 
 def build_variables(spec_name: str, **kwargs: Any) -> dict[str, Any]:

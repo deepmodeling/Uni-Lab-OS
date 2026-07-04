@@ -177,10 +177,7 @@ def test_photoshotting_preset_uses_s05_camera_config():
     assert camera_node["config"]["url"] == "opc.tcp://127.0.0.1:48405/"
     assert camera_node["config"]["csv_path"].endswith("s05_photoshotting/photoshotting_nodes.csv")
     assert camera_node["config"]["save_dir"] == "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
-    assert camera_node["config"]["opcua_node_id_map"] == {
-        "S05加工完成": "ns=4;s=上位机通讯|S05加工完成",
-        "S05拍照结果": "ns=4;s=上位机通讯|S05拍照结果",
-    }
+    assert "opcua_node_id_map" not in camera_node["config"]
     assert _action_to_dict(preset.actions["take_photo"], runtime_config)["opc_variables"] == [
         "S05加工完成",
         "S05拍照结果",
@@ -208,6 +205,7 @@ def test_magnetic_stirring_preset_uses_s04_stirrer_config():
         )
     }
     assert collect_snapshot_variables("run_stirring", {"position": 1}, runtime_config) == [
+        "S041磁搅状态",
         "S041允许加工",
         "S041磁搅工艺选择",
         "S041参数写入完成",
@@ -222,28 +220,7 @@ def test_magnetic_stirring_preset_uses_s04_stirrer_config():
     stirrer_node = next(node for node in graph["nodes"] if node["id"] == "szlab_mixer_stirrer")
     assert stirrer_node["config"]["url"] == "opc.tcp://127.0.0.1:48405/"
     assert stirrer_node["config"]["csv_path"].endswith("s04_magnetic_stirring/magnetic_stirring_nodes.csv")
-    assert stirrer_node["config"]["opcua_node_id_map"]["S041允许加工"] == "ns=2;i=205"
-    assert stirrer_node["config"]["opcua_node_id_map"]["S041磁搅工艺选择"] == "ns=2;i=206"
-    assert stirrer_node["config"]["opcua_node_id_map"]["S041参数写入完成"] == "ns=2;i=207"
-    assert stirrer_node["config"]["opcua_node_id_map"]["S041加工完成"] == "ns=2;i=208"
-    assert (
-        stirrer_node["config"]["opcua_node_id_map"]["磁搅速度设置_上位机[0]"]
-        == "ns=2;i=247"
-    )
-    assert (
-        stirrer_node["config"]["opcua_node_id_map"]["磁搅温度反馈_上位机[0]"]
-        == "ns=2;i=240"
-    )
-    assert (
-        stirrer_node["config"]["opcua_node_id_map"]["磁搅温度设置_上位机[0]"]
-        == "ns=2;i=254"
-    )
-    assert stirrer_node["config"]["opcua_node_id_map"]["磁搅时间设置_上位机[5]"] == "ns=2;i=266"
-    assert stirrer_node["config"]["opcua_node_id_map"]["磁搅安全温度设置_上位机[5]"] == "ns=2;i=273"
-    assert stirrer_node["config"]["opcua_node_id_map"]["S045允许加工"] == "ns=2;i=229"
-    assert stirrer_node["config"]["opcua_node_id_map"]["S045磁搅工艺选择"] == "ns=2;i=230"
-    assert stirrer_node["config"]["opcua_node_id_map"]["S046加工完成"] == "ns=2;i=238"
-    assert stirrer_node["config"]["opcua_node_id_map"]["S04取放料编号"] == "ns=2;i=515"
+    assert "opcua_node_id_map" not in stirrer_node["config"]
     assert _action_to_dict(preset.actions["run_stirring"], runtime_config)["opc_variables"] == []
 
 
@@ -511,7 +488,7 @@ def test_build_local_device_graph_keeps_csv_when_explicitly_configured():
     assert nodes["AI4C_plc"]["config"]["csv_path"] == "ai4c_sim_updated.csv"
 
 
-def test_s06_robot_generated_graph_maps_csv_node_ids_to_pump_device():
+def test_s06_robot_generated_graph_keeps_csv_path_without_node_id_map():
     preset = load_preset("s06_robot")
     assert not Path(preset.default_config["csv"]).is_absolute()
     csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
@@ -524,10 +501,9 @@ def test_s06_robot_generated_graph_maps_csv_node_ids_to_pump_device():
     )
 
     nodes = {node["id"]: node for node in graph["nodes"]}
-    node_id_map = nodes["szlab_mixer_pump"]["config"]["opcua_node_id_map"]
-
-    assert node_id_map["S06准备信号"] == "ns=4;s=上位机通讯|S06准备信号"
-    assert node_id_map["传感器状态_上位机[3].NO[1]"] == "ns=4;s=上位机通讯|传感器状态_上位机[3].NO[1]"
+    pump_config = nodes["szlab_mixer_pump"]["config"]
+    assert pump_config["csv_path"] == str(csv_path)
+    assert "opcua_node_id_map" not in pump_config
 
 
 def test_szlab_mixer_pump_runtime_snapshot_variables_are_mapped_for_production_opcua():
@@ -780,6 +756,163 @@ def test_run_node_with_live_opc_sampling_logs_changes_during_action(tmp_path):
     assert live_events[-1]["detail"]["changes"][0]["after"] == {"success": True, "value": 2}
 
 
+def test_run_node_with_live_opc_sampling_emits_opc_wait_events(tmp_path):
+    config_path = tmp_path / "runtime.json"
+    config_path.write_text(
+        """
+        {
+          "device_factory": {
+            "plc_device_id": "plc",
+            "target_device_id": "pump"
+          },
+          "opc_snapshot": {
+            "action_variables": {
+              "run_solvent_addition": ["S06加工完成"]
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    class FakePLC:
+        def get_variables(self, variable_names, use_cache=False):
+            return {name: {"success": True, "value": False} for name in variable_names}
+
+        def get_opc_variable_metadata(self, variable_name):
+            return variable_name, f"ns=4;s={variable_name}"
+
+        def drain_opc_wait_events(self):
+            return [
+                {
+                    "message": "等待 OPC 变量 S06加工完成 == True (timeout=300.0s, interval=0.2s)",
+                    "detail": {
+                        "type": "opc_wait",
+                        "phase": "start",
+                        "variable": "S06加工完成",
+                        "expected": True,
+                        "timeout": 300.0,
+                        "interval": 0.2,
+                    },
+                    "phase": "start",
+                },
+                {
+                    "message": "OPC 变量等待完成 S06加工完成 == True: success=True, last_value=True",
+                    "detail": {
+                        "type": "opc_wait",
+                        "phase": "finish",
+                        "variable": "S06加工完成",
+                        "expected": True,
+                        "timeout": 300.0,
+                        "interval": 0.2,
+                        "success": True,
+                        "last_value": True,
+                    },
+                    "phase": "finish",
+                },
+            ]
+
+    class FakePump:
+        def run_solvent_addition(self):
+            return {"success": True}
+
+    events = []
+
+    def write_event(message, *, level="info", detail=None):
+        events.append({"message": message, "level": level, "detail": detail})
+
+    _run_node_with_live_opc_sampling(
+        WorkflowNode(uuid="node_1", name="auto-run_solvent_addition", device_name="pump", param={}),
+        {"plc": FakePLC(), "pump": FakePump()},
+        logger=WorkflowLogger(writer=write_event),
+        runtime_config=load_runtime_config(config_path),
+        sample_interval=0.01,
+    )
+
+    wait_events = [event for event in events if event["detail"] and event["detail"].get("type") == "opc_wait"]
+    assert [event["message"] for event in wait_events] == [
+        "等待 OPC 变量 S06加工完成 == True (timeout=300.0s, interval=0.2s)",
+        "OPC 变量等待完成 S06加工完成 == True: success=True, last_value=True",
+    ]
+    assert wait_events[0]["detail"]["phase"] == "start"
+    assert wait_events[1]["detail"]["phase"] == "finish"
+
+
+def test_run_node_with_live_opc_sampling_emits_nested_client_wait_events(tmp_path):
+    config_path = tmp_path / "runtime.json"
+    config_path.write_text(
+        """
+        {
+          "device_factory": {
+            "target_device_id": "stirrer"
+          },
+          "opc_snapshot": {
+            "action_variables": {
+              "run_stirring": ["S041加工完成"]
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    class FakeClient:
+        def __init__(self):
+            self.writer = None
+
+        def set_opc_wait_event_writer(self, writer):
+            self.writer = writer
+
+        def emit_wait_start(self):
+            assert self.writer is not None
+            self.writer(
+                {
+                    "message": "等待 OPC 变量 S041加工完成 == True (timeout=300.0s, interval=1.0s)",
+                    "detail": {
+                        "type": "opc_wait",
+                        "phase": "start",
+                        "variable": "S041加工完成",
+                        "expected": True,
+                        "node_id": "ns=4;s=S041加工完成",
+                    },
+                }
+            )
+
+    class FakeStirrer:
+        def __init__(self):
+            self._client = FakeClient()
+
+        def get_variables(self, variable_names, use_cache=False):
+            return {name: {"success": True, "value": False} for name in variable_names}
+
+        def get_opc_variable_metadata(self, variable_name):
+            return variable_name, f"ns=4;s={variable_name}"
+
+        def run_stirring(self):
+            self._client.emit_wait_start()
+            assert any(
+                event["detail"] and event["detail"].get("type") == "opc_wait"
+                for event in events
+            )
+            return {"success": True}
+
+    events = []
+
+    def write_event(message, *, level="info", detail=None):
+        events.append({"message": message, "level": level, "detail": detail})
+
+    _run_node_with_live_opc_sampling(
+        WorkflowNode(uuid="node_1", name="auto-run_stirring", device_name="stirrer", param={}),
+        {"stirrer": FakeStirrer()},
+        logger=WorkflowLogger(writer=write_event),
+        runtime_config=load_runtime_config(config_path),
+        sample_interval=0.01,
+    )
+
+    wait_events = [event for event in events if event["detail"] and event["detail"].get("type") == "opc_wait"]
+    assert [event["detail"]["variable"] for event in wait_events] == ["S041加工完成"]
+
+
 def test_run_node_with_live_opc_sampling_skips_parallel_sampling_for_direct_device(tmp_path):
     config_path = tmp_path / "runtime.json"
     config_path.write_text(
@@ -877,7 +1010,6 @@ def test_run_nodes_logs_opc_summary_with_detail_instead_of_full_snapshots():
         "display_name": "Robotic_Arm_Idle",
         "node_id": None,
         "before": {"success": True, "value": True},
-        "value_goal": {"success": True, "value": False},
         "after": {"success": True, "value": False},
     }
 
@@ -956,11 +1088,9 @@ def test_stack_s05_s06_preset_uses_trimmed_csv_for_stack_camera_and_pump():
     assert preset.target_device_ids == ["szlab_mixer_photoshotting", "szlab_mixer_pump"]
     plc_node = next(node for node in preset.device_graph["nodes"] if node["id"] == "szlab_poly_plc")
     assert plc_node["config"]["opcua_node_id_prefix"] == "ns=4;s=上位机通讯|"
-    assert plc_node["config"]["opcua_node_id_map"]["传感器状态_上位机[3].NO[8]"] == "ns=2;i=62"
-    assert plc_node["config"]["opcua_node_id_map"]["传感器状态_上位机[4].NO[12]"] == "ns=2;i=83"
+    assert "opcua_node_id_map" not in plc_node["config"]
     pump_node = next(node for node in preset.device_graph["nodes"] if node["id"] == "szlab_mixer_pump")
-    assert pump_node["config"]["opcua_node_id_map"]["传感器状态_上位机[3].NO[1]"] == "ns=2;i=55"
-    assert pump_node["config"]["opcua_node_id_map"]["传感器状态_上位机[5].NO[1]"] == "ns=2;i=89"
+    assert "opcua_node_id_map" not in pump_node["config"]
     take_photo_snapshot = collect_snapshot_variables("take_photo", {}, runtime_config)
     assert "传感器状态_上位机[3].NO[8]" in take_photo_snapshot
     assert "传感器状态_上位机[3].NO[13]" in take_photo_snapshot

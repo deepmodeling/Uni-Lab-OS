@@ -83,21 +83,23 @@ def run_s07_debug(config_path: Path, *, use_production: bool) -> dict[str, Any]:
     action_cfg = dict(config["action"])
     action_name = action_cfg.pop("name")
     module = importlib.import_module("unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07")
-    opcua_module = importlib.import_module(
-        "unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.opcua_client"
-    )
+    plc_module = importlib.import_module("unilabos.devices.workstation.szlab_poly_studio.plc")
     device = module.SZLabS07SolidAdditionDevice(
         plc_device_id="debug_s07_plc",
         process_timeout=float(device_cfg.get("process_timeout", 300.0)),
         poll_interval=float(device_cfg.get("poll_interval", 0.2)),
         require_station_ready=bool(device_cfg.get("require_station_ready", True)),
     )
-    client = opcua_module.S07OpcUaClient(
-        config["resolved_opcua_url"],
+    client = plc_module.SZLabPolyPLCDevice(
+        url=config["resolved_opcua_url"],
+        csv_path=False,
+        opcua_object_name="VirtualMixer",
         node_id_map=dict(device_cfg.get("opcua_node_id_map", {})) if use_production else {},
-        allow_recursive_browse=bool(device_cfg.get("opcua_allow_recursive_browse", False)) if use_production else False,
-        timeout=float(device_cfg.get("opcua_timeout", 30.0)),
-        ignore_token_time_check=bool(device_cfg.get("opcua_ignore_token_time_check", False)),
+        fallback_node_id_prefix="ns=4;s=上位机通讯|",
+        opcua_allow_recursive_browse=bool(device_cfg.get(
+            "opcua_allow_recursive_browse", False)) if use_production else False,
+        opcua_timeout=float(device_cfg.get("opcua_timeout", 30.0)),
+        ignore_opcua_token_time_drift=bool(device_cfg.get("opcua_ignore_token_time_check", False)),
     )
     try:
         device._read_plc_variable = client.read
@@ -121,15 +123,17 @@ def reset_plc_signals(config_path: Path, *, use_production: bool) -> None:
 
     config = load_s07_debug_config(config_path, use_production=use_production)
     device_cfg = config["device"]
-    opcua_module = importlib.import_module(
-        "unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.opcua_client"
-    )
-    client = opcua_module.S07OpcUaClient(
-        config["resolved_opcua_url"],
+    plc_module = importlib.import_module("unilabos.devices.workstation.szlab_poly_studio.plc")
+    client = plc_module.SZLabPolyPLCDevice(
+        url=config["resolved_opcua_url"],
+        csv_path=False,
+        opcua_object_name="VirtualMixer",
         node_id_map=dict(device_cfg.get("opcua_node_id_map", {})) if use_production else {},
-        allow_recursive_browse=bool(device_cfg.get("opcua_allow_recursive_browse", False)) if use_production else False,
-        timeout=float(device_cfg.get("opcua_timeout", 30.0)),
-        ignore_token_time_check=bool(device_cfg.get("opcua_ignore_token_time_check", False)),
+        fallback_node_id_prefix="ns=4;s=上位机通讯|",
+        opcua_allow_recursive_browse=bool(device_cfg.get(
+            "opcua_allow_recursive_browse", False)) if use_production else False,
+        opcua_timeout=float(device_cfg.get("opcua_timeout", 30.0)),
+        ignore_opcua_token_time_drift=bool(device_cfg.get("opcua_ignore_token_time_check", False)),
     )
     try:
         for name, value in (

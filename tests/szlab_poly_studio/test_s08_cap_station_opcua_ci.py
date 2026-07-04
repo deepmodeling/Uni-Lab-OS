@@ -35,6 +35,7 @@ def opcua_pseudo_stack():
     from tests.pseudo_devices.common.opcua_csv_server import CsvOpcUaServer
     from tests.pseudo_devices.common.opcua_flow_daemon import FlowDaemon
 
+    logging.getLogger("opcua").setLevel(logging.WARNING)
     url = os.environ.get("UNILABOS_TEST_SZLAB_S08_OPCUA_URL")
     external = bool(url)
     server = None

@@ -11,7 +11,6 @@ from unilabos.registry.ast_registry_scanner import scan_directory
 S07_PACKAGE = "unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition"
 s07_module = importlib.import_module(f"{S07_PACKAGE}.s07")
 sensors = importlib.import_module(f"{S07_PACKAGE}.sensors")
-opcua_client = importlib.import_module(f"{S07_PACKAGE}.opcua_client")
 SZLabS07SolidAdditionDevice = s07_module.SZLabS07SolidAdditionDevice
 
 
@@ -72,9 +71,8 @@ def test_s07_debug_config_references_existing_local_files():
 def test_s07_debug_helpers_match_pump_style_layout():
     device_dir = Path("unilabos/devices/workstation/szlab_poly_studio/s07_solid_addition")
 
-    assert (device_dir / "opcua_client.py").exists()
-    assert (device_dir / "probe_real_opcua.py").exists()
-    assert hasattr(opcua_client, "S07OpcUaClient")
+    assert not (device_dir / "opcua_client.py").exists()
+    assert not (device_dir / "probe_real_opcua.py").exists()
 
 
 def test_s07_scan_powder_cartridges_writes_process_and_reads_qr_codes():

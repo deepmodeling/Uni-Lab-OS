@@ -28,9 +28,14 @@ _DEFAULT_CONFIG = _DEVICE_DIR / "photoshotting_debug.json"
 
 class DirectOpcUaGateway:
     def __init__(self, url: str, node_id_map: dict[str, str]) -> None:
-        from unilabos.devices.workstation.szlab_poly_studio.s06_pump.opcua_client import SzlabMixerOpcUaClient
+        from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
 
-        self._client = SzlabMixerOpcUaClient(url=url, node_id_map=node_id_map)
+        self._client = SZLabPolyPLCDevice(
+            url=url,
+            csv_path=False,
+            opcua_object_name="VirtualMixer",
+            node_id_map=node_id_map,
+        )
 
     def read_variable(self, name: str, use_cache: bool = False) -> Any:
         del use_cache

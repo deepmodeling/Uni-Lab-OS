@@ -32,8 +32,8 @@ import time
 from typing import Any, Literal
 
 from unilabos.registry.decorators import ActionInputHandle, DataSource, action, device, not_action, topic_config
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
 
-from .opcua_client import SzlabMixerOpcUaClient
 from .sensors import (
     ADDITION_BEAKER_SENSOR,
     ROBOT_BEAKER_PICK_VAR,
@@ -77,7 +77,7 @@ class SzlabMixerPumpDevice:
         pipeline_route_specs: list[dict[str, Any]] | None = None,
         robot_addition_position: int = 0,
         robot_stirrer_position: int = 0,
-        opcua_client: SzlabMixerOpcUaClient | None = None,
+        opcua_client: SZLabPolyPLCDevice | None = None,
         opcua_browse_depth: int = 8,
         opcua_browse_limit: int = 5000,
         opcua_node_id_map: dict[str, str] | None = None,
@@ -88,14 +88,16 @@ class SzlabMixerPumpDevice:
         self.timeout = timeout
         self._robot_addition_position = int(robot_addition_position)
         self._robot_stirrer_position = int(robot_stirrer_position)
-        self._client = opcua_client or SzlabMixerOpcUaClient(
+        self._client = opcua_client or SZLabPolyPLCDevice(
             url=url,
+            csv_path=False,
             username=username,
             password=password,
-            browse_depth=opcua_browse_depth,
-            browse_limit=opcua_browse_limit,
+            opcua_object_name="VirtualMixer",
+            opcua_browse_depth=opcua_browse_depth,
+            opcua_browse_limit=opcua_browse_limit,
             node_id_map=opcua_node_id_map,
-            allow_recursive_browse=opcua_allow_recursive_browse,
+            opcua_allow_recursive_browse=opcua_allow_recursive_browse,
         )
         specs = pipeline_route_specs or kwargs.pop("pipeline_route_specs", None)
         self._pipeline_routes = pipeline_routes or parse_pipeline_route_specs(specs)

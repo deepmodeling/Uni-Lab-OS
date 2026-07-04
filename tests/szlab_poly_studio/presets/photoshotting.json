@@ -31,11 +31,7 @@
           "url": "${opcua_url}",
           "timeout": 300.0,
           "csv_path": "${csv_path}",
-          "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos",
-          "opcua_node_id_map": {
-            "S05加工完成": "ns=4;s=上位机通讯|S05加工完成",
-            "S05拍照结果": "ns=4;s=上位机通讯|S05拍照结果"
-          }
+          "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
         },
         "data": {}
       }

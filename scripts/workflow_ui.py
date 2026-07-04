@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
 import re
@@ -28,12 +27,14 @@ from scripts.run_workflow_local import (
     RuntimeConfig,
     WorkflowLogger,
     WorkflowNode,
+    bind_opc_wait_logger,
     build_execution_order,
     build_snapshot_diff_detail,
     collect_snapshot_variables,
     create_local_devices,
     format_snapshot_detail,
     ignore_opcua_token_time_drift,
+    iter_opc_wait_logs,
     load_workflow_nodes,
     load_runtime_config,
     method_name_from_template,
@@ -345,9 +346,11 @@ def _run_node_with_live_opc_sampling(
         sampler = threading.Thread(target=sample_live_changes, name="SzlabLiveOpcSampler", daemon=True)
         sampler.start()
 
+    unbind_wait_logger = bind_opc_wait_logger(logger, default_plc, device, snapshot_client)
     try:
         result = getattr(device, method_name)(**node.param)
     finally:
+        unbind_wait_logger()
         stop_sampling.set()
         if sampler is not None:
             sampler.join(timeout=max(sample_interval * 2, 0.1))
@@ -367,6 +370,8 @@ def _run_node_with_live_opc_sampling(
         )
     if sampling_errors:
         logger.log(f"OPC实时采样异常: {sampling_errors[-1]}", level="warning")
+    for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
+        logger.log(wait_log["message"], detail=wait_log.get("detail"))
     logger.log(f"动作结果: {result}", detail={"result": result})
 
     output = {
@@ -830,51 +835,11 @@ def build_local_device_graph(
             if isinstance(config, dict):
                 config.pop("csv_path", None)
     else:
-        auto_map = _load_opcua_node_id_map_from_csv(csv_path)
         for node in graph.get("nodes", []):
             config = node.get("config")
             if isinstance(config, dict) and config.get("url") == opcua_url:
                 config["csv_path"] = csv_path
-                existing_map = dict(config.get("opcua_node_id_map") or {})
-                merged_map = {**auto_map, **existing_map}
-                if merged_map:
-                    config["opcua_node_id_map"] = merged_map
     return graph
-
-
-def _load_opcua_node_id_map_from_csv(csv_path: str) -> dict[str, str]:
-    node_id_map: dict[str, str] = {}
-    if not csv_path:
-        return node_id_map
-
-    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "gb18030", "gbk"):
-        for delimiter in (",", "\t"):
-            try:
-                with open(csv_path, newline="", encoding=encoding) as csv_file:
-                    reader = csv.DictReader(csv_file, delimiter=delimiter)
-                    fieldnames = reader.fieldnames or []
-                    if "变量名" not in fieldnames:
-                        continue
-                    node_id_field = next(
-                        (field for field in fieldnames if field.strip().lower() in {"node_id", "nodeid"}),
-                        None,
-                    )
-                    for row in reader:
-                        name = (row.get("变量名") or "").strip()
-                        if not name:
-                            continue
-                        if node_id_field:
-                            node_id = (row.get(node_id_field) or "").strip()
-                            if node_id:
-                                node_id_map[name] = node_id
-                                continue
-                        node_id_map[name] = f"ns=4;s=上位机通讯|{name}"
-                return node_id_map
-            except UnicodeError:
-                continue
-            except OSError:
-                return {}
-    return node_id_map
 
 
 def _load_preset_runtime_config(preset: WorkflowPreset) -> RuntimeConfig:

@@ -1,4 +1,4 @@
-"""SZLab mixer pump 单元测试用 pseudo OPC UA client。"""
+"""S06 注射泵单元测试用 pseudo OPC UA client。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 
 class PseudoSzlabMixerOpcUaClient:
-    """与 SzlabMixerOpcUaClient 方法签名一致，用于单元测试。"""
+    """S06 单元测试用的伪 PLC/OPC UA 客户端。"""
 
     def __init__(self, initial_values: dict[str, Any] | None = None):
         self.values: dict[str, Any] = {

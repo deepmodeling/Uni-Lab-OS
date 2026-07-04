@@ -134,6 +134,10 @@
       "run_stirring": [
         {
           "param": "position",
+          "template": "S04{position}磁搅状态"
+        },
+        {
+          "param": "position",
           "template": "S04{position}允许加工"
         },
         {

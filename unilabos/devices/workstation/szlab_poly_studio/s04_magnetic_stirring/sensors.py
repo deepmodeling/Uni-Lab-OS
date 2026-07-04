@@ -16,6 +16,10 @@ def s04_allow_var(position: int) -> str:
     return f"{s04_station_prefix(position)}允许加工"
 
 
+def s04_status_var(position: int) -> str:
+    return f"{s04_station_prefix(position)}磁搅状态"
+
+
 def s04_process_var(position: int) -> str:
     return f"{s04_station_prefix(position)}磁搅工艺选择"
 
@@ -54,6 +58,7 @@ def s04_public_variables() -> list[str]:
         variables.extend(
             [
                 s04_allow_var(position),
+                s04_status_var(position),
                 s04_process_var(position),
                 s04_params_written_var(position),
                 s04_done_var(position),

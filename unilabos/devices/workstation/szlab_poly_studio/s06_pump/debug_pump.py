@@ -208,7 +208,7 @@ def _run_from_config(config_path: Path, *, use_production: bool) -> dict[str, An
 
 
 def reset_plc_signals(config_path: Path, *, use_production: bool) -> None:
-    from unilabos.devices.workstation.szlab_poly_studio.s06_pump.opcua_client import SzlabMixerOpcUaClient
+    from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
     from unilabos.devices.workstation.szlab_poly_studio.s06_pump.sensors import (
         S06_PARAM_WRITTEN_VAR,
         S06_PROCESS_SELECT_VAR,
@@ -218,8 +218,10 @@ def reset_plc_signals(config_path: Path, *, use_production: bool) -> None:
     config = load_pump_debug_config(config_path, use_production=use_production)
     device_cfg = config["device"]
     node_id_map = dict(device_cfg.get("opcua_node_id_map", {})) if use_production else {}
-    client = SzlabMixerOpcUaClient(
+    client = SZLabPolyPLCDevice(
         url=config["resolved_opcua_url"],
+        csv_path=False,
+        opcua_object_name="VirtualMixer",
         node_id_map=node_id_map,
     )
     try:

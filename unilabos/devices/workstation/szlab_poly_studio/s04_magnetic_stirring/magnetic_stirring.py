@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from unilabos.registry.decorators import action, device, not_action, topic_config
-from unilabos.devices.workstation.szlab_poly_studio.plc import wait_variable_true
+from unilabos.devices.workstation.szlab_poly_studio.plc import wait_variable_equal
 
 from .sensors import (
     S04_PROCESS_MODES,
@@ -18,6 +18,7 @@ from .sensors import (
     s04_safe_temperature_var,
     s04_speed_var,
     s04_station_prefix,
+    s04_status_var,
     s04_temperature_var,
 )
 
@@ -138,15 +139,47 @@ class SzlabMixerMagneticStirrerDevice:
     @not_action
     def _wait_done(self, position: int) -> bool:
         variable = s04_done_var(position)
+        waiter = getattr(self._plc_gateway, "wait_new_cycle_done", None) if self._plc_gateway is not None else None
+        if callable(waiter):
+            return waiter(variable, timeout=self.timeout, interval=1.0)
+        wait_equal = getattr(self._plc_gateway, "wait_equal", None) if self._plc_gateway is not None else None
+        wait_variable_equal = (
+            getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
+        )
+        if callable(wait_equal) or callable(wait_variable_equal):
+            if not self._wait_variable_equal(variable, False):
+                return False
+            return self._wait_variable_true(variable)
+        if self._read_bool(variable):
+            if not self._wait_variable_equal(variable, False):
+                return False
         return self._wait_variable_true(variable)
+
+    @not_action
+    def _wait_idle_status(self, position: int) -> bool:
+        return self._wait_variable_equal(s04_status_var(position), 1)
+
+    @not_action
+    def _read_bool(self, variable: str) -> bool:
+        return bool(self._read_variable(variable, use_cache=False))
 
     @not_action
     def _wait_variable_true(self, variable: str) -> bool:
         waiter = getattr(self._plc_gateway, "wait_variable_true", None) if self._plc_gateway is not None else None
         if callable(waiter):
             return waiter(variable, timeout=self.timeout, interval=1.0)
+        return self._wait_variable_equal(variable, True)
+
+    @not_action
+    def _wait_variable_equal(self, variable: str, expected: Any) -> bool:
+        waiter = getattr(self._plc_gateway, "wait_equal", None) if self._plc_gateway is not None else None
+        if callable(waiter):
+            return waiter(variable, expected, timeout=self.timeout, interval=1.0)
+        waiter = getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
+        if callable(waiter):
+            return waiter(variable, expected, timeout=self.timeout, interval=1.0)
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
-        return wait_variable_true(reader, variable, timeout=self.timeout, interval=1.0)
+        return wait_variable_equal(reader, variable, expected, timeout=self.timeout, interval=1.0)
 
     @action(auto_prefix=True, description="执行 S04 磁搅加工")
     def run_stirring(
@@ -180,13 +213,17 @@ class SzlabMixerMagneticStirrerDevice:
         if reset:
             return self._reset_pc_to_plc_defaults(position)
 
+        if not self._wait_idle_status(position):
+            self._status = "Error"
+            return {
+                "success": False,
+                "message": f"{station} 磁搅状态等待空闲超时（期望 1）",
+                "data": {"station": station, "expected_status": 1},
+            }
+
         if not self._wait_allow_processing(position):
             self._status = "Error"
             return {"success": False, "message": f"{station} 允许加工等待超时", "data": {"station": station}}
-
-        pre_reset_result = self._reset_pc_to_plc_defaults(position, include_params_written=False)
-        if not pre_reset_result.get("success", False):
-            return pre_reset_result
 
         duration_ms = int(float(duration) * 1000)
         try:

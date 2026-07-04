@@ -1,4 +1,5 @@
 import csv
+import json
 import logging
 import os
 import threading
@@ -20,7 +21,8 @@ from unilabos.registry.decorators import action, device, not_action, topic_confi
 from unilabos.utils.log import logger
 
 
-DEFAULT_CSV_NAME = "szlab_plc_0610.csv"
+DEFAULT_CSV_NAME = "szlab_plc_0702.csv"
+DEFAULT_STACK_SENSOR_LAYOUT_NAME = "stack_sensor_layout.json"
 
 
 def wait_variable_equal(
@@ -32,11 +34,37 @@ def wait_variable_equal(
     interval: float = 1.0,
 ) -> bool:
     started_at = time.time()
-    while time.time() - started_at <= timeout:
-        if reader.read_variable(variable_name, use_cache=False) == expected:
-            return True
-        time.sleep(interval)
-    return False
+    start_recorder = getattr(reader, "_record_opc_wait_start", None)
+    if callable(start_recorder):
+        start_recorder(variable_name, expected, timeout=timeout, interval=interval)
+
+    success = False
+    last_value = None
+    error = None
+    try:
+        while time.time() - started_at <= timeout:
+            last_value = reader.read_variable(variable_name, use_cache=False)
+            if last_value == expected:
+                success = True
+                return True
+            time.sleep(interval)
+        return False
+    except Exception as exc:
+        error = str(exc)
+        raise
+    finally:
+        finish_recorder = getattr(reader, "_record_opc_wait_finish", None)
+        if callable(finish_recorder):
+            finish_recorder(
+                variable_name,
+                expected,
+                timeout=timeout,
+                interval=interval,
+                success=success,
+                last_value=last_value,
+                elapsed=time.time() - started_at,
+                error=error,
+            )
 
 
 def wait_variable_true(
@@ -49,144 +77,35 @@ def wait_variable_true(
     return wait_variable_equal(reader, variable_name, True, timeout=timeout, interval=interval)
 
 
-S3_UNUSED_BEAKER_SENSORS: Dict[str, str] = {
-    "1-1": "传感器状态_上位机[0].NO[6]",
-    "1-2": "传感器状态_上位机[0].NO[7]",
-    "1-3": "传感器状态_上位机[0].NO[8]",
-    "1-4": "传感器状态_上位机[0].NO[9]",
-    "1-5": "传感器状态_上位机[0].NO[10]",
-    "1-6": "传感器状态_上位机[0].NO[11]",
-    "2-1": "传感器状态_上位机[0].NO[12]",
-    "2-2": "传感器状态_上位机[0].NO[13]",
-    "2-3": "传感器状态_上位机[0].NO[14]",
-    "2-4": "传感器状态_上位机[0].NO[15]",
-    "2-5": "传感器状态_上位机[1].NO[0]",
-    "2-6": "传感器状态_上位机[1].NO[1]",
-    "3-1": "传感器状态_上位机[1].NO[2]",
-    "3-2": "传感器状态_上位机[1].NO[3]",
-    "3-3": "传感器状态_上位机[1].NO[4]",
-    "3-4": "传感器状态_上位机[1].NO[5]",
-    "3-5": "传感器状态_上位机[1].NO[6]",
-    "3-6": "传感器状态_上位机[1].NO[7]",
-}
-
-S3_UNUSED_SAMPLE_VIAL_SENSORS: Dict[str, str] = {
-    "1-1": "传感器状态_上位机[1].NO[8]",
-    "1-2": "传感器状态_上位机[1].NO[9]",
-    "1-3": "传感器状态_上位机[1].NO[10]",
-    "1-4": "传感器状态_上位机[1].NO[11]",
-    "1-5": "传感器状态_上位机[1].NO[12]",
-    "1-6": "传感器状态_上位机[1].NO[13]",
-    "2-1": "传感器状态_上位机[1].NO[14]",
-    "2-2": "传感器状态_上位机[1].NO[15]",
-    "2-3": "传感器状态_上位机[2].NO[0]",
-    "2-4": "传感器状态_上位机[2].NO[1]",
-    "2-5": "传感器状态_上位机[2].NO[2]",
-    "2-6": "传感器状态_上位机[2].NO[3]",
-    "3-1": "传感器状态_上位机[2].NO[4]",
-    "3-2": "传感器状态_上位机[2].NO[5]",
-    "3-3": "传感器状态_上位机[2].NO[6]",
-    "3-4": "传感器状态_上位机[2].NO[7]",
-    "3-5": "传感器状态_上位机[2].NO[8]",
-    "3-6": "传感器状态_上位机[2].NO[9]",
-}
-
-S11_USED_BEAKER_SENSORS: Dict[str, str] = {
-    "1-1": "传感器状态_上位机[6].NO[0]",
-    "1-2": "传感器状态_上位机[6].NO[1]",
-    "1-3": "传感器状态_上位机[6].NO[2]",
-    "1-4": "传感器状态_上位机[6].NO[3]",
-    "1-5": "传感器状态_上位机[6].NO[4]",
-    "1-6": "传感器状态_上位机[6].NO[5]",
-    "2-1": "传感器状态_上位机[6].NO[6]",
-    "2-2": "传感器状态_上位机[6].NO[7]",
-    "2-3": "传感器状态_上位机[6].NO[8]",
-    "2-4": "传感器状态_上位机[6].NO[9]",
-    "2-5": "传感器状态_上位机[6].NO[10]",
-    "2-6": "传感器状态_上位机[6].NO[11]",
-    "3-1": "传感器状态_上位机[6].NO[12]",
-    "3-2": "传感器状态_上位机[6].NO[13]",
-    "3-3": "传感器状态_上位机[6].NO[14]",
-    "3-4": "传感器状态_上位机[6].NO[15]",
-    "3-5": "传感器状态_上位机[7].NO[0]",
-    "3-6": "传感器状态_上位机[7].NO[1]",
-}
-
-S11_USED_SAMPLE_VIAL_SENSORS: Dict[str, str] = {
-    "1-1": "传感器状态_上位机[7].NO[2]",
-    "1-2": "传感器状态_上位机[7].NO[3]",
-    "1-3": "传感器状态_上位机[7].NO[4]",
-    "1-4": "传感器状态_上位机[7].NO[5]",
-    "1-5": "传感器状态_上位机[7].NO[6]",
-    "1-6": "传感器状态_上位机[7].NO[7]",
-    "2-1": "传感器状态_上位机[7].NO[8]",
-    "2-2": "传感器状态_上位机[7].NO[9]",
-    "2-3": "传感器状态_上位机[7].NO[10]",
-    "2-4": "传感器状态_上位机[7].NO[11]",
-    "2-5": "传感器状态_上位机[7].NO[12]",
-    "2-6": "传感器状态_上位机[7].NO[13]",
-    "3-1": "传感器状态_上位机[7].NO[14]",
-    "3-2": "传感器状态_上位机[7].NO[15]",
-    "3-3": "传感器状态_上位机[8].NO[0]",
-    "3-4": "传感器状态_上位机[8].NO[1]",
-    "3-5": "传感器状态_上位机[8].NO[2]",
-    "3-6": "传感器状态_上位机[8].NO[3]",
-}
-
-S2_TIP_SENSORS: Dict[str, str] = {
-    str(index): f"传感器状态_上位机[0].NO[{index - 1}]"
-    for index in range(1, 7)
-}
-
-POWDER_CONTAINER_SENSORS: Dict[str, str] = {
-    "1-1": "传感器状态_上位机[3].NO[8]",
-    "1-2": "传感器状态_上位机[3].NO[9]",
-    "1-3": "传感器状态_上位机[3].NO[10]",
-    "2-1": "传感器状态_上位机[3].NO[11]",
-    "2-2": "传感器状态_上位机[3].NO[12]",
-    "2-3": "传感器状态_上位机[3].NO[13]",
-}
-
-S10_LIQUID_REAGENT_SENSORS: Dict[str, str] = {
-    "1-1": "传感器状态_上位机[4].NO[12]",
-    "1-2": "传感器状态_上位机[4].NO[13]",
-    "1-3": "传感器状态_上位机[4].NO[14]",
-    "1-4": "传感器状态_上位机[4].NO[15]",
-    "1-5": "传感器状态_上位机[5].NO[0]",
-    "2-1": "传感器状态_上位机[5].NO[1]",
-    "2-2": "传感器状态_上位机[5].NO[2]",
-    "2-3": "传感器状态_上位机[5].NO[3]",
-    "2-4": "传感器状态_上位机[5].NO[4]",
-    "2-5": "传感器状态_上位机[5].NO[5]",
-    "3-1": "传感器状态_上位机[5].NO[6]",
-    "3-2": "传感器状态_上位机[5].NO[7]",
-    "3-3": "传感器状态_上位机[5].NO[8]",
-    "3-4": "传感器状态_上位机[5].NO[9]",
-    "3-5": "传感器状态_上位机[5].NO[10]",
-    "4-1": "传感器状态_上位机[5].NO[11]",
-    "4-2": "传感器状态_上位机[5].NO[12]",
-    "4-3": "传感器状态_上位机[5].NO[13]",
-    "4-4": "传感器状态_上位机[5].NO[14]",
-    "4-5": "传感器状态_上位机[5].NO[15]",
-}
-
-SENSOR_GROUPS: Dict[str, Dict[str, str]] = {
-    "s2_tip": S2_TIP_SENSORS,
-    "s3_unused_beaker": S3_UNUSED_BEAKER_SENSORS,
-    "s3_unused_sample_vial": S3_UNUSED_SAMPLE_VIAL_SENSORS,
-    "s10_liquid_reagent": S10_LIQUID_REAGENT_SENSORS,
-    "s11_used_beaker": S11_USED_BEAKER_SENSORS,
-    "s11_used_sample_vial": S11_USED_SAMPLE_VIAL_SENSORS,
-    "powder_container": POWDER_CONTAINER_SENSORS,
-}
-
-
 def _resolve_csv_path(csv_path: Optional[str]) -> str:
     if csv_path is None:
         csv_path = DEFAULT_CSV_NAME
     if os.path.isabs(csv_path):
         return csv_path
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), csv_path)
+
+
+def _resolve_config_path(config_path: Optional[str]) -> str:
+    if config_path is None:
+        config_path = DEFAULT_STACK_SENSOR_LAYOUT_NAME
+    if os.path.isabs(config_path):
+        return config_path
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), config_path)
+
+
+def load_stack_sensor_groups_from_json(config_path: Optional[str] = None) -> Dict[str, Dict[str, str]]:
+    """Load stack UI sensor layout: business position -> PLC variable name."""
+    resolved_path = _resolve_config_path(config_path)
+    with open(resolved_path, encoding="utf-8") as config_file:
+        config = json.load(config_file)
+    sensor_groups = config.get("sensor_groups", {})
+    return {
+        str(group_name): {
+            str(site_key): str(variable_name)
+            for site_key, variable_name in group.items()
+        }
+        for group_name, group in sensor_groups.items()
+    }
 
 
 def load_variable_definitions_from_csv(csv_path: str) -> tuple[List[str], Dict[str, str]]:
@@ -279,32 +198,66 @@ class SZLabPolyPLCDevice(BaseClient):
     def __init__(
         self,
         url: str,
-        csv_path: Optional[str] = None,
+        csv_path: Optional[str] | bool = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
         heartbeat_node: str = "Heart_Beat",
         auto_connect: bool = True,
         opcua_log_level: str = "WARNING",
         opcua_node_id_map: Optional[Dict[str, str]] = None,
+        node_id_map: Optional[Dict[str, str]] = None,
         opcua_node_id_prefix: Optional[str] = None,
+        fallback_node_id_prefix: Optional[str] = None,
+        opcua_object_name: Optional[str] = None,
+        opcua_browse_depth: int = 8,
+        opcua_browse_limit: int = 5000,
+        opcua_allow_recursive_browse: bool = False,
+        opcua_timeout: Optional[float] = None,
+        stack_sensor_layout_path: Optional[str] = None,
         ignore_opcua_token_time_drift: bool = False,
         *args,
         **kwargs,
     ):
-        if OpcUaNode is None:
+        standalone_opcua_client = csv_path is False
+        self._standalone_opcua_client = standalone_opcua_client
+        if OpcUaNode is None and not standalone_opcua_client:
             raise ModuleNotFoundError("SZLabPolyPLCDevice 需要可选依赖 pylabrobot，请在 unilab 环境中运行")
         super().__init__()
-        self.csv_path = _resolve_csv_path(csv_path)
+        self._opc_wait_events: List[Dict[str, Any]] = []
+        self._node_registry: Dict[str, Any] = {}
+        self._variables_to_find: Dict[str, Dict[str, Any]] = {}
+        self._found_node_objects: Dict[str, Any] = {}
+        self.url = url
+        self.csv_path = None if csv_path is False else _resolve_csv_path(csv_path)
+        self.stack_sensor_groups = load_stack_sensor_groups_from_json(stack_sensor_layout_path)
         self.heartbeat_node = heartbeat_node
         self.heartbeat_on = False
         self._heartbeat_timer: Optional[threading.Timer] = None
         self._sensor_read_warning_names: set[str] = set()
+        self._fallback_node_id_prefix = fallback_node_id_prefix
+        self._opcua_object_name = opcua_object_name
+        self._opcua_browse_depth = int(opcua_browse_depth)
+        self._opcua_browse_limit = int(opcua_browse_limit)
+        self._opcua_allow_recursive_browse = bool(opcua_allow_recursive_browse)
 
-        variable_names, csv_node_id_map = load_variable_definitions_from_csv(self.csv_path)
-        nodes = [
-            OpcUaNode(name=name, node_type=NodeType.VARIABLE, data_type=None)
-            for name in variable_names
-        ]
+        if self.csv_path is None:
+            variable_names: List[str] = []
+            csv_node_id_map: Dict[str, str] = {}
+        else:
+            variable_names, csv_node_id_map = load_variable_definitions_from_csv(self.csv_path)
+        explicit_node_id_map = {
+            **dict(node_id_map or {}),
+            **dict(opcua_node_id_map or {}),
+        }
+        for name in explicit_node_id_map:
+            if name not in variable_names:
+                variable_names.append(name)
+        nodes = []
+        if not self._standalone_opcua_client:
+            nodes = [
+                OpcUaNode(name=name, node_type=NodeType.VARIABLE, data_type=None)
+                for name in variable_names
+            ]
         prefix_node_id_map = (
             {name: f"{opcua_node_id_prefix}{name}" for name in variable_names}
             if opcua_node_id_prefix
@@ -313,18 +266,24 @@ class SZLabPolyPLCDevice(BaseClient):
         self._direct_node_id_map = {
             **prefix_node_id_map,
             **csv_node_id_map,
-            **dict(opcua_node_id_map or {}),
+            **explicit_node_id_map,
         }
-        self.register_node_list(nodes)
+        if self._standalone_opcua_client:
+            self._register_variable_definitions(variable_names)
+        else:
+            self.register_node_list(nodes)
 
         logging.getLogger("opcua").setLevel(getattr(logging, opcua_log_level.upper(), logging.WARNING))
         if ignore_opcua_token_time_drift:
             _patch_opcua_token_time_drift_check()
-        client = Client(url)
+        client = Client(url, timeout=opcua_timeout) if opcua_timeout is not None else Client(url)
         if username and password:
             client.set_user(username)
             client.set_password(password)
-        self._set_client(client)
+        if self._standalone_opcua_client:
+            self.client = client
+        else:
+            self._set_client(client)
         if self._direct_node_id_map:
             self._register_direct_node_ids(nodes)
         if auto_connect:
@@ -332,7 +291,7 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def _connect(self) -> None:
-        if not self._direct_node_id_map:
+        if not self._direct_node_id_map and not self._opcua_object_name and not self._opcua_allow_recursive_browse:
             return super()._connect()
         logger.info("try to connect client...")
         if not self.client:
@@ -340,12 +299,27 @@ class SZLabPolyPLCDevice(BaseClient):
         try:
             self.client.connect()
             logger.info("client connected!")
-            missing = sorted(set(self._variables_to_find) - set(self._node_registry))
-            if missing:
-                logger.warning(f"以下节点缺少 NodeId 映射，未执行自动浏览: {', '.join(missing)}")
+            if not self._direct_node_id_map:
+                self._register_browsed_opcua_nodes()
+            else:
+                missing = sorted(set(self._variables_to_find) - set(self._node_registry))
+                if missing:
+                    logger.warning(f"以下节点缺少 NodeId 映射，未执行自动浏览: {', '.join(missing)}")
         except Exception as exc:
             logger.error(f"client connect failed: {exc}")
             raise
+
+    @not_action
+    def _register_variable_definitions(self, variable_names: List[str]) -> None:
+        for name in variable_names:
+            self._variables_to_find.setdefault(
+                name,
+                {
+                    "node_type": NodeType.VARIABLE,
+                    "data_type": None,
+                    "node_id": self._direct_node_id_map.get(name),
+                },
+            )
 
     @not_action
     def _register_direct_node_ids(self, nodes: List[OpcUaNode]) -> None:
@@ -354,19 +328,123 @@ class SZLabPolyPLCDevice(BaseClient):
         nodes_by_name = {node.name: node for node in nodes}
         for name, node_id in self._direct_node_id_map.items():
             node = nodes_by_name.get(name)
-            if node is None:
+            if node is None and not self._standalone_opcua_client:
                 continue
-            if node.node_type != NodeType.VARIABLE:
+            if node is not None and node.node_type != NodeType.VARIABLE:
                 continue
-            self._node_registry[name] = Variable(self.client, name, node_id, node.data_type)
+            data_type = node.data_type if node is not None else None
+            self._node_registry[name] = Variable(self.client, name, node_id, data_type)
             self._variables_to_find.setdefault(
                 name,
                 {
-                    "node_type": node.node_type,
-                    "data_type": node.data_type,
+                    "node_type": NodeType.VARIABLE,
+                    "data_type": data_type,
                     "node_id": node_id,
                 },
             )
+
+    @not_action
+    def _register_browsed_opcua_nodes(self) -> None:
+        for name, opc_node in self._browse_device_nodes().items():
+            self._register_variable_node_id(name, str(opc_node.nodeid))
+
+    @not_action
+    def _browse_device_nodes(self) -> Dict[str, Any]:
+        if not self.client:
+            raise ValueError("client is not initialized")
+        objects = self.client.get_objects_node()
+        top_children = objects.get_children()
+        if self._opcua_object_name:
+            for child in top_children:
+                if child.get_browse_name().Name == self._opcua_object_name:
+                    return {node.get_browse_name().Name: node for node in child.get_children()}
+
+        if not self._opcua_allow_recursive_browse:
+            top_names = []
+            for child in top_children:
+                try:
+                    top_names.append(f"{child.get_browse_name().Name}({child.nodeid})")
+                except Exception:
+                    top_names.append(str(child.nodeid))
+            object_hint = f"{self._opcua_object_name} 对象" if self._opcua_object_name else "指定对象"
+            raise RuntimeError(
+                f"OPC UA 中未找到 {object_hint}。真机节点树较大，已停止自动递归扫描以避免卡住；"
+                "请先用 OPC UA 浏览工具找到变量 NodeId，并写入设备配置的 opcua_node_id_map。"
+                f"顶层对象: {top_names}"
+            )
+
+        nodes = self._browse_nodes_recursively(objects)
+        if not nodes:
+            raise RuntimeError("OPC UA 中没有递归扫描到可用变量节点；请确认变量是否已发布")
+        return nodes
+
+    @not_action
+    def _browse_nodes_recursively(self, root: Any) -> Dict[str, Any]:
+        nodes_by_name: Dict[str, Any] = {}
+        visited = 0
+        stack: list[tuple[Any, int]] = [(root, 0)]
+
+        while stack and visited < self._opcua_browse_limit:
+            node, depth = stack.pop()
+            visited += 1
+            try:
+                children = node.get_children()
+            except Exception:
+                continue
+            for child in children:
+                try:
+                    browse_name = child.get_browse_name().Name
+                except Exception:
+                    browse_name = ""
+                try:
+                    display_name = child.get_display_name().Text
+                except Exception:
+                    display_name = ""
+                for name in (browse_name, display_name):
+                    if name and name not in nodes_by_name:
+                        nodes_by_name[name] = child
+                if depth < self._opcua_browse_depth:
+                    stack.append((child, depth + 1))
+
+        logging.getLogger(__name__).info(
+            "已递归扫描 OPC UA 节点: object=%s visited=%s indexed=%s",
+            self._opcua_object_name,
+            visited,
+            len(nodes_by_name),
+        )
+        return nodes_by_name
+
+    @not_action
+    def _register_variable_node_id(self, name: str, node_id: str) -> None:
+        if not self.client:
+            raise ValueError("client is not initialized")
+        self._node_registry[name] = Variable(self.client, name, node_id, None)
+        self._variables_to_find.setdefault(
+            name,
+            {
+                "node_type": NodeType.VARIABLE,
+                "data_type": None,
+                "node_id": node_id,
+            },
+        )
+
+    @not_action
+    def use_node(self, node_name: str) -> Any:
+        if not self._standalone_opcua_client:
+            try:
+                return super().use_node(node_name)
+            except Exception:
+                if not self._fallback_node_id_prefix:
+                    raise
+
+        node = self._node_registry.get(node_name)
+        if node is not None:
+            return node
+        if self._fallback_node_id_prefix:
+            node_id = f"{self._fallback_node_id_prefix}{node_name}"
+            self._register_variable_node_id(node_name, node_id)
+            return self._node_registry[node_name]
+        raise KeyError(f"未找到 OPC UA 节点: {node_name}")
 
     @not_action
     def read_variable(self, node_name: str, use_cache: bool = True) -> Any:
@@ -484,6 +562,98 @@ class SZLabPolyPLCDevice(BaseClient):
         return wait_variable_true(self, node_name, timeout=timeout, interval=interval)
 
     @not_action
+    def drain_opc_wait_events(self) -> List[Dict[str, Any]]:
+        events = list(getattr(self, "_opc_wait_events", []))
+        self._opc_wait_events = []
+        return events
+
+    @not_action
+    def set_opc_wait_event_writer(self, writer: Any | None) -> None:
+        self._opc_wait_event_writer = writer
+
+    @not_action
+    def _emit_or_store_opc_wait_event(self, event: Dict[str, Any]) -> None:
+        writer = getattr(self, "_opc_wait_event_writer", None)
+        if callable(writer):
+            writer(event)
+            return
+        self._opc_wait_events.append(event)
+
+    @not_action
+    def _opc_wait_variable_detail(self, node_name: str) -> Dict[str, Any]:
+        display_name = node_name
+        node_id = None
+        try:
+            display_name, node_id = self.get_opc_variable_metadata(node_name)
+        except (KeyError, ValueError):
+            pass
+        detail = {"display_name": display_name}
+        if node_id:
+            detail["node_id"] = node_id
+            detail["label"] = f"{display_name} ({node_id})"
+        else:
+            detail["label"] = display_name
+        return detail
+
+    @not_action
+    def _record_opc_wait_start(
+        self,
+        node_name: str,
+        expected: Any,
+        *,
+        timeout: float,
+        interval: float,
+    ) -> None:
+        detail = {
+            "type": "opc_wait",
+            "phase": "start",
+            "variable": node_name,
+            "expected": expected,
+            "timeout": timeout,
+            "interval": interval,
+        }
+        detail.update(self._opc_wait_variable_detail(node_name))
+        self._emit_or_store_opc_wait_event(
+            {
+                "phase": "start",
+                "message": f"等待 OPC 变量 {node_name} == {expected} (timeout={timeout}s, interval={interval}s)",
+                "detail": detail,
+            }
+        )
+
+    @not_action
+    def _record_opc_wait_finish(
+        self,
+        node_name: str,
+        expected: Any,
+        *,
+        timeout: float,
+        interval: float,
+        success: bool,
+        last_value: Any,
+        elapsed: float,
+        error: str | None = None,
+    ) -> None:
+        detail = {
+            "type": "opc_wait",
+            "phase": "finish",
+            "variable": node_name,
+            "expected": expected,
+            "timeout": timeout,
+            "interval": interval,
+            "success": success,
+            "last_value": last_value,
+            "elapsed": elapsed,
+        }
+        detail.update(self._opc_wait_variable_detail(node_name))
+        if error:
+            detail["error"] = error
+        message = f"OPC 变量等待完成 {node_name} == {expected}: success={success}, last_value={last_value}"
+        if error:
+            message = f"{message}, error={error}"
+        self._emit_or_store_opc_wait_event({"phase": "finish", "message": message, "detail": detail})
+
+    @not_action
     def wait_new_cycle_done(
         self,
         node_name: str,
@@ -501,8 +671,17 @@ class SZLabPolyPLCDevice(BaseClient):
     def get_opc_variable_metadata(self, node_name: str) -> tuple[str, str | None]:
         try:
             return node_name, self.use_node(node_name).node_id
-        except Exception:
+        except (KeyError, ValueError):
             return node_name, None
+
+    @not_action
+    def check_variable_accessible(self, node_name: str) -> tuple[bool, str | None]:
+        try:
+            node = self.use_node(node_name)
+            node._get_node().get_data_type_as_variant_type()
+        except Exception as exc:
+            return False, str(exc)
+        return True, node.node_id
 
     @not_action
     def get_variables(self, node_names: Optional[List[str]] = None, use_cache: bool = False) -> Dict[str, Any]:
@@ -542,12 +721,19 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def _read_stack_sensor_groups(self, group_names: Optional[List[str]] = None) -> Dict[str, Dict[str, Optional[bool]]]:
-        selected_groups = group_names or list(SENSOR_GROUPS)
+        selected_groups = group_names or list(self.stack_sensor_groups)
         return {
             group_name: self._read_sensor_group(sensors)
-            for group_name, sensors in SENSOR_GROUPS.items()
+            for group_name, sensors in self.stack_sensor_groups.items()
             if group_name in selected_groups
         }
+
+    @not_action
+    def _read_named_sensor_group(self, group_name: str) -> Dict[str, Optional[bool]]:
+        sensors = self.stack_sensor_groups.get(group_name)
+        if sensors is None:
+            raise KeyError(f"stack_sensor_layout.json 缺少传感器分组: {group_name}")
+        return self._read_sensor_group(sensors)
 
     @action(auto_prefix=True, always_free=True, description="启动苏州实验室 PLC 心跳")
     def start_heart_beat(self) -> Dict[str, Any]:
@@ -618,12 +804,12 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @action(auto_prefix=True, always_free=True, description="读取指定传感器分组")
     def get_sensor_group_status(self, group_name: str) -> Dict[str, Any]:
-        sensors = SENSOR_GROUPS.get(group_name)
+        sensors = self.stack_sensor_groups.get(group_name)
         if sensors is None:
             return {
                 "success": False,
                 "group_name": group_name,
-                "available_groups": sorted(SENSOR_GROUPS),
+                "available_groups": sorted(self.stack_sensor_groups),
             }
         return {
             "success": True,
@@ -650,31 +836,31 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @topic_config(period=1.0)
     def s2_tip_occupied(self) -> Dict[str, Optional[bool]]:
-        return self._read_sensor_group(S2_TIP_SENSORS)
+        return self._read_named_sensor_group("s2_tip")
 
     @topic_config(period=1.0)
     def s3_unused_beaker_occupied(self) -> Dict[str, Optional[bool]]:
-        return self._read_sensor_group(S3_UNUSED_BEAKER_SENSORS)
+        return self._read_named_sensor_group("s3_unused_beaker")
 
     @topic_config(period=1.0)
     def s3_unused_sample_vial_occupied(self) -> Dict[str, Optional[bool]]:
-        return self._read_sensor_group(S3_UNUSED_SAMPLE_VIAL_SENSORS)
+        return self._read_named_sensor_group("s3_unused_sample_vial")
 
     @topic_config(period=1.0)
     def s10_liquid_reagent_occupied(self) -> Dict[str, Optional[bool]]:
-        return self._read_sensor_group(S10_LIQUID_REAGENT_SENSORS)
+        return self._read_named_sensor_group("s10_liquid_reagent")
 
     @topic_config(period=1.0)
     def s11_used_beaker_occupied(self) -> Dict[str, Optional[bool]]:
-        return self._read_sensor_group(S11_USED_BEAKER_SENSORS)
+        return self._read_named_sensor_group("s11_used_beaker")
 
     @topic_config(period=1.0)
     def s11_used_sample_vial_occupied(self) -> Dict[str, Optional[bool]]:
-        return self._read_sensor_group(S11_USED_SAMPLE_VIAL_SENSORS)
+        return self._read_named_sensor_group("s11_used_sample_vial")
 
     @topic_config(period=1.0)
     def powder_container_occupied(self) -> Dict[str, Optional[bool]]:
-        return self._read_sensor_group(POWDER_CONTAINER_SENSORS)
+        return self._read_named_sensor_group("powder_container")
 
     @topic_config(period=5.0)
     def registered_variable_count(self) -> int:

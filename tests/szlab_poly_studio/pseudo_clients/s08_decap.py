@@ -17,7 +17,7 @@ _cap_cache_element_name = _s08_module._cap_cache_element_name
 
 
 class PseudoSzlabS08OpcUaClient:
-    """与 SzlabS08OpcUaClient 方法签名一致，用于单元测试。"""
+    """S08 单元测试用的伪 PLC/OPC UA 客户端。"""
 
     def __init__(
         self,

@@ -31,33 +31,15 @@ UniLab 写入、对端读取：S08工艺选择、S08参数写入完成、S082瓶
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import time
 from enum import IntEnum
-from pathlib import Path
 from typing import Any, Optional, Sequence
 
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.utils.log import logger
 
-
-def _load_opcua_client_class():
-    try:
-        from .decap_s08_opcua_client import SzlabS08OpcUaClient
-
-        return SzlabS08OpcUaClient
-    except ImportError:
-        module_path = Path(__file__).resolve().parent / "decap_s08_opcua_client.py"
-        spec = importlib.util.spec_from_file_location("szlab_decap_s08_opcua_client", module_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"无法加载 S08 OPC UA 客户端: {module_path}")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module.SzlabS08OpcUaClient
-
-
-SzlabS08OpcUaClient = _load_opcua_client_class()
 
 DEFAULT_OPCUA_URL = os.environ.get(
     "UNILABOS_SZLAB_S08_OPCUA_URL",
@@ -270,7 +252,7 @@ class SZLabS08CapStationDevice:
         require_station_ready: bool = True,
         require_station_status: bool = False,
         validate_cap_constraints: bool = False,
-        opcua_client: SzlabS08OpcUaClient | None = None,
+        opcua_client: SZLabPolyPLCDevice | None = None,
         opcua_browse_depth: int = 8,
         opcua_browse_limit: int = 5000,
         opcua_node_id_map: dict[str, str] | None = None,
@@ -297,15 +279,16 @@ class SZLabS08CapStationDevice:
                 )
             if uplink_prefix:
                 resolved_node_id_map = build_opcua_node_id_map_for_uplink_comm(uplink_prefix)
-        self._client = opcua_client or SzlabS08OpcUaClient(
+        self._client = opcua_client or SZLabPolyPLCDevice(
             url=url,
+            csv_path=False,
             username=username,
             password=password,
-            browse_depth=opcua_browse_depth,
-            browse_limit=opcua_browse_limit,
+            opcua_object_name=opcua_object_name,
+            opcua_browse_depth=opcua_browse_depth,
+            opcua_browse_limit=opcua_browse_limit,
             node_id_map=resolved_node_id_map,
-            allow_recursive_browse=opcua_allow_recursive_browse,
-            object_name=opcua_object_name,
+            opcua_allow_recursive_browse=opcua_allow_recursive_browse,
         )
         self._last_status: dict[str, Any] = {}
         self._init_unilab_written_state()
@@ -443,9 +426,6 @@ class SZLabS08CapStationDevice:
             if hasattr(self._client, "reconnect"):
                 self._client.reconnect()
             self._reset_unilab_written_params()
-
-        if _is_virtual_test_opcua_url(self.url):
-            return True
 
         var_ref = self._format_opc_variable_ref(NODE_PROCESS_COMPLETE)
         return self._wait_process_complete(

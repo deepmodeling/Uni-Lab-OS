@@ -3,7 +3,7 @@
 苏州实验室 S08 开关盖工位驱动，直连 OPC UA。对外仅暴露一个 Action：**`process_cap`**。
 
 - 驱动：`decap_s08_cap_station.py`（`SZLabS08CapStationDevice`）
-- OPC 客户端：`decap_s08_opcua_client.py`
+- OPC/PLC 客户端：统一使用 `../plc.py` 中的 `SZLabPolyPLCDevice`
 - 变量表：`decap_s08_nodes.csv`
 - 本地调试：`decap_s08_debug.py`、`decap_s08_debug.json`
 

@@ -51,6 +51,24 @@ export function collectOpcChanges(events: LogEvent[]): OpcChange[] {
       });
     });
 
+    const waitRow = collectWaitRow(event);
+    if (waitRow) {
+      const key = `${event.node_id || 'workflow'}:${waitRow.name}`;
+      const current = rows.get(key);
+      rows.set(key, {
+        ...waitRow,
+        ...(current || {}),
+        eventSequence: event.sequence,
+        workflowNodeId: event.node_id || null,
+        opcNodeId: waitRow.opcNodeId || current?.opcNodeId || '',
+        displayName: waitRow.displayName || current?.displayName || waitRow.name,
+        label: waitRow.label || current?.label || waitRow.name,
+        valueBegin: current?.valueBegin,
+        valueGoal: waitRow.valueGoal ?? current?.valueGoal,
+        valueEnd: waitRow.valueEnd ?? current?.valueEnd,
+      });
+    }
+
     const changes = event.detail?.changes;
     if (!Array.isArray(changes)) return;
 
@@ -106,6 +124,25 @@ function collectSnapshotRows(event: LogEvent, field: 'before' | 'after') {
       },
     ];
   });
+}
+
+function collectWaitRow(event: LogEvent): OpcChange | null {
+  const detail = event.detail;
+  if (!isRecord(detail) || detail.type !== 'opc_wait') return null;
+  const variable = typeof detail.variable === 'string' ? detail.variable : '';
+  if (!variable) return null;
+
+  return {
+    eventSequence: event.sequence,
+    workflowNodeId: event.node_id || null,
+    opcNodeId: typeof detail.node_id === 'string' ? detail.node_id : '',
+    displayName: typeof detail.display_name === 'string' ? detail.display_name : variable,
+    label: typeof detail.label === 'string' ? detail.label : variable,
+    name: variable,
+    valueBegin: undefined,
+    valueGoal: detail.expected,
+    valueEnd: detail.phase === 'finish' ? detail.last_value : undefined,
+  };
 }
 
 function getValueGoal(record: Record<string, unknown>, fallback?: unknown): unknown {

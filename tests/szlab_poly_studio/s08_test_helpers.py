@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.szlab_poly_studio.pseudo_clients.decap_s08_pseudo_opcua_client import (
+from tests.szlab_poly_studio.pseudo_clients.s08_decap import (
     PseudoSzlabS08OpcUaClient,
 )
 from unilabos.devices.workstation.szlab_poly_studio.s08_decap import decap_s08_cap_station as s08_module

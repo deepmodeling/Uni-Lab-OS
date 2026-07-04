@@ -59,6 +59,51 @@ def test_szlab_wait_variable_true_reuses_read_variable_and_interval(monkeypatch)
     assert sleeps == [1.0, 1.0]
 
 
+def test_szlab_plc_wait_variable_equal_records_start_and_finish_events(monkeypatch):
+    device = object.__new__(SZLabPolyPLCDevice)
+    device._opc_wait_events = []
+    device.values = [False, True]
+    device.reads = []
+
+    def read_variable(name, use_cache=False):
+        device.reads.append((name, use_cache))
+        return device.values.pop(0)
+
+    monkeypatch.setattr(device, "read_variable", read_variable)
+    monkeypatch.setattr(
+        device,
+        "get_opc_variable_metadata",
+        lambda name: (name, f"ns=4;s={name}"),
+    )
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.plc.time.sleep",
+        lambda _seconds: None,
+    )
+
+    assert device.wait_variable_equal("S06加工完成", True, timeout=5.0, interval=0.2) is True
+
+    events = device.drain_opc_wait_events()
+    assert [event["phase"] for event in events] == ["start", "finish"]
+    assert events[0]["message"] == "等待 OPC 变量 S06加工完成 == True (timeout=5.0s, interval=0.2s)"
+    assert events[0]["detail"] == {
+        "type": "opc_wait",
+        "phase": "start",
+        "variable": "S06加工完成",
+        "expected": True,
+        "timeout": 5.0,
+        "interval": 0.2,
+        "display_name": "S06加工完成",
+        "node_id": "ns=4;s=S06加工完成",
+        "label": "S06加工完成 (ns=4;s=S06加工完成)",
+    }
+    assert events[1]["message"].startswith("OPC 变量等待完成 S06加工完成 == True: success=True")
+    assert events[1]["detail"]["phase"] == "finish"
+    assert events[1]["detail"]["success"] is True
+    assert events[1]["detail"]["last_value"] is True
+    assert events[1]["detail"]["node_id"] == "ns=4;s=S06加工完成"
+    assert device.drain_opc_wait_events() == []
+
+
 def test_clear_pc_to_plc_variables_treats_failed_write_as_success_when_already_clear():
     class FakePlcGateway:
         def __init__(self):
@@ -180,10 +225,14 @@ def test_szlab_magnetic_stirrer_run_stirring_writes_s041_parameters():
         def __init__(self):
             self.reads = []
             self.writes = []
+            self.events = []
             self.done_values = [False, False, True]
 
         def read_variable(self, name, use_cache=False):
             self.reads.append(name)
+            self.events.append(("read", name))
+            if name == "S041磁搅状态":
+                return 1
             if name == "S041允许加工":
                 return True
             if name == "S041加工完成":
@@ -192,6 +241,7 @@ def test_szlab_magnetic_stirrer_run_stirring_writes_s041_parameters():
 
         def write_variable(self, name, value):
             self.writes.append((name, value))
+            self.events.append(("write", name, value))
             return True
 
     gateway = FakePlcGateway()
@@ -212,25 +262,136 @@ def test_szlab_magnetic_stirrer_run_stirring_writes_s041_parameters():
 
     assert result["success"] is True
     assert result["data"]["station"] == "S041"
-    assert gateway.reads == ["S041允许加工", "S041加工完成", "S041加工完成", "S041加工完成"]
+    assert gateway.reads == ["S041磁搅状态", "S041允许加工", "S041加工完成", "S041加工完成", "S041加工完成"]
     assert gateway.writes == [
-        ("S041磁搅工艺选择", 0),
-        ("磁搅速度设置_上位机[0]", 0),
-        ("磁搅温度设置_上位机[0]", 0),
-        ("磁搅时间设置_上位机[0]", 30000),
-        ("磁搅安全温度设置_上位机[0]", 0),
         ("S041磁搅工艺选择", 3),
         ("磁搅速度设置_上位机[0]", 300),
         ("磁搅温度设置_上位机[0]", 60),
         ("磁搅时间设置_上位机[0]", 30000),
         ("磁搅安全温度设置_上位机[0]", 80),
         ("S041参数写入完成", True),
+        # PLC 报加工完成后，PC 再 reset 本轮参数。
         ("S041磁搅工艺选择", 0),
         ("磁搅速度设置_上位机[0]", 0),
         ("磁搅温度设置_上位机[0]", 0),
         ("磁搅时间设置_上位机[0]", 30000),
         ("磁搅安全温度设置_上位机[0]", 0),
         ("S041参数写入完成", False),
+    ]
+    done_index = gateway.events.index(("read", "S041加工完成"))
+    reset_index = gateway.events.index(("write", "S041磁搅工艺选择", 0))
+    assert done_index < reset_index
+    assert all(name != "S041加工完成" for name, _value in gateway.writes)
+
+
+def test_szlab_magnetic_stirrer_waits_for_idle_status_before_writing(monkeypatch):
+    class FakePlcGateway:
+        def __init__(self):
+            self.reads = []
+            self.writes = []
+            self.status_values = [0, 1]
+            self.done_values = [False, True]
+
+        def read_variable(self, name, use_cache=False):
+            self.reads.append(name)
+            if name == "S041磁搅状态":
+                return self.status_values.pop(0)
+            if name == "S041允许加工":
+                return True
+            if name == "S041加工完成":
+                return self.done_values.pop(0)
+            raise KeyError(name)
+
+        def write_variable(self, name, value):
+            self.writes.append((name, value))
+            return True
+
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.plc.time.sleep",
+        lambda _seconds: None,
+    )
+    gateway = FakePlcGateway()
+    device = SzlabMixerMagneticStirrerDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.run_stirring(position=1, mode=3)
+
+    assert result["success"] is True
+    assert gateway.reads[:3] == ["S041磁搅状态", "S041磁搅状态", "S041允许加工"]
+    assert ("S041磁搅工艺选择", 3) in gateway.writes
+
+
+def test_szlab_magnetic_stirrer_idle_status_timeout_before_writing():
+    class FakePlcGateway:
+        def __init__(self):
+            self.waits = []
+            self.writes = []
+
+        def wait_equal(self, name, expected, timeout=300.0, interval=1.0):
+            self.waits.append((name, expected, timeout, interval))
+            return False
+
+        def read_variable(self, name, use_cache=False):
+            raise AssertionError("磁搅状态应通过 wait_equal 等待")
+
+        def write_variable(self, name, value):
+            self.writes.append((name, value))
+            return True
+
+    gateway = FakePlcGateway()
+    device = SzlabMixerMagneticStirrerDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        timeout=12.0,
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.run_stirring(position=1, mode=3)
+
+    assert result["success"] is False
+    assert result["message"] == "S041 磁搅状态等待空闲超时（期望 1）"
+    assert gateway.waits == [("S041磁搅状态", 1, 12.0, 1.0)]
+    assert gateway.writes == []
+
+
+def test_szlab_magnetic_stirrer_waits_for_new_done_cycle_when_done_is_stale_true():
+    class FakePlcGateway:
+        def __init__(self):
+            self.reads = []
+            self.writes = []
+            self.done_values = [True, False, True]
+
+        def read_variable(self, name, use_cache=False):
+            self.reads.append(name)
+            if name == "S041磁搅状态":
+                return 1
+            if name == "S041允许加工":
+                return True
+            if name == "S041加工完成":
+                return self.done_values.pop(0)
+            raise KeyError(name)
+
+        def write_variable(self, name, value):
+            self.writes.append((name, value))
+            return True
+
+    gateway = FakePlcGateway()
+    device = SzlabMixerMagneticStirrerDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.run_stirring(position=1, mode=3)
+
+    assert result["success"] is True
+    assert [name for name in gateway.reads if name == "S041加工完成"] == [
+        "S041加工完成",
+        "S041加工完成",
+        "S041加工完成",
     ]
 
 
@@ -242,6 +403,7 @@ def test_szlab_magnetic_stirrer_waits_for_done_timeout(monkeypatch):
         def read_variable(self, name, use_cache=False):
             self.reads.append(name)
             values = {
+                "S041磁搅状态": 1,
                 "S041允许加工": True,
                 "S041加工完成": False,
             }
@@ -251,7 +413,7 @@ def test_szlab_magnetic_stirrer_waits_for_done_timeout(monkeypatch):
             return True
 
     sleeps = []
-    ticks = iter([0.0, 0.0, 0.0, 0.0, 1.1])
+    ticks = iter([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.1])
     monkeypatch.setattr("unilabos.devices.workstation.szlab_poly_studio.plc.time.time", lambda: next(ticks))
     monkeypatch.setattr(
         "unilabos.devices.workstation.szlab_poly_studio.plc.time.sleep",
@@ -282,8 +444,12 @@ def test_szlab_magnetic_stirrer_uses_plc_wait_helper_when_available():
             self.waits.append((name, timeout, interval))
             return True
 
+        def wait_equal(self, name, expected, timeout=300.0, interval=1.0):
+            self.waits.append((name, expected, timeout, interval))
+            return True
+
         def read_variable(self, name, use_cache=False):
-            raise AssertionError("应优先使用 wait_variable_true")
+            raise AssertionError("应优先使用 wait helper")
 
         def write_variable(self, name, value):
             self.writes.append((name, value))
@@ -301,7 +467,9 @@ def test_szlab_magnetic_stirrer_uses_plc_wait_helper_when_available():
 
     assert result["success"] is True
     assert gateway.waits == [
+        ("S041磁搅状态", 1, 12.0, 1.0),
         ("S041允许加工", 12.0, 1.0),
+        ("S041加工完成", False, 12.0, 1.0),
         ("S041加工完成", 12.0, 1.0),
     ]
 
@@ -312,6 +480,8 @@ def test_szlab_magnetic_stirrer_does_not_mark_params_written_after_write_failure
             self.writes = []
 
         def read_variable(self, name, use_cache=False):
+            if name == "S041磁搅状态":
+                return 1
             return True
 
         def write_variable(self, name, value):
@@ -632,6 +802,31 @@ def test_szlab_poly_plc_can_enable_opcua_token_time_drift_patch(monkeypatch, tmp
     )
 
     assert patch_calls == ["patched"]
+
+
+def test_szlab_poly_plc_missing_sensor_group_is_not_silent():
+    device = object.__new__(SZLabPolyPLCDevice)
+    device.stack_sensor_groups = {}
+
+    with pytest.raises(KeyError, match="stack_sensor_layout.json"):
+        device._read_named_sensor_group("s2_tip")
+
+
+def test_szlab_poly_plc_metadata_only_suppresses_missing_node(monkeypatch):
+    device = object.__new__(SZLabPolyPLCDevice)
+
+    def missing_node(_name):
+        raise KeyError("missing")
+
+    monkeypatch.setattr(device, "use_node", missing_node)
+    assert device.get_opc_variable_metadata("missing") == ("missing", None)
+
+    def broken_node(_name):
+        raise RuntimeError("opcua disconnected")
+
+    monkeypatch.setattr(device, "use_node", broken_node)
+    with pytest.raises(RuntimeError, match="opcua disconnected"):
+        device.get_opc_variable_metadata("broken")
 
 
 def test_szlab_mixer_keeps_pipeline_route_helpers():

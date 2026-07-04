@@ -21,7 +21,7 @@ from scripts.run_workflow_local import (
     WorkflowNode,
     run_nodes,
 )
-from tests.szlab_poly_studio.pseudo_szlab_s09_opcua_client import PseudoSzlabS09OpcUaClient
+from tests.szlab_poly_studio.pseudo_clients.s09_pipetting import PseudoSzlabS09OpcUaClient
 
 
 def make_pipetting_device(client: PseudoSzlabS09OpcUaClient | None = None) -> SzlabMixerPipettingStationDevice:

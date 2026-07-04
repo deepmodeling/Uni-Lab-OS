@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from tests.szlab_poly_studio.pseudo_clients.decap_s08_pseudo_opcua_client import PseudoSzlabS08OpcUaClient
+from tests.szlab_poly_studio.pseudo_clients.s08_decap import PseudoSzlabS08OpcUaClient
 from tests.szlab_poly_studio.s08_test_helpers import (
     NODE_PARAMS_WRITTEN,
     NODE_PROCESS_COMPLETE,
@@ -96,13 +96,14 @@ def test_is_virtual_test_opcua_url():
 
 
 def test_real_opcua_url_auto_uses_uplink_prefix():
-    with patch.object(s08_module, "SzlabS08OpcUaClient") as mock_cls:
+    with patch.object(s08_module, "SZLabPolyPLCDevice") as mock_cls:
         mock_cls.return_value = MagicMock()
         s08_module.SZLabS08CapStationDevice(
             url="opc.tcp://192.168.1.10:4840/",
             opcua_uplink_comm_prefix=None,
         )
         node_id_map = mock_cls.call_args.kwargs["node_id_map"]
+        assert mock_cls.call_args.kwargs["csv_path"] is False
         assert node_id_map[NODE_PROCESS_SELECT] == "ns=4;s=上位机通讯|S08工艺选择"
 
 

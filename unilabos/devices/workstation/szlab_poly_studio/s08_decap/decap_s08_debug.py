@@ -10,9 +10,9 @@
 """
 
 from __future__ import annotations
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
 from unilabos.devices.workstation.szlab_poly_studio.s08_decap.decap_s08_cap_station import (
     SZLabS08CapStationDevice,
-    SzlabS08OpcUaClient,
     build_opcua_node_id_map_for_uplink_comm,
 )
 
@@ -67,17 +67,11 @@ def load_s08_debug_config(config_path: Path, *, use_production: bool) -> dict[st
     return config
 
 
-def _load_device_class():
-    return SZLabS08CapStationDevice, SzlabS08OpcUaClient, build_opcua_node_id_map_for_uplink_comm
-
-
 def _client_kwargs_for_config(device_cfg: dict[str, Any], object_name: str) -> dict[str, Any]:
     prefix = device_cfg.get("opcua_uplink_comm_prefix")
     if prefix:
-        _device_cls, client_cls, build_map = _load_device_class()
-        del _device_cls, client_cls
-        return {"node_id_map": build_map(str(prefix))}
-    return {"object_name": object_name}
+        return {"node_id_map": build_opcua_node_id_map_for_uplink_comm(str(prefix))}
+    return {"opcua_object_name": object_name}
 
 
 def start_virtual_opcua_stack(config: dict[str, Any]) -> tuple[Any, threading.Thread, threading.Event]:
@@ -157,13 +151,16 @@ def run_s08_debug(
     opcua_uplink_comm_prefix: str | None,
     action_cfg: dict[str, Any],
 ) -> dict[str, Any]:
-    device_cls, client_cls, _build_map = _load_device_class()
-    client = client_cls(opcua_url, **_client_kwargs_for_config(
-        {"opcua_uplink_comm_prefix": opcua_uplink_comm_prefix} if opcua_uplink_comm_prefix else {},
-        object_name,
-    ))
+    client = SZLabPolyPLCDevice(
+        url=opcua_url,
+        csv_path=False,
+        **_client_kwargs_for_config(
+            {"opcua_uplink_comm_prefix": opcua_uplink_comm_prefix} if opcua_uplink_comm_prefix else {},
+            object_name,
+        ),
+    )
     try:
-        device = device_cls(
+        device = SZLabS08CapStationDevice(
             url=opcua_url,
             timeout=timeout,
             poll_interval=poll_interval,
@@ -216,9 +213,9 @@ def _run_from_config(config_path: Path, *, use_production: bool) -> dict[str, An
 def reset_plc_signals(config_path: Path, *, use_production: bool) -> None:
     config = load_s08_debug_config(config_path, use_production=use_production)
     device_cfg = config["device"]
-    _device_cls, client_cls, _build_map = _load_device_class()
-    client = client_cls(
-        config["resolved_opcua_url"],
+    client = SZLabPolyPLCDevice(
+        url=config["resolved_opcua_url"],
+        csv_path=False,
         **_client_kwargs_for_config(device_cfg if use_production else {}, config["virtual_object_name"]),
     )
     try:

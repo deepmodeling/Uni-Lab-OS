@@ -305,6 +305,64 @@ assert.equal(opcRowsWhileRunning[0].valueBegin.value, true);
 assert.equal(opcRowsWhileRunning[0].valueGoal.value, false);
 assert.equal(opcRowsWhileRunning[0].valueEnd, undefined);
 
+const opcRowsWithWaitGoal = collectOpcChanges([
+  {
+    sequence: 1,
+    message: 'OPC状态采样: 1 个变量',
+    level: 'info',
+    scope: 'node',
+    node_id: 'node_1',
+    detail: {
+      before: {
+        S06加工完成: {
+          name: 'S06加工完成',
+          label: 'S06加工完成',
+          display_name: 'S06加工完成',
+          node_id: 'ns=4;s=S06加工完成',
+          value: { success: true, value: false, node_id: 'ns=4;s=S06加工完成' },
+        },
+      },
+    },
+  },
+  {
+    sequence: 2,
+    message: '等待 OPC 变量 S06加工完成 == true',
+    level: 'info',
+    scope: 'node',
+    node_id: 'node_1',
+    detail: {
+      type: 'opc_wait',
+      phase: 'start',
+      variable: 'S06加工完成',
+      expected: true,
+      node_id: 'ns=4;s=S06加工完成',
+      display_name: 'S06加工完成',
+      label: 'S06加工完成 (ns=4;s=S06加工完成)',
+    },
+  },
+  {
+    sequence: 3,
+    message: 'OPC 变量等待完成 S06加工完成 == true',
+    level: 'info',
+    scope: 'node',
+    node_id: 'node_1',
+    detail: {
+      type: 'opc_wait',
+      phase: 'finish',
+      variable: 'S06加工完成',
+      expected: true,
+      last_value: true,
+      node_id: 'ns=4;s=S06加工完成',
+      display_name: 'S06加工完成',
+      label: 'S06加工完成 (ns=4;s=S06加工完成)',
+    },
+  },
+]);
+assert.equal(opcRowsWithWaitGoal.length, 1, 'wait expected 应合并到同一个 OPC 变量行');
+assert.equal(opcRowsWithWaitGoal[0].valueBegin.value, false);
+assert.equal(opcRowsWithWaitGoal[0].valueGoal, true);
+assert.equal(opcRowsWithWaitGoal[0].valueEnd, true);
+
 assert.equal(formatOpcValue({ success: true, value: false, node_id: 'ns=2;i=270' }), 'false');
 assert.equal(formatOpcValue({ success: false, error: 'bad node' }), 'bad node');
 

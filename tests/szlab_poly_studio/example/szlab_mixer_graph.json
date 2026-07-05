@@ -11,8 +11,6 @@
       "config": {
         "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
         "timeout": 300,
-        "robot_addition_position": 7,
-        "robot_stirrer_position": 2,
         "pipeline_route_specs": [
           {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
           {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},

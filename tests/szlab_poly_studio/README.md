@@ -43,12 +43,11 @@ UI 中 OPC UA URL 填 `opc.tcp://127.0.0.1:48506/`，运行 `run_solvent_additio
 常用参数：
 
 ```text
-pump: 1
+process: 1
 volume: 8
 volume_pump_1: 0
 volume_pump_2: 0
 skip_level_check: false
-skip_robot: true
 beaker_true_means_present: true
 ```
 

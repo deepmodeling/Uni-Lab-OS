@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import json
+import os
 import time
 from importlib.util import find_spec
 from pathlib import Path
@@ -462,8 +463,6 @@ def test_s06_debug_preset_uses_debug_file_name_and_only_pump_device():
     assert graph_nodes["szlab_mixer_pump"]["config"] == {
         "url": "${opcua_url}",
         "timeout": "${timeout}",
-        "robot_addition_position": 7,
-        "robot_stirrer_position": 2,
         "pipeline_route_specs": [
             {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
             {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
@@ -491,6 +490,156 @@ def test_s06_debug_preset_uses_debug_file_name_and_only_pump_device():
         "传感器状态_上位机[4].NO[12]",
         "传感器状态_上位机[5].NO[1]",
     ]
+
+
+def test_s09_debug_preset_uses_debug_file_name():
+    preset = load_preset("debug_s09_pipetting_station")
+    runtime_config = _load_preset_runtime_config(preset)
+    graph_nodes = {node["id"]: node for node in preset.device_graph["nodes"]}
+    csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
+
+    assert preset.id == "debug_s09_pipetting_station"
+    assert preset.target_device_ids == ["szlab_mixer_pipetting_station"]
+    assert preset.runtime_config == "../runtime_configs/debug_s09_pipetting_station_runtime.json"
+    assert not Path("tests/szlab_poly_studio/presets/s09_pipetting_station.json").exists()
+    assert not Path("tests/szlab_poly_studio/runtime_configs/s09_pipetting_station_runtime.json").exists()
+    assert csv_path.name == "pipetting_station_nodes.csv"
+    assert csv_path.exists()
+    assert set(graph_nodes) == {"szlab_mixer_pipetting_station"}
+    assert runtime_config.device_factory.devices == {
+        "szlab_mixer_pipetting_station": (
+            "unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station."
+            "pipetting_station.SzlabMixerPipettingStationDevice"
+        )
+    }
+    assert collect_snapshot_variables("run_process", {}, runtime_config) == [
+        "S09允许加工",
+        "S09工艺选择",
+        "S09参数写入完成",
+        "S09工艺完成",
+        "工站状态[8]",
+        "S09TIP盒工位编号",
+        "S09TIP编号",
+        "S09液体瓶编号",
+        "S09抽液量",
+        "S09放液量",
+    ]
+
+
+def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
+    preset = load_preset("szlab_robot_action_workflow")
+    robot_action_preset = load_preset("robot_action")
+    runtime_config = _load_preset_runtime_config(preset)
+    graph_nodes = {node["id"]: node for node in preset.device_graph["nodes"]}
+
+    assert preset.id == "szlab_robot_action_workflow"
+    assert preset.target_device_ids == [
+        "szlab_mixer_robot",
+        "szlab_s07_solid_addition",
+        "szlab_mixer_pump",
+        "szlab_mixer_stirrer",
+        "szlab_mixer_photoshotting",
+    ]
+    assert set(graph_nodes) == {
+        "szlab_poly_plc",
+        "szlab_mixer_robot",
+        "szlab_s07_solid_addition",
+        "szlab_mixer_pump",
+        "szlab_mixer_stirrer",
+        "szlab_mixer_photoshotting",
+    }
+    assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"] == "${csv_path}"
+    assert preset.debug_config["skip_robot_precheck_variables"] == robot_action_preset.debug_config[
+        "skip_robot_precheck_variables"
+    ]
+    assert preset.debug_config["env"]["SKIP_SENSOR_PRECHECK"] == "1"
+    assert runtime_config.device_factory.devices == {
+        "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
+        "szlab_mixer_robot": "unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot.SzlabMixerRobotDevice",
+        "szlab_s07_solid_addition": "unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07.SZLabS07SolidAdditionDevice",
+        "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice",
+        "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring.SzlabMixerMagneticStirrerDevice",
+        "szlab_mixer_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.SzlabMixerPhotoShottingDevice",
+    }
+    assert collect_snapshot_variables("dose_powder", {}, runtime_config) == [
+        "S07原点信号",
+        "S07允许加工",
+        "S07工艺选择",
+        "S07参数写入完成",
+        "S07工艺完成",
+        "S07粗注粉位置号",
+        "S07精注粉位置号",
+        "S07注粉重量",
+    ]
+    assert collect_snapshot_variables("run_solvent_addition", {"process": 3}, runtime_config) == [
+        "S06准备信号",
+        "S06允许加工",
+        "S06工艺选择",
+        "S06_1号溶液添加量",
+        "S06_2号溶液添加量",
+        "S06参数写入完成",
+        "S06加工完成",
+    ]
+
+
+def test_szlab_robot_action_workflow_auto_applies_debug_sensor_skips(monkeypatch):
+    monkeypatch.delenv("SKIP_SENSOR_PRECHECK", raising=False)
+    monkeypatch.delenv("SKIP_ROBOT_PRECHECK_VARIABLES", raising=False)
+
+    create_app("szlab_robot_action_workflow")
+
+    skipped_variables = {
+        item.strip()
+        for item in os.environ["SKIP_ROBOT_PRECHECK_VARIABLES"].split(",")
+        if item.strip()
+    }
+    assert os.environ["SKIP_SENSOR_PRECHECK"] == "1"
+    assert "传感器状态_上位机[0].NO[6]" in skipped_variables
+
+
+def test_szlab_robot_action_workflow_debug_skips_s03_pick_sensor_gate(monkeypatch):
+    from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import SzlabMixerRobotDevice
+
+    monkeypatch.delenv("SKIP_SENSOR_PRECHECK", raising=False)
+    monkeypatch.delenv("SKIP_ROBOT_PRECHECK_VARIABLES", raising=False)
+    create_app("szlab_robot_action_workflow")
+
+    device = SzlabMixerRobotDevice(auto_connect=False)
+    result = device._ensure_sensor_gate("传感器状态_上位机[0].NO[6]", True, "S03 取料源位必须有物料")
+
+    assert result is None
+
+
+def test_szlab_robot_action_workflow_flow_matches_requested_synthesis_route():
+    flow = json.loads(Path("szlab_robot_action_workflow_flow.json").read_text(encoding="utf-8"))
+    actions = [item["action"] for item in flow["rules"][0]["actions"]]
+
+    assert flow["name"] == "szlab_robot_action_workflow"
+    assert [action["index"] for action in actions] == list(range(1, 15))
+    assert [(action["device_id"], action["method"]) for action in actions] == [
+        ("szlab_mixer_robot", "submit_pick_from_s03"),
+        ("szlab_mixer_robot", "submit_place_to_s072"),
+        ("szlab_s07_solid_addition", "dose_powder"),
+        ("szlab_mixer_robot", "submit_pick_from_s072"),
+        ("szlab_mixer_robot", "submit_place_to_s06"),
+        ("szlab_mixer_pump", "run_solvent_addition"),
+        ("szlab_mixer_robot", "submit_pick_from_s06"),
+        ("szlab_mixer_robot", "submit_place_to_s04"),
+        ("szlab_mixer_stirrer", "run_stirring"),
+        ("szlab_mixer_robot", "submit_pick_from_s04"),
+        ("szlab_mixer_robot", "submit_place_to_s05"),
+        ("szlab_mixer_photoshotting", "take_photo"),
+        ("szlab_mixer_robot", "submit_pick_from_s05"),
+        ("szlab_mixer_robot", "submit_place_to_s10"),
+    ]
+    assert actions[0]["params"] == {"product_type": 1, "position": "1-1"}
+    assert actions[2]["params"]["recipe_name"] == "default"
+    assert actions[5]["params"]["process"] == 3
+    assert actions[5]["params"]["skip_level_check"] is True
+    assert "skip_robot" not in actions[5]["params"]
+    assert actions[8]["params"]["position"] == 1
+    assert actions[8]["params"]["mode"] == 3
+    assert actions[-1]["params"] == {"position": 1}
 
 
 def test_ai4c_runtime_device_classes_are_importable():

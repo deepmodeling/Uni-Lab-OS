@@ -10,8 +10,6 @@
   },
   "device": {
     "timeout": 300.0,
-    "robot_addition_position": 7,
-    "robot_stirrer_position": 2,
     "pipeline_route_specs": [
       {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
       {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
@@ -40,7 +38,6 @@
     "direction": "aspirate",
     "pipeline": "aspirate",
     "skip_level_check": true,
-    "skip_robot": true,
     "beaker_true_means_present": true
   }
 }

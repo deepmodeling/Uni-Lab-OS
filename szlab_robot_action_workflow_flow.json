@@ -1,0 +1,211 @@
+{
+  "name": "szlab_robot_action_workflow",
+  "rules": [
+    {
+      "name": "szlab_robot_action_workflow",
+      "trigger": {
+        "node": "S03 取烧杯",
+        "value": true,
+        "edge": "rising"
+      },
+      "log_nodes": [
+        "S03 取烧杯",
+        "S072 放烧杯",
+        "S07 加粉",
+        "S072 取烧杯",
+        "S06 放烧杯",
+        "S06 工艺3加溶剂",
+        "S06 取烧杯",
+        "S04 位置1放烧杯",
+        "S04 位置1磁搅",
+        "S04 位置1取烧杯",
+        "S05 放烧杯",
+        "S05 拍照",
+        "S05 取烧杯",
+        "S10 位置1放置"
+      ],
+      "actions": [
+        {
+          "action": {
+            "index": 1,
+            "node": "S03 取烧杯",
+            "workflow_node_id": "node_001_pick_from_s03",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_pick_from_s03",
+            "params": {
+              "product_type": 1,
+              "position": "1-1"
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 2,
+            "node": "S072 放烧杯",
+            "workflow_node_id": "node_002_place_to_s072",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_place_to_s072",
+            "params": {
+              "product_type": 1,
+              "position": 1
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 3,
+            "node": "S07 加粉",
+            "workflow_node_id": "node_003_dose_powder",
+            "device_id": "szlab_s07_solid_addition",
+            "method": "dose_powder",
+            "params": {
+              "coarse_position": 1,
+              "fine_position": 1,
+              "target_weight": 1.0,
+              "recipe_name": "default",
+              "timeout": 300.0
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 4,
+            "node": "S072 取烧杯",
+            "workflow_node_id": "node_004_pick_from_s072",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_pick_from_s072",
+            "params": {
+              "product_type": 1,
+              "position": 1
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 5,
+            "node": "S06 放烧杯",
+            "workflow_node_id": "node_005_place_to_s06",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_place_to_s06",
+            "params": {}
+          }
+        },
+        {
+          "action": {
+            "index": 6,
+            "node": "S06 工艺3加溶剂",
+            "workflow_node_id": "node_006_run_solvent_addition",
+            "device_id": "szlab_mixer_pump",
+            "method": "run_solvent_addition",
+            "params": {
+              "process": 3,
+              "volume": 1,
+              "skip_level_check": true
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 7,
+            "node": "S06 取烧杯",
+            "workflow_node_id": "node_007_pick_from_s06",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_pick_from_s06",
+            "params": {}
+          }
+        },
+        {
+          "action": {
+            "index": 8,
+            "node": "S04 位置1放烧杯",
+            "workflow_node_id": "node_008_place_to_s04",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_place_to_s04",
+            "params": {
+              "position": 1,
+              "sample_id": ""
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 9,
+            "node": "S04 位置1磁搅",
+            "workflow_node_id": "node_009_run_stirring",
+            "device_id": "szlab_mixer_stirrer",
+            "method": "run_stirring",
+            "params": {
+              "position": 1,
+              "mode": 3,
+              "speed": 300,
+              "temperature": 25,
+              "duration": 30.0,
+              "safe_temperature": 80
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 10,
+            "node": "S04 位置1取烧杯",
+            "workflow_node_id": "node_010_pick_from_s04",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_pick_from_s04",
+            "params": {
+              "position": 1
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 11,
+            "node": "S05 放烧杯",
+            "workflow_node_id": "node_011_place_to_s05",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_place_to_s05",
+            "params": {
+              "sample_id": ""
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 12,
+            "node": "S05 拍照",
+            "workflow_node_id": "node_012_take_photo",
+            "device_id": "szlab_mixer_photoshotting",
+            "method": "take_photo",
+            "params": {
+              "sample_id": "sample-001",
+              "photo_path": ""
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 13,
+            "node": "S05 取烧杯",
+            "workflow_node_id": "node_013_pick_from_s05",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_pick_from_s05",
+            "params": {
+              "sample_id": ""
+            }
+          }
+        },
+        {
+          "action": {
+            "index": 14,
+            "node": "S10 位置1放置",
+            "workflow_node_id": "node_014_place_to_s10",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_place_to_s10",
+            "params": {
+              "position": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

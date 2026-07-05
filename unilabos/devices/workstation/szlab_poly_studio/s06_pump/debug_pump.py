@@ -106,8 +106,6 @@ def run_pump_debug(
     *,
     opcua_url: str,
     timeout: float,
-    robot_addition_position: int,
-    robot_stirrer_position: int,
     pipeline_route_specs: list[dict[str, Any]],
     opcua_node_id_map: dict[str, str],
     opcua_allow_recursive_browse: bool,
@@ -119,7 +117,6 @@ def run_pump_debug(
     direction: Literal["aspirate", "dispense"],
     pipeline: Literal["aspirate", "dispense", "air"],
     skip_level_check: bool,
-    skip_robot: bool,
     beaker_true_means_present: bool,
 ) -> dict[str, Any]:
     import unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump as pump_module
@@ -136,8 +133,6 @@ def run_pump_debug(
     device = SzlabMixerPumpDevice(
         url=opcua_url,
         timeout=timeout,
-        robot_addition_position=robot_addition_position,
-        robot_stirrer_position=robot_stirrer_position,
         pipeline_route_specs=pipeline_route_specs,
         opcua_browse_depth=8,
         opcua_browse_limit=10000,
@@ -159,7 +154,6 @@ def run_pump_debug(
                 volume_pump_1=volume_pump_1,
                 volume_pump_2=volume_pump_2,
                 skip_level_check=skip_level_check,
-                skip_robot=skip_robot,
                 beaker_true_means_present=beaker_true_means_present,
             )
         print(result)
@@ -187,8 +181,6 @@ def _run_from_config(config_path: Path, *, use_production: bool) -> dict[str, An
     return run_pump_debug(
         opcua_url=config["resolved_opcua_url"],
         timeout=float(device_cfg["timeout"]),
-        robot_addition_position=int(device_cfg["robot_addition_position"]),
-        robot_stirrer_position=int(device_cfg["robot_stirrer_position"]),
         pipeline_route_specs=list(device_cfg.get("pipeline_route_specs", [])),
         opcua_node_id_map=dict(device_cfg.get("opcua_node_id_map", {})) if use_production else {},
         opcua_allow_recursive_browse=(
@@ -202,7 +194,6 @@ def _run_from_config(config_path: Path, *, use_production: bool) -> dict[str, An
         direction=action_cfg.get("direction", "aspirate"),
         pipeline=action_cfg.get("pipeline", "aspirate"),
         skip_level_check=bool(action_cfg["skip_level_check"]),
-        skip_robot=bool(action_cfg["skip_robot"]),
         beaker_true_means_present=bool(action_cfg["beaker_true_means_present"]),
     )
 

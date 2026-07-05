@@ -36,8 +36,6 @@ from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevic
 
 from .sensors import (
     ADDITION_BEAKER_SENSOR,
-    ROBOT_BEAKER_PICK_VAR,
-    ROBOT_BEAKER_PLACE_VAR,
     S06_ALLOW_PROCESS_VAR,
     S06_DONE_VAR,
     S06_PARAM_WRITTEN_VAR,
@@ -75,8 +73,6 @@ class SzlabMixerPumpDevice:
         timeout: float = 300.0,
         pipeline_routes: dict[tuple[int, S06PipelineKind], S06PipelineRoute] | None = None,
         pipeline_route_specs: list[dict[str, Any]] | None = None,
-        robot_addition_position: int = 0,
-        robot_stirrer_position: int = 0,
         opcua_client: SZLabPolyPLCDevice | None = None,
         opcua_browse_depth: int = 8,
         opcua_browse_limit: int = 5000,
@@ -86,8 +82,6 @@ class SzlabMixerPumpDevice:
     ):
         self.url = url
         self.timeout = timeout
-        self._robot_addition_position = int(robot_addition_position)
-        self._robot_stirrer_position = int(robot_stirrer_position)
         self._client = opcua_client or SZLabPolyPLCDevice(
             url=url,
             csv_path=False,
@@ -285,22 +279,6 @@ class SzlabMixerPumpDevice:
             return {"success": False, "message": "S06 工艺选择必须为 1、2 或 3"}
         return self._execute_s06_addition(process, volume, require_allow=require_allow)
 
-    @not_action
-    def _transport_beaker_to_stirrer(self, skip_robot: bool) -> dict[str, Any]:
-        if skip_robot:
-            return {"success": True, "message": "已跳过机械臂搬运", "skipped": True}
-        if self._robot_addition_position <= 0 or self._robot_stirrer_position <= 0:
-            return {"success": False, "message": "机械臂加液位/磁搅位编号待定义"}
-        pick = self._robot_addition_position
-        place = self._robot_stirrer_position
-        self._client.write(ROBOT_BEAKER_PICK_VAR, pick)
-        self._client.write(ROBOT_BEAKER_PLACE_VAR, place)
-        return {
-            "success": True,
-            "message": "已下发机械臂烧杯搬运位号（取放完成等待由机器人模块负责）",
-            "data": {"pick_position": pick, "place_position": place},
-        }
-
     @action(
         auto_prefix=True,
         description="执行 S06 单步转液（工艺选择 + 溶液添加量 + 加工完成等待）",
@@ -331,7 +309,7 @@ class SzlabMixerPumpDevice:
 
     @action(
         auto_prefix=True,
-        description="S06 泵加液完整流程：烧杯检测 → 液位确认 → 储液瓶抽液排至烧杯 → 可选抽空气 → 机械臂骨架",
+        description="S06 泵加液完整流程：烧杯检测 → 液位确认 → 写入工艺参数 → 等待加工完成",
         handles=[
             ActionInputHandle(
                 key="process",
@@ -350,7 +328,6 @@ class SzlabMixerPumpDevice:
         volume_pump_1: int = 0,
         volume_pump_2: int = 0,
         skip_level_check: bool = False,
-        skip_robot: bool = True,
         beaker_true_means_present: bool = True,
     ) -> dict[str, Any]:
         if process not in (1, 2, 3):
@@ -391,12 +368,6 @@ class SzlabMixerPumpDevice:
         if not result["success"]:
             self._status = "Error"
             return {**result, "steps": steps}
-
-        robot_result = self._transport_beaker_to_stirrer(skip_robot)
-        steps.append({"step": "机械臂至磁搅", **robot_result})
-        if not robot_result["success"]:
-            self._status = "Error"
-            return {**robot_result, "steps": steps}
 
         self._status = "Idle"
         return {

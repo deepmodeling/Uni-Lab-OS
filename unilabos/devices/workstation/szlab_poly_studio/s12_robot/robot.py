@@ -102,8 +102,13 @@ class SzlabMixerRobotDevice(
 
     @not_action
     def _wait_variable_truthy(self, name: str, timeout: float, interval: float | None = None) -> tuple[bool, Any]:
-        started_at = time.time()
         poll_interval = self.poll_interval if interval is None else interval
+        waiter = getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
+        if callable(waiter):
+            success = bool(waiter(name, True, timeout=timeout, interval=poll_interval))
+            return success, True if success else None
+
+        started_at = time.time()
         last_value = None
         while time.time() - started_at <= timeout:
             last_value = self._read_variable(name, use_cache=False)

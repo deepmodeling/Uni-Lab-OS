@@ -1,24 +1,36 @@
 {
-  "id": "s06_robot",
-  "title": "SZLab 机械臂 + S06 加液联调",
+  "id": "szlab_robot_action_workflow",
+  "title": "SZLab 机械臂 + S04/S05/S06/S07 合成流程",
   "target_device_id": "szlab_mixer_robot",
   "target_device_ids": [
     "szlab_mixer_robot",
-    "szlab_mixer_pump"
+    "szlab_s07_solid_addition",
+    "szlab_mixer_pump",
+    "szlab_mixer_stirrer",
+    "szlab_mixer_photoshotting"
   ],
   "actions_source": "registry",
-  "runtime_config": "../runtime_configs/s06_robot_runtime.json",
-  "default_workflow_name": "s06_robot_workflow",
+  "runtime_config": "../runtime_configs/szlab_robot_action_workflow_runtime.json",
+  "default_workflow_name": "szlab_robot_action_workflow",
   "default_config": {
     "graph": "__generated__",
-    "url": "opc.tcp://192.168.1.10:4840",
+    "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
     "csv": "szlab_plc_0702.csv",
     "timeout": 300,
     "write_allowed_timeout": 60,
     "no_subscription": true,
-    "show_csv": false
+    "show_csv": false,
+    "stack_status_groups": [
+      "s3_unused_beaker",
+      "s10_liquid_reagent",
+      "powder_container"
+    ]
   },
   "debug_config": {
+    "env": {
+      "SKIP_SENSOR_PRECHECK": "1"
+    },
+    "auto_apply": true,
     "skip_robot_precheck_variables": [
       "Robot_Home",
       "传感器状态_上位机[0].NO[0]",
@@ -144,10 +156,7 @@
       "传感器状态_上位机[8].NO[1]",
       "传感器状态_上位机[8].NO[2]",
       "传感器状态_上位机[8].NO[3]"
-    ],
-    "env": {
-      "SKIP_SENSOR_PRECHECK": "1"
-    }
+    ]
   },
   "path_roots": [
     "unilabos/devices/workstation/szlab_poly_studio"
@@ -161,34 +170,17 @@
         "parent": null,
         "type": "device",
         "class": "szlab_poly_plc",
-        "position": {"x": 0, "y": 0, "z": 0},
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
         "config": {
           "url": "${opcua_url}",
           "csv_path": "${csv_path}",
           "timeout": "${timeout}",
-          "no_subscription": true
-        },
-        "data": {}
-      },
-      {
-        "id": "szlab_mixer_pump",
-        "name": "szlab_mixer_pump",
-        "children": [],
-        "parent": null,
-        "type": "device",
-        "class": "szlab_mixer_pump",
-        "position": {"x": 200, "y": 0, "z": 0},
-        "config": {
-          "url": "${opcua_url}",
-          "timeout": "${timeout}",
-          "pipeline_route_specs": [
-            {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
-            {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
-            {"pump": 1, "pipeline": "air", "control_valve": 13, "absolute_position": 23},
-            {"pump": 2, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
-            {"pump": 2, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
-            {"pump": 2, "pipeline": "air", "control_valve": 13, "absolute_position": 23}
-          ]
+          "no_subscription": true,
+          "opcua_node_id_prefix": "ns=4;s=上位机通讯|"
         },
         "data": {}
       },
@@ -199,12 +191,132 @@
         "parent": null,
         "type": "device",
         "class": "szlab_mixer_robot",
-        "position": {"x": 400, "y": 0, "z": 0},
+        "position": {
+          "x": 160,
+          "y": 0,
+          "z": 0
+        },
         "config": {
           "plc_device_id": "szlab_poly_plc",
           "busy_variable_name": "机器人Busy信号",
           "timeout": "${timeout}",
           "write_allowed_timeout": "${write_allowed_timeout}"
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_s07_solid_addition",
+        "name": "szlab_s07_solid_addition",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_s07_solid_addition",
+        "position": {
+          "x": 320,
+          "y": 0,
+          "z": 0
+        },
+        "config": {
+          "plc_device_id": "szlab_poly_plc",
+          "process_timeout": "${timeout}",
+          "poll_interval": 0.2
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_mixer_pump",
+        "name": "szlab_mixer_pump",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_mixer_pump",
+        "position": {
+          "x": 480,
+          "y": 0,
+          "z": 0
+        },
+        "config": {
+          "url": "${opcua_url}",
+          "timeout": "${timeout}",
+          "pipeline_route_specs": [
+            {
+              "pump": 1,
+              "pipeline": "aspirate",
+              "control_valve": 11,
+              "absolute_position": 21
+            },
+            {
+              "pump": 1,
+              "pipeline": "dispense",
+              "control_valve": 12,
+              "absolute_position": 22
+            },
+            {
+              "pump": 1,
+              "pipeline": "air",
+              "control_valve": 13,
+              "absolute_position": 23
+            },
+            {
+              "pump": 2,
+              "pipeline": "aspirate",
+              "control_valve": 11,
+              "absolute_position": 21
+            },
+            {
+              "pump": 2,
+              "pipeline": "dispense",
+              "control_valve": 12,
+              "absolute_position": 22
+            },
+            {
+              "pump": 2,
+              "pipeline": "air",
+              "control_valve": 13,
+              "absolute_position": 23
+            }
+          ]
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_mixer_stirrer",
+        "name": "szlab_mixer_stirrer",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_mixer_stirrer",
+        "position": {
+          "x": 640,
+          "y": 0,
+          "z": 0
+        },
+        "config": {
+          "url": "${opcua_url}",
+          "timeout": "${timeout}",
+          "plc_device_id": "szlab_poly_plc",
+          "use_plc_gateway": true
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_mixer_photoshotting",
+        "name": "szlab_mixer_photoshotting",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_mixer_photoshotting",
+        "position": {
+          "x": 800,
+          "y": 0,
+          "z": 0
+        },
+        "config": {
+          "url": "${opcua_url}",
+          "timeout": "${timeout}",
+          "plc_device_id": "szlab_poly_plc",
+          "use_plc_gateway": true,
+          "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
         },
         "data": {}
       }

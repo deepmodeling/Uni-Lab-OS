@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -233,6 +234,21 @@ class SzlabMixerPhotoShottingDevice:
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
         return wait_variable_true(reader, S05_DONE, timeout=self.timeout, interval=1.0)
 
+    @not_action
+    def _wait_photo_result_code(self) -> tuple[Any, str]:
+        deadline = time.time() + self.timeout
+        last_code: Any = 0
+        last_label = "UNKNOWN"
+        while True:
+            last_code = self._read_variable(S05_RESULT, use_cache=False)
+            last_label = self._result_label(last_code)
+            if last_label != "UNKNOWN":
+                return last_code, last_label
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return last_code, last_label
+            time.sleep(min(1.0, remaining))
+
     @action(auto_prefix=True, description="执行烧杯姿势拍照检测")
     def take_photo(
         self,
@@ -254,8 +270,7 @@ class SzlabMixerPhotoShottingDevice:
             self._status = "Error"
             return {"success": False, "message": "S05 拍照完成等待超时"}
 
-        result_code = self._read_variable(S05_RESULT, use_cache=False)
-        result_label = self._result_label(result_code)
+        result_code, result_label = self._wait_photo_result_code()
         photo_url = self._fetch_photo_url(sample_id) if result_label == "OK" else ""
         self._status = "Idle"
         self._last_photo_path = photo_path
@@ -267,6 +282,13 @@ class SzlabMixerPhotoShottingDevice:
             "result_code": result_code,
             "result": result_label,
         }
+        if result_label == "UNKNOWN":
+            self._status = "Error"
+            return {
+                "success": False,
+                "message": f"S05 拍照结果等待超时（last_value={result_code}）",
+                "data": data,
+            }
         if result_label != "OK":
             self._status = "Error"
             return {

@@ -881,6 +881,8 @@ def _preset_for_runtime(preset: WorkflowPreset, runtime_config: RuntimeConfig) -
 
 def create_app(preset_name: str = "ai4c", runtime_config: RuntimeConfig | None = None) -> FastAPI:
     preset = load_preset(preset_name)
+    if preset.debug_config.get("auto_apply") is True:
+        apply_preset_debug_config(preset_name)
     runtime_config = runtime_config or _load_preset_runtime_config(preset)
     active_preset = _preset_for_runtime(preset, runtime_config)
     app = FastAPI(title="szlab Workflow Debugger")

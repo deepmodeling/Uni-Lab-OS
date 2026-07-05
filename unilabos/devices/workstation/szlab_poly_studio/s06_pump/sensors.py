@@ -29,10 +29,6 @@ STORAGE_BOTTLE_PRESENT: dict[int, str] = {
     2: "传感器状态_上位机[5].NO[1]",  # 液体试剂瓶2-1
 }
 
-# CSV 行 188-189：机器人夹爪取放料位置号_烧杯（PC→PLC）
-ROBOT_BEAKER_PICK_VAR = "S03_1取料编号"
-ROBOT_BEAKER_PLACE_VAR = "S03_1放料编号"
-
 
 def s06_solution_amount_var(pump: int) -> str:
     return f"S06_{pump}号溶液添加量"

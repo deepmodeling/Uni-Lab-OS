@@ -1,0 +1,122 @@
+{
+  "device_factory": {
+    "plc_device_id": "szlab_poly_plc",
+    "devices": {
+      "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
+      "szlab_mixer_robot": "unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot.SzlabMixerRobotDevice",
+      "szlab_s07_solid_addition": "unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07.SZLabS07SolidAdditionDevice",
+      "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice",
+      "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring.SzlabMixerMagneticStirrerDevice",
+      "szlab_mixer_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.SzlabMixerPhotoShottingDevice"
+    }
+  },
+  "opc_snapshot": {
+    "common_variables": [],
+    "action_variables": {
+      "submit_pick_from_s03": [
+        "S03取放料产品",
+        "S03取放料编号",
+        "任务号"
+      ],
+      "submit_place_to_s072": [
+        "S072取放料产品",
+        "任务号"
+      ],
+      "submit_pick_from_s072": [
+        "S072取放料产品",
+        "任务号"
+      ],
+      "submit_place_to_s06": [
+        "任务号"
+      ],
+      "submit_pick_from_s06": [
+        "任务号"
+      ],
+      "submit_place_to_s04": [
+        "S04取放料编号",
+        "任务号"
+      ],
+      "submit_pick_from_s04": [
+        "S04取放料编号",
+        "任务号"
+      ],
+      "submit_place_to_s05": [
+        "任务号"
+      ],
+      "submit_pick_from_s05": [
+        "任务号"
+      ],
+      "submit_place_to_s10": [
+        "S10取放料编号",
+        "任务号"
+      ],
+      "dose_powder": [
+        "S07原点信号",
+        "S07允许加工",
+        "S07工艺选择",
+        "S07参数写入完成",
+        "S07工艺完成",
+        "S07粗注粉位置号",
+        "S07精注粉位置号",
+        "S07注粉重量"
+      ],
+      "run_solvent_addition": [
+        "S06准备信号",
+        "S06允许加工",
+        "S06工艺选择",
+        "S06_1号溶液添加量",
+        "S06_2号溶液添加量",
+        "S06参数写入完成",
+        "S06加工完成"
+      ],
+      "take_photo": [
+        "S05加工完成",
+        "S05拍照结果"
+      ]
+    },
+    "param_variables": {
+      "run_stirring": [
+        {
+          "param": "position",
+          "template": "S04{position}磁搅状态"
+        },
+        {
+          "param": "position",
+          "template": "S04{position}允许加工"
+        },
+        {
+          "param": "position",
+          "template": "S04{position}磁搅工艺选择"
+        },
+        {
+          "param": "position",
+          "template": "S04{position}参数写入完成"
+        },
+        {
+          "param": "position",
+          "template": "S04{position}加工完成"
+        },
+        {
+          "param": "position",
+          "template": "磁搅温度反馈_上位机[{position_minus_1}]"
+        },
+        {
+          "param": "position",
+          "template": "磁搅速度设置_上位机[{position_minus_1}]"
+        },
+        {
+          "param": "position",
+          "template": "磁搅温度设置_上位机[{position_minus_1}]"
+        },
+        {
+          "param": "position",
+          "template": "磁搅时间设置_上位机[{position_minus_1}]"
+        },
+        {
+          "param": "position",
+          "template": "磁搅安全温度设置_上位机[{position_minus_1}]"
+        }
+      ]
+    }
+  }
+}

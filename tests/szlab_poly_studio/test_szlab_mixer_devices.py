@@ -660,6 +660,45 @@ def test_szlab_photoshotting_uses_plc_wait_helper_when_available():
     assert gateway.reads == ["S05拍照结果"]
 
 
+def test_szlab_photoshotting_waits_for_nonzero_photo_result_after_done(monkeypatch):
+    class FakePlcGateway:
+        def __init__(self):
+            self.waits = []
+            self.reads = []
+            self.result_values = [0, 0, 1]
+
+        def wait_variable_true(self, name, timeout=300.0, interval=1.0):
+            self.waits.append((name, timeout, interval))
+            return True
+
+        def read_variable(self, name, use_cache=False):
+            self.reads.append(name)
+            if name == "S05拍照结果":
+                return self.result_values.pop(0)
+            raise KeyError(name)
+
+    sleeps = []
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.time.sleep",
+        lambda seconds: sleeps.append(seconds),
+    )
+    gateway = FakePlcGateway()
+    device = SzlabMixerPhotoShottingDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        timeout=9.0,
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.take_photo(sample_id="sample-1")
+
+    assert result["success"] is True
+    assert result["data"]["result_code"] == 1
+    assert result["data"]["result"] == "OK"
+    assert gateway.reads == ["S05拍照结果", "S05拍照结果", "S05拍照结果"]
+    assert sleeps == [1.0, 1.0]
+
+
 def test_szlab_photoshotting_take_photo_fails_when_result_is_ng():
     class FakePlcGateway:
         def __init__(self):
@@ -867,6 +906,7 @@ class FakeRobotPlcGateway:
         self.written_values = {}
         self.reads = []
         self.writes = []
+        self.wait_equal_calls = []
 
     def read_variable(self, name, use_cache=False):
         self.reads.append((name, use_cache))
@@ -888,6 +928,10 @@ class FakeRobotPlcGateway:
         self.writes.append((name, value))
         self.written_values[name] = value
         return True
+
+    def wait_variable_equal(self, name, expected, timeout=300.0, interval=1.0):
+        self.wait_equal_calls.append((name, expected, timeout, interval))
+        return self.read_variable(name, use_cache=False) == expected
 
 
 def test_szlab_robot_s04_sensor_mapping_matches_plc_csv_positions():
@@ -918,6 +962,10 @@ def test_szlab_robot_s04_pick_requires_material_and_resets_pc_to_plc_variables()
     assert result["success"] is True
     assert result["status"] == "completed"
     assert result["reset"]["success"] is True
+    assert gateway.wait_equal_calls == [
+        ("Robot_任务允许写入", True, 3.0, 1.0),
+        ("Robot_任务完成", True, 3.0, 1.0),
+    ]
     assert gateway.reads == [
         ("传感器状态_上位机[2].NO[10]", False),
         ("Robot_Home", False),
@@ -935,6 +983,44 @@ def test_szlab_robot_s04_pick_requires_material_and_resets_pc_to_plc_variables()
         ("S04取放料编号", 0),
         ("任务号", 0),
     ]
+
+
+def test_szlab_robot_waits_emit_plc_opc_wait_events():
+    plc = object.__new__(SZLabPolyPLCDevice)
+    plc._opc_wait_events = []
+    plc._opc_wait_event_writer = None
+    values = {
+        "传感器状态_上位机[0].NO[6]": True,
+        "Robot_Home": True,
+        "Robot_任务允许写入": True,
+        "Robot_任务完成": True,
+    }
+
+    def read_variable(name, use_cache=False):
+        del use_cache
+        return values[name]
+
+    def write_variable(name, value):
+        values[name] = value
+
+    plc.read_variable = read_variable
+    plc.write_variable = write_variable
+    plc.get_opc_variable_metadata = lambda name: (name, f"ns=4;s=上位机通讯|{name}")
+
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0, write_readback_timeout=0.0)
+    device.set_plc_gateway(plc)
+
+    result = device.submit_pick_from_s03(product_type=1, position="1-1")
+
+    assert result["success"] is True
+    events = plc.drain_opc_wait_events()
+    assert [(event["phase"], event["detail"]["variable"]) for event in events] == [
+        ("start", "Robot_任务允许写入"),
+        ("finish", "Robot_任务允许写入"),
+        ("start", "Robot_任务完成"),
+        ("finish", "Robot_任务完成"),
+    ]
+    assert all(event["detail"]["expected"] is True for event in events)
 
 
 def test_szlab_robot_s04_pick_rejects_empty_position_without_writing_task():
@@ -1354,7 +1440,7 @@ def test_szlab_mixer_device_creation_passes_csv_path_to_gateway_devices(monkeypa
     assert "use_plc_gateway" not in created[0]
 
 
-def test_production_graph_passes_robot_and_pipeline_specs(monkeypatch):
+def test_production_graph_passes_only_pipeline_specs_for_s06_pump(monkeypatch):
     created = {}
 
     class FakePump:
@@ -1373,8 +1459,8 @@ def test_production_graph_passes_robot_and_pipeline_specs(monkeypatch):
         runtime_config=load_runtime_config("tests/szlab_poly_studio/runtime_configs/szlab_mixer_pump_runtime.json"),
     )
 
-    assert created["pump"]["robot_addition_position"] == 7
-    assert created["pump"]["robot_stirrer_position"] == 2
+    assert "robot_addition_position" not in created["pump"]
+    assert "robot_stirrer_position" not in created["pump"]
     assert len(created["pump"]["pipeline_route_specs"]) == 6
 
 
@@ -1402,7 +1488,7 @@ def test_szlab_mixer_run_nodes_samples_current_device_variables():
         def get_opc_variable_metadata(self, variable_name):
             return variable_name, f"ns=2;s={variable_name}"
 
-        def run_solvent_addition(self, process=1, volume=1, skip_robot=True):
+        def run_solvent_addition(self, process=1, volume=1):
             return {"success": True}
 
     pump = FakePump()
@@ -1415,7 +1501,7 @@ def test_szlab_mixer_run_nodes_samples_current_device_variables():
                 uuid="pump",
                 name="auto-run_solvent_addition",
                 device_name="szlab_mixer_pump",
-                param={"process": 1, "volume": 1, "skip_robot": True},
+                param={"process": 1, "volume": 1},
             )
         ],
         {"szlab_mixer_pump": pump},

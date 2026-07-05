@@ -189,6 +189,11 @@ export function layoutFlowGraph<T extends { id: string; position: unknown }>(
     return applyGridLayout(nodes);
   }
 
+  const branchAnchor = ordered.find((nodeId) => (outgoing.get(nodeId) || []).length > 1);
+  if (branchAnchor) {
+    return applyBranchedLayout(nodes, ordered, outgoing, branchAnchor);
+  }
+
   const rowsByColumn = new Map<number, number>();
   return nodes.map((node) => {
     const column = columns.get(node.id) || 0;
@@ -204,6 +209,125 @@ export function layoutFlowGraph<T extends { id: string; position: unknown }>(
       },
     };
   });
+}
+
+function applyBranchedLayout<T extends { id: string; position: unknown }>(
+  nodes: T[],
+  ordered: string[],
+  outgoing: Map<string, string[]>,
+  branchAnchor: string,
+): T[] {
+  const originalIndex = new Map(nodes.map((node, index) => [node.id, index]));
+  const positions = new Map<string, { x: number; y: number }>();
+  const anchorOrderIndex = ordered.indexOf(branchAnchor);
+  const nodesBeforeAnchor = ordered.slice(0, Math.max(anchorOrderIndex, 0));
+  const branchChildren = [...(outgoing.get(branchAnchor) || [])].sort(
+    (left, right) => (originalIndex.get(left) || 0) - (originalIndex.get(right) || 0),
+  );
+  const joinNode = findFirstCommonJoin(branchChildren, ordered, outgoing);
+
+  nodesBeforeAnchor.forEach((nodeId, index) => {
+    const wrappedColumn = index % MAX_NODES_PER_ROW;
+    const wrappedRow = Math.floor(index / MAX_NODES_PER_ROW);
+    positions.set(nodeId, {
+      x: DEFAULT_START_X + wrappedColumn * LAYOUT_X_GAP,
+      y: DEFAULT_START_Y + wrappedRow * LAYOUT_Y_GAP,
+    });
+  });
+
+  const previousRow = nodesBeforeAnchor.length
+    ? Math.floor((nodesBeforeAnchor.length - 1) / MAX_NODES_PER_ROW)
+    : -1;
+  const anchorRow = previousRow + 1;
+  positions.set(branchAnchor, positionAt(0, anchorRow));
+
+  const branchPaths = branchChildren.map((childId) => collectBranchPath(childId, joinNode, outgoing));
+  branchPaths.forEach((path, branchIndex) => {
+    const row = anchorRow + 1 + branchIndex;
+    path.forEach((nodeId, stepIndex) => {
+      positions.set(nodeId, positionAt(stepIndex + 1, row));
+    });
+  });
+
+  const longestBranchLength = branchPaths.reduce((maxLength, path) => Math.max(maxLength, path.length), 0);
+  let continuationColumn = Math.max(1, longestBranchLength + 1);
+  if (joinNode) {
+    positions.set(joinNode, positionAt(continuationColumn, anchorRow));
+    continuationColumn += 1;
+  }
+
+  ordered.forEach((nodeId) => {
+    if (positions.has(nodeId) || branchPaths.some((path) => path.includes(nodeId))) return;
+    if (anchorOrderIndex >= 0 && ordered.indexOf(nodeId) < anchorOrderIndex) return;
+    positions.set(nodeId, positionAt(continuationColumn, anchorRow));
+    continuationColumn += 1;
+  });
+
+  return nodes.map((node, index) => ({
+    ...node,
+    position: positions.get(node.id) || positionAt(index % MAX_NODES_PER_ROW, Math.floor(index / MAX_NODES_PER_ROW)),
+  }));
+}
+
+function findFirstCommonJoin(
+  branchChildren: string[],
+  ordered: string[],
+  outgoing: Map<string, string[]>,
+) {
+  if (branchChildren.length < 2) return null;
+
+  const distanceByBranch = branchChildren.map((childId) => collectReachableDistances(childId, outgoing));
+  const commonCandidates = ordered.filter((nodeId) =>
+    !branchChildren.includes(nodeId) && distanceByBranch.every((distances) => distances.has(nodeId)),
+  );
+  if (!commonCandidates.length) return null;
+
+  return commonCandidates.sort((left, right) => {
+    const leftDistance = Math.max(...distanceByBranch.map((distances) => distances.get(left) || 0));
+    const rightDistance = Math.max(...distanceByBranch.map((distances) => distances.get(right) || 0));
+    if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+    return ordered.indexOf(left) - ordered.indexOf(right);
+  })[0];
+}
+
+function collectReachableDistances(startNodeId: string, outgoing: Map<string, string[]>) {
+  const distances = new Map<string, number>();
+  const pending: Array<{ nodeId: string; distance: number }> = [{ nodeId: startNodeId, distance: 0 }];
+
+  while (pending.length) {
+    const { nodeId, distance } = pending.shift()!;
+    const currentDistance = distances.get(nodeId);
+    if (currentDistance !== undefined && currentDistance <= distance) continue;
+    distances.set(nodeId, distance);
+    for (const target of outgoing.get(nodeId) || []) {
+      pending.push({ nodeId: target, distance: distance + 1 });
+    }
+  }
+
+  return distances;
+}
+
+function collectBranchPath(startNodeId: string, joinNode: string | null, outgoing: Map<string, string[]>) {
+  const path: string[] = [];
+  let current: string | undefined = startNodeId;
+  const seen = new Set<string>();
+
+  while (current && current !== joinNode && !seen.has(current)) {
+    path.push(current);
+    seen.add(current);
+    const nextNodes: string[] = outgoing.get(current) || [];
+    if (nextNodes.length !== 1) break;
+    current = nextNodes[0];
+  }
+
+  return path;
+}
+
+function positionAt(column: number, row: number) {
+  return {
+    x: DEFAULT_START_X + column * LAYOUT_X_GAP,
+    y: DEFAULT_START_Y + row * LAYOUT_Y_GAP,
+  };
 }
 
 function normalizeImportedPayload(payload: unknown, actionByMethod: Map<string, ActionSpecLike>) {

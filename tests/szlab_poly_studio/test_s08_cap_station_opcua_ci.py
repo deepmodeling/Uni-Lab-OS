@@ -95,19 +95,17 @@ class TestSzlabS08CapStationOpcUaDevice:
         device = SZLabS08CapStationDevice(url=url, timeout=30.0)
         try:
             open_result = device.process_cap(
-                operation="open",
-                vial_type="liquid_100ml",
-                sample_id=SAMPLE_ID,
-                timeout=30.0,
+                工艺选择=5,
+                样品ID=SAMPLE_ID,
+                超时时间=30.0,
             )
             assert open_result["success"] is True
             assert open_result["cap_storage_slot"] == 1
 
             close_result = device.process_cap(
-                operation="close",
-                vial_type="liquid_100ml",
-                sample_id=SAMPLE_ID,
-                timeout=30.0,
+                工艺选择=6,
+                样品ID=SAMPLE_ID,
+                超时时间=30.0,
             )
             assert close_result["success"] is True
             assert close_result["cap_storage_slot"] == 1

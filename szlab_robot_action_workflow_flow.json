@@ -95,7 +95,7 @@
             "index": 6,
             "node": "S06 工艺3加溶剂",
             "workflow_node_id": "node_006_run_solvent_addition",
-            "device_id": "szlab_mixer_pump",
+            "device_id": "szlab_s06_pump",
             "method": "run_solvent_addition",
             "params": {
               "process": 3,
@@ -132,7 +132,7 @@
             "index": 9,
             "node": "S04 位置1磁搅",
             "workflow_node_id": "node_009_run_stirring",
-            "device_id": "szlab_mixer_stirrer",
+            "device_id": "szlab_s04_magnetic_stirring",
             "method": "run_stirring",
             "params": {
               "position": 1,
@@ -173,7 +173,7 @@
             "index": 12,
             "node": "S05 拍照",
             "workflow_node_id": "node_012_take_photo",
-            "device_id": "szlab_mixer_photoshotting",
+            "device_id": "szlab_s05_photoshotting",
             "method": "take_photo",
             "params": {
               "sample_id": "sample-001",

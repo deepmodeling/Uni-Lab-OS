@@ -66,11 +66,18 @@ const actionGroups: ActionGroupDemo[] = [
     ],
   },
   {
-    title: "设备工艺",
-    device: "S04 / S05",
+    title: "szlab_mixer_stirrer",
+    device: "szlab_mixer_stirrer",
     hint: "只表达设备动作，不负责物料位置变更",
     actions: [
       { label: "执行 S04 磁搅加工", subtitle: "run_stirring(position, temp, speed, time)", status: "ready" },
+    ],
+  },
+  {
+    title: "szlab_mixer_photoshotting",
+    device: "szlab_mixer_photoshotting",
+    hint: "只表达设备动作，不负责物料位置变更",
+    actions: [
       { label: "S05 拍照并保存结果", subtitle: "take_photo()", status: "locked" },
     ],
   },

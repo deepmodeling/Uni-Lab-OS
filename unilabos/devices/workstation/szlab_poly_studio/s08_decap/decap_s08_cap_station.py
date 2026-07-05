@@ -3,11 +3,11 @@ S08 开盖/关盖工位子设备。
 
 通过自带 OPC UA 客户端直连 PLC 变量，实现 S08 开关盖工站统一握手（新版 PLC 协议）。
 
-对外仅暴露一个工艺 Action ``process_cap``，由入参 ``operation``（open/close）与
-``vial_type``（sample_500ml / sample_250ml / liquid_100ml）选择「S08工艺选择 / S08工艺完成」1–6。
+对外仅暴露一个工艺 Action ``process_cap``，由入参 ``工艺选择`` 直接指定「S08工艺选择 / S08工艺完成」1–6，
+并通过 ``样品ID`` 传递机械臂扫描到的样品编号。
 
 瓶盖暂存映射由 UniLab 写入/读取 OPC UA「S082_{1..5}数据缓存」INT[30]（样品 ID），
-配合「S082瓶盖暂存位」下发工艺。开盖须传入机械臂扫描的 sample_id，分配第一个空闲暂存位并
+配合「S082瓶盖暂存位」下发工艺。开盖须传入机械臂扫描的样品ID，分配第一个空闲暂存位并
 写入 ID–Slot 绑定；关盖须传入相同样品 ID，按缓存反查暂存位，关盖成功后清除该 Slot 的 ID 记录。
 
 开/关盖前读取开盖工位传感器（工位1=NO[14]：500/250ml 样品瓶；工位2=NO[15]：100ml 液体瓶），
@@ -101,19 +101,15 @@ OPEN_PROCESS_IDS = frozenset(
     }
 )
 
-VIAL_TYPE_ALIASES = {
-    "sample_500ml": "sample_500ml",
-    "500ml": "sample_500ml",
-    "sample_250ml": "sample_250ml",
-    "250ml": "sample_250ml",
-    "liquid_100ml": "liquid_100ml",
-    "100ml": "liquid_100ml",
-}
-
 VIAL_PROCESS_TYPES: dict[str, tuple[S08ProcessType, S08ProcessType]] = {
     "sample_500ml": (S08ProcessType.OPEN_SAMPLE_VIAL_500ML, S08ProcessType.CLOSE_SAMPLE_VIAL_500ML),
     "sample_250ml": (S08ProcessType.OPEN_SAMPLE_VIAL_250ML, S08ProcessType.CLOSE_SAMPLE_VIAL_250ML),
     "liquid_100ml": (S08ProcessType.OPEN_LIQUID_VIAL_100ML, S08ProcessType.CLOSE_LIQUID_VIAL_100ML),
+}
+PROCESS_TYPE_TO_VIAL_TYPE: dict[S08ProcessType, str] = {
+    open_type: vial_type for vial_type, (open_type, _close_type) in VIAL_PROCESS_TYPES.items()
+} | {
+    close_type: vial_type for vial_type, (_open_type, close_type) in VIAL_PROCESS_TYPES.items()
 }
 
 # 示意图 S08开关盖：工位1=500/250ml 样品瓶，工位2=100ml 液体瓶
@@ -142,9 +138,9 @@ def _normalize_sample_id(sample_id: Sequence[int] | None) -> list[int]:
         return [0] * CAP_CACHE_LENGTH
     values = [int(v) for v in sample_id]
     if not values:
-        raise ValueError("sample_id 不能为空")
+        raise ValueError("样品ID 不能为空")
     if len(values) > CAP_CACHE_LENGTH:
-        raise ValueError(f"sample_id 长度不能超过 {CAP_CACHE_LENGTH}")
+        raise ValueError(f"样品ID 长度不能超过 {CAP_CACHE_LENGTH}")
     return values + [0] * (CAP_CACHE_LENGTH - len(values))
 
 
@@ -163,26 +159,11 @@ def _validate_cap_storage_slot(cap_storage_slot: int) -> None:
         raise ValueError(f"cap_storage_slot 必须在 1-5 范围内，收到: {cap_storage_slot}")
 
 
-def _normalize_operation(operation: str) -> str:
-    normalized = operation.strip().lower()
-    if normalized not in {"open", "close"}:
-        raise ValueError("operation 必须是 open 或 close")
-    return normalized
-
-
-def _normalize_vial_type(vial_type: str) -> str:
-    normalized = VIAL_TYPE_ALIASES.get(vial_type.strip().lower())
-    if normalized is None:
-        supported = ", ".join(sorted(VIAL_PROCESS_TYPES))
-        raise ValueError(f"vial_type 无效，支持: {supported}")
-    return normalized
-
-
-def _resolve_process_type(operation: str, vial_type: str) -> S08ProcessType:
-    normalized_operation = _normalize_operation(operation)
-    normalized_vial_type = _normalize_vial_type(vial_type)
-    open_type, close_type = VIAL_PROCESS_TYPES[normalized_vial_type]
-    return open_type if normalized_operation == "open" else close_type
+def _resolve_process_type_by_id(process_id: int) -> S08ProcessType:
+    try:
+        return S08ProcessType(int(process_id))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("工艺选择必须是 1-6：1/3/5=开盖，2/4/6=关盖") from exc
 
 
 DEFAULT_UPLINK_COMM_PREFIX = "ns=4;s=上位机通讯"
@@ -253,6 +234,8 @@ class SZLabS08CapStationDevice:
         require_station_status: bool = False,
         validate_cap_constraints: bool = False,
         opcua_client: SZLabPolyPLCDevice | None = None,
+        plc_device_id: str = "szlab_poly_plc",
+        use_plc_gateway: bool = False,
         opcua_browse_depth: int = 8,
         opcua_browse_limit: int = 5000,
         opcua_node_id_map: dict[str, str] | None = None,
@@ -266,6 +249,8 @@ class SZLabS08CapStationDevice:
         self.timeout = timeout
         self.poll_interval = poll_interval
         self.require_station_ready = require_station_ready
+        self.plc_device_id = plc_device_id
+        self._plc_gateway: Any = None
         # 工站状态字 / 瓶盖业务约束：默认关闭；暂不从 device graph 或 workflow UI 透传。
         self.require_station_status = False
         self.validate_cap_constraints = False
@@ -279,23 +264,53 @@ class SZLabS08CapStationDevice:
                 )
             if uplink_prefix:
                 resolved_node_id_map = build_opcua_node_id_map_for_uplink_comm(uplink_prefix)
-        self._client = opcua_client or SZLabPolyPLCDevice(
-            url=url,
-            csv_path=False,
-            username=username,
-            password=password,
-            opcua_object_name=opcua_object_name,
-            opcua_browse_depth=opcua_browse_depth,
-            opcua_browse_limit=opcua_browse_limit,
-            node_id_map=resolved_node_id_map,
-            opcua_allow_recursive_browse=opcua_allow_recursive_browse,
-        )
+        if use_plc_gateway:
+            self._client = None
+        else:
+            self._client = opcua_client or SZLabPolyPLCDevice(
+                url=url,
+                csv_path=False,
+                username=username,
+                password=password,
+                opcua_object_name=opcua_object_name,
+                opcua_browse_depth=opcua_browse_depth,
+                opcua_browse_limit=opcua_browse_limit,
+                node_id_map=resolved_node_id_map,
+                opcua_allow_recursive_browse=opcua_allow_recursive_browse,
+            )
         self._last_status: dict[str, Any] = {}
+        if self._client is not None:
+            self._init_unilab_written_state()
+
+    @not_action
+    def set_plc_gateway(self, plc_gateway) -> None:
+        self._plc_gateway = plc_gateway
         self._init_unilab_written_state()
 
     @not_action
+    def _plc(self):
+        plc = self._plc_gateway if self._plc_gateway is not None else self._client
+        if plc is None:
+            raise RuntimeError("S08 开关盖工位尚未绑定 szlab_poly_plc")
+        return plc
+
+    @not_action
+    def disconnect(self) -> None:
+        if self._client is not None:
+            self._client.disconnect()
+
+    @not_action
+    def get_variables(self, variable_names: list[str], use_cache: bool = False) -> dict[str, dict[str, Any]]:
+        if self._plc_gateway is not None:
+            return self._plc_gateway.get_variables(variable_names, use_cache=use_cache)
+        return self._client.get_variables(variable_names, use_cache=use_cache)
+
+    @not_action
     def get_opc_variable_metadata(self, variable_name: str) -> tuple[str, str | None]:
-        return self._client.get_opc_variable_metadata(variable_name)
+        plc = self._plc()
+        if hasattr(plc, "get_opc_variable_metadata"):
+            return plc.get_opc_variable_metadata(variable_name)
+        return variable_name, None
 
     @not_action
     def _format_opc_variable_ref(self, node_name: str) -> str:
@@ -307,11 +322,18 @@ class SZLabS08CapStationDevice:
 
     @not_action
     def _read_variable(self, node_name: str) -> Any:
-        return self._client.read(node_name)
+        plc = self._plc()
+        if self._plc_gateway is not None and hasattr(plc, "read_variable"):
+            return plc.read_variable(node_name, use_cache=False)
+        return plc.read(node_name)
 
     @not_action
     def _write_variable(self, node_name: str, value: Any) -> None:
-        self._client.write(node_name, value)
+        plc = self._plc()
+        if self._plc_gateway is not None and hasattr(plc, "write_variable"):
+            plc.write_variable(node_name, value)
+            return
+        plc.write(node_name, value)
 
     @not_action
     def _wait_plc_bool(
@@ -321,17 +343,41 @@ class SZLabS08CapStationDevice:
         timeout: Optional[float] = None,
         description: Optional[str] = None,
     ) -> bool:
+        return self._wait_plc_equal(node_name, expected, timeout=timeout, description=description or node_name)
+
+    @not_action
+    def _wait_plc_equal(
+        self,
+        node_name: str,
+        expected: Any,
+        timeout: Optional[float] = None,
+        description: Optional[str] = None,
+    ) -> bool:
         timeout = self.timeout if timeout is None else timeout
-        desc = description or node_name
-        logger.info(f"等待 {desc} == {expected}")
-        start = time.time()
-        while time.time() - start < timeout:
-            if bool(self._read_variable(node_name)) is expected:
-                logger.info(f"✓ {desc} 已变为 {expected}")
-                return True
-            time.sleep(self.poll_interval)
-        logger.error(f"✗ 等待 {desc} 超时 ({timeout}s)")
-        return False
+        desc = description or f"{node_name} == {expected}"
+        interval = self.poll_interval
+        logger.info(f"等待 {desc}")
+        plc = self._plc()
+        waiter = getattr(plc, "wait_variable_equal", None)
+        if callable(waiter):
+            ok = bool(waiter(node_name, expected, timeout=timeout, interval=interval))
+        else:
+            waiter = getattr(plc, "wait_equal", None)
+            if callable(waiter):
+                ok = bool(waiter(node_name, expected, timeout=timeout, interval=interval))
+            else:
+                start = time.time()
+                ok = False
+                while time.time() - start < timeout:
+                    if self._read_variable(node_name) == expected:
+                        ok = True
+                        break
+                    time.sleep(interval)
+        if ok:
+            logger.info(f"✓ {desc}")
+        else:
+            logger.error(f"✗ 等待 {desc} 超时 ({timeout}s)")
+        return ok
 
     @not_action
     def _read_process_complete_int(self) -> int:
@@ -366,13 +412,12 @@ class SZLabS08CapStationDevice:
         logger.info(f"等待 {desc}")
         interval = self.poll_interval
 
-        if hasattr(self._client, "wait_equal"):
-            ok = self._client.wait_equal(
-                NODE_PROCESS_COMPLETE,
-                expected,
-                timeout=timeout,
-                interval=interval,
-            )
+        plc = self._plc()
+        waiter = getattr(plc, "wait_variable_equal", None)
+        if not callable(waiter):
+            waiter = getattr(plc, "wait_equal", None)
+        if callable(waiter):
+            ok = bool(waiter(NODE_PROCESS_COMPLETE, expected, timeout=timeout, interval=interval))
             if ok:
                 logger.info(f"✓ {desc}")
             else:
@@ -520,7 +565,7 @@ class SZLabS08CapStationDevice:
     def _find_cap_slot_by_sample_id(self, sample_id: Sequence[int]) -> Optional[int]:
         normalized = _normalize_sample_id(sample_id)
         if _sample_id_is_empty(normalized):
-            raise ValueError("sample_id 不能全为 0")
+            raise ValueError("样品ID 不能全为 0")
         for slot in CAP_STORAGE_SLOTS:
             cached = self._try_read_sample_id_from_plc(slot)
             if cached is not None and _sample_ids_match(cached, normalized):
@@ -528,12 +573,12 @@ class SZLabS08CapStationDevice:
         return None
 
     @not_action
-    def _validate_cap_station_has_bottle(self, vial_type: str, operation: str) -> None:
-        normalized_vial_type = _normalize_vial_type(vial_type)
+    def _validate_cap_station_has_bottle(self, process_type: S08ProcessType) -> None:
+        normalized_vial_type = PROCESS_TYPE_TO_VIAL_TYPE[process_type]
         station_id = VIAL_TYPE_TO_CAP_STATION[normalized_vial_type]
         sensor_node = SENSOR_CAP_STATION[station_id]
         if not bool(self._read_variable(sensor_node)):
-            op_label = "开盖" if _normalize_operation(operation) == "open" else "关盖"
+            op_label = "开盖" if process_type in OPEN_PROCESS_IDS else "关盖"
             vial_label = VIAL_TYPE_LABELS[normalized_vial_type]
             raise ValueError(
                 f"{op_label}前检测到开盖工位{station_id}无{vial_label}（{sensor_node}=False）"
@@ -615,10 +660,10 @@ class SZLabS08CapStationDevice:
     @not_action
     def _require_sample_id(self, sample_id: Sequence[int] | None) -> list[int]:
         if sample_id is None:
-            raise ValueError("必须传入机械臂扫描获得的 sample_id（list[int]，最长 30）")
+            raise ValueError("必须传入机械臂扫描获得的样品ID（list[int]，最长 30）")
         normalized = _normalize_sample_id(sample_id)
         if _sample_id_is_empty(normalized):
-            raise ValueError("sample_id 不能全为 0")
+            raise ValueError("样品ID 不能全为 0")
         return normalized
 
     @not_action
@@ -752,22 +797,21 @@ class SZLabS08CapStationDevice:
 
     @action(
         auto_prefix=True,
-        description="S08 开/关盖工艺；operation=open|close，vial_type=sample_500ml|sample_250ml|liquid_100ml；开盖/关盖均须传入机械臂扫描的 sample_id",
+        description="S08 开/关盖",
     )
     def process_cap(
         self,
-        operation: str,
-        vial_type: str,
-        sample_id: list[int],
-        timeout: float = 300.0,
+        工艺选择: int = int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
+        样品ID: list[int] | None = None,
+        超时时间: float = 300.0,
     ) -> dict[str, Any]:
         try:
-            process_type = _resolve_process_type(operation, vial_type)
-            normalized_sample_id = self._require_sample_id(sample_id)
+            process_type = _resolve_process_type_by_id(工艺选择)
+            normalized_sample_id = self._require_sample_id(样品ID)
             if self.require_station_status:
                 self._validate_s08_station_status_ready()
             if self.validate_cap_constraints:
-                self._validate_cap_station_has_bottle(vial_type, operation)
+                self._validate_cap_station_has_bottle(process_type)
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
 
@@ -775,12 +819,12 @@ class SZLabS08CapStationDevice:
             return self._open_cap(
                 process_type=process_type,
                 sample_id=normalized_sample_id,
-                timeout=timeout,
+                timeout=超时时间,
             )
         return self._close_cap(
             process_type=process_type,
             sample_id=normalized_sample_id,
-            timeout=timeout,
+            timeout=超时时间,
         )
 
     @topic_config(period=2.0)

@@ -1,14 +1,28 @@
 {
   "id": "szlab_robot_action_workflow",
-  "title": "SZLab 机械臂 + S04/S05/S06/S07 合成流程",
+  "title": "SZLab 机械臂 + S04/S05/S06/S07/S08 合成流程",
   "target_device_id": "szlab_mixer_robot",
   "target_device_ids": [
     "szlab_mixer_robot",
+    "szlab_s04_magnetic_stirring",
+    "szlab_s05_photoshotting",
+    "szlab_s06_pump",
     "szlab_s07_solid_addition",
-    "szlab_mixer_pump",
-    "szlab_mixer_stirrer",
-    "szlab_mixer_photoshotting"
+    "szlab_s08_cap_station"
   ],
+  "registry_device_ids": [
+    "szlab_mixer_robot",
+    "szlab_mixer_stirrer",
+    "szlab_mixer_photoshotting",
+    "szlab_mixer_pump",
+    "szlab_s07_solid_addition",
+    "szlab_s08_cap_station"
+  ],
+  "action_device_id_aliases": {
+    "szlab_mixer_stirrer": "szlab_s04_magnetic_stirring",
+    "szlab_mixer_photoshotting": "szlab_s05_photoshotting",
+    "szlab_mixer_pump": "szlab_s06_pump"
+  },
   "actions_source": "registry",
   "runtime_config": "../runtime_configs/szlab_robot_action_workflow_runtime.json",
   "default_workflow_name": "szlab_robot_action_workflow",
@@ -205,6 +219,25 @@
         "data": {}
       },
       {
+        "id": "szlab_s08_cap_station",
+        "name": "szlab_s08_cap_station",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_s08_cap_station",
+        "position": {
+          "x": 320,
+          "y": 0,
+          "z": 0
+        },
+        "config": {
+          "timeout": "${timeout}",
+          "plc_device_id": "szlab_poly_plc",
+          "use_plc_gateway": true
+        },
+        "data": {}
+      },
+      {
         "id": "szlab_s07_solid_addition",
         "name": "szlab_s07_solid_addition",
         "children": [],
@@ -212,7 +245,7 @@
         "type": "device",
         "class": "szlab_s07_solid_addition",
         "position": {
-          "x": 320,
+          "x": 480,
           "y": 0,
           "z": 0
         },
@@ -224,14 +257,14 @@
         "data": {}
       },
       {
-        "id": "szlab_mixer_pump",
-        "name": "szlab_mixer_pump",
+        "id": "szlab_s06_pump",
+        "name": "szlab_s06_pump",
         "children": [],
         "parent": null,
         "type": "device",
         "class": "szlab_mixer_pump",
         "position": {
-          "x": 480,
+          "x": 640,
           "y": 0,
           "z": 0
         },
@@ -280,14 +313,14 @@
         "data": {}
       },
       {
-        "id": "szlab_mixer_stirrer",
-        "name": "szlab_mixer_stirrer",
+        "id": "szlab_s04_magnetic_stirring",
+        "name": "szlab_s04_magnetic_stirring",
         "children": [],
         "parent": null,
         "type": "device",
         "class": "szlab_mixer_stirrer",
         "position": {
-          "x": 640,
+          "x": 800,
           "y": 0,
           "z": 0
         },
@@ -300,14 +333,14 @@
         "data": {}
       },
       {
-        "id": "szlab_mixer_photoshotting",
-        "name": "szlab_mixer_photoshotting",
+        "id": "szlab_s05_photoshotting",
+        "name": "szlab_s05_photoshotting",
         "children": [],
         "parent": null,
         "type": "device",
         "class": "szlab_mixer_photoshotting",
         "position": {
-          "x": 800,
+          "x": 960,
           "y": 0,
           "z": 0
         },

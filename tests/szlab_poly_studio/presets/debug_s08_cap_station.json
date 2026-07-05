@@ -1,10 +1,10 @@
 {
-  "id": "s08_cap_station",
+  "id": "debug_s08_cap_station",
   "title": "S08 开盖工位本地调试",
   "target_device_id": "szlab_s08_cap_station",
   "target_device_ids": ["szlab_s08_cap_station"],
   "actions_source": "registry",
-  "runtime_config": "runtime_configs/s08_cap_station_runtime.json",
+  "runtime_config": "../runtime_configs/debug_s08_cap_station_runtime.json",
   "default_workflow_name": "s08_cap_workflow",
   "default_config": {
     "graph": "__generated__",
@@ -21,17 +21,34 @@
   "device_graph": {
     "nodes": [
       {
+        "id": "szlab_poly_plc",
+        "name": "szlab_poly_plc",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_poly_plc",
+        "position": {"x": 0, "y": 0, "z": 0},
+        "config": {
+          "url": "${opcua_url}",
+          "csv_path": "${csv_path}",
+          "timeout": "${timeout}",
+          "no_subscription": true,
+          "opcua_node_id_prefix": "ns=4;s=上位机通讯|"
+        },
+        "data": {}
+      },
+      {
         "id": "szlab_s08_cap_station",
         "name": "S08 开盖工位",
         "children": [],
         "parent": null,
         "type": "device",
         "class": "szlab_s08_cap_station",
-        "position": {"x": 0, "y": 0, "z": 0},
+        "position": {"x": 160, "y": 0, "z": 0},
         "config": {
-          "url": "${opcua_url}",
           "timeout": "${timeout}",
-          "opcua_uplink_comm_prefix": "ns=4;s=上位机通讯"
+          "plc_device_id": "szlab_poly_plc",
+          "use_plc_gateway": true
         },
         "data": {}
       }

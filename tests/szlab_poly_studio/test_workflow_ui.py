@@ -150,7 +150,7 @@ def test_ai4c_preset_uses_formal_device_class():
 
 
 def test_photoshotting_preset_uses_s05_camera_config():
-    preset = load_preset("photoshotting")
+    preset = load_preset("debug_s05_photoshotting")
     runtime_config = _load_preset_runtime_config(preset)
     csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
     graph = build_local_device_graph(
@@ -159,7 +159,7 @@ def test_photoshotting_preset_uses_s05_camera_config():
         preset=preset,
     )
 
-    assert preset.id == "photoshotting"
+    assert preset.id == "debug_s05_photoshotting"
     assert csv_path.exists()
     assert preset.target_device_ids == ["szlab_mixer_photoshotting"]
     assert list(preset.actions) == ["take_photo"]
@@ -186,7 +186,7 @@ def test_photoshotting_preset_uses_s05_camera_config():
 
 
 def test_magnetic_stirring_preset_uses_s04_stirrer_config():
-    preset = load_preset("magnetic_stirring")
+    preset = load_preset("debug_s04_magnetic_stirring")
     runtime_config = _load_preset_runtime_config(preset)
     csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
     graph = build_local_device_graph(
@@ -195,7 +195,7 @@ def test_magnetic_stirring_preset_uses_s04_stirrer_config():
         preset=preset,
     )
 
-    assert preset.id == "magnetic_stirring"
+    assert preset.id == "debug_s04_magnetic_stirring"
     assert csv_path.exists()
     assert preset.target_device_ids == ["szlab_mixer_stirrer"]
     assert list(preset.actions) == ["run_stirring"]
@@ -535,18 +535,20 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     assert preset.id == "szlab_robot_action_workflow"
     assert preset.target_device_ids == [
         "szlab_mixer_robot",
+        "szlab_s04_magnetic_stirring",
+        "szlab_s05_photoshotting",
+        "szlab_s06_pump",
         "szlab_s07_solid_addition",
-        "szlab_mixer_pump",
-        "szlab_mixer_stirrer",
-        "szlab_mixer_photoshotting",
+        "szlab_s08_cap_station",
     ]
     assert set(graph_nodes) == {
         "szlab_poly_plc",
         "szlab_mixer_robot",
+        "szlab_s04_magnetic_stirring",
+        "szlab_s05_photoshotting",
+        "szlab_s06_pump",
         "szlab_s07_solid_addition",
-        "szlab_mixer_pump",
-        "szlab_mixer_stirrer",
-        "szlab_mixer_photoshotting",
+        "szlab_s08_cap_station",
     }
     assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"] == "${csv_path}"
     assert preset.debug_config["skip_robot_precheck_variables"] == robot_action_preset.debug_config[
@@ -556,11 +558,15 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     assert runtime_config.device_factory.devices == {
         "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
         "szlab_mixer_robot": "unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot.SzlabMixerRobotDevice",
+        "szlab_s04_magnetic_stirring": "unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring.SzlabMixerMagneticStirrerDevice",
+        "szlab_s05_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.SzlabMixerPhotoShottingDevice",
+        "szlab_s06_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice",
         "szlab_s07_solid_addition": "unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07.SZLabS07SolidAdditionDevice",
-        "szlab_mixer_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice",
-        "szlab_mixer_stirrer": "unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring.SzlabMixerMagneticStirrerDevice",
-        "szlab_mixer_photoshotting": "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.SzlabMixerPhotoShottingDevice",
+        "szlab_s08_cap_station": "unilabos.devices.workstation.szlab_poly_studio.s08_decap.decap_s08_cap_station.SZLabS08CapStationDevice",
     }
+    assert preset.actions["run_stirring"].device_id == "szlab_s04_magnetic_stirring"
+    assert preset.actions["take_photo"].device_id == "szlab_s05_photoshotting"
+    assert preset.actions["run_solvent_addition"].device_id == "szlab_s06_pump"
     assert collect_snapshot_variables("dose_powder", {}, runtime_config) == [
         "S07原点信号",
         "S07允许加工",
@@ -579,6 +585,26 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "S06_2号溶液添加量",
         "S06参数写入完成",
         "S06加工完成",
+    ]
+    assert collect_snapshot_variables("process_cap", {}, runtime_config) == [
+        "S08原点信号",
+        "S08允许加工",
+        "S08工艺选择",
+        "S08参数写入完成",
+        "S08工艺完成",
+        "S082瓶盖暂存位",
+        "工站状态[7]",
+        "传感器状态_上位机[3].NO[14]",
+        "传感器状态_上位机[3].NO[15]",
+        "传感器状态_上位机[4].NO[0]",
+        "传感器状态_上位机[4].NO[1]",
+        "传感器状态_上位机[4].NO[2]",
+        "传感器状态_上位机[4].NO[3]",
+        "传感器状态_上位机[4].NO[4]",
+    ]
+    assert collect_snapshot_variables("submit_pour_from_s08", {}, runtime_config) == [
+        "S08倒料产品选择",
+        "任务号",
     ]
 
 
@@ -622,13 +648,13 @@ def test_szlab_robot_action_workflow_flow_matches_requested_synthesis_route():
         ("szlab_s07_solid_addition", "dose_powder"),
         ("szlab_mixer_robot", "submit_pick_from_s072"),
         ("szlab_mixer_robot", "submit_place_to_s06"),
-        ("szlab_mixer_pump", "run_solvent_addition"),
+        ("szlab_s06_pump", "run_solvent_addition"),
         ("szlab_mixer_robot", "submit_pick_from_s06"),
         ("szlab_mixer_robot", "submit_place_to_s04"),
-        ("szlab_mixer_stirrer", "run_stirring"),
+        ("szlab_s04_magnetic_stirring", "run_stirring"),
         ("szlab_mixer_robot", "submit_pick_from_s04"),
         ("szlab_mixer_robot", "submit_place_to_s05"),
-        ("szlab_mixer_photoshotting", "take_photo"),
+        ("szlab_s05_photoshotting", "take_photo"),
         ("szlab_mixer_robot", "submit_pick_from_s05"),
         ("szlab_mixer_robot", "submit_place_to_s10"),
     ]

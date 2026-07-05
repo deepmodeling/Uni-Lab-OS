@@ -272,6 +272,45 @@ const wrappedLinearLayout = layoutFlowGraph(
 assert.equal(wrappedLinearLayout[6].position.x, wrappedLinearLayout[0].position.x, '第 7 个节点应换行回到行首');
 assert.ok(wrappedLinearLayout[6].position.y > wrappedLinearLayout[0].position.y, '第 7 个节点应排到下一行');
 
+const branchedLayout = layoutFlowGraph(
+  [
+    { ...baseNodes[0], id: 'precheck', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 'solvent', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 'branch_start', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 's05', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 'photo', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 's11', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 's08', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 'join', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 'post', position: { x: 999, y: 999 } },
+  ],
+  [
+    { id: 'precheck-solvent', source: 'precheck', target: 'solvent' },
+    { id: 'solvent-branch', source: 'solvent', target: 'branch_start' },
+    { id: 'branch-s05', source: 'branch_start', target: 's05' },
+    { id: 'branch-s11', source: 'branch_start', target: 's11' },
+    { id: 's05-photo', source: 's05', target: 'photo' },
+    { id: 'photo-join', source: 'photo', target: 'join' },
+    { id: 's11-s08', source: 's11', target: 's08' },
+    { id: 's08-join', source: 's08', target: 'join' },
+    { id: 'join-post', source: 'join', target: 'post' },
+  ],
+);
+const branchedById = Object.fromEntries(branchedLayout.map((node) => [node.id, node.position]));
+assert.equal(branchedById.solvent.y, branchedById.precheck.y, '分支前主干应保留在同一行');
+assert.ok(branchedById.solvent.x > branchedById.precheck.x, '分支前主干应横向递增');
+assert.equal(branchedById.branch_start.x, branchedById.precheck.x, '分支入口锚点应另起一行并回到行首');
+assert.ok(branchedById.branch_start.y > branchedById.precheck.y, '分支入口锚点应下移到新行');
+assert.equal(branchedById.photo.y, branchedById.s05.y, '同一条分支应按横向行排列');
+assert.ok(branchedById.photo.x > branchedById.s05.x, '同一条分支后续节点应向右排列');
+assert.equal(branchedById.s08.y, branchedById.s11.y, '第二条分支也应按横向行排列');
+assert.ok(branchedById.s08.x > branchedById.s11.x, '第二条分支后续节点应向右排列');
+assert.ok(branchedById.s11.y > branchedById.s05.y, '不同分支应分到不同横向行');
+assert.equal(branchedById.join.y, branchedById.branch_start.y, '分支汇合锚点应回到分支入口所在主干行');
+assert.ok(branchedById.join.x > branchedById.branch_start.x, '分支汇合锚点应位于分支入口右侧');
+assert.equal(branchedById.post.y, branchedById.branch_start.y, '汇合后的主干应继续沿锚点行排列');
+assert.ok(branchedById.post.x > branchedById.join.x, '汇合后的主干应继续向右排列');
+
 const opcRowsWhileRunning = collectOpcChanges([
   {
     sequence: 1,
@@ -428,9 +467,9 @@ assert.deepEqual(
       ],
     },
     {
-      id: 'process_devices',
-      title: '设备工艺',
-      device: 'S04 / S05',
+      id: 'szlab_mixer_stirrer',
+      title: 'szlab_mixer_stirrer',
+      device: 'szlab_mixer_stirrer',
       actions: [
         {
           method: 'run_stirring',
@@ -438,6 +477,13 @@ assert.deepEqual(
           description: '执行 S04 磁搅加工',
           device_id: 'szlab_mixer_stirrer',
         },
+      ],
+    },
+    {
+      id: 'szlab_mixer_photoshotting',
+      title: 'szlab_mixer_photoshotting',
+      device: 'szlab_mixer_photoshotting',
+      actions: [
         {
           method: 'take_photo',
           label: '拍照并保存结果',
@@ -447,5 +493,5 @@ assert.deepEqual(
       ],
     },
   ],
-  '动作面板应按机械臂和设备工艺分层显示',
+  '动作面板应按机械臂和单设备分层显示',
 );

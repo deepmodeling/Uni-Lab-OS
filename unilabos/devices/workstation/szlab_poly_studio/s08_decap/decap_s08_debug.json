@@ -19,9 +19,8 @@
   },
   "action": {
     "name": "process_cap",
-    "operation": "open",
-    "vial_type": "liquid_100ml",
-    "sample_id": [101, 102, 103],
-    "timeout": 8.0
+    "工艺选择": 5,
+    "样品ID": [101, 102, 103],
+    "超时时间": 8.0
   }
 }

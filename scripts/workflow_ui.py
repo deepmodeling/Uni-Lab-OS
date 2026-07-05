@@ -13,7 +13,7 @@ import time
 import uuid
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -91,9 +91,17 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
     data = json.loads(preset_path.read_text(encoding="utf-8"))
     target_device_id = data.get("target_device_id", ROBOT_ARM_DEVICE_ID)
     target_device_ids = list(data.get("target_device_ids") or [target_device_id])
+    registry_device_ids = list(data.get("registry_device_ids") or target_device_ids)
+    action_device_id_aliases = dict(data.get("action_device_id_aliases") or {})
     path_roots = data.get("path_roots", ["tests/szlab_poly_studio"])
     if data.get("actions_source") == "registry":
-        actions = _load_registry_actions(target_device_ids, path_roots, preset_path.parent)
+        actions = _load_registry_actions(registry_device_ids, path_roots, preset_path.parent)
+        if action_device_id_aliases:
+            actions = {
+                method: replace(action, device_id=action_device_id_aliases.get(
+                    action.device_id or "", action.device_id))
+                for method, action in actions.items()
+            }
     else:
         actions = {
             item["method"]: ActionSpec(

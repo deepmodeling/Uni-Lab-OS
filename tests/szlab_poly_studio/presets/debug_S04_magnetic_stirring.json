@@ -1,5 +1,5 @@
 {
-  "id": "magnetic_stirring",
+  "id": "debug_s04_magnetic_stirring",
   "title": "SZLab S04 磁搅本地调试工具",
   "target_device_id": "szlab_mixer_stirrer",
   "target_device_ids": ["szlab_mixer_stirrer"],

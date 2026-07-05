@@ -10,7 +10,7 @@
 ## 工艺编号（`S08工艺选择` / `S08工艺完成`）
 
 | 编号 | 操作 | 瓶型 |
-|------|------|------|
+| ---- | ---- | ---- |
 | 1 | 开盖 | 样品瓶 500ml（开盖工位 1，`NO[14]`） |
 | 2 | 关盖 | 样品瓶 500ml |
 | 3 | 开盖 | 样品瓶 250ml（开盖工位 1） |
@@ -18,8 +18,8 @@
 | 5 | 开盖 | 液体瓶 100ml（开盖工位 2，`NO[15]`） |
 | 6 | 关盖 | 液体瓶 100ml |
 
-开盖：机械臂传入 `sample_id`，驱动分配空闲暂存位（1–5），写入 `S082_{n}数据缓存` 并下发工艺。
-关盖：用相同 `sample_id` 反查暂存位，关盖成功后清除该位缓存。
+开盖：机械臂传入 `样品ID`，驱动分配空闲暂存位（1–5），写入 `S082_{n}数据缓存` 并下发工艺。
+关盖：用相同 `样品ID` 反查暂存位，关盖成功后清除该位缓存。
 
 ## 常规流程（`process_cap`）
 
@@ -31,7 +31,7 @@ sequenceDiagram
     participant UL as UniLab 驱动
     participant PLC as PLC / 虚拟 OPC
 
-    WF->>UL: process_cap(operation, vial_type, sample_id)
+    WF->>UL: process_cap(工艺选择, 样品ID, 超时时间)
 
     opt require_station_ready（默认 True）
         UL->>PLC: 读 S08原点信号
@@ -51,8 +51,8 @@ sequenceDiagram
     UL->>PLC: 读 S08允许加工
     PLC-->>UL: True
 
-    alt operation = open
-        UL->>PLC: 写 S082_n数据缓存（sample_id）
+    alt 工艺选择 = 1/3/5（开盖）
+        UL->>PLC: 写 S082_n数据缓存（样品ID）
     end
 
     UL->>PLC: 写 S082瓶盖暂存位、S08工艺选择、S08参数写入完成=True
@@ -60,7 +60,7 @@ sequenceDiagram
     UL->>PLC: 复位：工艺选择=0、参数写入完成=False、暂存位=0
     PLC-->>UL: S08工艺完成 == 0
 
-    alt operation = close
+    alt 工艺选择 = 2/4/6（关盖）
         UL->>PLC: 清除对应暂存位数据缓存
     end
 
@@ -70,7 +70,7 @@ sequenceDiagram
 ### 可选校验开关
 
 | 参数 | 默认 | 作用 |
-|------|------|------|
+| ---- | ---- | ---- |
 | `require_station_ready` | `True` | 工艺前等待 `S08原点信号` |
 | `require_station_status` | `False` | 工艺前检查 `工站状态[7]` ∈ {2,…,6} |
 | `validate_cap_constraints` | `False` | 开/关盖前检查工位与暂存位传感器、样品 ID 与缓存一致性 |
@@ -93,7 +93,7 @@ PYTHONPATH=. python -m pytest tests/szlab_poly_studio/test_s08_cap_station.py -v
 简要分类：
 
 | 数量 | 内容 |
-|------|------|
+| ---- | ---- |
 | 2 | 注册表 / preset 仅暴露 `process_cap` |
 | 5 | 内部实现（连接复位、NodeId 映射、等待工艺完成、虚拟/实机 URL） |
 | 9 | `process_cap` 成功路径与入参校验（开/关、三种瓶型、槽位分配） |
@@ -102,7 +102,7 @@ PYTHONPATH=. python -m pytest tests/szlab_poly_studio/test_s08_cap_station.py -v
 测试支撑文件（均在 `tests/szlab_poly_studio/`）：
 
 | 文件 | 作用 |
-|------|------|
+| ---- | ---- |
 | `s08_test_helpers.py` | 共用 `make_s08_device()` fixture 与常量 |
 | `pseudo_clients/decap_s08_pseudo_opcua_client.py` | 单元测试用 mock OPC client（不连网） |
 

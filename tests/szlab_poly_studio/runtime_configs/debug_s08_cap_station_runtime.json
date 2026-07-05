@@ -1,6 +1,8 @@
 {
   "device_factory": {
+    "plc_device_id": "szlab_poly_plc",
     "devices": {
+      "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
       "szlab_s08_cap_station": "unilabos.devices.workstation.szlab_poly_studio.s08_decap.decap_s08_cap_station.SZLabS08CapStationDevice"
     }
   },

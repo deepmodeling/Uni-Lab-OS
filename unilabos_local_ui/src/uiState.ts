@@ -53,15 +53,12 @@ export function buildWorkspaceSummary(input: WorkspaceSummaryInput) {
 
 export function groupActionsByDevice<T extends ActionLike>(actions: T[]): ActionGroup<T>[] {
   const robotActions: T[] = [];
-  const processActions: T[] = [];
   const otherActionsByDevice = new Map<string, T[]>();
 
   actions.forEach((action) => {
     const deviceId = action.device_id || '';
     if (isRobotAction(action)) {
       robotActions.push(action);
-    } else if (isKnownProcessDevice(deviceId)) {
-      processActions.push(action);
     } else {
       const key = deviceId || 'unknown_device';
       otherActionsByDevice.set(key, [...(otherActionsByDevice.get(key) || []), action]);
@@ -75,14 +72,6 @@ export function groupActionsByDevice<T extends ActionLike>(actions: T[]): Action
       title: '机械臂转运',
       device: 'szlab_mixer_robot',
       actions: robotActions,
-    });
-  }
-  if (processActions.length) {
-    groups.push({
-      id: 'process_devices',
-      title: '设备工艺',
-      device: 'S04 / S05',
-      actions: processActions,
     });
   }
   otherActionsByDevice.forEach((groupActions, deviceId) => {
@@ -99,10 +88,6 @@ export function groupActionsByDevice<T extends ActionLike>(actions: T[]): Action
 function isRobotAction(action: ActionLike) {
   const deviceId = action.device_id || '';
   return deviceId.includes('robot') || /^submit_(pick|place)_/.test(action.method);
-}
-
-function isKnownProcessDevice(deviceId: string) {
-  return deviceId.includes('stirrer') || deviceId.includes('photoshotting') || deviceId.includes('pump');
 }
 
 function runStatusText(status?: string | null) {

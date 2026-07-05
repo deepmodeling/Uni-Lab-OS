@@ -1,5 +1,5 @@
 {
-  "id": "photoshotting",
+  "id": "debug_s05_photoshotting",
   "title": "SZLab S05 拍照本地调试工具",
   "target_device_id": "szlab_mixer_photoshotting",
   "target_device_ids": ["szlab_mixer_photoshotting"],

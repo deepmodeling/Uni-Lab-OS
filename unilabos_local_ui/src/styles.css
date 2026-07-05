@@ -404,6 +404,7 @@ code {
   gap: 14px;
 }
 
+.log-category-tabs,
 .log-tabs {
   display: flex;
   gap: 6px;
@@ -412,6 +413,12 @@ code {
   padding-bottom: 2px;
 }
 
+.log-category-tabs {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+.log-category-tabs button,
 .log-tabs button {
   flex: 0 0 auto;
   border: 0;
@@ -423,9 +430,29 @@ code {
   padding: 7px 10px;
 }
 
+.log-category-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.log-category-tabs button span {
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 10px;
+  padding: 1px 5px;
+}
+
+.log-category-tabs button.active,
 .log-tabs button.active {
   border-bottom-color: #2563eb;
   background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.log-category-tabs button.active span {
+  background: #dbeafe;
   color: #1d4ed8;
 }
 
@@ -554,12 +581,27 @@ code {
 
 .opc-changes {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
   min-height: 0;
   border-top: 1px solid #dbe3ef;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   padding: 12px 14px;
-  overflow: hidden;
+  overflow: auto;
+}
+
+.opc-collapsible {
+  min-height: 0;
+}
+
+.opc-collapsible .opc-change-table-wrap,
+.opc-collapsible .opc-change-empty {
+  margin-top: 8px;
+}
+
+.opc-collapsible:not([open]) .opc-change-table-wrap,
+.opc-collapsible:not([open]) .opc-change-empty {
+  display: none;
 }
 
 .opc-changes-head {
@@ -568,12 +610,31 @@ code {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.opc-changes-head::-webkit-details-marker {
+  display: none;
+}
+
+.opc-changes-head::before {
+  color: #64748b;
+  content: "▾";
+  font-size: 12px;
+  font-weight: 900;
+  transition: transform 120ms ease;
+}
+
+.opc-collapsible:not([open]) .opc-changes-head::before {
+  transform: rotate(-90deg);
 }
 
 .opc-changes-head h3 {
   margin: 0;
   color: #0f172a;
   font-size: 13px;
+  flex: 1;
 }
 
 .opc-changes-head span {
@@ -879,6 +940,7 @@ code {
   color: #1d4ed8;
   font-size: 12px;
   font-weight: 800;
+  margin-top: 12px;
   margin-bottom: 10px;
   padding: 9px 10px;
 }
@@ -1473,6 +1535,10 @@ code {
   margin: 0 auto;
 }
 
+.demo-workbench.left-collapsed {
+  grid-template-columns: 64px minmax(600px, 1fr) 340px;
+}
+
 .demo-card {
   min-height: 0;
   border: 1px solid #dbe3ef;
@@ -1488,6 +1554,42 @@ code {
   gap: 10px;
   padding: 14px;
   overflow: hidden;
+}
+
+.demo-action-panel.collapsed {
+  grid-template-rows: auto;
+  justify-items: center;
+  padding: 14px 10px;
+}
+
+.demo-action-panel.collapsed .demo-panel-title {
+  justify-content: center;
+}
+
+.demo-action-panel.collapsed .demo-panel-title h2,
+.demo-action-panel.collapsed .demo-panel-title span,
+.demo-action-panel.collapsed .demo-tabbar,
+.demo-action-panel.collapsed .demo-left-sections {
+  display: none;
+}
+
+.demo-panel-collapse-button {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  min-height: 34px;
+  border: 1px solid #dbe3ef;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+}
+
+.demo-panel-collapse-button:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .demo-left-sections {
@@ -1986,6 +2088,12 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+}
+
+.demo-run-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .demo-toolbar-actions button,

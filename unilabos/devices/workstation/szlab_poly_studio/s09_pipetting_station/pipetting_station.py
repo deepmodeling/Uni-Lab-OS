@@ -665,6 +665,9 @@ class SzlabMixerPipettingStationDevice:
             plan.append((8, f"烧杯放液{suffix}", 0, dispense_chunk))
         plan.append((6, "放 TIP", 0, 0))
 
+        # # 临时现场调试：只执行放 TIP，跳过取 TIP、取液、放液。
+        # plan: list[tuple[int, str, int, int]] = [(6, "放 TIP", 0, 0)]
+
         for process, step_name, aspirate_chunk, dispense_chunk in plan:
             result = self.run_process(
                 process=process,
@@ -675,6 +678,7 @@ class SzlabMixerPipettingStationDevice:
                 aspirate_volume=aspirate_chunk,
                 dispense_volume=dispense_chunk,
                 volume_unit="raw",
+                require_allow=process in {5, 7, 8},
                 skip_level_check=skip_level_check,
             )
             steps.append({"step": step_name, **result})
@@ -713,6 +717,38 @@ class SzlabMixerPipettingStationDevice:
             "steps": steps,
             "logs": logs,
         }
+
+    @action(auto_prefix=True, description="执行 S09 烧杯加液：取 TIP、液体瓶取液、烧杯放液、放 TIP")
+    def add_liquid_to_beaker(
+        self,
+        tip_box_index: int = 1,
+        tip_index: int = 1,
+        liquid_bottle_index: int = 1,
+        station: int = 1,
+        aspirate_volume: int = 1,
+        dispense_volume: int = 1,
+        volume_unit: str = "raw",
+        skip_level_check: bool = False,
+    ) -> dict[str, Any]:
+        result = self.add_liquid(
+            tip_box_index=tip_box_index,
+            tip_index=tip_index,
+            liquid_bottle_index=liquid_bottle_index,
+            station=station,
+            aspirate_volume=aspirate_volume,
+            dispense_volume=dispense_volume,
+            volume_unit=volume_unit,
+            skip_level_check=skip_level_check,
+        )
+        if result.get("success", False):
+            data = dict(result.get("data") or {})
+            data["process_sequence"] = [
+                step["data"]["process"]
+                for step in result.get("steps", [])
+                if isinstance(step.get("data"), dict) and "process" in step["data"]
+            ]
+            return {**result, "message": "S09 烧杯加液完成", "data": data}
+        return result
 
     @action(auto_prefix=True, description="执行 S09 多步加液工作流")
     def run_liquid_workflow(

@@ -126,9 +126,16 @@ export function createExecutionPlan<T extends FlowNodeLike>(
     nodeStates[node.id] = { reason };
   });
 
-  const executableNodes = nodes.filter((node) => nodeStates[node.id]?.reason === 'willRun');
-  const executableNodeIds = new Set(executableNodes.map((node) => node.id));
-  const executableEdges = edges.filter((edge) => executableNodeIds.has(edge.source) && executableNodeIds.has(edge.target));
+  const executableNodeIdsForPlan = new Set(
+    nodes.filter((node) => nodeStates[node.id]?.reason === 'willRun').map((node) => node.id),
+  );
+  const executableEdges = edges.filter(
+    (edge) => executableNodeIdsForPlan.has(edge.source) && executableNodeIdsForPlan.has(edge.target),
+  );
+  const executableNodes = orderNodesByDag(
+    nodes.filter((node) => executableNodeIdsForPlan.has(node.id)),
+    executableEdges,
+  );
   const disabledNodeId = nodes.find((node) => reachableDisabledSeeds.has(node.id))?.id || null;
 
   return {
@@ -160,30 +167,17 @@ export function layoutFlowGraph<T extends { id: string; position: unknown }>(
   if (!nodes.length) return nodes;
   if (!edges.length) return applyGridLayout(nodes);
 
-  const ids = new Set(nodes.map((node) => node.id));
-  const incoming = new Map(nodes.map((node) => [node.id, 0]));
   const outgoing = new Map(nodes.map((node) => [node.id, [] as string[]]));
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
   edges.forEach((edge) => {
-    if (!ids.has(edge.source) || !ids.has(edge.target)) return;
+    if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) return;
     outgoing.get(edge.source)?.push(edge.target);
-    incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
   });
 
-  const originalIndex = new Map(nodes.map((node, index) => [node.id, index]));
   const columns = new Map(nodes.map((node) => [node.id, 0]));
-  const ready = nodes.filter((node) => (incoming.get(node.id) || 0) === 0).map((node) => node.id);
-  const ordered: string[] = [];
-
-  while (ready.length) {
-    ready.sort((left, right) => (originalIndex.get(left) || 0) - (originalIndex.get(right) || 0));
-    const current = ready.shift()!;
-    ordered.push(current);
-    for (const target of outgoing.get(current) || []) {
-      columns.set(target, Math.max(columns.get(target) || 0, (columns.get(current) || 0) + 1));
-      incoming.set(target, (incoming.get(target) || 0) - 1);
-      if ((incoming.get(target) || 0) === 0) ready.push(target);
-    }
-  }
+  const ordered = orderNodeIdsByDag(nodes, edges, (current, target) => {
+    columns.set(target, Math.max(columns.get(target) || 0, (columns.get(current) || 0) + 1));
+  });
 
   if (ordered.length !== nodes.length) {
     return applyGridLayout(nodes);
@@ -195,8 +189,9 @@ export function layoutFlowGraph<T extends { id: string; position: unknown }>(
   }
 
   const rowsByColumn = new Map<number, number>();
-  return nodes.map((node) => {
-    const column = columns.get(node.id) || 0;
+  return ordered.map((nodeId) => {
+    const node = nodesById.get(nodeId)!;
+    const column = columns.get(nodeId) || 0;
     const wrappedColumn = column % MAX_NODES_PER_ROW;
     const wrappedRow = Math.floor(column / MAX_NODES_PER_ROW);
     const stackRow = rowsByColumn.get(column) || 0;
@@ -218,6 +213,7 @@ function applyBranchedLayout<T extends { id: string; position: unknown }>(
   branchAnchor: string,
 ): T[] {
   const originalIndex = new Map(nodes.map((node, index) => [node.id, index]));
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const positions = new Map<string, { x: number; y: number }>();
   const anchorOrderIndex = ordered.indexOf(branchAnchor);
   const nodesBeforeAnchor = ordered.slice(0, Math.max(anchorOrderIndex, 0));
@@ -263,10 +259,56 @@ function applyBranchedLayout<T extends { id: string; position: unknown }>(
     continuationColumn += 1;
   });
 
-  return nodes.map((node, index) => ({
-    ...node,
-    position: positions.get(node.id) || positionAt(index % MAX_NODES_PER_ROW, Math.floor(index / MAX_NODES_PER_ROW)),
-  }));
+  return ordered.map((nodeId, index) => {
+    const node = nodesById.get(nodeId)!;
+    return {
+      ...node,
+      position: positions.get(node.id) || positionAt(index % MAX_NODES_PER_ROW, Math.floor(index / MAX_NODES_PER_ROW)),
+    };
+  });
+}
+
+function orderNodesByDag<T extends { id: string }>(nodes: T[], edges: FlowEdgeLike[]): T[] {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const orderedIds = orderNodeIdsByDag(nodes, edges);
+  if (orderedIds.length !== nodes.length) return nodes;
+  return orderedIds.flatMap((nodeId) => {
+    const node = nodesById.get(nodeId);
+    return node ? [node] : [];
+  });
+}
+
+function orderNodeIdsByDag<T extends { id: string }>(
+  nodes: T[],
+  edges: FlowEdgeLike[],
+  onEdgeVisited?: (source: string, target: string) => void,
+) {
+  const ids = new Set(nodes.map((node) => node.id));
+  const originalIndex = new Map(nodes.map((node, index) => [node.id, index]));
+  const incoming = new Map(nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(nodes.map((node) => [node.id, [] as string[]]));
+
+  edges.forEach((edge) => {
+    if (!ids.has(edge.source) || !ids.has(edge.target)) return;
+    outgoing.get(edge.source)?.push(edge.target);
+    incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
+  });
+
+  const ready = nodes.filter((node) => (incoming.get(node.id) || 0) === 0).map((node) => node.id);
+  const ordered: string[] = [];
+
+  while (ready.length) {
+    ready.sort((left, right) => (originalIndex.get(left) || 0) - (originalIndex.get(right) || 0));
+    const current = ready.shift()!;
+    ordered.push(current);
+    for (const target of outgoing.get(current) || []) {
+      onEdgeVisited?.(current, target);
+      incoming.set(target, (incoming.get(target) || 0) - 1);
+      if ((incoming.get(target) || 0) === 0) ready.push(target);
+    }
+  }
+
+  return ordered;
 }
 
 function findFirstCommonJoin(

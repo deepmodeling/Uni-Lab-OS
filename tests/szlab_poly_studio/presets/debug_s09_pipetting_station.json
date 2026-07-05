@@ -4,6 +4,7 @@
   "target_device_id": "szlab_mixer_pipetting_station",
   "target_device_ids": ["szlab_mixer_pipetting_station"],
   "actions_source": "registry",
+  "hidden_actions": ["run_process"],
   "runtime_config": "../runtime_configs/debug_s09_pipetting_station_runtime.json",
   "default_workflow_name": "szlab_s09_pipetting_workflow",
   "default_config": {

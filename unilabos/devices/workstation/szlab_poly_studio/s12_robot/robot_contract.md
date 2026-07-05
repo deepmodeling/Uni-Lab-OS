@@ -10,7 +10,7 @@ Every robot pick/place action uses the updated upper-computer PLC handshake:
 4. Write all station task parameters as integers. The updated PLC contract exposes these Robot PC->PLC parameters as `DINT`.
 5. Write `任务号` with the action task number.
 6. Write `Robot_任务写入完成=False`, then `Robot_任务写入完成=True`.
-7. Wait for `Robot_任务完成` to become non-zero. Although the CSV type is `DINT`, non-zero is the confirmed completion/true condition.
+7. Wait for `Robot_任务完成` to equal the written `任务号`. The CSV type is `DINT`; PLC returns the completed task number, not a Bool.
 8. Write `Robot_任务写入完成=False`.
 9. Reset every written station parameter and `任务号` to `0`.
 
@@ -105,7 +105,7 @@ Confirmed built-in mappings:
 
 - Confirm OPC UA Browser can read `Robot_Home`, `Robot_任务允许写入`, and `Robot_任务完成` from the updated CSV.
 - Confirm OPC UA Browser can safely write `Robot_任务写入完成`, `任务号`, and one DINT station parameter.
-- Confirm `Robot_任务完成` returns to `0` or otherwise starts a fresh cycle before the next task, so stale non-zero completion does not mask a failed task.
+- Confirm `Robot_任务完成` returns to `0` or otherwise starts a fresh cycle before the next task, so a stale task number does not mask a failed task.
 - Confirm exact source/target sensor mapping for S01, S072, S08, and S09 liquid reagent full/not-full selection.
 - Confirm whether all PC->PLC task variables use `0` as the final reset value.
 - S07固体加样准备 is not ready. The Feishu flowchart text is incomplete: "再从固体粉末容器瓶平台上与固体粉末容器瓶". Do not implement this preparation workflow until the missing PLC variables and complete motion text are confirmed.

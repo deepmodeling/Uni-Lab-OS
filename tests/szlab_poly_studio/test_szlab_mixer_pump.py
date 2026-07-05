@@ -54,6 +54,30 @@ def test_szlab_mixer_pump_constructor_has_no_internal_robot_position_config():
     assert "robot_stirrer_position" not in constructor_params
 
 
+def test_szlab_mixer_pump_can_use_shared_plc_gateway():
+    gateway = PseudoSzlabMixerOpcUaClient()
+    device = SzlabMixerPumpDevice(
+        url="opc.tcp://127.0.0.1:0/unused",
+        timeout=0.05,
+        pipeline_routes={
+            (1, "aspirate"): S06PipelineRoute(control_valve=11, absolute_position=21),
+            (1, "dispense"): S06PipelineRoute(control_valve=12, absolute_position=22),
+            (1, "air"): S06PipelineRoute(control_valve=13, absolute_position=23),
+            (2, "aspirate"): S06PipelineRoute(control_valve=0, absolute_position=0),
+            (2, "dispense"): S06PipelineRoute(control_valve=0, absolute_position=0),
+            (2, "air"): S06PipelineRoute(control_valve=0, absolute_position=0),
+        },
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.run_solvent_addition(process=1, volume=5)
+
+    assert result["success"] is True
+    assert ("S06工艺选择", 1) in gateway.writes
+    assert ("S06参数写入完成", True) in gateway.writes
+
+
 def test_szlab_mixer_pump_rejects_invalid_process_index():
     device = make_pump_device()
     result = device.run_solvent_addition(process=4, volume=1)

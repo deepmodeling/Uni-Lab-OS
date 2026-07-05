@@ -146,11 +146,14 @@ def s09_sensor(product_type: int, position: int) -> str:
         if position not in S09_TIP_SENSORS:
             raise ValueError("S09 TIP位置必须是 1-2")
         return S09_TIP_SENSORS[position]
+    if product_type == 2:
+        numbered_position(position, min_value=1, max_value=5, label="S09 液体试剂瓶位置")
+        return ""
     if product_type == 3:
         if position != 1:
             raise ValueError("S09 烧杯位置必须是 1")
         return S09_BEAKER_SENSOR
-    raise ValueError("S09 液体试剂瓶传感器未在 CSV 中明确映射，暂不支持自动门禁")
+    raise ValueError("S09取放料产品必须是 1(TIP盒)、2(液体试剂瓶) 或 3(烧杯)")
 
 
 def s10_sensor(position: int) -> str:

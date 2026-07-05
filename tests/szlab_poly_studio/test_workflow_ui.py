@@ -512,7 +512,9 @@ def test_s09_debug_preset_uses_debug_file_name():
             "pipetting_station.SzlabMixerPipettingStationDevice"
         )
     }
-    assert collect_snapshot_variables("run_process", {}, runtime_config) == [
+    assert "run_process" not in preset.actions
+    assert "add_liquid_to_beaker" in preset.actions
+    assert collect_snapshot_variables("add_liquid_to_beaker", {}, runtime_config) == [
         "S09允许加工",
         "S09工艺选择",
         "S09参数写入完成",
@@ -523,6 +525,11 @@ def test_s09_debug_preset_uses_debug_file_name():
         "S09液体瓶编号",
         "S09抽液量",
         "S09放液量",
+        "S09液体瓶1剩余液量",
+        "S09液体瓶2剩余液量",
+        "S09液体瓶3剩余液量",
+        "S09液体瓶4剩余液量",
+        "S09液体瓶5剩余液量",
     ]
 
 
@@ -540,6 +547,7 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "szlab_s06_pump",
         "szlab_s07_solid_addition",
         "szlab_s08_cap_station",
+        "szlab_mixer_pipetting_station",
     ]
     assert set(graph_nodes) == {
         "szlab_poly_plc",
@@ -549,6 +557,7 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "szlab_s06_pump",
         "szlab_s07_solid_addition",
         "szlab_s08_cap_station",
+        "szlab_mixer_pipetting_station",
     }
     assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"] == "${csv_path}"
     assert preset.debug_config["skip_robot_precheck_variables"] == robot_action_preset.debug_config[
@@ -563,10 +572,19 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "szlab_s06_pump": "unilabos.devices.workstation.szlab_poly_studio.s06_pump.pump.SzlabMixerPumpDevice",
         "szlab_s07_solid_addition": "unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07.SZLabS07SolidAdditionDevice",
         "szlab_s08_cap_station": "unilabos.devices.workstation.szlab_poly_studio.s08_decap.decap_s08_cap_station.SZLabS08CapStationDevice",
+        "szlab_mixer_pipetting_station": "unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.pipetting_station.SzlabMixerPipettingStationDevice",
     }
     assert preset.actions["run_stirring"].device_id == "szlab_s04_magnetic_stirring"
     assert preset.actions["take_photo"].device_id == "szlab_s05_photoshotting"
     assert preset.actions["run_solvent_addition"].device_id == "szlab_s06_pump"
+    assert preset.actions["add_liquid_to_beaker"].device_id == "szlab_mixer_pipetting_station"
+    assert "run_process" not in preset.actions
+    assert "add_liquid" not in preset.actions
+    assert [
+        action.method
+        for action in preset.actions.values()
+        if action.device_id == "szlab_mixer_pipetting_station"
+    ] == ["add_liquid_to_beaker"]
     assert collect_snapshot_variables("dose_powder", {}, runtime_config) == [
         "S07原点信号",
         "S07允许加工",
@@ -602,8 +620,36 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "传感器状态_上位机[4].NO[3]",
         "传感器状态_上位机[4].NO[4]",
     ]
+    assert collect_snapshot_variables("add_liquid_to_beaker", {}, runtime_config) == [
+        "S09允许加工",
+        "S09工艺选择",
+        "S09参数写入完成",
+        "S09工艺完成",
+        "S09TIP盒工位编号",
+        "S09TIP编号",
+        "S09液体瓶编号",
+        "S09抽液量",
+        "S09放液量",
+        "S09液体瓶1剩余液量",
+        "S09液体瓶2剩余液量",
+        "S09液体瓶3剩余液量",
+        "S09液体瓶4剩余液量",
+        "S09液体瓶5剩余液量",
+    ]
     assert collect_snapshot_variables("submit_pour_from_s08", {}, runtime_config) == [
         "S08倒料产品选择",
+        "任务号",
+    ]
+    assert collect_snapshot_variables("submit_place_to_s09", {}, runtime_config) == [
+        "S09工艺选择",
+        "S09参数写入完成",
+        "S09工艺完成",
+        "S09原点信号_1",
+        "S09原点信号_2",
+        "S09原点信号_3",
+        "S09原点信号_4",
+        "S09取放料产品",
+        "S09取放料编号",
         "任务号",
     ]
 
@@ -955,6 +1001,7 @@ def test_run_record_returns_structured_log_events_with_node_id():
             "sequence": 1,
             "message": "workflow 准备完成",
             "level": "info",
+            "category": "workflow",
             "scope": "workflow",
             "node_id": None,
             "detail": None,
@@ -963,6 +1010,7 @@ def test_run_record_returns_structured_log_events_with_node_id():
             "sequence": 2,
             "message": "节点开始执行",
             "level": "info",
+            "category": "node",
             "scope": "node",
             "node_id": "node_1",
             "detail": {"method": "pick_well_plate_from_loading_rack"},

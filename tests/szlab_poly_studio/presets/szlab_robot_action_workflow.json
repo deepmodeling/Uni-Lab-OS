@@ -8,7 +8,8 @@
     "szlab_s05_photoshotting",
     "szlab_s06_pump",
     "szlab_s07_solid_addition",
-    "szlab_s08_cap_station"
+    "szlab_s08_cap_station",
+    "szlab_mixer_pipetting_station"
   ],
   "registry_device_ids": [
     "szlab_mixer_robot",
@@ -16,7 +17,8 @@
     "szlab_mixer_photoshotting",
     "szlab_mixer_pump",
     "szlab_s07_solid_addition",
-    "szlab_s08_cap_station"
+    "szlab_s08_cap_station",
+    "szlab_mixer_pipetting_station"
   ],
   "action_device_id_aliases": {
     "szlab_mixer_stirrer": "szlab_s04_magnetic_stirring",
@@ -24,11 +26,27 @@
     "szlab_mixer_pump": "szlab_s06_pump"
   },
   "actions_source": "registry",
+  "hidden_actions": [
+    "check_home_position",
+    "read_home_positions",
+    "go_to_safe_position",
+    "prepare_liquid_station",
+    "read_allow_process",
+    "bind_sample_to_station",
+    "release_station",
+    "run_process",
+    "add_liquid",
+    "run_liquid_workflow",
+    "set_liquid_bottle_remaining_volume",
+    "initialize_liquid_bottle_remaining_volumes",
+    "read_balance",
+    "get_pipetting_status"
+  ],
   "runtime_config": "../runtime_configs/szlab_robot_action_workflow_runtime.json",
   "default_workflow_name": "szlab_robot_action_workflow",
   "default_config": {
     "graph": "__generated__",
-    "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
+    "url": "opc.tcp://192.168.1.10:4840",
     "csv": "szlab_plc_0702.csv",
     "timeout": 300,
     "write_allowed_timeout": 60,
@@ -271,6 +289,8 @@
         "config": {
           "url": "${opcua_url}",
           "timeout": "${timeout}",
+          "plc_device_id": "szlab_poly_plc",
+          "use_plc_gateway": true,
           "pipeline_route_specs": [
             {
               "pump": 1,
@@ -350,6 +370,26 @@
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true,
           "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
+        },
+        "data": {}
+      },
+      {
+        "id": "szlab_mixer_pipetting_station",
+        "name": "szlab_mixer_pipetting_station",
+        "children": [],
+        "parent": null,
+        "type": "device",
+        "class": "szlab_mixer_pipetting_station",
+        "position": {
+          "x": 1120,
+          "y": 0,
+          "z": 0
+        },
+        "config": {
+          "url": "${opcua_url}",
+          "timeout": "${timeout}",
+          "plc_device_id": "szlab_poly_plc",
+          "use_plc_gateway": true
         },
         "data": {}
       }

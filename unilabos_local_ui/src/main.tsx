@@ -282,7 +282,9 @@ function App() {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [selectedLogNodeId, setSelectedLogNodeId] = useState<string | null>(null);
+  const [selectedLogCategory, setSelectedLogCategory] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<'devices' | 'stacks'>('devices');
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [collapsedActionGroups, setCollapsedActionGroups] = useState<Record<string, boolean>>({});
   const [mainTab, setMainTab] = useState<'workflow' | 'sensors'>('workflow');
   const [sideTab, setSideTab] = useState<'control' | 'materials' | 'logs'>('control');
@@ -721,11 +723,19 @@ function App() {
         </dl>
       </header>
 
-      <main className="demo-workbench">
-        <aside className="demo-card demo-action-panel">
+      <main className={`demo-workbench${leftPanelCollapsed ? ' left-collapsed' : ''}`}>
+        <aside className={`demo-card demo-action-panel${leftPanelCollapsed ? ' collapsed' : ''}`}>
           <div className="demo-panel-title">
             <h2>联调入口</h2>
             <span>Device / Stack</span>
+            <button
+              aria-label={leftPanelCollapsed ? '展开联调入口' : '收起联调入口'}
+              className="demo-panel-collapse-button"
+              onClick={() => setLeftPanelCollapsed((collapsed) => !collapsed)}
+              type="button"
+            >
+              {leftPanelCollapsed ? '›' : '‹'}
+            </button>
           </div>
           <div className="demo-tabbar left" role="tablist" aria-label="联调入口切换">
             <button className={leftTab === 'devices' ? 'active' : ''} onClick={() => setLeftTab('devices')} type="button">设备动作</button>
@@ -847,7 +857,6 @@ function App() {
               <button onClick={() => importFileRef.current?.click()}>导入 Flow JSON</button>
               <button onClick={() => buildWorkflow().catch((error) => setMessage(error.message))}>校验流程</button>
               <button onClick={exportPseudoFlow} disabled={!nodes.length}>导出 Flow JSON</button>
-              <button className="primary" onClick={runWorkflow} disabled={isRunning || !workflow || !executionPlan.executableCount}>运行</button>
             </div>
           </div>
 
@@ -923,7 +932,6 @@ function App() {
               </div>
               <div className="demo-run-buttons">
                 <button onClick={() => setShowConfigModal(true)}>运行配置</button>
-                <button onClick={() => buildWorkflow().catch((error) => setMessage(error.message))}>校验流程</button>
                 <button className="primary" onClick={runWorkflow} disabled={isRunning || !workflow || !executionPlan.executableCount}>运行</button>
                 <button className="danger" onClick={cancelWorkflow} disabled={!activeRunId}>终止</button>
               </div>
@@ -994,7 +1002,9 @@ function App() {
               <LogPanel
                 events={logEvents}
                 nodes={nodes}
+                selectedCategory={selectedLogCategory}
                 selectedNodeId={selectedLogNodeId}
+                onSelectCategory={setSelectedLogCategory}
                 onSelectNode={setSelectedLogNodeId}
               />
             </section>
@@ -1268,15 +1278,20 @@ function nodeStatusText(status: NodeRunStatus) {
 function LogPanel({
   events,
   nodes,
+  selectedCategory,
   selectedNodeId,
+  onSelectCategory,
   onSelectNode,
 }: {
   events: LogEvent[];
   nodes: Node<ActionNodeData>[];
+  selectedCategory: string | null;
   selectedNodeId: string | null;
+  onSelectCategory: (category: string | null) => void;
   onSelectNode: (nodeId: string | null) => void;
 }) {
   const nodeLabels = new Map(nodes.map((node) => [node.id, node.data.label]));
+  const categoryTabs = buildLogCategoryTabs(events);
   const eventNodeIds = new Set(events.flatMap((event) => (event.node_id ? [event.node_id] : [])));
   const nodeTabs = [
     ...nodes
@@ -1286,9 +1301,12 @@ function LogPanel({
       .filter((nodeId) => !nodeLabels.has(nodeId))
       .map((nodeId) => ({ id: nodeId, label: nodeId })),
   ];
-  const visibleEvents = selectedNodeId
-    ? events.filter((event) => event.node_id === selectedNodeId)
+  const categoryFilteredEvents = selectedCategory
+    ? events.filter((event) => normalizeLogCategory(event) === selectedCategory)
     : events;
+  const visibleEvents = selectedNodeId
+    ? categoryFilteredEvents.filter((event) => event.node_id === selectedNodeId)
+    : categoryFilteredEvents;
   const groupedEvents = groupLogEvents(visibleEvents);
 
   if (!events.length) {
@@ -1297,6 +1315,29 @@ function LogPanel({
 
   return (
     <div className="log-panel">
+      <div className="log-category-tabs" role="tablist" aria-label="日志分类">
+        <button
+          className={!selectedCategory ? 'active' : ''}
+          role="tab"
+          aria-selected={!selectedCategory}
+          onClick={() => onSelectCategory(null)}
+        >
+          全部
+          <span>{events.length}</span>
+        </button>
+        {categoryTabs.map((tab) => (
+          <button
+            className={selectedCategory === tab.category ? 'active' : ''}
+            key={tab.category}
+            role="tab"
+            aria-selected={selectedCategory === tab.category}
+            onClick={() => onSelectCategory(tab.category)}
+          >
+            {tab.label}
+            <span>{tab.count}</span>
+          </button>
+        ))}
+      </div>
       <div className="log-tabs" role="tablist" aria-label="节点日志">
         <button
           className={!selectedNodeId ? 'active' : ''}
@@ -1344,6 +1385,9 @@ function LogPanel({
             </div>
           </details>
         ))}
+        {!groupedEvents.length && (
+          <div className="log-empty">当前分类暂无日志</div>
+        )}
       </div>
     </div>
   );
@@ -1362,73 +1406,77 @@ function OpcChangePanel({
 
   return (
     <section className="opc-changes">
-      <div className="opc-changes-head">
-        <h3>OPC 采样变量</h3>
-        <span>{variables.length} 个</span>
-      </div>
-      {variables.length ? (
-        <div className="opc-change-table-wrap">
-          <table className="opc-change-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Name</th>
-                <th>当前值</th>
-              </tr>
-            </thead>
-            <tbody>
-              {variables.map((variable, index) => (
-                <tr key={variable.name}>
-                  <td>{index + 1}</td>
-                  <td><code>{variable.name}</code></td>
-                  <td>{variable.currentValue === undefined ? '-' : formatOpcValue(variable.currentValue)}</td>
+      <details className="opc-collapsible" open>
+        <summary className="opc-changes-head">
+          <h3>OPC 采样变量</h3>
+          <span>{variables.length} 个</span>
+        </summary>
+        {variables.length ? (
+          <div className="opc-change-table-wrap">
+            <table className="opc-change-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Name</th>
+                  <th>当前值</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="opc-change-empty">暂无 OPC 采样变量，请先添加动作节点</div>
-      )}
-      <div className="opc-changes-head">
-        <h3>OPC 变量变化</h3>
-        <span>{changes.length} 条</span>
-      </div>
-      {changes.length ? (
-        <div className="opc-change-table-wrap">
-          <table className="opc-change-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Workflow Node</th>
-                <th>NodeID</th>
-                <th>Name</th>
-                <th>Value Begin</th>
-                <th>Value Goal</th>
-                <th>Value End</th>
-              </tr>
-            </thead>
-            <tbody>
-          {changes.map((change, index) => (
-            <tr key={`${change.eventSequence}-${change.name}-${index}`}>
-              <td>{index + 1}</td>
-              <td>{change.workflowNodeId ? (nodeLabels.get(change.workflowNodeId) || change.workflowNodeId) : 'Workflow'}</td>
-              <td><code>{change.opcNodeId || '-'}</code></td>
-              <td>
-                <strong>{change.displayName}</strong>
-                <code>{change.name}</code>
-              </td>
-              <td>{formatOpcValue(change.valueBegin)}</td>
-              <td>{formatOpcValue(change.valueGoal)}</td>
-              <td>{formatOpcValue(change.valueEnd)}</td>
-            </tr>
-          ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="opc-change-empty">暂无 OPC 变量变化</div>
-      )}
+              </thead>
+              <tbody>
+                {variables.map((variable, index) => (
+                  <tr key={variable.name}>
+                    <td>{index + 1}</td>
+                    <td><code>{variable.name}</code></td>
+                    <td>{variable.currentValue === undefined ? '-' : formatOpcValue(variable.currentValue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="opc-change-empty">暂无 OPC 采样变量，请先添加动作节点</div>
+        )}
+      </details>
+      <details className="opc-collapsible" open>
+        <summary className="opc-changes-head">
+          <h3>OPC 变量变化</h3>
+          <span>{changes.length} 条</span>
+        </summary>
+        {changes.length ? (
+          <div className="opc-change-table-wrap">
+            <table className="opc-change-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Workflow Node</th>
+                  <th>NodeID</th>
+                  <th>Name</th>
+                  <th>Value Begin</th>
+                  <th>Value Goal</th>
+                  <th>Value End</th>
+                </tr>
+              </thead>
+              <tbody>
+                {changes.map((change, index) => (
+                  <tr key={`${change.eventSequence}-${change.name}-${index}`}>
+                    <td>{index + 1}</td>
+                    <td>{change.workflowNodeId ? (nodeLabels.get(change.workflowNodeId) || change.workflowNodeId) : 'Workflow'}</td>
+                    <td><code>{change.opcNodeId || '-'}</code></td>
+                    <td>
+                      <strong>{change.displayName}</strong>
+                      <code>{change.name}</code>
+                    </td>
+                    <td>{formatOpcValue(change.valueBegin)}</td>
+                    <td>{formatOpcValue(change.valueGoal)}</td>
+                    <td>{formatOpcValue(change.valueEnd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="opc-change-empty">暂无 OPC 变量变化</div>
+        )}
+      </details>
     </section>
   );
 }
@@ -1440,10 +1488,51 @@ function normalizeLogEvents(runStatus: RunStatus | null): LogEvent[] {
     sequence: index + 1,
     message,
     level: 'info',
+    category: 'workflow',
     scope: 'workflow',
     node_id: null,
     detail: null,
   }));
+}
+
+function buildLogCategoryTabs(events: LogEvent[]) {
+  const counts = new Map<string, number>();
+  events.forEach((event) => {
+    const category = normalizeLogCategory(event);
+    counts.set(category, (counts.get(category) || 0) + 1);
+  });
+  return Array.from(counts.entries())
+    .map(([category, count]) => ({ category, count, label: logCategoryLabel(category) }))
+    .sort((left, right) => logCategoryOrder(left.category) - logCategoryOrder(right.category));
+}
+
+function normalizeLogCategory(event: LogEvent) {
+  if (event.category) return event.category;
+  if (event.detail?.type === 'opc_wait') return 'opc_wait';
+  if (event.message.includes('OPC')) return 'opc';
+  if (event.node_id) return 'node';
+  return 'workflow';
+}
+
+function logCategoryLabel(category: string) {
+  const labels: Record<string, string> = {
+    workflow: '流程',
+    setup: '准备',
+    node: '节点',
+    opc_sample: 'OPC采样',
+    opc_change: 'OPC变化',
+    opc_wait: 'OPC等待',
+    opc: 'OPC',
+    action_result: '结果',
+    error: '错误',
+  };
+  return labels[category] || category;
+}
+
+function logCategoryOrder(category: string) {
+  const order = ['workflow', 'setup', 'node', 'opc_sample', 'opc_change', 'opc_wait', 'opc', 'action_result', 'error'];
+  const index = order.indexOf(category);
+  return index === -1 ? order.length : index;
 }
 
 function groupLogEvents(events: LogEvent[]) {

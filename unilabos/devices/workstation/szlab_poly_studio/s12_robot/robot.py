@@ -4,7 +4,7 @@ import os
 import time
 from typing import Any
 
-from unilabos.registry.decorators import action, device, not_action
+from unilabos.registry.decorators import ActionInputHandle, DataSource, action, device, not_action
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
     ROBOT_HOME_VARIABLE,
     ROBOT_TASK_COMPLETE_VARIABLE,
@@ -190,17 +190,24 @@ class SzlabMixerRobotDevice(
         return status
 
     @not_action
-    def _wait_robot_task_complete(self) -> tuple[bool, str, Any]:
+    def _wait_robot_task_complete(self, task_number: int) -> tuple[bool, str, Any]:
         if os.environ.get("SKIP_ROBOT_HANDSHAKE_CHECK") == "1":
             return True, "已跳过 Robot_任务完成等待", None
-        success, value = self._wait_variable_truthy(
+        expected = int(task_number)
+        success = self._wait_variable_equal(
             ROBOT_TASK_COMPLETE_VARIABLE,
+            expected,
             timeout=self.timeout,
             interval=self.poll_interval,
         )
         if success:
-            return True, f"{ROBOT_TASK_COMPLETE_VARIABLE} 已非 0", value
-        return False, f"等待 {ROBOT_TASK_COMPLETE_VARIABLE} 非 0 超时", value
+            return True, f"{ROBOT_TASK_COMPLETE_VARIABLE} == {expected}", expected
+        actual = None
+        try:
+            actual = self._read_variable(ROBOT_TASK_COMPLETE_VARIABLE, use_cache=False)
+        except Exception:
+            actual = None
+        return False, f"等待 {ROBOT_TASK_COMPLETE_VARIABLE} == {expected} 超时", actual
 
     @not_action
     def _reset_pc_to_plc_variables(self, reset_variables: dict[str, Any]) -> dict[str, Any]:
@@ -311,7 +318,7 @@ class SzlabMixerRobotDevice(
             }
             return {"success": False, "message": str(exc), **self._last_task}
 
-        complete_success, complete_message, complete_value = self._wait_robot_task_complete()
+        complete_success, complete_message, complete_value = self._wait_robot_task_complete(task_number)
         if os.environ.get("SKIP_RESET_AFTER_RUN") == "1":
             try:
                 self._write_variable(ROBOT_WRITE_DONE_VARIABLE, False)
@@ -513,14 +520,56 @@ class SzlabMixerRobotDevice(
         except Exception as exc:
             return {"success": False, "message": str(exc), "task": "pour", "station": "S08", "product_type": product_type}
 
-    @action(auto_prefix=True, description="S09 放料")
+    @action(
+        auto_prefix=True,
+        description="S09 放料",
+        handles=[
+            ActionInputHandle(
+                key="product_type",
+                data_type="szlab_s09_product_type",
+                label="S09取放料产品",
+                data_key="product_type",
+                data_source=DataSource.HANDLE,
+                description="S09取放料产品：1=TIP盒，2=液体试剂瓶，3=烧杯",
+            ),
+            ActionInputHandle(
+                key="position",
+                data_type="szlab_s09_position",
+                label="S09取放料编号",
+                data_key="position",
+                data_source=DataSource.HANDLE,
+                description="S09取放料编号：TIP盒 1-2，液体试剂瓶 1-5，烧杯 1",
+            ),
+        ],
+    )
     def submit_place_to_s09(self, product_type: int = 1, position: int = 1) -> dict[str, Any]:
         try:
             return self._run_s09_place(product_type, position)
         except Exception as exc:
             return {"success": False, "message": str(exc), "task": "place", "station": "S09", "position": position}
 
-    @action(auto_prefix=True, description="S09 取料")
+    @action(
+        auto_prefix=True,
+        description="S09 取料",
+        handles=[
+            ActionInputHandle(
+                key="product_type",
+                data_type="szlab_s09_product_type",
+                label="S09取放料产品",
+                data_key="product_type",
+                data_source=DataSource.HANDLE,
+                description="S09取放料产品：1=TIP盒，2=液体试剂瓶，3=烧杯",
+            ),
+            ActionInputHandle(
+                key="position",
+                data_type="szlab_s09_position",
+                label="S09取放料编号",
+                data_key="position",
+                data_source=DataSource.HANDLE,
+                description="S09取放料编号：TIP盒 1-2，液体试剂瓶 1-5，烧杯 1",
+            ),
+        ],
+    )
     def submit_pick_from_s09(self, product_type: int = 1, position: int = 1) -> dict[str, Any]:
         try:
             return self._run_s09_pick(product_type, position)

@@ -34,6 +34,73 @@ const { collectOpcChanges, formatOpcValue } = await importTypeScriptModule(
 const { formatUiError, buildWorkspaceSummary, groupActionsByDevice } = await importTypeScriptModule(
   new URL('../src/uiState.ts', import.meta.url),
 );
+const mainSource = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const styleSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+const opcChangesSource = await readFile(new URL('../src/opcChanges.ts', import.meta.url), 'utf8');
+
+const toolbarSource = mainSource.match(/<div className="demo-canvas-toolbar">[\s\S]*?<div className="demo-tabbar"/)?.[0] || '';
+assert.equal(
+  /onClick=\{runWorkflow\}/.test(toolbarSource),
+  false,
+  '顶部画布工具栏不应包含运行按钮',
+);
+
+const runButtonsSource = mainSource.match(/<div className="demo-run-buttons">[\s\S]*?<\/div>/)?.[0] || '';
+assert.equal(
+  /校验流程/.test(runButtonsSource),
+  false,
+  '右侧运行按钮区不应重复展示校验流程',
+);
+assert.match(
+  styleSource,
+  /\.demo-run-buttons\s*\{[\s\S]*?gap:\s*(1[2-9]|[2-9]\d)px;/,
+  '右侧运行按钮区需要至少 12px 间距，避免按钮挤在一起',
+);
+assert.match(
+  styleSource,
+  /\.demo-execution-summary\s*\{[^}]*margin-top:\s*(1[0-9]|[2-9]\d)px;/,
+  '运行按钮区和执行摘要之间需要至少 10px 间距',
+);
+assert.match(
+  mainSource,
+  /<details className="opc-collapsible" open>[\s\S]*?<summary className="opc-changes-head">[\s\S]*?OPC 采样变量/,
+  'OPC 采样变量应放在可折叠区域内',
+);
+assert.match(
+  mainSource,
+  /<details className="opc-collapsible" open>[\s\S]*?<summary className="opc-changes-head">[\s\S]*?OPC 变量变化/,
+  'OPC 变量变化应放在可折叠区域内',
+);
+assert.match(
+  mainSource,
+  /leftPanelCollapsed/,
+  '左侧联调入口面板应有折叠状态',
+);
+assert.match(
+  mainSource,
+  /aria-label=\{leftPanelCollapsed \? '展开联调入口' : '收起联调入口'\}/,
+  '左侧联调入口面板应提供可访问的折叠按钮',
+);
+assert.match(
+  styleSource,
+  /\.demo-workbench\.left-collapsed\s*\{[^}]*grid-template-columns:\s*64px minmax\(600px, 1fr\) 340px;/,
+  '左侧联调入口收起后应变为窄栏',
+);
+assert.match(
+  opcChangesSource,
+  /category\?: string/,
+  '结构化日志事件应包含 category 标签',
+);
+assert.match(
+  mainSource,
+  /selectedLogCategory/,
+  '日志面板应支持按 category 筛选',
+);
+assert.match(
+  mainSource,
+  /className="log-category-tabs"/,
+  '日志面板应渲染分类标签栏',
+);
 
 const baseNodes = [
   {
@@ -234,6 +301,23 @@ assert.deepEqual(disabledBeforeStartPlan.executableNodes.map((node) => node.id),
 assert.equal(disabledBeforeStartPlan.nodeStates.a.reason, 'beforeStart');
 assert.equal(disabledBeforeStartPlan.disabledNodeId, null);
 
+const unorderedDagPlan = createExecutionPlan(
+  [
+    { ...baseNodes[0], id: 'b', data: { ...baseNodes[0].data, label: 'B' } },
+    { ...baseNodes[0], id: 'c', data: { ...baseNodes[0].data, label: 'C' } },
+    { ...baseNodes[0], id: 'a', data: { ...baseNodes[0].data, label: 'A' } },
+  ],
+  [
+    { id: 'a-b', source: 'a', target: 'b' },
+    { id: 'b-c', source: 'b', target: 'c' },
+  ],
+);
+assert.deepEqual(
+  unorderedDagPlan.executableNodes.map((node) => node.id),
+  ['a', 'b', 'c'],
+  '执行计划应按 DAG 拓扑顺序，而不是节点加入顺序',
+);
+
 const laidOut = layoutFlowGraph(
   [
     { ...baseNodes[0], id: 'a', position: { x: 999, y: 999 } },
@@ -247,6 +331,24 @@ const laidOut = layoutFlowGraph(
 );
 assert.ok(laidOut[1].position.x > laidOut[0].position.x, '线性流程应按 x 轴递增布局');
 assert.ok(laidOut[2].position.x > laidOut[1].position.x, '线性流程后续节点应继续右移');
+
+const unorderedDagLayout = layoutFlowGraph(
+  [
+    { ...baseNodes[0], id: 'b', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 'c', position: { x: 999, y: 999 } },
+    { ...baseNodes[0], id: 'a', position: { x: 999, y: 999 } },
+  ],
+  [
+    { id: 'a-b', source: 'a', target: 'b' },
+    { id: 'b-c', source: 'b', target: 'c' },
+  ],
+);
+assert.deepEqual(
+  unorderedDagLayout.map((node) => node.id),
+  ['a', 'b', 'c'],
+  '自动布局应按 DAG 拓扑顺序重排节点数组，而不是保留加入顺序',
+);
+assert.ok(unorderedDagLayout[1].position.x > unorderedDagLayout[0].position.x, 'DAG 后继节点应排在前驱右侧');
 
 const gridLayout = layoutFlowGraph(
   [

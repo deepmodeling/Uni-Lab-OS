@@ -78,24 +78,43 @@ class SzlabMixerPumpDevice:
         opcua_browse_limit: int = 5000,
         opcua_node_id_map: dict[str, str] | None = None,
         opcua_allow_recursive_browse: bool = False,
+        plc_device_id: str = "szlab_poly_plc",
+        use_plc_gateway: bool = False,
         **kwargs,
     ):
         self.url = url
         self.timeout = timeout
-        self._client = opcua_client or SZLabPolyPLCDevice(
-            url=url,
-            csv_path=False,
-            username=username,
-            password=password,
-            opcua_object_name="VirtualMixer",
-            opcua_browse_depth=opcua_browse_depth,
-            opcua_browse_limit=opcua_browse_limit,
-            node_id_map=opcua_node_id_map,
-            opcua_allow_recursive_browse=opcua_allow_recursive_browse,
-        )
+        self.plc_device_id = plc_device_id
+        self._plc_gateway = None
+        self._client = None
+        if opcua_client is not None:
+            self._client = opcua_client
+        elif not use_plc_gateway:
+            self._client = SZLabPolyPLCDevice(
+                url=url,
+                csv_path=False,
+                username=username,
+                password=password,
+                opcua_object_name="VirtualMixer",
+                opcua_browse_depth=opcua_browse_depth,
+                opcua_browse_limit=opcua_browse_limit,
+                node_id_map=opcua_node_id_map,
+                opcua_allow_recursive_browse=opcua_allow_recursive_browse,
+            )
         specs = pipeline_route_specs or kwargs.pop("pipeline_route_specs", None)
         self._pipeline_routes = pipeline_routes or parse_pipeline_route_specs(specs)
         self._status = "Idle"
+
+    @not_action
+    def set_plc_gateway(self, plc_gateway) -> None:
+        self._plc_gateway = plc_gateway
+
+    @not_action
+    def _opc_client(self):
+        client = self._plc_gateway or self._client
+        if client is None:
+            raise RuntimeError("S06 泵未绑定 PLC gateway，无法访问 OPC UA 变量")
+        return client
 
     @property
     @topic_config()
@@ -104,19 +123,20 @@ class SzlabMixerPumpDevice:
 
     @not_action
     def disconnect(self) -> None:
-        self._client.disconnect()
+        if self._client is not None:
+            self._client.disconnect()
 
     @not_action
     def get_variables(self, variable_names: list[str], use_cache: bool = False) -> dict[str, dict[str, Any]]:
-        return self._client.get_variables(variable_names, use_cache=use_cache)
+        return self._opc_client().get_variables(variable_names, use_cache=use_cache)
 
     @not_action
     def get_opc_variable_metadata(self, variable_name: str) -> tuple[str, str | None]:
-        return self._client.get_opc_variable_metadata(variable_name)
+        return self._opc_client().get_opc_variable_metadata(variable_name)
 
     @not_action
     def _read_bool(self, name: str) -> bool:
-        return bool(self._client.read(name))
+        return bool(self._opc_client().read(name))
 
     @not_action
     def _wait_beaker_present(self, beaker_true_means_present: bool = True) -> dict[str, Any] | None:
@@ -130,13 +150,13 @@ class SzlabMixerPumpDevice:
     @not_action
     def _wait_allow_process(self) -> dict[str, Any] | None:
         """等待 PLC 确认可加工（含储液瓶液量充足等前置条件）。"""
-        if self._client.wait_equal(S06_ALLOW_PROCESS_VAR, True, timeout=self.timeout, interval=0.2):
+        if self._opc_client().wait_equal(S06_ALLOW_PROCESS_VAR, True, timeout=self.timeout, interval=0.2):
             return None
         return {"success": False, "message": "等待 S06 允许加工超时"}
 
     @not_action
     def _wait_ready(self) -> dict[str, Any] | None:
-        if self._client.wait_equal(S06_READY_VAR, True, timeout=self.timeout, interval=0.2):
+        if self._opc_client().wait_equal(S06_READY_VAR, True, timeout=self.timeout, interval=0.2):
             return None
         return {"success": False, "message": "等待 S06 准备信号超时"}
 
@@ -155,8 +175,8 @@ class SzlabMixerPumpDevice:
     @not_action
     def _apply_pipeline_route(self, pump: int, pipeline: S06PipelineKind) -> None:
         route = self._pipeline_routes[(pump, pipeline)]
-        self._client.write(s06_pump_valve_var(pump), int(route.control_valve))
-        self._client.write(s06_pump_position_var(pump), int(route.absolute_position))
+        self._opc_client().write(s06_pump_valve_var(pump), int(route.control_valve))
+        self._opc_client().write(s06_pump_position_var(pump), int(route.absolute_position))
 
     @not_action
     def _s06_amount_vars_for_process(self, process: int) -> list[str]:
@@ -191,7 +211,7 @@ class SzlabMixerPumpDevice:
             *((amount_var, 0) for amount_var in self._s06_amount_vars_for_process(process)),
         ):
             try:
-                self._client.write(name, value)
+                self._opc_client().write(name, value)
             except Exception:
                 # 清理阶段尽量执行，不用二次异常覆盖真正的执行错误。
                 continue
@@ -228,23 +248,23 @@ class SzlabMixerPumpDevice:
                 return err
 
         for amount_var in amount_values:
-            accessible, detail = self._client.check_variable_accessible(amount_var)
+            accessible, detail = self._opc_client().check_variable_accessible(amount_var)
             if not accessible:
                 self._status = "Error"
                 return {"success": False, "message": f"{amount_var} 的 OPC UA NodeId 无效，无法执行工艺 {process}: {detail}"}
 
         self._status = "Running"
         try:
-            self._client.write(S06_PROCESS_SELECT_VAR, int(process))
+            self._opc_client().write(S06_PROCESS_SELECT_VAR, int(process))
             for amount_var, amount in amount_values.items():
-                self._client.write(amount_var, amount)
-            self._client.write(S06_PARAM_WRITTEN_VAR, True)
+                self._opc_client().write(amount_var, amount)
+            self._opc_client().write(S06_PARAM_WRITTEN_VAR, True)
         except Exception as exc:
             self._status = "Error"
             self._clear_s06_written_params(process)
             return {"success": False, "message": str(exc)}
         try:
-            if not self._client.wait_new_cycle_done(S06_DONE_VAR, timeout=self.timeout):
+            if not self._opc_client().wait_new_cycle_done(S06_DONE_VAR, timeout=self.timeout):
                 self._status = "Error"
                 return {"success": False, "message": "S06 加工完成等待超时"}
             self._clear_s06_written_params(process)

@@ -2,6 +2,7 @@ export type LogEvent = {
   sequence: number;
   message: string;
   level: string;
+  category?: string;
   scope: string;
   node_id?: string | null;
   detail?: Record<string, unknown> | null;

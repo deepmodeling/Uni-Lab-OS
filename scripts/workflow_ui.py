@@ -102,6 +102,13 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
                     action.device_id or "", action.device_id))
                 for method, action in actions.items()
             }
+        hidden_actions = set(data.get("hidden_actions") or [])
+        if hidden_actions:
+            actions = {
+                method: action
+                for method, action in actions.items()
+                if method not in hidden_actions
+            }
     else:
         actions = {
             item["method"]: ActionSpec(
@@ -250,6 +257,7 @@ class LogEvent:
     sequence: int
     message: str
     level: str = "info"
+    category: str = "workflow"
     scope: str = "workflow"
     node_id: str | None = None
     detail: dict[str, Any] | None = None
@@ -259,6 +267,7 @@ class LogEvent:
             "sequence": self.sequence,
             "message": self.message,
             "level": self.level,
+            "category": self.category,
             "scope": self.scope,
             "node_id": self.node_id,
             "detail": self.detail,
@@ -283,19 +292,45 @@ class RunRecord:
         *,
         node_id: str | None = None,
         level: str = "info",
+        category: str | None = None,
         detail: dict[str, Any] | None = None,
     ) -> None:
         self.logs.append(message)
+        scope = "node" if node_id else "workflow"
         self.log_events.append(
             LogEvent(
                 sequence=len(self.log_events) + 1,
                 message=message,
                 level=level,
-                scope="node" if node_id else "workflow",
+                category=category or _infer_log_category(message, scope=scope, detail=detail),
+                scope=scope,
                 node_id=node_id,
                 detail=detail,
             )
         )
+
+
+def _infer_log_category(message: str, *, scope: str, detail: dict[str, Any] | None) -> str:
+    detail_type = detail.get("type") if isinstance(detail, dict) else None
+    if detail_type == "opc_wait":
+        return "opc_wait"
+    if "OPC" in message:
+        if "采样" in message:
+            return "opc_sample"
+        if "变化" in message:
+            return "opc_change"
+        if "等待" in message:
+            return "opc_wait"
+        return "opc"
+    if message.startswith("动作结果"):
+        return "action_result"
+    if "执行失败" in message or "节点执行失败" in message:
+        return "error"
+    if scope == "node":
+        return "node"
+    if "连接" in message or "设备图" in message or "CSV" in message:
+        return "setup"
+    return "workflow"
 
 
 def _run_node_with_live_opc_sampling(

@@ -70,7 +70,7 @@ usage() {
   - run Sxx 会自动枚举该工位下所有已知 position/sensor 对应关系。
   - MODE=both 默认同时生成 place 和 pick；S01 只有 pick。
   - S07 会同时覆盖 S071 和 S072；也可以单独 run S071 或 run S072。
-  - 正常运行要求 Robot_Home=True 且 Robot_任务允许写入=True，并等待 Robot_任务完成 非 0。
+  - 正常运行要求 Robot_Home=True 且 Robot_任务允许写入=True，并等待 Robot_任务完成 == 任务号。
   - DRY_RUN=1 只打印将执行的用例，不连接真实 PLC。
 EOF
 }
@@ -582,7 +582,7 @@ run_station() {
   echo "工位: $station"
   echo "测试用例数: $count"
   echo "DRY_RUN: $DRY_RUN"
-  echo "Robot握手: Robot_Home -> Robot_任务允许写入 -> Robot_任务写入完成 -> Robot_任务完成非0"
+  echo "Robot握手: Robot_Home -> Robot_任务允许写入 -> Robot_任务写入完成 -> Robot_任务完成==任务号"
   confirm_real_run "$station" "$count"
 
   local index=0

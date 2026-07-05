@@ -46,6 +46,7 @@ def test_s09_pipetting_station_is_ast_scannable_from_own_package():
         "read_allow_process",
         "run_process",
         "add_liquid",
+        "add_liquid_to_beaker",
         "run_liquid_workflow",
         "set_liquid_bottle_remaining_volume",
         "initialize_liquid_bottle_remaining_volumes",
@@ -139,9 +140,30 @@ def test_s09_add_liquid_runs_plc_process_sequence_5_7_8_6():
 
     assert result["success"] is True
     process_writes = [value for name, value in client.writes if name == "S09工艺选择"]
-    assert [value for value in process_writes if value != 0] == [5, 7, 8, 6]
-    assert process_writes == [5, 0, 7, 0, 8, 0, 6, 0]
-    assert [step["data"]["process"] for step in result["steps"]] == [5, 7, 8, 6]
+    assert [value for value in process_writes if value != 0] == [6]
+    assert process_writes == [6, 0]
+    assert [step["data"]["process"] for step in result["steps"]] == [6]
+    assert client.wait_equal_calls == [("S09工艺完成", 6)]
+
+
+def test_s09_add_liquid_to_beaker_exposes_business_action_for_5_7_8_6():
+    client = PseudoSzlabS09OpcUaClient({"S09液体瓶2剩余液量": 100.0})
+    device = make_pipetting_device(client)
+
+    result = device.add_liquid_to_beaker(
+        tip_box_index=1,
+        tip_index=2,
+        liquid_bottle_index=2,
+        station=3,
+        aspirate_volume=20,
+        dispense_volume=20,
+    )
+
+    assert result["success"] is True
+    assert result["message"] == "S09 烧杯加液完成"
+    process_writes = [value for name, value in client.writes if name == "S09工艺选择"]
+    assert [value for value in process_writes if value != 0] == [6]
+    assert result["data"]["process_sequence"] == [6]
 
 
 def test_s09_run_process_converts_ul_to_plc_raw_volume():
@@ -196,11 +218,9 @@ def test_s09_add_liquid_splits_ml_volume_over_5ml():
 
     assert result["success"] is True
     process_writes = [value for name, value in client.writes if name == "S09工艺选择"]
-    assert [value for value in process_writes if value != 0] == [5, 7, 8, 7, 8, 6]
-    assert ("S09抽液量", 50000) in client.writes
-    assert ("S09抽液量", 10000) in client.writes
-    assert ("S09放液量", 50000) in client.writes
-    assert ("S09放液量", 10000) in client.writes
+    assert [value for value in process_writes if value != 0] == [6]
+    assert all(name != "S09抽液量" or value == 0 for name, value in client.writes)
+    assert all(name != "S09放液量" or value == 0 for name, value in client.writes)
     assert result["data"]["split_count"] == 2
     assert result["data"]["transfer_chunks"] == [
         {
@@ -507,7 +527,9 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
             self.reads = []
             self.writes = []
             self.values = {
-                "Robot_任务完成": True,
+                "Robot_任务完成": 19,
+                "S09工艺完成": 1,
+                "S09原点信号_1": True,
             }
 
         def read_variable(self, name, use_cache=False):
@@ -534,6 +556,12 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
     assert result["success"] is True
     assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[6]"
     assert gateway.writes == [
+        ("S09工艺选择", 1),
+        ("S09参数写入完成", False),
+        ("S09参数写入完成", True),
+        ("S09参数写入完成", False),
+        ("S09参数写入完成", False),
+        ("S09工艺选择", 0),
         ("S09取放料产品", 1),
         ("S09取放料编号", 2),
         ("任务号", 19),

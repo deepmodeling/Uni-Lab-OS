@@ -658,15 +658,8 @@ class SzlabMixerPipettingStationDevice:
         else:
             transfer_chunks = [(aspirate_raw, dispense_raw)]
 
-        plan: list[tuple[int, str, int, int]] = [(5, "取 TIP", 0, 0)]
-        for index, (aspirate_chunk, dispense_chunk) in enumerate(transfer_chunks, start=1):
-            suffix = f" {index}/{len(transfer_chunks)}" if len(transfer_chunks) > 1 else ""
-            plan.append((7, f"液体瓶取液{suffix}", aspirate_chunk, 0))
-            plan.append((8, f"烧杯放液{suffix}", 0, dispense_chunk))
-        plan.append((6, "放 TIP", 0, 0))
-
-        # # 临时现场调试：只执行放 TIP，跳过取 TIP、取液、放液。
-        # plan: list[tuple[int, str, int, int]] = [(6, "放 TIP", 0, 0)]
+        # 临时现场调试：只执行放 TIP，跳过取 TIP、取液、放液。
+        plan: list[tuple[int, str, int, int]] = [(6, "放 TIP", 0, 0)]
 
         for process, step_name, aspirate_chunk, dispense_chunk in plan:
             result = self.run_process(
@@ -678,7 +671,7 @@ class SzlabMixerPipettingStationDevice:
                 aspirate_volume=aspirate_chunk,
                 dispense_volume=dispense_chunk,
                 volume_unit="raw",
-                require_allow=process in {5, 6, 7, 8},
+                require_allow=process in {5, 7, 8},
                 skip_level_check=skip_level_check,
             )
             steps.append({"step": step_name, **result})

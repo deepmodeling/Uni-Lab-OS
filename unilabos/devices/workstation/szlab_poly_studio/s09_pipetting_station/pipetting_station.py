@@ -678,7 +678,7 @@ class SzlabMixerPipettingStationDevice:
                 aspirate_volume=aspirate_chunk,
                 dispense_volume=dispense_chunk,
                 volume_unit="raw",
-                require_allow=process in {5, 7, 8},
+                require_allow=process in {5, 6, 7, 8},
                 skip_level_check=skip_level_check,
             )
             steps.append({"step": step_name, **result})

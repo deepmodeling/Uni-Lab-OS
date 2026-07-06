@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.pipetting_station import (
         SzlabMixerPipettingStationDevice,
     )
-    from unilabos.devices.workstation.szlab_poly_studio.s1 import S1Workstation
+    from unilabos.devices.workstation.szlab_poly_studio.s1_synthesis import S1Workstation
     from unilabos.devices.workstation.szlab_poly_studio.warehouses import (
         powder_container_placeholder_warehouse,
         s1_loading_buffer_warehouse,
@@ -50,7 +50,7 @@ def __getattr__(name: str):
 
         return SZLabPolyStudioDeck
     if name == "S1Workstation":
-        from unilabos.devices.workstation.szlab_poly_studio.s1 import S1Workstation
+        from unilabos.devices.workstation.szlab_poly_studio.s1_synthesis import S1Workstation
 
         return S1Workstation
     if name == "SzlabMixerPumpDevice":

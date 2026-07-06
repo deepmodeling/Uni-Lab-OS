@@ -1,6 +1,7 @@
+from unilabos.devices.workstation.szlab_poly_studio.s1_synthesis.s1_workstation import S1Workstation
 import pytest
 
-from unilabos.devices.workstation.szlab_poly_studio.s1.s1_workstation import S1Workstation
+pytest.importorskip("pylabrobot")
 
 
 class FakeTransport:

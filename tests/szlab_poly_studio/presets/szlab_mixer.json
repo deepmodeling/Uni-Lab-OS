@@ -13,7 +13,7 @@
   "default_config": {
     "graph": "__generated__",
     "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
-    "csv": "szlab_plc_0623.csv",
+    "csv": "szlab_plc_0702.csv",
     "timeout": 300,
     "no_subscription": true,
     "show_csv": false
@@ -33,7 +33,7 @@
         "position": {"x": 0, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "csv_path": "szlab_plc_0623.csv",
+          "csv_path": "szlab_plc_0702.csv",
           "timeout": "${timeout}",
           "no_subscription": true
         },

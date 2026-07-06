@@ -342,12 +342,12 @@ def test_s06_debug_runtime_creates_only_plc_and_pump(monkeypatch, tmp_path):
     ]
 
 
-def test_szlab_mixer_ui_preset_uses_0623_csv_and_s04_s05_actions():
+def test_szlab_mixer_ui_preset_uses_current_csv_and_s04_s05_actions():
     preset = load_preset("szlab_mixer")
     runtime_config = _load_preset_runtime_config(preset)
     graph_nodes = {node["id"]: node for node in preset.device_graph["nodes"]}
 
-    assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"].endswith("szlab_plc_0623.csv")
+    assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"].endswith("szlab_plc_0702.csv")
     assert runtime_config.device_factory.plc_device_id == "szlab_poly_plc"
     assert preset.actions["run_stirring"].device_id == "szlab_mixer_stirrer"
     assert preset.actions["take_photo"].device_id == "szlab_mixer_photoshotting"

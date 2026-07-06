@@ -53,7 +53,7 @@ class SzlabMixerPipettingStationDevice:
         url: str = DEFAULT_OPCUA_URL,
         username: str | None = None,
         password: str | None = None,
-        csv_path: str | None = "szlab_plc_0628.csv",
+        csv_path: str | None = "szlab_plc_0628_addnodeid.csv",
         timeout: float = 300.0,
         auto_connect: bool = True,
         plc_device_id: str = "szlab_poly_plc",

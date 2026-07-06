@@ -564,9 +564,9 @@ def test_szlab_magnetic_stirrer_rejects_invalid_mode():
     assert result == {"success": False, "message": "磁搅工艺选择必须是 1(搅拌)、2(加热)、3(搅拌+加热)"}
 
 
-def test_szlab_photoshotting_debug_assets_use_0623_s05_variables():
+def test_szlab_photoshotting_debug_assets_use_current_s05_variables():
     device_dir = Path("unilabos/devices/workstation/szlab_poly_studio/s05_photoshotting")
-    latest_csv = Path("unilabos/devices/workstation/szlab_poly_studio/szlab_plc_0623.csv")
+    latest_csv = Path("unilabos/devices/workstation/szlab_poly_studio/szlab_plc_0702.csv")
     nodes_csv = device_dir / "photoshotting_nodes.csv"
     flow_path = device_dir / "photoshotting_flow.json"
     config_path = device_dir / "photoshotting_debug.json"

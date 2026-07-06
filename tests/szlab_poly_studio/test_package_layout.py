@@ -23,7 +23,7 @@ def test_szlab_poly_studio_default_csv_resolves_inside_workstation_package():
 
     csv_path = Path(_resolve_csv_path(None))
 
-    assert csv_path.name == "szlab_plc_0610.csv"
+    assert csv_path.name == "szlab_plc_0702.csv"
     assert csv_path.parent.parts[-4:] == (
         "unilabos",
         "devices",
@@ -39,7 +39,7 @@ def test_szlab_poly_studio_latest_csv_supports_utf16_encoding():
 
     from unilabos.devices.workstation.szlab_poly_studio.plc import load_variable_names_from_csv
 
-    csv_path = Path("unilabos/devices/workstation/szlab_poly_studio/szlab_plc_0623.csv")
+    csv_path = Path("unilabos/devices/workstation/szlab_poly_studio/szlab_plc_0702.csv")
 
     names = load_variable_names_from_csv(str(csv_path))
 

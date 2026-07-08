@@ -19,6 +19,14 @@ description: Guide for adding new workstations to Uni-Lab-OS (接入新工作站
 
 ---
 
+## 补充参考
+
+- 接入通用外部 LIMS/MES/供应商系统、配置 RPC/回调/物料同步时，读 [reference.md](reference.md)。
+- 新增或修改工作流可见的动作节点函数、定义`@action`、handles、变量分组、manual-confirm 节点、日志或错误/状态语义时，读 [workflow-node-guidelines.md](workflow-node-guidelines.md)。
+- 接入 Bioyond/Bioyond Studio/奔曜工作站、供应商物料同步或回调报告时，读 [bioyond.md](bioyond.md)。
+
+---
+
 ## @device 装饰器（工作站）
 
 工作站也使用 `@device` 装饰器注册，参数与普通设备一致：
@@ -421,6 +429,8 @@ class ROS2SerialNode(BaseROS2DeviceNode):
 
 ## Deck 与物料生命周期
 
+Deck / WareHouse / Plate / Bottle 等资源类本身的创建规范可参考 add-resource；这里重点说明工作站图文件和生命周期中的用法。
+
 ### 1. Deck 入参与两种初始化模式
 
 系统根据设备节点 `config.deck` 的写法，自动反序列化 Deck 实例后传入 `__init__` 的 `deck` 参数。目前 `deck` 是固定字段名，只支持一个主 Deck。建议一个设备拥有一个台面，台面上抽象二级、三级子物料。
@@ -515,6 +525,8 @@ def _initialize_default_deck(self):
     self.deck.assign_child_resource(My_Plate("T2"), spot=1)
 ```
 
+如果资源需要首次创建时自动添加默认 children/layout，可实现 `setup()` 并用 `setup=False` 作为默认值；工作站 Deck 自动放置 WareHouse 是典型例子。若图文件写 `config.setup=true`，它只是传给 Deck 构造函数的参数，只有该 Deck 的 `__init__(..., setup=False, **kwargs)` 显式读取并调用 `self.setup()` 时才生效。默认保持 `False` 可避免反序列化已有 `children` 时重复创建或覆盖持久化状态。
+
 ### 3. 物料双向同步
 
 当工作站对接外部系统（LIMS/MES）时，需要实现 `ResourceSynchronizer` 处理双向物料同步：
@@ -603,6 +615,7 @@ class MyPlate(Plate):
 - `serialize()` 输出的所有字段都会作为 `config` 回传到 `__init__`，所以 `__init__` 必须能接受它们（显式声明或 `**kwargs`）
 - `serialize_state()` 输出的 `data` 用于持久化运行时状态（如物料信息、液体量等）
 - `_unilabos_state` 中只存可 JSON 序列化的基本类型（str, int, float, bool, list, dict, None）
+- 如果 Deck 已经带 `children` 反序列化进来，工作站不要再次初始化默认子物料，避免重复或陈旧资源
 
 ### 5. 子物料自动同步
 
@@ -678,9 +691,9 @@ Deck 节点要点：
 
 ## 关键规则
 
-1. **`__init__` 必须接受 `deck` 和 `**kwargs`** — `WorkstationBase.**init**`需要`deck` 参数
+1. **`__init__` 必须接受 `deck` 和 `**kwargs`** — `WorkstationBase.__init__` 需要 `deck` 参数
 2. **Deck 通过 `config.deck._resource_type` 反序列化传入** — 不要在 `__init__` 中手动创建 Deck
-3. **Deck 为空时自行初始化内容** — 在 `post_init` 中检查并填充默认物料
+3. **Deck 为空时自行初始化内容** — 在 `post_init` 中检查并填充默认物料；如需默认 children/layout，用 `setup=False` 控制并只在首次创建时显式打开
 4. **外部同步实现 `ResourceSynchronizer`** — `sync_from_external` / `sync_to_external`
 5. **通过 `self._children` 访问子设备** — 不要自行维护子设备引用
 6. **`post_init` 中启动后台服务** — 不要在 `__init__` 中启动网络连接
@@ -698,7 +711,20 @@ python -c "from unilabos.devices.workstation.<name>.<name> import <ClassName>"
 
 # 启动测试（AST 自动扫描）
 unilab -g <graph>.json
+
+# 如果工站是外部设备包，通过外部包的 registry/check-mode 验证
+unilab --check_mode --devices ./<device_package_dir> --external_devices_only
+
+# 外部设备包的离线契约测试
+pytest tests/
 ```
+
+验证层级建议：
+
+1. AST/check-mode：确认 `@device`/`@action`/`@resource` 元数据能被扫描。
+2. 离线 pytest：确认 action schema、manual-confirm metadata、参数过滤、资源构造/反序列化等契约。
+3. live read-only API：确认当前部署的设备、operation、仓库、物料、报告 envelope。
+4. live write/action：只在测试环境、凭证和安全边界明确后执行。
 
 ---
 

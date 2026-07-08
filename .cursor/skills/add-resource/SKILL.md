@@ -81,7 +81,8 @@ self.warehouses = {
 - **max_volume 单位为 μL**：500mL = 500000
 - **尺寸单位为 mm**：`diameter`, `height`, `size_x/y/z`, `dx/dy/dz`
 - **BottleCarrier 必须设置 `num_items_x/y/z`**：用于前端渲染布局
-- **Deck 的 `__init__` 必须接受 `setup=False`**：图文件中 `config.setup=true` 触发 `setup()`
+- **默认子资源用 `setup=False` 控制**：只有需要首次创建时自动添加默认 children/layout 的资源才实现 `setup()`，例如工作站 Deck 自动放置 WareHouse；`setup` 必须默认为 `False`，只在图文件或调用方显式 `setup=True` 时执行，避免反序列化已有 `children` 时重复创建、覆盖持久化状态或污染外部同步物料
+- **类形式（class）的资源必须被实际 import**：运行时解析通过 `find_subclass(type_name, PLRResource)` 查找，只遍历**已 import** 的 `__subclasses__()`；AST 扫描只生成注册表条目，不会 import 模块。Deck / WareHouse / 自定义 Plate 等 class 形式资源需在 `resources/__init__.py` 中 eager import；工厂函数（`def`）形式不受影响
 - **按项目分组文件**：同一工作站的资源放在 `unilabos/resources/<project>/` 下
 - **`__init__` 必须接受 `serialize()` 输出的所有字段**：`serialize()` 输出会作为 `config` 回传到 `__init__`，因此必须通过显式参数或 `**kwargs` 接受，否则反序列化会报错
 - **持久化运行时状态用 `serialize_state()`**：通过 `_unilabos_state` 字典存储可变信息（如物料内容、液体量），只存 JSON 可序列化的基本类型
@@ -195,7 +196,7 @@ def my_warehouse_4x4(name: str) -> "WareHouse":
 
 #### Deck 组装 WareHouse
 
-Deck 通过 `setup()` 将多个 WareHouse 放置到指定坐标：
+需要默认 children/layout 的资源可通过 `setup()` 初始化，工作站 Deck 是最常见例子。`setup` 必须默认为 `False`，只有首次创建默认布局时显式打开：
 
 ```python
 from pylabrobot.resources import Deck, Coordinate
@@ -319,6 +320,7 @@ class MyLabDeck(Deck):
 ```
 unilabos/resources/
 ├── <project>/              # 按项目分组
+│   ├── __init__.py         # eager import class 形式资源，确保 find_subclass 可发现
 │   ├── bottles.py          # Bottle 工厂函数
 │   ├── bottle_carriers.py  # Carrier 工厂函数
 │   ├── warehouses.py       # WareHouse 工厂函数
@@ -332,6 +334,9 @@ unilabos/resources/
 ```bash
 # 资源可导入
 python -c "from unilabos.resources.my_project.bottles import My_Reagent_Bottle; print(My_Reagent_Bottle('test'))"
+
+# class 形式资源可通过运行时入口被 PLR 发现
+python -c "import unilabos.resources.my_project; from pylabrobot.utils.object_parsing import find_subclass; from pylabrobot.resources import Resource as R; assert find_subclass('MyStation_Deck', R)"
 
 # 启动测试（AST 自动扫描）
 unilab -g <graph>.json

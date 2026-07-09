@@ -87,6 +87,26 @@ class BaseCommunicationClient(ABC):
         """
         pass
 
+    def publish_action_lock(self, device_id: str, action_name: str, free: bool) -> None:
+        """
+        主动上报单个 device+action 的锁(可用性)状态(默认空实现)
+
+        Args:
+            device_id: 设备ID
+            action_name: 动作名称
+            free: 是否空闲(True 空闲, False 占用)
+        """
+        pass
+
+    def publish_action_locks(self, locks: list) -> None:
+        """
+        批量主动上报 device+action 的锁(可用性)状态(默认空实现)
+
+        Args:
+            locks: [{"device_id": str, "action_name": str, "free": bool}, ...]
+        """
+        pass
+
     def setup_pong_subscription(self) -> None:
         """
         设置pong消息订阅（可选实现）

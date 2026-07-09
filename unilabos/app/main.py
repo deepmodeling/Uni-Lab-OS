@@ -507,6 +507,57 @@ def build_argparser():
         action="store_true",
         help="Skip post-install @device scan / device listing",
     )
+
+    # HTTP 客户端子命令（与现有 --ak/--sk/--addr 复用）
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format (for AI agent consumption)",
+    )
+
+    # login: 保存 ak/sk 到会话文件
+    login_parser = subparsers.add_parser("login", help="Save ak/sk to session file")
+    login_parser.add_argument("--ak", type=str, required=True, help="Access key")
+    login_parser.add_argument("--sk", type=str, required=True, help="Secret key")
+
+    subparsers.add_parser("logout", help="Clear local ak/sk")
+    subparsers.add_parser("whoami", help="Show current user information")
+
+    # config show: 查看当前会话配置
+    config_parser = subparsers.add_parser("config", help="Show session configuration")
+    config_subparsers = config_parser.add_subparsers(title="config subcommands", dest="config_command")
+    config_subparsers.add_parser("show", help="Show current session configuration")
+
+    # lab 命令组
+    lab_grp_parser = subparsers.add_parser("lab", help="Laboratory management")
+    lab_grp_subparsers = lab_grp_parser.add_subparsers(title="lab subcommands", dest="lab_command")
+    lab_list_parser = lab_grp_subparsers.add_parser("list", help="List laboratories")
+    lab_list_parser.add_argument("--page", type=int, default=1, help="Page number")
+    lab_list_parser.add_argument("--page_size", type=int, default=20, help="Page size")
+
+    # material 命令组
+    material_grp_parser = subparsers.add_parser("material", help="Material management")
+    material_grp_subparsers = material_grp_parser.add_subparsers(
+        title="material subcommands", dest="material_command"
+    )
+    material_list_parser = material_grp_subparsers.add_parser("list", help="List materials in a lab")
+    material_list_parser.add_argument("--lab_uuid", type=str, required=True, help="Lab UUID")
+    material_list_parser.add_argument(
+        "--with_children", action="store_true", default=False, help="Include child resources"
+    )
+
+    # workflow 命令组
+    workflow_grp_parser = subparsers.add_parser("workflow", help="Workflow management")
+    workflow_grp_subparsers = workflow_grp_parser.add_subparsers(
+        title="workflow subcommands", dest="workflow_command"
+    )
+    wf_upload_parser = workflow_grp_subparsers.add_parser("upload", help="Upload workflow file")
+    wf_upload_parser.add_argument("-f", "--workflow_file", type=str, required=True, help="Workflow file (JSON)")
+    wf_upload_parser.add_argument("-n", "--workflow_name", type=str, default=None, help="Workflow name")
+    wf_upload_parser.add_argument("--tags", type=str, nargs="*", default=[], help="Tags (space-separated)")
+    wf_upload_parser.add_argument("--published", action="store_true", default=False, help="Publish after upload")
+    wf_upload_parser.add_argument("--description", type=str, default="", help="Workflow description")
+
     return parser
 
 
@@ -552,6 +603,93 @@ def main():
     convert_argv_dashes_to_underscores(parser)
     args = parser.parse_args()
     args_dict = vars(args)
+
+    # 处理 HTTP 客户端子命令（login, logout, whoami, config, lab, material, workflow）
+    # 这些命令不需要加载完整的 UniLab-OS 环境，提前处理并退出
+    http_client_commands = ["login", "logout", "whoami", "config", "lab", "material", "workflow"]
+    if args_dict.get("command") in http_client_commands:
+        from unilabos.client import (
+            SessionManager,
+            set_output_format,
+            OutputFormat,
+            print_error,
+            print_output,
+            resolve_addr,
+        )
+        from unilabos.app.cli.auth import cmd_login, cmd_logout, cmd_whoami
+        from unilabos.app.cli.config import cmd_config_show
+        from unilabos.app.cli.lab import cmd_lab_list
+        from unilabos.app.cli.material import cmd_material_list
+        from unilabos.app.cli.workflow import cmd_workflow_upload
+
+        # 设置输出格式
+        if args_dict.get("json", False):
+            set_output_format(OutputFormat.JSON)
+
+        # 解析 working_dir：与设备控制模式逻辑一致（cwd 或 cwd/unilabos_data）
+        raw_working_dir = args_dict.get("working_dir")
+        if raw_working_dir:
+            wd = os.path.abspath(raw_working_dir)
+        else:
+            wd = os.path.abspath(os.getcwd())
+        if os.path.basename(wd) != "unilabos_data":
+            sub = os.path.join(wd, "unilabos_data")
+            if os.path.isdir(sub):
+                wd = sub
+
+        # 解析 --addr（支持 test/uat/local/prod 别名）
+        addr_arg = args_dict.get("addr")
+        if addr_arg and addr_arg != parser.get_default("addr"):
+            args.addr_resolved = resolve_addr(addr_arg)
+        else:
+            args.addr_resolved = None
+
+        # 创建会话管理器
+        session_manager = SessionManager(working_dir=wd)
+
+        # 路由到对应的命令处理函数
+        command = args_dict.get("command")
+        if command == "login":
+            cmd_login(args, session_manager)
+        elif command == "logout":
+            cmd_logout(args, session_manager)
+        elif command == "whoami":
+            cmd_whoami(args, session_manager)
+        elif command == "config":
+            config_command = args_dict.get("config_command")
+            if config_command == "show":
+                cmd_config_show(args, session_manager)
+            else:
+                print_error("config 子命令需要指定: show")
+                sys.exit(1)
+        elif command == "lab":
+            lab_command = args_dict.get("lab_command")
+            if lab_command == "list":
+                cmd_lab_list(args, session_manager)
+            else:
+                print_error("lab 子命令需要指定: list")
+                sys.exit(1)
+        elif command == "material":
+            material_command = args_dict.get("material_command")
+            if material_command == "list":
+                cmd_material_list(args, session_manager)
+            else:
+                print_error("material 子命令需要指定: list")
+                sys.exit(1)
+        elif command == "workflow":
+            workflow_command = args_dict.get("workflow_command")
+            if workflow_command == "upload":
+                cmd_workflow_upload(args, session_manager)
+            else:
+                print_error("workflow 子命令需要指定: upload")
+                sys.exit(1)
+        else:
+            print_error(f"{command} 命令暂未实现")
+            sys.exit(1)
+
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
 
     # Supervisor mode: spawn child processes and monitor for restart
     if args_dict.get("restart_mode", False):
@@ -817,29 +955,6 @@ def main():
     except Exception as _ext_exc:  # noqa: BLE001
         logger.warning(f"[ext-registry] 外源 registry 发现跳过: {_ext_exc}")
 
-    # Plan 09 Task 5: 发现外源包的 unilabos_registry/ 目录,并入 build_registry。
-    # 来源:device dirs(社区包 + 显式 --devices)各自的包根 + `unilabos.registry` entry points。
-    try:
-        from pathlib import Path as _Path
-
-        from unilabos.registry.external_registry_discovery import (
-            discover_registry_paths_from_entry_points,
-            discover_registry_paths_from_project,
-        )
-
-        _ext: list = []
-        for _d in args_dict.get("devices") or []:
-            _dp = _Path(_d)
-            _ext.extend(discover_registry_paths_from_project(_dp))
-            _ext.extend(discover_registry_paths_from_project(_dp.parent))
-        _ext.extend(discover_registry_paths_from_entry_points())
-        _ext_str = list(dict.fromkeys(str(p) for p in _ext))
-        if _ext_str:
-            args_dict["_external_registry_paths"] = _ext_str
-            print_status(f"发现 {len(_ext_str)} 个外源 registry 目录", "info")
-    except Exception as _ext_exc:  # noqa: BLE001
-        logger.warning(f"[ext-registry] 外源 registry 发现跳过: {_ext_exc}")
-
     # Step 0: AST 分析优先 + YAML 注册表加载
     # check_mode 和 upload_registry 都会执行实际 import 验证
     devices_dirs = args_dict.get("devices", None)
@@ -853,7 +968,6 @@ def main():
         check_mode=check_mode,
         complete_registry=complete_registry,
         external_only=external_only,
-        external_registry_paths=args_dict.get("_external_registry_paths"),
     )
 
     # Check mode: 注册表验证完成后直接退出
@@ -891,13 +1005,17 @@ def main():
     else:
         print_status("本次启动注册表不报送云端，如果您需要联网调试，请在启动命令增加--upload_registry", "warning")
 
-    # 处理 workflow_upload 子命令
-    if workflow_upload:
-        from unilabos.workflow.wf_utils import handle_workflow_upload_command
+    workflow_upload = args_dict.get("command") in ("workflow_upload", "wf")
 
+    if workflow_upload:
         handle_workflow_upload_command(args_dict)
         print_status("工作流上传完成，程序退出", "info")
         os._exit(0)
+
+    # 使用远程资源启动
+    if not workflow_upload and args_dict.get("use_remote_resource"):
+        print_status("后续运行必须拥有一个实验室，请前往 https://leap-lab.bohrium.com 注册实验室！", "warning")
+        os._exit(1)
 
     import networkx as nx
     import yaml

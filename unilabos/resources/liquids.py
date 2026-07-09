@@ -92,6 +92,38 @@ def resolve_substance_targets(material: Any, slots: Optional[Sequence[Any]]) -> 
     return targets
 
 
+def resolve_site_spot(parent: Any, site: Any) -> Optional[int]:
+    """把 site 标识解析成父级 ``_ordering`` 上的 spot 索引（供 ``assign_child_resource(spot=...)`` 用）。
+
+    与 set_substance **复用同一套 slot/site 标识解析**（``resolve_substance_targets``）：支持
+    int 索引 / 数字串 / "A1" 标签 / 名称匹配。空 site 返回 None（由父级默认排布）。
+
+    - 直接是 int / 数字串 → 当作 spot 索引返回。
+    - 命中 ``_ordering`` 的 key（最常见，保持旧行为）→ 返回其位置索引。
+    - 其余 → 复用 ``resolve_substance_targets`` 定位子目标，再回填其在 ``_ordering`` 的位置。
+    - 无法解析 → None（交回调用方按原始 site / 默认排布处理）。
+    """
+    if site is None or (isinstance(site, str) and not site):
+        return None
+    if isinstance(site, int):
+        return site
+    if isinstance(site, str) and site.isdigit():
+        return int(site)
+    ordering = getattr(parent, "_ordering", None)
+    keys = list(ordering.keys()) if ordering else []
+    if site in keys:
+        return keys.index(site)
+    try:
+        target = resolve_substance_targets(parent, [site])[0]
+        tname = getattr(target, "name", None)
+        for i, k in enumerate(keys):
+            if tname and (tname == k or tname.endswith(f"_{k}")):
+                return i
+    except Exception:
+        pass
+    return None
+
+
 def apply_substances(
     material: Any,
     names: Sequence[str],

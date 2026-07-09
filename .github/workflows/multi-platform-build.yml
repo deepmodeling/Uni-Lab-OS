@@ -123,6 +123,10 @@ jobs:
           echo "CONDA_NO_PLUGINS=true" >> "$GITHUB_ENV"
           echo "PYTHONUTF8=1" >> "$GITHUB_ENV"
           echo "PYTHONIOENCODING=utf-8" >> "$GITHUB_ENV"
+          # anaconda-client 1.13+ 把 `anaconda` 入口迁移到插件化的 anaconda-cli-base，
+          # 新版顶层移除了 `--version`，且会改变 `anaconda upload` 的命名空间。
+          # 强制使用独立(standalone)CLI 以恢复完全向后兼容的行为(--version 与 upload 均可用)。
+          echo "ANACONDA_CLIENT_FORCE_STANDALONE=1" >> "$GITHUB_ENV"
 
       - name: Show environment info
         if: steps.should_build.outputs.should_build == 'true'
@@ -130,7 +134,8 @@ jobs:
           conda info
           conda list -n build-env | grep -E "(rattler-build|anaconda-client)"
           conda run -n build-env rattler-build --version
-          conda run -n build-env anaconda --version
+          # 用 binstar_client 模块入口查看版本，无论 anaconda CLI 处于 standalone 还是 plugin 模式都可用
+          conda run -n build-env python -m binstar_client.scripts.cli --version
           echo "Platform: ${{ matrix.platform }}"
           echo "OS: ${{ matrix.os }}"
 

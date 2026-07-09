@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from unilabos.registry.init_enforce import validate_init_param_enforce
 from unilabos.utils import logger
 from unilabos.utils.banner_print import print_status
 
@@ -51,6 +52,44 @@ def resolve_class_namespace(project_name: str, namespace: Optional[str]) -> str:
             ns = COMMUNITY_PREFIX + ns
         return ns
     return COMMUNITY_PREFIX + normalize_name(project_name)
+
+
+def discover_registry_paths_from_project(project_root: Path | str) -> List[Path]:
+    """从包根推导目录化注册表路径。
+
+    ``[tool.unilabos.registry].paths`` 相对包含 ``pyproject.toml`` 的包根解析；
+    未声明时回退到包根下的 ``unilabos_registry/``。
+    """
+    root = Path(project_root).resolve()
+    pyproject_paths = _read_pyproject_registry_paths(root)
+    if pyproject_paths:
+        return pyproject_paths
+
+    fallback = root / "unilabos_registry"
+    if fallback.is_dir():
+        return [fallback]
+    return []
+
+
+def _read_pyproject_registry_paths(project_root: Path) -> List[Path]:
+    pyproject = project_root / "pyproject.toml"
+    if not pyproject.is_file():
+        return []
+
+    data = _load_toml(pyproject)
+    registry_config = data.get("tool", {}).get("unilabos", {}).get("registry", {})
+    raw_paths = registry_config.get("paths", [])
+    if not isinstance(raw_paths, list):
+        return []
+
+    paths: List[Path] = []
+    for raw_path in raw_paths:
+        if not isinstance(raw_path, str):
+            continue
+        registry_path = (project_root / raw_path).resolve()
+        if registry_path.is_dir():
+            paths.append(registry_path)
+    return paths
 
 
 def read_pyproject(pkg_dir: Path) -> Dict[str, Any]:
@@ -163,7 +202,6 @@ def read_external_registry_devices(pkg_dir: Path) -> Dict[str, Dict[str, Any]]:
         logger.warning("[package] 未安装 pyyaml，跳过外部注册表读取")
         return {}
 
-    from unilabos.registry.external_registry_discovery import discover_registry_paths_from_project
     from unilabos.registry.yaml_ref import resolve_yaml_refs
 
     registry_roots = discover_registry_paths_from_project(pkg_dir)
@@ -400,6 +438,12 @@ def build_resources_from_registry(
     for device_id, entry in entries.items():
         cls = entry.get("class") if isinstance(entry.get("class"), dict) else {}
         init_schema = entry.get("init_param_schema") if isinstance(entry.get("init_param_schema"), dict) else None
+        init_enforce = validate_init_param_enforce(
+            device_id,
+            init_schema,
+            entry.get("init_param_enforce"),
+            error_factory=PackageCLIError,
+        )
         category = entry.get("category") or entry.get("tags") or []
         if isinstance(category, str):
             category = [category]
@@ -431,6 +475,7 @@ def build_resources_from_registry(
         }
         if init_schema is not None:
             resource["init_param_schema"] = init_schema
+        resource["init_param_enforce"] = init_enforce
         resources.append(resource)
     return resources
 

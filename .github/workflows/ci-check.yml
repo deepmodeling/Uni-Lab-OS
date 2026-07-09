@@ -14,6 +14,10 @@ jobs:
       # Fix Unicode encoding issue on Windows runner (cp1252 -> utf-8)
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: 1
+      # 强制 matplotlib 使用无头后端，避免在无显示的 Windows runner 上加载 GUI 后端 DLL 导致原生崩溃
+      MPLBACKEND: Agg
+      # 原生崩溃(0xC0000005 访问违例)时打印 Python 调用栈，便于定位是哪个设备模块 import 崩溃
+      PYTHONFAULTHANDLER: "1"
 
     defaults:
       run:
@@ -50,10 +54,28 @@ jobs:
           uv pip install .
 
       - name: Run check mode (AST registry validation)
+        # check_mode 会真实 import 所有设备类(连带 matplotlib/opencv 等原生库)。
+        # Windows runner 上偶发原生崩溃(退出码 -1073741819 = 0xC0000005 访问违例)，
+        # 这是环境/DLL 层面的 flaky 崩溃，与注册表内容无关，因此对该步做有限次重试。
+        # 注意：段错误退出码为负数，必须用 "%ERRORLEVEL% EQU 0" 显式判断，
+        # 不能用 "if errorlevel 1"(它对负数退出码会误判为成功)。
         run: |
           call conda activate check-env
           echo Running check mode...
+          set ATTEMPTS=4
+          set COUNT=0
+          :retry
+          set /a COUNT+=1
+          echo === Check attempt %COUNT% of %ATTEMPTS% ===
           python -m unilabos --check_mode --skip_env_check
+          if %ERRORLEVEL% EQU 0 (
+            echo Check passed on attempt %COUNT%
+            exit /b 0
+          )
+          echo Attempt %COUNT% failed with exit code %ERRORLEVEL%
+          if %COUNT% LSS %ATTEMPTS% goto retry
+          echo All %ATTEMPTS% attempts failed
+          exit /b 1
 
       - name: Check for uncommitted changes
         shell: bash

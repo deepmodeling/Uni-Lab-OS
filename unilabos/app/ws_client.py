@@ -52,7 +52,6 @@ class JobStatus(Enum):
     """任务状态枚举"""
 
     QUEUE = "queue"  # 排队中
-    READY = "ready"  # 已获得执行许可，等待开始
     STARTED = "started"  # 执行中
     ENDED = "ended"  # 已结束
 
@@ -85,20 +84,16 @@ class JobInfo:
     status: JobStatus
     start_time: float
     last_update_time: float = field(default_factory=time.time)
-    ready_timeout: Optional[float] = None  # READY状态的超时时间
     always_free: bool = False  # 是否为永久闲置动作(不受排队限制)
+    # 执行载荷：排队的 job 在出队时由客户端自行启动，需保存原始 job_start 参数
+    action_type: str = ""
+    action_args: Dict[str, Any] = field(default_factory=dict)
+    sample_material: Dict[str, Any] = field(default_factory=dict)
+    server_info: Optional[Dict[str, Any]] = None
 
     def update_timestamp(self):
         """更新最后更新时间"""
         self.last_update_time = time.time()
-
-    def set_ready_timeout(self, timeout_seconds: int = 30):
-        """设置READY状态超时时间"""
-        self.ready_timeout = time.time() + timeout_seconds
-
-    def is_ready_timeout(self) -> bool:
-        """检查READY状态是否超时"""
-        return self.status == JobStatus.READY and self.ready_timeout is not None and time.time() > self.ready_timeout
 
 
 @dataclass
@@ -138,10 +133,13 @@ class DeviceActionManager:
         self.all_jobs: Dict[str, JobInfo] = {}  # job_id -> job_info
         self.lock = threading.RLock()
 
-    def add_queue_request(self, job_info: JobInfo) -> bool:
+    def enqueue_job(self, job_info: JobInfo) -> Tuple[bool, bool]:
         """
-        添加队列请求
-        返回True表示可以立即执行(free)，False表示需要排队(busy)
+        服务端直接下发的 job 入队/直发。
+
+        返回 (should_start_now, lock_became_busy):
+          should_start_now: 该 job 是否应立即启动(调用方负责 send_goal)
+          lock_became_busy: 该 device+action 是否发生 free->busy 翻转(需上报 busy 锁)
         """
         with self.lock:
             device_key = job_info.device_action_key
@@ -152,7 +150,7 @@ class DeviceActionManager:
                         "[DeviceActionManager] Duplicate job_id has different task_id: "
                         f"{job_info.job_id[:8]} old={existing_job.task_id[:8]} new={job_info.task_id[:8]}"
                     )
-                    return False
+                    return False, False
                 if job_info.notebook_id and not existing_job.notebook_id:
                     existing_job.notebook_id = job_info.notebook_id
                 existing_job.update_timestamp()
@@ -163,139 +161,88 @@ class DeviceActionManager:
                     existing_job.action_name,
                 )
                 logger.info(
-                    f"[DeviceActionManager] Duplicate queue request ignored for job {job_log}, "
+                    f"[DeviceActionManager] Duplicate job request ignored for job {job_log}, "
                     f"status={existing_job.status}"
                 )
-                return existing_job.status == JobStatus.READY
+                return False, False
 
             # 总是将job添加到all_jobs中
             self.all_jobs[job_info.job_id] = job_info
 
-            # always_free的动作不受排队限制，直接设为READY
+            # always_free的动作不受排队限制，直接并发执行，不占用设备锁
             if job_info.always_free:
-                job_info.status = JobStatus.READY
+                job_info.status = JobStatus.STARTED
                 job_info.update_timestamp()
-                job_info.set_ready_timeout(10)
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
                 logger.trace(f"[DeviceActionManager] Job {job_log} always_free, start immediately")
-                return True
+                return True, False
 
-            # 检查是否有正在执行或准备执行的任务
-            if device_key in self.active_jobs:
-                # 有正在执行或准备执行的任务，加入队列
+            # 设备上已有占用(正在执行)或已有排队任务 -> 入队
+            if device_key in self.active_jobs or self.device_queues.get(device_key):
                 if device_key not in self.device_queues:
                     self.device_queues[device_key] = []
                 job_info.status = JobStatus.QUEUE
                 self.device_queues[device_key].append(job_info)
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
                 logger.info(f"[DeviceActionManager] Job {job_log} queued for {device_key}")
-                return False
+                return False, False
 
-            # 检查是否有排队的任务
-            if device_key in self.device_queues and self.device_queues[device_key]:
-                # 有排队的任务，加入队列末尾
-                job_info.status = JobStatus.QUEUE
-                self.device_queues[device_key].append(job_info)
-                job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-                logger.info(f"[DeviceActionManager] Job {job_log} queued for {device_key}")
-                return False
-
-            # 没有正在执行或排队的任务，可以立即执行
-            # 将其状态设为READY并占位，防止后续job也被判断为free
-            job_info.status = JobStatus.READY
-            job_info.update_timestamp()
-            job_info.set_ready_timeout(10)  # 设置10秒超时
-            self.active_jobs[device_key] = job_info
-            job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-            logger.trace(f"[DeviceActionManager] Job {job_log} can start immediately for {device_key}")
-            return True
-
-    def start_job(self, job_id: str) -> bool:
-        """
-        开始执行任务
-        返回True表示成功开始，False表示失败
-        """
-        with self.lock:
-            if job_id not in self.all_jobs:
-                logger.error(f"[DeviceActionManager] Job {job_id[:4]} not found for start")
-                return False
-
-            job_info = self.all_jobs[job_id]
-            device_key = job_info.device_action_key
-
-            # 检查job的状态是否正确
-            if job_info.status != JobStatus.READY:
-                job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-                logger.error(f"[DeviceActionManager] Job {job_log} is not in READY status, current: {job_info.status}")
-                return False
-
-            # always_free的job不需要检查active_jobs
-            if not job_info.always_free:
-                # 检查设备上是否是这个job
-                if device_key not in self.active_jobs or self.active_jobs[device_key].job_id != job_id:
-                    job_log = format_job_log(
-                        job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name
-                    )
-                    logger.error(f"[DeviceActionManager] Job {job_log} is not the active job for {device_key}")
-                    return False
-
-            # 开始执行任务，将状态从READY转换为STARTED
+            # 设备空闲 -> 立即执行并占用设备锁(free->busy 翻转)
             job_info.status = JobStatus.STARTED
             job_info.update_timestamp()
-            job_info.ready_timeout = None  # 清除超时时间
-
+            self.active_jobs[device_key] = job_info
             job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-            logger.info(f"[DeviceActionManager] Job {job_log} started for {device_key}")
-            return True
+            logger.trace(f"[DeviceActionManager] Job {job_log} start immediately for {device_key}")
+            return True, True
 
-    def end_job(self, job_id: str) -> Optional[JobInfo]:
+    def end_job(self, job_id: str) -> Tuple[Optional[JobInfo], bool]:
         """
-        结束任务，返回下一个可以执行的任务(如果有的话)
+        结束任务。
+
+        返回 (next_job, lock_became_free):
+          next_job: 下一个应启动的任务(调用方负责 send_goal)，无则 None
+          lock_became_free: 该 device+action 是否发生 busy->free 翻转(需上报 free 锁)
         """
         with self.lock:
             if job_id not in self.all_jobs:
                 logger.warning(f"[DeviceActionManager] Job {job_id[:4]} not found for end")
-                return None
+                return None, False
 
             job_info = self.all_jobs[job_id]
             device_key = job_info.device_action_key
 
-            # always_free的job直接清理，不影响队列
+            # always_free的job直接清理，不影响队列/锁
             if job_info.always_free:
                 job_info.status = JobStatus.ENDED
                 job_info.update_timestamp()
                 del self.all_jobs[job_id]
-                return None
+                return None, False
 
             # 移除活跃任务
-            if device_key in self.active_jobs and self.active_jobs[device_key].job_id == job_id:
+            was_active = device_key in self.active_jobs and self.active_jobs[device_key].job_id == job_id
+            if was_active:
                 del self.active_jobs[device_key]
-                job_info.status = JobStatus.ENDED
-                job_info.update_timestamp()
-                # 从all_jobs中移除已结束的job
-                del self.all_jobs[job_id]
-                # job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-                # logger.debug(f"[DeviceActionManager] Job {job_log} ended for {device_key}")
-                pass
             else:
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
                 logger.warning(f"[DeviceActionManager] Job {job_log} was not active for {device_key}")
+            job_info.status = JobStatus.ENDED
+            job_info.update_timestamp()
+            del self.all_jobs[job_id]
 
-            # 检查队列中是否有等待的任务
+            # 检查队列中是否有等待的任务 -> 直接置 STARTED 并占用，锁保持 busy
             if device_key in self.device_queues and self.device_queues[device_key]:
                 next_job = self.device_queues[device_key].pop(0)  # FIFO
-                # 将下一个job设置为READY状态并放入active_jobs
-                next_job.status = JobStatus.READY
+                next_job.status = JobStatus.STARTED
                 next_job.update_timestamp()
-                next_job.set_ready_timeout(10)  # 设置10秒超时
                 self.active_jobs[device_key] = next_job
                 next_job_log = format_job_log(
                     next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
                 )
-                logger.trace(f"[DeviceActionManager] Next job {next_job_log} can start for {device_key}")
-                return next_job
+                logger.trace(f"[DeviceActionManager] Next job {next_job_log} starts for {device_key}")
+                return next_job, False
 
-            return None
+            # 队列已空：若刚释放了活跃任务，则 busy->free 翻转
+            return None, was_active
 
     def get_active_jobs(self) -> List[JobInfo]:
         """获取所有正在执行的任务(含active_jobs和always_free的STARTED job)"""
@@ -320,184 +267,116 @@ class DeviceActionManager:
         with self.lock:
             return self.all_jobs.get(job_id)
 
-    def cancel_job(self, job_id: str) -> bool:
-        """取消单个任务"""
+    def is_action_busy(self, device_action_key: str) -> bool:
+        """该 device+action 是否被占用(有正在执行或排队的非 always_free 任务)。"""
+        with self.lock:
+            if device_action_key in self.active_jobs:
+                return True
+            return bool(self.device_queues.get(device_action_key))
+
+    def cancel_job(self, job_id: str) -> Tuple[bool, Optional[JobInfo], bool]:
+        """
+        取消单个任务。
+
+        返回 (success, next_job, lock_became_free):
+          success: 是否成功取消
+          next_job: 取消活跃任务后被提升应启动的下一个任务(调用方负责 send_goal)，无则 None
+          lock_became_free: 该 device+action 是否发生 busy->free 翻转(需上报 free 锁)
+        """
         with self.lock:
             if job_id not in self.all_jobs:
                 logger.warning(f"[DeviceActionManager] Job {job_id[:4]} not found for cancel")
-                return False
+                return False, None, False
 
             job_info = self.all_jobs[job_id]
             device_key = job_info.device_action_key
 
-            # always_free的job直接清理
+            # always_free的job直接清理，不影响锁
             if job_info.always_free:
                 job_info.status = JobStatus.ENDED
                 del self.all_jobs[job_id]
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
                 logger.trace(f"[DeviceActionManager] Always-free job {job_log} cancelled")
-                return True
+                return True, None, False
 
             # 如果是正在执行的任务
             if device_key in self.active_jobs and self.active_jobs[device_key].job_id == job_id:
-                # 清理active job状态
                 del self.active_jobs[device_key]
                 job_info.status = JobStatus.ENDED
-                # 从all_jobs中移除
                 del self.all_jobs[job_id]
                 job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
                 logger.trace(f"[DeviceActionManager] Active job {job_log} cancelled for {device_key}")
 
-                # 启动下一个任务
+                # 队列中有等待任务 -> 提升并占用，锁保持 busy
                 if device_key in self.device_queues and self.device_queues[device_key]:
                     next_job = self.device_queues[device_key].pop(0)
-                    # 将下一个job设置为READY状态并放入active_jobs
-                    next_job.status = JobStatus.READY
+                    next_job.status = JobStatus.STARTED
                     next_job.update_timestamp()
-                    next_job.set_ready_timeout(10)
                     self.active_jobs[device_key] = next_job
                     next_job_log = format_job_log(
                         next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
                     )
-                    logger.trace(f"[DeviceActionManager] Next job {next_job_log} can start after cancel")
-                return True
+                    logger.trace(f"[DeviceActionManager] Next job {next_job_log} starts after cancel")
+                    return True, next_job, False
+                # 队列已空 -> busy->free 翻转
+                return True, None, True
 
-            # 如果是排队中的任务
+            # 如果是排队中的任务(取消不影响锁)
             elif device_key in self.device_queues:
                 original_length = len(self.device_queues[device_key])
                 self.device_queues[device_key] = [j for j in self.device_queues[device_key] if j.job_id != job_id]
                 if len(self.device_queues[device_key]) < original_length:
                     job_info.status = JobStatus.ENDED
-                    # 从all_jobs中移除
                     del self.all_jobs[job_id]
                     job_log = format_job_log(
                         job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name
                     )
                     logger.trace(f"[DeviceActionManager] Queued job {job_log} cancelled for {device_key}")
-                    return True
+                    return True, None, False
 
             job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
             logger.warning(f"[DeviceActionManager] Job {job_log} not found in active or queued jobs")
-            return False
+            return False, None, False
 
-    def cancel_jobs_by_task_id(self, task_id: str) -> List[str]:
-        """按task_id取消所有相关任务，返回被取消的job_id列表"""
-        cancelled_job_ids = []
+    def cancel_jobs_by_task_id(self, task_id: str) -> Tuple[List[str], List[JobInfo], List[Tuple[str, str]]]:
+        """
+        按task_id取消所有相关任务。
+
+        返回 (cancelled_job_ids, next_jobs_to_start, freed_locks):
+          cancelled_job_ids: 被取消的 job_id 列表
+          next_jobs_to_start: 因取消而被提升应启动的任务列表(调用方负责 send_goal)
+          freed_locks: 发生 busy->free 翻转的 (device_id, action_name) 列表(需上报 free 锁)
+        """
+        cancelled_job_ids: List[str] = []
+        next_jobs_to_start: List[JobInfo] = []
+        freed_locks: List[Tuple[str, str]] = []
 
         # 首先找到所有属于该task_id的job
-        jobs_to_cancel = []
         with self.lock:
             jobs_to_cancel = [job_info for job_info in self.all_jobs.values() if job_info.task_id == task_id]
 
         if not jobs_to_cancel:
             logger.warning(f"[DeviceActionManager] No jobs found for task_id: {task_id}")
-            return cancelled_job_ids
+            return cancelled_job_ids, next_jobs_to_start, freed_locks
 
         logger.info(f"[DeviceActionManager] Found {len(jobs_to_cancel)} jobs to cancel for task_id: {task_id}")
 
         # 逐个取消job
         for job_info in jobs_to_cancel:
-            if self.cancel_job(job_info.job_id):
+            success, next_job, lock_became_free = self.cancel_job(job_info.job_id)
+            if success:
                 cancelled_job_ids.append(job_info.job_id)
+            # 被提升的下一个任务若也属于本 task_id，会在后续循环中被取消，无需启动
+            if next_job is not None and next_job.task_id != task_id:
+                next_jobs_to_start.append(next_job)
+            if lock_became_free:
+                freed_locks.append((job_info.device_id, job_info.action_name))
 
         logger.info(
             f"[DeviceActionManager] Successfully cancelled {len(cancelled_job_ids)} " f"jobs for task_id: {task_id}"
         )
 
-        return cancelled_job_ids
-
-    def refresh_ready_timeouts(self, timeout_seconds: float = 10, reason: str = "") -> int:
-        """将 READY 任务的超时时间刷新到至少 now + timeout_seconds。"""
-        if timeout_seconds <= 0:
-            return 0
-
-        refreshed_count = 0
-        now = time.time()
-        min_timeout = now + timeout_seconds
-
-        with self.lock:
-            ready_candidates = list(self.active_jobs.values())
-            for job in self.all_jobs.values():
-                if job.always_free and job.status == JobStatus.READY and job not in ready_candidates:
-                    ready_candidates.append(job)
-
-            for job_info in ready_candidates:
-                if job_info.status != JobStatus.READY or job_info.ready_timeout is None:
-                    continue
-                if job_info.ready_timeout >= min_timeout:
-                    continue
-
-                old_timeout = job_info.ready_timeout
-                job_info.ready_timeout = min_timeout
-                job_info.update_timestamp()
-                refreshed_count += 1
-
-                job_log = format_job_log(
-                    job_info.job_id,
-                    job_info.task_id,
-                    job_info.device_id,
-                    job_info.action_name,
-                )
-                logger.info(
-                    "[DeviceActionManager] Refreshed READY timeout for job %s from %.3f to %.3f%s",
-                    job_log,
-                    old_timeout,
-                    job_info.ready_timeout,
-                    f" ({reason})" if reason else "",
-                )
-
-            logger.info(
-                "[DeviceActionManager] READY timeout refresh window %.1fs; refreshed %s READY job(s)%s",
-                timeout_seconds,
-                refreshed_count,
-                f" ({reason})" if reason else "",
-            )
-
-        return refreshed_count
-
-    def check_ready_timeouts(self, is_connected: bool = True) -> List[JobInfo]:
-        """检查READY状态超时的任务，仅检测不处理"""
-        timeout_jobs = []
-
-        with self.lock:
-            # 收集所有需要检查的 READY 任务(active_jobs + always_free READY jobs)
-            ready_candidates = list(self.active_jobs.values())
-            for job in self.all_jobs.values():
-                if job.always_free and job.status == JobStatus.READY and job not in ready_candidates:
-                    ready_candidates.append(job)
-
-            ready_jobs_count = sum(1 for job in ready_candidates if job.status == JobStatus.READY)
-            if ready_jobs_count > 0:
-                logger.trace(f"[DeviceActionManager] Checking {ready_jobs_count} READY jobs for timeout")  # type: ignore  # noqa: E501
-
-            # 找到所有超时的READY任务（只检测，不处理）
-            for job_info in ready_candidates:
-                if job_info.status != JobStatus.READY:
-                    continue
-                if not is_connected:
-                    min_timeout = time.time() + 10
-                    if job_info.ready_timeout is not None and job_info.ready_timeout < min_timeout:
-                        old_timeout = job_info.ready_timeout
-                        job_info.ready_timeout = min_timeout
-                        job_info.update_timestamp()
-                        job_log = format_job_log(
-                            job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name
-                        )
-                        logger.info(
-                            "[DeviceActionManager] WebSocket disconnected, keep READY job %s alive: %.3f -> %.3f",
-                            job_log,
-                            old_timeout,
-                            job_info.ready_timeout,
-                        )
-                    continue
-                if job_info.is_ready_timeout():
-                    timeout_jobs.append(job_info)
-                    job_log = format_job_log(
-                        job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name
-                    )
-                    logger.warning(f"[DeviceActionManager] Job {job_log} READY timeout detected")
-
-        return timeout_jobs
+        return cancelled_job_ids, next_jobs_to_start, freed_locks
 
 
 class MessageProcessor:
@@ -601,7 +480,6 @@ class MessageProcessor:
                     self.reconnect_count = 0
 
                     logger.info(f"[MessageProcessor] 已连接到 {self.websocket_url}")
-                    self.device_manager.refresh_ready_timeouts(10, reason="websocket connected")
 
                     # 启动发送协程
                     send_task = asyncio.create_task(self._send_handler(), name="websocket-send_task")
@@ -763,6 +641,8 @@ class MessageProcessor:
                 self._handle_pong(message_data)
             elif message_type == "query_action_state":
                 await self._handle_query_action_state(message_data)
+            elif message_type == "query_action_lock":
+                await self._handle_query_action_lock(message_data)
             elif message_type == "job_start":
                 await self._handle_job_start(message_data)
             elif message_type == "cancel_action" or message_type == "cancel_task":
@@ -817,9 +697,8 @@ class MessageProcessor:
             return False
 
     async def _handle_query_action_state(self, data: Dict[str, Any]):
-        """处理query_action_state消息"""
+        """处理query_action_state消息：纯被动查询，只回复当前状态，不入队、无副作用。"""
         device_id = data.get("device_id", "")
-        device_uuid = data.get("device_uuid", "")
         action_name = data.get("action_name", "")
         task_id = data.get("task_id", "")
         job_id = data.get("job_id", "")
@@ -831,107 +710,55 @@ class MessageProcessor:
 
         job_log = format_job_log(job_id, task_id, device_id, action_name)
 
-        # 1) 该 job 仍在设备管理器中（READY/QUEUE/STARTED）：不重复入队。
-        #    READY/STARTED 表示同一个 job 已被本地接收/执行，断线重连后仍回复 free，
-        #    让服务端继续发送 job_start；重复 job_start 会被幂等缓存拦截或回放结果。
-        #    QUEUE 表示该 job 尚未轮到执行，仍回复 busy。
-        #    完成后 end_job 会把 job 从管理器移除，故运行中的 job 一定能在此命中。
+        # 该 (task_id, job_id) 仍在设备管理器中(QUEUE/STARTED) -> 正在处理，回复 busy。
         existing_job = self.device_manager.get_job_info(job_id)
-        if existing_job and existing_job.job_id == job_id and existing_job.task_id == task_id:
-            if existing_job.status in (JobStatus.READY, JobStatus.STARTED):
-                response_type, free, need_more = "query_action_status", True, 0
-            elif existing_job.status == JobStatus.QUEUE:
-                response_type, free, need_more = "query_action_status", False, 10
-            else:
-                response_type, free, need_more = "job_call_back_status", False, 10
+        if existing_job and existing_job.task_id == task_id and existing_job.status in (
+            JobStatus.QUEUE,
+            JobStatus.STARTED,
+        ):
             await self._send_action_state_response(
                 existing_job.device_id,
                 existing_job.action_name,
                 existing_job.task_id,
                 existing_job.job_id,
-                response_type,
-                free,
-                need_more,
-                notebook_id=existing_job.notebook_id or notebook_id,
-            )
-            logger.trace(
-                f"[MessageProcessor] query_action_state {job_log} 返回当前状态 {existing_job.status}"
-            )
-            return
-
-        # 2) 不在管理器、但已 job_start 过（已完成被移除，多为断线重连后服务端重查）：
-        #    回复 free，让服务端继续走 job_start，真正结果由 _handle_job_start 命中缓存回放。
-        if self.websocket_client and self.websocket_client.is_job_cached(job_id, task_id):
-            self.websocket_client.log_cached_job(job_id, task_id, source="query_action_state")
-            await self._send_action_state_response(
-                device_id,
-                action_name,
-                task_id,
-                job_id,
-                "query_action_status",
-                True,
-                0,
-                notebook_id=notebook_id,
-            )
-            logger.info(
-                f"[MessageProcessor] [缓存复用] query_action_state {job_log} 命中缓存(已完成)，回复 free"
-            )
-            return
-
-        device_action_key = f"/devices/{device_id}/{action_name}"
-
-        # 检查action是否为always_free
-        action_always_free = self._check_action_always_free(device_id, action_name)
-
-        # 创建任务信息
-        job_info = JobInfo(
-            job_id=job_id,
-            task_id=task_id,
-            device_id=device_id,
-            notebook_id=notebook_id,
-            action_name=action_name,
-            device_action_key=device_action_key,
-            status=JobStatus.QUEUE,
-            start_time=time.time(),
-            always_free=action_always_free,
-        )
-
-        # 添加到设备管理器
-        can_start_immediately = self.device_manager.add_queue_request(job_info)
-
-        if can_start_immediately:
-            # 可以立即开始
-            await self._send_action_state_response(
-                device_id,
-                action_name,
-                task_id,
-                job_id,
-                "query_action_status",
-                True,
-                0,
-                notebook_id=notebook_id,
-            )
-            logger.trace(f"[MessageProcessor] Job {job_log} can start immediately")
-        else:
-            # 需要排队
-            await self._send_action_state_response(
-                device_id,
-                action_name,
-                task_id,
-                job_id,
                 "query_action_status",
                 False,
                 10,
-                notebook_id=notebook_id,
+                notebook_id=existing_job.notebook_id or notebook_id,
             )
-            logger.trace(f"[MessageProcessor] Job {job_log} queued")
+            logger.trace(
+                f"[MessageProcessor] query_action_state {job_log} 返回当前状态 {existing_job.status} (busy)"
+            )
+            return
 
-            # 通知QueueProcessor有新的队列更新
-            if self.queue_processor:
-                self.queue_processor.notify_queue_update()
+        # 不在管理器中 -> 已完成/未知，回复 free（仅状态回报，不触发任何执行/入队）。
+        if self.websocket_client and self.websocket_client.is_job_cached(job_id, task_id):
+            self.websocket_client.log_cached_job(job_id, task_id, source="query_action_state")
+        await self._send_action_state_response(
+            device_id,
+            action_name,
+            task_id,
+            job_id,
+            "query_action_status",
+            True,
+            0,
+            notebook_id=notebook_id,
+        )
+        logger.trace(f"[MessageProcessor] query_action_state {job_log} 返回当前状态 free")
+
+    async def _handle_query_action_lock(self, data: Dict[str, Any]):
+        """处理 query_action_lock：服务端要求客户端重新上报当前全量锁(每个 device+action 的忙闲)。
+
+        与 query_action_state(查询单个 job) 不同，这里是全量锁快照重传，用于服务端侧状态重新对齐。
+        """
+        if not self.websocket_client:
+            logger.warning("[MessageProcessor] query_action_lock received but websocket_client unavailable")
+            return
+        self.websocket_client.report_all_action_locks()
+        logger.trace("[MessageProcessor] query_action_lock: re-reported all action locks")
 
     async def _handle_job_start(self, data: Dict[str, Any]):
-        """处理job_start消息"""
+        """处理job_start消息：服务端直接下发，本地直跑或排队(不再要求先 query_action_state)。"""
         try:
             data = dict(data or {})
             if not data.get("sample_material"):
@@ -958,55 +785,40 @@ class MessageProcessor:
                         )
                     return
 
-            # 服务端对always_free动作可能跳过query_action_state直接发job_start，
-            # 此时job尚未注册，需要自动补注册
-            existing_job = self.device_manager.get_job_info(req.job_id)
-            if existing_job and existing_job.task_id != req.task_id:
-                logger.warning(
-                    "[MessageProcessor] job_start job_id matched but task_id mismatched, skip start: "
-                    "job=%s old_task=%s new_task=%s",
-                    req.job_id[:8],
-                    existing_job.task_id[:8],
-                    req.task_id[:8],
-                )
-                return
-            if not existing_job:
-                action_name = req.action
-                device_action_key = f"/devices/{req.device_id}/{action_name}"
-                action_always_free = self._check_action_always_free(req.device_id, action_name)
+            notebook_id = req.notebook_id or ""
+            device_action_key = f"/devices/{req.device_id}/{req.action}"
+            action_always_free = self._check_action_always_free(req.device_id, req.action)
 
-                if action_always_free:
-                    job_info = JobInfo(
-                        job_id=req.job_id,
-                        task_id=req.task_id,
-                        device_id=req.device_id,
-                        notebook_id=req.notebook_id,
-                        action_name=action_name,
-                        device_action_key=device_action_key,
-                        status=JobStatus.QUEUE,
-                        start_time=time.time(),
-                        always_free=True,
-                    )
-                    self.device_manager.add_queue_request(job_info)
-                    existing_job = job_info
-                    logger.info(f"[MessageProcessor] Job {job_log} always_free, auto-registered from direct job_start")
-                else:
-                    logger.error(f"[MessageProcessor] Job {job_log} not registered (missing query_action_state)")
-                    return
+            # 构造 JobInfo 并入队/直发；排队的 job 在出队时由客户端用保存的载荷启动
+            job_info = JobInfo(
+                job_id=req.job_id,
+                task_id=req.task_id,
+                device_id=req.device_id,
+                notebook_id=notebook_id,
+                action_name=req.action,
+                device_action_key=device_action_key,
+                status=JobStatus.QUEUE,
+                start_time=time.time(),
+                always_free=action_always_free,
+                action_type=req.action_type,
+                action_args=req.action_args,
+                sample_material=req.sample_material,
+                server_info=req.server_info,
+            )
 
-            if existing_job and req.notebook_id and not existing_job.notebook_id:
-                existing_job.notebook_id = req.notebook_id
-            notebook_id = req.notebook_id or (existing_job.notebook_id if existing_job else "")
+            should_start_now, lock_became_busy = self.device_manager.enqueue_job(job_info)
 
-            success = self.device_manager.start_job(req.job_id)
-            if not success:
-                logger.error(f"[MessageProcessor] Failed to start job {job_log}")
+            # free->busy 翻转：主动上报该 device+action 的锁被占用
+            if lock_became_busy and self.websocket_client:
+                self.websocket_client.publish_action_lock(req.device_id, req.action, free=False)
+
+            if not should_start_now:
+                logger.info(f"[MessageProcessor] Job {job_log} queued, waiting for device")
                 return
 
             logger.info(f"[MessageProcessor] Starting job {job_log}")
 
             # 创建HostNode任务
-            device_action_key = f"/devices/{req.device_id}/{req.action}"
             queue_item = QueueItem(
                 task_type="job_call_back_status",
                 device_id=req.device_id,
@@ -1063,28 +875,15 @@ class MessageProcessor:
                     }
                     self.send_message(message)
 
-                    # 手动调用job结束逻辑
-                    next_job = self.device_manager.end_job(req.job_id)
-                    if next_job:
-                        # 通知下一个任务可以开始
-                        await self._send_action_state_response(
-                            next_job.device_id,
-                            next_job.action_name,
-                            next_job.task_id,
-                            next_job.job_id,
-                            "query_action_status",
-                            True,
-                            0,
-                            notebook_id=next_job.notebook_id,
-                        )
+                    # 手动调用job结束逻辑：出队下一个任务由客户端自行启动
+                    # (该 fallback 分支无 websocket_client，无法上报锁，故忽略 lock_became_free)
+                    next_job, _lock_became_free = self.device_manager.end_job(req.job_id)
+                    if next_job and self.queue_processor:
+                        self.queue_processor.enqueue_pending_start(next_job)
                         next_job_log = format_job_log(
                             next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
                         )
-                        logger.info(f"[MessageProcessor] Started next job {next_job_log} after error")
-
-                        # 通知QueueProcessor有队列更新
-                        if self.queue_processor:
-                            self.queue_processor.notify_queue_update()
+                        logger.info(f"[MessageProcessor] Queued next job {next_job_log} for start after error")
             else:
                 logger.warning("[MessageProcessor] Failed to publish job error status - missing req or queue_item")
 
@@ -1118,9 +917,20 @@ class MessageProcessor:
                     )
 
             # 按job_id取消单个job（清理状态机）
-            success = self.device_manager.cancel_job(job_id)
+            success, next_job, lock_became_free = self.device_manager.cancel_job(job_id)
             if success:
                 logger.info(f"[MessageProcessor] Job {job_log} cancelled from queue/active list")
+
+                # 取消活跃任务后，出队下一个由客户端自行启动
+                if next_job and self.queue_processor:
+                    self.queue_processor.enqueue_pending_start(next_job)
+                # busy->free 翻转，主动上报锁释放
+                elif lock_became_free and self.websocket_client:
+                    self.websocket_client.publish_action_lock(
+                        job_info.device_id if job_info else "",
+                        job_info.action_name if job_info else "",
+                        free=True,
+                    )
 
                 # 通知QueueProcessor有队列更新
                 if self.queue_processor:
@@ -1148,9 +958,18 @@ class MessageProcessor:
                 )
 
             # 按task_id取消所有相关job（清理状态机）
-            cancelled_job_ids = self.device_manager.cancel_jobs_by_task_id(task_id)
+            cancelled_job_ids, next_jobs_to_start, freed_locks = self.device_manager.cancel_jobs_by_task_id(task_id)
             if cancelled_job_ids:
                 logger.info(f"[MessageProcessor] Cancelled {len(cancelled_job_ids)} jobs for task_id: {task_id}")
+
+                # 出队被提升的任务由客户端自行启动
+                for next_job in next_jobs_to_start:
+                    if self.queue_processor:
+                        self.queue_processor.enqueue_pending_start(next_job)
+                # busy->free 翻转，主动上报锁释放
+                if self.websocket_client:
+                    for dev_id, act_name in freed_locks:
+                        self.websocket_client.publish_action_lock(dev_id, act_name, free=True)
 
                 # 通知QueueProcessor有队列更新
                 if self.queue_processor:
@@ -1391,6 +1210,10 @@ class QueueProcessor:
         # 事件通知机制
         self.queue_update_event = threading.Event()
 
+        # 待启动队列：出队/取消提升的任务由本线程统一调用 send_goal，
+        # 避免在 ROS 结果回调线程里直接 send_goal(wait_for_server) 阻塞 executor。
+        self.pending_starts: "Queue[JobInfo]" = Queue()
+
         logger.trace("[QueueProcessor] Initialized")
 
     def set_websocket_client(self, websocket_client: "WebSocketClient"):
@@ -1417,51 +1240,14 @@ class QueueProcessor:
         logger.info("[QueueProcessor] Stopped")
 
     def _run(self):
-        """运行队列处理主循环"""
+        """运行队列处理主循环：消费待启动队列，由本线程统一启动出队/取消提升的任务。"""
         logger.trace("[QueueProcessor] Queue processor started")
 
         while self.is_running:
             try:
-                # 检查READY状态超时的任务
-                timeout_jobs = self.device_manager.check_ready_timeouts(
-                    is_connected=self.message_processor.is_connected()
-                )
-                if timeout_jobs:
-                    logger.info(f"[QueueProcessor] Found {len(timeout_jobs)} READY jobs that timed out")
-                    # 为超时的job发布失败状态，通过正常job完成流程处理
-                    for timeout_job in timeout_jobs:
-                        timeout_item = QueueItem(
-                            task_type="job_call_back_status",
-                            device_id=timeout_job.device_id,
-                            action_name=timeout_job.action_name,
-                            task_id=timeout_job.task_id,
-                            job_id=timeout_job.job_id,
-                            notebook_id=timeout_job.notebook_id,
-                            device_action_key=timeout_job.device_action_key,
-                        )
-                        # 发布超时失败状态，这会触发正常的job完成流程
-                        if self.websocket_client:
-                            job_log = format_job_log(
-                                timeout_job.job_id, timeout_job.task_id, timeout_job.device_id, timeout_job.action_name
-                            )
-                            logger.info(f"[QueueProcessor] Publishing timeout failure for job {job_log}")
-                            self.websocket_client.publish_job_status(
-                                {},
-                                timeout_item,
-                                "failed",
-                                serialize_result_info("Job READY state timeout after 10 seconds", False, {}),
-                            )
+                self._drain_pending_starts()
 
-                    # 立即触发状态更新
-                    self.notify_queue_update()
-
-                # 发送正在执行任务的running状态
-                self._send_running_status()
-
-                # 发送排队任务的busy状态
-                self._send_busy_status()
-
-                # 等待10秒或者等待事件通知
+                # 无 READY 超时/周期上报负担，事件驱动为主，10s 兜底唤醒
                 self.queue_update_event.wait(timeout=10)
                 self.queue_update_event.clear()  # 清除事件
 
@@ -1476,80 +1262,66 @@ class QueueProcessor:
         """通知队列有更新，触发立即检查"""
         self.queue_update_event.set()
 
-    def _send_running_status(self):
-        """发送正在执行任务的running状态"""
-        if not self.message_processor.is_connected():
+    def enqueue_pending_start(self, job_info: JobInfo) -> None:
+        """登记一个待启动任务(出队/取消提升)，由 QueueProcessor 线程统一 send_goal。"""
+        try:
+            self.pending_starts.put_nowait(job_info)
+        except Exception:
+            logger.warning("[QueueProcessor] pending_starts queue full, dropping job")
             return
+        self.notify_queue_update()
 
-        active_jobs = self.device_manager.get_active_jobs()
-        for job_info in active_jobs:
-            # 只给真正在执行的job发送running状态，READY状态的job不需要
-            if job_info.status != JobStatus.STARTED:
-                continue
+    def _drain_pending_starts(self) -> None:
+        """消费待启动队列，逐个启动。"""
+        while True:
+            try:
+                job = self.pending_starts.get_nowait()
+            except Empty:
+                break
+            self._start_job_goal(job)
 
-            message = {
-                "action": "report_action_state",
-                "data": {
-                    "type": "job_call_back_status",
-                    "device_id": job_info.device_id,
-                    "action_name": job_info.action_name,
-                    "task_id": job_info.task_id,
-                    "job_id": job_info.job_id,
-                    "notebook_id": job_info.notebook_id,
-                    "free": False,
-                    "need_more": 10 + 1,
-                },
-            }
-            self.message_processor.send_message(message)
-            job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-            logger.trace(f"[QueueProcessor] Sent running status for job {job_log}")  # type: ignore
-
-    def _send_busy_status(self):
-        """发送排队任务的busy状态"""
-        if not self.message_processor.is_connected():
-            return
-
-        queued_jobs = self.device_manager.get_queued_jobs()
-        if not queued_jobs:
-            return
-
-        queue_summary = {}
-        for j in queued_jobs:
-            key = f"{j.device_id}/{j.action_name}"
-            queue_summary[key] = queue_summary.get(key, 0) + 1
-        logger.debug(
-            f"[QueueProcessor] Sending busy status for {len(queued_jobs)} queued jobs: {queue_summary}"
+    def _start_job_goal(self, job: JobInfo) -> None:
+        """用 JobInfo 保存的载荷向 HostNode 下发 goal。"""
+        job_log = format_job_log(job.job_id, job.task_id, job.device_id, job.action_name)
+        queue_item = QueueItem(
+            task_type="job_call_back_status",
+            device_id=job.device_id,
+            action_name=job.action_name,
+            task_id=job.task_id,
+            job_id=job.job_id,
+            notebook_id=job.notebook_id,
+            device_action_key=job.device_action_key,
         )
 
-        for job_info in queued_jobs:
-            # 快照可能已过期：在遍历过程中 end_job() 可能已将此 job 移至 READY，
-            # 此时不应再发送 busy/need_more，否则会覆盖已发出的 free=True 通知
-            if job_info.status != JobStatus.QUEUE:
-                continue
+        host_node = HostNode.get_instance(0)
+        if not host_node:
+            logger.error(f"[QueueProcessor] HostNode unavailable, fail dequeued job {job_log}")
+            if self.websocket_client:
+                self.websocket_client.publish_job_status(
+                    {}, queue_item, "failed", serialize_result_info("HostNode instance not available", False, {})
+                )
+            return
 
-            message = {
-                "action": "report_action_state",
-                "data": {
-                    "type": "query_action_status",
-                    "device_id": job_info.device_id,
-                    "action_name": job_info.action_name,
-                    "task_id": job_info.task_id,
-                    "job_id": job_info.job_id,
-                    "notebook_id": job_info.notebook_id,
-                    "free": False,
-                    "need_more": 10 + 1,
-                },
-            }
-            success = self.message_processor.send_message(message)
-            job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
-            if success:
-                logger.trace(f"[QueueProcessor] Sent busy/need_more for queued job {job_log}")
-            else:
-                logger.warning(f"[QueueProcessor] Failed to send busy status for job {job_log}")
+        try:
+            host_node.send_goal(
+                queue_item,
+                action_type=job.action_type,
+                action_kwargs=job.action_args,
+                sample_material=job.sample_material,
+                server_info=job.server_info,
+            )
+            logger.info(f"[QueueProcessor] Started dequeued job {job_log}")
+        except Exception as e:
+            logger.error(f"[QueueProcessor] Failed to start dequeued job {job_log}: {e}")
+            logger.error(traceback.format_exc())
+            if self.websocket_client:
+                self.websocket_client.publish_job_status(
+                    {}, queue_item, "failed", serialize_result_info(traceback.format_exc(), False, {})
+                )
 
     def handle_job_completed(self, job_id: str, status: str) -> None:
-        """处理任务完成"""
-        # 获取job信息用于日志
+        """处理任务完成：出队下一个任务由本类自行启动；队列清空则上报 free 锁。"""
+        # 获取job信息用于日志（end_job 会将其移除，需提前取出 device/action）
         job_info = self.device_manager.get_job_info(job_id)
 
         # 如果job不存在，说明可能已被手动取消
@@ -1559,41 +1331,21 @@ class QueueProcessor:
             )
             return
 
-        job_log = format_job_log(
-            job_id,
-            job_info.task_id,
-            job_info.device_id,
-            job_info.action_name,
-        )
+        device_id = job_info.device_id
+        action_name = job_info.action_name
+        job_log = format_job_log(job_id, job_info.task_id, device_id, action_name)
 
         logger.trace(f"[QueueProcessor] Job {job_log} completed with status: {status}")
 
-        # 结束任务，获取下一个可执行的任务
-        next_job = self.device_manager.end_job(job_id)
+        # 结束任务，获取下一个可执行的任务及锁翻转
+        next_job, lock_became_free = self.device_manager.end_job(job_id)
 
-        if next_job and self.message_processor.is_connected():
-            # 通知下一个任务可以开始
-            message = {
-                "action": "report_action_state",
-                "data": {
-                    "type": "query_action_status",
-                    "device_id": next_job.device_id,
-                    "action_name": next_job.action_name,
-                    "task_id": next_job.task_id,
-                    "job_id": next_job.job_id,
-                    "notebook_id": next_job.notebook_id,
-                    "free": True,
-                    "need_more": 0,
-                },
-            }
-            self.message_processor.send_message(message)
-            # next_job_log = format_job_log(
-            #     next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
-            # )
-            # logger.debug(f"[QueueProcessor] Notified next job {next_job_log} can start")
-
-            # 立即触发下一轮状态检查
-            self.notify_queue_update()
+        if next_job:
+            # 锁保持 busy，客户端自行启动下一个任务
+            self.enqueue_pending_start(next_job)
+        elif lock_became_free and self.websocket_client:
+            # busy->free 翻转，主动上报锁释放
+            self.websocket_client.publish_action_lock(device_id, action_name, free=True)
 
 
 class WebSocketClient(BaseCommunicationClient):
@@ -1964,19 +1716,87 @@ class WebSocketClient(BaseCommunicationClient):
         """取消指定的任务"""
         # 获取job信息用于日志
         job_info = self.device_manager.get_job_info(job_id)
+        device_id = job_info.device_id if job_info else ""
+        action_name = job_info.action_name if job_info else ""
         job_log = format_job_log(
             job_id,
             job_info.task_id if job_info else "",
-            job_info.device_id if job_info else "",
-            job_info.action_name if job_info else "",
+            device_id,
+            action_name,
         )
 
         logger.debug(f"[WebSocketClient] Cancel goal request for job: {job_log}")
-        success = self.device_manager.cancel_job(job_id)
+        success, next_job, lock_became_free = self.device_manager.cancel_job(job_id)
         if success:
             logger.info(f"[WebSocketClient] Job {job_log} cancelled successfully")
+            if next_job:
+                self.queue_processor.enqueue_pending_start(next_job)
+            elif lock_became_free:
+                self.publish_action_lock(device_id, action_name, free=True)
         else:
             logger.warning(f"[WebSocketClient] Failed to cancel job {job_log}")
+
+    def publish_action_lock(self, device_id: str, action_name: str, free: bool) -> None:
+        """主动上报单个 device+action 的锁(可用性)状态。"""
+        self.publish_action_locks([{"device_id": device_id, "action_name": action_name, "free": free}])
+
+    def publish_action_locks(self, locks: List[Dict[str, Any]]) -> None:
+        """批量主动上报 device+action 的锁(可用性)状态。
+
+        report_action_lock 不带 job_id/task_id，仅表达每个 device+action 当前是否空闲。
+        单次锁翻转 locks 长度为 1，host_ready/重连时为全量快照。
+        """
+        if self.is_disabled or not locks:
+            return
+        # 未连接时不发送：重连后由 publish_host_ready 的全量快照重新对齐真实锁状态，
+        # 避免把断链期间产生的中间态当作稳定状态推给服务端。
+        if not self.is_connected():
+            logger.debug(f"[WebSocketClient] Not connected, skip report_action_lock for {len(locks)} action(s)")
+            return
+
+        message = {
+            "action": "report_action_lock",
+            "data": {
+                "locks": locks,
+                "machine_name": BasicConfig.machine_name,
+                "timestamp": time.time(),
+            },
+        }
+        self.message_processor.send_message(message)
+        logger.info(f"[WebSocketClient] report_action_lock sent for {len(locks)} action(s)")
+
+    def report_all_action_locks(self) -> None:
+        """重新上报全量锁快照：遍历所有 device+action，按 DeviceActionManager 的忙闲状态上报 free/busy。
+
+        用于 host_ready/重连后的锁对齐，以及响应服务端主动下发的 query_action_lock。
+        """
+        if self.is_disabled or not self.is_connected():
+            logger.debug("[WebSocketClient] Not connected, skip report_all_action_locks")
+            return
+
+        host_node = HostNode.get_instance(0)
+        if host_node is None:
+            logger.debug("[WebSocketClient] Host node 尚未就绪，跳过全量锁上报")
+            return
+
+        locks: List[Dict[str, Any]] = []
+        for device_id in host_node.devices_names.keys():
+            action_names = set()
+            # 从全量动作映射(_action_value_mappings)取动作名，而非仅 _action_clients：
+            # 它是设备“可调用动作”的权威清单，需全量上报，包含
+            #   - 建独立 ROS ActionServer 的动作；
+            #   - UniLabJsonCommand 动作(不建 ActionServer、经 _execute_driver_command 调用)；
+            #   - @action(auto_prefix=True) 注册成的 "auto-" 动作(如 workbench 的 prepare_materials 等)。
+            # 仅跳过 _execute_driver_command[_async]：它是上述动作的通用调用通道本身，并非具体业务动作。
+            for action_name in host_node._action_value_mappings.get(device_id, {}).keys():
+                if action_name.startswith("_execute_driver_command"):
+                    continue
+                action_names.add(action_name)
+            for action_name in action_names:
+                device_action_key = f"/devices/{device_id}/{action_name}"
+                free = not self.device_manager.is_action_busy(device_action_key)
+                locks.append({"device_id": device_id, "action_name": action_name, "free": free})
+        self.publish_action_locks(locks)
 
     def publish_host_ready(self) -> None:
         """发布host_node ready信号，包含设备和动作信息"""
@@ -1998,23 +1818,14 @@ class WebSocketClient(BaseCommunicationClient):
         machine_name = BasicConfig.machine_name
 
         try:
-            # 获取设备信息
+            # host_node_ready 不再上报 actions：设备可调用动作以 report_action_lock 为准
+            # (来源 _action_value_mappings，覆盖 auto-/UniLabJsonCommand 等全量动作，且借 FIFO
+            # 在本消息之前先行发送)。host_ready 仅声明设备在线与归属，避免与锁口径不一致。
             for device_id, namespace in host_node.devices_names.items():
                 device_key = (
                     f"{namespace}/{device_id}" if namespace.startswith("/") else f"/{namespace}/{device_id}"
                 )
                 is_online = device_key in host_node._online_devices
-
-                # 获取设备的动作信息
-                actions = {}
-                for action_id, client in host_node._action_clients.items():
-                    # action_id 格式: /namespace/device_id/action_name
-                    if device_id in action_id:
-                        action_name = action_id.split("/")[-1]
-                        actions[action_name] = {
-                            "action_path": action_id,
-                            "action_type": str(type(client).__name__),
-                        }
 
                 devices.append(
                     {
@@ -2023,7 +1834,6 @@ class WebSocketClient(BaseCommunicationClient):
                         "device_key": device_key,
                         "is_online": is_online,
                         "machine_name": host_node.device_machine_names.get(device_id, machine_name),
-                        "actions": actions,
                     }
                 )
 
@@ -2040,5 +1850,9 @@ class WebSocketClient(BaseCommunicationClient):
                 "devices": devices,
             },
         }
+        # 先上报全量锁快照，再发 host_ready：借助发送队列 FIFO 顺序，
+        # 服务端会先收到 report_action_lock、再收到 host_node_ready。
+        # 启动时全部 free，重连时按 DeviceActionManager 反映正在运行/排队的 busy，实现锁状态对齐。
+        self.report_all_action_locks()
         self.message_processor.send_message(message)
         logger.info(f"[WebSocketClient] Host node ready signal published with {len(devices)} devices")

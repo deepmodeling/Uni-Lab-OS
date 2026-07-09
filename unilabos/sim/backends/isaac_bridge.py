@@ -59,6 +59,37 @@ class IsaacBridgeBackend:
         result = self._rpc("get_joint_states", {"body_id": str(body_id)}) or {}
         return {str(key): float(value) for key, value in dict(result).items()}
 
+    def list_joint_controls(self) -> list[dict[str, Any]]:
+        result = self._rpc("list_joint_controls") or []
+        return [dict(item) for item in result]
+
+    def get_joint_control_state(self) -> dict[str, Any]:
+        return dict(self._rpc("get_joint_control_state") or {})
+
+    def plan_joint_targets(self, targets: dict[str, float], options: dict[str, Any] | None = None) -> dict[str, Any]:
+        return dict(
+            self._rpc(
+                "plan_joint_targets",
+                {"targets": dict(targets), "options": dict(options or {})},
+            )
+            or {}
+        )
+
+    def check_joint_plan(self, plan_id: str) -> dict[str, Any]:
+        return dict(self._rpc("check_joint_plan", {"plan_id": str(plan_id)}) or {})
+
+    def execute_joint_plan(self, plan_id: str) -> dict[str, Any]:
+        return dict(self._rpc("execute_joint_plan", {"plan_id": str(plan_id)}) or {})
+
+    def stop_joint_motion(self) -> dict[str, Any]:
+        return dict(self._rpc("stop_joint_motion") or {})
+
+    def set_collision_check_enabled(self, enabled: bool) -> dict[str, Any]:
+        return dict(self._rpc("set_collision_check_enabled", {"enabled": bool(enabled)}) or {})
+
+    def apply_stable_drive_settings(self) -> dict[str, Any]:
+        return dict(self._rpc("apply_stable_drive_settings") or {})
+
     def apply_wrench(self, body_id: str, wrench: dict[str, Any]) -> None:
         self._rpc("apply_wrench", {"body_id": str(body_id), "wrench": dict(wrench)})
 

@@ -6,6 +6,7 @@ PRCXI_EP_Adapter:
     module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_EP_Adapter
     type: pylabrobot
   description: 'ep适配器 (Code: 1)'
+  displayname: PRCXI_EP_Adapter
   handles: []
   icon: ''
   init_param_schema: {}

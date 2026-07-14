@@ -251,6 +251,7 @@ virtual_centrifuge:
     type: python
   config_info: []
   description: Virtual Centrifuge for CentrifugeProtocol Testing
+  displayname: virtual_centrifuge
   handles:
   - data_key: vessel
     data_source: handle
@@ -675,6 +676,7 @@ virtual_column:
     type: python
   config_info: []
   description: Virtual Column Chromatography Device for RunColumn Protocol Testing
+  displayname: virtual_column
   handles:
   - data_key: from_vessel
     data_source: handle
@@ -1110,6 +1112,7 @@ virtual_filter:
     type: python
   config_info: []
   description: Virtual Filter for FilterProtocol Testing
+  displayname: virtual_filter
   handles:
   - data_key: vessel_in
     data_source: handle
@@ -1375,6 +1378,7 @@ virtual_gas_source:
     type: python
   config_info: []
   description: Virtual gas source
+  displayname: virtual_gas_source
   handles:
   - data_key: fluid_out
     data_source: executor
@@ -1971,6 +1975,7 @@ virtual_heatchill:
     type: python
   config_info: []
   description: Virtual HeatChill for HeatChillProtocol Testing
+  displayname: virtual_heatchill
   handles:
   - data_key: vessel
     data_source: handle
@@ -2337,6 +2342,7 @@ virtual_multiway_valve:
     type: python
   config_info: []
   description: Virtual 8-Way Valve for flow direction control
+  displayname: virtual_multiway_valve
   handles:
   - data_key: fluid_in
     data_source: handle
@@ -2735,6 +2741,7 @@ virtual_rotavap:
     type: python
   config_info: []
   description: Virtual Rotary Evaporator for EvaporateProtocol Testing
+  displayname: virtual_rotavap
   handles:
   - data_key: vessel_in
     data_source: handle
@@ -2986,6 +2993,7 @@ virtual_sample_demo:
     type: python
   config_info: []
   description: Virtual sample tracking demo device
+  displayname: virtual_sample_demo
   handles: []
   icon: ''
   init_param_schema:
@@ -3947,6 +3955,7 @@ virtual_separator:
     type: python
   config_info: []
   description: Virtual Separator for SeparateProtocol Testing
+  displayname: virtual_separator
   handles:
   - data_key: from_vessel
     data_source: handle
@@ -4290,6 +4299,7 @@ virtual_solenoid_valve:
     type: python
   config_info: []
   description: Virtual Solenoid Valve for simple on/off flow control
+  displayname: virtual_solenoid_valve
   handles:
   - data_key: fluid_port_in
     data_source: handle
@@ -4693,6 +4703,7 @@ virtual_solid_dispenser:
   config_info: []
   description: Virtual Solid Dispenser for Add Protocol Testing - supports mass and
     molar additions
+  displayname: virtual_solid_dispenser
   handles:
   - data_key: solid_out
     data_source: executor
@@ -5315,6 +5326,7 @@ virtual_stirrer:
     type: python
   config_info: []
   description: Virtual Stirrer for StirProtocol Testing
+  displayname: virtual_stirrer
   handles:
   - data_key: vessel
     data_source: handle
@@ -5848,6 +5860,7 @@ virtual_transfer_pump:
     type: python
   config_info: []
   description: Virtual Transfer Pump for TransferProtocol Testing (Syringe-style)
+  displayname: virtual_transfer_pump
   handles:
   - data_key: fluid_port
     data_source: handle
@@ -6090,6 +6103,7 @@ virtual_vacuum_pump:
     type: python
   config_info: []
   description: Virtual vacuum pump
+  displayname: virtual_vacuum_pump
   handles:
   - data_key: fluid_in
     data_source: handle

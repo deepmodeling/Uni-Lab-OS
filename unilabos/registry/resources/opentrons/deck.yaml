@@ -5,6 +5,7 @@ OTDeck:
     module: pylabrobot.resources.opentrons.deck:OTDeck
     type: pylabrobot
   description: Opentrons deck
+  displayname: OTDeck
   handles: []
   icon: ''
   init_param_schema: {}
@@ -20,6 +21,7 @@ hplc_station:
     module: unilabos.devices.resource_container.container:DeckContainer
     type: python
   description: hplc_station deck
+  displayname: hplc_station
   handles: []
   icon: ''
   init_param_schema: {}

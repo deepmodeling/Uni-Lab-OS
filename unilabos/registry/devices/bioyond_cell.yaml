@@ -2165,6 +2165,7 @@ bioyond_cell:
     type: python
   config_info: []
   description: ''
+  displayname: bioyond_cell
   handles: []
   icon: benyao2.webp
   init_param_schema:

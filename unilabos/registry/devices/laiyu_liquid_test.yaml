@@ -628,6 +628,7 @@ xyz_stepper_controller:
     type: python
   config_info: []
   description: 新XYZ控制器
+  displayname: xyz_stepper_controller
   handles: []
   icon: ''
   init_param_schema:

@@ -691,6 +691,7 @@ bioyond_dispensing_station:
     type: python
   config_info: []
   description: ''
+  displayname: bioyond_dispensing_station
   handles: []
   icon: preparation_station.webp
   init_param_schema:

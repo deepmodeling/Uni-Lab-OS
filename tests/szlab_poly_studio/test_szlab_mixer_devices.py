@@ -1170,6 +1170,10 @@ def test_szlab_robot_s03_pick_writes_product_position_and_task_number():
         ("S03取放料编号", False),
         ("任务号", False),
         ("Robot_任务完成", False),
+        ("Robot_任务写入完成", False),
+        ("S03取放料产品", False),
+        ("S03取放料编号", False),
+        ("任务号", False),
     ]
     assert gateway.writes == [
         ("S03取放料产品", 1),
@@ -1182,6 +1186,45 @@ def test_szlab_robot_s03_pick_writes_product_position_and_task_number():
         ("S03取放料编号", 0),
         ("任务号", 0),
     ]
+    assert result["reset"]["readback"] == {
+        "Robot_任务写入完成": False,
+        "S03取放料产品": 0,
+        "S03取放料编号": 0,
+        "任务号": 0,
+    }
+
+
+def test_szlab_robot_s03_reset_retries_until_pc_to_plc_variables_are_clear():
+    class DelayedResetGateway(FakeRobotPlcGateway):
+        def __init__(self):
+            super().__init__(sensor_values={"传感器状态_上位机[0].NO[6]": True})
+            self.stale_reset_reads = {"S03取放料产品": 1, "S03取放料编号": 1, "任务号": 1}
+
+        def read_variable(self, name, use_cache=False):
+            if name in self.stale_reset_reads and self.written_values.get(name) == 0:
+                value = self.stale_reset_reads.pop(name)
+                self.reads.append((name, use_cache))
+                self.events.append(("read", name, use_cache))
+                return value
+            return super().read_variable(name, use_cache=use_cache)
+
+    gateway = DelayedResetGateway()
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_pick_from_s03(product_type=1, position="1-1")
+
+    assert result["success"] is True
+    assert result["reset"]["success"] is True
+    assert result["reset"]["readback"] == {
+        "Robot_任务写入完成": False,
+        "S03取放料产品": 0,
+        "S03取放料编号": 0,
+        "任务号": 0,
+    }
+    assert gateway.writes.count(("S03取放料产品", 0)) == 2
+    assert gateway.writes.count(("S03取放料编号", 0)) == 2
+    assert gateway.writes.count(("任务号", 0)) == 2
 
 
 def test_szlab_robot_s072_place_uses_position_sensor_mapping():
@@ -1263,7 +1306,7 @@ def test_szlab_robot_s08_pour_rejects_unknown_product_type():
 
 def test_szlab_robot_s09_tip_place_uses_confirmed_two_slot_gate():
     gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[4].NO[6]": False, "S09工艺完成": 1, "S09原点信号_1": True},
+        sensor_values={"传感器状态_上位机[4].NO[6]": False},
     )
     device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
     device.set_plc_gateway(gateway)
@@ -1273,17 +1316,7 @@ def test_szlab_robot_s09_tip_place_uses_confirmed_two_slot_gate():
     assert result["success"] is True
     assert result["s09_safe_position"] == 1
     assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[6]"
-    assert gateway.writes[:4] == [
-        ("S09工艺选择", 1),
-        ("S09参数写入完成", False),
-        ("S09参数写入完成", True),
-        ("S09参数写入完成", False),
-    ]
-    assert gateway.writes[4:6] == [
-        ("S09参数写入完成", False),
-        ("S09工艺选择", 0),
-    ]
-    assert gateway.writes[6:] == [
+    assert gateway.writes == [
         ("S09取放料产品", 1),
         ("S09取放料编号", 2),
         ("任务号", 19),
@@ -1294,40 +1327,16 @@ def test_szlab_robot_s09_tip_place_uses_confirmed_two_slot_gate():
         ("S09取放料编号", 0),
         ("任务号", 0),
     ]
-    home_index = gateway.events.index(("read", "S09原点信号_1", False))
     robot_task_index = gateway.events.index(("write", "任务号", 19))
-    assert home_index < robot_task_index
+    assert ("write", "S09工艺选择", 1) not in gateway.events
+    assert not any(event[1] == "S09原点信号_1" for event in gateway.events)
     complete_wait_index = gateway.events.index(("wait", "Robot_任务完成", 19))
     write_done_true_index = gateway.events.index(("write", "Robot_任务写入完成", True))
     assert write_done_true_index < complete_wait_index
 
 
-def test_szlab_robot_s09_safe_position_holds_param_written_pulse(monkeypatch):
-    from unilabos.devices.workstation.szlab_poly_studio.s12_robot import robot_S09 as robot_s09_module
-
-    sleeps = []
-
-    class FakeTime:
-        @staticmethod
-        def sleep(seconds):
-            sleeps.append(seconds)
-
-    monkeypatch.setattr(robot_s09_module, "time", FakeTime, raising=False)
-    monkeypatch.setattr(robot_s09_module, "S09_PARAM_WRITTEN_HOLD_SECONDS", 0.2, raising=False)
-    gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[4].NO[6]": False, "S09工艺完成": 1, "S09原点信号_1": True},
-    )
-    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
-    device.set_plc_gateway(gateway)
-
-    result = device.submit_place_to_s09(product_type=1, position=2)
-
-    assert result["success"] is True
-    assert sleeps == [0.2]
-
-
 def test_szlab_robot_s09_liquid_bottle_place_allows_positions_without_sensor_gate():
-    gateway = FakeRobotPlcGateway(sensor_values={"S09工艺完成": 3, "S09原点信号_3": True})
+    gateway = FakeRobotPlcGateway()
     device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
     device.set_plc_gateway(gateway)
 
@@ -1336,9 +1345,9 @@ def test_szlab_robot_s09_liquid_bottle_place_allows_positions_without_sensor_gat
     assert result["success"] is True
     assert result["s09_safe_position"] == 3
     assert result["target_sensor_variable"] == ""
-    assert ("S09工艺选择", 3) in gateway.writes
-    assert gateway.events.index(("read", "S09原点信号_3", False)) < gateway.events.index(("write", "任务号", 19))
-    assert gateway.writes[-9:] == [
+    assert ("S09工艺选择", 3) not in gateway.writes
+    assert not any(event[1] == "S09原点信号_3" for event in gateway.events)
+    assert gateway.writes == [
         ("S09取放料产品", 2),
         ("S09取放料编号", 5),
         ("任务号", 19),
@@ -1351,8 +1360,8 @@ def test_szlab_robot_s09_liquid_bottle_place_allows_positions_without_sensor_gat
     ]
 
 
-def test_szlab_robot_s09_pick_waits_for_beaker_safe_position_before_task():
-    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[4].NO[7]": True, "S09工艺完成": 4, "S09原点信号_4": True})
+def test_szlab_robot_s09_pick_directly_submits_beaker_robot_task():
+    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[4].NO[7]": True})
     device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
     device.set_plc_gateway(gateway)
 
@@ -1360,12 +1369,13 @@ def test_szlab_robot_s09_pick_waits_for_beaker_safe_position_before_task():
 
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
-    assert ("S09工艺选择", 4) in gateway.writes
-    assert gateway.events.index(("read", "S09原点信号_4", False)) < gateway.events.index(("write", "任务号", 20))
+    assert ("S09工艺选择", 4) not in gateway.writes
+    assert not any(event[1] == "S09原点信号_4" for event in gateway.events)
+    assert ("任务号", 20) in gateway.writes
 
 
-def test_szlab_robot_s09_beaker_place_waits_home_signal_before_place_task():
-    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[4].NO[7]": False, "S09工艺完成": 4, "S09原点信号_4": True})
+def test_szlab_robot_s09_beaker_place_directly_submits_robot_task():
+    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[4].NO[7]": False})
     device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
     device.set_plc_gateway(gateway)
 
@@ -1373,33 +1383,9 @@ def test_szlab_robot_s09_beaker_place_waits_home_signal_before_place_task():
 
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
-    assert gateway.writes[:4] == [
-        ("S09工艺选择", 4),
-        ("S09参数写入完成", False),
-        ("S09参数写入完成", True),
-        ("S09参数写入完成", False),
-    ]
-    assert ("S09原点信号_4", True, 3.0, 1.0) in gateway.wait_equal_calls
-    assert gateway.events.index(("write", "S09工艺选择", 0)) < gateway.events.index(("write", "任务号", 19))
-    assert gateway.events.index(("wait", "S09原点信号_4", True)) < gateway.events.index(("write", "任务号", 19))
-
-
-def test_szlab_robot_s09_safe_position_timeout_resets_process_params():
-    gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[4].NO[7]": False, "S09工艺完成": 0, "S09原点信号_4": False}
-    )
-    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
-    device.set_plc_gateway(gateway)
-
-    result = device.submit_place_to_s09(product_type=3, position=1)
-
-    assert result["success"] is False
-    assert result["message"] == "S09 去安全位4完成等待超时"
-    assert ("任务号", 19) not in gateway.writes
-    assert gateway.writes[-2:] == [
-        ("S09参数写入完成", False),
-        ("S09工艺选择", 0),
-    ]
+    assert ("S09工艺选择", 4) not in gateway.writes
+    assert ("S09原点信号_4", True, 3.0, 1.0) not in gateway.wait_equal_calls
+    assert ("任务号", 19) in gateway.writes
 
 
 def test_szlab_robot_home_signal_blocks_task_before_pc_to_plc_write():

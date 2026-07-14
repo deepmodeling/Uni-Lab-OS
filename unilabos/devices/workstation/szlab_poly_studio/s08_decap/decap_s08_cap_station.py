@@ -7,7 +7,7 @@ S08 开盖/关盖工位子设备。
 并通过 ``样品ID`` 传递机械臂扫描到的样品编号。
 
 瓶盖暂存映射由 UniLab 写入/读取 OPC UA「S082_{1..5}数据缓存」INT[30]（样品 ID），
-配合「S082瓶盖暂存位」下发工艺。开盖须传入机械臂扫描的样品ID，分配第一个空闲暂存位并
+配合「S082瓶盖暂存位」下发工艺。开盖须传入机械臂扫描的样品ID，可指定暂存位或自动分配第一个空闲暂存位并
 写入 ID–Slot 绑定；关盖须传入相同样品 ID，按缓存反查暂存位，关盖成功后清除该 Slot 的 ID 记录。
 
 开/关盖前读取开盖工位传感器（工位1=NO[14]：500/250ml 样品瓶；工位2=NO[15]：100ml 液体瓶），
@@ -157,6 +157,16 @@ def _sample_ids_match(left: Sequence[int], right: Sequence[int]) -> bool:
 def _validate_cap_storage_slot(cap_storage_slot: int) -> None:
     if cap_storage_slot not in range(1, 6):
         raise ValueError(f"cap_storage_slot 必须在 1-5 范围内，收到: {cap_storage_slot}")
+
+
+def _normalize_optional_cap_storage_slot(cap_storage_slot: int | None) -> int | None:
+    if cap_storage_slot is None:
+        return None
+    slot = int(cap_storage_slot)
+    if slot == 0:
+        return None
+    _validate_cap_storage_slot(slot)
+    return slot
 
 
 def _resolve_process_type_by_id(process_id: int) -> S08ProcessType:
@@ -603,7 +613,26 @@ class SZLabS08CapStationDevice:
             )
 
     @not_action
-    def _resolve_open_cap_storage_slot(self, sample_id: Sequence[int]) -> int:
+    def _resolve_open_cap_storage_slot(
+        self,
+        sample_id: Sequence[int],
+        cap_storage_slot: int | None = None,
+    ) -> int:
+        preferred_slot = _normalize_optional_cap_storage_slot(cap_storage_slot)
+        if preferred_slot is not None:
+            if self.validate_cap_constraints:
+                cached = self._try_read_sample_id_from_plc(preferred_slot)
+                if cached is not None and not _sample_id_is_empty(cached):
+                    if _sample_ids_match(cached, sample_id) and self._read_cap_slot_sensor(preferred_slot):
+                        raise ValueError(
+                            f"该样品已开盖，瓶盖位于暂存位{preferred_slot}，不能对同一瓶重复开盖"
+                        )
+                    raise ValueError(
+                        f"瓶盖暂存位{preferred_slot}已登记其他样品 ID，不能用于本次开盖"
+                    )
+                self._validate_cap_storage_slot_empty(preferred_slot)
+            return preferred_slot
+
         if not self.validate_cap_constraints:
             existing_slot = self._find_cap_slot_by_sample_id(sample_id)
             if existing_slot is not None:
@@ -628,7 +657,17 @@ class SZLabS08CapStationDevice:
         return free_slot
 
     @not_action
-    def _resolve_close_cap_storage_slot(self, sample_id: Sequence[int]) -> int:
+    def _resolve_close_cap_storage_slot(
+        self,
+        sample_id: Sequence[int],
+        cap_storage_slot: int | None = None,
+    ) -> int:
+        preferred_slot = _normalize_optional_cap_storage_slot(cap_storage_slot)
+        if preferred_slot is not None:
+            if self.validate_cap_constraints:
+                self._validate_cap_storage_slot_has_cap(preferred_slot)
+            return preferred_slot
+
         slot = self._find_cap_slot_by_sample_id(sample_id)
         if slot is None:
             if not self.validate_cap_constraints:
@@ -761,11 +800,12 @@ class SZLabS08CapStationDevice:
         self,
         process_type: S08ProcessType,
         sample_id: Sequence[int],
+        cap_storage_slot: int | None = None,
         timeout: float = 300.0,
     ) -> dict[str, Any]:
         try:
             normalized = self._require_sample_id(sample_id)
-            slot = self._resolve_open_cap_storage_slot(normalized)
+            slot = self._resolve_open_cap_storage_slot(normalized, cap_storage_slot)
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
         return self._run_cap_process(
@@ -780,11 +820,12 @@ class SZLabS08CapStationDevice:
         self,
         process_type: S08ProcessType,
         sample_id: Sequence[int],
+        cap_storage_slot: int | None = None,
         timeout: float = 300.0,
     ) -> dict[str, Any]:
         try:
             normalized = _normalize_sample_id(sample_id)
-            slot = self._resolve_close_cap_storage_slot(normalized)
+            slot = self._resolve_close_cap_storage_slot(normalized, cap_storage_slot)
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
         return self._run_cap_process(
@@ -803,6 +844,7 @@ class SZLabS08CapStationDevice:
         self,
         工艺选择: int = int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID: list[int] | None = None,
+        瓶盖暂存位: int = 1,
         超时时间: float = 300.0,
     ) -> dict[str, Any]:
         try:
@@ -819,11 +861,13 @@ class SZLabS08CapStationDevice:
             return self._open_cap(
                 process_type=process_type,
                 sample_id=normalized_sample_id,
+                cap_storage_slot=瓶盖暂存位,
                 timeout=超时时间,
             )
         return self._close_cap(
             process_type=process_type,
             sample_id=normalized_sample_id,
+            cap_storage_slot=瓶盖暂存位,
             timeout=超时时间,
         )
 

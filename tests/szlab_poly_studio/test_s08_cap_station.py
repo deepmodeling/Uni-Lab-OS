@@ -50,6 +50,7 @@ def test_s08_registry_actions_only_expose_process_cap():
     assert [param["name"] for param in action.params] == [
         "工艺选择",
         "样品ID",
+        "瓶盖暂存位",
         "超时时间",
     ]
     assert action.description == "S08 开/关盖"
@@ -202,6 +203,7 @@ def test_process_cap_open_liquid_vial_writes_sample_id_to_slot_cache():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
+        瓶盖暂存位=0,
         超时时间=1.0,
     )
 
@@ -222,6 +224,7 @@ def test_process_cap_open_sample_500ml_uses_process_one():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_SAMPLE_VIAL_500ML),
         样品ID=SAMPLE_B,
+        瓶盖暂存位=0,
         超时时间=1.0,
     )
 
@@ -237,12 +240,14 @@ def test_process_cap_sample_250ml_dispatches_open_and_close():
     open_result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_SAMPLE_VIAL_250ML),
         样品ID=SAMPLE_A,
+        瓶盖暂存位=0,
         超时时间=1.0,
     )
     client.set_cap_storage_slot_present(open_result["cap_storage_slot"], True)
     close_result = device.process_cap(
         工艺选择=int(S08ProcessType.CLOSE_SAMPLE_VIAL_250ML),
         样品ID=SAMPLE_A,
+        瓶盖暂存位=0,
         超时时间=1.0,
     )
 
@@ -271,6 +276,7 @@ def test_process_cap_open_auto_allocates_first_empty_cache_slot():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
+        瓶盖暂存位=0,
         超时时间=1.0,
     )
 
@@ -278,6 +284,39 @@ def test_process_cap_open_auto_allocates_first_empty_cache_slot():
     assert result["cap_storage_slot"] == 2
     assert ("S082瓶盖暂存位", 2) in client.writes
     assert (_cap_cache_element_name(2, 0), SAMPLE_A[0]) in client.writes
+
+
+def test_process_cap_open_defaults_to_cap_storage_slot_one():
+    device, client = make_s08_device()
+    client.seed_slot_sample_id(1, SAMPLE_B)
+    client.seed_slot_sample_id(2, SAMPLE_B)
+
+    result = device.process_cap(
+        工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
+        样品ID=SAMPLE_A,
+        超时时间=1.0,
+    )
+
+    assert result["success"] is True
+    assert result["cap_storage_slot"] == 1
+    assert ("S082瓶盖暂存位", 1) in client.writes
+
+
+def test_process_cap_open_uses_explicit_cap_storage_slot():
+    device, client = make_s08_device()
+
+    result = device.process_cap(
+        工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
+        样品ID=SAMPLE_A,
+        瓶盖暂存位=4,
+        超时时间=1.0,
+    )
+
+    assert result["success"] is True
+    assert result["cap_storage_slot"] == 4
+    assert ("S082瓶盖暂存位", 4) in client.writes
+    assert (_cap_cache_element_name(4, 0), SAMPLE_A[0]) in client.writes
+    assert (_cap_cache_element_name(1, 0), SAMPLE_A[0]) not in client.writes
 
 
 def test_process_cap_open_requires_sample_id():
@@ -302,6 +341,7 @@ def test_process_cap_close_finds_slot_by_sample_id_and_clears_cache():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.CLOSE_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
+        瓶盖暂存位=0,
         超时时间=1.0,
     )
 
@@ -387,6 +427,7 @@ def test_process_cap_skips_station_status_check_when_disabled():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
+        瓶盖暂存位=0,
         超时时间=1.0,
     )
 

@@ -283,6 +283,24 @@ class SzlabMixerPipettingStationDevice:
         }
 
     @not_action
+    def _write_configured_remaining_volumes(
+        self,
+        remaining_volumes: dict[int, float | None],
+    ) -> dict[str, float]:
+        written: dict[str, float] = {}
+        for bottle, remaining_volume in remaining_volumes.items():
+            if remaining_volume is None:
+                continue
+            bottle = validate_liquid_bottle(bottle)
+            value = float(remaining_volume)
+            if value < 0:
+                raise ValueError("S09 液体瓶剩余液量不能为负数")
+            variable = s09_remaining_volume_var(bottle)
+            self._write_variable(variable, value)
+            written[variable] = value
+        return written
+
+    @not_action
     def _split_raw_volume(self, raw_volume: int) -> list[int]:
         raw_volume = int(raw_volume)
         chunks: list[int] = []
@@ -390,7 +408,7 @@ class SzlabMixerPipettingStationDevice:
             "data": {"home_positions": values, "errors": errors},
         }
 
-    @action(auto_prefix=True, description="执行 S09 去安全位工艺并确认原点信号")
+    @not_action
     def go_to_safe_position(self, home_position: int = 1, require_allow: bool = True) -> dict[str, Any]:
         try:
             home_position = validate_home_position(home_position)
@@ -640,6 +658,11 @@ class SzlabMixerPipettingStationDevice:
         dispense_volume: int = 1,
         volume_unit: str = "raw",
         skip_level_check: bool = False,
+        S09液体瓶1剩余液量: float | None = None,
+        S09液体瓶2剩余液量: float | None = None,
+        S09液体瓶3剩余液量: float | None = None,
+        S09液体瓶4剩余液量: float | None = None,
+        S09液体瓶5剩余液量: float | None = None,
     ) -> dict[str, Any]:
         steps: list[dict[str, Any]] = []
         logs: list[dict[str, Any]] = []
@@ -658,8 +681,32 @@ class SzlabMixerPipettingStationDevice:
         else:
             transfer_chunks = [(aspirate_raw, dispense_raw)]
 
+        try:
+            configured_remaining_volumes = self._write_configured_remaining_volumes(
+                {
+                    1: S09液体瓶1剩余液量,
+                    2: S09液体瓶2剩余液量,
+                    3: S09液体瓶3剩余液量,
+                    4: S09液体瓶4剩余液量,
+                    5: S09液体瓶5剩余液量,
+                }
+            )
+        except ValueError as exc:
+            return {"success": False, "message": str(exc)}
+        except Exception as exc:
+            return {"success": False, "message": str(exc)}
+
         # 临时现场调试：只执行放 TIP，跳过取 TIP、取液、放液。
-        plan: list[tuple[int, str, int, int]] = [(6, "放 TIP", 0, 0)]
+        # plan: list[tuple[int, str, int, int]] = [(6, "放 TIP", 0, 0)]
+        plan: list[tuple[int, str, int, int]] = [(5, "取 TIP", 0, 0)]
+        for aspirate_chunk, dispense_chunk in transfer_chunks:
+            plan.extend(
+                [
+                    (7, "液体瓶取液", aspirate_chunk, 0),
+                    (8, "烧杯放液", 0, dispense_chunk),
+                ]
+            )
+        plan.append((6, "放 TIP", 0, 0))
 
         for process, step_name, aspirate_chunk, dispense_chunk in plan:
             result = self.run_process(
@@ -671,7 +718,7 @@ class SzlabMixerPipettingStationDevice:
                 aspirate_volume=aspirate_chunk,
                 dispense_volume=dispense_chunk,
                 volume_unit="raw",
-                require_allow=process in {5, 7, 8},
+                require_allow=process in {5, 6, 7, 8},
                 skip_level_check=skip_level_check,
             )
             steps.append({"step": step_name, **result})
@@ -696,6 +743,7 @@ class SzlabMixerPipettingStationDevice:
                 "volume_unit": "raw",
                 "aspirate_volume_ul": self._raw_volume_to_ul(aspirate_raw),
                 "dispense_volume_ul": self._raw_volume_to_ul(dispense_raw),
+                "configured_remaining_volumes": configured_remaining_volumes,
                 "split_count": len(transfer_chunks),
                 "transfer_chunks": [
                     {
@@ -722,6 +770,11 @@ class SzlabMixerPipettingStationDevice:
         dispense_volume: int = 1,
         volume_unit: str = "raw",
         skip_level_check: bool = False,
+        S09液体瓶1剩余液量: float | None = None,
+        S09液体瓶2剩余液量: float | None = None,
+        S09液体瓶3剩余液量: float | None = None,
+        S09液体瓶4剩余液量: float | None = None,
+        S09液体瓶5剩余液量: float | None = None,
     ) -> dict[str, Any]:
         result = self.add_liquid(
             tip_box_index=tip_box_index,
@@ -732,6 +785,11 @@ class SzlabMixerPipettingStationDevice:
             dispense_volume=dispense_volume,
             volume_unit=volume_unit,
             skip_level_check=skip_level_check,
+            S09液体瓶1剩余液量=S09液体瓶1剩余液量,
+            S09液体瓶2剩余液量=S09液体瓶2剩余液量,
+            S09液体瓶3剩余液量=S09液体瓶3剩余液量,
+            S09液体瓶4剩余液量=S09液体瓶4剩余液量,
+            S09液体瓶5剩余液量=S09液体瓶5剩余液量,
         )
         if result.get("success", False):
             data = dict(result.get("data") or {})

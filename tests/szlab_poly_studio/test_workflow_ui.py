@@ -513,7 +513,17 @@ def test_s09_debug_preset_uses_debug_file_name():
         )
     }
     assert "run_process" not in preset.actions
+    assert "go_to_safe_position" not in preset.actions
+    assert "add_liquid" in preset.actions
     assert "add_liquid_to_beaker" in preset.actions
+    add_liquid_param_names = [param["name"] for param in preset.actions["add_liquid"].params]
+    assert add_liquid_param_names[-5:] == [
+        "S09液体瓶1剩余液量",
+        "S09液体瓶2剩余液量",
+        "S09液体瓶3剩余液量",
+        "S09液体瓶4剩余液量",
+        "S09液体瓶5剩余液量",
+    ]
     assert collect_snapshot_variables("add_liquid_to_beaker", {}, runtime_config) == [
         "S09允许加工",
         "S09工艺选择",
@@ -560,6 +570,11 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "szlab_mixer_pipetting_station",
     }
     assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"] == "${csv_path}"
+    assert graph_nodes["szlab_mixer_pipetting_station"]["config"] == {
+        "url": "${opcua_url}",
+        "timeout": 300.0,
+        "csv_path": "s09_pipetting_station/pipetting_station_nodes.csv",
+    }
     assert preset.debug_config["skip_robot_precheck_variables"] == robot_action_preset.debug_config[
         "skip_robot_precheck_variables"
     ]
@@ -579,12 +594,28 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     assert preset.actions["run_solvent_addition"].device_id == "szlab_s06_pump"
     assert preset.actions["add_liquid_to_beaker"].device_id == "szlab_mixer_pipetting_station"
     assert "run_process" not in preset.actions
-    assert "add_liquid" not in preset.actions
+    assert "add_liquid" in preset.actions
+    assert "run_liquid_workflow" in preset.actions
+    assert "get_pipetting_status" in preset.actions
     assert [
         action.method
         for action in preset.actions.values()
         if action.device_id == "szlab_mixer_pipetting_station"
-    ] == ["add_liquid_to_beaker"]
+    ] == [
+        "check_home_position",
+        "read_home_positions",
+        "prepare_liquid_station",
+        "read_allow_process",
+        "bind_sample_to_station",
+        "release_station",
+        "add_liquid",
+        "add_liquid_to_beaker",
+        "run_liquid_workflow",
+        "set_liquid_bottle_remaining_volume",
+        "initialize_liquid_bottle_remaining_volumes",
+        "read_balance",
+        "get_pipetting_status",
+    ]
     assert collect_snapshot_variables("dose_powder", {}, runtime_config) == [
         "S07原点信号",
         "S07允许加工",

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" role="img">
+  <rect width="1280" height="680" fill="#f8fbff"/>
+  <text x="72" y="76" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="700" fill="#14213d">轻量级私有化：Gateway 收敛入口，平台统一管理数据与设备</text>
+  <text x="72" y="112" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" font-weight="400" fill="#52647d">外部用户通过 Gateway 访问 Polymer Platform；MySQL / MinIO 提供底层数据与文件服务；设备服务和 UniLabOS 作为平台内服务接入。</text>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2f5f9f"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#19345f" flood-opacity="0.13"/>
+    </filter>
+  </defs>
+  <rect x="78" y="146" width="1124" height="424" rx="30" fill="#eef5ff" stroke="#b9d2f5" stroke-width="2"/>
+  <g filter="url(#shadow)">
+    <rect x="116" y="278" width="170" height="116" rx="22" fill="#ffffff" stroke="#9fc3ff" stroke-width="3"/>
+<text x="201.0" y="322" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="700" fill="#14213d">外部用户</text>
+<text x="201.0" y="356" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">浏览器 / 内网访问</text>
+    <rect x="348" y="278" width="180" height="116" rx="22" fill="#ffffff" stroke="#9fc3ff" stroke-width="3"/>
+<text x="438.0" y="322" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="700" fill="#14213d">Gateway</text>
+<text x="438.0" y="356" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">统一入口</text>
+<text x="438.0" y="382" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">访问边界收敛</text>
+    <rect x="598" y="222" width="260" height="178" rx="22" fill="#ffffff" stroke="#9bd9b1" stroke-width="3"/>
+<text x="728.0" y="266" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="700" fill="#14213d">Polymer Platform</text>
+<text x="728.0" y="300" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">配方 / 实验 / 审计</text>
+<text x="728.0" y="326" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">文件资产索引</text>
+<text x="728.0" y="352" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">设备任务入口</text>
+    <rect x="942" y="222" width="220" height="178" rx="22" fill="#ffffff" stroke="#f2c879" stroke-width="3"/>
+<text x="1052.0" y="266" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="700" fill="#14213d">设备服务 + UniLabOS</text>
+<text x="1052.0" y="300" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">设备 action</text>
+<text x="1052.0" y="326" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">本地联调</text>
+<text x="1052.0" y="352" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">工作站能力</text>
+    <rect x="598" y="462" width="220" height="86" rx="22" fill="#ffffff" stroke="#c8b9ff" stroke-width="3"/>
+<text x="708.0" y="506" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="700" fill="#14213d">MySQL</text>
+<text x="708.0" y="540" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">结构化数据 / 状态 / 审计</text>
+    <rect x="942" y="462" width="220" height="86" rx="22" fill="#ffffff" stroke="#ffb3ad" stroke-width="3"/>
+<text x="1052.0" y="506" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="700" fill="#14213d">MinIO</text>
+<text x="1052.0" y="540" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">附件 / 日志 / 原始数据</text>
+  </g>
+  <g stroke="#2f5f9f" stroke-width="5" fill="none" marker-end="url(#arrow)">
+    <path d="M286 336 H338"/>
+    <path d="M528 336 H588"/>
+    <path d="M858 310 H932"/>
+    <path d="M710 400 V452"/>
+    <path d="M1038 400 V452"/>
+    <path d="M942 336 C890 336 870 420 818 484"/>
+    <path d="M1052 400 V452"/>
+  </g>
+  <rect x="214" y="596" width="852" height="52" rx="18" fill="#e8f1ff"/>
+  <text x="640" y="629" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="700" fill="#1f4f8f">文件、日志、结果和结构化状态统一进入 MySQL / MinIO，保证私有化部署下的数据可管、可查、可迁移。</text>
+</svg>

@@ -210,18 +210,45 @@ class SzlabMixerRobotDevice(
         return False, f"等待 {ROBOT_TASK_COMPLETE_VARIABLE} == {expected} 超时", actual
 
     @not_action
-    def _reset_pc_to_plc_variables(self, reset_variables: dict[str, Any]) -> dict[str, Any]:
+    def _reset_pc_to_plc_variables(
+        self,
+        reset_variables: dict[str, Any],
+        verify: bool = False,
+        max_attempts: int = 3,
+    ) -> dict[str, Any]:
         reset_writes: dict[str, Any] = {}
+        readback: dict[str, Any] = {}
         errors: dict[str, str] = {}
-        for name, value in reset_variables.items():
-            try:
-                self._write_variable(name, value)
-                reset_writes[name] = value
-            except Exception as exc:
-                errors[name] = str(exc)
+        attempts = max(1, int(max_attempts))
+        for attempt in range(1, attempts + 1):
+            errors = {}
+            for name, value in reset_variables.items():
+                try:
+                    self._write_variable(name, value)
+                    reset_writes[name] = value
+                except Exception as exc:
+                    errors[name] = str(exc)
+            if errors or not verify:
+                break
+            readback = {}
+            mismatches: dict[str, str] = {}
+            for name, expected in reset_variables.items():
+                try:
+                    actual = self._read_variable(name, use_cache=False)
+                    readback[name] = actual
+                    if actual != expected:
+                        mismatches[name] = f"期望 {expected!r}，实际 {actual!r}"
+                except Exception as exc:
+                    mismatches[name] = str(exc)
+            errors = mismatches
+            if not errors:
+                break
+            if attempt < attempts:
+                time.sleep(min(self.poll_interval, 0.2))
         return {
             "success": not errors,
             "written_variables": reset_writes,
+            "readback": readback,
             "errors": errors,
         }
 
@@ -256,6 +283,7 @@ class SzlabMixerRobotDevice(
         variables: dict[str, Any] | None = None,
         reset_variables: dict[str, Any] | None = None,
         precheck=None,
+        verify_reset: bool = False,
         **data: Any,
     ) -> dict[str, Any]:
         reset_variables = reset_variables or {ROBOT_TASK_NUMBER_VARIABLE: 0}
@@ -304,7 +332,8 @@ class SzlabMixerRobotDevice(
                 },
             }
             reset_result = self._reset_pc_to_plc_variables(
-                rollback_variables
+                rollback_variables,
+                verify=verify_reset,
             )
             self._last_task = {
                 "task": task,
@@ -333,7 +362,8 @@ class SzlabMixerRobotDevice(
             }
         else:
             reset_result = self._reset_pc_to_plc_variables(
-                {ROBOT_WRITE_DONE_VARIABLE: False, **reset_variables}
+                {ROBOT_WRITE_DONE_VARIABLE: False, **reset_variables},
+                verify=verify_reset,
             )
         status = "completed" if complete_success and reset_result["success"] else "failed"
 

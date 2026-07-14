@@ -84,6 +84,22 @@ type RunStatus = {
 };
 
 type NodeRunStatus = 'idle' | 'preparing' | 'running' | 'success' | 'failed' | 'cancelled';
+type MainTab = 'workflow' | 'tasks' | 'sensors';
+type TaskTemplate = {
+  id: string;
+  name: string;
+  nodeIds: string[];
+  resources: string[];
+  gates: string[];
+};
+type TaskInstanceStatus = 'waiting' | 'pending' | 'running' | 'done';
+type TaskInstance = {
+  id: string;
+  sample: string;
+  templateId: string;
+  order: number;
+  status: TaskInstanceStatus;
+};
 
 type StackSlotPayload = {
   site_key?: string;
@@ -159,6 +175,146 @@ const DEFAULT_CONFIG = {
   show_csv: false,
 };
 const DRAFT_STORAGE_PREFIX = 'unilabos.workflowDraft';
+const DEFAULT_SENSOR_GATES: Record<string, { label: string; free: boolean }> = {
+  robot: { label: 'Robot 机械臂', free: true },
+  s04: { label: 'S04 磁搅位', free: true },
+  s05: { label: 'S05 拍照位', free: true },
+  s06: { label: 'S06 加液位', free: true },
+  s07: { label: 'S07 固体加料位', free: true },
+  s08: { label: 'S08 开关盖位', free: true },
+  s09: { label: 'S09 移液位', free: true },
+};
+const SAMPLE_NAMES = ['Sample A', 'Sample B', 'Sample C', 'Sample D', 'Sample E'];
+
+function uniqueTaskKeys(keys: string[]) {
+  return Array.from(new Set(keys.filter(Boolean)));
+}
+
+function inferTaskResources(node: Node<ActionNodeData>) {
+  const text = `${node.data.deviceId || ''} ${node.data.method} ${node.data.label}`.toLowerCase();
+  const resources: string[] = [];
+  if (text.includes('robot') || /^submit_(pick|place)_/.test(node.data.method)) {
+    resources.push('robot');
+  }
+  inferStationKeys(text).forEach((station) => resources.push(station));
+  return resources.length ? uniqueTaskKeys(resources) : [node.data.deviceId || 'unknown'];
+}
+
+function inferTaskGates(node: Node<ActionNodeData>) {
+  const text = `${node.data.deviceId || ''} ${node.data.method} ${node.data.label}`.toLowerCase();
+  return inferStationKeys(text);
+}
+
+function inferStationKeys(text: string) {
+  const stations: string[] = [];
+  (['s04', 's05', 's06', 's07', 's08', 's09'] as const).forEach((station) => {
+    const compact = station.replace('s0', 's');
+    if (text.includes(station) || text.includes(compact)) {
+      stations.push(station);
+    }
+  });
+  return stations;
+}
+
+function orderSelectedNodesByPlan(
+  selectedNodes: Node<ActionNodeData>[],
+  plannedNodes: Node<ActionNodeData>[],
+) {
+  const selectedIds = new Set(selectedNodes.map((node) => node.id));
+  const ordered = plannedNodes.filter((node) => selectedIds.has(node.id));
+  const missing = selectedNodes.filter((node) => !ordered.some((item) => item.id === node.id));
+  return [...ordered, ...missing];
+}
+
+function summarizeTaskName(taskNodes: Node<ActionNodeData>[]) {
+  if (!taskNodes.length) return '未命名 Task';
+  const stationNames = uniqueTaskKeys(taskNodes.flatMap((node) => inferTaskGates(node).map((gate) => gate.toUpperCase())));
+  if (stationNames.length) return `${stationNames.join(' + ')} 工艺 Task`;
+  return taskNodes.length === 1 ? taskNodes[0].data.label : `${taskNodes[0].data.label} 等 ${taskNodes.length} 步`;
+}
+
+function chunkNodesForTaskPreview(orderedNodes: Node<ActionNodeData>[]) {
+  const chunks: Array<Node<ActionNodeData>[]> = [];
+  let index = 0;
+  while (index < orderedNodes.length) {
+    const current = orderedNodes[index];
+    const currentResources = inferTaskResources(current);
+    const next = orderedNodes[index + 1];
+    if (currentResources.includes('robot') && next) {
+      chunks.push([current, next]);
+      index += 2;
+    } else {
+      chunks.push([current]);
+      index += 1;
+    }
+  }
+  return chunks;
+}
+
+function buildRunningTaskResourceHolders(
+  instances: TaskInstance[],
+  templates: TaskTemplate[],
+) {
+  const holders: Record<string, string> = {};
+  instances.filter((task) => task.status === 'running').forEach((task) => {
+    const template = templates.find((item) => item.id === task.templateId);
+    template?.resources.forEach((resource) => {
+      holders[resource] = `${task.sample} / ${template.name}`;
+    });
+  });
+  return holders;
+}
+
+function unlockNextTaskInstances(instances: TaskInstance[]) {
+  return instances.map((task) => {
+    if (task.status !== 'waiting') return task;
+    const previousDone = instances
+      .filter((item) => item.sample === task.sample && item.order < task.order)
+      .every((item) => item.status === 'done');
+    return previousDone ? { ...task, status: 'pending' as const } : task;
+  });
+}
+
+function taskBlockingReasons(
+  task: TaskInstance,
+  instances: TaskInstance[],
+  templates: TaskTemplate[],
+  sensorGates: Record<string, boolean>,
+) {
+  if (task.status === 'done' || task.status === 'running') return [];
+  const template = templates.find((item) => item.id === task.templateId);
+  if (!template) return ['缺少 Task 模板'];
+  const reasons: string[] = [];
+  const previousDone = instances
+    .filter((item) => item.sample === task.sample && item.order < task.order)
+    .every((item) => item.status === 'done');
+  if (!previousDone) reasons.push('前置 Task 未完成');
+  template.gates.forEach((gate) => {
+    if (sensorGates[gate] === false) {
+      reasons.push(`${DEFAULT_SENSOR_GATES[gate]?.label || gate} 传感器占用`);
+    }
+  });
+  const holders = buildRunningTaskResourceHolders(instances, templates);
+  template.resources.forEach((resource) => {
+    if (holders[resource]) {
+      reasons.push(`${DEFAULT_SENSOR_GATES[resource]?.label || resource} 已被 ${holders[resource]} 锁定`);
+    }
+  });
+  return reasons;
+}
+
+function taskVisualState(task: TaskInstance, blockingReasons: string[]) {
+  if (task.status === 'done') return 'done';
+  if (task.status === 'running') return 'running';
+  return blockingReasons.length ? 'blocked' : 'ready';
+}
+
+function taskStatusText(status: ReturnType<typeof taskVisualState>) {
+  if (status === 'done') return '完成';
+  if (status === 'running') return '运行中';
+  if (status === 'blocked') return '阻塞';
+  return '可启动';
+}
 
 function buildDefaultParams(params: ParamSpec[]) {
   return params.reduce<Record<string, unknown>>((defaults, param) => {
@@ -286,13 +442,20 @@ function App() {
   const [leftTab, setLeftTab] = useState<'devices' | 'stacks'>('devices');
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [collapsedActionGroups, setCollapsedActionGroups] = useState<Record<string, boolean>>({});
-  const [mainTab, setMainTab] = useState<'workflow' | 'sensors'>('workflow');
+  const [mainTab, setMainTab] = useState<MainTab>('workflow');
   const [sideTab, setSideTab] = useState<'control' | 'materials' | 'logs'>('control');
   const [selectedStackId, setSelectedStackId] = useState('');
   const [showStackModal, setShowStackModal] = useState(false);
   const [stackStatus, setStackStatus] = useState<StackStatusPayload | null>(null);
   const [stackError, setStackError] = useState('');
   const [isRefreshingStack, setIsRefreshingStack] = useState(false);
+  const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
+  const [taskInstances, setTaskInstances] = useState<TaskInstance[]>([]);
+  const [taskEvents, setTaskEvents] = useState<string[]>([]);
+  const [taskSampleCount, setTaskSampleCount] = useState(3);
+  const [sensorGates, setSensorGates] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(Object.entries(DEFAULT_SENSOR_GATES).map(([key, gate]) => [key, gate.free])),
+  );
   const importFileRef = useRef<HTMLInputElement | null>(null);
   const canvasToastTimerRef = useRef<number | null>(null);
   const [config, setConfig] = useState({
@@ -315,6 +478,14 @@ function App() {
   const draftKey = useMemo(() => workflowDraftKey(workflowName, nodes, edges), [workflowName, nodes, edges]);
   const executionPlan = useMemo(() => createExecutionPlan(nodes, edges, startNodeId), [edges, nodes, startNodeId]);
   const actionGroups = useMemo(() => groupActionsByDevice(actions), [actions]);
+  const selectedTaskNodes = useMemo(
+    () => nodes.filter((node) => node.selected),
+    [nodes],
+  );
+  const runningTaskResourceHolders = useMemo(
+    () => buildRunningTaskResourceHolders(taskInstances, taskTemplates),
+    [taskInstances, taskTemplates],
+  );
 
   const toggleActionGroup = useCallback((groupId: string) => {
     setCollapsedActionGroups((current) => ({
@@ -529,6 +700,120 @@ function App() {
     );
     showCanvasToast('已更新节点执行范围');
   };
+
+  const appendTaskEvent = useCallback((message: string) => {
+    const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    setTaskEvents((current) => [`${time} ${message}`, ...current].slice(0, 20));
+  }, []);
+
+  const createTaskTemplateFromNodes = useCallback((templateName: string, templateNodes: Node<ActionNodeData>[]) => {
+    const orderedNodeIds = orderSelectedNodesByPlan(templateNodes, executionPlan.executableNodes).map((node) => node.id);
+    if (!orderedNodeIds.length) {
+      setMessage('请先在流程画布中选择节点，再保存为 Task 模板。');
+      return;
+    }
+    const selectedNodesById = new Map(nodes.map((node) => [node.id, node]));
+    const orderedNodes = orderedNodeIds.map((nodeId) => selectedNodesById.get(nodeId)).filter(Boolean) as Node<ActionNodeData>[];
+    const resources = uniqueTaskKeys(orderedNodes.flatMap(inferTaskResources));
+    const gates = uniqueTaskKeys(orderedNodes.flatMap(inferTaskGates));
+    const taskName = templateName || summarizeTaskName(orderedNodes);
+    setTaskTemplates((current) => [
+      ...current,
+      {
+        id: `task_${Date.now().toString(36)}_${current.length + 1}`,
+        name: taskName,
+        nodeIds: orderedNodeIds,
+        resources,
+        gates,
+      },
+    ]);
+    appendTaskEvent(`保存 Task 模板「${taskName}」，包含 ${orderedNodeIds.length} 个子功能。`);
+    showCanvasToast('已保存 Task 模板');
+  }, [appendTaskEvent, executionPlan.executableNodes, nodes]);
+
+  const createTaskTemplateFromSelection = useCallback(() => {
+    createTaskTemplateFromNodes(summarizeTaskName(selectedTaskNodes), selectedTaskNodes);
+  }, [createTaskTemplateFromNodes, selectedTaskNodes]);
+
+  const createRecommendedTaskTemplates = useCallback(() => {
+    const orderedNodes = executionPlan.executableNodes.length ? executionPlan.executableNodes : nodes;
+    const chunks = chunkNodesForTaskPreview(orderedNodes);
+    if (!chunks.length) {
+      setMessage('当前画布没有可切分的节点。');
+      return;
+    }
+    const templates = chunks.map((chunk, index) => ({
+      id: `auto_task_${Date.now().toString(36)}_${index + 1}`,
+      name: summarizeTaskName(chunk),
+      nodeIds: chunk.map((node) => node.id),
+      resources: uniqueTaskKeys(chunk.flatMap(inferTaskResources)),
+      gates: uniqueTaskKeys(chunk.flatMap(inferTaskGates)),
+    }));
+    setTaskTemplates(templates);
+    setTaskInstances([]);
+    appendTaskEvent(`已按当前流程顺序自动切分 ${templates.length} 个 Task 模板。`);
+    showCanvasToast('已生成推荐 Task 切分');
+  }, [appendTaskEvent, executionPlan.executableNodes, nodes]);
+
+  const createTaskInstances = useCallback(() => {
+    if (!taskTemplates.length) {
+      setMessage('请先创建 Task 模板。');
+      return;
+    }
+    const samples = SAMPLE_NAMES.slice(0, taskSampleCount);
+    const instances = samples.flatMap((sample) =>
+      taskTemplates.map((template, order) => ({
+        id: `${sample}_${template.id}`,
+        sample,
+        templateId: template.id,
+        order,
+        status: order === 0 ? 'pending' as const : 'waiting' as const,
+      })),
+    );
+    setTaskInstances(instances);
+    appendTaskEvent(`已生成 ${instances.length} 个 Task 实例，等待调度器根据传感器门控启动。`);
+  }, [appendTaskEvent, taskSampleCount, taskTemplates]);
+
+  const toggleSensorGate = useCallback((gate: string) => {
+    setSensorGates((current) => ({ ...current, [gate]: !current[gate] }));
+    appendTaskEvent(`${DEFAULT_SENSOR_GATES[gate]?.label || gate} 门控已切换。`);
+  }, [appendTaskEvent]);
+
+  const scheduleOneTask = useCallback(() => {
+    const completedRunning = taskInstances.filter((task) => task.status === 'running');
+    let nextInstances = taskInstances.map((task) => (
+      task.status === 'running' ? { ...task, status: 'done' as const } : task
+    ));
+    completedRunning.forEach((task) => {
+      const template = taskTemplates.find((item) => item.id === task.templateId);
+      appendTaskEvent(`完成 ${task.sample} / ${template?.name || task.templateId}，释放资源锁。`);
+    });
+    nextInstances = unlockNextTaskInstances(nextInstances);
+    const runnable = nextInstances
+      .filter((task) => task.status === 'pending')
+      .filter((task) => taskBlockingReasons(task, nextInstances, taskTemplates, sensorGates).length === 0)
+      .sort((left, right) => left.order - right.order || left.sample.localeCompare(right.sample));
+    if (!runnable.length) {
+      setTaskInstances(nextInstances);
+      appendTaskEvent('暂无可启动 Task：等待前置完成、传感器空闲或资源锁释放。');
+      return;
+    }
+    const selectedTask = runnable[0];
+    nextInstances = nextInstances.map((task) =>
+      task.id === selectedTask.id ? { ...task, status: 'running' as const } : task,
+    );
+    const template = taskTemplates.find((item) => item.id === selectedTask.templateId);
+    setTaskInstances(nextInstances);
+    appendTaskEvent(`启动 ${selectedTask.sample} / ${template?.name || selectedTask.templateId}。`);
+  }, [appendTaskEvent, sensorGates, taskInstances, taskTemplates]);
+
+  const resetTaskDemo = useCallback(() => {
+    setTaskTemplates([]);
+    setTaskInstances([]);
+    setTaskEvents([]);
+    setSensorGates(Object.fromEntries(Object.entries(DEFAULT_SENSOR_GATES).map(([key, gate]) => [key, gate.free])));
+    appendTaskEvent('Task 编排演示已重置。');
+  }, [appendTaskEvent]);
 
   const buildWorkflow = useCallback(async () => {
     if (!executionPlan.executableNodes.length) {
@@ -862,6 +1147,7 @@ function App() {
 
           <div className="demo-tabbar" role="tablist" aria-label="主工作区切换">
             <button className={mainTab === 'workflow' ? 'active' : ''} onClick={() => setMainTab('workflow')} type="button">流程画布</button>
+            <button className={mainTab === 'tasks' ? 'active' : ''} onClick={() => setMainTab('tasks')} type="button">Task 编排</button>
             <button className={mainTab === 'sensors' ? 'active' : ''} onClick={() => setMainTab('sensors')} type="button">传感器快照</button>
           </div>
 
@@ -907,6 +1193,138 @@ function App() {
                 </Controls>
               </ReactFlow>
               {canvasToast && <div className="canvas-toast">{canvasToast}</div>}
+            </div>
+          )}
+
+          {mainTab === 'tasks' && (
+            <div className="task-orchestration">
+              <section className="task-column task-recipe-column">
+                <div className="task-panel-head">
+                  <div>
+                    <h2>从当前流程定义 Task</h2>
+                    <p>在“流程画布”中点选或框选节点后，在这里保存为可调度 Task 模板。</p>
+                  </div>
+                  <span>{selectedTaskNodes.length} 个已选节点</span>
+                </div>
+                <div className="task-action-row">
+                  <button className="primary" onClick={createTaskTemplateFromSelection} disabled={!selectedTaskNodes.length} type="button">
+                    选中节点保存为 Task
+                  </button>
+                  <button onClick={createRecommendedTaskTemplates} disabled={!nodes.length} type="button">
+                    按流程自动切分
+                  </button>
+                  <button className="danger" onClick={resetTaskDemo} type="button">重置演示</button>
+                </div>
+                <div className="task-selected-preview">
+                  {selectedTaskNodes.length ? (
+                    orderSelectedNodesByPlan(selectedTaskNodes, executionPlan.executableNodes).map((node, index) => (
+                      <article className="task-node-chip" key={node.id}>
+                        <span>{index + 1}</span>
+                        <strong>{node.data.label}</strong>
+                        <code>{node.data.method}</code>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="task-empty">回到流程画布选择一段节点，例如 Robot 放到 S07 + S07 注粉。</div>
+                  )}
+                </div>
+                <div className="task-panel-head compact">
+                  <div>
+                    <h2>Task Templates</h2>
+                    <p>模板来自当前 DAG 子节点，后续可保存到前端配置。</p>
+                  </div>
+                  <span>{taskTemplates.length} 个模板</span>
+                </div>
+                <div className="task-template-list">
+                  {taskTemplates.map((template, index) => {
+                    const templateNodes = template.nodeIds
+                      .map((nodeId) => nodes.find((node) => node.id === nodeId))
+                      .filter(Boolean) as Node<ActionNodeData>[];
+                    return (
+                      <article className="task-template-card" key={template.id}>
+                        <div>
+                          <strong>{index + 1}. {template.name}</strong>
+                          <span>{templateNodes.map((node) => node.data.label).join(' → ')}</span>
+                        </div>
+                        <div className="task-mini-tags">
+                          {template.resources.map((resource) => <code key={resource}>lock:{resource}</code>)}
+                          {template.gates.map((gate) => <code key={gate}>gate:{gate}</code>)}
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {!taskTemplates.length && <div className="task-empty">暂无模板。可以先点击“按流程自动切分”快速生成一版。</div>}
+                </div>
+              </section>
+
+              <section className="task-column task-scheduler-column">
+                <div className="task-panel-head">
+                  <div>
+                    <h2>Task Queue 模拟</h2>
+                    <p>这里演示未来 scheduler：先完成 running，再从 ready 队列中启动一个 Task。</p>
+                  </div>
+                  <span>{taskInstances.length} 个实例</span>
+                </div>
+                <div className="task-action-row">
+                  <label className="task-sample-count">
+                    样品数
+                    <input type="number" min={1} max={5} value={taskSampleCount} onChange={(event) => setTaskSampleCount(Number(event.target.value))} />
+                  </label>
+                  <button onClick={createTaskInstances} disabled={!taskTemplates.length} type="button">生成样品任务</button>
+                  <button className="primary" onClick={scheduleOneTask} disabled={!taskInstances.length} type="button">调度一步</button>
+                </div>
+                <div className="task-queue-list">
+                  {taskInstances.map((task) => {
+                    const template = taskTemplates.find((item) => item.id === task.templateId);
+                    const reasons = taskBlockingReasons(task, taskInstances, taskTemplates, sensorGates);
+                    const state = taskVisualState(task, reasons);
+                    return (
+                      <article className={`task-queue-card ${state}`} key={task.id}>
+                        <div>
+                          <strong>{task.sample} / {template?.name || task.templateId}</strong>
+                          <span>{reasons.length ? reasons.join('；') : '满足启动条件'}</span>
+                        </div>
+                        <em>{taskStatusText(state)}</em>
+                      </article>
+                    );
+                  })}
+                  {!taskInstances.length && <div className="task-empty">生成样品任务后，这里会显示 pending / running / done 队列。</div>}
+                </div>
+              </section>
+
+              <section className="task-column task-resource-column">
+                <div className="task-panel-head">
+                  <div>
+                    <h2>Sensor Gates</h2>
+                    <p>第一版只用传感器空闲和资源锁；之后这里可替换为真实 OPC 变量。</p>
+                  </div>
+                </div>
+                <div className="task-gate-list">
+                  {Object.entries(DEFAULT_SENSOR_GATES).map(([gate, meta]) => {
+                    const holder = runningTaskResourceHolders[gate];
+                    const free = sensorGates[gate] && !holder;
+                    return (
+                      <button className={`task-gate-card ${free ? 'free' : 'busy'}`} key={gate} onClick={() => toggleSensorGate(gate)} type="button">
+                        <span>
+                          <strong>{meta.label}</strong>
+                          <small>{holder ? `资源锁：${holder}` : sensorGates[gate] ? '传感器空闲' : '手动模拟占用'}</small>
+                        </span>
+                        <em>{free ? 'FREE' : 'BUSY'}</em>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="task-panel-head compact">
+                  <div>
+                    <h2>Scheduler Events</h2>
+                    <p>静态事件流，后续可映射到右侧日志分类。</p>
+                  </div>
+                </div>
+                <div className="task-event-list">
+                  {taskEvents.map((event, index) => <div key={`${event}-${index}`}>{event}</div>)}
+                  {!taskEvents.length && <div className="task-empty">暂无 Task 事件。</div>}
+                </div>
+              </section>
             </div>
           )}
 

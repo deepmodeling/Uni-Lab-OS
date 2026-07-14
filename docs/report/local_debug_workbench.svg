@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" role="img">
+  <rect width="1280" height="680" fill="#f8fbff"/>
+  <text x="72" y="76" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="700" fill="#14213d">本地联调工作台：复杂流程可看、可跑、可定位</text>
+  <text x="72" y="112" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" font-weight="400" fill="#52647d">把设备 action、流程画布、运行控制、日志、OPC 变量变化和堆栈状态集中到一个界面</text>
+  <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#19345f" flood-opacity="0.13"/></filter>
+  <g filter="url(#shadow)">
+<rect x="80" y="145" width="1120" height="380" rx="28" fill="#ffffff"/>
+<rect x="110" y="180" width="230" height="310" rx="20" fill="#f1f6ff"/>
+<rect x="370" y="180" width="510" height="310" rx="20" fill="#f8fafc"/>
+<rect x="910" y="180" width="260" height="310" rx="20" fill="#f1f6ff"/>
+<text x="225" y="220" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="22" font-weight="700" fill="#14213d">设备 action</text>
+<text x="225" y="270" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">S07 注粉</text>
+<text x="225" y="310" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">S09 加液</text>
+<text x="225" y="350" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">S05 拍照</text>
+<text x="625" y="220" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="22" font-weight="700" fill="#14213d">流程画布</text>
+<rect x="420" y="275" width="110" height="75" rx="22" fill="#ffffff" stroke="#9fc3ff" stroke-width="3"/>
+<text x="475.0" y="323" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">Robot</text>
+<text x="475.0" y="359" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">转运</text>
+<rect x="585" y="275" width="110" height="75" rx="22" fill="#ffffff" stroke="#9bd9b1" stroke-width="3"/>
+<text x="640.0" y="323" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">S07</text>
+<text x="640.0" y="359" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">注粉</text>
+<rect x="750" y="275" width="110" height="75" rx="22" fill="#ffffff" stroke="#f2c879" stroke-width="3"/>
+<text x="805.0" y="323" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">S09</text>
+<text x="805.0" y="359" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">加液</text>
+<path d="M530 313 H575 M695 313 H740" stroke="#6aa0e8" stroke-width="5" fill="none"/>
+<text x="625" y="430" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" font-weight="700" fill="#1f4f8f">起点续跑 / 节点禁用 / 参数编辑</text>
+<text x="1040" y="220" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="22" font-weight="700" fill="#14213d">日志与变量</text>
+<text x="1040" y="270" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">节点日志</text>
+<text x="1040" y="310" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">OPC 等待</text>
+<text x="1040" y="350" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">Begin / Goal / End</text>
+<rect x="186" y="560" width="908" height="54" rx="18" fill="#e8f1ff"/>
+<text x="640" y="594" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="700" fill="#1f4f8f">从黑盒执行变成结构化调试：节点、日志、变量、物料状态都能对应起来</text>
+  </g>
+</svg>

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="620" viewBox="0 0 1280 620" role="img">
+  <rect width="1280" height="620" fill="#f8fbff"/>
+  <text x="72" y="76" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="700" fill="#14213d">协作方式 SOP：绑定 UniLab 开发链路</text>
+  <text x="72" y="112" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" font-weight="400" fill="#52647d">设备拆分、action、registry、preset、本地联调和 CI 使用同一套 UniLab 资产</text>
+  <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#19345f" flood-opacity="0.13"/></filter>
+  <g filter="url(#shadow)">
+<rect x="80" y="195" width="180" height="145" rx="22" fill="#ffffff" stroke="#9fc3ff" stroke-width="3"/>
+<text x="170.0" y="243" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">设备拆分</text>
+<text x="170.0" y="279" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">S04 / S05 / S06</text>
+<text x="170.0" y="307" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">S07 / S08 / S09 / S12</text>
+<rect x="315" y="195" width="180" height="145" rx="22" fill="#ffffff" stroke="#9bd9b1" stroke-width="3"/>
+<text x="405.0" y="243" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">UniLab action</text>
+<text x="405.0" y="279" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">参数 schema</text>
+<text x="405.0" y="307" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">返回值 / 错误码</text>
+<rect x="550" y="195" width="180" height="145" rx="22" fill="#ffffff" stroke="#f2c879" stroke-width="3"/>
+<text x="640.0" y="243" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">Registry / Preset</text>
+<text x="640.0" y="279" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">统一能力入口</text>
+<text x="640.0" y="307" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">前端测试复用</text>
+<rect x="785" y="195" width="180" height="145" rx="22" fill="#ffffff" stroke="#c8b9ff" stroke-width="3"/>
+<text x="875.0" y="243" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">本地联调</text>
+<text x="875.0" y="279" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">画布运行</text>
+<text x="875.0" y="307" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">日志 / OPC 变量</text>
+<rect x="1020" y="195" width="180" height="145" rx="22" fill="#ffffff" stroke="#ffb3ad" stroke-width="3"/>
+<text x="1110.0" y="243" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">CI 验证</text>
+<text x="1110.0" y="279" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">单测 + 虚拟硬件</text>
+<text x="1110.0" y="307" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">质量门禁</text>
+<path d="M260 267 H305 M495 267 H540 M730 267 H775 M965 267 H1010" stroke="#2f5f9f" stroke-width="5" fill="none"/>
+<rect x="174" y="430" width="932" height="80" rx="24" fill="#eef5ff" stroke="#b9d2f5" stroke-width="2"/>
+<text x="640" y="465" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="21" font-weight="700" fill="#14213d">SOP 不是额外流程，而是嵌入 UniLab 的开发、联调、测试和展示链路</text>
+<text x="640" y="495" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="400" fill="#52647d">多人并行开发，同时保持接口、流程和验证方式一致</text>
+  </g>
+</svg>

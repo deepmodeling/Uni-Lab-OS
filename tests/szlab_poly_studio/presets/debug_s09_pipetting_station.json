@@ -9,7 +9,7 @@
   "default_workflow_name": "szlab_s09_pipetting_workflow",
   "default_config": {
     "graph": "__generated__",
-    "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
+    "url": "opc.tcp://192.168.1.10:4840",
     "csv": "s09_pipetting_station/pipetting_station_nodes.csv",
     "timeout": 300,
     "no_subscription": true,

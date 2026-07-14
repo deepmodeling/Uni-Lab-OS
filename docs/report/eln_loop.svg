@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="620" viewBox="0 0 1280 620" role="img">
+  <rect width="1280" height="620" fill="#f8fbff"/>
+  <text x="72" y="76" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="700" fill="#14213d">架构与定制 ELN：配方、执行、记录一致</text>
+  <text x="72" y="112" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" font-weight="400" fill="#52647d">把高分子配方模型、实验准备、设备执行和 ELN 记录放到同一条数据链路中</text>
+  <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#19345f" flood-opacity="0.13"/></filter>
+  <g filter="url(#shadow)">
+<rect x="90" y="190" width="220" height="150" rx="22" fill="#ffffff" stroke="#9fc3ff" stroke-width="3"/>
+<text x="200.0" y="238" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">高分子配方模型</text>
+<text x="200.0" y="274" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">结构化生成</text>
+<text x="200.0" y="302" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">字段统一</text>
+<rect x="380" y="190" width="220" height="150" rx="22" fill="#ffffff" stroke="#9bd9b1" stroke-width="3"/>
+<text x="490.0" y="238" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">实验准备</text>
+<text x="490.0" y="274" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">批次、物料</text>
+<text x="490.0" y="302" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">参数确认</text>
+<rect x="670" y="190" width="220" height="150" rx="22" fill="#ffffff" stroke="#f2c879" stroke-width="3"/>
+<text x="780.0" y="238" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">设备执行</text>
+<text x="780.0" y="274" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">UniLab action</text>
+<text x="780.0" y="302" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">日志与结果</text>
+<rect x="960" y="190" width="220" height="150" rx="22" fill="#ffffff" stroke="#c8b9ff" stroke-width="3"/>
+<text x="1070.0" y="238" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="700" fill="#14213d">ELN 记录</text>
+<text x="1070.0" y="274" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">结果回流</text>
+<text x="1070.0" y="302" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="400" fill="#52647d">审计追踪</text>
+<path d="M310 265 H370 M600 265 H660 M890 265 H950" stroke="#2f5f9f" stroke-width="5" fill="none"/>
+<path d="M1070 355 C1070 455 200 455 200 355" stroke="#2f5f9f" stroke-width="5" fill="none"/>
+<rect x="330" y="430" width="620" height="64" rx="18" fill="#e8f1ff"/>
+<text x="640" y="470" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="22" font-weight="700" fill="#1f4f8f">同一套数据口径贯穿设计、执行、记录和归档</text>
+  </g>
+</svg>

@@ -21,10 +21,6 @@ S09_HOME_LABELS: dict[int, str] = {
 }
 
 S09_PROCESS_LABELS: dict[int, str] = {
-    1: "去安全位1（机器人 TIP 盒取放）",
-    2: "去安全位2（机器人液体试剂 1/2/3 取放）",
-    3: "去安全位3（机器人液体试剂 4/5 取放）",
-    4: "去安全位4（机器人烧杯取放）",
     5: "取 TIP",
     6: "放 TIP",
     7: "液体瓶取液（润洗一次后取液）",
@@ -69,7 +65,7 @@ def s09_remaining_volume_vars() -> list[str]:
 def validate_process(process: int) -> int:
     process = int(process)
     if process not in S09_PROCESS_LABELS:
-        raise ValueError("S09 工艺选择必须在 1-10 范围内")
+        raise ValueError("S09 工艺选择必须在 5-10 范围内")
     return process
 
 

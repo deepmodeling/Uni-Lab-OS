@@ -26,22 +26,7 @@
     "szlab_mixer_pump": "szlab_s06_pump"
   },
   "actions_source": "registry",
-  "hidden_actions": [
-    "check_home_position",
-    "read_home_positions",
-    "go_to_safe_position",
-    "prepare_liquid_station",
-    "read_allow_process",
-    "bind_sample_to_station",
-    "release_station",
-    "run_process",
-    "add_liquid",
-    "run_liquid_workflow",
-    "set_liquid_bottle_remaining_volume",
-    "initialize_liquid_bottle_remaining_volumes",
-    "read_balance",
-    "get_pipetting_status"
-  ],
+  "hidden_actions": ["run_process"],
   "runtime_config": "../runtime_configs/szlab_robot_action_workflow_runtime.json",
   "default_workflow_name": "szlab_robot_action_workflow",
   "default_config": {
@@ -387,9 +372,8 @@
         },
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}",
-          "plc_device_id": "szlab_poly_plc",
-          "use_plc_gateway": true
+          "timeout": 300.0,
+          "csv_path": "s09_pipetting_station/pipetting_station_nodes.csv"
         },
         "data": {}
       }

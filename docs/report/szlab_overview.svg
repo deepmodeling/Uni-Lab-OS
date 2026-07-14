@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img">
+  <rect width="1280" height="720" fill="#f8fbff"/>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#19345f" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+  <text x="72" y="74" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="700" fill="#14213d">SZLab UniLabOS 实践阶段性汇报</text>
+  <text x="72" y="108" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" font-weight="400" fill="#52647d">围绕数据闭环、私有化落地与 UniLabOS 工程能力，形成可交付、可复用、可持续迭代的项目实践</text>
+  <g filter="url(#shadow)">
+    <rect x="72" y="140" width="1136" height="108" rx="26" fill="#ffffff" stroke="#4f8fd8" stroke-width="2.8"/>
+    <rect x="92" y="164" width="116" height="60" rx="20" fill="#e7f1ff"/>
+    <text x="150" y="190" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700" fill="#2c6fba">数据闭环</text>
+    <text x="150" y="213" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="500" fill="#4f8fd8">核心入口</text>
+    <text x="238" y="182" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="25" font-weight="700" fill="#14213d">高分子配方模型 + 定制 ELN</text>
+    <text x="238" y="214" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">配方 - 实验 - 记录 - 结果闭环</text>
+    <rect x="862" y="164" width="134" height="60" rx="18" fill="#f7fbff" stroke="#9fc3ff" stroke-width="2"/>
+    <text x="929" y="190" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700" fill="#14213d">配方模型</text>
+    <text x="929" y="211" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#52647d">结构化生成</text>
+    <rect x="1030" y="164" width="134" height="60" rx="18" fill="#f7fbff" stroke="#9fc3ff" stroke-width="2"/>
+    <text x="1097" y="190" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700" fill="#14213d">ELN 记录</text>
+    <text x="1097" y="211" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#52647d">结果回流</text>
+
+    <rect x="72" y="280" width="1136" height="108" rx="26" fill="#ffffff" stroke="#25a56a" stroke-width="2.8"/>
+    <rect x="92" y="304" width="116" height="60" rx="20" fill="#e5f7ed"/>
+    <text x="150" y="330" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700" fill="#167a4a">私有化落地</text>
+    <text x="150" y="353" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="500" fill="#25a56a">轻量部署</text>
+    <text x="238" y="322" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="25" font-weight="700" fill="#14213d">Gateway + Polymer Platform + MySQL / MinIO</text>
+    <text x="238" y="354" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">一套 Docker 组合完成本地部署</text>
+    <rect x="862" y="304" width="134" height="60" rx="18" fill="#f7fffa" stroke="#9bd9b1" stroke-width="2"/>
+    <text x="929" y="331" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700" fill="#14213d">Gateway</text>
+    <text x="929" y="352" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#52647d">统一入口</text>
+    <rect x="1016" y="304" width="148" height="60" rx="18" fill="#f7fffa" stroke="#9bd9b1" stroke-width="2"/>
+    <text x="1090" y="331" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700" fill="#14213d">MySQL / MinIO</text>
+    <text x="1090" y="352" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="400" fill="#52647d">数据与文件</text>
+
+    <rect x="72" y="420" width="1136" height="140" rx="26" fill="#ffffff" stroke="#c97700" stroke-width="2.8"/>
+    <rect x="92" y="452" width="116" height="72" rx="20" fill="#fff3df"/>
+    <text x="150" y="481" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700" fill="#9a5a00">工程能力</text>
+    <text x="150" y="506" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="500" fill="#c97700">UniLabOS 绑定</text>
+    <text x="238" y="462" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="25" font-weight="700" fill="#14213d">协作 SOP + 虚拟 OPC CI + 本地联调工作台</text>
+    <text x="238" y="494" text-anchor="start" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="400" fill="#52647d">标准动作、虚拟验证、可视化联调</text>
+    <rect x="708" y="484" width="128" height="52" rx="16" fill="#fffdf7" stroke="#f2c879" stroke-width="2"/>
+    <text x="772" y="507" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#14213d">协作 SOP</text>
+    <text x="772" y="526" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#52647d">action 标准</text>
+    <rect x="872" y="484" width="128" height="52" rx="16" fill="#fbfaff" stroke="#c8b9ff" stroke-width="2"/>
+    <text x="936" y="507" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#14213d">CI 验证</text>
+    <text x="936" y="526" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#52647d">虚拟 OPC</text>
+    <rect x="1036" y="484" width="128" height="52" rx="16" fill="#fffafa" stroke="#ffb3ad" stroke-width="2"/>
+    <text x="1100" y="507" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="700" fill="#14213d">联调工作台</text>
+    <text x="1100" y="526" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#52647d">可视化调试</text>
+
+    <rect x="150" y="620" width="980" height="56" rx="20" fill="#14213d"/>
+    <text x="640" y="655" text-anchor="middle" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="21" font-weight="700" fill="#ffffff">阶段成果：从项目交付，沉淀为 UniLabOS 可复制的工程实践能力</text>
+  </g>
+</svg>

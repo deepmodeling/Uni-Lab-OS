@@ -42,7 +42,6 @@ def test_s09_pipetting_station_is_ast_scannable_from_own_package():
     assert {
         "check_home_position",
         "read_home_positions",
-        "go_to_safe_position",
         "read_allow_process",
         "run_process",
         "add_liquid",
@@ -53,19 +52,20 @@ def test_s09_pipetting_station_is_ast_scannable_from_own_package():
         "read_balance",
         "get_pipetting_status",
     }.issubset(actions)
+    assert "go_to_safe_position" not in actions
 
 
-def test_s09_process_labels_cover_plc_processes_1_to_10():
-    assert set(S09_PROCESS_LABELS) == set(range(1, 11))
+def test_s09_process_labels_cover_liquid_processes_5_to_10():
+    assert set(S09_PROCESS_LABELS) == set(range(5, 11))
     assert S09_PROCESS_LABELS[5] == "取 TIP"
     assert S09_PROCESS_LABELS[7].startswith("液体瓶取液")
     assert validate_process(10) == 10
 
     device = make_pipetting_device()
-    result = device.run_process(process=11)
+    result = device.run_process(process=1)
 
     assert result["success"] is False
-    assert "1-10" in result["message"]
+    assert "5-10" in result["message"]
 
 
 def test_s09_run_process_writes_expected_variables_and_waits_done():
@@ -140,10 +140,51 @@ def test_s09_add_liquid_runs_plc_process_sequence_5_7_8_6():
 
     assert result["success"] is True
     process_writes = [value for name, value in client.writes if name == "S09工艺选择"]
-    assert [value for value in process_writes if value != 0] == [6]
-    assert process_writes == [6, 0]
-    assert [step["data"]["process"] for step in result["steps"]] == [6]
-    assert client.wait_equal_calls == [("S09工艺完成", 6)]
+    assert [value for value in process_writes if value != 0] == [5, 7, 8, 6]
+    assert process_writes == [5, 0, 7, 0, 8, 0, 6, 0]
+    assert [step["data"]["process"] for step in result["steps"]] == [5, 7, 8, 6]
+    assert client.wait_equal_calls == [
+        ("S09允许加工", True),
+        ("S09工艺完成", 5),
+        ("S09允许加工", True),
+        ("S09工艺完成", 7),
+        ("S09允许加工", True),
+        ("S09工艺完成", 8),
+        ("S09允许加工", True),
+        ("S09工艺完成", 6),
+    ]
+
+
+def test_s09_add_liquid_writes_frontend_remaining_volume_params_before_process():
+    client = PseudoSzlabS09OpcUaClient()
+    device = make_pipetting_device(client)
+
+    result = device.add_liquid(
+        tip_box_index=1,
+        tip_index=2,
+        liquid_bottle_index=2,
+        station=1,
+        aspirate_volume=1,
+        dispense_volume=1,
+        S09液体瓶1剩余液量=10.0,
+        S09液体瓶2剩余液量=20.0,
+        S09液体瓶3剩余液量=30.0,
+    )
+
+    assert result["success"] is True
+    assert client.writes[:3] == [
+        ("S09液体瓶1剩余液量", 10.0),
+        ("S09液体瓶2剩余液量", 20.0),
+        ("S09液体瓶3剩余液量", 30.0),
+    ]
+    assert ("S09液体瓶4剩余液量", 0.0) not in client.writes
+    assert ("S09液体瓶5剩余液量", 0.0) not in client.writes
+    assert result["data"]["configured_remaining_volumes"] == {
+        "S09液体瓶1剩余液量": 10.0,
+        "S09液体瓶2剩余液量": 20.0,
+        "S09液体瓶3剩余液量": 30.0,
+    }
+    assert client.values["S09液体瓶2剩余液量"] == 19.9999
 
 
 def test_s09_add_liquid_to_beaker_exposes_business_action_for_5_7_8_6():
@@ -162,8 +203,8 @@ def test_s09_add_liquid_to_beaker_exposes_business_action_for_5_7_8_6():
     assert result["success"] is True
     assert result["message"] == "S09 烧杯加液完成"
     process_writes = [value for name, value in client.writes if name == "S09工艺选择"]
-    assert [value for value in process_writes if value != 0] == [6]
-    assert result["data"]["process_sequence"] == [6]
+    assert [value for value in process_writes if value != 0] == [5, 7, 8, 6]
+    assert result["data"]["process_sequence"] == [5, 7, 8, 6]
 
 
 def test_s09_run_process_converts_ul_to_plc_raw_volume():
@@ -218,9 +259,9 @@ def test_s09_add_liquid_splits_ml_volume_over_5ml():
 
     assert result["success"] is True
     process_writes = [value for name, value in client.writes if name == "S09工艺选择"]
-    assert [value for value in process_writes if value != 0] == [6]
-    assert all(name != "S09抽液量" or value == 0 for name, value in client.writes)
-    assert all(name != "S09放液量" or value == 0 for name, value in client.writes)
+    assert [value for value in process_writes if value != 0] == [5, 7, 8, 7, 8, 6]
+    assert [value for name, value in client.writes if name == "S09抽液量" and value != 0] == [50000, 10000]
+    assert [value for name, value in client.writes if name == "S09放液量" and value != 0] == [50000, 10000]
     assert result["data"]["split_count"] == 2
     assert result["data"]["transfer_chunks"] == [
         {
@@ -350,19 +391,39 @@ def test_s09_run_process_require_allow_waits_and_blocks_before_writing_params_on
     assert client.writes == []
 
 
-def test_s09_go_to_safe_position_reads_allow_then_writes_process_params():
-    client = PseudoSzlabS09OpcUaClient({"S09允许加工": True, "S09原点信号_4": True})
+def test_s09_add_liquid_release_tip_waits_allow_before_writing_process():
+    class ReleaseTipBlockedClient(PseudoSzlabS09OpcUaClient):
+        def __init__(self):
+            super().__init__({"S09允许加工": True, "S09液体瓶1剩余液量": 10.0})
+            self.allow_wait_count = 0
+
+        def wait_equal(self, name: str, expected, timeout: float = 300.0, interval: float = 0.2) -> bool:
+            if (name, expected) == ("S09允许加工", True):
+                self.allow_wait_count += 1
+                self.wait_equal_calls.append((name, expected))
+                self.events.append(("wait_equal", name, expected))
+                return self.allow_wait_count < 4
+            return super().wait_equal(name, expected, timeout=timeout, interval=interval)
+
+    client = ReleaseTipBlockedClient()
     device = make_pipetting_device(client)
 
-    result = device.go_to_safe_position(home_position=4)
+    result = device.add_liquid(
+        tip_box_index=1,
+        tip_index=1,
+        liquid_bottle_index=1,
+        station=1,
+        aspirate_volume=1,
+        dispense_volume=1,
+        skip_level_check=True,
+    )
 
-    assert result["success"] is True
-    assert client.wait_equal_calls[0] == ("S09允许加工", True)
-    assert ("S09工艺选择", 4) in client.writes
-    assert client.pulses == ["S09参数写入完成"]
-    assert client.reads[-1] == "S09原点信号_4"
-    assert result["logs"][-2]["message"] == "等待机械臂到达 S09 安全位4"
-    assert result["logs"][-1]["message"] == "S09 安全位4原点信号读取完成"
+    assert result["success"] is False
+    assert result["message"] == "等待 S09 允许加工超时"
+    assert [step.get("data", {}).get("process") for step in result["steps"] if step.get("success")] == [5, 7, 8]
+    assert client.wait_equal_calls[-1] == ("S09允许加工", True)
+    assert client.allow_wait_count == 4
+    assert ("S09工艺选择", 6) not in client.writes
 
 
 def test_s09_run_nodes_orchestration_emits_action_logs_to_workflow_logger():
@@ -556,12 +617,6 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
     assert result["success"] is True
     assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[6]"
     assert gateway.writes == [
-        ("S09工艺选择", 1),
-        ("S09参数写入完成", False),
-        ("S09参数写入完成", True),
-        ("S09参数写入完成", False),
-        ("S09参数写入完成", False),
-        ("S09工艺选择", 0),
         ("S09取放料产品", 1),
         ("S09取放料编号", 2),
         ("任务号", 19),

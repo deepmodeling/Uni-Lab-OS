@@ -23,6 +23,7 @@ import './styles.css';
 import { collectOpcChanges, formatOpcValue, type LogEvent, type OpcChange } from './opcChanges';
 import { buildWorkspaceSummary, groupActionsByDevice } from './uiState';
 import {
+  createExecutionEdgeOverlay,
   createExecutionPlan,
   createImportedDraft,
   createWorkflowRequest,
@@ -156,11 +157,13 @@ type ActionNodeData = {
   paramSpecs?: ParamSpec[];
   opcVariables?: string[];
   executionDisabled?: boolean;
-  executionState?: 'willRun' | 'beforeStart' | 'disabled' | 'blockedByDisabled' | 'disconnected';
+  executionBypassed?: boolean;
+  executionState?: 'willRun' | 'beforeStart' | 'disabled' | 'blockedByDisabled' | 'disconnected' | 'bypassed';
   isExecutionStart?: boolean;
   runStatus?: NodeRunStatus;
   onPositionChange?: (nodeId: string, value: number) => void;
   onSetStart?: (nodeId: string) => void;
+  onToggleBypassed?: (nodeId: string) => void;
   onToggleDisabled?: (nodeId: string) => void;
   onEditParams?: (nodeId: string) => void;
 };
@@ -477,6 +480,28 @@ function App() {
   const opcChanges = useMemo(() => collectOpcChanges(logEvents), [logEvents]);
   const draftKey = useMemo(() => workflowDraftKey(workflowName, nodes, edges), [workflowName, nodes, edges]);
   const executionPlan = useMemo(() => createExecutionPlan(nodes, edges, startNodeId), [edges, nodes, startNodeId]);
+  const renderedEdges = useMemo(() => {
+    const executableEdgeEndpoints = new Set(
+      executionPlan.executableEdges.map((edge) => JSON.stringify([edge.source, edge.target])),
+    );
+    const originalEdges = edges.map((edge) => ({
+      ...edge,
+      className: executableEdgeEndpoints.has(JSON.stringify([edge.source, edge.target]))
+        ? undefined
+        : 'execution-skipped-edge',
+    }));
+    const derivedEdges: Edge[] = createExecutionEdgeOverlay(edges, executionPlan.executableEdges).map(
+      (edge) => ({
+        ...edge,
+        className: 'execution-derived-edge',
+        animated: true,
+        selectable: false,
+        deletable: false,
+        focusable: false,
+      }),
+    );
+    return [...originalEdges, ...derivedEdges];
+  }, [edges, executionPlan.executableEdges]);
   const actionGroups = useMemo(() => groupActionsByDevice(actions), [actions]);
   const selectedTaskNodes = useMemo(
     () => nodes.filter((node) => node.selected),
@@ -670,6 +695,7 @@ function App() {
           opcVariables: action.opc_variables || [],
           runStatus: 'idle',
           executionDisabled: false,
+          executionBypassed: false,
         },
       },
     ]);
@@ -694,11 +720,36 @@ function App() {
     setNodes((current) =>
       current.map((node) =>
         node.id === nodeId
-          ? { ...node, data: { ...node.data, executionDisabled: !node.data.executionDisabled } }
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                executionDisabled: !node.data.executionDisabled,
+                executionBypassed: false,
+              },
+            }
           : node,
       ),
     );
     showCanvasToast('已更新节点执行范围');
+  };
+
+  const toggleNodeBypassed = (nodeId: string) => {
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                executionBypassed: !node.data.executionBypassed,
+                executionDisabled: false,
+              },
+            }
+          : node,
+      ),
+    );
+    showCanvasToast('已更新节点直通状态');
   };
 
   const appendTaskEvent = useCallback((message: string) => {
@@ -1162,14 +1213,12 @@ function App() {
                     isExecutionStart: executionPlan.startNodeId === node.id,
                     onPositionChange: (nodeId: string, value: number) => updateNodeParam(nodeId, 'position', value),
                     onSetStart: setExecutionStart,
+                    onToggleBypassed: toggleNodeBypassed,
                     onToggleDisabled: toggleNodeDisabled,
                     onEditParams: setEditingNodeId,
                   },
                 }))}
-                edges={edges.map((edge) => ({
-                  ...edge,
-                  className: executionPlan.executableEdges.some((item) => item.id === edge.id) ? undefined : 'execution-skipped-edge',
-                }))}
+                edges={renderedEdges}
                 nodeTypes={nodeTypes}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
@@ -1618,7 +1667,11 @@ function statusText(status?: string) {
 function ActionNode({ id, data, selected }: NodeProps<ActionNodeData>) {
   const runStatus = data.runStatus || 'idle';
   const executionState = data.executionState || 'willRun';
-  const executionBadge = data.isExecutionStart ? '起点' : executionStateText(executionState);
+  const executionBadge = executionState === 'bypassed'
+    ? executionStateText(executionState)
+    : data.isExecutionStart
+      ? '起点'
+      : executionStateText(executionState);
 
   return (
     <div className={`flow-node ${selected ? 'selected' : ''} ${runStatus} execution-${executionState} ${data.isExecutionStart ? 'execution-start' : ''}`}>
@@ -1635,6 +1688,21 @@ function ActionNode({ id, data, selected }: NodeProps<ActionNodeData>) {
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M5 4v16M7 5h10l-2 4 2 4H7" />
+          </svg>
+        </button>
+        <button
+          aria-label={data.executionBypassed ? '取消直通' : '直通此节点'}
+          aria-pressed={Boolean(data.executionBypassed)}
+          className={data.executionBypassed ? 'active' : ''}
+          title={data.executionBypassed ? '取消直通' : '直通此节点'}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onToggleBypassed?.(id);
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 12h15M14 7l5 5-5 5" />
           </svg>
         </button>
         <button
@@ -1681,6 +1749,7 @@ function executionStateText(state: ActionNodeData['executionState']) {
   if (state === 'beforeStart') return '起点之前';
   if (state === 'disabled') return '已禁用';
   if (state === 'blockedByDisabled') return '被上游禁用';
+  if (state === 'bypassed') return '已直通';
   return '';
 }
 

@@ -20,6 +20,7 @@ async function importTypeScriptModule(path) {
 }
 
 const {
+  createExecutionEdgeOverlay,
   createExecutionPlan,
   createImportedDraft,
   createWorkflowRequest,
@@ -101,6 +102,99 @@ assert.match(
   /className="log-category-tabs"/,
   '日志面板应渲染分类标签栏',
 );
+assert.match(
+  mainSource,
+  /onToggleBypassed/,
+  'ActionNode 应接收直通切换回调',
+);
+const actionNodeSource = mainSource.match(
+  /function ActionNode\([\s\S]*?\nfunction executionStateText/,
+)?.[0] || '';
+const bypassButtonSource = actionNodeSource.match(
+  /<button(?:(?!<button)[\s\S])*?<path d="M4 12h15M14 7l5 5-5 5" \/>[\s\S]*?<\/button>/,
+)?.[0] || '';
+assert.match(
+  bypassButtonSource,
+  /aria-label=\{data\.executionBypassed \? '取消直通' : '直通此节点'\}/,
+  '直通按钮 aria-label 应表达当前可执行动作',
+);
+assert.match(
+  bypassButtonSource,
+  /aria-pressed=\{Boolean\(data\.executionBypassed\)\}/,
+  '直通按钮应暴露 aria-pressed 状态',
+);
+assert.match(
+  bypassButtonSource,
+  /title=\{data\.executionBypassed \? '取消直通' : '直通此节点'\}/,
+  '直通按钮标题应反映当前切换状态',
+);
+assert.match(
+  mainSource,
+  /executionBypassed:\s*!node\.data\.executionBypassed[\s\S]*?executionDisabled:\s*false/,
+  '切换直通时应无条件清除禁用状态',
+);
+assert.match(
+  mainSource,
+  /executionDisabled:\s*!node\.data\.executionDisabled[\s\S]*?executionBypassed:\s*false/,
+  '切换禁用时应无条件清除直通状态',
+);
+assert.match(
+  styleSource,
+  /\.flow-node\.execution-bypassed\s*\{/,
+  '直通节点应提供独立视觉样式',
+);
+assert.match(
+  styleSource,
+  /\.execution-badge\.bypassed\s*\{/,
+  '直通徽标应提供独立视觉样式',
+);
+assert.match(
+  styleSource,
+  /\.node-hover-actions button\.active\s*\{/,
+  '直通按钮激活时应有明显样式',
+);
+assert.match(
+  styleSource,
+  /\.flow-node:focus-within \.node-hover-actions/,
+  '节点工具栏应在内部按钮获得键盘焦点时显示',
+);
+assert.match(
+  styleSource,
+  /\.node-hover-actions button:focus-visible\s*\{[^}]*outline:/,
+  '节点工具栏按钮应提供明确的键盘焦点轮廓',
+);
+const renderedEdgesSource = mainSource.match(
+  /const renderedEdges = useMemo\([\s\S]*?\n  \}, \[edges, executionPlan\.executableEdges\]\);/,
+)?.[0] || '';
+assert.match(
+  renderedEdgesSource,
+  /executionPlan\.executableEdges\.map\(\(edge\) => JSON\.stringify\(\[edge\.source, edge\.target\]\)\)/,
+  '画布应使用安全端点键识别可执行原始边',
+);
+assert.match(
+  renderedEdgesSource,
+  /executableEdgeEndpoints\.has\(JSON\.stringify\(\[edge\.source, edge\.target\]\)\)/,
+  '原始边高亮判断应使用安全端点键',
+);
+assert.match(
+  renderedEdgesSource,
+  /createExecutionEdgeOverlay\(edges, executionPlan\.executableEdges\)\.map/,
+  '画布应通过纯函数生成缺失的派生边覆盖层',
+);
+assert.match(
+  renderedEdgesSource,
+  /className:\s*'execution-derived-edge'[\s\S]*?animated:\s*true[\s\S]*?selectable:\s*false[\s\S]*?deletable:\s*false[\s\S]*?focusable:\s*false/,
+  '派生边应动画显示且不可选择、不可删除、不可聚焦',
+);
+const reactFlowEdgesSource = mainSource.match(
+  /<ReactFlow[\s\S]*?edges=\{renderedEdges\}[\s\S]*?nodeTypes=\{nodeTypes\}/,
+)?.[0] || '';
+assert.match(reactFlowEdgesSource, /edges=\{renderedEdges\}/, 'ReactFlow 应渲染原始边与派生边的组合');
+assert.match(
+  styleSource,
+  /\.react-flow__edge\.execution-derived-edge\s+\.react-flow__edge-path\s*\{[^}]*stroke:[^;}]+;[^}]*stroke-dasharray:/,
+  '派生边应有独立且清晰的连线样式',
+);
 
 const baseNodes = [
   {
@@ -125,6 +219,43 @@ const runningNodes = [
   },
 ];
 const edges = [{ id: 'e1', source: 'load', target: 'unload' }];
+
+const arrowSafeOriginalEdges = [
+  { id: 'original-arrow', source: 'a->b', target: 'c' },
+];
+const arrowSafeExecutableEdges = [
+  { id: 'same-endpoints', source: 'a->b', target: 'c' },
+  { id: 'missing-endpoints', source: 'a', target: 'b->c' },
+];
+const overlayBaseId = 'execution-derived:1:a:4:b->c';
+const collidingOriginalEdges = [
+  ...arrowSafeOriginalEdges,
+  { id: overlayBaseId, source: 'reserved', target: 'edge' },
+];
+const executionOverlay = createExecutionEdgeOverlay(
+  collidingOriginalEdges,
+  arrowSafeExecutableEdges,
+);
+assert.deepEqual(
+  executionOverlay.map((edge) => [edge.source, edge.target]),
+  [['a', 'b->c']],
+  '覆盖层只应返回原图缺失的端点，且包含 -> 的节点 ID 不应发生端点键碰撞',
+);
+assert.notEqual(
+  executionOverlay[0].id,
+  overlayBaseId,
+  '覆盖边基础 ID 与原始边冲突时应确定性消解',
+);
+assert.equal(
+  new Set([...collidingOriginalEdges, ...executionOverlay].map((edge) => edge.id)).size,
+  collidingOriginalEdges.length + executionOverlay.length,
+  '原始边与覆盖边合并后 ID 应全局唯一',
+);
+assert.deepEqual(
+  createExecutionEdgeOverlay(collidingOriginalEdges, arrowSafeExecutableEdges),
+  executionOverlay,
+  '相同输入应稳定生成相同覆盖边 ID',
+);
 
 assert.deepEqual(createWorkflowRequest('ai4c', baseNodes, edges), {
   name: 'ai4c',
@@ -219,6 +350,50 @@ assert.ok(
   importedFlow.nodes[1].position.x > importedFlow.nodes[0].position.x,
   '导入 flow 后应自动生成递增横向布局',
 );
+const importedSnakeCaseBypassedFlow = createImportedDraft(
+  {
+    rules: [{
+      actions: [{
+        action: {
+          workflow_node_id: 'load',
+          method: 'pick_well_plate_from_loading_rack',
+          params: {},
+          execution_bypassed: true,
+          execution_disabled: true,
+        },
+      }],
+    }],
+  },
+  actionSpecs,
+);
+assert.equal(importedSnakeCaseBypassedFlow.nodes[0].data.executionBypassed, true);
+assert.equal(
+  importedSnakeCaseBypassedFlow.nodes[0].data.executionDisabled,
+  false,
+  'pseudo Flow 冲突字段应以 snake_case 直通状态优先',
+);
+const importedCamelCaseBypassedFlow = createImportedDraft(
+  {
+    rules: [{
+      actions: [{
+        action: {
+          workflow_node_id: 'load',
+          method: 'pick_well_plate_from_loading_rack',
+          params: {},
+          executionBypassed: true,
+          executionDisabled: true,
+        },
+      }],
+    }],
+  },
+  actionSpecs,
+);
+assert.equal(importedCamelCaseBypassedFlow.nodes[0].data.executionBypassed, true);
+assert.equal(
+  importedCamelCaseBypassedFlow.nodes[0].data.executionDisabled,
+  false,
+  'pseudo Flow 冲突字段应以 camelCase 直通状态优先',
+);
 
 const importedDraft = createImportedDraft(
   {
@@ -261,6 +436,176 @@ const restoredDisabledDraft = createImportedDraft(
   { autoLayout: false },
 );
 assert.equal(restoredDisabledDraft.nodes[0].data.executionDisabled, true, '持久化草稿恢复后应保留禁用状态');
+
+const bypassedWorkflowRequest = createWorkflowRequest(
+  'persisted_bypassed',
+  [{ ...importedDraft.nodes[0], data: { ...importedDraft.nodes[0].data, executionBypassed: true } }],
+  [],
+);
+assert.equal(
+  bypassedWorkflowRequest.nodes[0].data.execution_bypassed,
+  true,
+  '导出草稿时应使用 snake_case 持久化直通状态',
+);
+const restoredBypassedDraft = createImportedDraft(
+  bypassedWorkflowRequest,
+  actionSpecs,
+  { autoLayout: false },
+);
+assert.equal(restoredBypassedDraft.nodes[0].data.executionBypassed, true, 'snake_case 草稿应恢复直通状态');
+const restoredCamelCaseBypassedDraft = createImportedDraft(
+  {
+    ...bypassedWorkflowRequest,
+    nodes: [{
+      ...bypassedWorkflowRequest.nodes[0],
+      data: {
+        ...bypassedWorkflowRequest.nodes[0].data,
+        execution_bypassed: undefined,
+        executionBypassed: true,
+      },
+    }],
+  },
+  actionSpecs,
+  { autoLayout: false },
+);
+assert.equal(
+  restoredCamelCaseBypassedDraft.nodes[0].data.executionBypassed,
+  true,
+  'camelCase 草稿应恢复直通状态',
+);
+const restoredConflictingDraft = createImportedDraft(
+  {
+    ...bypassedWorkflowRequest,
+    nodes: [{
+      ...bypassedWorkflowRequest.nodes[0],
+      data: {
+        ...bypassedWorkflowRequest.nodes[0].data,
+        execution_disabled: true,
+        execution_bypassed: true,
+      },
+    }],
+  },
+  actionSpecs,
+  { autoLayout: false },
+);
+assert.equal(restoredConflictingDraft.nodes[0].data.executionBypassed, true);
+assert.equal(
+  restoredConflictingDraft.nodes[0].data.executionDisabled,
+  false,
+  '画布草稿冲突字段应以直通状态优先',
+);
+
+const linearBypassPlan = createExecutionPlan(
+  [
+    { ...baseNodes[0], id: 'a', data: { ...baseNodes[0].data } },
+    { ...baseNodes[0], id: 'b', data: { ...baseNodes[0].data, executionBypassed: true } },
+    { ...baseNodes[0], id: 'c', data: { ...baseNodes[0].data } },
+  ],
+  [
+    { id: 'a-b', source: 'a', target: 'b' },
+    { id: 'b-c', source: 'b', target: 'c' },
+  ],
+);
+assert.deepEqual(linearBypassPlan.executableNodes.map((node) => node.id), ['a', 'c']);
+assert.deepEqual(
+  linearBypassPlan.executableEdges.map((edge) => [edge.source, edge.target]),
+  [['a', 'c']],
+  '线性流程应越过直通节点重连前驱和后继',
+);
+assert.equal(linearBypassPlan.nodeStates.b.reason, 'bypassed');
+
+const consecutiveBypassPlan = createExecutionPlan(
+  [
+    { ...baseNodes[0], id: 'a', data: { ...baseNodes[0].data } },
+    { ...baseNodes[0], id: 'b', data: { ...baseNodes[0].data, executionBypassed: true } },
+    { ...baseNodes[0], id: 'c', data: { ...baseNodes[0].data, executionBypassed: true } },
+    { ...baseNodes[0], id: 'd', data: { ...baseNodes[0].data } },
+  ],
+  [
+    { id: 'a-b', source: 'a', target: 'b' },
+    { id: 'b-c', source: 'b', target: 'c' },
+    { id: 'c-d', source: 'c', target: 'd' },
+  ],
+);
+assert.deepEqual(consecutiveBypassPlan.executableNodes.map((node) => node.id), ['a', 'd']);
+assert.deepEqual(
+  consecutiveBypassPlan.executableEdges.map((edge) => [edge.source, edge.target]),
+  [['a', 'd']],
+  '连续直通节点应收敛为一条重连边',
+);
+const reorderedConsecutiveBypassPlan = createExecutionPlan(
+  [
+    { ...baseNodes[0], id: 'd', data: { ...baseNodes[0].data } },
+    { ...baseNodes[0], id: 'c', data: { ...baseNodes[0].data, executionBypassed: true } },
+    { ...baseNodes[0], id: 'b', data: { ...baseNodes[0].data, executionBypassed: true } },
+    { ...baseNodes[0], id: 'a', data: { ...baseNodes[0].data } },
+  ],
+  [
+    { id: 'a-b', source: 'a', target: 'b' },
+    { id: 'b-c', source: 'b', target: 'c' },
+    { id: 'c-d', source: 'c', target: 'd' },
+  ],
+);
+assert.deepEqual(
+  reorderedConsecutiveBypassPlan.executableEdges
+    .map((edge) => [edge.source, edge.target, edge.id])
+    .sort(),
+  consecutiveBypassPlan.executableEdges
+    .map((edge) => [edge.source, edge.target, edge.id])
+    .sort(),
+  '直通节点在 nodes 中重排后，派生边端点和 id 应保持一致',
+);
+
+const branchedBypassNodes = [
+  { ...baseNodes[0], id: 'p1', data: { ...baseNodes[0].data } },
+  { ...baseNodes[0], id: 'p2', data: { ...baseNodes[0].data } },
+  { ...baseNodes[0], id: 'x', data: { ...baseNodes[0].data, executionBypassed: true } },
+  { ...baseNodes[0], id: 'q1', data: { ...baseNodes[0].data } },
+  { ...baseNodes[0], id: 'q2', data: { ...baseNodes[0].data } },
+];
+const branchedBypassEdges = [
+  { id: 'p1-x', source: 'p1', target: 'x' },
+  { id: 'p2-x', source: 'p2', target: 'x' },
+  { id: 'x-q1', source: 'x', target: 'q1' },
+  { id: 'x-q2', source: 'x', target: 'q2' },
+  { id: 'bypass:2:p1:2:q2', source: 'p1', target: 'q1' },
+  { id: 'x-p1', source: 'x', target: 'p1' },
+];
+const branchedBypassPlan = createExecutionPlan(branchedBypassNodes, branchedBypassEdges);
+assert.deepEqual(
+  branchedBypassPlan.executableEdges.map((edge) => `${edge.source}->${edge.target}`).sort(),
+  ['p1->q1', 'p1->q2', 'p2->p1', 'p2->q1', 'p2->q2'],
+  '分支直通应生成前驱×后继，并去重且排除自环',
+);
+assert.equal(
+  branchedBypassPlan.executableEdges.filter((edge) => edge.source === edge.target).length,
+  0,
+  '派生执行图不应包含自环',
+);
+assert.deepEqual(
+  new Set(branchedBypassPlan.executableEdges.map((edge) => edge.id)).size,
+  branchedBypassPlan.executableEdges.length,
+  '输入边 id 与候选派生 id 冲突时，最终执行边 id 仍应唯一',
+);
+
+const bypassedStartPlan = createExecutionPlan(
+  [
+    { ...baseNodes[0], id: 'a', data: { ...baseNodes[0].data } },
+    { ...baseNodes[0], id: 'b', data: { ...baseNodes[0].data, executionBypassed: true } },
+    { ...baseNodes[0], id: 'c', data: { ...baseNodes[0].data } },
+    { ...baseNodes[0], id: 'd', data: { ...baseNodes[0].data } },
+  ],
+  [
+    { id: 'a-b', source: 'a', target: 'b' },
+    { id: 'b-c', source: 'b', target: 'c' },
+    { id: 'c-d', source: 'c', target: 'd' },
+  ],
+  'b',
+);
+assert.equal(bypassedStartPlan.startNodeId, 'b', '直通起点仍应保留为有效选择');
+assert.deepEqual(bypassedStartPlan.executableNodes.map((node) => node.id), ['c', 'd']);
+assert.equal(bypassedStartPlan.nodeStates.a.reason, 'beforeStart');
+assert.equal(bypassedStartPlan.nodeStates.b.reason, 'bypassed');
 
 const executionPlan = createExecutionPlan(
   [

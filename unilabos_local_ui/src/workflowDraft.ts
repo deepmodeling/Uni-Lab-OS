@@ -11,6 +11,7 @@ type WorkflowDraftNode = {
     paramSpecs?: ParamSpecLike[];
     opcVariables?: string[];
     executionDisabled?: boolean;
+    executionBypassed?: boolean;
   };
 };
 
@@ -52,7 +53,7 @@ type ImportedDraftOptions = {
   autoLayout?: boolean;
 };
 
-type ExecutionReason = 'willRun' | 'beforeStart' | 'disabled' | 'blockedByDisabled' | 'disconnected';
+type ExecutionReason = 'willRun' | 'beforeStart' | 'disabled' | 'blockedByDisabled' | 'disconnected' | 'bypassed';
 
 const DEFAULT_START_X = 80;
 const DEFAULT_START_Y = 120;
@@ -80,6 +81,9 @@ export function createWorkflowRequest(
       if (node.data.executionDisabled) {
         data.execution_disabled = true;
       }
+      if (node.data.executionBypassed) {
+        data.execution_bypassed = true;
+      }
       return {
         id: node.id,
         position: node.position,
@@ -106,17 +110,24 @@ export function createExecutionPlan<T extends FlowNodeLike>(
   const nodeIds = new Set(nodes.map((node) => node.id));
   const normalizedStartNodeId = startNodeId && nodeIds.has(startNodeId) ? startNodeId : null;
   const reachableFromStart = collectReachableNodeIds(normalizedStartNodeId, nodes, edges);
-  const disabledSeeds = new Set(nodes.filter((node) => node.data.executionDisabled).map((node) => node.id));
+  const executionGraph = createBypassedExecutionGraph(nodes, edges);
+  const disabledSeeds = new Set(
+    executionGraph.nodes.filter((node) => node.data.executionDisabled).map((node) => node.id),
+  );
   const reachableDisabledSeeds = new Set(Array.from(disabledSeeds).filter((nodeId) => reachableFromStart.has(nodeId)));
   const blockedByDisabled = new Set<string>();
   reachableDisabledSeeds.forEach((nodeId) => {
-    collectReachableNodeIds(nodeId, nodes, edges).forEach((blockedId) => blockedByDisabled.add(blockedId));
+    collectReachableNodeIds(nodeId, executionGraph.nodes, executionGraph.edges).forEach(
+      (blockedId) => blockedByDisabled.add(blockedId),
+    );
   });
 
   const nodeStates: Record<string, { reason: ExecutionReason }> = {};
   nodes.forEach((node) => {
     let reason: ExecutionReason = 'willRun';
-    if (!reachableFromStart.has(node.id)) {
+    if (node.data.executionBypassed) {
+      reason = 'bypassed';
+    } else if (!reachableFromStart.has(node.id)) {
       reason = 'beforeStart';
     } else if (reachableDisabledSeeds.has(node.id)) {
       reason = 'disabled';
@@ -127,13 +138,13 @@ export function createExecutionPlan<T extends FlowNodeLike>(
   });
 
   const executableNodeIdsForPlan = new Set(
-    nodes.filter((node) => nodeStates[node.id]?.reason === 'willRun').map((node) => node.id),
+    executionGraph.nodes.filter((node) => nodeStates[node.id]?.reason === 'willRun').map((node) => node.id),
   );
-  const executableEdges = edges.filter(
+  const executableEdges = executionGraph.edges.filter(
     (edge) => executableNodeIdsForPlan.has(edge.source) && executableNodeIdsForPlan.has(edge.target),
   );
   const executableNodes = orderNodesByDag(
-    nodes.filter((node) => executableNodeIdsForPlan.has(node.id)),
+    executionGraph.nodes.filter((node) => executableNodeIdsForPlan.has(node.id)),
     executableEdges,
   );
   const disabledNodeId = nodes.find((node) => reachableDisabledSeeds.has(node.id))?.id || null;
@@ -147,6 +158,35 @@ export function createExecutionPlan<T extends FlowNodeLike>(
     totalCount: nodes.length,
     executableCount: executableNodes.length,
   };
+}
+
+export function createExecutionEdgeOverlay(
+  originalEdges: FlowEdgeLike[],
+  executableEdges: FlowEdgeLike[],
+) {
+  const originalEndpoints = new Set(
+    originalEdges.map((edge) => JSON.stringify([edge.source, edge.target])),
+  );
+  const overlayEndpoints = new Set<string>();
+  const reservedIds = new Set(originalEdges.map((edge) => edge.id));
+
+  return executableEdges.flatMap((edge) => {
+    const endpointKey = JSON.stringify([edge.source, edge.target]);
+    if (originalEndpoints.has(endpointKey) || overlayEndpoints.has(endpointKey)) {
+      return [];
+    }
+    overlayEndpoints.add(endpointKey);
+
+    const baseId = createExecutionOverlayEdgeId(edge.source, edge.target);
+    let id = baseId;
+    let collisionIndex = 1;
+    while (reservedIds.has(id)) {
+      id = `${baseId}#${collisionIndex}`;
+      collisionIndex += 1;
+    }
+    reservedIds.add(id);
+    return [{ id, source: edge.source, target: edge.target }];
+  });
 }
 
 export function createImportedDraft(
@@ -395,7 +435,15 @@ function normalizePseudoFlowPayload(data: Record<string, unknown>, actionByMetho
     const action = asRecord(asRecord(item, 'Flow JSON 动作格式错误').action, 'Flow JSON 动作格式错误');
     const method = readRequiredString(action.method, 'Flow JSON 动作缺少 method');
     const id = readOptionalString(action.workflow_node_id) || `node_${index + 1}_${method}`;
-    return buildFlowNode(id, method, action.params, actionByMethod);
+    const executionFlags = normalizeExecutionFlags(action);
+    return buildFlowNode(
+      id,
+      method,
+      action.params,
+      actionByMethod,
+      executionFlags.executionDisabled,
+      executionFlags.executionBypassed,
+    );
   });
   const edges = nodes.slice(1).map((node, index) => ({
     id: `${nodes[index].id}-${node.id}`,
@@ -415,13 +463,15 @@ function normalizeCanvasDraftPayload(data: Record<string, unknown>, actionByMeth
     const nodeData = asRecord(node.data, '画布草稿节点缺少 data');
     const method = readRequiredString(nodeData.method, '画布草稿节点缺少 method');
     const id = readOptionalString(node.id) || `node_${index + 1}_${method}`;
+    const executionFlags = normalizeExecutionFlags(nodeData);
     return {
       ...buildFlowNode(
         id,
         method,
         nodeData.params,
         actionByMethod,
-        Boolean(nodeData.execution_disabled || nodeData.executionDisabled),
+        executionFlags.executionDisabled,
+        executionFlags.executionBypassed,
       ),
       position: normalizePosition(node.position),
     };
@@ -453,6 +503,7 @@ function buildFlowNode(
   importedParams: unknown,
   actionByMethod: Map<string, ActionSpecLike>,
   executionDisabled = false,
+  executionBypassed = false,
 ) {
   const action = actionByMethod.get(method);
   if (!action) {
@@ -475,9 +526,113 @@ function buildFlowNode(
       paramSpecs: action.params || [],
       opcVariables: action.opc_variables || [],
       runStatus: 'idle',
-        executionDisabled,
+      executionDisabled: executionBypassed ? false : executionDisabled,
+      executionBypassed,
     },
   };
+}
+
+function normalizeExecutionFlags(data: Record<string, unknown>) {
+  const executionBypassed = Boolean(data.execution_bypassed || data.executionBypassed);
+  return {
+    executionBypassed,
+    executionDisabled: executionBypassed
+      ? false
+      : Boolean(data.execution_disabled || data.executionDisabled),
+  };
+}
+
+function createBypassedExecutionGraph<T extends FlowNodeLike>(nodes: T[], edges: FlowEdgeLike[]) {
+  const bypassedNodeIds = new Set(
+    nodes.filter((node) => node.data.executionBypassed).map((node) => node.id),
+  );
+  if (!bypassedNodeIds.size) {
+    return { nodes, edges };
+  }
+
+  let workingEdges = [...edges];
+  nodes.forEach((node) => {
+    if (!bypassedNodeIds.has(node.id)) return;
+    const incoming = workingEdges.filter((edge) => edge.target === node.id && edge.source !== node.id);
+    const outgoing = workingEdges.filter((edge) => edge.source === node.id && edge.target !== node.id);
+    workingEdges = workingEdges.filter((edge) => edge.source !== node.id && edge.target !== node.id);
+    incoming.forEach((incomingEdge) => {
+      outgoing.forEach((outgoingEdge) => {
+        if (incomingEdge.source === outgoingEdge.target) return;
+        workingEdges.push({
+          id: createBypassEdgeId(incomingEdge.source, outgoingEdge.target),
+          source: incomingEdge.source,
+          target: outgoingEdge.target,
+        });
+      });
+    });
+    workingEdges = deduplicateEdges(workingEdges);
+  });
+
+  const executionNodes = nodes.filter((node) => !bypassedNodeIds.has(node.id));
+  const executionNodeIds = new Set(executionNodes.map((node) => node.id));
+  return {
+    nodes: executionNodes,
+    edges: ensureUniqueEdgeIds(
+      deduplicateEdges(
+        workingEdges.filter(
+          (edge) =>
+            edge.source !== edge.target &&
+            executionNodeIds.has(edge.source) &&
+            executionNodeIds.has(edge.target),
+        ),
+      ),
+    ),
+  };
+}
+
+function deduplicateEdges(edges: FlowEdgeLike[]) {
+  const seen = new Set<string>();
+  return edges.filter((edge) => {
+    const key = JSON.stringify([edge.source, edge.target]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function ensureUniqueEdgeIds(edges: FlowEdgeLike[]) {
+  const reservedIds = new Set(edges.map((edge) => edge.id));
+  const assignedIds = new Set<string>();
+  const resolvedIds = new Map<FlowEdgeLike, string>();
+  const sortedEdges = [...edges].sort((left, right) => {
+    const leftKey = JSON.stringify([left.id, left.source, left.target]);
+    const rightKey = JSON.stringify([right.id, right.source, right.target]);
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
+
+  sortedEdges.forEach((edge) => {
+    let id = edge.id;
+    if (assignedIds.has(id)) {
+      const suffix = `${edge.source.length}:${edge.source}:${edge.target.length}:${edge.target}`;
+      id = `${edge.id}#${suffix}`;
+      let collisionIndex = 1;
+      while (reservedIds.has(id) || assignedIds.has(id)) {
+        id = `${edge.id}#${suffix}:${collisionIndex}`;
+        collisionIndex += 1;
+      }
+    }
+    assignedIds.add(id);
+    resolvedIds.set(edge, id);
+  });
+
+  return edges.map((edge) => {
+    const id = resolvedIds.get(edge)!;
+    return id === edge.id ? edge : { ...edge, id };
+  });
+}
+
+function createBypassEdgeId(source: string, target: string) {
+  return `bypass:${source.length}:${source}:${target.length}:${target}`;
+}
+
+function createExecutionOverlayEdgeId(source: string, target: string) {
+  return `execution-derived:${source.length}:${source}:${target.length}:${target}`;
 }
 
 function collectReachableNodeIds(

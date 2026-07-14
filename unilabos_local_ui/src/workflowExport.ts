@@ -5,6 +5,7 @@ type WorkflowExportNode = {
     method: string;
     deviceId?: string;
     params: Record<string, unknown>;
+    executionBypassed?: boolean;
   };
 };
 
@@ -36,16 +37,20 @@ export function createPseudoFlowJson(
           edge: 'rising',
         },
         log_nodes: orderedNodes.map((node) => node.data.label),
-        actions: orderedNodes.map((node, index) => ({
-          action: {
+        actions: orderedNodes.map((node, index) => {
+          const action: Record<string, unknown> = {
             index: index + 1,
             node: node.data.label,
             workflow_node_id: node.id,
             device_id: node.data.deviceId,
             method: node.data.method,
             params: node.data.params,
-          },
-        })),
+          };
+          if (node.data.executionBypassed) {
+            action.execution_bypassed = true;
+          }
+          return { action };
+        }),
       },
     ],
   };

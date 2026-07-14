@@ -763,7 +763,8 @@ code {
 }
 
 .flow-node:hover .node-hover-actions,
-.flow-node.selected .node-hover-actions {
+.flow-node.selected .node-hover-actions,
+.flow-node:focus-within .node-hover-actions {
   opacity: 1;
   transform: translateY(0);
 }
@@ -781,9 +782,21 @@ code {
   padding: 0;
 }
 
+.node-hover-actions button:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .node-hover-actions button:hover {
   border-color: #93c5fd;
   background: #eff6ff;
+}
+
+.node-hover-actions button.active {
+  border-color: #64748b;
+  background: #475569;
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.2), 0 8px 18px rgba(15, 23, 42, 0.2);
 }
 
 .node-hover-actions button.danger {
@@ -842,6 +855,13 @@ code {
   opacity: 0.58;
   border-color: #cbd5e1;
   background: repeating-linear-gradient(135deg, #fff, #fff 8px, #f1f5f9 8px, #f1f5f9 16px);
+}
+
+.flow-node.execution-bypassed {
+  opacity: 0.76;
+  border-color: #94a3b8;
+  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  box-shadow: 0 8px 18px rgba(71, 85, 105, 0.12);
 }
 
 .flow-node.execution-start {
@@ -927,6 +947,11 @@ code {
   color: #b91c1c;
 }
 
+.execution-badge.bypassed {
+  background: #e2e8f0;
+  color: #334155;
+}
+
 .execution-badge.beforeStart,
 .execution-badge.blockedByDisabled {
   background: #e2e8f0;
@@ -954,6 +979,12 @@ code {
 
 .react-flow__edge.execution-skipped-edge {
   opacity: 0.28;
+}
+
+.react-flow__edge.execution-derived-edge .react-flow__edge-path {
+  stroke: #3b82f6;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
 }
 
 .modal-backdrop {

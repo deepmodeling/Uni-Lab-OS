@@ -84,6 +84,32 @@ assert.deepEqual(createPseudoFlowJson('szlab_flow', nodes, [{ id: 'e1', source: 
   ],
 });
 
+const bypassedFlow = createPseudoFlowJson(
+  'bypassed_flow',
+  [
+    {
+      ...nodes[0],
+      data: {
+        ...nodes[0].data,
+        executionBypassed: true,
+      },
+    },
+    nodes[1],
+  ],
+  [{ source: 'pick', target: 'stir' }],
+);
+const bypassedActions = bypassedFlow.rules[0].actions.map((item) => item.action);
+assert.equal(
+  bypassedActions.find((action) => action.workflow_node_id === 'stir').execution_bypassed,
+  true,
+  '直通 action 应导出 snake_case execution_bypassed',
+);
+assert.equal(
+  Object.hasOwn(bypassedActions.find((action) => action.workflow_node_id === 'pick'), 'execution_bypassed'),
+  false,
+  '普通 action 不应导出 execution_bypassed',
+);
+
 const actions = [
   {
     method: 'move_plate',

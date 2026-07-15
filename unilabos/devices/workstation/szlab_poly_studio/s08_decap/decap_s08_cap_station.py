@@ -36,7 +36,7 @@ import time
 from enum import IntEnum
 from typing import Any, Optional, Sequence
 
-from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice, wait_sensor_conditions
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.utils.log import logger
 
@@ -553,13 +553,54 @@ class SZLabS08CapStationDevice:
         return bool(self._read_variable(CAP_STORAGE_SLOT_SENSORS[slot]))
 
     @not_action
+    def _cap_sensor_conditions(
+        self,
+        process_type: S08ProcessType,
+        cap_storage_slot: int,
+    ) -> tuple[dict[str, bool], dict[str, bool]]:
+        vial_type = PROCESS_TYPE_TO_VIAL_TYPE[process_type]
+        station_sensor = SENSOR_CAP_STATION[VIAL_TYPE_TO_CAP_STATION[vial_type]]
+        slot_sensor = CAP_STORAGE_SLOT_SENSORS[cap_storage_slot]
+        is_open = process_type in OPEN_PROCESS_IDS
+        return (
+            {station_sensor: True, slot_sensor: not is_open},
+            {station_sensor: True, slot_sensor: is_open},
+        )
+
+    @not_action
+    def _wait_cap_sensor_conditions(
+        self,
+        conditions: dict[str, bool],
+        *,
+        phase: str,
+        timeout: float,
+    ) -> dict[str, Any]:
+        plc = self._plc()
+        waiter = getattr(plc, "wait_sensor_conditions", None)
+        if callable(waiter):
+            success, values = waiter(conditions, timeout=timeout, interval=self.poll_interval)
+        else:
+            success, values = wait_sensor_conditions(plc, conditions, timeout=timeout, interval=self.poll_interval)
+        return {
+            "success": bool(success),
+            "phase": phase,
+            "conditions": conditions,
+            "values": values,
+            "mismatches": {
+                name: {"expected": expected, "actual": values.get(name)}
+                for name, expected in conditions.items()
+                if values.get(name) != expected
+            },
+        }
+
+    @not_action
     def _find_free_cap_slot(self) -> Optional[int]:
         for slot in CAP_STORAGE_SLOTS:
             cached = self._try_read_sample_id_from_plc(slot)
             cache_empty = cached is not None and _sample_id_is_empty(cached)
             if not cache_empty:
                 continue
-            if self.validate_cap_constraints and self._read_cap_slot_sensor(slot):
+            if self._read_cap_slot_sensor(slot):
                 continue
             return slot
         return None
@@ -720,11 +761,30 @@ class SZLabS08CapStationDevice:
         is_open = process_type in OPEN_PROCESS_IDS
         task_label = "开瓶盖" if is_open else "关瓶盖"
         normalized_sample_id = _normalize_sample_id(sample_id)
+        pre_sensor_conditions, post_sensor_conditions = self._cap_sensor_conditions(
+            process_type,
+            cap_storage_slot,
+        )
 
         logger.info(
             f"S08 {task_label}: process={process_id}, cap_storage_slot={cap_storage_slot}, "
             f"sample_id={normalized_sample_id[:8]}..."
         )
+
+        try:
+            sensor_precheck = self._wait_cap_sensor_conditions(
+                pre_sensor_conditions,
+                phase="pre",
+                timeout=timeout,
+            )
+        except Exception as exc:
+            return {"success": False, "message": f"S08 {task_label}前传感器读取失败: {_format_driver_error(exc)}"}
+        if not sensor_precheck["success"]:
+            return {
+                "success": False,
+                "message": f"S08 {task_label}前等待瓶体与瓶盖暂存位状态超时",
+                "sensor_precheck": sensor_precheck,
+            }
 
         if self.require_station_ready:
             if not self._wait_plc_bool(NODE_HOME, True, timeout=timeout, description="S08 原点信号（机械臂安全位）"):
@@ -774,6 +834,28 @@ class SZLabS08CapStationDevice:
                 }
             handshake_teardown_done = True
 
+            try:
+                sensor_postcheck = self._wait_cap_sensor_conditions(
+                    post_sensor_conditions,
+                    phase="post",
+                    timeout=timeout,
+                )
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "status": "verification_failed",
+                    "message": f"S08 {task_label}已完成，但传感器读取失败: {_format_driver_error(exc)}",
+                    "sensor_precheck": sensor_precheck,
+                }
+            if not sensor_postcheck["success"]:
+                return {
+                    "success": False,
+                    "status": "verification_failed",
+                    "message": f"S08 {task_label}已完成，但瓶体或瓶盖暂存位状态验证失败",
+                    "sensor_precheck": sensor_precheck,
+                    "sensor_postcheck": sensor_postcheck,
+                }
+
             if clear_cache_on_complete:
                 self._clear_slot_cache(cap_storage_slot)
             status = self._read_s08_status()
@@ -783,6 +865,8 @@ class SZLabS08CapStationDevice:
                 "process_type": process_id,
                 "cap_storage_slot": cap_storage_slot,
                 "sample_id": normalized_sample_id,
+                "sensor_precheck": sensor_precheck,
+                "sensor_postcheck": sensor_postcheck,
                 "status": status,
             }
         except Exception as exc:

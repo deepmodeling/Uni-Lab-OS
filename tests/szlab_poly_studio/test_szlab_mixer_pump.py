@@ -204,17 +204,50 @@ def test_szlab_mixer_pump_run_solvent_addition_checks_storage_bottle_present():
     result = device.run_solvent_addition(process=1)
 
     assert result["success"] is False
-    assert "储液瓶 1" in result["message"]
+    assert "储液瓶在位超时" in result["message"]
+    assert result["sensor_precheck"]["mismatches"]["传感器状态_上位机[4].NO[12]"] == {
+        "expected": True,
+        "actual": False,
+    }
 
 
-def test_szlab_mixer_pump_skip_level_check_bypasses_storage_bottle_sensor():
+def test_szlab_mixer_pump_skip_level_check_cannot_bypass_storage_bottle_sensor():
     client = PseudoSzlabMixerOpcUaClient({"传感器状态_上位机[4].NO[12]": False})
     device = make_pump_device(client)
 
     result = device.run_solvent_addition(process=1, volume=1, skip_level_check=True)
 
-    assert result["success"] is True
-    assert "储液瓶" not in result["message"]
+    assert result["success"] is False
+    assert "储液瓶在位超时" in result["message"]
+
+
+def test_szlab_mixer_pump_transfer_liquid_requires_beaker_sensor():
+    client = PseudoSzlabMixerOpcUaClient({"传感器状态_上位机[3].NO[1]": False})
+    device = make_pump_device(client)
+
+    result = device.transfer_liquid(process=1, volume=5)
+
+    assert result["success"] is False
+    assert result["sensor_precheck"]["mismatches"]["传感器状态_上位机[3].NO[1]"]["actual"] is False
+    assert client.writes == []
+
+
+def test_szlab_mixer_pump_reports_material_missing_after_completion():
+    class MaterialRemovedClient(PseudoSzlabMixerOpcUaClient):
+        def wait_new_cycle_done(self, name, timeout=300.0, interval=0.2):
+            success = super().wait_new_cycle_done(name, timeout=timeout, interval=interval)
+            self.values["传感器状态_上位机[3].NO[1]"] = False
+            return success
+
+    client = MaterialRemovedClient()
+    device = make_pump_device(client)
+
+    result = device.run_solvent_addition(process=1, volume=5)
+
+    assert result["success"] is False
+    assert result["status"] == "verification_failed"
+    assert "在位验证失败" in result["message"]
+    assert ("S06参数写入完成", False) in client.writes
 
 
 def test_szlab_mixer_pump_run_solvent_addition_never_writes_legacy_robot_variables():

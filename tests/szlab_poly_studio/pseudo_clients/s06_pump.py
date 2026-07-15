@@ -35,6 +35,10 @@ class PseudoSzlabMixerOpcUaClient:
             raise KeyError(f"未找到 OPC UA 节点: {name}")
         return self.values[name]
 
+    def read_variable(self, name: str, use_cache: bool = False) -> Any:
+        del use_cache
+        return self.read(name)
+
     def write(self, name: str, value: Any) -> None:
         self.events.append(("write", name, value))
         self.values[name] = value
@@ -52,6 +56,17 @@ class PseudoSzlabMixerOpcUaClient:
         self.events.append(("wait", name, expected))
         self.wait_equal_calls.append((name, expected))
         return self.values.get(name) == expected
+
+    def wait_sensor_conditions(
+        self,
+        conditions: dict[str, bool],
+        timeout: float = 300.0,
+        interval: float = 0.2,
+    ) -> tuple[bool, dict[str, Any]]:
+        del timeout, interval
+        self.events.append(("wait_sensor_conditions", dict(conditions)))
+        values = {name: self.read(name) for name in conditions}
+        return all(values[name] == expected for name, expected in conditions.items()), values
 
     def wait_new_cycle_done(self, name: str, timeout: float = 300.0, interval: float = 0.2) -> bool:
         del timeout, interval

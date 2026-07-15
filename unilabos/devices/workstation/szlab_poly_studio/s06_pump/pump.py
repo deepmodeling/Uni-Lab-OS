@@ -28,11 +28,10 @@ Docker 本地调试（推荐）：
 from __future__ import annotations
 
 import os
-import time
 from typing import Any, Literal
 
 from unilabos.registry.decorators import ActionInputHandle, DataSource, action, device, not_action, topic_config
-from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice, wait_sensor_conditions
 
 from .sensors import (
     ADDITION_BEAKER_SENSOR,
@@ -135,19 +134,6 @@ class SzlabMixerPumpDevice:
         return self._opc_client().get_opc_variable_metadata(variable_name)
 
     @not_action
-    def _read_bool(self, name: str) -> bool:
-        return bool(self._opc_client().read(name))
-
-    @not_action
-    def _wait_beaker_present(self, beaker_true_means_present: bool = True) -> dict[str, Any] | None:
-        deadline = time.time() + self.timeout
-        while time.time() < deadline:
-            if self._read_bool(ADDITION_BEAKER_SENSOR) == beaker_true_means_present:
-                return None
-            time.sleep(0.2)
-        return {"success": False, "message": "等待加液位放置烧杯超时"}
-
-    @not_action
     def _wait_allow_process(self) -> dict[str, Any] | None:
         """等待 PLC 确认可加工（含储液瓶液量充足等前置条件）。"""
         if self._opc_client().wait_equal(S06_ALLOW_PROCESS_VAR, True, timeout=self.timeout, interval=0.2):
@@ -161,16 +147,36 @@ class SzlabMixerPumpDevice:
         return {"success": False, "message": "等待 S06 准备信号超时"}
 
     @not_action
-    def _ensure_storage_bottle_present(self, process: int) -> dict[str, Any] | None:
-        """确认储液瓶在位；液量是否足够由 PLC 通过 S06允许加工 反馈。"""
+    def _material_sensor_conditions(self, process: int) -> dict[str, bool]:
         pumps = (1, 2) if process == 3 else (process,)
+        conditions = {ADDITION_BEAKER_SENSOR: True}
         for pump_index in pumps:
             present_var = STORAGE_BOTTLE_PRESENT.get(pump_index)
             if not present_var:
-                continue
-            if not self._read_bool(present_var):
-                return {"success": False, "message": f"储液瓶 {pump_index} 未检测到在位"}
-        return None
+                raise RuntimeError(f"S06 储液瓶 {pump_index} 缺少传感器映射")
+            conditions[present_var] = True
+        return conditions
+
+    @not_action
+    def _wait_material_sensors(self, process: int, phase: str) -> dict[str, Any]:
+        conditions = self._material_sensor_conditions(process)
+        client = self._opc_client()
+        waiter = getattr(client, "wait_sensor_conditions", None)
+        if callable(waiter):
+            success, values = waiter(conditions, timeout=self.timeout, interval=0.2)
+        else:
+            success, values = wait_sensor_conditions(client, conditions, timeout=self.timeout, interval=0.2)
+        return {
+            "success": bool(success),
+            "phase": phase,
+            "conditions": conditions,
+            "values": values,
+            "mismatches": {
+                name: {"expected": expected, "actual": values.get(name)}
+                for name, expected in conditions.items()
+                if values.get(name) != expected
+            },
+        }
 
     @not_action
     def _apply_pipeline_route(self, pump: int, pipeline: S06PipelineKind) -> None:
@@ -239,6 +245,19 @@ class SzlabMixerPumpDevice:
         if invalid_amounts:
             return {"success": False, "message": f"{', '.join(invalid_amounts)} 的体积必须大于 0"}
 
+        try:
+            sensor_precheck = self._wait_material_sensors(process, phase="pre")
+        except Exception as exc:
+            self._status = "Error"
+            return {"success": False, "message": f"S06 前置物料传感器读取失败: {exc}"}
+        if not sensor_precheck["success"]:
+            self._status = "Error"
+            return {
+                "success": False,
+                "message": "S06 等待加液烧杯及储液瓶在位超时",
+                "sensor_precheck": sensor_precheck,
+            }
+
         if require_allow:
             err = self._wait_allow_process()
             if err:
@@ -271,6 +290,24 @@ class SzlabMixerPumpDevice:
         except Exception:
             self._status = "Error"
             raise
+        try:
+            sensor_postcheck = self._wait_material_sensors(process, phase="post")
+        except Exception as exc:
+            self._status = "Error"
+            return {
+                "success": False,
+                "status": "verification_failed",
+                "message": f"S06 加液已完成，但物料传感器读取失败: {exc}",
+            }
+        if not sensor_postcheck["success"]:
+            self._status = "Error"
+            return {
+                "success": False,
+                "status": "verification_failed",
+                "message": "S06 加液已完成，但烧杯或储液瓶在位验证失败",
+                "sensor_precheck": sensor_precheck,
+                "sensor_postcheck": sensor_postcheck,
+            }
         self._status = "Idle"
         return {
             "success": True,
@@ -281,6 +318,8 @@ class SzlabMixerPumpDevice:
                 "volume_pump_1": volume_pump_1,
                 "volume_pump_2": volume_pump_2,
                 "amount_values": amount_values,
+                "sensor_precheck": sensor_precheck,
+                "sensor_postcheck": sensor_postcheck,
             },
         }
 
@@ -352,35 +391,15 @@ class SzlabMixerPumpDevice:
     ) -> dict[str, Any]:
         if process not in (1, 2, 3):
             return {"success": False, "message": "S06 工艺选择必须为 1、2 或 3"}
+        del skip_level_check, beaker_true_means_present
 
         self._status = "Running"
         steps: list[dict[str, Any]] = []
 
-        err = self._wait_allow_process()
-        if err:
-            self._status = "Error"
-            return err
-
-        err = self._wait_ready()
-        if err:
-            self._status = "Error"
-            return err
-
-        err = self._wait_beaker_present(beaker_true_means_present)
-        if err:
-            self._status = "Error"
-            return err
-
-        if not skip_level_check:
-            err = self._ensure_storage_bottle_present(process)
-            if err:
-                self._status = "Error"
-                return err
-
         result = self._execute_s06_addition(
             process,
             volume,
-            require_allow=False,
+            require_allow=True,
             volume_pump_1=volume_pump_1,
             volume_pump_2=volume_pump_2,
         )

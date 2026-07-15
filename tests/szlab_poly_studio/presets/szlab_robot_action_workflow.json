@@ -47,7 +47,6 @@
     "env": {
       "SKIP_SENSOR_PRECHECK": "1"
     },
-    "auto_apply": true,
     "skip_robot_precheck_variables": [
       "Robot_Home",
       "传感器状态_上位机[0].NO[0]",

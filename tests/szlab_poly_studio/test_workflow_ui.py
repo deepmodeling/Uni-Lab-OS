@@ -28,6 +28,7 @@ from scripts.workflow_ui import (
     _record_to_dict,
     _register_shutdown_handler,
     _run_node_with_live_opc_sampling,
+    apply_preset_debug_config,
     build_graph_workflow,
     build_linear_workflow,
     create_app,
@@ -685,27 +686,22 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     ]
 
 
-def test_szlab_robot_action_workflow_auto_applies_debug_sensor_skips(monkeypatch):
+def test_szlab_robot_action_workflow_does_not_auto_apply_debug_sensor_skips(monkeypatch):
     monkeypatch.delenv("SKIP_SENSOR_PRECHECK", raising=False)
     monkeypatch.delenv("SKIP_ROBOT_PRECHECK_VARIABLES", raising=False)
 
     create_app("szlab_robot_action_workflow")
 
-    skipped_variables = {
-        item.strip()
-        for item in os.environ["SKIP_ROBOT_PRECHECK_VARIABLES"].split(",")
-        if item.strip()
-    }
-    assert os.environ["SKIP_SENSOR_PRECHECK"] == "1"
-    assert "传感器状态_上位机[0].NO[6]" in skipped_variables
+    assert "SKIP_SENSOR_PRECHECK" not in os.environ
+    assert "SKIP_ROBOT_PRECHECK_VARIABLES" not in os.environ
 
 
-def test_szlab_robot_action_workflow_debug_skips_s03_pick_sensor_gate(monkeypatch):
+def test_szlab_robot_action_workflow_explicit_debug_skips_s03_pick_sensor_gate(monkeypatch):
     from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import SzlabMixerRobotDevice
 
     monkeypatch.delenv("SKIP_SENSOR_PRECHECK", raising=False)
     monkeypatch.delenv("SKIP_ROBOT_PRECHECK_VARIABLES", raising=False)
-    create_app("szlab_robot_action_workflow")
+    apply_preset_debug_config("szlab_robot_action_workflow")
 
     device = SzlabMixerRobotDevice(auto_connect=False)
     result = device._ensure_sensor_gate("传感器状态_上位机[0].NO[6]", True, "S03 取料源位必须有物料")

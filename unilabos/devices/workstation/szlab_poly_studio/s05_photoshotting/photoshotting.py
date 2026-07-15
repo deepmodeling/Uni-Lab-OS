@@ -14,6 +14,7 @@ from unilabos.devices.workstation.szlab_poly_studio.plc import wait_variable_tru
 from .sensors import (
     PHOTO_RESULT_LABELS,
     S05_DONE,
+    S05_MATERIAL_SENSOR,
     S05_RESULT,
 )
 
@@ -235,6 +236,14 @@ class SzlabMixerPhotoShottingDevice:
         return wait_variable_true(reader, S05_DONE, timeout=self.timeout, interval=1.0)
 
     @not_action
+    def _wait_material_present(self) -> bool:
+        waiter = getattr(self._plc_gateway, "wait_variable_true", None) if self._plc_gateway is not None else None
+        if callable(waiter):
+            return waiter(S05_MATERIAL_SENSOR, timeout=self.timeout, interval=1.0)
+        reader = self._plc_gateway if self._plc_gateway is not None else self._client
+        return wait_variable_true(reader, S05_MATERIAL_SENSOR, timeout=self.timeout, interval=1.0)
+
+    @not_action
     def _wait_photo_result_code(self) -> tuple[Any, str]:
         deadline = time.time() + self.timeout
         last_code: Any = 0
@@ -262,13 +271,29 @@ class SzlabMixerPhotoShottingDevice:
             sample_id[样品ID]: 用于生成照片文件名和结果记录的样品标识。
             photo_path[照片路径]: 保留参数；相机照片链接接口接入后由设备侧获取。
             inspection_result[算法结果]: 保留参数；S05 当前按 PLC 拍照结果判断。
-            require_material[要求有料]: 兼容旧工作流参数；S05 最新变量表不再提供物料检测，当前不使用。
+            require_material[要求有料]: 兼容旧工作流参数；实机动作始终要求拍照位置有料。
         """
         del inspection_result, require_material
         self._status = "Running"
+        if not self._wait_material_present():
+            self._status = "Error"
+            return {
+                "success": False,
+                "message": "S05 等待拍照位置有料超时",
+                "data": {"sensor_variable": S05_MATERIAL_SENSOR},
+            }
         if not self._wait_photo_done():
             self._status = "Error"
             return {"success": False, "message": "S05 拍照完成等待超时"}
+
+        if not self._wait_material_present():
+            self._status = "Error"
+            return {
+                "success": False,
+                "status": "verification_failed",
+                "message": "S05 拍照已完成，但物料在位验证失败",
+                "data": {"sensor_variable": S05_MATERIAL_SENSOR},
+            }
 
         result_code, result_label = self._wait_photo_result_code()
         photo_url = self._fetch_photo_url(sample_id) if result_label == "OK" else ""

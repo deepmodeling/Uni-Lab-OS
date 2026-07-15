@@ -807,6 +807,8 @@ def test_szlab_photoshotting_take_photo_polls_done_every_second_until_complete(m
 
         def read_variable(self, name, use_cache=False):
             self.reads.append(name)
+            if name == "传感器状态_上位机[3].NO[0]":
+                return True
             if name == "S05加工完成":
                 return self.done_values.pop(0)
             values = {"S05拍照结果": 1}
@@ -830,7 +832,14 @@ def test_szlab_photoshotting_take_photo_polls_done_every_second_until_complete(m
     assert result["success"] is True
     assert result["data"]["result"] == "OK"
     assert result["data"]["photo_url"] == ""
-    assert gateway.reads == ["S05加工完成", "S05加工完成", "S05加工完成", "S05拍照结果"]
+    assert gateway.reads == [
+        "传感器状态_上位机[3].NO[0]",
+        "S05加工完成",
+        "S05加工完成",
+        "S05加工完成",
+        "传感器状态_上位机[3].NO[0]",
+        "S05拍照结果",
+    ]
     assert sleeps == [1.0, 1.0]
 
 
@@ -860,7 +869,11 @@ def test_szlab_photoshotting_uses_plc_wait_helper_when_available():
     result = device.take_photo(sample_id="sample-1")
 
     assert result["success"] is True
-    assert gateway.waits == [("S05加工完成", 9.0, 1.0)]
+    assert gateway.waits == [
+        ("传感器状态_上位机[3].NO[0]", 9.0, 1.0),
+        ("S05加工完成", 9.0, 1.0),
+        ("传感器状态_上位机[3].NO[0]", 9.0, 1.0),
+    ]
     assert gateway.reads == ["S05拍照结果"]
 
 
@@ -903,6 +916,56 @@ def test_szlab_photoshotting_waits_for_nonzero_photo_result_after_done(monkeypat
     assert sleeps == [1.0, 1.0]
 
 
+def test_szlab_photoshotting_rejects_missing_material_before_photo():
+    class FakePlcGateway:
+        def wait_variable_true(self, name, timeout=300.0, interval=1.0):
+            assert name == "传感器状态_上位机[3].NO[0]"
+            return False
+
+        def read_variable(self, name, use_cache=False):
+            raise AssertionError("无物料时不应读取拍照结果")
+
+    device = SzlabMixerPhotoShottingDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        timeout=9.0,
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(FakePlcGateway())
+
+    result = device.take_photo(sample_id="sample-1")
+
+    assert result["success"] is False
+    assert result["message"] == "S05 等待拍照位置有料超时"
+
+
+def test_szlab_photoshotting_reports_material_missing_after_photo():
+    class FakePlcGateway:
+        def __init__(self):
+            self.material_waits = 0
+
+        def wait_variable_true(self, name, timeout=300.0, interval=1.0):
+            if name == "传感器状态_上位机[3].NO[0]":
+                self.material_waits += 1
+                return self.material_waits == 1
+            return True
+
+        def read_variable(self, name, use_cache=False):
+            raise AssertionError("后置物料验证失败时不应读取拍照结果")
+
+    device = SzlabMixerPhotoShottingDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        timeout=9.0,
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(FakePlcGateway())
+
+    result = device.take_photo(sample_id="sample-1")
+
+    assert result["success"] is False
+    assert result["status"] == "verification_failed"
+    assert "物料在位验证失败" in result["message"]
+
+
 def test_szlab_photoshotting_take_photo_fails_when_result_is_ng():
     class FakePlcGateway:
         def __init__(self):
@@ -911,6 +974,7 @@ def test_szlab_photoshotting_take_photo_fails_when_result_is_ng():
         def read_variable(self, name, use_cache=False):
             self.reads.append(name)
             values = {
+                "传感器状态_上位机[3].NO[0]": True,
                 "S05加工完成": True,
                 "S05拍照结果": 2,
             }
@@ -928,7 +992,12 @@ def test_szlab_photoshotting_take_photo_fails_when_result_is_ng():
     assert result["success"] is False
     assert result["message"] == "S05 拍照检测 NG"
     assert result["data"]["result"] == "NG"
-    assert gateway.reads == ["S05加工完成", "S05拍照结果"]
+    assert gateway.reads == [
+        "传感器状态_上位机[3].NO[0]",
+        "S05加工完成",
+        "传感器状态_上位机[3].NO[0]",
+        "S05拍照结果",
+    ]
 
 
 def test_szlab_poly_plc_uses_node_id_map_without_browsing(monkeypatch, tmp_path):

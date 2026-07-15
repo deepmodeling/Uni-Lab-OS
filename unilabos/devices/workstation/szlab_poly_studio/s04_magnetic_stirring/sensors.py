@@ -52,6 +52,10 @@ def s04_safe_temperature_var(position: int) -> str:
     return f"磁搅安全温度设置_上位机[{int(position) - 1}]"
 
 
+def s04_material_sensor_var(position: int) -> str:
+    return f"传感器状态_上位机[2].NO[{int(position) + 9}]"
+
+
 def s04_public_variables() -> list[str]:
     variables: list[str] = []
     for position in S04_POSITION_RANGE:

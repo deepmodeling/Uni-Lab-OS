@@ -363,6 +363,8 @@ def test_szlab_magnetic_stirrer_run_stirring_writes_s041_parameters():
                 return True
             if name == "S041加工完成":
                 return self.done_values.pop(0)
+            if name == "传感器状态_上位机[2].NO[10]":
+                return True
             raise KeyError(name)
 
         def write_variable(self, name, value):
@@ -388,7 +390,15 @@ def test_szlab_magnetic_stirrer_run_stirring_writes_s041_parameters():
 
     assert result["success"] is True
     assert result["data"]["station"] == "S041"
-    assert gateway.reads == ["S041磁搅状态", "S041允许加工", "S041加工完成", "S041加工完成", "S041加工完成"]
+    assert gateway.reads == [
+        "传感器状态_上位机[2].NO[10]",
+        "S041磁搅状态",
+        "S041允许加工",
+        "S041加工完成",
+        "S041加工完成",
+        "S041加工完成",
+        "传感器状态_上位机[2].NO[10]",
+    ]
     assert gateway.writes == [
         ("S041磁搅工艺选择", 3),
         ("磁搅速度设置_上位机[0]", 300),
@@ -426,6 +436,8 @@ def test_szlab_magnetic_stirrer_waits_for_idle_status_before_writing(monkeypatch
                 return True
             if name == "S041加工完成":
                 return self.done_values.pop(0)
+            if name == "传感器状态_上位机[2].NO[10]":
+                return True
             raise KeyError(name)
 
         def write_variable(self, name, value):
@@ -446,7 +458,12 @@ def test_szlab_magnetic_stirrer_waits_for_idle_status_before_writing(monkeypatch
     result = device.run_stirring(position=1, mode=3)
 
     assert result["success"] is True
-    assert gateway.reads[:3] == ["S041磁搅状态", "S041磁搅状态", "S041允许加工"]
+    assert gateway.reads[:4] == [
+        "传感器状态_上位机[2].NO[10]",
+        "S041磁搅状态",
+        "S041磁搅状态",
+        "S041允许加工",
+    ]
     assert ("S041磁搅工艺选择", 3) in gateway.writes
 
 
@@ -459,6 +476,10 @@ def test_szlab_magnetic_stirrer_idle_status_timeout_before_writing():
         def wait_equal(self, name, expected, timeout=300.0, interval=1.0):
             self.waits.append((name, expected, timeout, interval))
             return False
+
+        def wait_variable_true(self, name, timeout=300.0, interval=1.0):
+            self.waits.append((name, timeout, interval))
+            return name == "传感器状态_上位机[2].NO[10]"
 
         def read_variable(self, name, use_cache=False):
             raise AssertionError("磁搅状态应通过 wait_equal 等待")
@@ -479,8 +500,72 @@ def test_szlab_magnetic_stirrer_idle_status_timeout_before_writing():
 
     assert result["success"] is False
     assert result["message"] == "S041 磁搅状态等待空闲超时（期望 1）"
-    assert gateway.waits == [("S041磁搅状态", 1, 12.0, 1.0)]
+    assert gateway.waits == [
+        ("传感器状态_上位机[2].NO[10]", 12.0, 1.0),
+        ("S041磁搅状态", 1, 12.0, 1.0),
+    ]
     assert gateway.writes == []
+
+
+def test_szlab_magnetic_stirrer_rejects_missing_material_before_writing():
+    class FakePlcGateway:
+        def __init__(self):
+            self.writes = []
+
+        def wait_variable_true(self, name, timeout=300.0, interval=1.0):
+            assert name == "传感器状态_上位机[2].NO[10]"
+            return False
+
+        def write_variable(self, name, value):
+            self.writes.append((name, value))
+
+    gateway = FakePlcGateway()
+    device = SzlabMixerMagneticStirrerDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        timeout=12.0,
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.run_stirring(position=1, mode=3)
+
+    assert result["success"] is False
+    assert result["message"] == "S041 等待搅拌位置有料超时"
+    assert gateway.writes == []
+
+
+def test_szlab_magnetic_stirrer_reports_missing_material_after_completion():
+    class FakePlcGateway:
+        def __init__(self):
+            self.material_waits = 0
+            self.writes = []
+
+        def wait_variable_true(self, name, timeout=300.0, interval=1.0):
+            if name == "传感器状态_上位机[2].NO[10]":
+                self.material_waits += 1
+                return self.material_waits == 1
+            return True
+
+        def wait_equal(self, name, expected, timeout=300.0, interval=1.0):
+            return True
+
+        def write_variable(self, name, value):
+            self.writes.append((name, value))
+
+    gateway = FakePlcGateway()
+    device = SzlabMixerMagneticStirrerDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        timeout=12.0,
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.run_stirring(position=1, mode=3)
+
+    assert result["success"] is False
+    assert result["status"] == "verification_failed"
+    assert "物料在位验证失败" in result["message"]
+    assert ("S041参数写入完成", False) in gateway.writes
 
 
 def test_szlab_magnetic_stirrer_waits_for_new_done_cycle_when_done_is_stale_true():
@@ -498,6 +583,8 @@ def test_szlab_magnetic_stirrer_waits_for_new_done_cycle_when_done_is_stale_true
                 return True
             if name == "S041加工完成":
                 return self.done_values.pop(0)
+            if name == "传感器状态_上位机[2].NO[10]":
+                return True
             raise KeyError(name)
 
         def write_variable(self, name, value):
@@ -529,6 +616,7 @@ def test_szlab_magnetic_stirrer_waits_for_done_timeout(monkeypatch):
         def read_variable(self, name, use_cache=False):
             self.reads.append(name)
             values = {
+                "传感器状态_上位机[2].NO[10]": True,
                 "S041磁搅状态": 1,
                 "S041允许加工": True,
                 "S041加工完成": False,
@@ -539,7 +627,7 @@ def test_szlab_magnetic_stirrer_waits_for_done_timeout(monkeypatch):
             return True
 
     sleeps = []
-    ticks = iter([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.1])
+    ticks = iter([0.0] * 10 + [1.1])
     monkeypatch.setattr("unilabos.devices.workstation.szlab_poly_studio.plc.time.time", lambda: next(ticks))
     monkeypatch.setattr(
         "unilabos.devices.workstation.szlab_poly_studio.plc.time.sleep",
@@ -593,10 +681,12 @@ def test_szlab_magnetic_stirrer_uses_plc_wait_helper_when_available():
 
     assert result["success"] is True
     assert gateway.waits == [
+        ("传感器状态_上位机[2].NO[10]", 12.0, 1.0),
         ("S041磁搅状态", 1, 12.0, 1.0),
         ("S041允许加工", 12.0, 1.0),
         ("S041加工完成", False, 12.0, 1.0),
         ("S041加工完成", 12.0, 1.0),
+        ("传感器状态_上位机[2].NO[10]", 12.0, 1.0),
     ]
 
 

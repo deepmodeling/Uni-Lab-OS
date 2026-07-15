@@ -12,6 +12,7 @@ from .sensors import (
     s04_allow_var,
     s04_done_var,
     s04_duration_var,
+    s04_material_sensor_var,
     s04_opcua_node_id_map,
     s04_params_written_var,
     s04_process_var,
@@ -213,6 +214,15 @@ class SzlabMixerMagneticStirrerDevice:
         if reset:
             return self._reset_pc_to_plc_defaults(position)
 
+        material_sensor = s04_material_sensor_var(position)
+        if not self._wait_variable_true(material_sensor):
+            self._status = "Error"
+            return {
+                "success": False,
+                "message": f"{station} 等待搅拌位置有料超时",
+                "data": {"station": station, "sensor_variable": material_sensor},
+            }
+
         if not self._wait_idle_status(position):
             self._status = "Error"
             return {
@@ -244,6 +254,15 @@ class SzlabMixerMagneticStirrerDevice:
         reset_result = self._reset_pc_to_plc_defaults(position)
         if not reset_result.get("success", False):
             return reset_result
+
+        if not self._wait_variable_true(material_sensor):
+            self._status = "Error"
+            return {
+                "success": False,
+                "status": "verification_failed",
+                "message": f"{station} 加工已完成，但搅拌位置物料在位验证失败",
+                "data": {"station": station, "sensor_variable": material_sensor},
+            }
 
         self._status = "Idle"
         self._last_position = position

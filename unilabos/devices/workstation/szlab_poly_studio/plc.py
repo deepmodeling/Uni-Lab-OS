@@ -81,6 +81,30 @@ def wait_variable_true(
     return wait_variable_equal(reader, variable_name, True, timeout=timeout, interval=interval)
 
 
+def wait_sensor_conditions(
+    reader: Any,
+    conditions: Dict[str, bool],
+    *,
+    timeout: float = 300.0,
+    interval: float = 0.2,
+) -> tuple[bool, Dict[str, Any]]:
+    """等待一组实机传感器同时达到期望状态，并返回最后一次读取值。"""
+    if not conditions:
+        return True, {}
+
+    started_at = time.monotonic()
+    last_values: Dict[str, Any] = {}
+    while time.monotonic() - started_at <= timeout:
+        last_values = {
+            variable_name: reader.read_variable(variable_name, use_cache=False)
+            for variable_name in conditions
+        }
+        if all(last_values[name] == expected for name, expected in conditions.items()):
+            return True, last_values
+        time.sleep(interval)
+    return False, last_values
+
+
 def _resolve_csv_path(csv_path: Optional[str]) -> str:
     if csv_path is None:
         csv_path = DEFAULT_CSV_NAME
@@ -721,6 +745,15 @@ class SZLabPolyPLCDevice(BaseClient):
         interval: float = 1.0,
     ) -> bool:
         return wait_variable_true(self, node_name, timeout=timeout, interval=interval)
+
+    @not_action
+    def wait_sensor_conditions(
+        self,
+        conditions: Dict[str, bool],
+        timeout: float = 300.0,
+        interval: float = 0.2,
+    ) -> tuple[bool, Dict[str, Any]]:
+        return wait_sensor_conditions(self, conditions, timeout=timeout, interval=interval)
 
     @not_action
     def drain_opc_wait_events(self) -> List[Dict[str, Any]]:

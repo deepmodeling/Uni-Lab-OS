@@ -10,7 +10,11 @@ from unilabos.devices.workstation.szlab_poly_studio.s06_pump.sensors import (
     default_s06_pipeline_routes,
     s06_pump_valve_var,
 )
-from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice, wait_variable_true
+from unilabos.devices.workstation.szlab_poly_studio.plc import (
+    SZLabPolyPLCDevice,
+    wait_sensor_conditions,
+    wait_variable_true,
+)
 from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring import (
     SzlabMixerMagneticStirrerDevice,
 )
@@ -57,6 +61,54 @@ def test_szlab_wait_variable_true_reuses_read_variable_and_interval(monkeypatch)
         ("S05加工完成", False),
     ]
     assert sleeps == [1.0, 1.0]
+
+
+def test_szlab_wait_sensor_conditions_reads_all_values_without_cache(monkeypatch):
+    class FakeReader:
+        def __init__(self):
+            self.cycles = [
+                {"sensor_a": True, "sensor_b": False},
+                {"sensor_a": True, "sensor_b": True},
+            ]
+            self.reads = []
+
+        def read_variable(self, name, use_cache=False):
+            self.reads.append((name, use_cache))
+            value = self.cycles[0][name]
+            if name == "sensor_b":
+                self.cycles.pop(0)
+            return value
+
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.plc.time.sleep",
+        lambda _seconds: None,
+    )
+    reader = FakeReader()
+
+    success, values = wait_sensor_conditions(
+        reader,
+        {"sensor_a": True, "sensor_b": True},
+        timeout=5.0,
+        interval=0.2,
+    )
+
+    assert success is True
+    assert values == {"sensor_a": True, "sensor_b": True}
+    assert reader.reads == [
+        ("sensor_a", False),
+        ("sensor_b", False),
+        ("sensor_a", False),
+        ("sensor_b", False),
+    ]
+
+
+def test_szlab_wait_sensor_conditions_propagates_read_errors():
+    class FakeReader:
+        def read_variable(self, name, use_cache=False):
+            raise RuntimeError(f"读取失败: {name}")
+
+    with pytest.raises(RuntimeError, match="读取失败"):
+        wait_sensor_conditions(FakeReader(), {"sensor_a": True}, timeout=5.0)
 
 
 def test_szlab_plc_wait_variable_equal_records_start_and_finish_events(monkeypatch):

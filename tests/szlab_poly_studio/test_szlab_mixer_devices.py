@@ -116,6 +116,64 @@ def test_szlab_plc_empty_stack_status_group_list_reads_no_sensors():
     assert device._read_stack_sensor_groups(group_names=[]) == {}
 
 
+def test_szlab_plc_sensor_group_reads_real_boolean_array_once(monkeypatch):
+    device = object.__new__(SZLabPolyPLCDevice)
+    device._sensor_read_warning_names = set()
+    reads = []
+
+    def read_sensor_array(group_index):
+        reads.append(group_index)
+        return [index in {10, 12} for index in range(16)]
+
+    monkeypatch.setattr(device, "_read_sensor_array", read_sensor_array)
+
+    status = device._read_sensor_group(
+        {
+            "1": "传感器状态_上位机[2].NO[10]",
+            "2": "传感器状态_上位机[2].NO[11]",
+            "3": "传感器状态_上位机[2].NO[12]",
+        }
+    )
+
+    assert status == {"1": True, "2": False, "3": True}
+    assert reads == [2]
+
+
+def test_szlab_plc_get_sensor_arrays_includes_csv_metadata(monkeypatch):
+    device = object.__new__(SZLabPolyPLCDevice)
+    device._sensor_bit_metadata = {
+        "传感器状态_上位机[2].NO[10]": {
+            "label": "搅拌1-1",
+            "address": "R10002.10",
+            "node_id": "ns=4;s=bit",
+        }
+    }
+    device._direct_node_id_map = {
+        "传感器状态_上位机[2].NO": "ns=4;s=array",
+    }
+    monkeypatch.setattr(
+        device,
+        "_read_sensor_array",
+        lambda group_index: [group_index == 2 and bit_index == 10 for bit_index in range(16)],
+    )
+
+    payload = device.get_sensor_arrays()
+
+    assert payload["success"] is True
+    assert len(payload["groups"]) == 10
+    group = payload["groups"][2]
+    assert group["node_id"] == "ns=4;s=array"
+    assert group["values"][10] is True
+    assert group["bits"][10] == {
+        "index": 10,
+        "name": "传感器状态_上位机[2].NO[10]",
+        "value": True,
+        "label": "搅拌1-1",
+        "address": "R10002.10",
+        "node_id": "ns=4;s=bit",
+    }
+
+
 def test_clear_pc_to_plc_variables_treats_failed_write_as_success_when_already_clear():
     class FakePlcGateway:
         def __init__(self):

@@ -2681,6 +2681,163 @@ code {
   border-top: 0;
 }
 
+.sensor-array-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.sensor-array-head,
+.sensor-array-actions,
+.sensor-array-group header,
+.sensor-array-group summary {
+  display: flex;
+  align-items: center;
+}
+
+.sensor-array-head {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sensor-array-head h3,
+.sensor-array-head p {
+  margin: 0;
+}
+
+.sensor-array-head p {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.sensor-array-actions {
+  gap: 8px;
+}
+
+.sensor-array-actions span {
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.sensor-array-actions span.online {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.sensor-array-actions span.offline {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.sensor-array-error {
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 9px 11px;
+  font-size: 12px;
+}
+
+.sensor-array-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.sensor-array-group {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.sensor-array-group header,
+.sensor-array-group summary {
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #475569;
+  font-size: 11px;
+}
+
+.sensor-array-group header span,
+.sensor-array-group summary span {
+  margin-left: auto;
+  color: #64748b;
+}
+
+.sensor-array-group summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.sensor-array-unmarked:not([open]) summary {
+  margin-bottom: 0;
+}
+
+.sensor-array-bits {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.sensor-array-bit {
+  display: grid;
+  flex: 0 0 78px;
+  min-width: 78px;
+  min-height: 66px;
+  align-content: space-between;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 5px;
+  text-align: center;
+}
+
+.sensor-array-bit span,
+.sensor-array-bit small {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sensor-array-bit strong {
+  color: #64748b;
+  font-size: 18px;
+}
+
+.sensor-array-bit.on {
+  border-color: #4ade80;
+  background: #dcfce7;
+}
+
+.sensor-array-bit.on strong {
+  color: #15803d;
+}
+
+.sensor-array-bit.off {
+  background: #f8fafc;
+}
+
+.sensor-array-bit.unknown {
+  border-style: dashed;
+  background: #fff7ed;
+}
+
+.task-gate-card:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
 .demo-opc-table {
   width: 100%;
   table-layout: fixed;

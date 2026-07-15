@@ -2,9 +2,10 @@ import csv
 import json
 import logging
 import os
+import re
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from opcua import Client, ua
 
@@ -23,6 +24,9 @@ from unilabos.utils.log import logger
 
 DEFAULT_CSV_NAME = "szlab_plc_0702.csv"
 DEFAULT_STACK_SENSOR_LAYOUT_NAME = "stack_sensor_layout.json"
+SENSOR_ARRAY_COUNT = 10
+SENSOR_BITS_PER_ARRAY = 16
+SENSOR_BIT_NAME_PATTERN = re.compile(r"^传感器状态_上位机\[(\d+)\]\.NO\[(\d+)\]$")
 
 
 def wait_variable_equal(
@@ -158,6 +162,35 @@ def load_variable_names_from_csv(csv_path: str) -> List[str]:
     return names
 
 
+def load_sensor_bit_metadata_from_csv(csv_path: str) -> Dict[str, Dict[str, str]]:
+    """读取传感器位的现场标签和软元件地址，供前端展示。"""
+    last_error: Optional[UnicodeDecodeError] = None
+    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "gb18030", "gbk"):
+        for delimiter in (",", "\t"):
+            try:
+                with open(csv_path, newline="", encoding=encoding) as csv_file:
+                    reader = csv.DictReader(csv_file, delimiter=delimiter)
+                    if "变量名" not in (reader.fieldnames or []):
+                        continue
+                    metadata: Dict[str, Dict[str, str]] = {}
+                    for row in reader:
+                        name = (row.get("变量名") or "").strip()
+                        if not SENSOR_BIT_NAME_PATTERN.fullmatch(name):
+                            continue
+                        metadata[name] = {
+                            "label": (row.get("注释") or "").strip(),
+                            "address": (row.get("软元件地址") or "").strip(),
+                            "node_id": (row.get("node_id") or row.get("nodeid") or "").strip(),
+                        }
+                    return metadata
+            except UnicodeDecodeError as exc:
+                last_error = exc
+                break
+    if last_error:
+        raise last_error
+    return {}
+
+
 def _patch_opcua_token_time_drift_check() -> None:
     """兼容 PLC/OPC UA Server 时间严重漂移导致的 security token 超时。"""
     from opcua.common.connection import SecureConnection
@@ -195,6 +228,17 @@ def _patch_opcua_token_time_drift_check() -> None:
     description="苏州实验室聚合物工作站 PLC/OPC UA 通讯设备，负责变量读写和传感器状态发布",
 )
 class SZLabPolyPLCDevice(BaseClient):
+    class _SensorArraySubscriptionHandler:
+        def __init__(self, device: "SZLabPolyPLCDevice") -> None:
+            self._device = device
+
+        def datachange_notification(self, node: Any, value: Any, data: Any) -> None:
+            del data
+            self._device._on_sensor_array_datachange(node, value)
+
+        def event_notification(self, event: Any) -> None:
+            del event
+
     def __init__(
         self,
         url: str,
@@ -234,6 +278,12 @@ class SZLabPolyPLCDevice(BaseClient):
         self.heartbeat_on = False
         self._heartbeat_timer: Optional[threading.Timer] = None
         self._sensor_read_warning_names: set[str] = set()
+        self._sensor_array_subscription: Any = None
+        self._sensor_array_subscription_handles: List[Any] = []
+        self._sensor_array_node_indexes: Dict[str, int] = {}
+        self._sensor_array_subscription_values: Dict[int, List[bool]] = {}
+        self._sensor_change_callbacks: List[Callable[[int, List[bool]], None]] = []
+        self._sensor_subscription_lock = threading.RLock()
         self._fallback_node_id_prefix = fallback_node_id_prefix
         self._opcua_object_name = opcua_object_name
         self._opcua_browse_depth = int(opcua_browse_depth)
@@ -243,8 +293,10 @@ class SZLabPolyPLCDevice(BaseClient):
         if self.csv_path is None:
             variable_names: List[str] = []
             csv_node_id_map: Dict[str, str] = {}
+            self._sensor_bit_metadata: Dict[str, Dict[str, str]] = {}
         else:
             variable_names, csv_node_id_map = load_variable_definitions_from_csv(self.csv_path)
+            self._sensor_bit_metadata = load_sensor_bit_metadata_from_csv(self.csv_path)
         explicit_node_id_map = {
             **dict(node_id_map or {}),
             **dict(opcua_node_id_map or {}),
@@ -452,11 +504,119 @@ class SZLabPolyPLCDevice(BaseClient):
         node = self.use_node(node_name)
         value, error = node.read()
         if error:
+            sensor_bit = self._parse_sensor_bit_name(node_name)
+            if sensor_bit is not None:
+                return self._read_sensor_array(sensor_bit[0])[sensor_bit[1]]
             if node_name in self._direct_node_id_map:
                 direct_node_id = self._direct_node_id_map[node_name]
                 raise RuntimeError(f"读取 PLC 变量失败: {node_name}: 直连 NodeId 无效: {direct_node_id}")
             raise RuntimeError(f"读取 PLC 变量失败: {node_name}")
         return value
+
+    @not_action
+    def _parse_sensor_bit_name(self, variable_name: str) -> Optional[tuple[int, int]]:
+        match = SENSOR_BIT_NAME_PATTERN.fullmatch(variable_name)
+        if match is None:
+            return None
+        group_index, bit_index = int(match.group(1)), int(match.group(2))
+        if group_index >= SENSOR_ARRAY_COUNT or bit_index >= SENSOR_BITS_PER_ARRAY:
+            return None
+        return group_index, bit_index
+
+    @not_action
+    def _read_sensor_array(self, group_index: int) -> List[bool]:
+        variable_name = f"传感器状态_上位机[{group_index}].NO"
+        node = self.use_node(variable_name)
+        value, error = node.read()
+        if error:
+            raise RuntimeError(f"读取 PLC 传感器数组失败: {variable_name}")
+        if not isinstance(value, (list, tuple)):
+            raise TypeError(f"PLC 传感器数组类型错误: {variable_name}: {type(value).__name__}")
+        if len(value) < SENSOR_BITS_PER_ARRAY:
+            raise ValueError(
+                f"PLC 传感器数组长度不足: {variable_name}: "
+                f"{len(value)} < {SENSOR_BITS_PER_ARRAY}"
+            )
+        return [bool(item) for item in value[:SENSOR_BITS_PER_ARRAY]]
+
+    @not_action
+    def start_sensor_array_subscription(
+        self,
+        callback: Callable[[int, List[bool]], None],
+        interval_ms: int = 200,
+    ) -> None:
+        """只订阅 10 个传感器数组，并在数组内容变化时通知前端。"""
+        with self._sensor_subscription_lock:
+            if callback not in self._sensor_change_callbacks:
+                self._sensor_change_callbacks.append(callback)
+            if self._sensor_array_subscription is not None:
+                return
+            if not self.client:
+                raise RuntimeError("PLC OPC UA 客户端尚未连接")
+
+            subscription = self.client.create_subscription(
+                interval_ms,
+                self._SensorArraySubscriptionHandler(self),
+            )
+            self._sensor_array_subscription = subscription
+
+        handles: List[Any] = []
+        try:
+            for group_index in range(SENSOR_ARRAY_COUNT):
+                variable_name = f"传感器状态_上位机[{group_index}].NO"
+                node_id = self._direct_node_id_map.get(variable_name)
+                opc_node = self.client.get_node(node_id) if node_id else self.use_node(variable_name)._get_node()
+                with self._sensor_subscription_lock:
+                    self._sensor_array_node_indexes[str(opc_node.nodeid)] = group_index
+                handles.append(subscription.subscribe_data_change(opc_node))
+        except Exception:
+            try:
+                subscription.delete()
+            finally:
+                with self._sensor_subscription_lock:
+                    self._sensor_array_subscription = None
+                    self._sensor_array_subscription_handles = []
+                    self._sensor_array_node_indexes = {}
+            raise
+
+        with self._sensor_subscription_lock:
+            self._sensor_array_subscription_handles = handles
+
+    @not_action
+    def _on_sensor_array_datachange(self, node: Any, value: Any) -> None:
+        node_id = str(node.nodeid)
+        with self._sensor_subscription_lock:
+            group_index = self._sensor_array_node_indexes.get(node_id)
+            if group_index is None or not isinstance(value, (list, tuple)):
+                return
+            values = [bool(item) for item in value[:SENSOR_BITS_PER_ARRAY]]
+            if len(values) < SENSOR_BITS_PER_ARRAY:
+                return
+            if self._sensor_array_subscription_values.get(group_index) == values:
+                return
+            self._sensor_array_subscription_values[group_index] = values
+            callbacks = list(self._sensor_change_callbacks)
+
+        for callback in callbacks:
+            try:
+                callback(group_index, values)
+            except Exception as exc:
+                logger.warning(f"处理 PLC 传感器变化通知失败: {exc}")
+
+    @not_action
+    def stop_sensor_array_subscription(self) -> None:
+        with self._sensor_subscription_lock:
+            subscription = self._sensor_array_subscription
+            self._sensor_array_subscription = None
+            self._sensor_array_subscription_handles = []
+            self._sensor_array_node_indexes = {}
+            self._sensor_array_subscription_values = {}
+            self._sensor_change_callbacks = []
+        if subscription is not None:
+            try:
+                subscription.delete()
+            except Exception as exc:
+                logger.warning(f"删除 PLC 传感器订阅失败: {exc}")
 
     @not_action
     def write_variable(self, node_name: str, value: Any) -> bool:
@@ -509,6 +669,7 @@ class SZLabPolyPLCDevice(BaseClient):
         if self._heartbeat_timer:
             self._heartbeat_timer.cancel()
             self._heartbeat_timer = None
+        self.stop_sensor_array_subscription()
         if self.client:
             self.client.disconnect()
 
@@ -707,9 +868,28 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def _read_sensor_group(self, sensors: Dict[str, str]) -> Dict[str, Optional[bool]]:
         result: Dict[str, Optional[bool]] = {}
+        array_cache: Dict[int, Optional[List[bool]]] = {}
         for site_key, variable_name in sensors.items():
             try:
-                result[site_key] = bool(self.read_variable(variable_name))
+                sensor_bit = self._parse_sensor_bit_name(variable_name)
+                if sensor_bit is None:
+                    result[site_key] = bool(self.read_variable(variable_name))
+                    continue
+                group_index, bit_index = sensor_bit
+                if group_index not in array_cache:
+                    try:
+                        array_cache[group_index] = self._read_sensor_array(group_index)
+                    except Exception:
+                        array_cache[group_index] = None
+                array_value = array_cache[group_index]
+                if array_value is not None:
+                    result[site_key] = array_value[bit_index]
+                    continue
+                node = self.use_node(variable_name)
+                value, error = node.read()
+                if error:
+                    raise RuntimeError(f"读取 PLC 传感器位失败: {variable_name}")
+                result[site_key] = bool(value)
             except Exception as exc:
                 if variable_name not in self._sensor_read_warning_names:
                     logger.warning(f"读取传感器 {variable_name} 失败: {exc}")
@@ -820,6 +1000,61 @@ class SZLabPolyPLCDevice(BaseClient):
     @action(auto_prefix=True, always_free=True, description="读取前端堆栈 JSON 状态")
     def get_stack_status(self, group_names: Optional[List[str]] = None) -> Dict[str, Any]:
         return build_stack_status(self._read_stack_sensor_groups(group_names=group_names))
+
+    @action(auto_prefix=True, always_free=True, description="读取全部实机传感器数组")
+    def get_sensor_arrays(self) -> Dict[str, Any]:
+        groups: List[Dict[str, Any]] = []
+        successful_groups = 0
+        for group_index in range(SENSOR_ARRAY_COUNT):
+            array_name = f"传感器状态_上位机[{group_index}].NO"
+            error: Optional[str] = None
+            try:
+                values: List[Optional[bool]] = self._read_sensor_array(group_index)
+                successful_groups += 1
+            except Exception as exc:
+                error = str(exc)
+                values = []
+                for bit_index in range(SENSOR_BITS_PER_ARRAY):
+                    bit_name = f"{array_name}[{bit_index}]"
+                    try:
+                        node = self.use_node(bit_name)
+                        value, read_error = node.read()
+                        values.append(None if read_error else bool(value))
+                    except Exception:
+                        values.append(None)
+                if any(value is not None for value in values):
+                    successful_groups += 1
+
+            bits = []
+            for bit_index, value in enumerate(values):
+                bit_name = f"{array_name}[{bit_index}]"
+                metadata = self._sensor_bit_metadata.get(bit_name, {})
+                bits.append(
+                    {
+                        "index": bit_index,
+                        "name": bit_name,
+                        "value": value,
+                        "label": metadata.get("label") or "",
+                        "address": metadata.get("address") or "",
+                        "node_id": metadata.get("node_id") or self._direct_node_id_map.get(bit_name),
+                    }
+                )
+            groups.append(
+                {
+                    "index": group_index,
+                    "name": array_name,
+                    "node_id": self._direct_node_id_map.get(array_name),
+                    "values": values,
+                    "bits": bits,
+                    "error": error if not any(value is not None for value in values) else None,
+                }
+            )
+        return {
+            "success": successful_groups == SENSOR_ARRAY_COUNT,
+            "partial": 0 < successful_groups < SENSOR_ARRAY_COUNT,
+            "schema": "szlab_poly_studio.sensor_arrays.v1",
+            "groups": groups,
+        }
 
     @action(auto_prefix=True, always_free=True, description="写入 S01 上料过渡仓取料编号和入料产品")
     def set_s1_loading_request(self, pick_index: int, product_type: int) -> Dict[str, Any]:

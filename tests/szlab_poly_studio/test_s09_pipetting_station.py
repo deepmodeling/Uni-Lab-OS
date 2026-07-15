@@ -125,6 +125,85 @@ def test_s09_run_process_waits_for_new_completion_cycle_when_done_is_stale():
     assert client.wait_equal_calls == [("S09工艺完成", 0), ("S09工艺完成", 5)]
 
 
+def test_s09_run_process_requires_selected_liquid_bottle_sensor():
+    client = PseudoSzlabS09OpcUaClient(
+        {
+            "S09液体瓶3剩余液量": 100.0,
+            "传感器状态_上位机[4].NO[9]": False,
+        }
+    )
+    device = make_pipetting_device(client)
+
+    result = device.run_process(
+        process=7,
+        tip_box_index=1,
+        tip_index=1,
+        liquid_bottle_index=3,
+        aspirate_volume=50,
+    )
+
+    assert result["success"] is False
+    assert result["status"] == "rejected"
+    assert result["sensor_precheck"]["mismatches"]["传感器状态_上位机[4].NO[9]"] == {
+        "expected": True,
+        "actual": False,
+    }
+    assert client.writes == []
+
+
+def test_s09_run_process_reports_verification_failed_when_material_disappears():
+    class MaterialRemovedClient(PseudoSzlabS09OpcUaClient):
+        def __init__(self):
+            super().__init__({"S09液体瓶1剩余液量": 100.0})
+            self.sensor_wait_count = 0
+
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2):
+            self.sensor_wait_count += 1
+            if self.sensor_wait_count == 2:
+                self.values["传感器状态_上位机[4].NO[7]"] = False
+            return super().wait_sensor_conditions(conditions, timeout=timeout, interval=interval)
+
+    client = MaterialRemovedClient()
+    device = make_pipetting_device(client)
+
+    result = device.run_process(
+        process=7,
+        tip_box_index=1,
+        tip_index=1,
+        liquid_bottle_index=1,
+        aspirate_volume=50,
+    )
+
+    assert result["success"] is False
+    assert result["status"] == "verification_failed"
+    assert "在位验证失败" in result["message"]
+    assert ("S09工艺选择", 0) in client.writes
+
+
+def test_s09_add_liquid_requires_tip_bottle_and_beaker_before_first_process():
+    client = PseudoSzlabS09OpcUaClient(
+        {
+            "S09液体瓶1剩余液量": 100.0,
+            "传感器状态_上位机[3].NO[1]": False,
+        }
+    )
+    device = make_pipetting_device(client)
+
+    result = device.add_liquid(
+        tip_box_index=1,
+        tip_index=1,
+        liquid_bottle_index=1,
+        station=1,
+        aspirate_volume=50,
+        dispense_volume=50,
+    )
+
+    assert result["success"] is False
+    assert result["status"] == "rejected"
+    assert result["sensor_precheck"]["mismatches"]["传感器状态_上位机[3].NO[1]"]["actual"] is False
+    assert client.writes == []
+
+
 def test_s09_add_liquid_runs_plc_process_sequence_5_7_8_6():
     client = PseudoSzlabS09OpcUaClient({"S09液体瓶4剩余液量": 100.0})
     device = make_pipetting_device(client)
@@ -587,6 +666,7 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
         def __init__(self):
             self.reads = []
             self.writes = []
+            self.task_submitted = False
             self.values = {
                 "Robot_任务完成": 19,
                 "S09工艺完成": 1,
@@ -597,7 +677,9 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
             del use_cache
             self.reads.append(name)
             if name == "传感器状态_上位机[4].NO[6]":
-                return False
+                return self.values.get(name, False)
+            if name == "传感器状态_上位机[3].NO[6]":
+                return self.values.get(name, True)
             if name == "机器人Busy信号":
                 return False
             if name in self.values:
@@ -607,6 +689,18 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
         def write_variable(self, name, value):
             self.writes.append((name, value))
             self.values[name] = value
+            if name == "任务号" and value == 19:
+                self.task_submitted = True
+
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2):
+            del timeout, interval
+            if self.task_submitted:
+                self.values.update(conditions)
+            values = {
+                name: self.read_variable(name, use_cache=False)
+                for name in conditions
+            }
+            return all(values[name] == expected for name, expected in conditions.items()), values
 
     gateway = FakePlcGateway()
     robot = SzlabMixerRobotDevice(timeout=3.0, busy_start_timeout=3.0)

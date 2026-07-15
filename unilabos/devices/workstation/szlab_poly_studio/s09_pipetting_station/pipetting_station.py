@@ -4,6 +4,7 @@ import os
 import time
 from typing import Any
 
+from unilabos.devices.workstation.szlab_poly_studio.plc import wait_sensor_conditions
 from unilabos.registry.decorators import action, device, not_action, topic_config
 
 from .sensors import (
@@ -11,16 +12,19 @@ from .sensors import (
     S09_ASPIRATE_VOLUME_VAR,
     S09_BALANCE_READING_VAR,
     S09_BALANCE_STABLE_VAR,
+    S09_BEAKER_SENSOR,
     S09_DISPENSE_VOLUME_VAR,
     S09_HOME_LABELS,
     S09_HOME_SIGNALS,
     S09_LIQUID_BOTTLE_VAR,
+    S09_LIQUID_BOTTLE_SENSORS,
     S09_PARAM_WRITTEN_VAR,
     S09_PROCESS_DONE_VAR,
     S09_PROCESS_LABELS,
     S09_PROCESS_SELECT_VAR,
     S09_STATION_STATUS_VAR,
     S09_TIP_BOX_VAR,
+    S09_TIP_BOX_SENSORS,
     S09_TIP_VAR,
     s09_opcua_node_id_map,
     s09_remaining_volume_var,
@@ -183,6 +187,47 @@ class SzlabMixerPipettingStationDevice:
     @not_action
     def _wait_allow_process(self) -> bool:
         return self._wait_equal(S09_ALLOW_PROCESS_VAR, True)
+
+    @not_action
+    def _material_conditions_for_process(
+        self,
+        process: int,
+        *,
+        tip_box_index: int,
+        liquid_bottle_index: int,
+    ) -> dict[str, bool]:
+        if process in {5, 6}:
+            return {S09_TIP_BOX_SENSORS[validate_tip_box(tip_box_index)]: True}
+        if process in {7, 9}:
+            return {S09_LIQUID_BOTTLE_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True}
+        if process in {8, 10}:
+            return {S09_BEAKER_SENSOR: True}
+        return {}
+
+    @not_action
+    def _wait_material_conditions(
+        self,
+        conditions: dict[str, bool],
+        *,
+        phase: str,
+    ) -> dict[str, Any]:
+        target = self._target()
+        waiter = getattr(target, "wait_sensor_conditions", None)
+        if callable(waiter):
+            success, values = waiter(conditions, timeout=self.timeout, interval=0.2)
+        else:
+            success, values = wait_sensor_conditions(target, conditions, timeout=self.timeout, interval=0.2)
+        return {
+            "success": bool(success),
+            "phase": phase,
+            "conditions": conditions,
+            "values": values,
+            "mismatches": {
+                name: {"expected": expected, "actual": values.get(name)}
+                for name, expected in conditions.items()
+                if values.get(name) != expected
+            },
+        }
 
     @not_action
     def _append_log(
@@ -513,6 +558,28 @@ class SzlabMixerPipettingStationDevice:
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
 
+        material_conditions = self._material_conditions_for_process(
+            process,
+            tip_box_index=tip_box_index,
+            liquid_bottle_index=liquid_bottle_index,
+        )
+        try:
+            sensor_precheck = self._wait_material_conditions(material_conditions, phase="pre")
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": f"S09 工艺 {process} 前置物料传感器读取失败: {exc}",
+                "logs": logs,
+            }
+        if not sensor_precheck["success"]:
+            return {
+                "success": False,
+                "message": f"S09 工艺 {process} 等待所需物料在位超时",
+                "status": "rejected",
+                "sensor_precheck": sensor_precheck,
+                "logs": logs,
+            }
+
         if require_allow:
             try:
                 self._append_log(
@@ -582,6 +649,7 @@ class SzlabMixerPipettingStationDevice:
             "volume_unit": "raw",
             "aspirate_volume_ul": self._raw_volume_to_ul(aspirate_volume),
             "dispense_volume_ul": self._raw_volume_to_ul(dispense_volume),
+            "sensor_precheck": sensor_precheck,
             "logs": logs,
         }
         try:
@@ -598,6 +666,28 @@ class SzlabMixerPipettingStationDevice:
                 f"S09 工艺 {process} 完成信号已确认",
                 {"variable": S09_PROCESS_DONE_VAR, "expected": process},
             )
+
+            try:
+                sensor_postcheck = self._wait_material_conditions(material_conditions, phase="post")
+            except Exception as exc:
+                self._status = "Error"
+                return {
+                    "success": False,
+                    "status": "verification_failed",
+                    "message": f"S09 工艺 {process} 已完成，但物料传感器读取失败: {exc}",
+                    "data": data,
+                    "logs": logs,
+                }
+            data["sensor_postcheck"] = sensor_postcheck
+            if not sensor_postcheck["success"]:
+                self._status = "Error"
+                return {
+                    "success": False,
+                    "status": "verification_failed",
+                    "message": f"S09 工艺 {process} 已完成，但所需物料在位验证失败",
+                    "data": data,
+                    "logs": logs,
+                }
 
             if process in {7, 9} and aspirate_volume > 0:
                 try:
@@ -676,6 +766,28 @@ class SzlabMixerPipettingStationDevice:
         if aspirate_raw != dispense_raw and max(aspirate_raw, dispense_raw) > S09_VOLUME_RAW_MAX:
             return {"success": False, "message": "S09 自动拆分加液时要求抽液量和放液量一致"}
 
+        try:
+            workflow_sensor_conditions = {
+                S09_TIP_BOX_SENSORS[validate_tip_box(tip_box_index)]: True,
+                S09_LIQUID_BOTTLE_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True,
+                S09_BEAKER_SENSOR: True,
+            }
+            workflow_sensor_precheck = self._wait_material_conditions(
+                workflow_sensor_conditions,
+                phase="workflow_pre",
+            )
+        except (KeyError, ValueError) as exc:
+            return {"success": False, "message": str(exc)}
+        except Exception as exc:
+            return {"success": False, "message": f"S09 加液流程物料传感器读取失败: {exc}"}
+        if not workflow_sensor_precheck["success"]:
+            return {
+                "success": False,
+                "status": "rejected",
+                "message": "S09 加液流程等待 TIP盒、液体瓶和烧杯在位超时",
+                "sensor_precheck": workflow_sensor_precheck,
+            }
+
         if aspirate_raw == dispense_raw:
             transfer_chunks = [(chunk, chunk) for chunk in self._split_raw_volume(aspirate_raw)]
         else:
@@ -744,6 +856,7 @@ class SzlabMixerPipettingStationDevice:
                 "aspirate_volume_ul": self._raw_volume_to_ul(aspirate_raw),
                 "dispense_volume_ul": self._raw_volume_to_ul(dispense_raw),
                 "configured_remaining_volumes": configured_remaining_volumes,
+                "sensor_precheck": workflow_sensor_precheck,
                 "split_count": len(transfer_chunks),
                 "transfer_chunks": [
                     {

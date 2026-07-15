@@ -52,6 +52,15 @@ S09_TIP_BOX_RANGE = range(1, 3)
 S09_TIP_RANGE = range(1, 97)
 S09_LIQUID_BOTTLE_RANGE = range(1, 6)
 S09_STATION_RANGE = range(1, 6)
+S09_TIP_BOX_SENSORS: dict[int, str] = {
+    1: "传感器状态_上位机[4].NO[5]",
+    2: "传感器状态_上位机[4].NO[6]",
+}
+S09_LIQUID_BOTTLE_SENSORS: dict[int, str] = {
+    position: f"传感器状态_上位机[4].NO[{position + 6}]"
+    for position in S09_LIQUID_BOTTLE_RANGE
+}
+S09_BEAKER_SENSOR = "传感器状态_上位机[3].NO[1]"
 
 
 def s09_remaining_volume_var(bottle: int) -> str:
@@ -122,5 +131,8 @@ def s09_opcua_node_id_map() -> dict[str, str]:
         PLC_ROBOT_TASK_VAR,
         S09_TRANSFER_PRODUCT_VAR,
         S09_TRANSFER_POSITION_VAR,
+        *S09_TIP_BOX_SENSORS.values(),
+        *S09_LIQUID_BOTTLE_SENSORS.values(),
+        S09_BEAKER_SENSOR,
     ]
     return {name: f"ns=4;s=上位机通讯|{name}" for name in names}

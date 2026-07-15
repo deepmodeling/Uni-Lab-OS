@@ -2782,16 +2782,15 @@ code {
 }
 
 .sensor-array-bits {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 110px));
   gap: 5px;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  justify-content: start;
 }
 
 .sensor-array-bit {
   display: grid;
-  flex: 0 0 78px;
-  min-width: 78px;
+  min-width: 0;
   min-height: 66px;
   align-content: space-between;
   border: 1px solid #cbd5e1;

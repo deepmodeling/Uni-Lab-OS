@@ -2050,12 +2050,30 @@ function categorizeSensorGroups(groups: SensorArrayGroupPayload[]): CategorizedS
 }
 
 function SensorBitRow({ bits }: { bits: CategorizedSensorBit[] }) {
+  const positions = bits.map((bit) => {
+    const match = bit.position.match(/^(\d+)-(\d+)$/);
+    return match ? { row: Number(match[1]), column: Number(match[2]) } : null;
+  });
+  const isMatrix = positions.length > 0 && positions.every((position) => position !== null);
+  const maxRow = isMatrix ? Math.max(...positions.map((position) => position?.row || 1)) : 0;
+  const maxColumn = isMatrix ? Math.max(...positions.map((position) => position?.column || 1)) : 0;
+
   return (
-    <div className="sensor-array-bits">
-      {bits.map((bit) => (
+    <div
+      className={`sensor-array-bits${isMatrix ? ' matrix' : ''}`}
+      style={isMatrix ? {
+        gridTemplateColumns: `repeat(${maxColumn}, minmax(78px, 110px))`,
+        gridTemplateRows: `repeat(${maxRow}, minmax(66px, auto))`,
+      } : undefined}
+    >
+      {bits.map((bit, bitIndex) => (
         <div
           className={`sensor-array-bit ${bit.value === true ? 'on' : bit.value === false ? 'off' : 'unknown'}`}
           key={`${bit.arrayIndex}-${bit.index}`}
+          style={isMatrix ? {
+            gridColumn: positions[bitIndex]?.column,
+            gridRow: positions[bitIndex]?.row,
+          } : undefined}
           title={`${bit.name}\n${bit.label || '未标注'}\n${bit.address || ''}\n${bit.node_id || ''}`}
         >
           <span>{bit.position || '单点'}</span>

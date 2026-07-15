@@ -14,13 +14,18 @@ ROBOT_WRITE_ALLOWED_VARIABLE = "Robot_任务允许写入"
 ROBOT_WRITE_DONE_VARIABLE = "Robot_任务写入完成"
 ROBOT_TASK_NUMBER_VARIABLE = "任务号"
 ROBOT_TASK_COMPLETE_VARIABLE = "Robot_任务完成"
+ROBOT_GRIPPER_SENSOR = "传感器状态_上位机[3].NO[6]"
 S05_MATERIAL_SENSOR = "传感器状态_上位机[3].NO[0]"
 S06_MATERIAL_SENSOR = "传感器状态_上位机[3].NO[1]"
 S09_TIP_SENSORS = {
     1: "传感器状态_上位机[4].NO[5]",
     2: "传感器状态_上位机[4].NO[6]",
 }
-S09_BEAKER_SENSOR = "传感器状态_上位机[4].NO[7]"
+S09_LIQUID_BOTTLE_SENSORS = {
+    position: f"传感器状态_上位机[4].NO[{position + 6}]"
+    for position in range(1, 6)
+}
+S09_BEAKER_SENSOR = "传感器状态_上位机[3].NO[1]"
 
 
 @dataclass(frozen=True)
@@ -147,8 +152,8 @@ def s09_sensor(product_type: int, position: int) -> str:
             raise ValueError("S09 TIP位置必须是 1-2")
         return S09_TIP_SENSORS[position]
     if product_type == 2:
-        numbered_position(position, min_value=1, max_value=5, label="S09 液体试剂瓶位置")
-        return ""
+        position = numbered_position(position, min_value=1, max_value=5, label="S09 液体试剂瓶位置")
+        return S09_LIQUID_BOTTLE_SENSORS[position]
     if product_type == 3:
         if position != 1:
             raise ValueError("S09 烧杯位置必须是 1")

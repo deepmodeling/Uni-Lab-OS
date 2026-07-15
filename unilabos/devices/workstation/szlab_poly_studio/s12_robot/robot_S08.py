@@ -15,6 +15,8 @@ S08_PLACE_SENSOR_BY_POSITION = {
     4: "传感器状态_上位机[4].NO[3]",
     5: "传感器状态_上位机[4].NO[4]",
 }
+S08_POUR_BEAKER_SENSOR = "传感器状态_上位机[3].NO[1]"
+S08_POUR_SAMPLE_VIAL_SENSOR = "传感器状态_上位机[3].NO[14]"
 
 
 class SzlabRobotS08Mixin:
@@ -73,4 +75,8 @@ class SzlabRobotS08Mixin:
             variables=build_variables("pour_from_s08", S08倒料产品选择=product_type),
             reset_variables={"S08倒料产品选择": 0, "任务号": 0},
             product_type=product_type,
+            pre_sensor_conditions={
+                S08_POUR_BEAKER_SENSOR: True,
+                S08_POUR_SAMPLE_VIAL_SENSOR: True,
+            },
         )

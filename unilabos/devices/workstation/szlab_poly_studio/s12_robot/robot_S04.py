@@ -78,7 +78,7 @@ class SzlabRobotS04Mixin:
             reset_variables={S04_POSITION_VARIABLE: 0, "任务号": 0},
             precheck=lambda: self._ensure_s04_pick_allowed(position),
             position=position,
-            sensor_variable=self._s04_sensor_variable(position),
+            source_sensor_variable=self._s04_sensor_variable(position),
         )
 
     def _run_s04_place(self, position: int, sample_id: str = "") -> dict[str, Any]:
@@ -92,5 +92,5 @@ class SzlabRobotS04Mixin:
             precheck=lambda: self._ensure_s04_place_allowed(position),
             position=position,
             sample_id=sample_id,
-            sensor_variable=self._s04_sensor_variable(position),
+            target_sensor_variable=self._s04_sensor_variable(position),
         )

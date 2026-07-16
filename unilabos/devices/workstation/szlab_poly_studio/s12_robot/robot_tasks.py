@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from unilabos.devices.workstation.szlab_poly_studio.plc import load_stack_sensor_groups_from_json
+from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensors import (
+    S09_STATION_SENSORS,
+    S09_TIP_BOX_SENSORS,
+)
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S04 import S04_SENSOR_BY_POSITION
 
 GateKind = Literal["pick", "place", "pour"]
@@ -16,15 +20,6 @@ ROBOT_TASK_NUMBER_VARIABLE = "任务号"
 ROBOT_TASK_COMPLETE_VARIABLE = "Robot_任务完成"
 S05_MATERIAL_SENSOR = "传感器状态_上位机[3].NO[0]"
 S06_MATERIAL_SENSOR = "传感器状态_上位机[3].NO[1]"
-S09_TIP_SENSORS = {
-    1: "传感器状态_上位机[4].NO[5]",
-    2: "传感器状态_上位机[4].NO[6]",
-}
-S09_LIQUID_BOTTLE_SENSORS = {
-    position: f"传感器状态_上位机[4].NO[{position + 6}]"
-    for position in range(1, 6)
-}
-S09_BEAKER_SENSOR = "传感器状态_上位机[3].NO[1]"
 
 
 @dataclass(frozen=True)
@@ -147,16 +142,16 @@ def s09_sensor(product_type: int, position: int) -> str:
     product_type = int(product_type)
     position = int(position)
     if product_type == 1:
-        if position not in S09_TIP_SENSORS:
+        if position not in S09_TIP_BOX_SENSORS:
             raise ValueError("S09 TIP位置必须是 1-2")
-        return S09_TIP_SENSORS[position]
+        return S09_TIP_BOX_SENSORS[position]
     if product_type == 2:
         position = numbered_position(position, min_value=1, max_value=5, label="S09 液体试剂瓶位置")
-        return S09_LIQUID_BOTTLE_SENSORS[position]
+        return S09_STATION_SENSORS[position]
     if product_type == 3:
         if position != 1:
             raise ValueError("S09 烧杯位置必须是 1")
-        return S09_BEAKER_SENSOR
+        return S09_STATION_SENSORS[position]
     raise ValueError("S09取放料产品必须是 1(TIP盒)、2(液体试剂瓶) 或 3(烧杯)")
 
 

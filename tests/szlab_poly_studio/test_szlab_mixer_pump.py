@@ -197,28 +197,20 @@ def test_szlab_mixer_pump_does_not_reset_params_before_process_complete_timeout(
     assert ("write", "S06工艺选择", 0) not in client.events
 
 
-def test_szlab_mixer_pump_run_solvent_addition_checks_storage_bottle_present():
-    client = PseudoSzlabMixerOpcUaClient({"传感器状态_上位机[4].NO[12]": False})
+def test_szlab_mixer_pump_run_solvent_addition_ignores_liquid_bottle_sensors():
+    client = PseudoSzlabMixerOpcUaClient(
+        {
+            "传感器状态_上位机[4].NO[12]": False,
+            "传感器状态_上位机[5].NO[1]": False,
+        }
+    )
     device = make_pump_device(client)
 
-    result = device.run_solvent_addition(process=1)
+    result = device.run_solvent_addition(process=3)
 
-    assert result["success"] is False
-    assert "储液瓶在位超时" in result["message"]
-    assert result["sensor_precheck"]["mismatches"]["传感器状态_上位机[4].NO[12]"] == {
-        "expected": True,
-        "actual": False,
-    }
-
-
-def test_szlab_mixer_pump_skip_level_check_cannot_bypass_storage_bottle_sensor():
-    client = PseudoSzlabMixerOpcUaClient({"传感器状态_上位机[4].NO[12]": False})
-    device = make_pump_device(client)
-
-    result = device.run_solvent_addition(process=1, volume=1, skip_level_check=True)
-
-    assert result["success"] is False
-    assert "储液瓶在位超时" in result["message"]
+    assert result["success"] is True
+    assert ("read", "传感器状态_上位机[4].NO[12]") not in client.events
+    assert ("read", "传感器状态_上位机[5].NO[1]") not in client.events
 
 
 def test_szlab_mixer_pump_transfer_liquid_requires_beaker_sensor():

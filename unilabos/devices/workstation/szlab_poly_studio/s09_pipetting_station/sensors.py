@@ -56,11 +56,10 @@ S09_TIP_BOX_SENSORS: dict[int, str] = {
     1: "传感器状态_上位机[4].NO[5]",
     2: "传感器状态_上位机[4].NO[6]",
 }
-S09_LIQUID_BOTTLE_SENSORS: dict[int, str] = {
+S09_STATION_SENSORS: dict[int, str] = {
     position: f"传感器状态_上位机[4].NO[{position + 6}]"
-    for position in S09_LIQUID_BOTTLE_RANGE
+    for position in S09_STATION_RANGE
 }
-S09_BEAKER_SENSOR = "传感器状态_上位机[3].NO[1]"
 
 
 def s09_remaining_volume_var(bottle: int) -> str:
@@ -132,7 +131,6 @@ def s09_opcua_node_id_map() -> dict[str, str]:
         S09_TRANSFER_PRODUCT_VAR,
         S09_TRANSFER_POSITION_VAR,
         *S09_TIP_BOX_SENSORS.values(),
-        *S09_LIQUID_BOTTLE_SENSORS.values(),
-        S09_BEAKER_SENSOR,
+        *S09_STATION_SENSORS.values(),
     ]
     return {name: f"ns=4;s=上位机通讯|{name}" for name in names}

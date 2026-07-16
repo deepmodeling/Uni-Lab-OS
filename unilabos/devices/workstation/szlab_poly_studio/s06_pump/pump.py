@@ -42,7 +42,6 @@ from .sensors import (
     S06_READY_VAR,
     S06PipelineKind,
     S06PipelineRoute,
-    STORAGE_BOTTLE_PRESENT,
     parse_pipeline_route_specs,
     s06_pump_position_var,
     s06_pump_valve_var,
@@ -148,14 +147,8 @@ class SzlabMixerPumpDevice:
 
     @not_action
     def _material_sensor_conditions(self, process: int) -> dict[str, bool]:
-        pumps = (1, 2) if process == 3 else (process,)
-        conditions = {ADDITION_BEAKER_SENSOR: True}
-        for pump_index in pumps:
-            present_var = STORAGE_BOTTLE_PRESENT.get(pump_index)
-            if not present_var:
-                raise RuntimeError(f"S06 储液瓶 {pump_index} 缺少传感器映射")
-            conditions[present_var] = True
-        return conditions
+        del process
+        return {ADDITION_BEAKER_SENSOR: True}
 
     @not_action
     def _wait_material_sensors(self, process: int, phase: str) -> dict[str, Any]:
@@ -261,7 +254,7 @@ class SzlabMixerPumpDevice:
             self._status = "Error"
             return {
                 "success": False,
-                "message": "S06 等待加液烧杯及储液瓶在位超时",
+                "message": "S06 等待加液烧杯在位超时",
                 "sensor_precheck": sensor_precheck,
             }
 
@@ -311,7 +304,7 @@ class SzlabMixerPumpDevice:
             return {
                 "success": False,
                 "status": "verification_failed",
-                "message": "S06 加液已完成，但烧杯或储液瓶在位验证失败",
+                "message": "S06 加液已完成，但烧杯在位验证失败",
                 "sensor_precheck": sensor_precheck,
                 "sensor_postcheck": sensor_postcheck,
             }

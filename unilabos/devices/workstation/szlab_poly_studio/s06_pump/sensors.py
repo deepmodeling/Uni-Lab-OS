@@ -23,12 +23,6 @@ S06_PROCESS_SELECT_VAR = "S06工艺选择"
 
 S06PipelineKind = Literal["aspirate", "dispense", "air"]
 
-# CSV 仅有液体试剂瓶在位检测（S10），无储液瓶液位点位；液量充足由 PLC 置位 S06允许加工
-STORAGE_BOTTLE_PRESENT: dict[int, str] = {
-    1: "传感器状态_上位机[4].NO[12]",  # 液体试剂瓶1-1
-    2: "传感器状态_上位机[5].NO[1]",  # 液体试剂瓶2-1
-}
-
 
 def s06_solution_amount_var(pump: int) -> str:
     return f"S06_{pump}号溶液添加量"

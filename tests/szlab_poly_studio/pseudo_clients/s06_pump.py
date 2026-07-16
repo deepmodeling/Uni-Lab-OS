@@ -19,8 +19,6 @@ class PseudoSzlabMixerOpcUaClient:
             "S06参数写入完成": False,
             "S06加工完成": False,
             "传感器状态_上位机[3].NO[1]": True,
-            "传感器状态_上位机[4].NO[12]": True,
-            "传感器状态_上位机[5].NO[1]": True,
             **(initial_values or {}),
         }
         self.writes: list[tuple[str, Any]] = []

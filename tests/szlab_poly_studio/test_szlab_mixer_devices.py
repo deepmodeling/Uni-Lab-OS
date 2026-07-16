@@ -1776,7 +1776,7 @@ def test_szlab_robot_s09_liquid_bottle_place_uses_confirmed_position_sensor():
 
 
 def test_szlab_robot_s09_pick_directly_submits_beaker_robot_task():
-    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[3].NO[1]": True})
+    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[4].NO[7]": True})
     device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
     device.set_plc_gateway(gateway)
 
@@ -1784,13 +1784,15 @@ def test_szlab_robot_s09_pick_directly_submits_beaker_robot_task():
 
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
+    assert result["source_sensor_variable"] == "传感器状态_上位机[4].NO[7]"
+    assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
     assert ("S09工艺选择", 4) not in gateway.writes
     assert not any(event[1] == "S09原点信号_4" for event in gateway.events)
     assert ("任务号", 20) in gateway.writes
 
 
 def test_szlab_robot_s09_beaker_place_directly_submits_robot_task():
-    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[3].NO[1]": False})
+    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[4].NO[7]": False})
     device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
     device.set_plc_gateway(gateway)
 
@@ -1798,6 +1800,8 @@ def test_szlab_robot_s09_beaker_place_directly_submits_robot_task():
 
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
+    assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[7]"
+    assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
     assert ("S09工艺选择", 4) not in gateway.writes
     assert ("S09原点信号_4", True, 3.0, 1.0) not in gateway.wait_equal_calls
     assert ("任务号", 19) in gateway.writes

@@ -12,17 +12,16 @@ from .sensors import (
     S09_ASPIRATE_VOLUME_VAR,
     S09_BALANCE_READING_VAR,
     S09_BALANCE_STABLE_VAR,
-    S09_BEAKER_SENSOR,
     S09_DISPENSE_VOLUME_VAR,
     S09_HOME_LABELS,
     S09_HOME_SIGNALS,
     S09_LIQUID_BOTTLE_VAR,
-    S09_LIQUID_BOTTLE_SENSORS,
     S09_PARAM_WRITTEN_VAR,
     S09_PROCESS_DONE_VAR,
     S09_PROCESS_LABELS,
     S09_PROCESS_SELECT_VAR,
     S09_STATION_STATUS_VAR,
+    S09_STATION_SENSORS,
     S09_TIP_BOX_VAR,
     S09_TIP_BOX_SENSORS,
     S09_TIP_VAR,
@@ -195,13 +194,14 @@ class SzlabMixerPipettingStationDevice:
         *,
         tip_box_index: int,
         liquid_bottle_index: int,
+        station: int,
     ) -> dict[str, bool]:
         if process in {5, 6}:
             return {S09_TIP_BOX_SENSORS[validate_tip_box(tip_box_index)]: True}
         if process in {7, 9}:
-            return {S09_LIQUID_BOTTLE_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True}
+            return {S09_STATION_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True}
         if process in {8, 10}:
-            return {S09_BEAKER_SENSOR: True}
+            return {S09_STATION_SENSORS[validate_station(station)]: True}
         return {}
 
     @not_action
@@ -579,6 +579,7 @@ class SzlabMixerPipettingStationDevice:
             process,
             tip_box_index=tip_box_index,
             liquid_bottle_index=liquid_bottle_index,
+            station=station,
         )
         try:
             sensor_precheck = self._wait_material_conditions(material_conditions, phase="pre")
@@ -786,8 +787,8 @@ class SzlabMixerPipettingStationDevice:
         try:
             workflow_sensor_conditions = {
                 S09_TIP_BOX_SENSORS[validate_tip_box(tip_box_index)]: True,
-                S09_LIQUID_BOTTLE_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True,
-                S09_BEAKER_SENSOR: True,
+                S09_STATION_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True,
+                S09_STATION_SENSORS[validate_station(station)]: True,
             }
             workflow_sensor_precheck = self._wait_material_conditions(
                 workflow_sensor_conditions,
@@ -801,7 +802,7 @@ class SzlabMixerPipettingStationDevice:
             return {
                 "success": False,
                 "status": "rejected",
-                "message": "S09 加液流程等待 TIP盒、液体瓶和烧杯在位超时",
+                "message": "S09 加液流程等待 TIP盒、液体瓶和加液工位物料在位超时",
                 "sensor_precheck": workflow_sensor_precheck,
             }
 

@@ -1789,7 +1789,9 @@ def test_szlab_robot_s09_pick_directly_submits_beaker_robot_task():
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
     assert result["source_sensor_variable"] == "传感器状态_上位机[4].NO[7]"
+    assert result["sensor_check_skipped"] is True
     assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
+    assert not any(name == "传感器状态_上位机[4].NO[7]" for name, _ in gateway.reads)
     assert ("S09工艺选择", 4) not in gateway.writes
     assert not any(event[1] == "S09原点信号_4" for event in gateway.events)
     assert ("任务号", 20) in gateway.writes

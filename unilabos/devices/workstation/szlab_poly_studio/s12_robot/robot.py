@@ -9,6 +9,7 @@ from unilabos.devices.workstation.szlab_poly_studio.plc import wait_sensor_condi
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
     ROBOT_HOME_VARIABLE,
     ROBOT_TASK_COMPLETE_VARIABLE,
+    ROBOT_TRANSFER_SENSOR,
     ROBOT_TASK_NUMBER_VARIABLE,
     ROBOT_WRITE_ALLOWED_VARIABLE,
     ROBOT_WRITE_DONE_VARIABLE,
@@ -207,6 +208,8 @@ class SzlabMixerRobotDevice(
     ) -> tuple[dict[str, bool], dict[str, bool]]:
         if station == "S01":
             return {}, {}
+        if station == "S072":
+            return {}, {}
 
         custom_preconditions = data.get("pre_sensor_conditions")
         custom_postconditions = data.get("post_sensor_conditions")
@@ -217,18 +220,22 @@ class SzlabMixerRobotDevice(
             target = str(data.get("target_sensor_variable") or "")
             if not target:
                 raise RuntimeError(f"{station} 放料动作缺少目标位传感器")
-            return (
-                {target: False},
-                {target: True},
-            )
+            preconditions = {target: False}
+            postconditions = {target: True}
+            if target != ROBOT_TRANSFER_SENSOR:
+                preconditions[ROBOT_TRANSFER_SENSOR] = True
+                postconditions[ROBOT_TRANSFER_SENSOR] = False
+            return preconditions, postconditions
         if task == "pick":
             source = str(data.get("source_sensor_variable") or "")
             if not source:
                 raise RuntimeError(f"{station} 取料动作缺少来源位传感器")
-            return (
-                {source: True},
-                {source: False},
-            )
+            preconditions = {source: True}
+            postconditions = {source: False}
+            if source != ROBOT_TRANSFER_SENSOR:
+                preconditions[ROBOT_TRANSFER_SENSOR] = False
+                postconditions[ROBOT_TRANSFER_SENSOR] = True
+            return preconditions, postconditions
         return {}, {}
 
     @not_action

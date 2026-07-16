@@ -244,14 +244,25 @@ class SzlabMixerMagneticStirrerDevice:
             self._write_variable(s04_safe_temperature_var(position), int(safe_temperature))
             self._write_variable(s04_params_written_var(position), True)
         except Exception as exc:
+            self._reset_pc_to_plc_defaults(position)
             self._status = "Error"
             return {"success": False, "message": str(exc), "data": {"station": station}}
 
-        if not self._wait_done(position):
+        done = False
+        wait_error: Exception | None = None
+        try:
+            done = self._wait_done(position)
+        except Exception as exc:
+            wait_error = exc
+        finally:
+            reset_result = self._reset_pc_to_plc_defaults(position)
+
+        if wait_error is not None:
+            self._status = "Error"
+            raise wait_error
+        if not done:
             self._status = "Error"
             return {"success": False, "message": f"{station} 加工完成等待超时", "data": {"station": station}}
-
-        reset_result = self._reset_pc_to_plc_defaults(position)
         if not reset_result.get("success", False):
             return reset_result
 
@@ -288,17 +299,29 @@ class SzlabMixerMagneticStirrerDevice:
     @not_action
     def _reset_pc_to_plc_defaults(self, position: int, include_params_written: bool = True) -> dict[str, Any]:
         station = s04_station_prefix(position)
-        try:
-            self._write_variable(s04_process_var(position), 0)
-            self._write_variable(s04_speed_var(position), 0)
-            self._write_variable(s04_temperature_var(position), 0)
-            self._write_variable(s04_duration_var(position), 30000)
-            self._write_variable(s04_safe_temperature_var(position), 0)
-            if include_params_written:
-                self._write_variable(s04_params_written_var(position), False)
-        except Exception as exc:
+        reset_values = [
+            (s04_process_var(position), 0),
+            (s04_speed_var(position), 0),
+            (s04_temperature_var(position), 0),
+            (s04_duration_var(position), 0),
+            (s04_safe_temperature_var(position), 0),
+        ]
+        if include_params_written:
+            reset_values.append((s04_params_written_var(position), False))
+
+        errors: list[str] = []
+        for name, value in reset_values:
+            try:
+                self._write_variable(name, value)
+            except Exception as exc:
+                errors.append(f"{name}: {exc}")
+        if errors:
             self._status = "Error"
-            return {"success": False, "message": str(exc), "data": {"station": station, "reset": True}}
+            return {
+                "success": False,
+                "message": f"{station} 磁搅 PC->PLC 参数清理失败: {'; '.join(errors)}",
+                "data": {"station": station, "reset": True},
+            }
         self._status = "Idle"
         return {
             "success": True,

@@ -271,22 +271,23 @@ class SzlabMixerPumpDevice:
 
         self._status = "Running"
         try:
-            self._opc_client().write(S06_PROCESS_SELECT_VAR, int(process))
-            for amount_var, amount in amount_values.items():
-                self._opc_client().write(amount_var, amount)
-            self._opc_client().write(S06_PARAM_WRITTEN_VAR, True)
-        except Exception as exc:
-            self._status = "Error"
-            self._clear_s06_written_params(process)
-            return {"success": False, "message": str(exc)}
-        try:
-            if not self._opc_client().wait_new_cycle_done(S06_DONE_VAR, timeout=self.timeout):
+            try:
+                self._opc_client().write(S06_PROCESS_SELECT_VAR, int(process))
+                for amount_var, amount in amount_values.items():
+                    self._opc_client().write(amount_var, amount)
+                self._opc_client().write(S06_PARAM_WRITTEN_VAR, True)
+            except Exception as exc:
                 self._status = "Error"
-                return {"success": False, "message": "S06 加工完成等待超时"}
+                return {"success": False, "message": str(exc)}
+            try:
+                if not self._opc_client().wait_new_cycle_done(S06_DONE_VAR, timeout=self.timeout):
+                    self._status = "Error"
+                    return {"success": False, "message": "S06 加工完成等待超时"}
+            except Exception:
+                self._status = "Error"
+                raise
+        finally:
             self._clear_s06_written_params(process)
-        except Exception:
-            self._status = "Error"
-            raise
         try:
             sensor_postcheck = self._wait_material_sensors(process, phase="post")
         except Exception as exc:

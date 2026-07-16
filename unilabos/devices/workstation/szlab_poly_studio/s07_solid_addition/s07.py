@@ -88,31 +88,37 @@ class SZLabS07SolidAdditionDevice:
 
     @not_action
     def _reset_unilab_written_params(self) -> None:
-        for node, value in (
+        reset_values = [
             (NODE_PROCESS_SELECT, 0),
             (NODE_PARAMS_WRITTEN, False),
             (NODE_LOAD_POSITION, 0),
             (NODE_COARSE_POSITION, 0),
             (NODE_FINE_POSITION, 0),
             (NODE_TARGET_WEIGHT, 0.0),
-        ):
-            self._write_plc_variable(node, value)
-        for node, value in iter_s07_powder_param_vars():
-            self._write_plc_variable(node, value)
+            *iter_s07_powder_param_vars(),
+        ]
+        for node, value in reset_values:
+            try:
+                self._write_plc_variable(node, value)
+            except Exception:
+                # 清理阶段逐项尝试，避免单个变量失败阻断其余参数复位。
+                continue
 
     @not_action
     def _run_s07_process(self, process_id: int, timeout: float) -> dict[str, Any]:
         timeout = self.process_timeout if timeout is None else timeout
-        if not self._wait_plc_bool(NODE_HOME, True, timeout, "S07 原点信号"):
-            return {"success": False, "message": "等待 S07 原点信号超时"}
-        if not self._wait_plc_bool(NODE_ALLOW_PROCESS, True, timeout, "S07 允许加工"):
-            return {"success": False, "message": "等待 S07 允许加工超时"}
-        self._write_plc_variable(NODE_PROCESS_SELECT, process_id)
-        self._write_plc_variable(NODE_PARAMS_WRITTEN, True)
-        if not self._wait_process_complete(process_id, timeout):
-            return {"success": False, "message": f"等待 S07 工艺完成超时（期望 {process_id}）"}
-        self._reset_unilab_written_params()
-        return {"success": True, "process_type": process_id, "status": {"process_complete": process_id}}
+        try:
+            if not self._wait_plc_bool(NODE_HOME, True, timeout, "S07 原点信号"):
+                return {"success": False, "message": "等待 S07 原点信号超时"}
+            if not self._wait_plc_bool(NODE_ALLOW_PROCESS, True, timeout, "S07 允许加工"):
+                return {"success": False, "message": "等待 S07 允许加工超时"}
+            self._write_plc_variable(NODE_PROCESS_SELECT, process_id)
+            self._write_plc_variable(NODE_PARAMS_WRITTEN, True)
+            if not self._wait_process_complete(process_id, timeout):
+                return {"success": False, "message": f"等待 S07 工艺完成超时（期望 {process_id}）"}
+            return {"success": True, "process_type": process_id, "status": {"process_complete": process_id}}
+        finally:
+            self._reset_unilab_written_params()
 
     @not_action
     def _read_qr_codes(self) -> dict[int, list[int]]:
@@ -155,7 +161,11 @@ class SZLabS07SolidAdditionDevice:
     def rotate_powder_cartridge_to_feed(self, position: int, timeout: float = 300.0) -> dict[str, Any]:
         if position not in POSITION_RANGE:
             return {"success": False, "message": "position 必须在 1-10 范围内"}
-        self._write_plc_variable(NODE_LOAD_POSITION, int(position))
+        try:
+            self._write_plc_variable(NODE_LOAD_POSITION, int(position))
+        except Exception:
+            self._reset_unilab_written_params()
+            raise
         result = self._run_s07_process(PROCESS_ROTATE_TO_FEED, timeout)
         result["position"] = position
         return result
@@ -173,11 +183,15 @@ class SZLabS07SolidAdditionDevice:
         if coarse_position not in POSITION_RANGE or fine_position not in POSITION_RANGE:
             return {"success": False, "message": "coarse_position/fine_position 必须在 1-10 范围内"}
         coarse_params, fine_params = self._load_powder_params_from_json(params_json, recipe_name)
-        self._write_plc_variable(NODE_COARSE_POSITION, int(coarse_position))
-        self._write_plc_variable(NODE_FINE_POSITION, int(fine_position))
-        self._write_plc_variable(NODE_TARGET_WEIGHT, float(target_weight))
-        self._write_powder_params("粗注粉", coarse_params, NODE_COARSE_SHAKE_MAX_SPEED)
-        self._write_powder_params("精注粉", fine_params, NODE_FINE_SHAKE_MAX_SPEED)
+        try:
+            self._write_plc_variable(NODE_COARSE_POSITION, int(coarse_position))
+            self._write_plc_variable(NODE_FINE_POSITION, int(fine_position))
+            self._write_plc_variable(NODE_TARGET_WEIGHT, float(target_weight))
+            self._write_powder_params("粗注粉", coarse_params, NODE_COARSE_SHAKE_MAX_SPEED)
+            self._write_powder_params("精注粉", fine_params, NODE_FINE_SHAKE_MAX_SPEED)
+        except Exception:
+            self._reset_unilab_written_params()
+            raise
         result = self._run_s07_process(PROCESS_DOSE_POWDER, timeout)
         result["target_weight"] = target_weight
         result["recipe_name"] = recipe_name

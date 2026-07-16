@@ -171,7 +171,7 @@ def test_s07_resets_all_unilab_written_params_after_dose_complete():
     assert (sensors.NODE_TARGET_WEIGHT, 0.0) in plc.writes[reset_params_written:]
 
 
-def test_s07_does_not_reset_params_before_process_complete_timeout():
+def test_s07_resets_params_after_process_complete_timeout():
     plc = FakeS07Plc()
     plc.force_process_timeout = True
     device = make_s07_device(plc)
@@ -181,8 +181,9 @@ def test_s07_does_not_reset_params_before_process_complete_timeout():
     assert result["success"] is False
     assert ("wait", sensors.NODE_PROCESS_COMPLETE, sensors.PROCESS_ROTATE_TO_FEED) in plc.events
     assert (sensors.NODE_LOAD_POSITION, 4) in plc.writes
-    assert (sensors.NODE_PARAMS_WRITTEN, False) not in plc.writes
-    assert (sensors.NODE_LOAD_POSITION, 0) not in plc.writes
+    assert (sensors.NODE_PARAMS_WRITTEN, False) in plc.writes
+    assert (sensors.NODE_PROCESS_SELECT, 0) in plc.writes
+    assert (sensors.NODE_LOAD_POSITION, 0) in plc.writes
 
 
 def test_s07_dose_powder_loads_recipe_params_from_json_without_ui_overrides(tmp_path):

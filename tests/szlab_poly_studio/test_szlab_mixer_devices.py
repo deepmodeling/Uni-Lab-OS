@@ -410,7 +410,7 @@ def test_szlab_magnetic_stirrer_run_stirring_writes_s041_parameters():
         ("S041磁搅工艺选择", 0),
         ("磁搅速度设置_上位机[0]", 0),
         ("磁搅温度设置_上位机[0]", 0),
-        ("磁搅时间设置_上位机[0]", 30000),
+        ("磁搅时间设置_上位机[0]", 0),
         ("磁搅安全温度设置_上位机[0]", 0),
         ("S041参数写入完成", False),
     ]
@@ -612,6 +612,7 @@ def test_szlab_magnetic_stirrer_waits_for_done_timeout(monkeypatch):
     class FakePlcGateway:
         def __init__(self):
             self.reads = []
+            self.writes = []
 
         def read_variable(self, name, use_cache=False):
             self.reads.append(name)
@@ -624,6 +625,7 @@ def test_szlab_magnetic_stirrer_waits_for_done_timeout(monkeypatch):
             return values[name]
 
         def write_variable(self, name, value):
+            self.writes.append((name, value))
             return True
 
     sleeps = []
@@ -646,6 +648,12 @@ def test_szlab_magnetic_stirrer_waits_for_done_timeout(monkeypatch):
     assert result["success"] is False
     assert result["message"] == "S041 加工完成等待超时"
     assert "S041加工完成" in gateway.reads
+    assert ("S041磁搅工艺选择", 0) in gateway.writes
+    assert ("磁搅速度设置_上位机[0]", 0) in gateway.writes
+    assert ("磁搅温度设置_上位机[0]", 0) in gateway.writes
+    assert ("磁搅时间设置_上位机[0]", 0) in gateway.writes
+    assert ("磁搅安全温度设置_上位机[0]", 0) in gateway.writes
+    assert ("S041参数写入完成", False) in gateway.writes
 
 
 def test_szlab_magnetic_stirrer_uses_plc_wait_helper_when_available():
@@ -747,7 +755,7 @@ def test_szlab_magnetic_stirrer_reset_restores_pc_to_plc_defaults():
         ("S041磁搅工艺选择", 0),
         ("磁搅速度设置_上位机[0]", 0),
         ("磁搅温度设置_上位机[0]", 0),
-        ("磁搅时间设置_上位机[0]", 30000),
+        ("磁搅时间设置_上位机[0]", 0),
         ("磁搅安全温度设置_上位机[0]", 0),
         ("S041参数写入完成", False),
     ]

@@ -184,7 +184,7 @@ def test_szlab_mixer_pump_resets_params_only_after_process_complete():
     assert reset_written > done_wait
 
 
-def test_szlab_mixer_pump_does_not_reset_params_before_process_complete_timeout():
+def test_szlab_mixer_pump_resets_params_after_process_complete_timeout():
     client = PseudoSzlabMixerOpcUaClient()
     client.force_done_timeout = True
     device = make_pump_device(client)
@@ -194,8 +194,9 @@ def test_szlab_mixer_pump_does_not_reset_params_before_process_complete_timeout(
     assert result["success"] is False
     assert "加工完成等待超时" in result["message"]
     assert ("wait_new_cycle_done", "S06加工完成") in client.events
-    assert ("write", "S06参数写入完成", False) not in client.events
-    assert ("write", "S06工艺选择", 0) not in client.events
+    assert ("write", "S06参数写入完成", False) in client.events
+    assert ("write", "S06工艺选择", 0) in client.events
+    assert ("write", "S06_1号溶液添加量", 0) in client.events
 
 
 def test_szlab_mixer_pump_run_solvent_addition_ignores_liquid_bottle_sensors():

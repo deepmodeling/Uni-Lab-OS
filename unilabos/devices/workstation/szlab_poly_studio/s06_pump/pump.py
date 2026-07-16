@@ -194,18 +194,17 @@ class SzlabMixerPumpDevice:
     def _s06_amount_values_for_process(
         self,
         process: int,
-        volume: int,
         *,
         volume_pump_1: int = 0,
         volume_pump_2: int = 0,
     ) -> dict[str, int]:
         if process == 1:
-            return {s06_solution_amount_var(1): int(volume_pump_1 or volume)}
+            return {s06_solution_amount_var(1): int(volume_pump_1)}
         if process == 2:
-            return {s06_solution_amount_var(2): int(volume_pump_2 or volume)}
+            return {s06_solution_amount_var(2): int(volume_pump_2)}
         return {
-            s06_solution_amount_var(1): int(volume_pump_1 or volume),
-            s06_solution_amount_var(2): int(volume_pump_2 or volume),
+            s06_solution_amount_var(1): int(volume_pump_1),
+            s06_solution_amount_var(2): int(volume_pump_2),
         }
 
     @not_action
@@ -226,7 +225,6 @@ class SzlabMixerPumpDevice:
     def _execute_s06_addition(
         self,
         process: int,
-        volume: int,
         *,
         require_allow: bool = True,
         volume_pump_1: int = 0,
@@ -237,7 +235,6 @@ class SzlabMixerPumpDevice:
             return {"success": False, "message": "S06 工艺选择必须为 1、2 或 3"}
         amount_values = self._s06_amount_values_for_process(
             process,
-            volume,
             volume_pump_1=volume_pump_1,
             volume_pump_2=volume_pump_2,
         )
@@ -314,7 +311,6 @@ class SzlabMixerPumpDevice:
             "message": f"S06 工艺 {process} 溶液添加完成",
             "data": {
                 "process": process,
-                "volume": volume,
                 "volume_pump_1": volume_pump_1,
                 "volume_pump_2": volume_pump_2,
                 "amount_values": amount_values,
@@ -336,7 +332,12 @@ class SzlabMixerPumpDevice:
         del pipeline, direction
         if process not in (1, 2, 3):
             return {"success": False, "message": "S06 工艺选择必须为 1、2 或 3"}
-        return self._execute_s06_addition(process, volume, require_allow=require_allow)
+        return self._execute_s06_addition(
+            process,
+            require_allow=require_allow,
+            volume_pump_1=volume,
+            volume_pump_2=volume,
+        )
 
     @action(
         auto_prefix=True,
@@ -383,9 +384,8 @@ class SzlabMixerPumpDevice:
     def run_solvent_addition(
         self,
         process: int = 1,
-        volume: int = 1,
-        volume_pump_1: int = 0,
-        volume_pump_2: int = 0,
+        volume_pump_1: int = 1,
+        volume_pump_2: int = 1,
         skip_level_check: bool = False,
         beaker_true_means_present: bool = True,
     ) -> dict[str, Any]:
@@ -398,7 +398,6 @@ class SzlabMixerPumpDevice:
 
         result = self._execute_s06_addition(
             process,
-            volume,
             require_allow=True,
             volume_pump_1=volume_pump_1,
             volume_pump_2=volume_pump_2,
@@ -414,7 +413,6 @@ class SzlabMixerPumpDevice:
             "message": f"S06 工艺 {process} 加液流程完成",
             "data": {
                 "process": process,
-                "volume": volume,
                 "volume_pump_1": volume_pump_1,
                 "volume_pump_2": volume_pump_2,
             },

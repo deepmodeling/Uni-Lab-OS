@@ -32,7 +32,6 @@
   "action": {
     "name": "run_solvent_addition",
     "pump": 3,
-    "volume": 10,
     "volume_pump_1": 18,
     "volume_pump_2": 12,
     "direction": "aspirate",

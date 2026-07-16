@@ -4,6 +4,8 @@ from typing import Any
 
 from .robot_tasks import build_variables, powder_container_sensor
 
+S072_MATERIAL_SENSOR = "传感器状态_上位机[3].NO[1]"
+
 
 class SzlabRobotS07Mixin:
     def _validate_s072_position(self, position: int) -> int:
@@ -48,7 +50,7 @@ class SzlabRobotS07Mixin:
             reset_variables={"S072取放料产品": 0, "任务号": 0},
             product_type=int(product_type),
             position=position,
-            sensor_check_skipped_reason="S072 暂无物料传感器，仅检查夹爪状态",
+            target_sensor_variable=S072_MATERIAL_SENSOR,
         )
 
     def _run_s072_pick(self, product_type: int, position: int) -> dict[str, Any]:
@@ -61,5 +63,5 @@ class SzlabRobotS07Mixin:
             reset_variables={"S072取放料产品": 0, "任务号": 0},
             product_type=int(product_type),
             position=position,
-            sensor_check_skipped_reason="S072 暂无物料传感器，仅检查夹爪状态",
+            source_sensor_variable=S072_MATERIAL_SENSOR,
         )

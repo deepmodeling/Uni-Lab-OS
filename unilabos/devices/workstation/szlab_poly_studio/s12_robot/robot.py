@@ -7,7 +7,6 @@ from typing import Any
 from unilabos.registry.decorators import ActionInputHandle, DataSource, action, device, not_action
 from unilabos.devices.workstation.szlab_poly_studio.plc import wait_sensor_conditions
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
-    ROBOT_GRIPPER_SENSOR,
     ROBOT_HOME_VARIABLE,
     ROBOT_TASK_COMPLETE_VARIABLE,
     ROBOT_TASK_NUMBER_VARIABLE,
@@ -208,18 +207,6 @@ class SzlabMixerRobotDevice(
     ) -> tuple[dict[str, bool], dict[str, bool]]:
         if station == "S01":
             return {}, {}
-        if station == "S072":
-            if task == "place":
-                return (
-                    {ROBOT_GRIPPER_SENSOR: True},
-                    {ROBOT_GRIPPER_SENSOR: False},
-                )
-            if task == "pick":
-                return (
-                    {ROBOT_GRIPPER_SENSOR: False},
-                    {ROBOT_GRIPPER_SENSOR: True},
-                )
-            return {}, {}
 
         custom_preconditions = data.get("pre_sensor_conditions")
         custom_postconditions = data.get("post_sensor_conditions")
@@ -231,16 +218,16 @@ class SzlabMixerRobotDevice(
             if not target:
                 raise RuntimeError(f"{station} 放料动作缺少目标位传感器")
             return (
-                {target: False, ROBOT_GRIPPER_SENSOR: True},
-                {target: True, ROBOT_GRIPPER_SENSOR: False},
+                {target: False},
+                {target: True},
             )
         if task == "pick":
             source = str(data.get("source_sensor_variable") or "")
             if not source:
                 raise RuntimeError(f"{station} 取料动作缺少来源位传感器")
             return (
-                {source: True, ROBOT_GRIPPER_SENSOR: False},
-                {source: False, ROBOT_GRIPPER_SENSOR: True},
+                {source: True},
+                {source: False},
             )
         return {}, {}
 

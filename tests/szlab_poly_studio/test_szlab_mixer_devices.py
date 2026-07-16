@@ -1173,9 +1173,6 @@ class FakeRobotPlcGateway:
         completion_values=None,
     ):
         self.sensor_values = dict(sensor_values or {})
-        if "传感器状态_上位机[3].NO[1]" not in self.sensor_values and self.sensor_values:
-            first_sensor_value = next(iter(self.sensor_values.values()))
-            self.sensor_values["传感器状态_上位机[3].NO[1]"] = not bool(first_sensor_value)
         self.home_value = home_value
         self.write_allowed_values = list(write_allowed_values or [True])
         self.completion_values = list(completion_values or [])
@@ -1263,13 +1260,11 @@ def test_szlab_robot_s04_pick_requires_material_and_resets_pc_to_plc_variables()
         ("Robot_任务允许写入", True, 3.0, 1.0),
         ("Robot_任务完成", 8, 3.0, 1.0),
     ]
-    assert gateway.reads[:2] == [
+    assert gateway.reads[:1] == [
         ("传感器状态_上位机[2].NO[10]", False),
-        ("传感器状态_上位机[3].NO[1]", False),
     ]
-    assert gateway.reads[-2:] == [
+    assert gateway.reads[-1:] == [
         ("传感器状态_上位机[2].NO[10]", False),
-        ("传感器状态_上位机[3].NO[1]", False),
     ]
     assert gateway.writes == [
         ("S04取放料编号", 1),
@@ -1288,7 +1283,6 @@ def test_szlab_robot_waits_emit_plc_opc_wait_events():
     plc._opc_wait_event_writer = None
     values = {
         "传感器状态_上位机[0].NO[6]": True,
-        "传感器状态_上位机[3].NO[1]": False,
         "Robot_Home": True,
         "Robot_任务允许写入": True,
         "Robot_任务完成": 6,
@@ -1302,7 +1296,6 @@ def test_szlab_robot_waits_emit_plc_opc_wait_events():
         values[name] = value
         if name == "Robot_任务写入完成" and value is True:
             values["传感器状态_上位机[0].NO[6]"] = False
-            values["传感器状态_上位机[3].NO[1]"] = True
 
     plc.read_variable = read_variable
     plc.write_variable = write_variable
@@ -1411,7 +1404,7 @@ def test_szlab_robot_s04_pick_rejects_empty_position_without_writing_task():
     assert gateway.writes == []
 
 
-def test_szlab_robot_replaces_retired_gripper_sensor_with_solvent_sensor():
+def test_szlab_robot_does_not_use_unrelated_transfer_sensors():
     gateway = FakeRobotPlcGateway(
         sensor_values={
             "传感器状态_上位机[2].NO[10]": True,
@@ -1425,7 +1418,7 @@ def test_szlab_robot_replaces_retired_gripper_sensor_with_solvent_sensor():
 
     assert result["success"] is True
     assert not any(name == "传感器状态_上位机[3].NO[6]" for name, _ in gateway.reads)
-    assert any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
+    assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
     assert ("任务号", 8) in gateway.writes
 
 
@@ -1574,13 +1567,11 @@ def test_szlab_robot_s03_pick_writes_product_position_and_task_number():
 
     assert result["success"] is True
     assert result["source_sensor_variable"] == "传感器状态_上位机[0].NO[6]"
-    assert gateway.reads[:2] == [
+    assert gateway.reads[:1] == [
         ("传感器状态_上位机[0].NO[6]", False),
-        ("传感器状态_上位机[3].NO[1]", False),
     ]
-    assert gateway.reads[-2:] == [
+    assert gateway.reads[-1:] == [
         ("传感器状态_上位机[0].NO[6]", False),
-        ("传感器状态_上位机[3].NO[1]", False),
     ]
     assert gateway.writes == [
         ("S03取放料产品", 1),
@@ -1855,7 +1846,6 @@ def test_szlab_robot_can_skip_configured_sensor_precheck(monkeypatch):
     gateway = FakeRobotPlcGateway(
         sensor_values={
             sensor: False,
-            "传感器状态_上位机[3].NO[1]": False,
         }
     )
     device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)

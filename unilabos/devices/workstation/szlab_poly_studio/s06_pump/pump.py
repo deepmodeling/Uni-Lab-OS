@@ -161,11 +161,18 @@ class SzlabMixerPumpDevice:
     def _wait_material_sensors(self, process: int, phase: str) -> dict[str, Any]:
         conditions = self._material_sensor_conditions(process)
         client = self._opc_client()
+        context = f"S06 加液{'前置' if phase == 'pre' else '后置'}传感器检查"
         waiter = getattr(client, "wait_sensor_conditions", None)
         if callable(waiter):
-            success, values = waiter(conditions, timeout=self.timeout, interval=0.2)
+            success, values = waiter(conditions, timeout=self.timeout, interval=0.2, context=context)
         else:
-            success, values = wait_sensor_conditions(client, conditions, timeout=self.timeout, interval=0.2)
+            success, values = wait_sensor_conditions(
+                client,
+                conditions,
+                timeout=self.timeout,
+                interval=0.2,
+                context=context,
+            )
         return {
             "success": bool(success),
             "phase": phase,

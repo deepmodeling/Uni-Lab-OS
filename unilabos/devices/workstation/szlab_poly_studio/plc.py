@@ -87,6 +87,7 @@ def wait_sensor_conditions(
     *,
     timeout: float = 300.0,
     interval: float = 0.2,
+    context: str | None = None,
 ) -> tuple[bool, Dict[str, Any]]:
     """等待一组实机传感器同时达到期望状态，并返回最后一次读取值。"""
     if not conditions:
@@ -94,15 +95,59 @@ def wait_sensor_conditions(
 
     started_at = time.monotonic()
     last_values: Dict[str, Any] = {}
-    while time.monotonic() - started_at <= timeout:
-        last_values = {
-            variable_name: reader.read_variable(variable_name, use_cache=False)
-            for variable_name in conditions
-        }
-        if all(last_values[name] == expected for name, expected in conditions.items()):
-            return True, last_values
-        time.sleep(interval)
-    return False, last_values
+    previous_values: Dict[str, Any] | None = None
+    start_recorded = False
+    success = False
+    error = None
+    try:
+        while time.monotonic() - started_at <= timeout:
+            last_values = {
+                variable_name: reader.read_variable(variable_name, use_cache=False)
+                for variable_name in conditions
+            }
+            if not start_recorded:
+                start_recorder = getattr(reader, "_record_opc_sensor_wait_start", None)
+                if callable(start_recorder):
+                    start_recorder(
+                        conditions,
+                        last_values,
+                        timeout=timeout,
+                        interval=interval,
+                        context=context,
+                    )
+                start_recorded = True
+            elif previous_values is not None and last_values != previous_values:
+                change_recorder = getattr(reader, "_record_opc_sensor_wait_change", None)
+                if callable(change_recorder):
+                    change_recorder(
+                        conditions,
+                        previous_values,
+                        last_values,
+                        timeout=timeout,
+                        context=context,
+                    )
+            previous_values = dict(last_values)
+            if all(last_values[name] == expected for name, expected in conditions.items()):
+                success = True
+                return True, last_values
+            time.sleep(interval)
+        return False, last_values
+    except Exception as exc:
+        error = str(exc)
+        raise
+    finally:
+        finish_recorder = getattr(reader, "_record_opc_sensor_wait_finish", None)
+        if callable(finish_recorder) and start_recorded:
+            finish_recorder(
+                conditions,
+                last_values,
+                timeout=timeout,
+                interval=interval,
+                success=success,
+                elapsed=time.monotonic() - started_at,
+                context=context,
+                error=error,
+            )
 
 
 def _resolve_csv_path(csv_path: Optional[str]) -> str:
@@ -752,8 +797,9 @@ class SZLabPolyPLCDevice(BaseClient):
         conditions: Dict[str, bool],
         timeout: float = 300.0,
         interval: float = 0.2,
+        context: str | None = None,
     ) -> tuple[bool, Dict[str, Any]]:
-        return wait_sensor_conditions(self, conditions, timeout=timeout, interval=interval)
+        return wait_sensor_conditions(self, conditions, timeout=timeout, interval=interval, context=context)
 
     @not_action
     def drain_opc_wait_events(self) -> List[Dict[str, Any]]:
@@ -777,10 +823,14 @@ class SZLabPolyPLCDevice(BaseClient):
     def _opc_wait_variable_detail(self, node_name: str) -> Dict[str, Any]:
         display_name = node_name
         node_id = None
+        sensor_metadata = getattr(self, "_sensor_bit_metadata", {}).get(node_name, {})
+        sensor_label = sensor_metadata.get("label")
         try:
             display_name, node_id = self.get_opc_variable_metadata(node_name)
         except (KeyError, ValueError):
             pass
+        if sensor_label:
+            display_name = sensor_label
         detail = {"display_name": display_name}
         if node_id:
             detail["node_id"] = node_id
@@ -788,6 +838,139 @@ class SZLabPolyPLCDevice(BaseClient):
         else:
             detail["label"] = display_name
         return detail
+
+    @not_action
+    def _opc_sensor_condition_details(
+        self,
+        conditions: Dict[str, bool],
+        values: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        details = []
+        for variable, expected in conditions.items():
+            item = {
+                "variable": variable,
+                "expected": expected,
+                "actual": values.get(variable),
+                "satisfied": values.get(variable) == expected,
+            }
+            item.update(self._opc_wait_variable_detail(variable))
+            details.append(item)
+        return details
+
+    @staticmethod
+    def _opc_sensor_wait_target_text(items: List[Dict[str, Any]]) -> str:
+        return "；".join(
+            f"{item['display_name']} [{item['variable']}]={item['expected']}（当前 {item['actual']}）"
+            for item in items
+        )
+
+    @not_action
+    def _record_opc_sensor_wait_start(
+        self,
+        conditions: Dict[str, bool],
+        values: Dict[str, Any],
+        *,
+        timeout: float,
+        interval: float,
+        context: str | None,
+    ) -> None:
+        items = self._opc_sensor_condition_details(conditions, values)
+        unmet = [item for item in items if not item["satisfied"]]
+        satisfied_count = len(items) - len(unmet)
+        label = context or "传感器条件"
+        if unmet:
+            message = (
+                f"{label}：已满足 {satisfied_count}/{len(items)}；"
+                f"仍等待 {self._opc_sensor_wait_target_text(unmet)}；超时 {timeout}s"
+            )
+        else:
+            message = f"{label}：{len(items)}/{len(items)} 已满足，无需继续等待"
+        detail = {
+            "type": "opc_wait",
+            "wait_kind": "sensor_conditions",
+            "phase": "start",
+            "context": context,
+            "conditions": items,
+            "satisfied_count": satisfied_count,
+            "total_count": len(items),
+            "timeout": timeout,
+            "interval": interval,
+        }
+        self._emit_or_store_opc_wait_event({"phase": "start", "message": message, "detail": detail})
+
+    @not_action
+    def _record_opc_sensor_wait_change(
+        self,
+        conditions: Dict[str, bool],
+        previous_values: Dict[str, Any],
+        values: Dict[str, Any],
+        *,
+        timeout: float,
+        context: str | None,
+    ) -> None:
+        items = self._opc_sensor_condition_details(conditions, values)
+        changed = [item for item in items if previous_values.get(item["variable"]) != item["actual"]]
+        unmet = [item for item in items if not item["satisfied"]]
+        changes_text = "；".join(
+            f"{item['display_name']} {previous_values.get(item['variable'])} → {item['actual']}" for item in changed
+        )
+        if unmet:
+            waiting_text = f"；仍等待 {self._opc_sensor_wait_target_text(unmet)}"
+        else:
+            waiting_text = ""
+        label = context or "传感器条件"
+        message = f"{label}状态变化：{changes_text}；已满足 {len(items) - len(unmet)}/{len(items)}{waiting_text}"
+        detail = {
+            "type": "opc_wait",
+            "wait_kind": "sensor_conditions",
+            "phase": "change",
+            "context": context,
+            "conditions": items,
+            "changes": changed,
+            "satisfied_count": len(items) - len(unmet),
+            "total_count": len(items),
+            "timeout": timeout,
+        }
+        self._emit_or_store_opc_wait_event({"phase": "change", "message": message, "detail": detail})
+
+    @not_action
+    def _record_opc_sensor_wait_finish(
+        self,
+        conditions: Dict[str, bool],
+        values: Dict[str, Any],
+        *,
+        timeout: float,
+        interval: float,
+        success: bool,
+        elapsed: float,
+        context: str | None,
+        error: str | None = None,
+    ) -> None:
+        items = self._opc_sensor_condition_details(conditions, values)
+        unmet = [item for item in items if not item["satisfied"]]
+        label = context or "传感器条件"
+        if success:
+            message = f"{label}完成：{len(items)}/{len(items)} 已满足，耗时 {elapsed:.1f}s"
+        elif error:
+            message = f"{label}读取失败：{error}；最终仍等待 {self._opc_sensor_wait_target_text(unmet)}"
+        else:
+            message = f"{label}超时：最终仍等待 {self._opc_sensor_wait_target_text(unmet)}"
+        detail = {
+            "type": "opc_wait",
+            "wait_kind": "sensor_conditions",
+            "phase": "finish",
+            "context": context,
+            "conditions": items,
+            "success": success,
+            "satisfied_count": len(items) - len(unmet),
+            "total_count": len(items),
+            "timeout": timeout,
+            "interval": interval,
+            "elapsed": elapsed,
+        }
+        if error:
+            detail["error"] = error
+        self._emit_or_store_opc_wait_event({"phase": "finish", "message": message, "detail": detail})
 
     @not_action
     def _record_opc_wait_start(

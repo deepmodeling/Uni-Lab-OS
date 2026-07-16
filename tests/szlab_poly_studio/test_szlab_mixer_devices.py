@@ -1214,7 +1214,8 @@ class FakeRobotPlcGateway:
         self.events.append(("wait", name, expected))
         return self.read_variable(name, use_cache=False) == expected
 
-    def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2):
+    def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+        del context
         self.sensor_wait_calls.append((dict(conditions), timeout, interval))
         task_completed = any(
             event[0] == "wait" and event[1] == "Robot_任务完成"
@@ -1314,13 +1315,87 @@ def test_szlab_robot_waits_emit_plc_opc_wait_events():
 
     assert result["success"] is True
     events = plc.drain_opc_wait_events()
-    assert [(event["phase"], event["detail"]["variable"]) for event in events] == [
+    variable_events = [event for event in events if "variable" in event["detail"]]
+    assert [(event["phase"], event["detail"]["variable"]) for event in variable_events] == [
         ("start", "Robot_任务允许写入"),
         ("finish", "Robot_任务允许写入"),
         ("start", "Robot_任务完成"),
         ("finish", "Robot_任务完成"),
     ]
-    assert [event["detail"]["expected"] for event in events] == [True, True, 6, 6]
+    assert [event["detail"]["expected"] for event in variable_events] == [True, True, 6, 6]
+    sensor_events = [event for event in events if event["detail"].get("wait_kind") == "sensor_conditions"]
+    assert [event["detail"]["context"] for event in sensor_events] == [
+        "机器人前置传感器检查",
+        "机器人前置传感器检查",
+        "机器人后置传感器检查",
+        "机器人后置传感器检查",
+    ]
+
+
+def test_sensor_condition_wait_logs_start_change_and_finish():
+    plc = object.__new__(SZLabPolyPLCDevice)
+    plc._opc_wait_events = []
+    plc._opc_wait_event_writer = None
+    plc._sensor_bit_metadata = {
+        "传感器状态_上位机[3].NO[1]": {"label": "加溶剂检测"},
+        "传感器状态_上位机[4].NO[12]": {"label": "液体试剂瓶1-1"},
+    }
+    plc.get_opc_variable_metadata = lambda name: (name, f"ns=4;s=上位机通讯|{name}")
+    solvent_reads = iter([False, True])
+
+    def read_variable(name, use_cache=False):
+        del use_cache
+        if name == "传感器状态_上位机[3].NO[1]":
+            return next(solvent_reads)
+        return True
+
+    plc.read_variable = read_variable
+    conditions = {
+        "传感器状态_上位机[3].NO[1]": True,
+        "传感器状态_上位机[4].NO[12]": True,
+    }
+
+    success, values = wait_sensor_conditions(
+        plc,
+        conditions,
+        timeout=1.0,
+        interval=0.0,
+        context="S06 加液前置传感器检查",
+    )
+
+    assert success is True
+    assert values == {name: True for name in conditions}
+    events = plc.drain_opc_wait_events()
+    assert [event["phase"] for event in events] == ["start", "change", "finish"]
+    assert "仍等待 加溶剂检测" in events[0]["message"]
+    assert "False → True" in events[1]["message"]
+    assert "2/2 已满足" in events[2]["message"]
+    assert all(event["detail"]["wait_kind"] == "sensor_conditions" for event in events)
+
+
+def test_sensor_condition_wait_timeout_lists_unmet_signals_once():
+    plc = object.__new__(SZLabPolyPLCDevice)
+    plc._opc_wait_events = []
+    plc._opc_wait_event_writer = None
+    plc._sensor_bit_metadata = {
+        "传感器状态_上位机[5].NO[1]": {"label": "液体试剂瓶2-1"},
+    }
+    plc.get_opc_variable_metadata = lambda name: (name, f"ns=4;s=上位机通讯|{name}")
+    plc.read_variable = lambda name, use_cache=False: False
+
+    success, _ = wait_sensor_conditions(
+        plc,
+        {"传感器状态_上位机[5].NO[1]": True},
+        timeout=0.001,
+        interval=0.01,
+        context="S06 加液前置传感器检查",
+    )
+
+    assert success is False
+    events = plc.drain_opc_wait_events()
+    assert [event["phase"] for event in events] == ["start", "finish"]
+    assert "液体试剂瓶2-1" in events[-1]["message"]
+    assert "当前 False" in events[-1]["message"]
 
 
 def test_szlab_robot_s04_pick_rejects_empty_position_without_writing_task():
@@ -1356,7 +1431,8 @@ def test_szlab_robot_replaces_retired_gripper_sensor_with_solvent_sensor():
 
 def test_szlab_robot_reports_verification_failed_without_resubmitting_task():
     class NoTransitionGateway(FakeRobotPlcGateway):
-        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2):
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            del context
             self.sensor_wait_calls.append((dict(conditions), timeout, interval))
             values = {
                 name: self.read_variable(name, use_cache=False)

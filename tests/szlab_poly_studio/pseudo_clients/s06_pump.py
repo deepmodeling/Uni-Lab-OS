@@ -62,8 +62,9 @@ class PseudoSzlabMixerOpcUaClient:
         conditions: dict[str, bool],
         timeout: float = 300.0,
         interval: float = 0.2,
+        context: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
-        del timeout, interval
+        del timeout, interval, context
         self.events.append(("wait_sensor_conditions", dict(conditions)))
         values = {name: self.read(name) for name in conditions}
         return all(values[name] == expected for name, expected in conditions.items()), values

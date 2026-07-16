@@ -576,11 +576,23 @@ class SZLabS08CapStationDevice:
         timeout: float,
     ) -> dict[str, Any]:
         plc = self._plc()
+        context = f"S08 开关盖{'前置' if phase == 'pre' else '后置'}传感器检查"
         waiter = getattr(plc, "wait_sensor_conditions", None)
         if callable(waiter):
-            success, values = waiter(conditions, timeout=timeout, interval=self.poll_interval)
+            success, values = waiter(
+                conditions,
+                timeout=timeout,
+                interval=self.poll_interval,
+                context=context,
+            )
         else:
-            success, values = wait_sensor_conditions(plc, conditions, timeout=timeout, interval=self.poll_interval)
+            success, values = wait_sensor_conditions(
+                plc,
+                conditions,
+                timeout=timeout,
+                interval=self.poll_interval,
+                context=context,
+            )
         return {
             "success": bool(success),
             "phase": phase,

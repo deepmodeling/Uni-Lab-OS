@@ -111,7 +111,8 @@ def test_s08_process_cap_uses_plc_gateway_for_waits_and_resets():
                     self.values[sensor] = expected in s08_module.OPEN_PROCESS_IDS
             return True
 
-        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2):
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            del timeout, interval, context
             values = {name: self.read_variable(name, use_cache=False) for name in conditions}
             return all(values[name] == expected for name, expected in conditions.items()), values
 

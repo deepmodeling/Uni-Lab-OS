@@ -212,11 +212,28 @@ class SzlabMixerPipettingStationDevice:
         phase: str,
     ) -> dict[str, Any]:
         target = self._target()
+        phase_labels = {
+            "pre": "前置",
+            "post": "后置",
+            "workflow_pre": "流程前置",
+        }
+        context = f"S09 加液{phase_labels.get(phase, phase)}传感器检查"
         waiter = getattr(target, "wait_sensor_conditions", None)
         if callable(waiter):
-            success, values = waiter(conditions, timeout=self.timeout, interval=0.2)
+            success, values = waiter(
+                conditions,
+                timeout=self.timeout,
+                interval=0.2,
+                context=context,
+            )
         else:
-            success, values = wait_sensor_conditions(target, conditions, timeout=self.timeout, interval=0.2)
+            success, values = wait_sensor_conditions(
+                target,
+                conditions,
+                timeout=self.timeout,
+                interval=0.2,
+                context=context,
+            )
         return {
             "success": bool(success),
             "phase": phase,

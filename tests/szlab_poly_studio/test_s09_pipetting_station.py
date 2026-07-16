@@ -157,11 +157,16 @@ def test_s09_run_process_reports_verification_failed_when_material_disappears():
             super().__init__({"S09液体瓶1剩余液量": 100.0})
             self.sensor_wait_count = 0
 
-        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2):
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
             self.sensor_wait_count += 1
             if self.sensor_wait_count == 2:
                 self.values["传感器状态_上位机[4].NO[7]"] = False
-            return super().wait_sensor_conditions(conditions, timeout=timeout, interval=interval)
+            return super().wait_sensor_conditions(
+                conditions,
+                timeout=timeout,
+                interval=interval,
+                context=context,
+            )
 
     client = MaterialRemovedClient()
     device = make_pipetting_device(client)
@@ -678,7 +683,7 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
             self.reads.append(name)
             if name == "传感器状态_上位机[4].NO[6]":
                 return self.values.get(name, False)
-            if name == "传感器状态_上位机[3].NO[6]":
+            if name == "传感器状态_上位机[3].NO[1]":
                 return self.values.get(name, True)
             if name == "机器人Busy信号":
                 return False
@@ -692,8 +697,8 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
             if name == "任务号" and value == 19:
                 self.task_submitted = True
 
-        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2):
-            del timeout, interval
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            del timeout, interval, context
             if self.task_submitted:
                 self.values.update(conditions)
             values = {

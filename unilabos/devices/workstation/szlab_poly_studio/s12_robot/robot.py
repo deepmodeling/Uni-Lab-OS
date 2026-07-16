@@ -173,11 +173,13 @@ class SzlabMixerRobotDevice(
             raise RuntimeError("机器人任务需要注入 szlab_poly_plc 网关")
 
         waiter = getattr(self._plc_gateway, "wait_sensor_conditions", None)
+        context = f"机器人{'前置' if phase == 'pre' else '后置'}传感器检查"
         if callable(waiter):
             success, values = waiter(
                 active_conditions,
                 timeout=self.timeout,
                 interval=self.poll_interval,
+                context=context,
             )
         else:
             success, values = wait_sensor_conditions(
@@ -185,6 +187,7 @@ class SzlabMixerRobotDevice(
                 active_conditions,
                 timeout=self.timeout,
                 interval=self.poll_interval,
+                context=context,
             )
         mismatches = {
             name: {"expected": expected, "actual": values.get(name)}

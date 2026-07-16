@@ -2016,6 +2016,10 @@ type CategorizedSensorGroup = {
   unmarked: boolean;
 };
 
+const HIDDEN_SENSOR_NAMES = new Set([
+  '传感器状态_上位机[3].NO[6]',
+]);
+
 function sensorLabelParts(label?: string): { category: string; position: string } {
   const normalized = (label || '').trim();
   if (!normalized) return { category: '未备注信号', position: '' };
@@ -2031,6 +2035,7 @@ function categorizeSensorGroups(groups: SensorArrayGroupPayload[]): CategorizedS
   const categories = new Map<string, CategorizedSensorBit[]>();
   groups.forEach((group) => {
     (group.bits || []).forEach((bit) => {
+      if (HIDDEN_SENSOR_NAMES.has(bit.name)) return;
       const { category, position } = sensorLabelParts(bit.label);
       const categorizedBit = {
         ...bit,

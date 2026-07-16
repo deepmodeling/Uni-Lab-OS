@@ -4,33 +4,25 @@ from typing import Any
 
 from .robot_tasks import build_variables
 
-S08_PICK_SENSOR_BY_POSITION = {
+S08_CAP_STATION_SENSOR_BY_POSITION = {
     1: "传感器状态_上位机[3].NO[14]",
     2: "传感器状态_上位机[3].NO[15]",
 }
-S08_PLACE_SENSOR_BY_POSITION = {
-    1: "传感器状态_上位机[4].NO[0]",
-    2: "传感器状态_上位机[4].NO[1]",
-    3: "传感器状态_上位机[4].NO[2]",
-    4: "传感器状态_上位机[4].NO[3]",
-    5: "传感器状态_上位机[4].NO[4]",
-}
-S08_POUR_BEAKER_SENSOR = "传感器状态_上位机[3].NO[1]"
 S08_POUR_SAMPLE_VIAL_SENSOR = "传感器状态_上位机[3].NO[14]"
 
 
 class SzlabRobotS08Mixin:
     def _s08_place_sensor_variable(self, position: int) -> str:
         position = int(position)
-        if position not in S08_PLACE_SENSOR_BY_POSITION:
-            raise ValueError("S08 放瓶位置必须在 1-5 范围内")
-        return S08_PLACE_SENSOR_BY_POSITION[position]
+        if position not in S08_CAP_STATION_SENSOR_BY_POSITION:
+            raise ValueError("S08 放瓶位置必须在 1-2 范围内")
+        return S08_CAP_STATION_SENSOR_BY_POSITION[position]
 
     def _s08_pick_sensor_variable(self, position: int) -> str:
         position = int(position)
-        if position not in S08_PICK_SENSOR_BY_POSITION:
+        if position not in S08_CAP_STATION_SENSOR_BY_POSITION:
             raise ValueError("S08 取瓶位置必须在 1-2 范围内")
-        return S08_PICK_SENSOR_BY_POSITION[position]
+        return S08_CAP_STATION_SENSOR_BY_POSITION[position]
 
     def _validate_s08_pour_product_type(self, product_type: int) -> int:
         product_type = int(product_type)
@@ -76,7 +68,6 @@ class SzlabRobotS08Mixin:
             reset_variables={"S08倒料产品选择": 0, "任务号": 0},
             product_type=product_type,
             pre_sensor_conditions={
-                S08_POUR_BEAKER_SENSOR: True,
                 S08_POUR_SAMPLE_VIAL_SENSOR: True,
             },
         )

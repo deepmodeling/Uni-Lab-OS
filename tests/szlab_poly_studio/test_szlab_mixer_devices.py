@@ -1677,10 +1677,42 @@ def test_szlab_robot_s08_pick_uses_position_sensor_mapping():
     ]
 
 
+@pytest.mark.parametrize(
+    ("position", "sensor"),
+    [
+        (1, "传感器状态_上位机[3].NO[14]"),
+        (2, "传感器状态_上位机[3].NO[15]"),
+    ],
+)
+def test_szlab_robot_s08_place_uses_cap_station_sensor(position, sensor):
+    gateway = FakeRobotPlcGateway(sensor_values={sensor: False})
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_place_to_s08(product_type=1, position=position)
+
+    assert result["success"] is True
+    assert result["target_sensor_variable"] == sensor
+    assert (sensor, False) in gateway.reads
+    assert not any(name.startswith("传感器状态_上位机[4].NO[") for name, _ in gateway.reads)
+
+
+def test_szlab_robot_s08_place_rejects_cap_storage_slot_as_position():
+    gateway = FakeRobotPlcGateway()
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_place_to_s08(product_type=1, position=3)
+
+    assert result["success"] is False
+    assert "S08 放瓶位置必须在 1-2 范围内" in result["message"]
+    assert gateway.writes == []
+
+
 def test_szlab_robot_s08_pour_writes_product_selection_and_task_number():
     gateway = FakeRobotPlcGateway(
         sensor_values={
-            "传感器状态_上位机[3].NO[1]": True,
+            "传感器状态_上位机[3].NO[1]": False,
             "传感器状态_上位机[3].NO[14]": True,
         }
     )
@@ -1691,9 +1723,9 @@ def test_szlab_robot_s08_pour_writes_product_selection_and_task_number():
 
     assert result["success"] is True
     assert result["sensor_precheck"]["values"] == {
-        "传感器状态_上位机[3].NO[1]": True,
         "传感器状态_上位机[3].NO[14]": True,
     }
+    assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
     assert gateway.writes == [
         ("S08倒料产品选择", 2),
         ("任务号", 25),

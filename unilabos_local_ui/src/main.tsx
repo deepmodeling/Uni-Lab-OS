@@ -32,6 +32,22 @@ import {
 } from './workflowDraft';
 import { createPseudoFlowJson } from './workflowExport';
 import { WorkstationDemo } from './WorkstationDemo';
+import {
+  createDefaultTriggerCondition,
+  createTaskTemplateTriggers,
+  normalizeTriggerConditions,
+  type TriggerCondition,
+} from './taskOrchestration';
+import {
+  createTaskOrchestrationClient,
+  fromApiTrigger,
+  TaskOrchestrationBusinessError,
+  TaskOrchestrationServiceUnavailableError,
+  toApiTrigger,
+  type ApiWaitingReason,
+  type ApiWorkspaceEvent,
+  type ApiWorkspaceResponse,
+} from './taskOrchestrationApi';
 
 type ActionSpec = {
   method: string;
@@ -85,22 +101,184 @@ type RunStatus = {
 };
 
 type NodeRunStatus = 'idle' | 'preparing' | 'running' | 'success' | 'failed' | 'cancelled';
-type MainTab = 'workflow' | 'tasks' | 'sensors';
+type Workspace = 'workflow' | 'tasks';
+type CanvasTab = 'workflow' | 'sensors';
 type TaskTemplate = {
   id: string;
   name: string;
   nodeIds: string[];
   resources: string[];
   gates: string[];
+  inputTriggers: TriggerCondition[];
+  outputTriggers: TriggerCondition[];
 };
-type TaskInstanceStatus = 'waiting' | 'pending' | 'running' | 'done';
+type CsvVariable = {
+  name: string;
+  data_type: string;
+  initial_value: string;
+  comment: string;
+};
+type TaskInstanceStatus = 'waiting' | 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 type TaskInstance = {
   id: string;
   sample: string;
   templateId: string;
   order: number;
   status: TaskInstanceStatus;
+  startedAt?: number;
+  finishedAt?: number;
 };
+type TaskWorkspaceState = {
+  taskTemplates: TaskTemplate[];
+  taskInstances: TaskInstance[];
+  taskEvents: string[];
+};
+
+function taskTriggerLogLabel(trigger: unknown) {
+  if (!trigger || typeof trigger !== 'object') return '条件已满足';
+  const item = trigger as { kind?: string; config?: Record<string, unknown> };
+  const config = item.config || {};
+  if (item.kind === 'resource') return `资源 ${String(config.resource || '')} 可用`;
+  if (item.kind === 'workstation') return `工位 ${String(config.workstation || '')} 可用`;
+  if (item.kind === 'opc') return `OPC ${String(config.variable || '')} == ${String(config.value)}`;
+  if (item.kind === 'internal') return `内部事件 ${String(config.key || '')} 已满足`;
+  return `${item.kind || '未知'} 条件已满足`;
+}
+
+function taskEventText(event: ApiWorkspaceEvent, fallbackTriggers: unknown[] = []) {
+  const timestamp = new Date(event.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+  const satisfiedTriggers = event.payload.satisfied_triggers;
+  if (event.kind === 'scheduled') {
+    const triggers = Array.isArray(satisfiedTriggers) ? satisfiedTriggers : fallbackTriggers;
+    const conditions = triggers.map(taskTriggerLogLabel).join('、');
+    return `${timestamp} 已派发：${conditions || '无额外输入条件'}`;
+  }
+  return `${timestamp} ${event.kind}`;
+}
+
+function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceState & {
+  version: number;
+  scheduledTemplateIds: string[];
+  isSchedulerRunning: boolean;
+  waitingReasons: Record<string, ApiWaitingReason>;
+  scheduleEntries: Array<{
+    id: string;
+    instanceId: string;
+    sample: string;
+    templateId: string;
+    resource: string;
+    startAt: number;
+    endAt: number;
+    state: 'planned' | 'running' | 'done';
+  }>;
+} {
+  const templateById = new Map(response.workspace.templates.map((template) => [template.id, template]));
+  return {
+    version: response.version,
+    taskTemplates: response.workspace.templates.map((template) => ({
+      id: template.id,
+      name: template.name,
+      nodeIds: template.node_ids,
+      resources: template.resources,
+      gates: [],
+      inputTriggers: template.input_triggers.map(fromApiTrigger),
+      outputTriggers: template.output_triggers.map(fromApiTrigger),
+    })),
+    taskInstances: response.workspace.task_instances.map((instance) => ({
+      id: instance.id,
+      sample: instance.sample_id,
+      templateId: instance.template_id,
+      order: instance.order,
+      status: instance.status,
+      startedAt: instance.started_at ?? undefined,
+      finishedAt: instance.finished_at ?? undefined,
+    })),
+    taskEvents: response.workspace.events.map((event) => (
+      taskEventText(
+        event,
+        event.template_id
+          ? [
+              ...(templateById.get(event.template_id)?.input_triggers || []),
+              ...(templateById.get(event.template_id)?.trigger ? [templateById.get(event.template_id)!.trigger] : []),
+            ]
+          : [],
+      )
+    )).slice(-20).reverse(),
+    scheduledTemplateIds: response.workspace.scheduled_template_ids,
+    isSchedulerRunning: !response.workspace.scheduler_paused,
+    waitingReasons: response.schedule?.waiting_reasons || {},
+    scheduleEntries: response.workspace.schedule_entries.flatMap((entry) => entry.resources.map((resource) => ({
+      id: `${entry.instance_id}:${resource}`,
+      instanceId: entry.instance_id,
+      sample: entry.sample_id,
+      templateId: entry.template_id,
+      resource,
+      startAt: entry.start_at,
+      endAt: entry.end_at,
+      state: entry.state,
+    }))),
+  };
+}
+
+function taskApiErrorMessage(error: unknown) {
+  if (error instanceof TaskOrchestrationServiceUnavailableError) {
+    return 'Task 编排服务不可用';
+  }
+  return error instanceof Error ? error.message : 'Task 编排操作失败';
+}
+
+export function createEmptyTaskWorkspaceState() {
+  return {
+    taskTemplates: [] as TaskTemplate[],
+    taskInstances: [] as TaskInstance[],
+    taskEvents: [] as string[],
+  };
+}
+
+export function resetTaskWorkspaceState(_previousState: TaskWorkspaceState) {
+  return createEmptyTaskWorkspaceState();
+}
+
+export function isRestorableContextMenuFocusTarget(
+  element: unknown,
+  body: unknown,
+  documentElement: unknown,
+) {
+  return element != null && element !== body && element !== documentElement;
+}
+
+export function clampContextMenuPosition(
+  x: number,
+  y: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  menuWidth = 176,
+  menuHeight = 92,
+  margin = 8,
+) {
+  const maxLeft = Math.max(margin, viewportWidth - menuWidth - margin);
+  const maxTop = Math.max(margin, viewportHeight - menuHeight - margin);
+  return {
+    left: Math.max(margin, Math.min(x, maxLeft)),
+    top: Math.max(margin, Math.min(y, maxTop)),
+  };
+}
+
+export function removeTaskTemplateState(
+  templateId: string,
+  taskTemplates: TaskTemplate[],
+  taskInstances: TaskInstance[],
+) {
+  if (!taskTemplates.some((template) => template.id === templateId)) {
+    return { taskTemplates, taskInstances, removedInstanceCount: 0 };
+  }
+  const nextTaskInstances = taskInstances.filter((task) => task.templateId !== templateId);
+  return {
+    taskTemplates: taskTemplates.filter((template) => template.id !== templateId),
+    taskInstances: nextTaskInstances,
+    removedInstanceCount: taskInstances.length - nextTaskInstances.length,
+  };
+}
 
 type StackSlotPayload = {
   site_key?: string;
@@ -273,7 +451,7 @@ function unlockNextTaskInstances(instances: TaskInstance[]) {
     if (task.status !== 'waiting') return task;
     const previousDone = instances
       .filter((item) => item.sample === task.sample && item.order < task.order)
-      .every((item) => item.status === 'done');
+      .every((item) => item.status === 'completed');
     return previousDone ? { ...task, status: 'pending' as const } : task;
   });
 }
@@ -284,13 +462,13 @@ function taskBlockingReasons(
   templates: TaskTemplate[],
   sensorGates: Record<string, boolean>,
 ) {
-  if (task.status === 'done' || task.status === 'running') return [];
+  if (task.status === 'completed' || task.status === 'running') return [];
   const template = templates.find((item) => item.id === task.templateId);
   if (!template) return ['缺少 Task 模板'];
   const reasons: string[] = [];
   const previousDone = instances
     .filter((item) => item.sample === task.sample && item.order < task.order)
-    .every((item) => item.status === 'done');
+    .every((item) => item.status === 'completed');
   if (!previousDone) reasons.push('前置 Task 未完成');
   template.gates.forEach((gate) => {
     if (sensorGates[gate] === false) {
@@ -307,7 +485,7 @@ function taskBlockingReasons(
 }
 
 function taskVisualState(task: TaskInstance, blockingReasons: string[]) {
-  if (task.status === 'done') return 'done';
+  if (task.status === 'completed') return 'done';
   if (task.status === 'running') return 'running';
   return blockingReasons.length ? 'blocked' : 'ready';
 }
@@ -445,7 +623,8 @@ function App() {
   const [leftTab, setLeftTab] = useState<'devices' | 'stacks'>('devices');
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [collapsedActionGroups, setCollapsedActionGroups] = useState<Record<string, boolean>>({});
-  const [mainTab, setMainTab] = useState<MainTab>('workflow');
+  const [workspace, setWorkspace] = useState<Workspace>('workflow');
+  const [canvasTab, setCanvasTab] = useState<CanvasTab>('workflow');
   const [sideTab, setSideTab] = useState<'control' | 'materials' | 'logs'>('control');
   const [selectedStackId, setSelectedStackId] = useState('');
   const [showStackModal, setShowStackModal] = useState(false);
@@ -455,12 +634,132 @@ function App() {
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [taskInstances, setTaskInstances] = useState<TaskInstance[]>([]);
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
+  const [taskWorkspaceVersion, setTaskWorkspaceVersion] = useState<number | null>(null);
+  const [taskWorkspacePath, setTaskWorkspacePath] = useState('szlab_canvas_workflow.json');
+  const [taskScheduleEntries, setTaskScheduleEntries] = useState<ReturnType<typeof taskWorkspaceFromApi>['scheduleEntries']>([]);
+  const [taskWaitingReasons, setTaskWaitingReasons] = useState<Record<string, ApiWaitingReason>>({});
+  const [isTaskDetailModalOpen, setIsTaskDetailModalOpen] = useState(false);
+  const [taskServiceError, setTaskServiceError] = useState('');
+  const [isTaskWorkspaceLoading, setIsTaskWorkspaceLoading] = useState(false);
   const [taskSampleCount, setTaskSampleCount] = useState(3);
-  const [sensorGates, setSensorGates] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(Object.entries(DEFAULT_SENSOR_GATES).map(([key, gate]) => [key, gate.free])),
-  );
-  const importFileRef = useRef<HTMLInputElement | null>(null);
+  const [selectedTaskTemplateId, setSelectedTaskTemplateId] = useState<string | null>(null);
+  const [scheduledTemplateIds, setScheduledTemplateIds] = useState<string[]>([]);
+  const [csvVariables, setCsvVariables] = useState<CsvVariable[]>([]);
+  const [activeTriggerSearch, setActiveTriggerSearch] = useState<string | null>(null);
+  const [triggerSearchQueries, setTriggerSearchQueries] = useState<Record<string, string>>({});
+  const [resourceScheduleHeight, setResourceScheduleHeight] = useState(260);
+  const [isSchedulerRunning, setIsSchedulerRunning] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isTaskTemplateEditing, setIsTaskTemplateEditing] = useState(false);
+  const contextMenuFirstActionRef = useRef<HTMLButtonElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const contextMenuTriggerRef = useRef<HTMLElement | null>(null);
+  const contextMenuFocusTargetRef = useRef<HTMLElement | null>(null);
+  const canvasWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const taskOrchestrationRef = useRef<HTMLDivElement | null>(null);
   const canvasToastTimerRef = useRef<number | null>(null);
+  const taskWorkspaceStateRef = useRef<TaskWorkspaceState>(createEmptyTaskWorkspaceState());
+  const taskApiRef = useRef(createTaskOrchestrationClient());
+  const taskWorkspaceVersionRef = useRef<number | null>(null);
+  const taskRequestQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const taskPollingTimerRef = useRef<number | null>(null);
+  const taskPollingInFlightRef = useRef(false);
+  const taskPollingGenerationRef = useRef(0);
+  const applyTaskWorkspace = useCallback((response: ApiWorkspaceResponse) => {
+    const next = taskWorkspaceFromApi(response);
+    taskWorkspaceStateRef.current = {
+      taskTemplates: next.taskTemplates,
+      taskInstances: next.taskInstances,
+      taskEvents: next.taskEvents,
+    };
+    setTaskTemplates(next.taskTemplates);
+    setTaskInstances(next.taskInstances);
+    setTaskEvents(next.taskEvents);
+    setTaskWorkspaceVersion(next.version);
+    taskWorkspaceVersionRef.current = next.version;
+    setScheduledTemplateIds(next.scheduledTemplateIds);
+    setTaskWaitingReasons(next.waitingReasons);
+    setIsSchedulerRunning(next.isSchedulerRunning);
+    setTaskScheduleEntries(next.scheduleEntries);
+    setSelectedTaskTemplateId((current) => (
+      next.taskTemplates.some((template) => template.id === current)
+        ? current
+        : next.taskTemplates[0]?.id || null
+    ));
+    setTaskServiceError('');
+  }, []);
+  const resetTaskWorkspace = useCallback(() => {
+    const emptyTaskWorkspace = resetTaskWorkspaceState(taskWorkspaceStateRef.current);
+    taskWorkspaceStateRef.current = emptyTaskWorkspace;
+    setTaskTemplates(emptyTaskWorkspace.taskTemplates);
+    setTaskInstances(emptyTaskWorkspace.taskInstances);
+    setTaskEvents(emptyTaskWorkspace.taskEvents);
+    setTaskWaitingReasons({});
+    setSelectedTaskTemplateId(null);
+    setIsTaskDetailModalOpen(false);
+    setScheduledTemplateIds([]);
+    setIsSchedulerRunning(false);
+    setTaskWorkspaceVersion(null);
+    setTaskScheduleEntries([]);
+  }, []);
+  const closeCanvasContextMenu = useCallback(({ restoreFocus = true }: { restoreFocus?: boolean } = {}) => {
+    setContextMenu(null);
+    if (!restoreFocus) return;
+    window.requestAnimationFrame(() => {
+      const trigger = contextMenuFocusTargetRef.current;
+      if (trigger?.isConnected && !trigger.matches('[disabled], [inert]')) {
+        trigger.focus();
+        if (document.activeElement === trigger) return;
+      }
+      canvasWorkspaceRef.current?.focus();
+    });
+  }, []);
+  const showCanvasToast = useCallback((text: string) => {
+    setCanvasToast(text);
+    if (canvasToastTimerRef.current !== null) {
+      window.clearTimeout(canvasToastTimerRef.current);
+    }
+    canvasToastTimerRef.current = window.setTimeout(() => {
+      setCanvasToast('');
+      canvasToastTimerRef.current = null;
+    }, 2000);
+  }, []);
+  const exitTaskTemplateEditing = useCallback(() => {
+    setIsTaskTemplateEditing(false);
+    setNodes((current) => current.map((node) => ({ ...node, selected: false })));
+    closeCanvasContextMenu();
+  }, [closeCanvasContextMenu]);
+  const openCanvasContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    if (!isTaskTemplateEditing) return;
+    event.preventDefault();
+    contextMenuTriggerRef.current = event.currentTarget;
+    const activeElement = document.activeElement;
+    contextMenuFocusTargetRef.current = activeElement instanceof HTMLElement
+      && isRestorableContextMenuFocusTarget(activeElement, document.body, document.documentElement)
+      && activeElement.isConnected
+      ? activeElement
+      : null;
+
+    const nodeElement = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('.react-flow__node')
+      : null;
+    const nodeId = nodeElement?.dataset.id;
+    if (nodeId) {
+      setNodes((current) => {
+        if (current.some((node) => node.id === nodeId && node.selected)) return current;
+        return current.map((node) => ({ ...node, selected: node.id === nodeId }));
+      });
+    }
+
+    const position = clampContextMenuPosition(
+      event.clientX,
+      event.clientY,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    setContextMenu({ x: position.left, y: position.top });
+  }, [isTaskTemplateEditing]);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
   const [config, setConfig] = useState({
     graph: DEFAULT_CONFIG.graph,
     url: DEFAULT_CONFIG.url,
@@ -507,11 +806,25 @@ function App() {
     () => nodes.filter((node) => node.selected),
     [nodes],
   );
-  const runningTaskResourceHolders = useMemo(
-    () => buildRunningTaskResourceHolders(taskInstances, taskTemplates),
-    [taskInstances, taskTemplates],
+  const nodesById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, node])),
+    [nodes],
   );
-
+  const selectedTaskTemplate = useMemo(
+    () => taskTemplates.find((template) => template.id === selectedTaskTemplateId) || taskTemplates[0] || null,
+    [selectedTaskTemplateId, taskTemplates],
+  );
+  const taskGanttEntries = useMemo(
+    () => taskScheduleEntries,
+    [taskScheduleEntries],
+  );
+  const scheduledResources = useMemo(() => [
+    ...new Set(
+      scheduledTemplateIds.length
+        ? taskGanttEntries.map((entry) => entry.resource)
+        : [],
+    ),
+  ], [scheduledTemplateIds.length, taskGanttEntries]);
   const toggleActionGroup = useCallback((groupId: string) => {
     setCollapsedActionGroups((current) => ({
       ...current,
@@ -528,6 +841,27 @@ function App() {
     () => configuredOpcVariables.map((name) => ({ name, currentValue: stackSensorValues[name] })),
     [configuredOpcVariables, stackSensorValues],
   );
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (config.csv) params.set('csv_path', config.csv);
+    fetch(`/api/csv-variables?${params.toString()}`)
+      .then((response) => response.ok ? response.json() : { variables: [] })
+      .then((payload) => setCsvVariables(Array.isArray(payload.variables) ? payload.variables : []))
+      .catch(() => setCsvVariables([]));
+  }, [config.csv]);
+  const loadTaskWorkspace = useCallback(async () => {
+    setIsTaskWorkspaceLoading(true);
+    try {
+      applyTaskWorkspace(await taskApiRef.current.getWorkspace(taskWorkspacePath));
+    } catch (error) {
+      setTaskServiceError(taskApiErrorMessage(error));
+    } finally {
+      setIsTaskWorkspaceLoading(false);
+    }
+  }, [applyTaskWorkspace, taskWorkspacePath]);
+  useEffect(() => {
+    if (workspace === 'tasks') void loadTaskWorkspace();
+  }, [loadTaskWorkspace, workspace]);
   const stackResources = useMemo(() => stackResourcesFromStatus(stackStatus), [stackStatus]);
   const selectedStack = useMemo(
     () => stackResources.find((stack) => stack.id === selectedStackId) || stackResources[0] || null,
@@ -563,12 +897,42 @@ function App() {
   }, [nodes, selectedLogNodeId]);
 
   useEffect(() => {
+    taskWorkspaceStateRef.current = { taskTemplates, taskInstances, taskEvents };
+  }, [taskEvents, taskInstances, taskTemplates]);
+
+  useEffect(() => {
     return () => {
       if (canvasToastTimerRef.current !== null) {
         window.clearTimeout(canvasToastTimerRef.current);
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    contextMenuFirstActionRef.current?.focus();
+    const closeContextMenuOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeCanvasContextMenu();
+    };
+    document.addEventListener('keydown', closeContextMenuOnEscape);
+    return () => document.removeEventListener('keydown', closeContextMenuOnEscape);
+  }, [closeCanvasContextMenu, contextMenu]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeContextMenuOnExternalPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (contextMenuRef.current?.contains(target) || contextMenuTriggerRef.current?.contains(target)) {
+        return;
+      }
+      closeCanvasContextMenu({ restoreFocus: false });
+    };
+    document.addEventListener('pointerdown', closeContextMenuOnExternalPointerDown, true);
+    return () => document.removeEventListener('pointerdown', closeContextMenuOnExternalPointerDown, true);
+  }, [closeCanvasContextMenu, contextMenu]);
 
   useEffect(() => {
     fetch('/api/preset')
@@ -579,6 +943,7 @@ function App() {
         setTitle(payload.title || 'szlab 本地调试工具');
         setActions(payloadActions);
         setDraftStorageKey(storageKey);
+        setTaskWorkspacePath(`${payload.default_workflow_name || 'szlab_canvas_workflow'}.json`);
         const savedDraft = loadSavedDraft(storageKey, payloadActions);
         if (savedDraft) {
           setWorkflowName(savedDraft.name);
@@ -602,7 +967,7 @@ function App() {
         setDraftReady(true);
       })
       .catch((error) => setMessage(`preset 加载失败: ${error.message}`));
-  }, []);
+  }, [resetTaskWorkspace]);
 
   const refreshStackStatus = useCallback(async () => {
     setIsRefreshingStack(true);
@@ -756,6 +1121,39 @@ function App() {
     const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     setTaskEvents((current) => [`${time} ${message}`, ...current].slice(0, 20));
   }, []);
+  const mutateTaskWorkspace = useCallback(async (
+    operation: (version: number) => Promise<ApiWorkspaceResponse>,
+    canApply: () => boolean = () => true,
+  ) => {
+    const execute = async () => {
+      const run = async () => {
+        const version = taskWorkspaceVersionRef.current;
+        if (version === null) throw new TaskOrchestrationServiceUnavailableError();
+        return operation(version);
+      };
+      try {
+        const response = await run();
+        if (canApply()) applyTaskWorkspace(response);
+      } catch (error) {
+        if (error instanceof TaskOrchestrationBusinessError && error.status === 409) {
+          try {
+            const latest = await taskApiRef.current.getWorkspace(taskWorkspacePath);
+            if (canApply()) applyTaskWorkspace(latest);
+            const response = await operation(latest.version);
+            if (canApply()) applyTaskWorkspace(response);
+            return;
+          } catch (retryError) {
+            setTaskServiceError(taskApiErrorMessage(retryError));
+            return;
+          }
+        }
+        setTaskServiceError(taskApiErrorMessage(error));
+      }
+    };
+    const queued = taskRequestQueueRef.current.then(execute, execute);
+    taskRequestQueueRef.current = queued.catch(() => undefined);
+    return queued;
+  }, [applyTaskWorkspace, taskWorkspacePath]);
 
   const createTaskTemplateFromNodes = useCallback((templateName: string, templateNodes: Node<ActionNodeData>[]) => {
     const orderedNodeIds = orderSelectedNodesByPlan(templateNodes, executionPlan.executableNodes).map((node) => node.id);
@@ -767,20 +1165,25 @@ function App() {
     const orderedNodes = orderedNodeIds.map((nodeId) => selectedNodesById.get(nodeId)).filter(Boolean) as Node<ActionNodeData>[];
     const resources = uniqueTaskKeys(orderedNodes.flatMap(inferTaskResources));
     const gates = uniqueTaskKeys(orderedNodes.flatMap(inferTaskGates));
+    const triggers = createTaskTemplateTriggers(resources, gates);
     const taskName = templateName || summarizeTaskName(orderedNodes);
-    setTaskTemplates((current) => [
-      ...current,
-      {
-        id: `task_${Date.now().toString(36)}_${current.length + 1}`,
+    const templateId = `task_${Date.now().toString(36)}_${taskTemplates.length + 1}`;
+    void mutateTaskWorkspace(async (version) => {
+      const response = await taskApiRef.current.createTemplate(taskWorkspacePath, version, {
+        id: templateId,
         name: taskName,
-        nodeIds: orderedNodeIds,
+        workflow_path: taskWorkspacePath,
+        node_ids: orderedNodeIds,
         resources,
-        gates,
-      },
-    ]);
-    appendTaskEvent(`保存 Task 模板「${taskName}」，包含 ${orderedNodeIds.length} 个子功能。`);
-    showCanvasToast('已保存 Task 模板');
-  }, [appendTaskEvent, executionPlan.executableNodes, nodes]);
+        trigger: null,
+        input_triggers: triggers.inputTriggers.map(toApiTrigger),
+        output_triggers: triggers.outputTriggers.map(toApiTrigger),
+      });
+      setSelectedTaskTemplateId(templateId);
+      showCanvasToast('已保存 Task 模板');
+      return response;
+    });
+  }, [executionPlan.executableNodes, mutateTaskWorkspace, nodes, showCanvasToast, taskTemplates.length, taskWorkspacePath]);
 
   const createTaskTemplateFromSelection = useCallback(() => {
     createTaskTemplateFromNodes(summarizeTaskName(selectedTaskNodes), selectedTaskNodes);
@@ -793,78 +1196,176 @@ function App() {
       setMessage('当前画布没有可切分的节点。');
       return;
     }
-    const templates = chunks.map((chunk, index) => ({
-      id: `auto_task_${Date.now().toString(36)}_${index + 1}`,
-      name: summarizeTaskName(chunk),
-      nodeIds: chunk.map((node) => node.id),
-      resources: uniqueTaskKeys(chunk.flatMap(inferTaskResources)),
-      gates: uniqueTaskKeys(chunk.flatMap(inferTaskGates)),
-    }));
-    setTaskTemplates(templates);
-    setTaskInstances([]);
-    appendTaskEvent(`已按当前流程顺序自动切分 ${templates.length} 个 Task 模板。`);
-    showCanvasToast('已生成推荐 Task 切分');
-  }, [appendTaskEvent, executionPlan.executableNodes, nodes]);
+    const templates = chunks.map((chunk, index) => {
+      const resources = uniqueTaskKeys(chunk.flatMap(inferTaskResources));
+      const gates = uniqueTaskKeys(chunk.flatMap(inferTaskGates));
+      const triggers = createTaskTemplateTriggers(resources, gates);
+      return {
+        id: `auto_task_${Date.now().toString(36)}_${index + 1}`,
+        name: summarizeTaskName(chunk),
+        nodeIds: chunk.map((node) => node.id),
+        resources,
+        gates,
+        ...triggers,
+      };
+    });
+    void (async () => {
+      for (const template of templates) {
+        await mutateTaskWorkspace((version) => taskApiRef.current.createTemplate(taskWorkspacePath, version, {
+            id: template.id,
+            name: template.name,
+            workflow_path: taskWorkspacePath,
+            node_ids: template.nodeIds,
+            resources: template.resources,
+            trigger: null,
+            input_triggers: template.inputTriggers.map(toApiTrigger),
+            output_triggers: template.outputTriggers.map(toApiTrigger),
+          }));
+      }
+      setSelectedTaskTemplateId(templates[0]?.id || null);
+      showCanvasToast('已生成推荐 Task 切分');
+    })();
+  }, [executionPlan.executableNodes, mutateTaskWorkspace, nodes, showCanvasToast, taskWorkspacePath]);
+
+  const deleteTaskTemplate = useCallback((template: TaskTemplate) => {
+    if (!taskTemplates.some((item) => item.id === template.id)) {
+      return;
+    }
+    const relatedInstanceCount = taskInstances.filter((task) => task.templateId === template.id).length;
+    const relatedInstancesHint = relatedInstanceCount
+      ? `这将同时删除 ${relatedInstanceCount} 个关联 Task 实例。`
+      : '';
+    if (!window.confirm(`确定删除 Task 模板「${template.name}」吗？${relatedInstancesHint}`)) {
+      return;
+    }
+    void mutateTaskWorkspace(async (version) => {
+      const response = await taskApiRef.current.deleteTemplate(taskWorkspacePath, version, template.id);
+      showCanvasToast('已删除 Task 模板');
+      return response;
+    });
+  }, [mutateTaskWorkspace, showCanvasToast, taskInstances, taskTemplates, taskWorkspacePath]);
+
+  const renameSelectedTaskTemplate = useCallback((name: string) => {
+    if (!selectedTaskTemplate) return;
+    void mutateTaskWorkspace((version) => taskApiRef.current.updateTemplate(
+      taskWorkspacePath,
+      version,
+      selectedTaskTemplate.id,
+      { name },
+    ));
+  }, [mutateTaskWorkspace, selectedTaskTemplate, taskWorkspacePath]);
+
+  const updateSelectedTaskTriggers = useCallback((kind: 'input' | 'output', triggers: TriggerCondition[]) => {
+    if (!selectedTaskTemplate) return;
+    const normalized = normalizeTriggerConditions(triggers, csvVariables);
+    void mutateTaskWorkspace((version) => taskApiRef.current.updateTemplate(
+      taskWorkspacePath,
+      version,
+      selectedTaskTemplate.id,
+      kind === 'input'
+        ? { input_triggers: normalized.map(toApiTrigger) }
+        : { output_triggers: normalized.map(toApiTrigger) },
+    ));
+  }, [csvVariables, mutateTaskWorkspace, selectedTaskTemplate, taskWorkspacePath]);
+
+  const startResourceScheduleResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = resourceScheduleHeight;
+    const containerHeight = taskOrchestrationRef.current?.clientHeight || window.innerHeight;
+    const maxHeight = Math.max(180, containerHeight - 260);
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      setResourceScheduleHeight(Math.max(180, Math.min(maxHeight, startHeight + startY - moveEvent.clientY)));
+    };
+    const onPointerUp = () => {
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }, [resourceScheduleHeight]);
+
+  const addTemplateToSchedule = useCallback((templateId: string) => {
+    const template = taskTemplates.find((item) => item.id === templateId);
+    if (!template) return;
+    if (scheduledTemplateIds.includes(templateId)) return;
+    void mutateTaskWorkspace((version) => taskApiRef.current.updateScheduledTemplates(
+      taskWorkspacePath, version, [...scheduledTemplateIds, templateId],
+    ));
+  }, [mutateTaskWorkspace, scheduledTemplateIds, taskTemplates, taskWorkspacePath]);
+
+  const removeTemplateFromSchedule = useCallback((templateId: string) => {
+    void mutateTaskWorkspace((version) => taskApiRef.current.updateScheduledTemplates(
+      taskWorkspacePath, version, scheduledTemplateIds.filter((id) => id !== templateId),
+    ));
+  }, [mutateTaskWorkspace, scheduledTemplateIds, taskWorkspacePath]);
 
   const createTaskInstances = useCallback(() => {
-    if (!taskTemplates.length) {
-      setMessage('请先创建 Task 模板。');
+    if (!scheduledTemplateIds.length) {
+      setMessage('请先将 Task Template 拖入 Resource Schedule。');
       return;
     }
     const samples = SAMPLE_NAMES.slice(0, taskSampleCount);
-    const instances = samples.flatMap((sample) =>
-      taskTemplates.map((template, order) => ({
-        id: `${sample}_${template.id}`,
-        sample,
-        templateId: template.id,
-        order,
-        status: order === 0 ? 'pending' as const : 'waiting' as const,
-      })),
-    );
-    setTaskInstances(instances);
-    appendTaskEvent(`已生成 ${instances.length} 个 Task 实例，等待调度器根据传感器门控启动。`);
-  }, [appendTaskEvent, taskSampleCount, taskTemplates]);
-
-  const toggleSensorGate = useCallback((gate: string) => {
-    setSensorGates((current) => ({ ...current, [gate]: !current[gate] }));
-    appendTaskEvent(`${DEFAULT_SENSOR_GATES[gate]?.label || gate} 门控已切换。`);
-  }, [appendTaskEvent]);
-
-  const scheduleOneTask = useCallback(() => {
-    const completedRunning = taskInstances.filter((task) => task.status === 'running');
-    let nextInstances = taskInstances.map((task) => (
-      task.status === 'running' ? { ...task, status: 'done' as const } : task
+    void mutateTaskWorkspace((version) => taskApiRef.current.generateInstances(
+      taskWorkspacePath, version, scheduledTemplateIds, samples,
     ));
-    completedRunning.forEach((task) => {
-      const template = taskTemplates.find((item) => item.id === task.templateId);
-      appendTaskEvent(`完成 ${task.sample} / ${template?.name || task.templateId}，释放资源锁。`);
-    });
-    nextInstances = unlockNextTaskInstances(nextInstances);
-    const runnable = nextInstances
-      .filter((task) => task.status === 'pending')
-      .filter((task) => taskBlockingReasons(task, nextInstances, taskTemplates, sensorGates).length === 0)
-      .sort((left, right) => left.order - right.order || left.sample.localeCompare(right.sample));
-    if (!runnable.length) {
-      setTaskInstances(nextInstances);
-      appendTaskEvent('暂无可启动 Task：等待前置完成、传感器空闲或资源锁释放。');
-      return;
-    }
-    const selectedTask = runnable[0];
-    nextInstances = nextInstances.map((task) =>
-      task.id === selectedTask.id ? { ...task, status: 'running' as const } : task,
-    );
-    const template = taskTemplates.find((item) => item.id === selectedTask.templateId);
-    setTaskInstances(nextInstances);
-    appendTaskEvent(`启动 ${selectedTask.sample} / ${template?.name || selectedTask.templateId}。`);
-  }, [appendTaskEvent, sensorGates, taskInstances, taskTemplates]);
+  }, [mutateTaskWorkspace, scheduledTemplateIds, taskSampleCount, taskWorkspacePath]);
 
-  const resetTaskDemo = useCallback(() => {
-    setTaskTemplates([]);
-    setTaskInstances([]);
-    setTaskEvents([]);
-    setSensorGates(Object.fromEntries(Object.entries(DEFAULT_SENSOR_GATES).map(([key, gate]) => [key, gate.free])));
-    appendTaskEvent('Task 编排演示已重置。');
-  }, [appendTaskEvent]);
+  const moveTaskInstance = useCallback((taskId: string, direction: -1 | 1) => {
+    const task = taskInstances.find((item) => item.id === taskId);
+    if (!task || task.status !== 'waiting' && task.status !== 'pending') return;
+    const sampleQueue = taskInstances
+      .filter((item) => item.sample === task.sample)
+      .sort((left, right) => left.order - right.order);
+    const targetOrder = sampleQueue.findIndex((item) => item.id === taskId) + direction;
+    if (targetOrder < 0 || targetOrder >= sampleQueue.length) return;
+    void mutateTaskWorkspace((version) => taskApiRef.current.moveInstance(
+      taskWorkspacePath, version, taskId, targetOrder,
+    ));
+  }, [mutateTaskWorkspace, taskInstances, taskWorkspacePath]);
+
+  const advanceTaskSchedule = useCallback(() => {
+    void mutateTaskWorkspace((version) => taskApiRef.current.advance(taskWorkspacePath, version));
+  }, [mutateTaskWorkspace, taskWorkspacePath]);
+
+  const setTaskSchedulerPaused = useCallback((paused: boolean) => {
+    void mutateTaskWorkspace((version) => taskApiRef.current.plan(taskWorkspacePath, version, paused));
+  }, [mutateTaskWorkspace, taskWorkspacePath]);
+
+  useEffect(() => {
+    taskPollingGenerationRef.current += 1;
+    const generation = taskPollingGenerationRef.current;
+    if (taskPollingTimerRef.current !== null) {
+      window.clearInterval(taskPollingTimerRef.current);
+      taskPollingTimerRef.current = null;
+    }
+    taskPollingInFlightRef.current = false;
+    if (!isSchedulerRunning || taskServiceError) return;
+    const poll = () => {
+      if (taskPollingInFlightRef.current || generation !== taskPollingGenerationRef.current) return;
+      taskPollingInFlightRef.current = true;
+      void mutateTaskWorkspace(
+        (version) => taskApiRef.current.advance(taskWorkspacePath, version),
+        () => generation === taskPollingGenerationRef.current,
+      ).finally(() => {
+        if (generation === taskPollingGenerationRef.current) {
+          taskPollingInFlightRef.current = false;
+        }
+      });
+    };
+    poll();
+    taskPollingTimerRef.current = window.setInterval(poll, 1500);
+    return () => {
+      taskPollingGenerationRef.current += 1;
+      if (taskPollingTimerRef.current !== null) {
+        window.clearInterval(taskPollingTimerRef.current);
+        taskPollingTimerRef.current = null;
+      }
+      taskPollingInFlightRef.current = false;
+    };
+  }, [isSchedulerRunning, mutateTaskWorkspace, taskServiceError, taskWorkspacePath]);
 
   const buildWorkflow = useCallback(async () => {
     if (!executionPlan.executableNodes.length) {
@@ -895,17 +1396,6 @@ function App() {
     }
   };
 
-  const showCanvasToast = (text: string) => {
-    setCanvasToast(text);
-    if (canvasToastTimerRef.current !== null) {
-      window.clearTimeout(canvasToastTimerRef.current);
-    }
-    canvasToastTimerRef.current = window.setTimeout(() => {
-      setCanvasToast('');
-      canvasToastTimerRef.current = null;
-    }, 2000);
-  };
-
   const autoLayoutNodes = () => {
     setNodes((current) => layoutFlowGraph(current, edges));
     showCanvasToast('已自动优化节点布局');
@@ -924,6 +1414,7 @@ function App() {
         edges: Edge[];
       };
       setWorkflowName(imported.name);
+      setTaskWorkspacePath(file.name);
       setNodes(imported.nodes);
       setEdges(imported.edges.map((edge) => ({ ...edge, animated: true })));
       setStartNodeId(null);
@@ -932,6 +1423,7 @@ function App() {
       setActiveRunId(null);
       setSelectedLogNodeId(null);
       setEditingNodeId(null);
+      exitTaskTemplateEditing();
       setMessage(`已导入 ${imported.nodes.length} 个节点，并自动优化布局`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -1059,6 +1551,32 @@ function App() {
         </dl>
       </header>
 
+      <nav className="workspace-navigation" aria-label="一级工作区">
+        <button
+          aria-pressed={workspace === 'workflow'}
+          className={workspace === 'workflow' ? 'active' : ''}
+          onClick={() => {
+            setWorkspace('workflow');
+            exitTaskTemplateEditing();
+          }}
+          type="button"
+        >
+          流程设计
+        </button>
+        <button
+          aria-pressed={workspace === 'tasks'}
+          className={workspace === 'tasks' ? 'active' : ''}
+          onClick={() => {
+            setWorkspace('tasks');
+            exitTaskTemplateEditing();
+          }}
+          type="button"
+        >
+          Task 编排
+        </button>
+      </nav>
+
+      {workspace === 'workflow' && (
       <main className={`demo-workbench${leftPanelCollapsed ? ' left-collapsed' : ''}`}>
         <aside className={`demo-card demo-action-panel${leftPanelCollapsed ? ' collapsed' : ''}`}>
           <div className="demo-panel-title">
@@ -1196,14 +1714,19 @@ function App() {
             </div>
           </div>
 
-          <div className="demo-tabbar" role="tablist" aria-label="主工作区切换">
-            <button className={mainTab === 'workflow' ? 'active' : ''} onClick={() => setMainTab('workflow')} type="button">流程画布</button>
-            <button className={mainTab === 'tasks' ? 'active' : ''} onClick={() => setMainTab('tasks')} type="button">Task 编排</button>
-            <button className={mainTab === 'sensors' ? 'active' : ''} onClick={() => setMainTab('sensors')} type="button">传感器快照</button>
+          <div className="demo-tabbar canvas-tabs" role="tablist" aria-label="流程设计视图切换">
+            <button className={canvasTab === 'workflow' ? 'active' : ''} onClick={() => setCanvasTab('workflow')} type="button">流程画布</button>
+            <button className={canvasTab === 'sensors' ? 'active' : ''} onClick={() => { setCanvasTab('sensors'); exitTaskTemplateEditing(); }} type="button">传感器快照</button>
           </div>
 
-          {mainTab === 'workflow' && (
-            <div className="demo-canvas real-flow-canvas">
+          {canvasTab === 'workflow' && (
+            <div
+              className="demo-canvas real-flow-canvas"
+              ref={canvasWorkspaceRef}
+              tabIndex={-1}
+              onContextMenuCapture={openCanvasContextMenu}
+            >
+              {isTaskTemplateEditing && <div className="task-template-editing-hint">模板编辑中：拖拽框选节点后右键创建模板</div>}
               <ReactFlow
                 nodes={nodes.map((node) => ({
                   ...node,
@@ -1223,7 +1746,11 @@ function App() {
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onNodeClick={() => closeCanvasContextMenu({ restoreFocus: false })}
                 onNodeDoubleClick={(_, node) => setEditingNodeId(node.id)}
+                onPaneClick={() => closeCanvasContextMenu({ restoreFocus: false })}
+                selectionOnDrag={isTaskTemplateEditing}
+                panOnDrag={!isTaskTemplateEditing}
                 defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
               >
                 <Background />
@@ -1239,149 +1766,65 @@ function App() {
                       <path d="M4 5h5v5H4V5Zm11 0h5v5h-5V5ZM4 14h5v5H4v-5Zm11 0h5v5h-5v-5ZM9 7.5h6M9 16.5h6M6.5 10v4M17.5 10v4" />
                     </svg>
                   </ControlButton>
+                  <ControlButton
+                    aria-label="切换 Task 模板编辑"
+                    aria-pressed={isTaskTemplateEditing}
+                    className={isTaskTemplateEditing ? 'active' : ''}
+                    title={isTaskTemplateEditing ? '退出 Task 模板编辑' : '进入 Task 模板编辑'}
+                    onClick={() => {
+                      if (isTaskTemplateEditing) {
+                        exitTaskTemplateEditing();
+                      } else {
+                        setIsTaskTemplateEditing(true);
+                      }
+                    }}
+                  >
+                    <svg className="auto-layout-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 6h14M4 12h14M4 18h9M18 17v4M16 19h4" />
+                    </svg>
+                  </ControlButton>
                 </Controls>
               </ReactFlow>
-              {canvasToast && <div className="canvas-toast">{canvasToast}</div>}
+              {isTaskTemplateEditing && contextMenu && (
+                <div
+                  className="canvas-context-menu"
+                  ref={contextMenuRef}
+                  role="dialog"
+                  aria-label="流程画布操作"
+                  style={{ left: contextMenu.x, top: contextMenu.y }}
+                >
+                  <button
+                    disabled={!selectedTaskNodes.length}
+                    onClick={() => {
+                      createTaskTemplateFromSelection();
+                      closeCanvasContextMenu();
+                    }}
+                    ref={selectedTaskNodes.length ? contextMenuFirstActionRef : undefined}
+                    type="button"
+                  >
+                    设为 Task 模板
+                  </button>
+                  <button
+                    onClick={() => {
+                      setNodes((current) => current.map((node) => ({ ...node, selected: false })));
+                      closeCanvasContextMenu();
+                    }}
+                    ref={!selectedTaskNodes.length ? contextMenuFirstActionRef : undefined}
+                    type="button"
+                  >
+                    取消选择
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {mainTab === 'tasks' && (
-            <div className="task-orchestration">
-              <section className="task-column task-recipe-column">
-                <div className="task-panel-head">
-                  <div>
-                    <h2>从当前流程定义 Task</h2>
-                    <p>在“流程画布”中点选或框选节点后，在这里保存为可调度 Task 模板。</p>
-                  </div>
-                  <span>{selectedTaskNodes.length} 个已选节点</span>
-                </div>
-                <div className="task-action-row">
-                  <button className="primary" onClick={createTaskTemplateFromSelection} disabled={!selectedTaskNodes.length} type="button">
-                    选中节点保存为 Task
-                  </button>
-                  <button onClick={createRecommendedTaskTemplates} disabled={!nodes.length} type="button">
-                    按流程自动切分
-                  </button>
-                  <button className="danger" onClick={resetTaskDemo} type="button">重置演示</button>
-                </div>
-                <div className="task-selected-preview">
-                  {selectedTaskNodes.length ? (
-                    orderSelectedNodesByPlan(selectedTaskNodes, executionPlan.executableNodes).map((node, index) => (
-                      <article className="task-node-chip" key={node.id}>
-                        <span>{index + 1}</span>
-                        <strong>{node.data.label}</strong>
-                        <code>{node.data.method}</code>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="task-empty">回到流程画布选择一段节点，例如 Robot 放到 S07 + S07 注粉。</div>
-                  )}
-                </div>
-                <div className="task-panel-head compact">
-                  <div>
-                    <h2>Task Templates</h2>
-                    <p>模板来自当前 DAG 子节点，后续可保存到前端配置。</p>
-                  </div>
-                  <span>{taskTemplates.length} 个模板</span>
-                </div>
-                <div className="task-template-list">
-                  {taskTemplates.map((template, index) => {
-                    const templateNodes = template.nodeIds
-                      .map((nodeId) => nodes.find((node) => node.id === nodeId))
-                      .filter(Boolean) as Node<ActionNodeData>[];
-                    return (
-                      <article className="task-template-card" key={template.id}>
-                        <div>
-                          <strong>{index + 1}. {template.name}</strong>
-                          <span>{templateNodes.map((node) => node.data.label).join(' → ')}</span>
-                        </div>
-                        <div className="task-mini-tags">
-                          {template.resources.map((resource) => <code key={resource}>lock:{resource}</code>)}
-                          {template.gates.map((gate) => <code key={gate}>gate:{gate}</code>)}
-                        </div>
-                      </article>
-                    );
-                  })}
-                  {!taskTemplates.length && <div className="task-empty">暂无模板。可以先点击“按流程自动切分”快速生成一版。</div>}
-                </div>
-              </section>
-
-              <section className="task-column task-scheduler-column">
-                <div className="task-panel-head">
-                  <div>
-                    <h2>Task Queue 模拟</h2>
-                    <p>这里演示未来 scheduler：先完成 running，再从 ready 队列中启动一个 Task。</p>
-                  </div>
-                  <span>{taskInstances.length} 个实例</span>
-                </div>
-                <div className="task-action-row">
-                  <label className="task-sample-count">
-                    样品数
-                    <input type="number" min={1} max={5} value={taskSampleCount} onChange={(event) => setTaskSampleCount(Number(event.target.value))} />
-                  </label>
-                  <button onClick={createTaskInstances} disabled={!taskTemplates.length} type="button">生成样品任务</button>
-                  <button className="primary" onClick={scheduleOneTask} disabled={!taskInstances.length} type="button">调度一步</button>
-                </div>
-                <div className="task-queue-list">
-                  {taskInstances.map((task) => {
-                    const template = taskTemplates.find((item) => item.id === task.templateId);
-                    const reasons = taskBlockingReasons(task, taskInstances, taskTemplates, sensorGates);
-                    const state = taskVisualState(task, reasons);
-                    return (
-                      <article className={`task-queue-card ${state}`} key={task.id}>
-                        <div>
-                          <strong>{task.sample} / {template?.name || task.templateId}</strong>
-                          <span>{reasons.length ? reasons.join('；') : '满足启动条件'}</span>
-                        </div>
-                        <em>{taskStatusText(state)}</em>
-                      </article>
-                    );
-                  })}
-                  {!taskInstances.length && <div className="task-empty">生成样品任务后，这里会显示 pending / running / done 队列。</div>}
-                </div>
-              </section>
-
-              <section className="task-column task-resource-column">
-                <div className="task-panel-head">
-                  <div>
-                    <h2>Sensor Gates</h2>
-                    <p>第一版只用传感器空闲和资源锁；之后这里可替换为真实 OPC 变量。</p>
-                  </div>
-                </div>
-                <div className="task-gate-list">
-                  {Object.entries(DEFAULT_SENSOR_GATES).map(([gate, meta]) => {
-                    const holder = runningTaskResourceHolders[gate];
-                    const free = sensorGates[gate] && !holder;
-                    return (
-                      <button className={`task-gate-card ${free ? 'free' : 'busy'}`} key={gate} onClick={() => toggleSensorGate(gate)} type="button">
-                        <span>
-                          <strong>{meta.label}</strong>
-                          <small>{holder ? `资源锁：${holder}` : sensorGates[gate] ? '传感器空闲' : '手动模拟占用'}</small>
-                        </span>
-                        <em>{free ? 'FREE' : 'BUSY'}</em>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="task-panel-head compact">
-                  <div>
-                    <h2>Scheduler Events</h2>
-                    <p>静态事件流，后续可映射到右侧日志分类。</p>
-                  </div>
-                </div>
-                <div className="task-event-list">
-                  {taskEvents.map((event, index) => <div key={`${event}-${index}`}>{event}</div>)}
-                  {!taskEvents.length && <div className="task-empty">暂无 Task 事件。</div>}
-                </div>
-              </section>
-            </div>
-          )}
-
-          {mainTab === 'sensors' && (
+          {canvasTab === 'sensors' && (
             <div className="demo-opc-dock tabbed">
               <OpcChangePanel changes={opcChanges} nodes={nodes} variables={configuredOpcVariableRows} />
             </div>
           )}
+          {canvasToast && <div className="canvas-toast workspace-toast" role="status">{canvasToast}</div>}
         </section>
 
         <aside className="demo-card demo-right-panel">
@@ -1478,6 +1921,522 @@ function App() {
           )}
         </aside>
       </main>
+      )}
+
+      {workspace === 'tasks' && (
+        <main className="task-workspace">
+          {taskServiceError && (
+            <section className="task-service-error" role="alert">
+              <strong>{taskServiceError}</strong>
+              {taskServiceError === 'Task 编排服务不可用' && (
+                <button onClick={() => void loadTaskWorkspace()} type="button">重试</button>
+              )}
+            </section>
+          )}
+          <div
+            className="task-orchestration"
+            ref={taskOrchestrationRef}
+            style={{ gridTemplateRows: `minmax(0, 1fr) ${resourceScheduleHeight}px` }}
+          >
+            <section className="task-column task-recipe-column">
+              <div className="task-panel-head">
+                <div>
+                  <h2>Task Templates</h2>
+                  <p>模板仅属于当前 workflow；导入或切换流程后会自动清空。</p>
+                </div>
+                <span>{taskTemplates.length} 个模板</span>
+              </div>
+              <div className="task-action-row">
+                <button onClick={createRecommendedTaskTemplates} disabled={!nodes.length} type="button">
+                  按流程自动切分
+                </button>
+              </div>
+              <div className="task-template-list">
+                {taskTemplates.map((template, index) => {
+                  const templateNodes = template.nodeIds
+                    .map((nodeId) => nodesById.get(nodeId))
+                    .filter(Boolean) as Node<ActionNodeData>[];
+                  return (
+                    <article
+                      className="task-template-card"
+                      draggable={true}
+                      key={template.id}
+                      onDragStart={(event) => event.dataTransfer.setData('application/x-unilab-task-template', template.id)}
+                    >
+                      <button
+                        className="task-template-delete"
+                        onClick={() => deleteTaskTemplate(template)}
+                        aria-label={`删除 Task 模板 ${template.name}`}
+                        title="删除 Task 模板"
+                        type="button"
+                      >
+                        <span aria-hidden="true">×</span>
+                      </button>
+                      <button
+                        className={`task-template-select${selectedTaskTemplate?.id === template.id ? ' selected' : ''}`}
+                        onClick={() => {
+                          setSelectedTaskTemplateId(template.id);
+                          setIsTaskDetailModalOpen(true);
+                        }}
+                        type="button"
+                      >
+                        <strong>{index + 1}. {template.name}</strong>
+                        <span>{templateNodes.map((node) => node.data.label).join(' → ')}</span>
+                      </button>
+                    </article>
+                  );
+                })}
+                {!taskTemplates.length && <div className="task-empty">暂无模板。可按当前流程自动切分生成一版。</div>}
+              </div>
+            </section>
+
+            {isTaskDetailModalOpen && selectedTaskTemplate && (
+            <section className="task-detail-modal" role="dialog" aria-modal="true" aria-label="Task Template 详情">
+              <div className="task-detail-modal-backdrop" onClick={() => setIsTaskDetailModalOpen(false)} />
+              <div className="task-column task-detail-column">
+                <section className="task-template-detail">
+                  <div className="task-detail-head">
+                    <div>
+                      <span>Template Details</span>
+                      <h3>工艺步骤与触发条件</h3>
+                    </div>
+                    <div>
+                      <em>{selectedTaskTemplate.nodeIds.length} steps</em>
+                      <button aria-label="关闭模板详情" className="task-detail-close" onClick={() => setIsTaskDetailModalOpen(false)} type="button">×</button>
+                    </div>
+                  </div>
+                  <label className="task-template-name-field">
+                    模板名称
+                    <input
+                      value={selectedTaskTemplate?.name || ''}
+                      onBlur={(event) => renameSelectedTaskTemplate(event.target.value)}
+                    />
+                  </label>
+                  <div className="task-detail-section">
+                    <strong>子节点</strong>
+                    {selectedTaskTemplate.nodeIds.map((nodeId, index) => {
+                      const node = nodesById.get(nodeId);
+                      return (
+                        <div className="task-detail-node" key={nodeId}>
+                          <b>{String(index + 1).padStart(2, '0')}</b>
+                          <span>
+                            <strong>{node?.data.label || `缺失节点 ${nodeId}`}</strong>
+                            <small>{node ? `${node.data.deviceId || 'unknown'} · ${node.data.method}` : nodeId}</small>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="task-trigger-grid">
+                    <div>
+                      <strong>输入触发</strong>
+                      <div className="task-trigger-editor">
+                        {selectedTaskTemplate.inputTriggers.map((trigger, index) => (
+                          <div className="task-trigger-condition" key={`input-${index}`}>
+                            <input
+                              aria-label={`输入条件变量 ${index + 1}`}
+                              placeholder="搜索全部 OPC 变量"
+                              type="search"
+                              value={triggerSearchQueries[`input-${index}`] ?? trigger.variableName}
+                              onFocus={() => {
+                                setActiveTriggerSearch(`input-${index}`);
+                                setTriggerSearchQueries((current) => ({
+                                  ...current,
+                                  [`input-${index}`]: '',
+                                }));
+                              }}
+                              onChange={(event) => {
+                                setTriggerSearchQueries((current) => ({ ...current, [`input-${index}`]: event.target.value }));
+                                const variable = csvVariables.find((item) => item.name === event.target.value);
+                                if (!variable) return;
+                                updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
+                                  (item, itemIndex) => itemIndex === index ? createDefaultTriggerCondition(variable) : item,
+                                ));
+                              }}
+                            />
+                            <span aria-hidden="true">==</span>
+                            {trigger.dataType === 'BOOL' || trigger.dataType === 'BOOLEAN' ? (
+                              <select
+                                aria-label={`输入条件值 ${index + 1}`}
+                                value={String(trigger.value)}
+                                onChange={(event) => updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
+                                  (item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value === 'true' } : item,
+                                ))}
+                              >
+                                <option value="true">true</option>
+                                <option value="false">false</option>
+                              </select>
+                            ) : trigger.dataType === 'INTEGER' || trigger.dataType === 'INT' || trigger.dataType === 'FLOAT' || trigger.dataType === 'DOUBLE' || trigger.dataType === 'NUMBER' ? (
+                              <input
+                                aria-label={`输入条件值 ${index + 1}`}
+                                type="number"
+                                step={trigger.dataType === 'INTEGER' || trigger.dataType === 'INT' ? 1 : 'any'}
+                                value={String(trigger.value)}
+                                onChange={(event) => updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
+                                  (item, itemIndex) => itemIndex === index ? { ...item, value: Number(event.target.value) } : item,
+                                ))}
+                              />
+                            ) : (
+                              <input
+                                aria-label={`输入条件值 ${index + 1}`}
+                                value={String(trigger.value)}
+                                onChange={(event) => updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
+                                  (item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item,
+                                ))}
+                              />
+                            )}
+                            <button
+                              aria-label={`删除输入条件 ${trigger.variableName || index + 1}`}
+                              onClick={() => updateSelectedTaskTriggers(
+                                'input',
+                                selectedTaskTemplate.inputTriggers.filter((_, itemIndex) => itemIndex !== index),
+                              )}
+                              type="button"
+                            >×</button>
+                            {activeTriggerSearch === `input-${index}` && (
+                              <div className="task-trigger-options">
+                                {csvVariables
+                                  .filter((variable) => `${variable.name} ${variable.comment}`.toLowerCase().includes((triggerSearchQueries[`input-${index}`] ?? trigger.variableName).toLowerCase()))
+                                  .map((variable) => (
+                                    <button
+                                      className={variable.name === trigger.variableName ? 'selected' : ''}
+                                      key={variable.name}
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => {
+                                        updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
+                                          (item, itemIndex) => itemIndex === index ? createDefaultTriggerCondition(variable) : item,
+                                        ));
+                                        setActiveTriggerSearch(null);
+                                        setTriggerSearchQueries((current) => {
+                                          const { [`input-${index}`]: _, ...rest } = current;
+                                          return rest;
+                                        });
+                                      }}
+                                      type="button"
+                                    >
+                                      <b>{variable.name}</b>
+                                      <small>{variable.data_type}{variable.comment ? ` · ${variable.comment}` : ''}</small>
+                                      {variable.name === trigger.variableName && <em aria-label="已选中">✓</em>}
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        <div className="task-trigger-add">
+                          <button
+                            disabled={!csvVariables.length}
+                            onClick={() => updateSelectedTaskTriggers(
+                              'input',
+                              [...selectedTaskTemplate.inputTriggers, createDefaultTriggerCondition(csvVariables[0])],
+                            )}
+                            type="button"
+                          >添加输入条件</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <strong>输出触发</strong>
+                      <div className="task-trigger-editor">
+                        {selectedTaskTemplate.outputTriggers.map((trigger, index) => (
+                          <div className="task-trigger-condition" key={`output-${index}`}>
+                            <input
+                              aria-label={`输出条件变量 ${index + 1}`}
+                              placeholder="搜索全部 OPC 变量"
+                              type="search"
+                              value={triggerSearchQueries[`output-${index}`] ?? trigger.variableName}
+                              onFocus={() => {
+                                setActiveTriggerSearch(`output-${index}`);
+                                setTriggerSearchQueries((current) => ({
+                                  ...current,
+                                  [`output-${index}`]: '',
+                                }));
+                              }}
+                              onChange={(event) => {
+                                setTriggerSearchQueries((current) => ({ ...current, [`output-${index}`]: event.target.value }));
+                                const variable = csvVariables.find((item) => item.name === event.target.value);
+                                if (!variable) return;
+                                updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
+                                  (item, itemIndex) => itemIndex === index ? createDefaultTriggerCondition(variable) : item,
+                                ));
+                              }}
+                            />
+                            <span aria-hidden="true">==</span>
+                            {trigger.dataType === 'BOOL' || trigger.dataType === 'BOOLEAN' ? (
+                              <select
+                                aria-label={`输出条件值 ${index + 1}`}
+                                value={String(trigger.value)}
+                                onChange={(event) => updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
+                                  (item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value === 'true' } : item,
+                                ))}
+                              >
+                                <option value="true">true</option>
+                                <option value="false">false</option>
+                              </select>
+                            ) : trigger.dataType === 'INTEGER' || trigger.dataType === 'INT' || trigger.dataType === 'FLOAT' || trigger.dataType === 'DOUBLE' || trigger.dataType === 'NUMBER' ? (
+                              <input
+                                aria-label={`输出条件值 ${index + 1}`}
+                                type="number"
+                                step={trigger.dataType === 'INTEGER' || trigger.dataType === 'INT' ? 1 : 'any'}
+                                value={String(trigger.value)}
+                                onChange={(event) => updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
+                                  (item, itemIndex) => itemIndex === index ? { ...item, value: Number(event.target.value) } : item,
+                                ))}
+                              />
+                            ) : (
+                              <input
+                                aria-label={`输出条件值 ${index + 1}`}
+                                value={String(trigger.value)}
+                                onChange={(event) => updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
+                                  (item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item,
+                                ))}
+                              />
+                            )}
+                            <button
+                              aria-label={`删除输出条件 ${trigger.variableName || index + 1}`}
+                              onClick={() => updateSelectedTaskTriggers(
+                                'output',
+                                selectedTaskTemplate.outputTriggers.filter((_, itemIndex) => itemIndex !== index),
+                              )}
+                              type="button"
+                            >×</button>
+                            {activeTriggerSearch === `output-${index}` && (
+                              <div className="task-trigger-options">
+                                {csvVariables
+                                  .filter((variable) => `${variable.name} ${variable.comment}`.toLowerCase().includes((triggerSearchQueries[`output-${index}`] ?? trigger.variableName).toLowerCase()))
+                                  .map((variable) => (
+                                    <button
+                                      className={variable.name === trigger.variableName ? 'selected' : ''}
+                                      key={variable.name}
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => {
+                                        updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
+                                          (item, itemIndex) => itemIndex === index ? createDefaultTriggerCondition(variable) : item,
+                                        ));
+                                        setActiveTriggerSearch(null);
+                                        setTriggerSearchQueries((current) => {
+                                          const { [`output-${index}`]: _, ...rest } = current;
+                                          return rest;
+                                        });
+                                      }}
+                                      type="button"
+                                    >
+                                      <b>{variable.name}</b>
+                                      <small>{variable.data_type}{variable.comment ? ` · ${variable.comment}` : ''}</small>
+                                      {variable.name === trigger.variableName && <em aria-label="已选中">✓</em>}
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        <div className="task-trigger-add">
+                          <button
+                            disabled={!csvVariables.length}
+                            onClick={() => updateSelectedTaskTriggers(
+                              'output',
+                              [...selectedTaskTemplate.outputTriggers, createDefaultTriggerCondition(csvVariables[0])],
+                            )}
+                            type="button"
+                          >添加输出条件</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <datalist id="csv-variable-options">
+                    {csvVariables.map((variable) => (
+                      <option key={variable.name} value={variable.name}>
+                        {variable.comment ? `${variable.data_type} · ${variable.comment}` : variable.data_type}
+                      </option>
+                    ))}
+                  </datalist>
+                </section>
+              </div>
+            </section>
+            )}
+
+            <section className="task-column task-scheduler-column">
+              <div className="task-panel-head">
+                <div>
+                  <h2>Task Queue</h2>
+                  <p>按样品顺序与资源门控模拟调度。</p>
+                </div>
+                <span>{taskInstances.length} 个实例</span>
+              </div>
+              <div className="task-action-row">
+                <label className="task-sample-count">
+                  样品数
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={taskSampleCount}
+                    onChange={(event) => setTaskSampleCount(Math.min(5, Math.max(1, Math.round(Number(event.target.value)) || 1)))}
+                  />
+                </label>
+                <button onClick={createTaskInstances} disabled={!scheduledTemplateIds.length || isTaskWorkspaceLoading} type="button">生成样品任务</button>
+                <button
+                  className="primary"
+                  onClick={() => setTaskSchedulerPaused(isSchedulerRunning)}
+                  disabled={!taskInstances.length || isTaskWorkspaceLoading}
+                  type="button"
+                >
+                  {isSchedulerRunning ? '暂停派发' : '运行调度'}
+                </button>
+                <button onClick={advanceTaskSchedule} disabled={!taskInstances.length || isTaskWorkspaceLoading} type="button">调度一步</button>
+              </div>
+              <div className="task-queue-list">
+                {taskInstances.map((task) => {
+                  const template = taskTemplates.find((item) => item.id === task.templateId);
+                  const waitingReason = taskWaitingReasons[task.id];
+                  const state = task.status === 'completed' ? 'done' : task.status === 'running' ? 'running' : task.status === 'pending' ? 'ready' : 'blocked';
+                  const sampleQueue = taskInstances
+                    .filter((item) => item.sample === task.sample)
+                    .sort((left, right) => left.order - right.order);
+                  const queueIndex = sampleQueue.findIndex((item) => item.id === task.id);
+                  const canReorder = !isSchedulerRunning && (task.status === 'waiting' || task.status === 'pending');
+                  return (
+                    <article className={`task-queue-card ${state}`} key={task.id}>
+                      <div>
+                        <strong>{task.sample} / {template?.name || task.templateId}</strong>
+                        <span>{task.startedAt
+                          ? `运行记录：${new Date(task.startedAt).toLocaleTimeString('zh-CN', { hour12: false })}`
+                          : waitingReason?.message || (task.status === 'waiting' ? '正在检查前置条件' : '等待调度器派发')}</span>
+                      </div>
+                      <div className="task-queue-actions">
+                        <button
+                          aria-label={`上移 ${task.sample}/${template?.name || task.templateId}`}
+                          disabled={!canReorder || queueIndex === 0}
+                          onClick={() => moveTaskInstance(task.id, -1)}
+                          title="提前执行"
+                          type="button"
+                        >↑</button>
+                        <button
+                          aria-label={`下移 ${task.sample}/${template?.name || task.templateId}`}
+                          disabled={!canReorder || queueIndex === sampleQueue.length - 1}
+                          onClick={() => moveTaskInstance(task.id, 1)}
+                          title="延后执行"
+                          type="button"
+                        >↓</button>
+                        <em>{taskStatusText(state)}</em>
+                      </div>
+                    </article>
+                  );
+                })}
+                {!taskInstances.length && <div className="task-empty">生成样品任务后，这里显示 pending / running / done 队列。</div>}
+              </div>
+            </section>
+
+            <section className="task-column task-log-column">
+              <div className="task-panel-head compact">
+                <div>
+                  <h2>等待条件与调度事件</h2>
+                  <p>仅展示当前未满足的前置、信号或资源条件。</p>
+                </div>
+              </div>
+              <div className="task-waiting-list">
+                {taskInstances
+                  .filter((task) => task.status !== 'completed' && task.status !== 'running')
+                  .map((task) => {
+                    const template = taskTemplates.find((item) => item.id === task.templateId);
+                    const waitingReason = taskWaitingReasons[task.id];
+                    return (
+                      <div key={task.id}>
+                        <strong>{task.sample} / {template?.name || task.templateId}</strong>
+                        <span>{waitingReason
+                          ? `${waitingReason.message}（${waitingReason.code}）`
+                          : task.status === 'waiting' ? '正在检查前置条件' : '等待调度器派发'}</span>
+                      </div>
+                    );
+                  })}
+                {!taskInstances.some((task) => task.status !== 'completed' && task.status !== 'running') && <div className="task-empty">当前没有等待中的 Task。</div>}
+              </div>
+              <div className="task-event-list">
+                {taskEvents.map((event, index) => <div key={`${event}-${index}`}>{event}</div>)}
+                {!taskEvents.length && <div className="task-empty">暂无 Task 事件。</div>}
+              </div>
+            </section>
+
+            <section className="task-column task-gantt-column">
+              <div
+                aria-label="调整 Resource Schedule 高度"
+                className="task-schedule-resize-handle"
+                onPointerDown={startResourceScheduleResize}
+                role="separator"
+              />
+              <div className="task-panel-head">
+                <div>
+                  <h2>Resource Schedule</h2>
+                  <p>由 Task 编排服务返回的排程，按资源泳道展示计划、运行与完成的 Task。</p>
+                </div>
+                <span>{isSchedulerRunning ? '派发中' : '已暂停'}</span>
+              </div>
+              <div
+                className="task-schedule-dropzone"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const templateId = event.dataTransfer.getData('application/x-unilab-task-template');
+                  addTemplateToSchedule(templateId);
+                }}
+              >
+                <strong>待排模板</strong>
+                <span>从左侧 Template 拖入此处，确定本次需要运行的 Task。本次待排 {scheduledTemplateIds.length} / {taskTemplates.length}</span>
+                <div className="task-scheduled-template-list">
+                  {scheduledTemplateIds.map((templateId, index) => {
+                    const template = taskTemplates.find((item) => item.id === templateId);
+                    if (!template) return null;
+                    return (
+                      <div key={templateId}>
+                        <b>{index + 1}</b>
+                        <span>{template.name}</span>
+                        <button
+                          aria-label={`移除待排模板 ${template.name}`}
+                          onClick={() => removeTemplateFromSchedule(templateId)}
+                          type="button"
+                        >×</button>
+                      </div>
+                    );
+                  })}
+                  {!scheduledTemplateIds.length && <em>拖入 Template 以建立本次运行队列</em>}
+                </div>
+              </div>
+              <div className="task-gantt">
+                {scheduledResources.map((resource) => {
+                  const entries = taskGanttEntries.filter((entry) => entry.resource === resource);
+                  const earliest = Math.min(...taskGanttEntries.map((entry) => entry.startAt), Date.now());
+                  const latest = Math.max(...taskGanttEntries.map((entry) => entry.endAt), Date.now() + 60_000);
+                  const span = Math.max(1, latest - earliest);
+                  return (
+                    <div className="task-gantt-row" key={resource}>
+                      <strong>{DEFAULT_SENSOR_GATES[resource]?.label || resource}</strong>
+                      <div className="task-gantt-track">
+                        {entries.map((entry) => (
+                          <button
+                            className={`task-gantt-bar ${entry.state}`}
+                            key={entry.id}
+                            onClick={() => setSelectedTaskTemplateId(entry.templateId)}
+                            style={{
+                              left: `${((entry.startAt - earliest) / span) * 100}%`,
+                              width: `${Math.max(5, ((entry.endAt - entry.startAt) / span) * 100)}%`,
+                            }}
+                            title={`${entry.sample} / ${taskTemplates.find((template) => template.id === entry.templateId)?.name || entry.templateId}`}
+                            type="button"
+                          >
+                            {entry.sample}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {!scheduledResources.length && <div className="task-empty">将 Template 拖入上方待排区后显示其需要的资源泳道。</div>}
+              </div>
+            </section>
+          </div>
+        </main>
+      )}
 
       {showStackModal && (
         <div className="demo-modal-backdrop" onMouseDown={() => setShowStackModal(false)}>

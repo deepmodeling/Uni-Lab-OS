@@ -1,0 +1,61 @@
+<h2>Task 编排应从流程编辑器中抽离</h2>
+<p class="subtitle">推荐将它提升为独立的“编排中心”；流程画布仅保留框选与“设为 Task 模板”入口。</p>
+
+<div class="cards">
+  <div class="card" data-choice="recommended" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">推荐：顶级「Task 编排中心」</div>
+        <div class="mockup-body">
+          <div class="mock-nav">流程画布　｜　<span style="color:#2563eb;font-weight:800">Task 编排</span>　｜　传感器</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+            <div class="mock-content">
+              <strong>流程画布</strong>
+              <div class="placeholder" style="margin-top:8px">框选节点 → 右键<br>「设为 Task 模板」</div>
+            </div>
+            <div class="mock-content">
+              <strong>Task 编排中心</strong>
+              <div class="placeholder" style="margin-top:8px">模板库 · 样品任务 · 调度队列 · 资源门控</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>独立一级工作区</h3>
+      <p>将 Task 从“画布的一个 Tab”提升为与流程编辑并列的工作区，符合它跨多个流程、面向调度的定位。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="alternative" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">备选：流程画布内的侧边抽屉</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px">
+            <div class="placeholder">流程画布<br><br>框选节点<br>右键菜单</div>
+            <div class="mock-sidebar">Task 模板<br><br>队列<br><br>资源门控</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>画布内侧栏</h3>
+      <p>切换成本低，但会挤压画布；当模板、实例和事件增多时，信息密度会失控。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">画布右键菜单</div>
+  <div class="mockup">
+    <div class="mockup-header">选择 3 个流程节点后</div>
+    <div class="mockup-body" style="display:flex;gap:20px;align-items:center">
+      <div class="placeholder" style="flex:1">A → B → C → D<br><br>已框选：B、C、D</div>
+      <div style="border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:8px;min-width:190px;box-shadow:0 8px 20px rgba(15,23,42,.12)">
+        <div style="padding:8px 10px;font-weight:800">设为 Task 模板</div>
+        <div style="padding:8px 10px;color:#64748b">取消选择</div>
+      </div>
+    </div>
+  </div>
+</div>

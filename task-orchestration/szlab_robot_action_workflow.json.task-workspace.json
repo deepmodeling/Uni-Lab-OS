@@ -1,0 +1,2933 @@
+{
+  "version": 937,
+  "workspace": {
+    "workflow_path": "szlab_robot_action_workflow.json",
+    "templates": [
+      {
+        "id": "auto_task_mrmvb2em_1",
+        "name": "S07 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_001_pick_from_s03",
+          "node_002_place_to_s072"
+        ],
+        "resources": [
+          "robot",
+          "s07"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_2",
+        "name": "S07 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_003_dose_powder"
+        ],
+        "resources": [
+          "s07"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_3",
+        "name": "S07 + S06 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_004_pick_from_s072",
+          "node_005_place_to_s06"
+        ],
+        "resources": [
+          "robot",
+          "s07",
+          "s06"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_4",
+        "name": "S06 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_006_run_solvent_addition"
+        ],
+        "resources": [
+          "s06"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_5",
+        "name": "S06 + S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_007_pick_from_s06",
+          "node_21_mriyea98"
+        ],
+        "resources": [
+          "robot",
+          "s06",
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_6",
+        "name": "S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_20_mrixjrw3"
+        ],
+        "resources": [
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_7",
+        "name": "S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_20_mrixm0d7"
+        ],
+        "resources": [
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_8",
+        "name": "S09 + S04 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_22_mriz2r2c",
+          "node_008_place_to_s04"
+        ],
+        "resources": [
+          "robot",
+          "s09",
+          "s04"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_9",
+        "name": "S04 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_009_run_stirring"
+        ],
+        "resources": [
+          "s04"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_10",
+        "name": "S04 + S05 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_010_pick_from_s04",
+          "node_011_place_to_s05"
+        ],
+        "resources": [
+          "robot",
+          "s04",
+          "s05"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_11",
+        "name": "S05 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_012_take_photo"
+        ],
+        "resources": [
+          "s05"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_12",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_23_mrizpxu7",
+          "node_15_mr726h6d"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_13",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_16_mr72oby0"
+        ],
+        "resources": [
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_14",
+        "name": "S05 + S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_013_pick_from_s05",
+          "node_16_mr73ew4k"
+        ],
+        "resources": [
+          "robot",
+          "s05",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_15",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_24_mrkgo92r",
+          "node_17_mr73fbgm"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmvb2em_16",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_25_mrkgpdnt",
+          "node_19_mr73gj6c"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_1",
+        "name": "S07 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_001_pick_from_s03",
+          "node_002_place_to_s072"
+        ],
+        "resources": [
+          "robot",
+          "s07"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_2",
+        "name": "S07 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_003_dose_powder"
+        ],
+        "resources": [
+          "s07"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_3",
+        "name": "S07 + S06 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_004_pick_from_s072",
+          "node_005_place_to_s06"
+        ],
+        "resources": [
+          "robot",
+          "s07",
+          "s06"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_4",
+        "name": "S06 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_006_run_solvent_addition"
+        ],
+        "resources": [
+          "s06"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_5",
+        "name": "S06 + S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_007_pick_from_s06",
+          "node_21_mriyea98"
+        ],
+        "resources": [
+          "robot",
+          "s06",
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_6",
+        "name": "S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_20_mrixjrw3"
+        ],
+        "resources": [
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_7",
+        "name": "S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_20_mrixm0d7"
+        ],
+        "resources": [
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_8",
+        "name": "S09 + S04 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_22_mriz2r2c",
+          "node_008_place_to_s04"
+        ],
+        "resources": [
+          "robot",
+          "s09",
+          "s04"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_9",
+        "name": "S04 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_009_run_stirring"
+        ],
+        "resources": [
+          "s04"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_10",
+        "name": "S04 + S05 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_010_pick_from_s04",
+          "node_011_place_to_s05"
+        ],
+        "resources": [
+          "robot",
+          "s04",
+          "s05"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_11",
+        "name": "S05 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_012_take_photo"
+        ],
+        "resources": [
+          "s05"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_12",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_23_mrizpxu7",
+          "node_15_mr726h6d"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_13",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_16_mr72oby0"
+        ],
+        "resources": [
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_14",
+        "name": "S05 + S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_013_pick_from_s05",
+          "node_16_mr73ew4k"
+        ],
+        "resources": [
+          "robot",
+          "s05",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_15",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_24_mrkgo92r",
+          "node_17_mr73fbgm"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmwlpni_16",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_25_mrkgpdnt",
+          "node_19_mr73gj6c"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_1",
+        "name": "S07 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_001_pick_from_s03",
+          "node_002_place_to_s072"
+        ],
+        "resources": [
+          "robot",
+          "s07"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_2",
+        "name": "S07 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_003_dose_powder"
+        ],
+        "resources": [
+          "s07"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_3",
+        "name": "S07 + S06 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_004_pick_from_s072",
+          "node_005_place_to_s06"
+        ],
+        "resources": [
+          "robot",
+          "s07",
+          "s06"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s07",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s07",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_4",
+        "name": "S06 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_006_run_solvent_addition"
+        ],
+        "resources": [
+          "s06"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_5",
+        "name": "S06 + S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_007_pick_from_s06",
+          "node_21_mriyea98"
+        ],
+        "resources": [
+          "robot",
+          "s06",
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s06",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s06",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_6",
+        "name": "S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_20_mrixjrw3"
+        ],
+        "resources": [
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_7",
+        "name": "S09 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_20_mrixm0d7"
+        ],
+        "resources": [
+          "s09"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_8",
+        "name": "S09 + S04 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_22_mriz2r2c",
+          "node_008_place_to_s04"
+        ],
+        "resources": [
+          "robot",
+          "s09",
+          "s04"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s09",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s09",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_9",
+        "name": "S04 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_009_run_stirring"
+        ],
+        "resources": [
+          "s04"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_10",
+        "name": "S04 + S05 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_010_pick_from_s04",
+          "node_011_place_to_s05"
+        ],
+        "resources": [
+          "robot",
+          "s04",
+          "s05"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s04",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s04",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle3_11",
+        "name": "S05 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_012_take_photo"
+        ],
+        "resources": [
+          "s05"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle4_12",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_23_mrizpxu7",
+          "node_15_mr726h6d"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle4_13",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_16_mr72oby0"
+        ],
+        "resources": [
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle4_14",
+        "name": "S05 + S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_013_pick_from_s05",
+          "node_16_mr73ew4k"
+        ],
+        "resources": [
+          "robot",
+          "s05",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s05",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s05",
+              "event": "completed"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle4_15",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_24_mrkgo92r",
+          "node_17_mr73fbgm"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "id": "auto_task_mrmydle4_16",
+        "name": "S08 工艺 Task",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "node_25_mrkgpdnt",
+          "node_19_mr73gj6c"
+        ],
+        "resources": [
+          "robot",
+          "s08"
+        ],
+        "trigger": null,
+        "input_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08"
+            }
+          }
+        ],
+        "output_triggers": [
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "robot",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "resource",
+            "config": {
+              "resource": "s08",
+              "event": "released"
+            }
+          },
+          {
+            "kind": "workstation",
+            "config": {
+              "workstation": "s08",
+              "event": "completed"
+            }
+          }
+        ]
+      }
+    ],
+    "task_instances": [
+      {
+        "id": "eb9fec0c499a4e8baf02f59d31895acc",
+        "template_id": "auto_task_mrmvb2em_1",
+        "status": "running",
+        "sample_id": "Sample A",
+        "order": 0,
+        "payload": {},
+        "started_at": 1784167639937,
+        "finished_at": null
+      },
+      {
+        "id": "f2890b392b8447bd9f8f72c39a6a14ef",
+        "template_id": "auto_task_mrmvb2em_1",
+        "status": "waiting",
+        "sample_id": "Sample B",
+        "order": 0,
+        "payload": {},
+        "started_at": null,
+        "finished_at": null
+      },
+      {
+        "id": "a6ee0c9ba4cb474abea36a513b853f83",
+        "template_id": "auto_task_mrmvb2em_1",
+        "status": "waiting",
+        "sample_id": "Sample C",
+        "order": 0,
+        "payload": {},
+        "started_at": null,
+        "finished_at": null
+      }
+    ],
+    "events": [
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "544423c31163454c8b4fc731dd75b97b",
+        "timestamp": 1784167635655,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/59",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "auto_task_mrmvb2em_1"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled",
+        "id": "9b45e68fa9d145d0ad98388acdcfdabd",
+        "timestamp": 1784167639937,
+        "idempotency_key": "instance/eb9fec0c499a4e8baf02f59d31895acc/scheduled",
+        "instance_id": "eb9fec0c499a4e8baf02f59d31895acc",
+        "template_id": "auto_task_mrmvb2em_1",
+        "payload": {}
+      }
+    ],
+    "scheduled_template_ids": [
+      "auto_task_mrmvb2em_1"
+    ],
+    "scheduler_paused": false,
+    "schedule_entries": [
+      {
+        "instance_id": "eb9fec0c499a4e8baf02f59d31895acc",
+        "template_id": "auto_task_mrmvb2em_1",
+        "sample_id": "Sample A",
+        "start_at": 1784167639937,
+        "end_at": 1784167669937,
+        "resources": [
+          "robot",
+          "s07"
+        ],
+        "state": "running"
+      },
+      {
+        "instance_id": "f2890b392b8447bd9f8f72c39a6a14ef",
+        "template_id": "auto_task_mrmvb2em_1",
+        "sample_id": "Sample B",
+        "start_at": 1784172774621,
+        "end_at": 1784172804621,
+        "resources": [
+          "robot",
+          "s07"
+        ],
+        "state": "planned"
+      },
+      {
+        "instance_id": "a6ee0c9ba4cb474abea36a513b853f83",
+        "template_id": "auto_task_mrmvb2em_1",
+        "sample_id": "Sample C",
+        "start_at": 1784172804621,
+        "end_at": 1784172834621,
+        "resources": [
+          "robot",
+          "s07"
+        ],
+        "state": "planned"
+      }
+    ],
+    "opc_snapshots": []
+  }
+}

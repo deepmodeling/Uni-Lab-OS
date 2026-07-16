@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Task 编排画板布局方向</title>
+  <style>
+    :root { color-scheme: light; --ink:#17324d; --muted:#6f8294; --paper:#f4f8fb; --line:#d9e4ec; --cyan:#10a8b7; --navy:#183b58; --mint:#dff6ec; --amber:#fff0cf; --coral:#ffddd5; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:14px ui-rounded, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    main { max-width:1500px; margin:auto; padding:34px; } h1 { margin:0; font-size:30px; letter-spacing:-.5px; } .lead { color:var(--muted); margin:8px 0 26px; font-size:16px; }
+    .options { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:20px; } .option { cursor:pointer; background:white; border:2px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:0 12px 30px rgba(31,74,104,.08); transition:.18s ease; } .option:hover,.option.selected { border-color:var(--cyan); transform:translateY(-3px); box-shadow:0 18px 35px rgba(16,168,183,.18); }
+    .option-head { padding:18px 18px 12px; display:flex; align-items:center; gap:10px; } .letter { width:26px; height:26px; background:var(--navy); color:white; display:grid; place-items:center; border-radius:8px; font-weight:800; } h2 { font-size:16px; margin:0; } .desc { color:var(--muted); margin:0 18px 16px; min-height:42px; line-height:1.55; }
+    .board { margin:0 14px 16px; padding:10px; min-height:430px; border-radius:11px; background:#edf3f7; border:1px solid #d4e1e9; font-size:8px; color:#486076; } .bar { height:22px; background:white; border:1px solid var(--line); border-radius:5px; display:flex; align-items:center; padding:0 8px; gap:5px; font-weight:800; } .pill { padding:3px 6px; border-radius:99px; background:#e8f3f8; color:#397188; margin-left:auto; }
+    .cols { display:grid; grid-template-columns:.85fr 1.25fr; gap:8px; margin-top:8px; height:376px; } .panel { background:#fff; border:1px solid var(--line); border-radius:6px; padding:8px; overflow:hidden; } .cap { text-transform:uppercase; color:#7890a3; letter-spacing:.08em; font-size:7px; font-weight:800; margin-bottom:7px; }
+    .row { border:1px solid #dfe9ef; border-left:3px solid var(--cyan); border-radius:4px; padding:6px; margin-bottom:5px; background:#fff; } .row small { display:block; color:#7790a2; margin-top:2px; }.ok{border-left-color:#24a36f;background:#f2fbf6}.wait{border-left-color:#edae32;background:#fffaf0}.block{border-left-color:#ec745f;background:#fff5f2}
+    .template { background:#f5f9fc; border:1px solid #dce8ef; padding:7px; border-radius:5px; margin-bottom:6px; }.chips{display:flex; flex-wrap:wrap; gap:3px; margin-top:5px}.chip{padding:2px 4px;border-radius:3px;background:#dff4f5;color:#217381}.gate{background:#fff0cf;color:#9a6700}
+    .gantt { display:grid; grid-template-columns:50px repeat(7,1fr); gap:2px; margin-top:5px; align-items:center; }.gantt span{height:13px}.axis{color:#92a5b3}.track{grid-column:2/-1;background:#edf4f7;position:relative;height:18px;border-radius:3px}.task{position:absolute;height:12px;top:3px;border-radius:3px;background:var(--cyan)}.task.a{left:3%;width:27%}.task.b{left:35%;width:45%;background:#6386dd}.task.c{left:66%;width:24%;background:#ef9c4f}.task.d{left:12%;width:26%;background:#4db38e}
+    .mini-gantt { margin-top:8px; background:white; border:1px solid var(--line); border-radius:6px; padding:8px; }.split { display:grid; grid-template-columns:1.1fr .9fr; gap:7px; height:100%; }.detail { background:#f8fbfd; border:1px solid #dce8ef; border-radius:5px; padding:8px; }.detail strong { font-size:10px; }.node { padding:5px; margin:4px 0; border-left:3px solid #6386dd; background:#fff; border:1px solid #dfe9ef; border-left-width:3px; border-radius:3px; }.signal { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed #dbe6ed; }.legend{display:flex;gap:7px;color:#71899a;margin:8px 18px 18px;font-size:12px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:3px;background:#10a8b7}.dot.amber{background:#edae32}.dot.purple{background:#6386dd}
+    @media(max-width:1000px){.options{grid-template-columns:1fr}.board{min-height:350px}.cols{height:300px}}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Task 编排画板：先确定信息层级</h1>
+    <p class="lead">三种布局都包含「模板详情、Queue 状态、甘特排程」。请选择最符合实际调度使用方式的一种。</p>
+    <div class="options">
+      <section class="option" data-choice="A" onclick="toggleSelect(this)">
+        <div class="option-head"><div class="letter">A</div><h2>模板优先 · 配置工作台</h2></div>
+        <p class="desc">左侧先选模板并查看节点/输入/输出；中间处理 Queue；底部为可收起的排程预览。</p>
+        <div class="board">
+          <div class="bar">TASK ORCHESTRATION <span class="pill">3 templates · 9 queued</span></div>
+          <div class="cols">
+            <div class="panel"><div class="cap">Task Templates</div><div class="template"><b>S07 固体加料</b><div class="chips"><i class="chip">robot</i><i class="chip gate">S07 free</i></div></div><div class="template"><b>S09 配液</b><div class="chips"><i class="chip">robot</i><i class="chip gate">S09 free</i></div></div><div class="template"><b>S04 反应记录</b></div><div class="detail"><div class="cap">选中模板详情</div><div class="node">① Robot 放料</div><div class="node">② S07 注粉</div><div class="signal">输入触发 <b>S07 空闲</b></div><div class="signal">输出触发 <b>物料已入位</b></div></div></div>
+            <div class="panel"><div class="cap">Queue · 按样品</div><div class="row ok"><b>Sample A · S07 固体加料</b><small>Ready · robot + S07 可用</small></div><div class="row wait"><b>Sample B · S07 固体加料</b><small>Waiting · 等待前置任务</small></div><div class="row block"><b>Sample A · S09 配液</b><small>Blocked · S09 occupied</small></div><div class="mini-gantt"><div class="cap">Schedule preview</div><div class="gantt"><span>robot</span><div class="track"><i class="task a"></i><i class="task c"></i></div><span>S07</span><div class="track"><i class="task b"></i></div><span>S09</span><div class="track"><i class="task d"></i></div></div></div></div>
+          </div>
+        </div><div class="legend"><span><i class="dot"></i>资源锁</span><span><i class="dot amber"></i>Sensor Gate</span><span><i class="dot purple"></i>节点步骤</span></div>
+      </section>
+      <section class="option" data-choice="B" onclick="toggleSelect(this)">
+        <div class="option-head"><div class="letter">B</div><h2>排程优先 · 调度驾驶舱</h2></div>
+        <p class="desc">甘特图是主画面；Queue 与模板作为侧栏。适合运行过程中观察并发、瓶颈和等待原因。</p>
+        <div class="board">
+          <div class="bar">SCHEDULE CONSOLE <span class="pill">now 10:32:18</span></div>
+          <div class="cols">
+            <div class="panel"><div class="cap">Queue · 9 tasks</div><div class="row ok"><b>A / S07</b><small>Ready</small></div><div class="row wait"><b>B / S07</b><small>Waiting</small></div><div class="row block"><b>A / S09</b><small>S09 busy</small></div><div class="cap" style="margin-top:12px">Templates</div><div class="template"><b>S07 加料</b><div class="chips"><i class="chip">2 steps</i></div></div><div class="template"><b>S09 配液</b><div class="chips"><i class="chip">4 steps</i></div></div></div>
+            <div class="panel"><div class="cap">Resource timeline · 0 — 16 min</div><div class="gantt"><span class="axis">robot</span><div class="track"><i class="task a"></i><i class="task c"></i></div><span class="axis">S07</span><div class="track"><i class="task b"></i></div><span class="axis">S09</span><div class="track"><i class="task d"></i></div><span class="axis">S04</span><div class="track"><i class="task b" style="left:58%;width:31%;background:#a77cdc"></i></div></div><div class="detail" style="margin-top:13px"><strong>选中：Sample A / S09 配液 · 计划 10:36—10:42</strong><div class="chips"><i class="chip">robot</i><i class="chip">S09</i><i class="chip gate">等待 S09 空闲</i></div><div class="node">① 取 TIP → ② 取液 → ③ 放液 → ④ 放 TIP</div></div></div>
+          </div>
+        </div><div class="legend"><span><i class="dot"></i>已排程</span><span><i class="dot amber"></i>等待门控</span><span><i class="dot purple"></i>工位并发</span></div>
+      </section>
+      <section class="option" data-choice="C" onclick="toggleSelect(this)">
+        <div class="option-head"><div class="letter">C</div><h2>详情优先 · 调度审阅台</h2></div>
+        <p class="desc">大面积模板详情与触发链，右侧 Queue；甘特图作为执行证据。适合工艺工程师校验模板定义。</p>
+        <div class="board">
+          <div class="bar">TASK REVIEW <span class="pill">Template: S09 配液</span></div>
+          <div class="cols">
+            <div class="panel"><div class="cap">Template details · 4 actions</div><div class="split"><div><div class="node">① Robot 取 TIP</div><div class="node">② Robot 液体瓶取液</div><div class="node">③ Robot 烧杯放液</div><div class="node">④ Robot 放 TIP</div></div><div class="detail"><strong>Trigger chain</strong><div class="signal">输入 <b>样品已到位</b></div><div class="signal">输入 <b>S09 空闲</b></div><div class="signal">锁定 <b>robot / S09</b></div><div class="signal">输出 <b>加液完成</b></div></div></div><div class="mini-gantt"><div class="cap">此模板的资源占用</div><div class="gantt"><span>robot</span><div class="track"><i class="task a" style="width:80%"></i></div><span>S09</span><div class="track"><i class="task d" style="left:35%;width:48%"></i></div></div></div></div>
+            <div class="panel"><div class="cap">Live Queue</div><div class="row ok"><b>Sample A · S07</b><small>Running · 10:32—10:36</small></div><div class="row wait"><b>Sample A · S09</b><small>Pending · 预计 10:36</small></div><div class="row block"><b>Sample B · S09</b><small>Blocked · robot locked</small></div><div class="detail" style="margin-top:12px"><div class="cap">Sensor Gates</div><div class="signal">S07 <b>FREE</b></div><div class="signal">S09 <b>BUSY</b></div><div class="signal">Robot <b>LOCKED</b></div></div></div>
+          </div>
+        </div><div class="legend"><span><i class="dot"></i>模板动作</span><span><i class="dot amber"></i>门控条件</span><span><i class="dot purple"></i>执行时间</span></div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

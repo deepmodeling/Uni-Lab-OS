@@ -195,7 +195,8 @@ def test_s09_add_liquid_requires_tip_and_target_station_before_first_process():
     device = make_pipetting_device(client)
 
     result = device.add_liquid(
-        tip_box_index=1,
+        take_tip_box_index=1,
+        release_tip_box_index=2,
         tip_index=1,
         liquid_bottle_index=1,
         station=1,
@@ -210,12 +211,37 @@ def test_s09_add_liquid_requires_tip_and_target_station_before_first_process():
     assert client.writes == []
 
 
+def test_s09_add_liquid_requires_release_tip_box_before_first_process():
+    client = PseudoSzlabS09OpcUaClient(
+        {
+            "S09液体瓶1剩余液量": 100.0,
+            "传感器状态_上位机[4].NO[6]": False,
+        }
+    )
+    device = make_pipetting_device(client)
+
+    result = device.add_liquid(
+        take_tip_box_index=1,
+        release_tip_box_index=2,
+        tip_index=1,
+        liquid_bottle_index=1,
+        station=1,
+        aspirate_volume=50,
+        dispense_volume=50,
+    )
+
+    assert result["success"] is False
+    assert result["sensor_precheck"]["mismatches"]["传感器状态_上位机[4].NO[6]"]["actual"] is False
+    assert client.writes == []
+
+
 def test_s09_add_liquid_runs_plc_process_sequence_5_7_8_6():
     client = PseudoSzlabS09OpcUaClient({"S09液体瓶4剩余液量": 100.0})
     device = make_pipetting_device(client)
 
     result = device.add_liquid(
-        tip_box_index=1,
+        take_tip_box_index=1,
+        release_tip_box_index=2,
         tip_index=2,
         liquid_bottle_index=4,
         station=3,
@@ -227,6 +253,14 @@ def test_s09_add_liquid_runs_plc_process_sequence_5_7_8_6():
     process_writes = [value for name, value in client.writes if name == "S09工艺选择"]
     assert [value for value in process_writes if value != 0] == [5, 7, 8, 6]
     assert process_writes == [5, 0, 7, 0, 8, 0, 6, 0]
+    tip_box_writes = [value for name, value in client.writes if name == "S09TIP盒工位编号"]
+    assert [value for value in tip_box_writes if value != 0] == [1, 1, 1, 2]
+    assert [step["step"] for step in result["steps"]] == [
+        "从 TIP盒1 取 TIP",
+        "液体瓶取液",
+        "烧杯放液",
+        "向 TIP盒2 放 TIP",
+    ]
     assert [step["data"]["process"] for step in result["steps"]] == [5, 7, 8, 6]
     assert client.wait_equal_calls == [
         ("S09允许加工", True),
@@ -245,7 +279,8 @@ def test_s09_add_liquid_writes_frontend_remaining_volume_params_before_process()
     device = make_pipetting_device(client)
 
     result = device.add_liquid(
-        tip_box_index=1,
+        take_tip_box_index=1,
+        release_tip_box_index=2,
         tip_index=2,
         liquid_bottle_index=2,
         station=1,
@@ -277,7 +312,8 @@ def test_s09_add_liquid_to_beaker_exposes_business_action_for_5_7_8_6():
     device = make_pipetting_device(client)
 
     result = device.add_liquid_to_beaker(
-        tip_box_index=1,
+        take_tip_box_index=1,
+        release_tip_box_index=2,
         tip_index=2,
         liquid_bottle_index=2,
         station=3,
@@ -333,7 +369,8 @@ def test_s09_add_liquid_splits_ml_volume_over_5ml():
     device = make_pipetting_device(client)
 
     result = device.add_liquid(
-        tip_box_index=1,
+        take_tip_box_index=1,
+        release_tip_box_index=2,
         tip_index=2,
         liquid_bottle_index=4,
         station=1,
@@ -494,7 +531,8 @@ def test_s09_add_liquid_release_tip_waits_allow_before_writing_process():
     device = make_pipetting_device(client)
 
     result = device.add_liquid(
-        tip_box_index=1,
+        take_tip_box_index=1,
+        release_tip_box_index=2,
         tip_index=1,
         liquid_bottle_index=1,
         station=1,

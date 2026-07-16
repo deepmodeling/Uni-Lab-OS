@@ -518,6 +518,11 @@ def test_s09_debug_preset_uses_debug_file_name():
     assert "add_liquid" in preset.actions
     assert "add_liquid_to_beaker" in preset.actions
     add_liquid_param_names = [param["name"] for param in preset.actions["add_liquid"].params]
+    assert add_liquid_param_names[:3] == [
+        "take_tip_box_index",
+        "release_tip_box_index",
+        "tip_index",
+    ]
     assert add_liquid_param_names[-5:] == [
         "S09液体瓶1剩余液量",
         "S09液体瓶2剩余液量",

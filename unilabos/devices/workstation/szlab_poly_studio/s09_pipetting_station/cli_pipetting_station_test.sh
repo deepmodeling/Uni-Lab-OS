@@ -38,6 +38,7 @@ CLEAR_PC_TO_PLC_BEFORE_RUN="${CLEAR_PC_TO_PLC_BEFORE_RUN:-0}"
 HOME_POSITIONS="${HOME_POSITIONS:-1}"
 PROCESSES="${PROCESSES:-5 7 8 6 9 10}"
 TIP_BOX_INDEX="${TIP_BOX_INDEX:-1}"
+RELEASE_TIP_BOX_INDEX="${RELEASE_TIP_BOX_INDEX:-2}"
 TIP_INDEX="${TIP_INDEX:-1}"
 LIQUID_BOTTLE_INDEX="${LIQUID_BOTTLE_INDEX:-1}"
 STATION="${STATION:-1}"
@@ -338,7 +339,7 @@ PY
 
 cases_for_action() {
   local action_group="$1"
-  "$PYTHON" - "$action_group" "$HOME_POSITIONS" "$PROCESSES" "$TIP_BOX_INDEX" "$TIP_INDEX" \
+  "$PYTHON" - "$action_group" "$HOME_POSITIONS" "$PROCESSES" "$TIP_BOX_INDEX" "$RELEASE_TIP_BOX_INDEX" "$TIP_INDEX" \
     "$LIQUID_BOTTLE_INDEX" "$STATION" "$ASPIRATE_VOLUME" "$DISPENSE_VOLUME" "$REMAINING_VOLUME" \
     "$VOLUME_UNIT" "$REQUIRE_ALLOW" "$RESET_DELAY" "$SAMPLE_ID" <<'PY'
 import json
@@ -349,6 +350,7 @@ import sys
     home_positions_text,
     processes_text,
     tip_box_index,
+    release_tip_box_index,
     tip_index,
     liquid_bottle_index,
     station,
@@ -359,7 +361,7 @@ import sys
     require_allow,
     reset_delay,
     sample_id,
-) = sys.argv[1:15]
+) = sys.argv[1:16]
 
 
 def bool_value(text):
@@ -370,9 +372,10 @@ def emit(action, params, label):
     print("\t".join([action, json.dumps(params, ensure_ascii=False, separators=(",", ":")), label]))
 
 
-def emit_run_process(process, label):
+def emit_run_process(process, label, process_tip_box_index=None):
     params = {
         **common,
+        "tip_box_index": int(process_tip_box_index or tip_box_index),
         "process": process,
         "aspirate_volume": float(aspirate_volume) if process in {7, 9} else 0,
         "dispense_volume": float(dispense_volume) if process in {8, 10} else 0,
@@ -385,6 +388,13 @@ def emit_run_process(process, label):
 
 common = {
     "tip_box_index": int(tip_box_index),
+    "tip_index": int(tip_index),
+    "liquid_bottle_index": int(liquid_bottle_index),
+    "station": int(station),
+}
+add_liquid_common = {
+    "take_tip_box_index": int(tip_box_index),
+    "release_tip_box_index": int(release_tip_box_index),
     "tip_index": int(tip_index),
     "liquid_bottle_index": int(liquid_bottle_index),
     "station": int(station),
@@ -429,20 +439,20 @@ elif action_group == "take-liquid":
 elif action_group == "dispense":
     emit_run_process(8, "执行 S09 工艺 8：烧杯放液")
 elif action_group == "release-tip":
-    emit_run_process(6, "执行 S09 工艺 6：放 TIP")
+    emit_run_process(6, "执行 S09 工艺 6：放 TIP", release_tip_box_index)
 elif action_group == "liquid-steps":
     emit_run_process(5, "执行 S09 工艺 5：取 TIP")
     emit_run_process(7, "执行 S09 工艺 7：液体瓶取液")
     emit_run_process(8, "执行 S09 工艺 8：烧杯放液")
-    emit_run_process(6, "执行 S09 工艺 6：放 TIP")
+    emit_run_process(6, "执行 S09 工艺 6：放 TIP", release_tip_box_index)
 elif action_group == "add-liquid":
-    emit("add_liquid", {**common, **volume_params}, "执行 S09 单次业务加液 5->7->8->6")
+    emit("add_liquid", {**add_liquid_common, **volume_params}, "执行 S09 单次业务加液 5->7->8->6")
 elif action_group == "workflow":
     emit(
         "run_liquid_workflow",
         {
             "sample_id": sample_id,
-            "liquid_steps": [{**common, **volume_params}],
+            "liquid_steps": [{**add_liquid_common, **volume_params}],
             "release_after": True,
         },
         "执行 S09 run_liquid_workflow 单步样例",

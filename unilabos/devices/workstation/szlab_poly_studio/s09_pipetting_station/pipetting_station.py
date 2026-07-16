@@ -758,7 +758,8 @@ class SzlabMixerPipettingStationDevice:
     @action(auto_prefix=True, description="执行 S09 单次业务加液流程")
     def add_liquid(
         self,
-        tip_box_index: int = 1,
+        take_tip_box_index: int = 1,
+        release_tip_box_index: int = 2,
         tip_index: int = 1,
         liquid_bottle_index: int = 1,
         station: int = 1,
@@ -785,8 +786,11 @@ class SzlabMixerPipettingStationDevice:
             return {"success": False, "message": "S09 自动拆分加液时要求抽液量和放液量一致"}
 
         try:
+            take_tip_box_index = validate_tip_box(take_tip_box_index)
+            release_tip_box_index = validate_tip_box(release_tip_box_index)
             workflow_sensor_conditions = {
-                S09_TIP_BOX_SENSORS[validate_tip_box(tip_box_index)]: True,
+                S09_TIP_BOX_SENSORS[take_tip_box_index]: True,
+                S09_TIP_BOX_SENSORS[release_tip_box_index]: True,
                 S09_STATION_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True,
                 S09_STATION_SENSORS[validate_station(station)]: True,
             }
@@ -826,22 +830,22 @@ class SzlabMixerPipettingStationDevice:
         except Exception as exc:
             return {"success": False, "message": str(exc)}
 
-        # 临时现场调试：只执行放 TIP，跳过取 TIP、取液、放液。
-        # plan: list[tuple[int, str, int, int]] = [(6, "放 TIP", 0, 0)]
-        plan: list[tuple[int, str, int, int]] = [(5, "取 TIP", 0, 0)]
+        plan: list[tuple[int, str, int, int, int]] = [
+            (5, f"从 TIP盒{take_tip_box_index} 取 TIP", take_tip_box_index, 0, 0)
+        ]
         for aspirate_chunk, dispense_chunk in transfer_chunks:
             plan.extend(
                 [
-                    (7, "液体瓶取液", aspirate_chunk, 0),
-                    (8, "烧杯放液", 0, dispense_chunk),
+                    (7, "液体瓶取液", take_tip_box_index, aspirate_chunk, 0),
+                    (8, "烧杯放液", take_tip_box_index, 0, dispense_chunk),
                 ]
             )
-        plan.append((6, "放 TIP", 0, 0))
+        plan.append((6, f"向 TIP盒{release_tip_box_index} 放 TIP", release_tip_box_index, 0, 0))
 
-        for process, step_name, aspirate_chunk, dispense_chunk in plan:
+        for process, step_name, process_tip_box_index, aspirate_chunk, dispense_chunk in plan:
             result = self.run_process(
                 process=process,
-                tip_box_index=tip_box_index,
+                tip_box_index=process_tip_box_index,
                 tip_index=tip_index,
                 liquid_bottle_index=liquid_bottle_index,
                 station=station,
@@ -864,7 +868,8 @@ class SzlabMixerPipettingStationDevice:
             "success": True,
             "message": "S09 单次加液完成",
             "data": {
-                "tip_box_index": tip_box_index,
+                "take_tip_box_index": take_tip_box_index,
+                "release_tip_box_index": release_tip_box_index,
                 "tip_index": tip_index,
                 "liquid_bottle_index": liquid_bottle_index,
                 "station": station,
@@ -893,7 +898,8 @@ class SzlabMixerPipettingStationDevice:
     @action(auto_prefix=True, description="执行 S09 烧杯加液：取 TIP、液体瓶取液、烧杯放液、放 TIP")
     def add_liquid_to_beaker(
         self,
-        tip_box_index: int = 1,
+        take_tip_box_index: int = 1,
+        release_tip_box_index: int = 2,
         tip_index: int = 1,
         liquid_bottle_index: int = 1,
         station: int = 1,
@@ -908,7 +914,8 @@ class SzlabMixerPipettingStationDevice:
         S09液体瓶5剩余液量: float | None = None,
     ) -> dict[str, Any]:
         result = self.add_liquid(
-            tip_box_index=tip_box_index,
+            take_tip_box_index=take_tip_box_index,
+            release_tip_box_index=release_tip_box_index,
             tip_index=tip_index,
             liquid_bottle_index=liquid_bottle_index,
             station=station,

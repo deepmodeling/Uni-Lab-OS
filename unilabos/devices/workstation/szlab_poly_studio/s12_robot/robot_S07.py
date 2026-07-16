@@ -4,18 +4,13 @@ from typing import Any
 
 from .robot_tasks import build_variables, powder_container_sensor
 
-S072_SENSOR_BY_POSITION = {
-    1: "传感器状态_上位机[3].NO[14]",
-    2: "传感器状态_上位机[3].NO[15]",
-}
-
 
 class SzlabRobotS07Mixin:
-    def _s072_sensor_variable(self, position: int) -> str:
+    def _validate_s072_position(self, position: int) -> int:
         position = int(position)
-        if position not in S072_SENSOR_BY_POSITION:
+        if position not in (1, 2):
             raise ValueError("S072 位置必须在 1-2 范围内")
-        return S072_SENSOR_BY_POSITION[position]
+        return position
 
     def _run_s071_place(self, position: str = "1-1") -> dict[str, Any]:
         sensor = powder_container_sensor(position)
@@ -44,29 +39,27 @@ class SzlabRobotS07Mixin:
         )
 
     def _run_s072_place(self, product_type: int, position: int) -> dict[str, Any]:
-        sensor = self._s072_sensor_variable(position)
+        position = self._validate_s072_position(position)
         return self._submit_robot_task(
             task="place",
             station="S072",
             task_number=15,
             variables=build_variables("place_to_s072", S072取放料产品=product_type),
             reset_variables={"S072取放料产品": 0, "任务号": 0},
-            precheck=lambda: self._ensure_sensor_gate(sensor, False, "S072 放料目标位必须为空"),
             product_type=int(product_type),
-            position=int(position),
-            target_sensor_variable=sensor,
+            position=position,
+            sensor_check_skipped_reason="S072 暂无物料传感器，仅检查夹爪状态",
         )
 
     def _run_s072_pick(self, product_type: int, position: int) -> dict[str, Any]:
-        sensor = self._s072_sensor_variable(position)
+        position = self._validate_s072_position(position)
         return self._submit_robot_task(
             task="pick",
             station="S072",
             task_number=16,
             variables=build_variables("pick_from_s072", S072取放料产品=product_type),
             reset_variables={"S072取放料产品": 0, "任务号": 0},
-            precheck=lambda: self._ensure_sensor_gate(sensor, True, "S072 取料源位必须有物料"),
             product_type=int(product_type),
-            position=int(position),
-            source_sensor_variable=sensor,
+            position=position,
+            sensor_check_skipped_reason="S072 暂无物料传感器，仅检查夹爪状态",
         )

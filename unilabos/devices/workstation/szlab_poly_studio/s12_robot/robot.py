@@ -209,7 +209,17 @@ class SzlabMixerRobotDevice(
         if station == "S01":
             return {}, {}
         if station == "S072":
-            raise RuntimeError("S072 传感器点位尚未确认，暂不允许执行实机取放料动作")
+            if task == "place":
+                return (
+                    {ROBOT_GRIPPER_SENSOR: True},
+                    {ROBOT_GRIPPER_SENSOR: False},
+                )
+            if task == "pick":
+                return (
+                    {ROBOT_GRIPPER_SENSOR: False},
+                    {ROBOT_GRIPPER_SENSOR: True},
+                )
+            return {}, {}
 
         custom_preconditions = data.get("pre_sensor_conditions")
         custom_postconditions = data.get("post_sensor_conditions")

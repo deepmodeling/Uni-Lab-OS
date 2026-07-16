@@ -1563,19 +1563,40 @@ def test_szlab_robot_s03_reset_retries_until_pc_to_plc_variables_are_clear():
     assert gateway.writes.count(("任务号", 0)) == 2
 
 
-def test_szlab_robot_s072_place_is_blocked_until_sensor_mapping_is_confirmed():
+def test_szlab_robot_s072_place_skips_unavailable_station_sensor():
     gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[3].NO[15]": False},
+        sensor_values={"传感器状态_上位机[3].NO[6]": True},
     )
     device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
     device.set_plc_gateway(gateway)
 
     result = device.submit_place_to_s072(product_type=1, position=2)
 
-    assert result["success"] is False
-    assert result["status"] == "rejected"
-    assert "S072 传感器点位尚未确认" in result["message"]
-    assert gateway.writes == []
+    assert result["success"] is True
+    assert result["sensor_check_skipped_reason"] == "S072 暂无物料传感器，仅检查夹爪状态"
+    assert gateway.sensor_wait_calls == [
+        ({"传感器状态_上位机[3].NO[6]": True}, 3.0, 1.0),
+        ({"传感器状态_上位机[3].NO[6]": False}, 3.0, 1.0),
+    ]
+    assert not any(name in {"传感器状态_上位机[3].NO[14]", "传感器状态_上位机[3].NO[15]"} for name, _ in gateway.reads)
+    assert ("任务号", 15) in gateway.writes
+
+
+def test_szlab_robot_s072_pick_skips_unavailable_station_sensor():
+    gateway = FakeRobotPlcGateway(
+        sensor_values={"传感器状态_上位机[3].NO[6]": False},
+    )
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_pick_from_s072(product_type=1, position=1)
+
+    assert result["success"] is True
+    assert gateway.sensor_wait_calls == [
+        ({"传感器状态_上位机[3].NO[6]": False}, 3.0, 1.0),
+        ({"传感器状态_上位机[3].NO[6]": True}, 3.0, 1.0),
+    ]
+    assert ("任务号", 16) in gateway.writes
 
 
 def test_szlab_robot_s08_pick_uses_position_sensor_mapping():

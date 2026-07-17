@@ -8,6 +8,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S07Sensors
+
+
 CSV_REFERENCE = str(Path(__file__).resolve().parent / "s07_nodes.csv")
 
 NODE_STATION_STATUS = "工站状态[6]"
@@ -27,14 +30,7 @@ NODE_FINE_SHAKE_MAX_SPEED = "S07_精注粉震荡最高速度"
 ROBOT_S071_PICK_PLACE_VAR = "S071取放料编号"
 ROBOT_S072_PRODUCT_VAR = "S072取放料产品"
 
-POWDER_CONTAINER_SENSORS = {
-    1: "传感器状态_上位机[3].NO[8]",
-    2: "传感器状态_上位机[3].NO[9]",
-    3: "传感器状态_上位机[3].NO[10]",
-    4: "传感器状态_上位机[3].NO[11]",
-    5: "传感器状态_上位机[3].NO[12]",
-    6: "传感器状态_上位机[3].NO[13]",
-}
+POWDER_CONTAINER_SENSORS = S07Sensors.POWDER_CONTAINER_BY_INDEX
 
 PROCESS_SCAN_CARTRIDGES = 1
 PROCESS_ROTATE_TO_FEED = 2

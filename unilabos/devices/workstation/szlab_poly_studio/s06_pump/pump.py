@@ -31,7 +31,8 @@ import os
 from typing import Any, Literal
 
 from unilabos.registry.decorators import ActionInputHandle, DataSource, action, device, not_action, topic_config
-from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice, wait_sensor_conditions
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
+from unilabos.devices.workstation.szlab_poly_studio.sensor import wait_sensor_conditions
 
 from .sensors import (
     ADDITION_BEAKER_SENSOR,

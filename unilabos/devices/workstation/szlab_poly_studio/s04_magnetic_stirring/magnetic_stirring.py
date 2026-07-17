@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from unilabos.registry.decorators import action, device, not_action, topic_config
-from unilabos.devices.workstation.szlab_poly_studio.plc import wait_variable_equal
+from unilabos.devices.workstation.szlab_poly_studio.sensor import wait_variable_equal
 
 from .sensors import (
     S04_PROCESS_MODES,

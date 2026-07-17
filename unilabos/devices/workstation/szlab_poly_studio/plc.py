@@ -1,8 +1,6 @@
 import csv
-import json
 import logging
 import os
-import re
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -17,137 +15,22 @@ except ModuleNotFoundError as exc:
         raise
     BaseClient = object
     OpcUaNode = None
+from unilabos.devices.workstation.szlab_poly_studio.sensor import (
+    SENSOR_ARRAY_COUNT,
+    SENSOR_BITS_PER_ARRAY,
+    SensorBase,
+    load_sensor_bit_metadata_from_csv,
+    load_stack_sensor_groups_from_json,
+    wait_sensor_conditions,
+    wait_variable_equal,
+    wait_variable_true,
+)
 from unilabos.devices.workstation.szlab_poly_studio.stack_status import build_stack_status
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.utils.log import logger
 
 
 DEFAULT_CSV_NAME = "szlab_plc_0702.csv"
-DEFAULT_STACK_SENSOR_LAYOUT_NAME = "stack_sensor_layout.json"
-SENSOR_ARRAY_COUNT = 10
-SENSOR_BITS_PER_ARRAY = 16
-SENSOR_BIT_NAME_PATTERN = re.compile(r"^传感器状态_上位机\[(\d+)\]\.NO\[(\d+)\]$")
-
-
-def wait_variable_equal(
-    reader: Any,
-    variable_name: str,
-    expected: Any,
-    *,
-    timeout: float = 300.0,
-    interval: float = 1.0,
-) -> bool:
-    started_at = time.time()
-    start_recorder = getattr(reader, "_record_opc_wait_start", None)
-    if callable(start_recorder):
-        start_recorder(variable_name, expected, timeout=timeout, interval=interval)
-
-    success = False
-    last_value = None
-    error = None
-    try:
-        while time.time() - started_at <= timeout:
-            last_value = reader.read_variable(variable_name, use_cache=False)
-            if last_value == expected:
-                success = True
-                return True
-            time.sleep(interval)
-        return False
-    except Exception as exc:
-        error = str(exc)
-        raise
-    finally:
-        finish_recorder = getattr(reader, "_record_opc_wait_finish", None)
-        if callable(finish_recorder):
-            finish_recorder(
-                variable_name,
-                expected,
-                timeout=timeout,
-                interval=interval,
-                success=success,
-                last_value=last_value,
-                elapsed=time.time() - started_at,
-                error=error,
-            )
-
-
-def wait_variable_true(
-    reader: Any,
-    variable_name: str,
-    *,
-    timeout: float = 300.0,
-    interval: float = 1.0,
-) -> bool:
-    return wait_variable_equal(reader, variable_name, True, timeout=timeout, interval=interval)
-
-
-def wait_sensor_conditions(
-    reader: Any,
-    conditions: Dict[str, bool],
-    *,
-    timeout: float = 300.0,
-    interval: float = 0.2,
-    context: str | None = None,
-) -> tuple[bool, Dict[str, Any]]:
-    """等待一组实机传感器同时达到期望状态，并返回最后一次读取值。"""
-    if not conditions:
-        return True, {}
-
-    started_at = time.monotonic()
-    last_values: Dict[str, Any] = {}
-    previous_values: Dict[str, Any] | None = None
-    start_recorded = False
-    success = False
-    error = None
-    try:
-        while time.monotonic() - started_at <= timeout:
-            last_values = {
-                variable_name: reader.read_variable(variable_name, use_cache=False)
-                for variable_name in conditions
-            }
-            if not start_recorded:
-                start_recorder = getattr(reader, "_record_opc_sensor_wait_start", None)
-                if callable(start_recorder):
-                    start_recorder(
-                        conditions,
-                        last_values,
-                        timeout=timeout,
-                        interval=interval,
-                        context=context,
-                    )
-                start_recorded = True
-            elif previous_values is not None and last_values != previous_values:
-                change_recorder = getattr(reader, "_record_opc_sensor_wait_change", None)
-                if callable(change_recorder):
-                    change_recorder(
-                        conditions,
-                        previous_values,
-                        last_values,
-                        timeout=timeout,
-                        context=context,
-                    )
-            previous_values = dict(last_values)
-            if all(last_values[name] == expected for name, expected in conditions.items()):
-                success = True
-                return True, last_values
-            time.sleep(interval)
-        return False, last_values
-    except Exception as exc:
-        error = str(exc)
-        raise
-    finally:
-        finish_recorder = getattr(reader, "_record_opc_sensor_wait_finish", None)
-        if callable(finish_recorder) and start_recorded:
-            finish_recorder(
-                conditions,
-                last_values,
-                timeout=timeout,
-                interval=interval,
-                success=success,
-                elapsed=time.monotonic() - started_at,
-                context=context,
-                error=error,
-            )
 
 
 def _resolve_csv_path(csv_path: Optional[str]) -> str:
@@ -156,29 +39,6 @@ def _resolve_csv_path(csv_path: Optional[str]) -> str:
     if os.path.isabs(csv_path):
         return csv_path
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), csv_path)
-
-
-def _resolve_config_path(config_path: Optional[str]) -> str:
-    if config_path is None:
-        config_path = DEFAULT_STACK_SENSOR_LAYOUT_NAME
-    if os.path.isabs(config_path):
-        return config_path
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), config_path)
-
-
-def load_stack_sensor_groups_from_json(config_path: Optional[str] = None) -> Dict[str, Dict[str, str]]:
-    """Load stack UI sensor layout: business position -> PLC variable name."""
-    resolved_path = _resolve_config_path(config_path)
-    with open(resolved_path, encoding="utf-8") as config_file:
-        config = json.load(config_file)
-    sensor_groups = config.get("sensor_groups", {})
-    return {
-        str(group_name): {
-            str(site_key): str(variable_name)
-            for site_key, variable_name in group.items()
-        }
-        for group_name, group in sensor_groups.items()
-    }
 
 
 def load_variable_definitions_from_csv(csv_path: str) -> tuple[List[str], Dict[str, str]]:
@@ -229,35 +89,6 @@ def load_variable_names_from_csv(csv_path: str) -> List[str]:
     """Load PLC variable names from the CSV column named '变量名'."""
     names, _node_id_map = load_variable_definitions_from_csv(csv_path)
     return names
-
-
-def load_sensor_bit_metadata_from_csv(csv_path: str) -> Dict[str, Dict[str, str]]:
-    """读取传感器位的现场标签和软元件地址，供前端展示。"""
-    last_error: Optional[UnicodeDecodeError] = None
-    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "gb18030", "gbk"):
-        for delimiter in (",", "\t"):
-            try:
-                with open(csv_path, newline="", encoding=encoding) as csv_file:
-                    reader = csv.DictReader(csv_file, delimiter=delimiter)
-                    if "变量名" not in (reader.fieldnames or []):
-                        continue
-                    metadata: Dict[str, Dict[str, str]] = {}
-                    for row in reader:
-                        name = (row.get("变量名") or "").strip()
-                        if not SENSOR_BIT_NAME_PATTERN.fullmatch(name):
-                            continue
-                        metadata[name] = {
-                            "label": (row.get("注释") or "").strip(),
-                            "address": (row.get("软元件地址") or "").strip(),
-                            "node_id": (row.get("node_id") or row.get("nodeid") or "").strip(),
-                        }
-                    return metadata
-            except UnicodeDecodeError as exc:
-                last_error = exc
-                break
-    if last_error:
-        raise last_error
-    return {}
 
 
 def _patch_opcua_token_time_drift_check() -> None:
@@ -584,17 +415,11 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def _parse_sensor_bit_name(self, variable_name: str) -> Optional[tuple[int, int]]:
-        match = SENSOR_BIT_NAME_PATTERN.fullmatch(variable_name)
-        if match is None:
-            return None
-        group_index, bit_index = int(match.group(1)), int(match.group(2))
-        if group_index >= SENSOR_ARRAY_COUNT or bit_index >= SENSOR_BITS_PER_ARRAY:
-            return None
-        return group_index, bit_index
+        return SensorBase.parse_bit_name(variable_name)
 
     @not_action
     def _read_sensor_array(self, group_index: int) -> List[bool]:
-        variable_name = f"传感器状态_上位机[{group_index}].NO"
+        variable_name = SensorBase.array(group_index)
         node = self.use_node(variable_name)
         value, error = node.read()
         if error:
@@ -632,7 +457,7 @@ class SZLabPolyPLCDevice(BaseClient):
         handles: List[Any] = []
         try:
             for group_index in range(SENSOR_ARRAY_COUNT):
-                variable_name = f"传感器状态_上位机[{group_index}].NO"
+                variable_name = SensorBase.array(group_index)
                 node_id = self._direct_node_id_map.get(variable_name)
                 opc_node = self.client.get_node(node_id) if node_id else self.use_node(variable_name)._get_node()
                 with self._sensor_subscription_lock:
@@ -1222,7 +1047,7 @@ class SZLabPolyPLCDevice(BaseClient):
         groups: List[Dict[str, Any]] = []
         successful_groups = 0
         for group_index in range(SENSOR_ARRAY_COUNT):
-            array_name = f"传感器状态_上位机[{group_index}].NO"
+            array_name = SensorBase.array(group_index)
             error: Optional[str] = None
             try:
                 values: List[Optional[bool]] = self._read_sensor_array(group_index)

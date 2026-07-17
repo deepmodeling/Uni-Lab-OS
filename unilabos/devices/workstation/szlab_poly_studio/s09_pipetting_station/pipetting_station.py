@@ -4,7 +4,7 @@ import os
 import time
 from typing import Any
 
-from unilabos.devices.workstation.szlab_poly_studio.plc import wait_sensor_conditions
+from unilabos.devices.workstation.szlab_poly_studio.sensor import wait_sensor_conditions
 from unilabos.registry.decorators import action, device, not_action, topic_config
 
 from .sensors import (

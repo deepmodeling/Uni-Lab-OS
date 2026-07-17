@@ -1,5 +1,8 @@
 """SZLab Poly Studio S04 磁搅工位 OPC UA 变量。"""
 
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S04Sensors
+
+
 S04_POSITION_RANGE = range(1, 7)
 S04_PROCESS_MODES = {
     1: "搅拌",
@@ -53,7 +56,7 @@ def s04_safe_temperature_var(position: int) -> str:
 
 
 def s04_material_sensor_var(position: int) -> str:
-    return f"传感器状态_上位机[2].NO[{int(position) + 9}]"
+    return S04Sensors.material(position)
 
 
 def s04_public_variables() -> list[str]:

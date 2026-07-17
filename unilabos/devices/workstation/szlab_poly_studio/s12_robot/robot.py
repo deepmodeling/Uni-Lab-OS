@@ -5,7 +5,7 @@ import time
 from typing import Any
 
 from unilabos.registry.decorators import ActionInputHandle, DataSource, action, device, not_action
-from unilabos.devices.workstation.szlab_poly_studio.plc import wait_sensor_conditions
+from unilabos.devices.workstation.szlab_poly_studio.sensor import wait_sensor_conditions
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
     ROBOT_HOME_VARIABLE,
     ROBOT_TASK_COMPLETE_VARIABLE,

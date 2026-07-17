@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S08Sensors
+
 from .robot_tasks import build_variables
 
-S08_CAP_STATION_SENSOR_BY_POSITION = {
-    1: "传感器状态_上位机[3].NO[14]",
-    2: "传感器状态_上位机[3].NO[15]",
-}
-S08_POUR_SAMPLE_VIAL_SENSOR = "传感器状态_上位机[3].NO[14]"
+S08_CAP_STATION_SENSOR_BY_POSITION = S08Sensors.CAP_STATION
+S08_POUR_SAMPLE_VIAL_SENSOR = S08Sensors.POUR_SAMPLE_VIAL
 
 
 class SzlabRobotS08Mixin:

@@ -3,18 +3,14 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S04Sensors
+
+
 S04_PLACE_TASK_NUMBER = 7
 S04_PICK_TASK_NUMBER = 8
 S04_POSITION_RANGE = range(1, 7)
 S04_POSITION_VARIABLE = "S04取放料编号"
-S04_SENSOR_BY_POSITION = {
-    1: "传感器状态_上位机[2].NO[10]",
-    2: "传感器状态_上位机[2].NO[11]",
-    3: "传感器状态_上位机[2].NO[12]",
-    4: "传感器状态_上位机[2].NO[13]",
-    5: "传感器状态_上位机[2].NO[14]",
-    6: "传感器状态_上位机[2].NO[15]",
-}
+S04_SENSOR_BY_POSITION = S04Sensors.MATERIAL_BY_POSITION
 
 
 class SzlabRobotS04Mixin:

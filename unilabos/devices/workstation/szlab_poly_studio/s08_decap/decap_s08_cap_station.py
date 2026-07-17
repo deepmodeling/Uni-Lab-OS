@@ -36,7 +36,8 @@ import time
 from enum import IntEnum
 from typing import Any, Optional, Sequence
 
-from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice, wait_sensor_conditions
+from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S08Sensors, wait_sensor_conditions
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.utils.log import logger
 
@@ -70,18 +71,8 @@ S08_STATION_STATUS_READY_VALUES = frozenset({2, 3, 4, 5, 6})
 CAP_CACHE_LENGTH = 30
 CAP_STORAGE_SLOTS = tuple(range(1, 6))
 
-SENSOR_CAP_STATION = {
-    1: "传感器状态_上位机[3].NO[14]",
-    2: "传感器状态_上位机[3].NO[15]",
-}
-
-CAP_STORAGE_SLOT_SENSORS = {
-    1: "传感器状态_上位机[4].NO[0]",
-    2: "传感器状态_上位机[4].NO[1]",
-    3: "传感器状态_上位机[4].NO[2]",
-    4: "传感器状态_上位机[4].NO[3]",
-    5: "传感器状态_上位机[4].NO[4]",
-}
+SENSOR_CAP_STATION = S08Sensors.CAP_STATION
+CAP_STORAGE_SLOT_SENSORS = S08Sensors.CAP_STORAGE_SLOT
 
 
 class S08ProcessType(IntEnum):

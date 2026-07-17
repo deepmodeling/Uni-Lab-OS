@@ -9,7 +9,7 @@ from typing import Any
 from urllib import request
 
 from unilabos.registry.decorators import action, device, not_action, topic_config
-from unilabos.devices.workstation.szlab_poly_studio.plc import wait_variable_true
+from unilabos.devices.workstation.szlab_poly_studio.sensor import wait_variable_true
 
 from .sensors import (
     PHOTO_RESULT_LABELS,

@@ -3,23 +3,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from unilabos.devices.workstation.szlab_poly_studio.plc import load_stack_sensor_groups_from_json
-from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensors import (
-    S09_STATION_SENSORS,
-    S09_TIP_BOX_SENSORS,
+from unilabos.devices.workstation.szlab_poly_studio.sensor import (
+    STACK_SENSOR_GROUPS,
+    S02Sensors,
+    S03Sensors,
+    S04Sensors,
+    S05Sensors,
+    S06Sensors,
+    S07Sensors,
+    S09Sensors,
+    S10Sensors,
+    S11Sensors,
 )
-from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S04 import S04_SENSOR_BY_POSITION
 
 GateKind = Literal["pick", "place", "pour"]
-STACK_SENSOR_GROUPS = load_stack_sensor_groups_from_json()
 
 ROBOT_HOME_VARIABLE = "Robot_Home"
 ROBOT_WRITE_ALLOWED_VARIABLE = "Robot_任务允许写入"
 ROBOT_WRITE_DONE_VARIABLE = "Robot_任务写入完成"
 ROBOT_TASK_NUMBER_VARIABLE = "任务号"
 ROBOT_TASK_COMPLETE_VARIABLE = "Robot_任务完成"
-S05_MATERIAL_SENSOR = "传感器状态_上位机[3].NO[0]"
-S06_MATERIAL_SENSOR = "传感器状态_上位机[3].NO[1]"
+S05_MATERIAL_SENSOR = S05Sensors.MATERIAL
+S06_MATERIAL_SENSOR = S06Sensors.MATERIAL
 
 
 @dataclass(frozen=True)
@@ -131,32 +136,32 @@ def numbered_position(position: int, *, min_value: int, max_value: int, label: s
 
 
 def s02_sensor(position: int) -> str:
-    return STACK_SENSOR_GROUPS["s2_tip"][str(numbered_position(position, min_value=1, max_value=6, label="S02 TIP位置"))]
+    return S02Sensors.TIP_BOX[str(numbered_position(position, min_value=1, max_value=6, label="S02 TIP位置"))]
 
 
 def s04_sensor(position: int) -> str:
-    return S04_SENSOR_BY_POSITION[numbered_position(position, min_value=1, max_value=6, label="S04磁搅位置")]
+    return S04Sensors.material(position)
 
 
 def s09_sensor(product_type: int, position: int) -> str:
     product_type = int(product_type)
     position = int(position)
     if product_type == 1:
-        if position not in S09_TIP_BOX_SENSORS:
+        if position not in S09Sensors.TIP_BOX:
             raise ValueError("S09 TIP位置必须是 1-2")
-        return S09_TIP_BOX_SENSORS[position]
+        return S09Sensors.TIP_BOX[position]
     if product_type == 2:
         position = numbered_position(position, min_value=1, max_value=5, label="S09 液体试剂瓶位置")
-        return S09_STATION_SENSORS[position]
+        return S09Sensors.STATION[position]
     if product_type == 3:
         if position != 1:
             raise ValueError("S09 烧杯位置必须是 1")
-        return S09_STATION_SENSORS[position]
+        return S09Sensors.STATION[position]
     raise ValueError("S09取放料产品必须是 1(TIP盒)、2(液体试剂瓶) 或 3(烧杯)")
 
 
 def s10_sensor(position: int) -> str:
-    values = list(STACK_SENSOR_GROUPS["s10_liquid_reagent"].values())
+    values = list(S10Sensors.LIQUID_REAGENT.values())
     position = numbered_position(position, min_value=1, max_value=len(values), label="S10试剂瓶位置")
     return values[position - 1]
 
@@ -165,10 +170,10 @@ def product_slot_sensor(product_type: int, position: str | int, *, used: bool) -
     product_type = int(product_type)
     key = str(position)
     if product_type == 1:
-        sensors = STACK_SENSOR_GROUPS["s11_used_beaker"] if used else STACK_SENSOR_GROUPS["s3_unused_beaker"]
+        sensors = S11Sensors.USED_BEAKER if used else S03Sensors.UNUSED_BEAKER
         label = "烧杯"
     elif product_type in (2, 3):
-        sensors = STACK_SENSOR_GROUPS["s11_used_sample_vial"] if used else STACK_SENSOR_GROUPS["s3_unused_sample_vial"]
+        sensors = S11Sensors.USED_SAMPLE_VIAL if used else S03Sensors.UNUSED_SAMPLE_VIAL
         label = "样品瓶"
     else:
         raise ValueError("产品类型必须是 1(烧杯)、2(样品瓶250ml) 或 3(样品瓶500ml)")
@@ -179,7 +184,7 @@ def product_slot_sensor(product_type: int, position: str | int, *, used: bool) -
 
 def powder_container_sensor(position: str | int) -> str:
     key = str(position)
-    sensors = STACK_SENSOR_GROUPS["powder_container"]
+    sensors = S07Sensors.POWDER_CONTAINER_BY_POSITION
     if key not in sensors:
         raise ValueError(f"固体粉末容器位置不存在: {key}")
     return sensors[key]

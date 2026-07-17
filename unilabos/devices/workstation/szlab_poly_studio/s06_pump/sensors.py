@@ -9,10 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S06Sensors
+
+
 CSV_REFERENCE = str(Path(__file__).resolve().parent / "pump_nodes.csv")
 
 # CSV 行 60：加溶剂检测（加液位烧杯）
-ADDITION_BEAKER_SENSOR = "传感器状态_上位机[3].NO[1]"
+ADDITION_BEAKER_SENSOR = S06Sensors.MATERIAL
 
 # 新 CSV：S06 加溶液工位握手与参数
 S06_READY_VAR = "S06准备信号"

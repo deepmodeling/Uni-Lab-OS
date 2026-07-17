@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
+import io
 import json
 import os
 import re
@@ -1018,6 +1020,40 @@ def create_app(preset_name: str = "ai4c", runtime_config: RuntimeConfig | None =
             "default_config": active_preset.default_config,
             "actions": [_action_to_dict(action, runtime_config) for action in active_preset.actions.values()],
         }
+
+    @app.get("/api/csv-variables", response_class=JSONResponse)
+    async def csv_variables(csv_path: str = "") -> dict[str, Any]:
+        value = csv_path.strip() or str(active_preset.default_config.get("csv") or "").strip()
+        path = _resolve_ui_path(value, active_preset) if value else None
+        if path is None or not path.exists():
+            return {"variables": []}
+        raw = path.read_bytes()
+        text = ""
+        for encoding in ("utf-8-sig", "utf-16", "gb18030"):
+            try:
+                text = raw.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        if not text:
+            raise HTTPException(status_code=400, detail=f"无法识别 CSV 文件编码: {path.name}")
+        sample = text[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",\t")
+        except csv.Error:
+            dialect = csv.excel
+        rows = csv.DictReader(io.StringIO(text), dialect=dialect)
+        variables = [
+            {
+                "name": (row.get("变量名") or "").strip(),
+                "data_type": (row.get("数据类型") or "STRING").strip(),
+                "initial_value": (row.get("初始值") or "").strip(),
+                "comment": (row.get("注释") or "").strip(),
+            }
+            for row in rows
+            if (row.get("变量名") or "").strip() and (row.get("数据类型") or "").strip()
+        ]
+        return {"variables": variables}
 
     @app.get("/api/stack-status", response_class=JSONResponse)
     async def get_stack_status() -> dict[str, Any]:

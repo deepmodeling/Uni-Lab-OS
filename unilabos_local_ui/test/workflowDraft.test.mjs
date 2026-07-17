@@ -6,6 +6,10 @@ import ts from 'typescript';
 
 async function importTypeScriptModule(path) {
   const source = await readFile(path, 'utf8');
+  return importTypeScriptSource(source);
+}
+
+async function importTypeScriptSource(source) {
   const transpiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2022,
@@ -35,9 +39,445 @@ const { collectOpcChanges, formatOpcValue } = await importTypeScriptModule(
 const { formatUiError, buildWorkspaceSummary, groupActionsByDevice } = await importTypeScriptModule(
   new URL('../src/uiState.ts', import.meta.url),
 );
+const {
+  buildTaskGanttSchedule,
+  createTaskTemplateTriggers,
+  createDefaultTriggerCondition,
+  normalizeTriggerConditions,
+  renameTaskTemplate,
+  updateTaskTemplateTriggers,
+} = await importTypeScriptModule(
+  new URL('../src/taskOrchestration.ts', import.meta.url),
+);
+const {
+  createTaskOrchestrationClient,
+  resolveTaskOrchestrationApiUrl,
+  resolveTaskOrchestrationUiToken,
+  TaskOrchestrationBusinessError,
+  TaskOrchestrationServiceUnavailableError,
+  toApiTrigger,
+} = await importTypeScriptModule(
+  new URL('../src/taskOrchestrationApi.ts', import.meta.url),
+);
 const mainSource = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const styleSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 const opcChangesSource = await readFile(new URL('../src/opcChanges.ts', import.meta.url), 'utf8');
+const taskStateSource = mainSource.match(
+  /export function createEmptyTaskWorkspaceState\([\s\S]*?\n}\n\ntype StackSlotPayload/,
+)?.[0].replace(/\n\ntype StackSlotPayload$/, '') || '';
+const {
+  createEmptyTaskWorkspaceState,
+  clampContextMenuPosition,
+  isRestorableContextMenuFocusTarget,
+  removeTaskTemplateState,
+  resetTaskWorkspaceState,
+} = await importTypeScriptSource(taskStateSource);
+
+assert.equal(
+  resolveTaskOrchestrationApiUrl({ VITE_TASK_ORCHESTRATION_API_URL: 'http://scheduler.test/api/v1/' }),
+  'http://scheduler.test/api/v1',
+  '任务编排 API 地址应使用环境变量并规范化末尾斜杠',
+);
+assert.equal(
+  resolveTaskOrchestrationApiUrl({}),
+  '/task-api/api/v1',
+  '未配置环境变量时应使用 Vite 任务编排代理地址',
+);
+assert.equal(
+  resolveTaskOrchestrationApiUrl({}, { protocol: 'http:', hostname: '127.0.0.1', port: '8014' }),
+  'http://127.0.0.1:8091/api/v1',
+  '由 workflow_ui 托管时应直连排程服务，避免落入前端静态回退路由',
+);
+assert.equal(
+  resolveTaskOrchestrationUiToken({}, { hostname: '127.0.0.1', port: '8014' }),
+  'local-task-ui-dev',
+  '本地 workflow_ui 应使用与排程服务一致的开发 UI 令牌',
+);
+assert.deepEqual(
+  toApiTrigger({ variableName: 'S09 空闲', dataType: 'BOOL', value: true }),
+  { kind: 'opc', config: { provider_id: 'default', variable: 'S09 空闲', value: true } },
+  'CSV OPC 条件应映射为后端可判定的默认 provider DTO',
+);
+assert.deepEqual(
+  toApiTrigger({ variableName: '系统资源可用：robot', dataType: 'BOOL', value: true }),
+  { kind: 'resource', config: { resource: 'robot' } },
+  '派生资源约束应映射为后端 resource Trigger DTO',
+);
+assert.deepEqual(
+  toApiTrigger({ variableName: '系统资源释放：robot', dataType: 'BOOL', value: true }),
+  { kind: 'resource', config: { resource: 'robot', event: 'released' } },
+  '派生资源输出应记录审计事件而不形成内部等待条件',
+);
+const taskApiRequests = [];
+const taskApi = createTaskOrchestrationClient({
+  baseUrl: 'http://scheduler.test/api/v1',
+  fetchImpl: async (url, init) => {
+    taskApiRequests.push({ url, init });
+    return new Response(JSON.stringify({
+      version: 3,
+      workspace: {
+        workflow_path: '/tmp/demo.json',
+        templates: [],
+        task_instances: [],
+        events: [],
+        scheduled_template_ids: [],
+        scheduler_paused: false,
+        schedule_entries: [],
+        opc_snapshots: [{ provider_id: 'gateway', sequence: 2, variable_count: 4, updated_at_by_variable: {} }],
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  },
+});
+await taskApi.getWorkspace('/tmp/demo.json');
+assert.equal(
+  taskApiRequests[0].url,
+  'http://scheduler.test/api/v1/workspaces?workflow_path=%2Ftmp%2Fdemo.json',
+  '读取工作区必须携带 workflow_path 查询参数',
+);
+assert.equal(
+  taskApiRequests[0].init.method,
+  'GET',
+  '读取工作区必须通过 GET 请求',
+);
+await taskApi.updateScheduledTemplates('/tmp/demo.json', 3, ['second', 'first']);
+assert.equal(
+  taskApiRequests[1].url,
+  'http://scheduler.test/api/v1/workspaces/scheduled-templates',
+  '待排模板顺序必须通过专用 API 持久化',
+);
+assert.deepEqual(
+  JSON.parse(taskApiRequests[1].init.body),
+  { workflow_path: '/tmp/demo.json', expected_version: 3, template_ids: ['second', 'first'] },
+  '待排模板请求只能包含工作区、版本和模板 ID',
+);
+await assert.rejects(
+  () => createTaskOrchestrationClient({
+    baseUrl: 'http://scheduler.test/api/v1',
+    fetchImpl: async () => new Response(JSON.stringify({ detail: { message: '模板不存在' } }), { status: 404 }),
+  }).getWorkspace('/tmp/demo.json'),
+  (error) => error instanceof TaskOrchestrationBusinessError && error.message === '模板不存在',
+  '404/409/422 应保留为可展示的业务错误',
+);
+await assert.rejects(
+  () => createTaskOrchestrationClient({
+    baseUrl: 'http://scheduler.test/api/v1',
+    fetchImpl: async () => new Response('', { status: 503 }),
+  }).getWorkspace('/tmp/demo.json'),
+  (error) => error instanceof TaskOrchestrationServiceUnavailableError,
+  '5xx 应归类为服务不可用错误',
+);
+await assert.rejects(
+  () => createTaskOrchestrationClient({
+    baseUrl: 'http://scheduler.test/api/v1',
+    fetchImpl: async () => new Response(JSON.stringify({ version: 3, workspace: {} }), { status: 200 }),
+  }).getWorkspace('/tmp/demo.json'),
+  (error) => error instanceof TaskOrchestrationServiceUnavailableError,
+  '无效成功响应必须归类为服务协议错误',
+);
+
+const taskTemplatesFixture = [
+  { id: 'solid', name: 'S07 固体加料', nodeIds: ['n1', 'n2'], resources: ['robot', 's07'], gates: ['s07'] },
+  { id: 'liquid', name: 'S09 配液', nodeIds: ['n3', 'n4', 'n5'], resources: ['robot', 's09'], gates: ['s09'] },
+];
+const taskInstancesFixture = [
+  { id: 'a-solid', sample: 'Sample A', templateId: 'solid', order: 0, status: 'done', finishedAt: 60_000 },
+  { id: 'a-liquid', sample: 'Sample A', templateId: 'liquid', order: 1, status: 'pending' },
+  { id: 'b-solid', sample: 'Sample B', templateId: 'solid', order: 0, status: 'pending' },
+];
+const ganttSchedule = buildTaskGanttSchedule(taskTemplatesFixture, taskInstancesFixture, 60_000);
+assert.deepEqual(
+  ganttSchedule.map((item) => ({ instanceId: item.instanceId, resource: item.resource, state: item.state })),
+  [
+    { instanceId: 'a-solid', resource: 'robot', state: 'done' },
+    { instanceId: 'a-solid', resource: 's07', state: 'done' },
+    { instanceId: 'a-liquid', resource: 'robot', state: 'planned' },
+    { instanceId: 'a-liquid', resource: 's09', state: 'planned' },
+    { instanceId: 'b-solid', resource: 'robot', state: 'planned' },
+    { instanceId: 'b-solid', resource: 's07', state: 'planned' },
+  ],
+  '甘特排程应按模板资源生成泳道条目，并保留实例运行状态',
+);
+assert.equal(
+  ganttSchedule.find((item) => item.instanceId === 'a-liquid' && item.resource === 'robot')?.startAt,
+  60_000,
+  '同一样品的后继 Task 应从前置完成时间开始排程',
+);
+assert.deepEqual(
+  renameTaskTemplate(taskTemplatesFixture, 'liquid', 'S09 精准配液').map((template) => template.name),
+  ['S07 固体加料', 'S09 精准配液'],
+  '重命名模板应只更新指定模板',
+);
+assert.deepEqual(
+  updateTaskTemplateTriggers(
+    [{
+      ...taskTemplatesFixture[0],
+      inputTriggers: [{ variableName: 'S07 空闲', dataType: 'BOOL', value: false }],
+      outputTriggers: [{ variableName: '加料完成', dataType: 'BOOL', value: false }],
+    }],
+    'solid',
+    'output',
+    [{ variableName: 'S07 工位释放', dataType: 'BOOL', value: true }],
+  )[0].outputTriggers,
+  [{ variableName: 'S07 工位释放', dataType: 'BOOL', value: true }],
+  '模板应支持独立更新输出触发列表',
+);
+const csvVariablesFixture = [
+  { name: 'ready', data_type: 'BOOL', initial_value: 'true' },
+  { name: 'batch', data_type: 'INTEGER', initial_value: '12' },
+  { name: 'temperature', data_type: 'FLOAT', initial_value: '23.5' },
+  { name: 'label', data_type: 'STRING', initial_value: '样品 A' },
+];
+assert.deepEqual(
+  createTaskTemplateTriggers(['robot', 's07'], ['s07']),
+  {
+    inputTriggers: [
+      { variableName: '系统资源可用：robot', dataType: 'BOOL', value: true },
+      { variableName: '系统资源可用：s07', dataType: 'BOOL', value: true },
+      { variableName: '系统工位可用：s07', dataType: 'BOOL', value: true },
+    ],
+    outputTriggers: [
+      { variableName: '系统资源释放：robot', dataType: 'BOOL', value: true },
+      { variableName: '系统资源释放：s07', dataType: 'BOOL', value: true },
+      { variableName: '系统工位完成：s07', dataType: 'BOOL', value: true },
+    ],
+  },
+  '模板应将识别出的资源锁与工位门控转换为详情中的输入和输出条件',
+);
+assert.deepEqual(
+  createDefaultTriggerCondition(csvVariablesFixture[0]),
+  { variableName: 'ready', dataType: 'BOOL', value: true },
+  '布尔 CSV 变量应以初始 true 值创建条件',
+);
+assert.deepEqual(
+  createDefaultTriggerCondition(csvVariablesFixture[1]),
+  { variableName: 'batch', dataType: 'INTEGER', value: 12 },
+  '整数 CSV 变量应以数字初始值创建条件',
+);
+assert.deepEqual(
+  createDefaultTriggerCondition(csvVariablesFixture[2]),
+  { variableName: 'temperature', dataType: 'FLOAT', value: 23.5 },
+  '浮点 CSV 变量应以数字初始值创建条件',
+);
+assert.deepEqual(
+  createDefaultTriggerCondition(csvVariablesFixture[3]),
+  { variableName: 'label', dataType: 'STRING', value: '样品 A' },
+  '字符串 CSV 变量应以文本初始值创建条件',
+);
+assert.deepEqual(
+  normalizeTriggerConditions([], csvVariablesFixture),
+  [{ variableName: 'ready', dataType: 'BOOL', value: true }],
+  '输入或输出条件为空时必须补充至少一条默认条件',
+);
+assert.deepEqual(
+  normalizeTriggerConditions(
+    [{ variableName: 'missing', dataType: 'STRING', value: '旧值' }],
+    csvVariablesFixture,
+  ),
+  [{ variableName: 'ready', dataType: 'BOOL', value: true }],
+  '已不存在于 CSV 的变量应替换为默认 CSV 条件',
+);
+assert.deepEqual(
+  normalizeTriggerConditions(
+    [{ variableName: '业务内部：样品已制备', dataType: 'BOOL', value: true }],
+    csvVariablesFixture,
+  ),
+  [{ variableName: '业务内部：样品已制备', dataType: 'BOOL', value: true }],
+  '业务内部链路条件必须保留稳定 key，而不是被 CSV 过滤',
+);
+assert.match(
+  mainSource,
+  /const \[isSchedulerRunning, setIsSchedulerRunning\] = useState\(false\);/,
+  'Task 编排应维护运行或暂停状态',
+);
+assert.match(
+  mainSource,
+  /isSchedulerRunning \? '暂停派发' : '运行调度'/,
+  'Task 编排应提供运行和暂停派发按钮',
+);
+assert.match(
+  mainSource,
+  /value=\{selectedTaskTemplate\?\.name \|\| ''\}[\s\S]*?onBlur=\{\(event\) => renameSelectedTaskTemplate\(event\.target\.value\)\}/,
+  '选中模板详情应在失焦时通过 API 保存重命名',
+);
+assert.match(mainSource, /createTaskOrchestrationClient\(\)/, 'Task 工作区应使用独立 REST API 客户端');
+assert.match(mainSource, /Task 编排服务不可用[\s\S]*?重试/, '服务不可用时应显示明确状态和重试按钮');
+assert.match(mainSource, /taskApiRef\.current\.updateScheduledTemplates/, '待排模板变更必须通过专用 API');
+assert.match(mainSource, /taskApiRef\.current\.advance/, '调度推进必须通过 API');
+assert.match(mainSource, /satisfied_triggers/, '调度日志应展示启动时已经满足的输入条件');
+assert.doesNotMatch(mainSource, /scheduleOneTask/, '前端不得保留本地定时完成模拟');
+assert.match(mainSource, /taskRequestQueueRef\.current\.then\(execute, execute\)/, '所有 Task 写操作应串行进入单一请求队列');
+assert.match(mainSource, /error instanceof TaskOrchestrationBusinessError && error\.status === 409[\s\S]*?getWorkspace\(taskWorkspacePath\)[\s\S]*?operation\(latest\.version\)/, '409 应 reload 最新 workspace 后仅重试一次');
+assert.match(mainSource, /taskPollingTimerRef[\s\S]*?taskPollingInFlightRef[\s\S]*?taskPollingGenerationRef/, '轮询应维护 timer、inflight 与 generation ref');
+assert.match(
+  mainSource,
+  /schedule_entries\.flatMap\(\(entry\) => entry\.resources\.map\(\(resource\)/,
+  'API 工位资源必须映射为 Resource Schedule 泳道',
+);
+assert.match(
+  mainSource,
+  /error instanceof TaskOrchestrationServiceUnavailableError[\s\S]*?return error instanceof Error \? error\.message/,
+  'Task API 业务错误应保留服务 detail，不应伪装为服务不可用',
+);
+assert.match(
+  mainSource,
+  /taskServiceError === 'Task 编排服务不可用' && \(\s*<button[\s\S]*?重试/,
+  '仅服务不可用状态应显示重试按钮',
+);
+assert.match(
+  mainSource,
+  /<section className="task-column task-gantt-column">[\s\S]*?taskGanttEntries/,
+  'Task 编排应渲染资源泳道甘特图',
+);
+assert.match(
+  mainSource,
+  /const moveTaskInstance = useCallback\(\(taskId: string, direction: -1 \| 1\)/,
+  'Queue 应支持手动调整同一样品内的 Task 执行顺序',
+);
+assert.match(
+  mainSource,
+  /aria-label=\{`上移 \$\{task\.sample\}\/\$\{template\?\.name \|\| task\.templateId\}`\}[\s\S]*?moveTaskInstance\(task\.id, -1\)/,
+  'Queue 卡片应提供上移执行顺序按钮',
+);
+assert.match(
+  styleSource,
+  /\.task-template-list\s*\{[\s\S]*?flex:\s*1;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
+  '三列布局中 Template 列表应填满自身列并独立滚动',
+);
+assert.doesNotMatch(
+  mainSource,
+  /<h2>Sensor Gates<\/h2>/,
+  'Task 编排主画面不应展示可手动切换的 Sensor Gates 面板',
+);
+assert.match(
+  mainSource,
+  /<h2>等待条件与调度事件<\/h2>[\s\S]*?taskEvents\.map/,
+  '调度区域应展示运行中实际等待的信号或资源原因',
+);
+assert.match(
+  mainSource,
+  /const \[scheduledTemplateIds, setScheduledTemplateIds\] = useState<string\[\]>\(\[\]\);/,
+  'Task 编排应维护手动加入 Resource Schedule 的模板序列',
+);
+assert.match(
+  mainSource,
+  /const addTemplateToSchedule = useCallback\(\(templateId: string\) =>/,
+  'Template 应可被手动加入 Resource Schedule',
+);
+assert.match(
+  mainSource,
+  /draggable=\{true\}[\s\S]*?onDragStart=\{\(event\) => event\.dataTransfer\.setData\('application\/x-unilab-task-template', template\.id\)\}/,
+  '模板卡片应支持拖入 Resource Schedule',
+);
+assert.match(
+  mainSource,
+  /onDrop=\{\(event\) => \{[\s\S]*?application\/x-unilab-task-template[\s\S]*?addTemplateToSchedule\(templateId\);/,
+  'Resource Schedule 应接收拖入的模板',
+);
+assert.match(
+  styleSource,
+  /\.task-orchestration\s*\{[\s\S]*?grid-template-columns:\s*minmax\([^;]+\)\s+minmax\([^;]+\)\s+minmax\([^;]+\);/,
+  'Task 编排应使用 Template、详情、Queue 三列布局',
+);
+assert.match(
+  mainSource,
+  /scheduledTemplateIds\.length\s*\?\s*taskGanttEntries\.map\(\(entry\) => entry\.resource\)/,
+  'Resource Schedule 应从 API 甘特条目的资源生成泳道，并在待排为空时隐藏',
+);
+assert.match(
+  mainSource,
+  /scheduledResources\.map\(\(resource\) =>/,
+  'Resource Schedule 不应固定渲染全部默认工位',
+);
+assert.match(
+  mainSource,
+  /本次待排 \{scheduledTemplateIds\.length\} \/ \{taskTemplates\.length\}/,
+  '待排区域应明确区分手动拖入数量与全部模板数量',
+);
+assert.match(
+  mainSource,
+  /const updateSelectedTaskTriggers = useCallback\(\(kind: 'input' \| 'output', triggers: TriggerCondition\[\]\) =>/,
+  'Template Detail 应提供类型化的输入与输出触发条件编辑',
+);
+assert.match(
+  mainSource,
+  /placeholder="搜索全部 OPC 变量"[\s\S]*?添加输入条件[\s\S]*?添加输出条件/,
+  '输入和输出条件均应从可搜索的全量 OPC 变量菜单新增',
+);
+assert.match(
+  mainSource,
+  /placeholder="搜索全部 OPC 变量"[\s\S]*?className="task-trigger-options"/,
+  '触发条件编辑器应提供可见的全量 OPC 变量搜索结果',
+);
+assert.match(
+  styleSource,
+  /\.task-trigger-options\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*20;/,
+  'OPC 变量搜索结果应作为置顶浮层展开',
+);
+assert.match(
+  styleSource,
+  /\.task-trigger-condition \.task-trigger-options button\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(72px,\s*0\.4fr\)\s+auto;/,
+  'OPC 变量候选项应保持单行布局，避免被删除按钮样式覆盖',
+);
+assert.match(
+  styleSource,
+  /\.task-trigger-condition \.task-trigger-options button\s*\{[\s\S]*?font-weight:\s*500;[\s\S]*?font-size:\s*12px;/,
+  'OPC 变量候选项应使用紧凑的常规字重，而非调试面板式粗体',
+);
+assert.match(
+  styleSource,
+  /\.task-trigger-condition \.task-trigger-options button\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(72px,\s*0\.4fr\)\s+auto;[\s\S]*?text-align:\s*left;/,
+  'OPC 变量候选项应将名称和类型固定为左对齐的两列',
+);
+assert.match(
+  styleSource,
+  /\.task-trigger-options\s*\{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior:\s*contain;/,
+  'OPC 变量列表应禁止横向偏移并隔离自身滚动',
+);
+assert.match(
+  styleSource,
+  /\.task-trigger-options b\s*\{[\s\S]*?justify-self:\s*stretch;[\s\S]*?text-align:\s*left;/,
+  'OPC 变量名称应锚定在候选项左侧',
+);
+assert.match(
+  mainSource,
+  /setTriggerSearchQueries\(\(current\) => \(\{[\s\S]*?\[`input-\$\{index\}`\]: '',/,
+  '聚焦输入条件变量时应清空筛选词，以展示完整 OPC 变量目录',
+);
+assert.match(
+  mainSource,
+  /trigger\.dataType === 'BOOL'[\s\S]*?<select[\s\S]*?type="number"[\s\S]*?createDefaultTriggerCondition\(variable\)/,
+  '条件值编辑器应随 BOOL、数值和字符串 CSV 类型切换，并在选变量时采用初始值',
+);
+assert.doesNotMatch(
+  mainSource,
+  /newInputTrigger|newOutputTrigger|placeholder="例如：S09 工位空闲"/,
+  '触发条件不应保留自由文本编辑入口',
+);
+assert.match(
+  mainSource,
+  /const \[resourceScheduleHeight, setResourceScheduleHeight\] = useState\(260\);/,
+  'Resource Schedule 应维护可调整高度',
+);
+assert.match(
+  mainSource,
+  /const startResourceScheduleResize = useCallback\(\(event: React\.PointerEvent<HTMLDivElement>\) =>/,
+  'Resource Schedule 应支持指针拖拽调整高度',
+);
+assert.match(
+  mainSource,
+  /className="task-schedule-resize-handle"[\s\S]*?onPointerDown=\{startResourceScheduleResize\}/,
+  'Resource Schedule 顶部应渲染拖拽分隔条',
+);
+assert.doesNotMatch(
+  mainSource,
+  /<div className="task-mini-tags">/,
+  'Template 卡片不应将资源锁或门控直接展示为业务触发',
+);
+assert.match(
+  styleSource,
+  /\.task-schedule-resize-handle\s*\{[\s\S]*?cursor:\s*row-resize;/,
+  'Resource Schedule 分隔条应使用垂直调整光标',
+);
 
 const toolbarSource = mainSource.match(/<div className="demo-canvas-toolbar">[\s\S]*?<div className="demo-tabbar"/)?.[0] || '';
 assert.equal(
@@ -61,6 +501,21 @@ assert.match(
   styleSource,
   /\.demo-execution-summary\s*\{[^}]*margin-top:\s*(1[0-9]|[2-9]\d)px;/,
   '运行按钮区和执行摘要之间需要至少 10px 间距',
+);
+assert.match(
+  styleSource,
+  /\.demo-tool-shell\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*0;/,
+  '工具壳应使用弹性列布局，避免固定最小高度裁切画布',
+);
+assert.match(
+  styleSource,
+  /\.demo-workbench\s*\{[\s\S]*?flex:\s*1;[\s\S]*?min-height:\s*0;/,
+  '工作台应占用页头和导航之外的剩余高度',
+);
+assert.doesNotMatch(
+  styleSource,
+  /\.demo-workbench\s*\{[\s\S]*?height:\s*calc\(100vh - 66px\);/,
+  '工作台不能再按未包含页头与导航的固定视口高度计算',
 );
 assert.match(
   mainSource,
@@ -163,6 +618,442 @@ assert.match(
   /\.node-hover-actions button:focus-visible\s*\{[^}]*outline:/,
   '节点工具栏按钮应提供明确的键盘焦点轮廓',
 );
+const taskTemplatesSource = mainSource.match(
+  /<div className="task-template-list">[\s\S]*?<section className="task-column task-scheduler-column">/,
+)?.[0] || '';
+const deleteTaskTemplateSource = mainSource.match(
+  /const deleteTaskTemplate = useCallback\([\s\S]*?\n  \}, \[mutateTaskWorkspace, showCanvasToast, taskInstances, taskTemplates, taskWorkspacePath\]\);/,
+)?.[0] || '';
+assert.match(
+  deleteTaskTemplateSource,
+  /if \(!window\.confirm\([\s\S]*?\)\) \{\s*return;\s*\}/,
+  '删除 Task 模板前应通过确认框征求用户确认',
+);
+assert.match(
+  deleteTaskTemplateSource,
+  /taskApiRef\.current\.deleteTemplate\(taskWorkspacePath, version, template\.id\)/,
+  '确认删除后应通过 API 级联更新模板和实例',
+);
+assert.match(
+  deleteTaskTemplateSource,
+  /mutateTaskWorkspace/,
+  '删除后应回写 API 工作区响应',
+);
+assert.match(
+  mainSource,
+  /const showCanvasToast = useCallback\(\(text: string\) => \{[\s\S]*?\n  \}, \[\]\);/,
+  '画布提示函数应使用稳定的 useCallback 引用',
+);
+assert.ok(
+  mainSource.indexOf('const showCanvasToast = useCallback') < mainSource.indexOf('const createTaskTemplateFromNodes = useCallback'),
+  '画布提示函数应定义在使用它的 Task 回调之前',
+);
+assert.match(
+  mainSource,
+  /const createTaskTemplateFromNodes = useCallback\([\s\S]*?taskApiRef\.current\.createTemplate/,
+  '创建 Task 模板回调应写入 API',
+);
+assert.match(
+  mainSource,
+  /const createRecommendedTaskTemplates = useCallback\([\s\S]*?taskApiRef\.current\.createTemplate/,
+  '自动切分 Task 模板回调应写入 API',
+);
+assert.match(
+  deleteTaskTemplateSource,
+  /showCanvasToast\('已删除 Task 模板'\)/,
+  '删除 Task 模板回调应保留成功提示',
+);
+assert.match(
+  taskTemplatesSource,
+  /className="task-template-delete"[\s\S]*?onClick=\{\(\) => deleteTaskTemplate\(template\)\}[\s\S]*?aria-label=\{`删除 Task 模板 \$\{template\.name\}`\}/,
+  'Task Template 卡片应提供动态 aria-label 的删除按钮',
+);
+assert.match(
+  styleSource,
+  /\.task-template-delete\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*\d+px;[\s\S]*?right:\s*\d+px;/,
+  'Task Template 删除按钮应定位在卡片右上角',
+);
+assert.match(
+  styleSource,
+  /\.task-template-delete:hover[\s\S]*?\.task-template-delete:focus-visible\s*\{/,
+  'Task Template 删除按钮应提供 hover 和键盘焦点样式',
+);
+assert.match(
+  mainSource,
+  /type Workspace = 'workflow' \| 'tasks';/,
+  'Task 编排应使用独立的一级工作区类型',
+);
+assert.match(
+  mainSource,
+  /const \[workspace, setWorkspace\] = useState<Workspace>\('workflow'\);/,
+  '应用应默认进入流程设计工作区',
+);
+assert.match(
+  mainSource,
+  /<nav className="workspace-navigation" aria-label="一级工作区">/,
+  '应用应提供可访问的一级工作区导航',
+);
+assert.match(
+  mainSource,
+  /aria-pressed=\{workspace === 'workflow'\}[\s\S]*?流程设计/,
+  '流程设计入口应暴露当前选中状态',
+);
+assert.match(
+  mainSource,
+  /aria-pressed=\{workspace === 'tasks'\}[\s\S]*?Task 编排/,
+  'Task 编排入口应暴露当前选中状态',
+);
+assert.match(
+  mainSource,
+  /workspace === 'workflow' && \([\s\S]*?<main className=\{`demo-workbench/,
+  '流程设计三栏应仅在流程工作区渲染',
+);
+assert.match(
+  mainSource,
+  /workspace === 'tasks' && \(\s*<main className="task-workspace">/,
+  'Task 编排应在独立全宽工作区渲染',
+);
+assert.doesNotMatch(
+  mainSource,
+  /mainTab === 'tasks'/,
+  '旧 mainTab 不应再包含 Task 编排分支',
+);
+const importFlowSource = mainSource.match(
+  /const importFlowJson = async[\s\S]*?\n  };/,
+)?.[0] || '';
+assert.match(
+  importFlowSource,
+  /setTaskWorkspacePath\(file\.name\);/,
+  '导入新 Flow JSON 后应以导入路径作为 Task 工作区键',
+);
+const presetLoadSource = mainSource.match(
+  /fetch\('\/api\/preset'\)[\s\S]*?\.catch/,
+)?.[0] || '';
+assert.match(
+  presetLoadSource,
+  /setTaskWorkspacePath\(`\$\{payload\.default_workflow_name \|\| 'szlab_canvas_workflow'\}\.json`\);/,
+  '加载 preset 后应以 workflow 路径作为 Task 工作区键',
+);
+assert.match(
+  styleSource,
+  /\.task-workspace\s*\{/,
+  'Task 一级工作区应提供独立布局样式',
+);
+const workflowWorkspaceSource = mainSource.match(
+  /\{workspace === 'workflow' && \([\s\S]*?<\/main>\s*\)\}/,
+)?.[0] || '';
+const taskWorkspaceSource = mainSource.match(
+  /\{workspace === 'tasks' && \([\s\S]*?<\/main>\s*\)\}/,
+)?.[0] || '';
+const canvasTabsSource = workflowWorkspaceSource.match(
+  /<div className="demo-tabbar canvas-tabs"[\s\S]*?<\/div>/,
+)?.[0] || '';
+assert.match(
+  mainSource,
+  /const \[contextMenu, setContextMenu\] = useState<\{ x: number; y: number \} \| null>\(null\);/,
+  '流程画布应维护右键菜单的视窗坐标状态',
+);
+assert.match(
+  mainSource,
+  /contextMenuFirstActionRef\.current\?\.focus\(\);/,
+  '右键浮层打开后应自动聚焦首个可操作按钮',
+);
+assert.match(
+  mainSource,
+  /document\.addEventListener\('keydown', closeContextMenuOnEscape\);[\s\S]*?document\.removeEventListener\('keydown', closeContextMenuOnEscape\);/,
+  '右键浮层打开时应注册并清理 Escape 键监听',
+);
+assert.match(
+  mainSource,
+  /event\.key !== 'Escape'[\s\S]*?closeCanvasContextMenu\(\);/,
+  'Escape 应通过统一关闭函数恢复焦点',
+);
+assert.match(
+  mainSource,
+  /document\.activeElement === trigger[\s\S]*?canvasWorkspaceRef\.current\?\.focus\(\);/,
+  '统一关闭函数应优先恢复触发元素，否则回退到稳定画布容器',
+);
+assert.match(
+  mainSource,
+  /const canvasWorkspaceRef = useRef<HTMLDivElement \| null>\(null\);/,
+  '流程画布应维护稳定父容器 ref 以恢复焦点',
+);
+assert.match(
+  mainSource,
+  /isRestorableContextMenuFocusTarget\(activeElement, document\.body, document\.documentElement\)/,
+  '打开右键对话框时应排除 body 和 documentElement 作为焦点恢复目标',
+);
+assert.match(
+  mainSource,
+  /const \[isTaskTemplateEditing, setIsTaskTemplateEditing\] = useState\(false\);/,
+  '流程画布应维护默认关闭的 Task 模板编辑状态',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /aria-label="切换 Task 模板编辑"[\s\S]*?aria-pressed=\{isTaskTemplateEditing\}[\s\S]*?className=\{isTaskTemplateEditing \? 'active' : ''\}[\s\S]*?title=\{isTaskTemplateEditing \? '退出 Task 模板编辑' : '进入 Task 模板编辑'\}/,
+  'Task 模板编辑切换按钮应暴露可访问状态与动态标题',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /isTaskTemplateEditing && <div className="task-template-editing-hint">模板编辑中：拖拽框选节点后右键创建模板<\/div>/,
+  '仅模板编辑模式应显示操作提示',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /onContextMenuCapture=\{openCanvasContextMenu\}/,
+  '画布容器应在捕获阶段统一处理右键，覆盖框选区域',
+);
+assert.match(
+  mainSource,
+  /const openCanvasContextMenu = useCallback\(\(event: React\.MouseEvent<HTMLElement>\) => \{\s*if \(!isTaskTemplateEditing\) return;\s*event\.preventDefault\(\);[\s\S]*?closest(?:<HTMLElement>)?\('\.react-flow__node'\)[\s\S]*?setContextMenu\(\{ x: position\.left, y: position\.top \}\);/,
+  '模板编辑模式应统一阻止原生右键菜单，并保留节点右键选择',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /ref=\{canvasWorkspaceRef\}[\s\S]*?tabIndex=\{-1\}/,
+  '流程画布稳定父容器应可作为焦点恢复回退目标',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /selectionOnDrag=\{isTaskTemplateEditing\}/,
+  'React Flow 仅在模板编辑模式启用拖拽框选',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /panOnDrag=\{!isTaskTemplateEditing\}/,
+  '模板编辑模式应禁用左键拖动画布，确保拖拽用于框选',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /onPaneClick=\{\(\) => closeCanvasContextMenu\(\{ restoreFocus: false \}\)\}/,
+  '点击画布空白处关闭 Task 右键菜单时不应抢夺焦点',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /onNodeClick=\{\(\) => closeCanvasContextMenu\(\{ restoreFocus: false \}\)\}/,
+  '左键点击节点时应关闭 Task 右键菜单且不抢夺节点焦点',
+);
+assert.match(
+  mainSource,
+  /const closeCanvasContextMenu = useCallback\(\(\{ restoreFocus = true \}: \{ restoreFocus\?: boolean \} = \{\}\) => \{[\s\S]*?setContextMenu\(null\);[\s\S]*?window\.requestAnimationFrame/,
+  '应通过统一关闭函数清空菜单并在下一帧恢复焦点',
+);
+assert.match(
+  mainSource,
+  /document\.addEventListener\('pointerdown', closeContextMenuOnExternalPointerDown, true\);[\s\S]*?document\.removeEventListener\('pointerdown', closeContextMenuOnExternalPointerDown, true\);/,
+  '菜单打开时应注册并清理捕获阶段的外部点击监听',
+);
+assert.match(
+  mainSource,
+  /contextMenuRef\.current\?\.contains\(target\)[\s\S]*?contextMenuTriggerRef\.current\?\.contains\(target\)/,
+  '外部点击判定应忽略菜单内部和 React Flow 触发区域',
+);
+assert.match(
+  mainSource,
+  /const closeContextMenuOnExternalPointerDown[\s\S]*?closeCanvasContextMenu\(\{ restoreFocus: false \}\);/,
+  '外部 pointerdown 关闭菜单时不应抢夺用户点击目标的焦点',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /isTaskTemplateEditing && contextMenu && \(\s*<div[\s\S]*?className="canvas-context-menu"[\s\S]*?style=\{\{ left: contextMenu\.x, top: contextMenu\.y \}\}/,
+  'Task 右键菜单仅在编辑模式且有坐标时显示',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /role="dialog"[\s\S]*?aria-label="流程画布操作"/,
+  '右键浮层应使用简单的 dialog 语义',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /disabled=\{!selectedTaskNodes\.length\}[\s\S]*?createTaskTemplateFromSelection\(\);[\s\S]*?closeCanvasContextMenu\(\);[\s\S]*?设为 Task 模板/,
+  '右键菜单应仅在有选中节点时允许创建 Task 模板，并在操作后关闭',
+);
+const createTaskTemplateFromSelectionSource = mainSource.match(
+  /const createTaskTemplateFromSelection = useCallback\([\s\S]*?\n  \}, \[createTaskTemplateFromNodes, selectedTaskNodes\]\);/,
+)?.[0] || '';
+assert.doesNotMatch(
+  createTaskTemplateFromSelectionSource,
+  /exitTaskTemplateEditing|setIsTaskTemplateEditing\(false\)/,
+  '创建 Task 模板后应保持模板编辑模式开启',
+);
+assert.match(
+  workflowWorkspaceSource,
+  /setNodes\(\(current\) => current\.map\(\(node\) => \(\{ \.\.\.node, selected: false \}\)\)\);[\s\S]*?closeCanvasContextMenu\(\);[\s\S]*?取消选择/,
+  '右键菜单应清除全部选择并关闭',
+);
+assert.match(
+  mainSource,
+  /const exitTaskTemplateEditing = useCallback\(\(\) => \{[\s\S]*?setIsTaskTemplateEditing\(false\);[\s\S]*?setNodes\(\(current\) => current\.map\(\(node\) => \(\{ \.\.\.node, selected: false \}\)\)\);[\s\S]*?closeCanvasContextMenu\(\);/,
+  '退出模板编辑模式应关闭菜单并清空节点选择',
+);
+assert.match(
+  mainSource,
+  /setWorkspace\('workflow'\);[\s\S]*?exitTaskTemplateEditing\(\);/,
+  '切换回流程设计时应退出模板编辑模式',
+);
+assert.match(
+  mainSource,
+  /setWorkspace\('tasks'\);[\s\S]*?exitTaskTemplateEditing\(\);/,
+  '切换到 Task 编排时应退出模板编辑模式',
+);
+assert.match(
+  importFlowSource,
+  /exitTaskTemplateEditing\(\);/,
+  '导入 Flow JSON 后应退出模板编辑模式',
+);
+assert.match(
+  canvasTabsSource,
+  /onClick=\{\(\) => \{ setCanvasTab\('sensors'\); exitTaskTemplateEditing\(\); \}\}/,
+  '切换到传感器快照时应退出模板编辑模式',
+);
+assert.match(
+  styleSource,
+  /\.canvas-context-menu\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?box-sizing:\s*border-box;[\s\S]*?width:\s*176px;[\s\S]*?min-height:\s*92px;[\s\S]*?max-width:\s*calc\(100vw - 16px\);[\s\S]*?max-height:\s*calc\(100vh - 16px\);[\s\S]*?overflow:\s*auto;/,
+  'Task 右键菜单应固定到浏览器视窗',
+);
+assert.match(
+  styleSource,
+  /\.canvas-context-menu button:focus-visible\s*\{/,
+  'Task 右键菜单操作应提供键盘焦点样式',
+);
+assert.doesNotMatch(
+  taskWorkspaceSource,
+  /demo-action-panel|demo-canvas-toolbar|demo-right-panel/,
+  'Task 工作区不应渲染流程设计三栏专属区域',
+);
+assert.doesNotMatch(
+  canvasTabsSource,
+  /Task 编排|setCanvasTab\('tasks'\)/,
+  '流程设计内部切换不应再提供 Task Tab',
+);
+assert.match(
+  taskWorkspaceSource,
+  /const templateNodes = template\.nodeIds[\s\S]*?nodesById\.get\(nodeId\)/,
+  'Task 模板节点解析应复用 nodesById Map',
+);
+assert.match(
+  taskWorkspaceSource,
+  /step=\{1\}[\s\S]*?setTaskSampleCount\(Math\.min\(5, Math\.max\(1, Math\.round\(Number\(event\.target\.value\)\) \|\| 1\)\)\)/,
+  '样品数输入应按整数取整并钳制到 1 至 5',
+);
+const taskTemplates = [
+  { id: 'template-a', name: '模板 A', nodeIds: ['a'], resources: ['robot'], gates: [] },
+  { id: 'template-b', name: '模板 B', nodeIds: ['b'], resources: ['s07'], gates: ['s07'] },
+  { id: 'template-c', name: '模板 C', nodeIds: ['c'], resources: ['s09'], gates: ['s09'] },
+];
+const taskInstances = [
+  { id: 'a-pending', sample: 'A', templateId: 'template-a', order: 0, status: 'pending' },
+  { id: 'b-running', sample: 'A', templateId: 'template-b', order: 1, status: 'running' },
+  { id: 'b-done', sample: 'B', templateId: 'template-b', order: 1, status: 'done' },
+  { id: 'c-waiting', sample: 'A', templateId: 'template-c', order: 2, status: 'waiting' },
+];
+assert.equal(typeof createEmptyTaskWorkspaceState, 'function', 'Task 工作区应导出可测试的空状态工厂');
+const firstEmptyTaskWorkspace = createEmptyTaskWorkspaceState();
+const secondEmptyTaskWorkspace = createEmptyTaskWorkspaceState();
+assert.deepEqual(
+  firstEmptyTaskWorkspace,
+  { taskTemplates: [], taskInstances: [], taskEvents: [] },
+  '空状态工厂应返回可直接用于清空 Task 工作区的三项状态',
+);
+assert.notEqual(firstEmptyTaskWorkspace.taskTemplates, secondEmptyTaskWorkspace.taskTemplates, '每次调用应返回独立模板数组');
+assert.notEqual(firstEmptyTaskWorkspace.taskInstances, secondEmptyTaskWorkspace.taskInstances, '每次调用应返回独立实例数组');
+assert.notEqual(firstEmptyTaskWorkspace.taskEvents, secondEmptyTaskWorkspace.taskEvents, '每次调用应返回独立事件数组');
+const populatedTaskWorkspace = {
+  taskTemplates: [{ id: 'template-a' }],
+  taskInstances: [{ id: 'instance-a' }],
+  taskEvents: ['已调度'],
+};
+const clearedTaskWorkspace = createEmptyTaskWorkspaceState();
+assert.deepEqual(clearedTaskWorkspace, { taskTemplates: [], taskInstances: [], taskEvents: [] }, '空状态可清空已有 Task 数据');
+assert.notEqual(clearedTaskWorkspace.taskTemplates, populatedTaskWorkspace.taskTemplates, '清空不能复用已有模板数组');
+assert.equal(typeof resetTaskWorkspaceState, 'function', 'Task 工作区应导出可测试的重置状态变换');
+const previousTaskWorkspace = {
+  taskTemplates: [{ id: 'template-a' }],
+  taskInstances: [{ id: 'instance-a' }],
+  taskEvents: ['已调度'],
+};
+const resetTaskWorkspace = resetTaskWorkspaceState(previousTaskWorkspace);
+assert.deepEqual(
+  resetTaskWorkspace,
+  { taskTemplates: [], taskInstances: [], taskEvents: [] },
+  '重置状态变换应清空已有模板、实例与事件',
+);
+assert.deepEqual(
+  previousTaskWorkspace,
+  {
+    taskTemplates: [{ id: 'template-a' }],
+    taskInstances: [{ id: 'instance-a' }],
+    taskEvents: ['已调度'],
+  },
+  '重置状态变换不得修改输入状态',
+);
+assert.notEqual(resetTaskWorkspace.taskTemplates, previousTaskWorkspace.taskTemplates, '重置状态不得复用输入模板数组');
+assert.equal(
+  typeof isRestorableContextMenuFocusTarget,
+  'function',
+  '应导出可 Node 测试的右键菜单焦点目标判定函数',
+);
+const bodyTarget = {};
+const documentElementTarget = {};
+const focusableTarget = {};
+assert.equal(
+  isRestorableContextMenuFocusTarget(null, bodyTarget, documentElementTarget),
+  false,
+  '空焦点目标不可恢复',
+);
+assert.equal(
+  isRestorableContextMenuFocusTarget(bodyTarget, bodyTarget, documentElementTarget),
+  false,
+  'document.body 不可作为右键菜单焦点恢复目标',
+);
+assert.equal(
+  isRestorableContextMenuFocusTarget(documentElementTarget, bodyTarget, documentElementTarget),
+  false,
+  'document.documentElement 不可作为右键菜单焦点恢复目标',
+);
+assert.equal(
+  isRestorableContextMenuFocusTarget(focusableTarget, bodyTarget, documentElementTarget),
+  true,
+  '普通不同对象可作为右键菜单焦点恢复候选',
+);
+assert.equal(typeof clampContextMenuPosition, 'function', '应导出可 Node 测试的右键菜单坐标钳制函数');
+assert.deepEqual(
+  clampContextMenuPosition(490, 390, 500, 400),
+  { left: 316, top: 300 },
+  '右下角打开的菜单应向内钳制，避免溢出视口',
+);
+assert.deepEqual(
+  clampContextMenuPosition(-20, -10, 500, 400),
+  { left: 8, top: 8 },
+  '负坐标菜单应钳制到视口安全边距',
+);
+assert.deepEqual(
+  clampContextMenuPosition(100, 120, 500, 400),
+  { left: 100, top: 120 },
+  '视口中间的菜单坐标应保持不变',
+);
+assert.deepEqual(
+  clampContextMenuPosition(100, 50, 180, 100),
+  { left: 8, top: 8 },
+  '极窄视口中菜单坐标应至少保留安全边距，并交由 CSS 缩小菜单尺寸',
+);
+assert.equal(typeof removeTaskTemplateState, 'function', 'Task 模板删除应导出可测试的纯状态变换');
+const removedTaskState = removeTaskTemplateState('template-b', taskTemplates, taskInstances);
+assert.deepEqual(
+  removedTaskState.taskTemplates.map((template) => template.id),
+  ['template-a', 'template-c'],
+  '删除目标模板时应保留其他模板顺序',
+);
+assert.deepEqual(
+  removedTaskState.taskInstances,
+  [taskInstances[0], taskInstances[3]],
+  '删除目标模板时应移除全部关联实例，并保留其他实例顺序和状态',
+);
+assert.equal(removedTaskState.removedInstanceCount, 2, '删除计数应等于实际移除的关联实例数');
+const unchangedTaskState = removeTaskTemplateState('missing-template', taskTemplates, taskInstances);
+assert.equal(unchangedTaskState.taskTemplates, taskTemplates, '不存在的模板不应修改模板 state');
+assert.equal(unchangedTaskState.taskInstances, taskInstances, '不存在的模板不应修改实例 state');
+assert.equal(unchangedTaskState.removedInstanceCount, 0, '不存在的模板不应返回删除计数');
 const renderedEdgesSource = mainSource.match(
   /const renderedEdges = useMemo\([\s\S]*?\n  \}, \[edges, executionPlan\.executableEdges\]\);/,
 )?.[0] || '';

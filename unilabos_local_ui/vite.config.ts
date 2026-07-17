@@ -6,6 +6,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:8014',
+      '/task-api': {
+        target: 'http://127.0.0.1:8091',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/task-api/, ''),
+      },
     },
   },
 });

@@ -122,3 +122,7 @@ Uni-Lab-OS 使用预构建的 `unilabos_msgs` 进行系统通信。您可以在 
 ## 联系我们
 
 - GitHub Issues: [https://github.com/deepmodeling/Uni-Lab-OS/issues](https://github.com/deepmodeling/Uni-Lab-OS/issues)
+
+
+cd /Users/dp/Ming/softwares/unilab/Uni-Lab-OS/task-orchestration
+TASK_ORCHESTRATION_UI_TOKEN='local-task-ui-dev' PYTHONPATH=src python -m uvicorn task_orchestration.main:app --host 127.0.0.1 --port 8091

@@ -214,16 +214,9 @@ S072_SENSOR_BY_POSITION = {
     1: "传感器状态_上位机[3].NO[14]",
     2: "传感器状态_上位机[3].NO[15]",
 }
-S08_PICK_SENSOR_BY_POSITION = {
+S08_CAP_STATION_SENSOR_BY_POSITION = {
     1: "传感器状态_上位机[3].NO[14]",
     2: "传感器状态_上位机[3].NO[15]",
-}
-S08_PLACE_SENSOR_BY_POSITION = {
-    1: "传感器状态_上位机[4].NO[0]",
-    2: "传感器状态_上位机[4].NO[1]",
-    3: "传感器状态_上位机[4].NO[2]",
-    4: "传感器状态_上位机[4].NO[3]",
-    5: "传感器状态_上位机[4].NO[4]",
 }
 S09_SENSORS = [
     (1, 1, "传感器状态_上位机[4].NO[5]"),
@@ -340,9 +333,9 @@ if station == "S072":
             emit("submit_pick_from_s072", params, "S072", "pick", position, sensor, product_type)
 elif station == "S08":
     for product_type in product_types():
-        for position, sensor in S08_PLACE_SENSOR_BY_POSITION.items():
+        for position, sensor in S08_CAP_STATION_SENSOR_BY_POSITION.items():
             emit("submit_place_to_s08", {"product_type": product_type, "position": position}, "S08", "place", position, sensor, product_type)
-        for position, sensor in S08_PICK_SENSOR_BY_POSITION.items():
+        for position, sensor in S08_CAP_STATION_SENSOR_BY_POSITION.items():
             emit("submit_pick_from_s08", {"product_type": product_type, "position": position}, "S08", "pick", position, sensor, product_type)
 elif station == "S09":
     for product_type, position, sensor in S09_SENSORS:

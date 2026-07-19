@@ -105,7 +105,16 @@ def test_s08_process_cap_uses_plc_gateway_for_waits_and_resets():
             self.waits.append((name, expected, timeout, interval))
             if name == NODE_PROCESS_COMPLETE:
                 self.values[name] = expected
+                slot = int(self.values.get("S082瓶盖暂存位", 0))
+                if expected and slot:
+                    sensor = s08_module.CAP_STORAGE_SLOT_SENSORS[slot]
+                    self.values[sensor] = expected in s08_module.OPEN_PROCESS_IDS
             return True
+
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            del timeout, interval, context
+            values = {name: self.read_variable(name, use_cache=False) for name in conditions}
+            return all(values[name] == expected for name, expected in conditions.items()), values
 
         def get_opc_variable_metadata(self, variable_name):
             return variable_name, f"ns=4;s=上位机通讯|{variable_name}"
@@ -405,6 +414,51 @@ def test_process_cap_open_liquid_vial_requires_station_two_sensor():
     assert "NO[15]" in result["message"]
 
 
+def test_process_cap_open_requires_empty_cap_storage_sensor_without_optional_validation():
+    device, client = make_s08_device(validate_cap_constraints=False)
+    client.set_cap_storage_slot_present(1, True)
+
+    result = device.process_cap(
+        工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
+        样品ID=SAMPLE_A,
+        瓶盖暂存位=1,
+        超时时间=1.0,
+    )
+
+    assert result["success"] is False
+    assert result["sensor_precheck"]["mismatches"]["传感器状态_上位机[4].NO[0]"] == {
+        "expected": False,
+        "actual": True,
+    }
+    assert (NODE_PARAMS_WRITTEN, True) not in client.writes
+
+
+def test_process_cap_reports_verification_failed_when_cap_sensor_does_not_change():
+    class NoSensorTransitionClient(PseudoSzlabS08OpcUaClient):
+        def read(self, name):
+            if name == NODE_PROCESS_COMPLETE:
+                if self.values.get(NODE_PARAMS_WRITTEN):
+                    return int(self.values.get(NODE_PROCESS_SELECT, 0))
+                return int(self.values.get(NODE_PROCESS_COMPLETE, 0))
+            return super().read(name)
+
+    device, client = make_s08_device(NoSensorTransitionClient())
+
+    result = device.process_cap(
+        工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
+        样品ID=SAMPLE_A,
+        瓶盖暂存位=1,
+        超时时间=1.0,
+    )
+
+    assert result["success"] is False
+    assert result["status"] == "verification_failed"
+    assert result["sensor_postcheck"]["mismatches"]["传感器状态_上位机[4].NO[0]"] == {
+        "expected": True,
+        "actual": False,
+    }
+
+
 def test_process_cap_fails_when_station_status_not_ready():
     device, client = make_s08_device(require_station_status=True)
     client.set_station_status(1)
@@ -434,7 +488,7 @@ def test_process_cap_skips_station_status_check_when_disabled():
     assert result["success"] is True
 
 
-def test_process_cap_skips_cap_constraints_when_disabled():
+def test_process_cap_keeps_physical_sensor_checks_when_business_constraints_disabled():
     device, client = make_s08_device(validate_cap_constraints=False)
     client.set_cap_station_present(2, False)
     client.seed_slot_sample_id(1, SAMPLE_A)
@@ -445,15 +499,10 @@ def test_process_cap_skips_cap_constraints_when_disabled():
         样品ID=SAMPLE_B,
         超时时间=1.0,
     )
-    assert open_result["success"] is True
-
-    duplicate_open = device.process_cap(
-        工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
-        样品ID=SAMPLE_A,
-        超时时间=1.0,
-    )
-    assert duplicate_open["success"] is True
-    assert duplicate_open["cap_storage_slot"] == 1
+    assert open_result["success"] is False
+    assert "等待瓶体与瓶盖暂存位状态超时" in open_result["message"]
+    assert open_result["sensor_precheck"]["mismatches"]["传感器状态_上位机[3].NO[15]"]["actual"] is False
+    assert (NODE_PARAMS_WRITTEN, True) not in client.writes
 
 
 def test_process_cap_close_fails_when_cap_storage_slot_empty():

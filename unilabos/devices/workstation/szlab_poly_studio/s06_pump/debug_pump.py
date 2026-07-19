@@ -142,15 +142,14 @@ def run_pump_debug(
     try:
         if action == "transfer_liquid":
             result = device.transfer_liquid(
-                pump=pump,
+                process=pump,
                 volume=volume,
                 direction=direction,
                 pipeline=pipeline,
             )
         else:
             result = device.run_solvent_addition(
-                pump=pump,
-                volume=volume,
+                process=pump,
                 volume_pump_1=volume_pump_1,
                 volume_pump_2=volume_pump_2,
                 skip_level_check=skip_level_check,
@@ -188,7 +187,7 @@ def _run_from_config(config_path: Path, *, use_production: bool) -> dict[str, An
         ),
         action=action_name,  # type: ignore[arg-type]
         pump=int(action_cfg["pump"]),
-        volume=int(action_cfg["volume"]),
+        volume=int(action_cfg.get("volume", 1)),
         volume_pump_1=optional_int(action_cfg.get("volume_pump_1")),
         volume_pump_2=optional_int(action_cfg.get("volume_pump_2")),
         direction=action_cfg.get("direction", "aspirate"),

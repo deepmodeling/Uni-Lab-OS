@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S09Sensors
+
+
 CSV_REFERENCE = str(Path(__file__).resolve().parent / "pipetting_station_nodes.csv")
 
 S09_HOME_SIGNALS: dict[int, str] = {
@@ -52,6 +55,8 @@ S09_TIP_BOX_RANGE = range(1, 3)
 S09_TIP_RANGE = range(1, 97)
 S09_LIQUID_BOTTLE_RANGE = range(1, 6)
 S09_STATION_RANGE = range(1, 6)
+S09_TIP_BOX_SENSORS = S09Sensors.TIP_BOX
+S09_STATION_SENSORS = S09Sensors.STATION
 
 
 def s09_remaining_volume_var(bottle: int) -> str:
@@ -122,5 +127,7 @@ def s09_opcua_node_id_map() -> dict[str, str]:
         PLC_ROBOT_TASK_VAR,
         S09_TRANSFER_PRODUCT_VAR,
         S09_TRANSFER_POSITION_VAR,
+        *S09_TIP_BOX_SENSORS.values(),
+        *S09_STATION_SENSORS.values(),
     ]
     return {name: f"ns=4;s=上位机通讯|{name}" for name in names}

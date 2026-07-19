@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import csv
 import io
 import json
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from unilabos.registry.ast_registry_scanner import scan_directory
@@ -438,11 +439,15 @@ class WorkflowRunManager:
         self._preset = preset
         self._runtime_config = runtime_config
         self._lock = threading.RLock()
+        self._sensor_event_condition = threading.Condition(self._lock)
         self._records: dict[str, RunRecord] = {}
         self._active_run_id: str | None = None
         self._cached_device_key: tuple[Any, ...] | None = None
         self._cached_devices: dict[str, Any] = {}
         self._stack_status_cache: tuple[float, dict[str, Any]] | None = None
+        self._sensor_arrays_cache: tuple[float, dict[str, Any]] | None = None
+        self._sensor_event_version = 0
+        self._sensor_event_plc: Any = None
 
     def start(self, payload: dict[str, Any]) -> RunRecord:
         with self._lock:
@@ -539,6 +544,39 @@ class WorkflowRunManager:
             lambda message: None,
         )
 
+    def ensure_sensor_event_subscription(self) -> None:
+        devices = self.get_live_devices()
+        plc_device_id = self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
+        if plc is None or not hasattr(plc, "start_sensor_array_subscription"):
+            raise RuntimeError("当前设备图中的 PLC 不支持传感器变化订阅")
+        with self._lock:
+            if self._sensor_event_plc is plc:
+                return
+        plc.start_sensor_array_subscription(self._on_sensor_array_change)
+        with self._lock:
+            self._sensor_event_plc = plc
+
+    def _on_sensor_array_change(self, group_index: int, values: list[bool]) -> None:
+        del group_index, values
+        with self._sensor_event_condition:
+            self._stack_status_cache = None
+            self._sensor_arrays_cache = None
+            self._sensor_event_version += 1
+            self._sensor_event_condition.notify_all()
+
+    def sensor_event_version(self) -> int:
+        with self._lock:
+            return self._sensor_event_version
+
+    def wait_for_sensor_change(self, version: int, timeout: float = 15.0) -> int:
+        with self._sensor_event_condition:
+            self._sensor_event_condition.wait_for(
+                lambda: self._sensor_event_version != version,
+                timeout=timeout,
+            )
+            return self._sensor_event_version
+
     def _get_or_create_devices(
         self,
         device_key: tuple[Any, ...],
@@ -553,6 +591,8 @@ class WorkflowRunManager:
             self._cached_devices = {}
             self._cached_device_key = None
             self._stack_status_cache = None
+            self._sensor_arrays_cache = None
+            self._sensor_event_plc = None
 
         if previous_devices:
             _disconnect_devices(previous_devices, log)
@@ -562,6 +602,7 @@ class WorkflowRunManager:
             self._cached_devices = devices
             self._cached_device_key = device_key
             self._stack_status_cache = None
+            self._sensor_arrays_cache = None
         return devices
 
     def _disconnect_cached_devices(self, devices: dict[str, Any] | None = None, log: Any = None) -> None:
@@ -572,6 +613,8 @@ class WorkflowRunManager:
             self._cached_devices = {}
             self._cached_device_key = None
             self._stack_status_cache = None
+            self._sensor_arrays_cache = None
+            self._sensor_event_plc = None
 
         _disconnect_devices(target_devices, log)
 
@@ -597,6 +640,29 @@ class WorkflowRunManager:
 
         with self._lock:
             self._stack_status_cache = (time.monotonic(), status)
+        return status
+
+    def get_sensor_arrays(self) -> dict[str, Any]:
+        now = time.monotonic()
+        with self._lock:
+            if self._sensor_arrays_cache and now - self._sensor_arrays_cache[0] < 1.0:
+                return self._sensor_arrays_cache[1]
+
+        devices = self.get_live_devices()
+        plc_device_id = self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
+        if plc is None or not hasattr(plc, "get_sensor_arrays"):
+            status = {
+                "success": False,
+                "schema": "szlab_poly_studio.sensor_arrays.v1",
+                "message": "当前设备图中没有可读取实机传感器数组的 PLC 设备",
+                "groups": [],
+            }
+        else:
+            status = plc.get_sensor_arrays()
+
+        with self._lock:
+            self._sensor_arrays_cache = (time.monotonic(), status)
         return status
 
     def _run_payload(self, run_id: str, payload: dict[str, Any]) -> None:
@@ -926,8 +992,6 @@ def _preset_for_runtime(preset: WorkflowPreset, runtime_config: RuntimeConfig) -
 
 def create_app(preset_name: str = "ai4c", runtime_config: RuntimeConfig | None = None) -> FastAPI:
     preset = load_preset(preset_name)
-    if preset.debug_config.get("auto_apply") is True:
-        apply_preset_debug_config(preset_name)
     runtime_config = runtime_config or _load_preset_runtime_config(preset)
     active_preset = _preset_for_runtime(preset, runtime_config)
     app = FastAPI(title="szlab Workflow Debugger")
@@ -1002,6 +1066,56 @@ def create_app(preset_name: str = "ai4c", runtime_config: RuntimeConfig | None =
                 "message": str(exc),
                 "stacks": {},
             }
+
+    @app.get("/api/sensor-arrays", response_class=JSONResponse)
+    async def get_sensor_arrays() -> dict[str, Any]:
+        try:
+            return manager.get_sensor_arrays()
+        except Exception as exc:
+            return {
+                "success": False,
+                "schema": "szlab_poly_studio.sensor_arrays.v1",
+                "message": str(exc),
+                "groups": [],
+            }
+
+    @app.get("/api/sensor-events")
+    async def stream_sensor_events() -> StreamingResponse:
+        async def event_stream():
+            version: int | None = None
+            while True:
+                try:
+                    await asyncio.to_thread(manager.ensure_sensor_event_subscription)
+                    current_version = manager.sensor_event_version()
+                    if version is None:
+                        version = current_version
+                        yield f"event: sensor-change\ndata: {json.dumps({'version': version})}\n\n"
+
+                    next_version = await asyncio.to_thread(
+                        manager.wait_for_sensor_change,
+                        version,
+                        15.0,
+                    )
+                    if next_version == version:
+                        yield ": keepalive\n\n"
+                        continue
+                    version = next_version
+                    yield f"event: sensor-change\ndata: {json.dumps({'version': version})}\n\n"
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    payload = json.dumps({"message": str(exc)}, ensure_ascii=False)
+                    yield f"event: subscription-error\ndata: {payload}\n\n"
+                    await asyncio.sleep(5.0)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.post("/api/workflow/build", response_class=JSONResponse)
     async def build_workflow(payload: dict[str, Any]) -> dict[str, Any]:

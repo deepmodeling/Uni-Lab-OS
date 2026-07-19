@@ -1,10 +1,9 @@
 import csv
-import json
 import logging
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from opcua import Client, ua
 
@@ -16,65 +15,22 @@ except ModuleNotFoundError as exc:
         raise
     BaseClient = object
     OpcUaNode = None
+from unilabos.devices.workstation.szlab_poly_studio.sensor import (
+    SENSOR_ARRAY_COUNT,
+    SENSOR_BITS_PER_ARRAY,
+    SensorBase,
+    load_sensor_bit_metadata_from_csv,
+    load_stack_sensor_groups_from_json,
+    wait_sensor_conditions,
+    wait_variable_equal,
+    wait_variable_true,
+)
 from unilabos.devices.workstation.szlab_poly_studio.stack_status import build_stack_status
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.utils.log import logger
 
 
 DEFAULT_CSV_NAME = "szlab_plc_0702.csv"
-DEFAULT_STACK_SENSOR_LAYOUT_NAME = "stack_sensor_layout.json"
-
-
-def wait_variable_equal(
-    reader: Any,
-    variable_name: str,
-    expected: Any,
-    *,
-    timeout: float = 300.0,
-    interval: float = 1.0,
-) -> bool:
-    started_at = time.time()
-    start_recorder = getattr(reader, "_record_opc_wait_start", None)
-    if callable(start_recorder):
-        start_recorder(variable_name, expected, timeout=timeout, interval=interval)
-
-    success = False
-    last_value = None
-    error = None
-    try:
-        while time.time() - started_at <= timeout:
-            last_value = reader.read_variable(variable_name, use_cache=False)
-            if last_value == expected:
-                success = True
-                return True
-            time.sleep(interval)
-        return False
-    except Exception as exc:
-        error = str(exc)
-        raise
-    finally:
-        finish_recorder = getattr(reader, "_record_opc_wait_finish", None)
-        if callable(finish_recorder):
-            finish_recorder(
-                variable_name,
-                expected,
-                timeout=timeout,
-                interval=interval,
-                success=success,
-                last_value=last_value,
-                elapsed=time.time() - started_at,
-                error=error,
-            )
-
-
-def wait_variable_true(
-    reader: Any,
-    variable_name: str,
-    *,
-    timeout: float = 300.0,
-    interval: float = 1.0,
-) -> bool:
-    return wait_variable_equal(reader, variable_name, True, timeout=timeout, interval=interval)
 
 
 def _resolve_csv_path(csv_path: Optional[str]) -> str:
@@ -83,29 +39,6 @@ def _resolve_csv_path(csv_path: Optional[str]) -> str:
     if os.path.isabs(csv_path):
         return csv_path
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), csv_path)
-
-
-def _resolve_config_path(config_path: Optional[str]) -> str:
-    if config_path is None:
-        config_path = DEFAULT_STACK_SENSOR_LAYOUT_NAME
-    if os.path.isabs(config_path):
-        return config_path
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), config_path)
-
-
-def load_stack_sensor_groups_from_json(config_path: Optional[str] = None) -> Dict[str, Dict[str, str]]:
-    """Load stack UI sensor layout: business position -> PLC variable name."""
-    resolved_path = _resolve_config_path(config_path)
-    with open(resolved_path, encoding="utf-8") as config_file:
-        config = json.load(config_file)
-    sensor_groups = config.get("sensor_groups", {})
-    return {
-        str(group_name): {
-            str(site_key): str(variable_name)
-            for site_key, variable_name in group.items()
-        }
-        for group_name, group in sensor_groups.items()
-    }
 
 
 def load_variable_definitions_from_csv(csv_path: str) -> tuple[List[str], Dict[str, str]]:
@@ -195,6 +128,17 @@ def _patch_opcua_token_time_drift_check() -> None:
     description="苏州实验室聚合物工作站 PLC/OPC UA 通讯设备，负责变量读写和传感器状态发布",
 )
 class SZLabPolyPLCDevice(BaseClient):
+    class _SensorArraySubscriptionHandler:
+        def __init__(self, device: "SZLabPolyPLCDevice") -> None:
+            self._device = device
+
+        def datachange_notification(self, node: Any, value: Any, data: Any) -> None:
+            del data
+            self._device._on_sensor_array_datachange(node, value)
+
+        def event_notification(self, event: Any) -> None:
+            del event
+
     def __init__(
         self,
         url: str,
@@ -234,6 +178,12 @@ class SZLabPolyPLCDevice(BaseClient):
         self.heartbeat_on = False
         self._heartbeat_timer: Optional[threading.Timer] = None
         self._sensor_read_warning_names: set[str] = set()
+        self._sensor_array_subscription: Any = None
+        self._sensor_array_subscription_handles: List[Any] = []
+        self._sensor_array_node_indexes: Dict[str, int] = {}
+        self._sensor_array_subscription_values: Dict[int, List[bool]] = {}
+        self._sensor_change_callbacks: List[Callable[[int, List[bool]], None]] = []
+        self._sensor_subscription_lock = threading.RLock()
         self._fallback_node_id_prefix = fallback_node_id_prefix
         self._opcua_object_name = opcua_object_name
         self._opcua_browse_depth = int(opcua_browse_depth)
@@ -243,8 +193,10 @@ class SZLabPolyPLCDevice(BaseClient):
         if self.csv_path is None:
             variable_names: List[str] = []
             csv_node_id_map: Dict[str, str] = {}
+            self._sensor_bit_metadata: Dict[str, Dict[str, str]] = {}
         else:
             variable_names, csv_node_id_map = load_variable_definitions_from_csv(self.csv_path)
+            self._sensor_bit_metadata = load_sensor_bit_metadata_from_csv(self.csv_path)
         explicit_node_id_map = {
             **dict(node_id_map or {}),
             **dict(opcua_node_id_map or {}),
@@ -452,11 +404,113 @@ class SZLabPolyPLCDevice(BaseClient):
         node = self.use_node(node_name)
         value, error = node.read()
         if error:
+            sensor_bit = self._parse_sensor_bit_name(node_name)
+            if sensor_bit is not None:
+                return self._read_sensor_array(sensor_bit[0])[sensor_bit[1]]
             if node_name in self._direct_node_id_map:
                 direct_node_id = self._direct_node_id_map[node_name]
                 raise RuntimeError(f"读取 PLC 变量失败: {node_name}: 直连 NodeId 无效: {direct_node_id}")
             raise RuntimeError(f"读取 PLC 变量失败: {node_name}")
         return value
+
+    @not_action
+    def _parse_sensor_bit_name(self, variable_name: str) -> Optional[tuple[int, int]]:
+        return SensorBase.parse_bit_name(variable_name)
+
+    @not_action
+    def _read_sensor_array(self, group_index: int) -> List[bool]:
+        variable_name = SensorBase.array(group_index)
+        node = self.use_node(variable_name)
+        value, error = node.read()
+        if error:
+            raise RuntimeError(f"读取 PLC 传感器数组失败: {variable_name}")
+        if not isinstance(value, (list, tuple)):
+            raise TypeError(f"PLC 传感器数组类型错误: {variable_name}: {type(value).__name__}")
+        if len(value) < SENSOR_BITS_PER_ARRAY:
+            raise ValueError(
+                f"PLC 传感器数组长度不足: {variable_name}: "
+                f"{len(value)} < {SENSOR_BITS_PER_ARRAY}"
+            )
+        return [bool(item) for item in value[:SENSOR_BITS_PER_ARRAY]]
+
+    @not_action
+    def start_sensor_array_subscription(
+        self,
+        callback: Callable[[int, List[bool]], None],
+        interval_ms: int = 200,
+    ) -> None:
+        """只订阅 10 个传感器数组，并在数组内容变化时通知前端。"""
+        with self._sensor_subscription_lock:
+            if callback not in self._sensor_change_callbacks:
+                self._sensor_change_callbacks.append(callback)
+            if self._sensor_array_subscription is not None:
+                return
+            if not self.client:
+                raise RuntimeError("PLC OPC UA 客户端尚未连接")
+
+            subscription = self.client.create_subscription(
+                interval_ms,
+                self._SensorArraySubscriptionHandler(self),
+            )
+            self._sensor_array_subscription = subscription
+
+        handles: List[Any] = []
+        try:
+            for group_index in range(SENSOR_ARRAY_COUNT):
+                variable_name = SensorBase.array(group_index)
+                node_id = self._direct_node_id_map.get(variable_name)
+                opc_node = self.client.get_node(node_id) if node_id else self.use_node(variable_name)._get_node()
+                with self._sensor_subscription_lock:
+                    self._sensor_array_node_indexes[str(opc_node.nodeid)] = group_index
+                handles.append(subscription.subscribe_data_change(opc_node))
+        except Exception:
+            try:
+                subscription.delete()
+            finally:
+                with self._sensor_subscription_lock:
+                    self._sensor_array_subscription = None
+                    self._sensor_array_subscription_handles = []
+                    self._sensor_array_node_indexes = {}
+            raise
+
+        with self._sensor_subscription_lock:
+            self._sensor_array_subscription_handles = handles
+
+    @not_action
+    def _on_sensor_array_datachange(self, node: Any, value: Any) -> None:
+        node_id = str(node.nodeid)
+        with self._sensor_subscription_lock:
+            group_index = self._sensor_array_node_indexes.get(node_id)
+            if group_index is None or not isinstance(value, (list, tuple)):
+                return
+            values = [bool(item) for item in value[:SENSOR_BITS_PER_ARRAY]]
+            if len(values) < SENSOR_BITS_PER_ARRAY:
+                return
+            if self._sensor_array_subscription_values.get(group_index) == values:
+                return
+            self._sensor_array_subscription_values[group_index] = values
+            callbacks = list(self._sensor_change_callbacks)
+
+        for callback in callbacks:
+            try:
+                callback(group_index, values)
+            except Exception as exc:
+                logger.warning(f"处理 PLC 传感器变化通知失败: {exc}")
+
+    @not_action
+    def stop_sensor_array_subscription(self) -> None:
+        with self._sensor_subscription_lock:
+            subscription = self._sensor_array_subscription
+            self._sensor_array_subscription = None
+            self._sensor_array_subscription_handles = []
+            self._sensor_array_node_indexes = {}
+            self._sensor_array_subscription_values = {}
+            self._sensor_change_callbacks = []
+        if subscription is not None:
+            try:
+                subscription.delete()
+            except Exception as exc:
+                logger.warning(f"删除 PLC 传感器订阅失败: {exc}")
 
     @not_action
     def write_variable(self, node_name: str, value: Any) -> bool:
@@ -509,6 +563,7 @@ class SZLabPolyPLCDevice(BaseClient):
         if self._heartbeat_timer:
             self._heartbeat_timer.cancel()
             self._heartbeat_timer = None
+        self.stop_sensor_array_subscription()
         if self.client:
             self.client.disconnect()
 
@@ -562,6 +617,16 @@ class SZLabPolyPLCDevice(BaseClient):
         return wait_variable_true(self, node_name, timeout=timeout, interval=interval)
 
     @not_action
+    def wait_sensor_conditions(
+        self,
+        conditions: Dict[str, bool],
+        timeout: float = 300.0,
+        interval: float = 0.2,
+        context: str | None = None,
+    ) -> tuple[bool, Dict[str, Any]]:
+        return wait_sensor_conditions(self, conditions, timeout=timeout, interval=interval, context=context)
+
+    @not_action
     def drain_opc_wait_events(self) -> List[Dict[str, Any]]:
         events = list(getattr(self, "_opc_wait_events", []))
         self._opc_wait_events = []
@@ -583,10 +648,14 @@ class SZLabPolyPLCDevice(BaseClient):
     def _opc_wait_variable_detail(self, node_name: str) -> Dict[str, Any]:
         display_name = node_name
         node_id = None
+        sensor_metadata = getattr(self, "_sensor_bit_metadata", {}).get(node_name, {})
+        sensor_label = sensor_metadata.get("label")
         try:
             display_name, node_id = self.get_opc_variable_metadata(node_name)
         except (KeyError, ValueError):
             pass
+        if sensor_label:
+            display_name = sensor_label
         detail = {"display_name": display_name}
         if node_id:
             detail["node_id"] = node_id
@@ -594,6 +663,139 @@ class SZLabPolyPLCDevice(BaseClient):
         else:
             detail["label"] = display_name
         return detail
+
+    @not_action
+    def _opc_sensor_condition_details(
+        self,
+        conditions: Dict[str, bool],
+        values: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        details = []
+        for variable, expected in conditions.items():
+            item = {
+                "variable": variable,
+                "expected": expected,
+                "actual": values.get(variable),
+                "satisfied": values.get(variable) == expected,
+            }
+            item.update(self._opc_wait_variable_detail(variable))
+            details.append(item)
+        return details
+
+    @staticmethod
+    def _opc_sensor_wait_target_text(items: List[Dict[str, Any]]) -> str:
+        return "；".join(
+            f"{item['display_name']} [{item['variable']}]={item['expected']}（当前 {item['actual']}）"
+            for item in items
+        )
+
+    @not_action
+    def _record_opc_sensor_wait_start(
+        self,
+        conditions: Dict[str, bool],
+        values: Dict[str, Any],
+        *,
+        timeout: float,
+        interval: float,
+        context: str | None,
+    ) -> None:
+        items = self._opc_sensor_condition_details(conditions, values)
+        unmet = [item for item in items if not item["satisfied"]]
+        satisfied_count = len(items) - len(unmet)
+        label = context or "传感器条件"
+        if unmet:
+            message = (
+                f"{label}：已满足 {satisfied_count}/{len(items)}；"
+                f"仍等待 {self._opc_sensor_wait_target_text(unmet)}；超时 {timeout}s"
+            )
+        else:
+            message = f"{label}：{len(items)}/{len(items)} 已满足，无需继续等待"
+        detail = {
+            "type": "opc_wait",
+            "wait_kind": "sensor_conditions",
+            "phase": "start",
+            "context": context,
+            "conditions": items,
+            "satisfied_count": satisfied_count,
+            "total_count": len(items),
+            "timeout": timeout,
+            "interval": interval,
+        }
+        self._emit_or_store_opc_wait_event({"phase": "start", "message": message, "detail": detail})
+
+    @not_action
+    def _record_opc_sensor_wait_change(
+        self,
+        conditions: Dict[str, bool],
+        previous_values: Dict[str, Any],
+        values: Dict[str, Any],
+        *,
+        timeout: float,
+        context: str | None,
+    ) -> None:
+        items = self._opc_sensor_condition_details(conditions, values)
+        changed = [item for item in items if previous_values.get(item["variable"]) != item["actual"]]
+        unmet = [item for item in items if not item["satisfied"]]
+        changes_text = "；".join(
+            f"{item['display_name']} {previous_values.get(item['variable'])} → {item['actual']}" for item in changed
+        )
+        if unmet:
+            waiting_text = f"；仍等待 {self._opc_sensor_wait_target_text(unmet)}"
+        else:
+            waiting_text = ""
+        label = context or "传感器条件"
+        message = f"{label}状态变化：{changes_text}；已满足 {len(items) - len(unmet)}/{len(items)}{waiting_text}"
+        detail = {
+            "type": "opc_wait",
+            "wait_kind": "sensor_conditions",
+            "phase": "change",
+            "context": context,
+            "conditions": items,
+            "changes": changed,
+            "satisfied_count": len(items) - len(unmet),
+            "total_count": len(items),
+            "timeout": timeout,
+        }
+        self._emit_or_store_opc_wait_event({"phase": "change", "message": message, "detail": detail})
+
+    @not_action
+    def _record_opc_sensor_wait_finish(
+        self,
+        conditions: Dict[str, bool],
+        values: Dict[str, Any],
+        *,
+        timeout: float,
+        interval: float,
+        success: bool,
+        elapsed: float,
+        context: str | None,
+        error: str | None = None,
+    ) -> None:
+        items = self._opc_sensor_condition_details(conditions, values)
+        unmet = [item for item in items if not item["satisfied"]]
+        label = context or "传感器条件"
+        if success:
+            message = f"{label}完成：{len(items)}/{len(items)} 已满足，耗时 {elapsed:.1f}s"
+        elif error:
+            message = f"{label}读取失败：{error}；最终仍等待 {self._opc_sensor_wait_target_text(unmet)}"
+        else:
+            message = f"{label}超时：最终仍等待 {self._opc_sensor_wait_target_text(unmet)}"
+        detail = {
+            "type": "opc_wait",
+            "wait_kind": "sensor_conditions",
+            "phase": "finish",
+            "context": context,
+            "conditions": items,
+            "success": success,
+            "satisfied_count": len(items) - len(unmet),
+            "total_count": len(items),
+            "timeout": timeout,
+            "interval": interval,
+            "elapsed": elapsed,
+        }
+        if error:
+            detail["error"] = error
+        self._emit_or_store_opc_wait_event({"phase": "finish", "message": message, "detail": detail})
 
     @not_action
     def _record_opc_wait_start(
@@ -707,9 +909,28 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def _read_sensor_group(self, sensors: Dict[str, str]) -> Dict[str, Optional[bool]]:
         result: Dict[str, Optional[bool]] = {}
+        array_cache: Dict[int, Optional[List[bool]]] = {}
         for site_key, variable_name in sensors.items():
             try:
-                result[site_key] = bool(self.read_variable(variable_name))
+                sensor_bit = self._parse_sensor_bit_name(variable_name)
+                if sensor_bit is None:
+                    result[site_key] = bool(self.read_variable(variable_name))
+                    continue
+                group_index, bit_index = sensor_bit
+                if group_index not in array_cache:
+                    try:
+                        array_cache[group_index] = self._read_sensor_array(group_index)
+                    except Exception:
+                        array_cache[group_index] = None
+                array_value = array_cache[group_index]
+                if array_value is not None:
+                    result[site_key] = array_value[bit_index]
+                    continue
+                node = self.use_node(variable_name)
+                value, error = node.read()
+                if error:
+                    raise RuntimeError(f"读取 PLC 传感器位失败: {variable_name}")
+                result[site_key] = bool(value)
             except Exception as exc:
                 if variable_name not in self._sensor_read_warning_names:
                     logger.warning(f"读取传感器 {variable_name} 失败: {exc}")
@@ -820,6 +1041,61 @@ class SZLabPolyPLCDevice(BaseClient):
     @action(auto_prefix=True, always_free=True, description="读取前端堆栈 JSON 状态")
     def get_stack_status(self, group_names: Optional[List[str]] = None) -> Dict[str, Any]:
         return build_stack_status(self._read_stack_sensor_groups(group_names=group_names))
+
+    @action(auto_prefix=True, always_free=True, description="读取全部实机传感器数组")
+    def get_sensor_arrays(self) -> Dict[str, Any]:
+        groups: List[Dict[str, Any]] = []
+        successful_groups = 0
+        for group_index in range(SENSOR_ARRAY_COUNT):
+            array_name = SensorBase.array(group_index)
+            error: Optional[str] = None
+            try:
+                values: List[Optional[bool]] = self._read_sensor_array(group_index)
+                successful_groups += 1
+            except Exception as exc:
+                error = str(exc)
+                values = []
+                for bit_index in range(SENSOR_BITS_PER_ARRAY):
+                    bit_name = f"{array_name}[{bit_index}]"
+                    try:
+                        node = self.use_node(bit_name)
+                        value, read_error = node.read()
+                        values.append(None if read_error else bool(value))
+                    except Exception:
+                        values.append(None)
+                if any(value is not None for value in values):
+                    successful_groups += 1
+
+            bits = []
+            for bit_index, value in enumerate(values):
+                bit_name = f"{array_name}[{bit_index}]"
+                metadata = self._sensor_bit_metadata.get(bit_name, {})
+                bits.append(
+                    {
+                        "index": bit_index,
+                        "name": bit_name,
+                        "value": value,
+                        "label": metadata.get("label") or "",
+                        "address": metadata.get("address") or "",
+                        "node_id": metadata.get("node_id") or self._direct_node_id_map.get(bit_name),
+                    }
+                )
+            groups.append(
+                {
+                    "index": group_index,
+                    "name": array_name,
+                    "node_id": self._direct_node_id_map.get(array_name),
+                    "values": values,
+                    "bits": bits,
+                    "error": error if not any(value is not None for value in values) else None,
+                }
+            )
+        return {
+            "success": successful_groups == SENSOR_ARRAY_COUNT,
+            "partial": 0 < successful_groups < SENSOR_ARRAY_COUNT,
+            "schema": "szlab_poly_studio.sensor_arrays.v1",
+            "groups": groups,
+        }
 
     @action(auto_prefix=True, always_free=True, description="写入 S01 上料过渡仓取料编号和入料产品")
     def set_s1_loading_request(self, pick_index: int, product_type: int) -> Dict[str, Any]:

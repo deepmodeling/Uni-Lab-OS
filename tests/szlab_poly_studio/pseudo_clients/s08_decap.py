@@ -48,9 +48,17 @@ class PseudoSzlabS08OpcUaClient:
             raise KeyError(f"未找到 OPC UA 节点: {name}")
         if name == NODE_PROCESS_COMPLETE:
             if self.values.get(NODE_PARAMS_WRITTEN):
-                return int(self.values.get(NODE_PROCESS_SELECT, 0))
+                process_id = int(self.values.get(NODE_PROCESS_SELECT, 0))
+                slot = int(self.values.get("S082瓶盖暂存位", 0))
+                if slot in CAP_STORAGE_SLOT_SENSORS:
+                    self.values[CAP_STORAGE_SLOT_SENSORS[slot]] = process_id in _s08_module.OPEN_PROCESS_IDS
+                return process_id
             return int(self.values.get(NODE_PROCESS_COMPLETE, 0))
         return self.values[name]
+
+    def read_variable(self, name: str, use_cache: bool = False) -> Any:
+        del use_cache
+        return self.read(name)
 
     def wait_equal(self, name: str, expected: Any, timeout: float = 300.0, interval: float = 0.2) -> bool:
         import time
@@ -61,6 +69,17 @@ class PseudoSzlabS08OpcUaClient:
                 return True
             time.sleep(interval)
         return False
+
+    def wait_sensor_conditions(
+        self,
+        conditions: dict[str, bool],
+        timeout: float = 300.0,
+        interval: float = 0.2,
+        context: str | None = None,
+    ) -> tuple[bool, dict[str, Any]]:
+        del timeout, interval, context
+        values = {name: self.read(name) for name in conditions}
+        return all(values[name] == expected for name, expected in conditions.items()), values
 
     def write(self, name: str, value: Any) -> None:
         self.values[name] = value

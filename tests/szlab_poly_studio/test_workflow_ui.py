@@ -28,6 +28,7 @@ from scripts.workflow_ui import (
     _record_to_dict,
     _register_shutdown_handler,
     _run_node_with_live_opc_sampling,
+    apply_preset_debug_config,
     build_graph_workflow,
     build_linear_workflow,
     create_app,
@@ -517,6 +518,11 @@ def test_s09_debug_preset_uses_debug_file_name():
     assert "add_liquid" in preset.actions
     assert "add_liquid_to_beaker" in preset.actions
     add_liquid_param_names = [param["name"] for param in preset.actions["add_liquid"].params]
+    assert add_liquid_param_names[:3] == [
+        "take_tip_box_index",
+        "release_tip_box_index",
+        "tip_index",
+    ]
     assert add_liquid_param_names[-5:] == [
         "S09液体瓶1剩余液量",
         "S09液体瓶2剩余液量",
@@ -685,27 +691,22 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     ]
 
 
-def test_szlab_robot_action_workflow_auto_applies_debug_sensor_skips(monkeypatch):
+def test_szlab_robot_action_workflow_does_not_auto_apply_debug_sensor_skips(monkeypatch):
     monkeypatch.delenv("SKIP_SENSOR_PRECHECK", raising=False)
     monkeypatch.delenv("SKIP_ROBOT_PRECHECK_VARIABLES", raising=False)
 
     create_app("szlab_robot_action_workflow")
 
-    skipped_variables = {
-        item.strip()
-        for item in os.environ["SKIP_ROBOT_PRECHECK_VARIABLES"].split(",")
-        if item.strip()
-    }
-    assert os.environ["SKIP_SENSOR_PRECHECK"] == "1"
-    assert "传感器状态_上位机[0].NO[6]" in skipped_variables
+    assert "SKIP_SENSOR_PRECHECK" not in os.environ
+    assert "SKIP_ROBOT_PRECHECK_VARIABLES" not in os.environ
 
 
-def test_szlab_robot_action_workflow_debug_skips_s03_pick_sensor_gate(monkeypatch):
+def test_szlab_robot_action_workflow_explicit_debug_skips_s03_pick_sensor_gate(monkeypatch):
     from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import SzlabMixerRobotDevice
 
     monkeypatch.delenv("SKIP_SENSOR_PRECHECK", raising=False)
     monkeypatch.delenv("SKIP_ROBOT_PRECHECK_VARIABLES", raising=False)
-    create_app("szlab_robot_action_workflow")
+    apply_preset_debug_config("szlab_robot_action_workflow")
 
     device = SzlabMixerRobotDevice(auto_connect=False)
     result = device._ensure_sensor_gate("传感器状态_上位机[0].NO[6]", True, "S03 取料源位必须有物料")
@@ -1498,6 +1499,77 @@ def test_stack_status_api_returns_live_plc_stack_status(monkeypatch):
     assert payload["stacks"]["s10_liquid_reagent"]["slots"]["1-1"]["occupied"] is True
     assert second_response["success"] is True
     assert fake_plc.calls == [["s10_liquid_reagent", "powder_container"]]
+
+
+def test_sensor_arrays_api_returns_live_plc_boolean_arrays(monkeypatch):
+    class FakePLC:
+        def __init__(self):
+            self.calls = 0
+
+        def get_sensor_arrays(self):
+            self.calls += 1
+            return {
+                "success": True,
+                "schema": "szlab_poly_studio.sensor_arrays.v1",
+                "groups": [
+                    {
+                        "index": 2,
+                        "name": "传感器状态_上位机[2].NO",
+                        "values": [False] * 10 + [True] + [False] * 5,
+                    }
+                ],
+            }
+
+    fake_plc = FakePLC()
+
+    def fake_get_live_devices(self):
+        return {"szlab_poly_plc": fake_plc}
+
+    monkeypatch.setattr(WorkflowRunManager, "get_live_devices", fake_get_live_devices)
+
+    app = create_app("szlab_robot_action_workflow")
+    endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/sensor-arrays"
+    )
+    response = asyncio.run(endpoint())
+    second_response = asyncio.run(endpoint())
+
+    assert response["success"] is True
+    assert response["groups"][0]["values"][10] is True
+    assert second_response["success"] is True
+    assert fake_plc.calls == 1
+
+
+def test_sensor_change_subscription_invalidates_stack_and_array_caches(monkeypatch):
+    class FakePLC:
+        def __init__(self):
+            self.subscription_calls = 0
+            self.callback = None
+
+        def start_sensor_array_subscription(self, callback):
+            self.subscription_calls += 1
+            self.callback = callback
+
+    fake_plc = FakePLC()
+    preset = load_preset("szlab_robot_action_workflow")
+    manager = WorkflowRunManager(preset, _load_preset_runtime_config(preset))
+    monkeypatch.setattr(manager, "get_live_devices", lambda: {"szlab_poly_plc": fake_plc})
+
+    manager._stack_status_cache = (time.monotonic(), {"success": True})
+    manager._sensor_arrays_cache = (time.monotonic(), {"success": True})
+    manager.ensure_sensor_event_subscription()
+    manager.ensure_sensor_event_subscription()
+    initial_version = manager.sensor_event_version()
+
+    assert fake_plc.subscription_calls == 1
+    assert fake_plc.callback is not None
+    fake_plc.callback(3, [False] * 8 + [True] + [False] * 7)
+
+    assert manager._stack_status_cache is None
+    assert manager._sensor_arrays_cache is None
+    assert manager.wait_for_sensor_change(initial_version, timeout=0.01) == initial_version + 1
 
 
 def test_s06_debug_stack_status_is_disabled_with_empty_group_list(monkeypatch):

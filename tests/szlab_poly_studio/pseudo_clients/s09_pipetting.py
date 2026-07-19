@@ -29,6 +29,13 @@ class PseudoSzlabS09OpcUaClient:
             "S09液体瓶4剩余液量": 0.0,
             "S09液体瓶5剩余液量": 0.0,
             "工站状态[8]": 2,
+            "传感器状态_上位机[4].NO[5]": True,
+            "传感器状态_上位机[4].NO[6]": True,
+            "传感器状态_上位机[4].NO[7]": True,
+            "传感器状态_上位机[4].NO[8]": True,
+            "传感器状态_上位机[4].NO[9]": True,
+            "传感器状态_上位机[4].NO[10]": True,
+            "传感器状态_上位机[4].NO[11]": True,
             **(initial_values or {}),
         }
         self.reads: list[str] = []
@@ -72,6 +79,17 @@ class PseudoSzlabS09OpcUaClient:
             return self.wait_results[(name, expected)]
         self.values[name] = expected
         return True
+
+    def wait_sensor_conditions(
+        self,
+        conditions: dict[str, bool],
+        timeout: float = 300.0,
+        interval: float = 0.2,
+        context: str | None = None,
+    ) -> tuple[bool, dict[str, Any]]:
+        del timeout, interval, context
+        values = {name: self.read(name) for name in conditions}
+        return all(values[name] == expected for name, expected in conditions.items()), values
 
     def get_variables(self, variable_names: list[str], use_cache: bool = False) -> dict[str, dict[str, Any]]:
         del use_cache

@@ -306,6 +306,32 @@ type StackStatusPayload = {
   stacks?: Record<string, StackPayload>;
 };
 
+type SensorBitPayload = {
+  index: number;
+  name: string;
+  value: boolean | null;
+  label?: string;
+  address?: string;
+  node_id?: string;
+};
+
+type SensorArrayGroupPayload = {
+  index: number;
+  name: string;
+  node_id?: string;
+  values?: Array<boolean | null>;
+  bits?: SensorBitPayload[];
+  error?: string | null;
+};
+
+type SensorArraysPayload = {
+  success: boolean;
+  partial?: boolean;
+  schema?: string;
+  message?: string;
+  groups?: SensorArrayGroupPayload[];
+};
+
 type StackResourceView = {
   id: string;
   title: string;
@@ -364,6 +390,14 @@ const DEFAULT_SENSOR_GATES: Record<string, { label: string; free: boolean }> = {
   s07: { label: 'S07 固体加料位', free: true },
   s08: { label: 'S08 开关盖位', free: true },
   s09: { label: 'S09 移液位', free: true },
+};
+const LIVE_SENSOR_GATE_BITS: Record<string, Array<[number, number]>> = {
+  s04: [[2, 10], [2, 11], [2, 12], [2, 13], [2, 14], [2, 15]],
+  s05: [[3, 0]],
+  s06: [[3, 1]],
+  s07: [[3, 14], [3, 15]],
+  s08: [[3, 14], [3, 15]],
+  s09: [[4, 7]],
 };
 const SAMPLE_NAMES = ['Sample A', 'Sample B', 'Sample C', 'Sample D', 'Sample E'];
 
@@ -601,6 +635,22 @@ function stackSensorValuesFromStatus(status: StackStatusPayload | null) {
   return values;
 }
 
+function sensorBitValue(status: SensorArraysPayload | null, groupIndex: number, bitIndex: number) {
+  const group = status?.groups?.find((item) => item.index === groupIndex);
+  const bit = group?.bits?.find((item) => item.index === bitIndex);
+  return bit?.value ?? group?.values?.[bitIndex] ?? null;
+}
+
+function liveSensorGateStates(status: SensorArraysPayload | null) {
+  return Object.fromEntries(
+    Object.entries(LIVE_SENSOR_GATE_BITS).map(([gate, bitRefs]) => {
+      const values = bitRefs.map(([groupIndex, bitIndex]) => sensorBitValue(status, groupIndex, bitIndex));
+      const knownValues = values.filter((value): value is boolean => value !== null);
+      return [gate, knownValues.length === values.length ? !knownValues.some(Boolean) : null];
+    }),
+  ) as Record<string, boolean | null>;
+}
+
 function App() {
   const [title, setTitle] = useState('szlab 本地调试工具');
   const [actions, setActions] = useState<ActionSpec[]>([]);
@@ -631,6 +681,9 @@ function App() {
   const [stackStatus, setStackStatus] = useState<StackStatusPayload | null>(null);
   const [stackError, setStackError] = useState('');
   const [isRefreshingStack, setIsRefreshingStack] = useState(false);
+  const [sensorArrays, setSensorArrays] = useState<SensorArraysPayload | null>(null);
+  const [sensorArrayError, setSensorArrayError] = useState('');
+  const [isRefreshingSensors, setIsRefreshingSensors] = useState(false);
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [taskInstances, setTaskInstances] = useState<TaskInstance[]>([]);
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
@@ -837,6 +890,16 @@ function App() {
     return uniqueOpcVariables(actions.flatMap((action) => action.opc_variables || []));
   }, [actions, nodes]);
   const stackSensorValues = useMemo(() => stackSensorValuesFromStatus(stackStatus), [stackStatus]);
+  const liveGateStates = useMemo(() => liveSensorGateStates(sensorArrays), [sensorArrays]);
+  const effectiveSensorGates = useMemo(
+    () => Object.fromEntries(
+      Object.entries(sensorGates).map(([gate, manualFree]) => [
+        gate,
+        liveGateStates[gate] ?? manualFree,
+      ]),
+    ),
+    [liveGateStates, sensorGates],
+  );
   const configuredOpcVariableRows = useMemo<OpcVariableView[]>(
     () => configuredOpcVariables.map((name) => ({ name, currentValue: stackSensorValues[name] })),
     [configuredOpcVariables, stackSensorValues],
@@ -983,9 +1046,48 @@ function App() {
     }
   }, []);
 
+  const refreshSensorArrays = useCallback(async () => {
+    setIsRefreshingSensors(true);
+    try {
+      const response = await fetch('/api/sensor-arrays');
+      const payload: SensorArraysPayload = await response.json();
+      setSensorArrays(payload);
+      setSensorArrayError(
+        payload.success || payload.partial
+          ? ''
+          : (payload.message || '实机传感器状态暂不可用'),
+      );
+    } catch (error) {
+      setSensorArrayError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRefreshingSensors(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void refreshStackStatus();
-  }, [refreshStackStatus]);
+    let stopped = false;
+    let refreshTimer: number | null = null;
+    const refresh = async () => {
+      await refreshStackStatus();
+      if (!stopped) await refreshSensorArrays();
+    };
+    const scheduleRefresh = () => {
+      if (stopped || refreshTimer !== null) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        if (!stopped) void refresh();
+      }, 80);
+    };
+
+    void refresh();
+    const sensorEvents = new EventSource('/api/sensor-events');
+    sensorEvents.addEventListener('sensor-change', scheduleRefresh);
+    return () => {
+      stopped = true;
+      sensorEvents.close();
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+    };
+  }, [refreshSensorArrays, refreshStackStatus]);
 
   useEffect(() => {
     if (!stackResources.length) {
@@ -1821,6 +1923,12 @@ function App() {
 
           {canvasTab === 'sensors' && (
             <div className="demo-opc-dock tabbed">
+              <SensorArrayPanel
+                error={sensorArrayError}
+                isRefreshing={isRefreshingSensors}
+                onRefresh={refreshSensorArrays}
+                status={sensorArrays}
+              />
               <OpcChangePanel changes={opcChanges} nodes={nodes} variables={configuredOpcVariableRows} />
             </div>
           )}
@@ -2836,6 +2944,157 @@ function LogPanel({
         )}
       </div>
     </div>
+  );
+}
+
+type CategorizedSensorBit = SensorBitPayload & {
+  arrayIndex: number;
+  category: string;
+  position: string;
+};
+
+type CategorizedSensorGroup = {
+  name: string;
+  bits: CategorizedSensorBit[];
+  unmarked: boolean;
+};
+
+const HIDDEN_SENSOR_NAMES = new Set([
+  '传感器状态_上位机[3].NO[6]',
+]);
+
+function sensorLabelParts(label?: string): { category: string; position: string } {
+  const normalized = (label || '').trim();
+  if (!normalized) return { category: '未备注信号', position: '' };
+  const match = normalized.match(/^(.*?)(\d+(?:-\d+)?)$/);
+  if (!match) return { category: normalized, position: '' };
+  return {
+    category: match[1].trim() || normalized,
+    position: match[2],
+  };
+}
+
+function categorizeSensorGroups(groups: SensorArrayGroupPayload[]): CategorizedSensorGroup[] {
+  const categories = new Map<string, CategorizedSensorBit[]>();
+  groups.forEach((group) => {
+    (group.bits || []).forEach((bit) => {
+      if (HIDDEN_SENSOR_NAMES.has(bit.name)) return;
+      const { category, position } = sensorLabelParts(bit.label);
+      const categorizedBit = {
+        ...bit,
+        arrayIndex: group.index,
+        category,
+        position,
+      };
+      categories.set(category, [...(categories.get(category) || []), categorizedBit]);
+    });
+  });
+
+  return Array.from(categories, ([name, bits]) => ({
+    name,
+    bits,
+    unmarked: name === '未备注信号',
+  })).sort((left, right) => Number(left.unmarked) - Number(right.unmarked));
+}
+
+function SensorBitRow({ bits }: { bits: CategorizedSensorBit[] }) {
+  const positions = bits.map((bit) => {
+    const match = bit.position.match(/^(\d+)-(\d+)$/);
+    return match ? { row: Number(match[1]), column: Number(match[2]) } : null;
+  });
+  const isMatrix = positions.length > 0 && positions.every((position) => position !== null);
+  const maxRow = isMatrix ? Math.max(...positions.map((position) => position?.row || 1)) : 0;
+  const maxColumn = isMatrix ? Math.max(...positions.map((position) => position?.column || 1)) : 0;
+
+  return (
+    <div
+      className={`sensor-array-bits${isMatrix ? ' matrix' : ''}`}
+      style={isMatrix ? {
+        gridTemplateColumns: `repeat(${maxColumn}, minmax(78px, 110px))`,
+        gridTemplateRows: `repeat(${maxRow}, minmax(66px, auto))`,
+      } : undefined}
+    >
+      {bits.map((bit, bitIndex) => (
+        <div
+          className={`sensor-array-bit ${bit.value === true ? 'on' : bit.value === false ? 'off' : 'unknown'}`}
+          key={`${bit.arrayIndex}-${bit.index}`}
+          style={isMatrix ? {
+            gridColumn: positions[bitIndex]?.column,
+            gridRow: positions[bitIndex]?.row,
+          } : undefined}
+          title={`${bit.name}\n${bit.label || '未标注'}\n${bit.address || ''}\n${bit.node_id || ''}`}
+        >
+          <span>{bit.position || '单点'}</span>
+          <strong>{bit.value === true ? '1' : bit.value === false ? '0' : '-'}</strong>
+          <small>[{bit.arrayIndex}].{bit.index}{bit.address ? ` · ${bit.address}` : ''}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SensorArrayPanel({
+  error,
+  isRefreshing,
+  onRefresh,
+  status,
+}: {
+  error: string;
+  isRefreshing: boolean;
+  onRefresh: () => Promise<void>;
+  status: SensorArraysPayload | null;
+}) {
+  const groups = status?.groups || [];
+  const categorizedGroups = categorizeSensorGroups(groups);
+  const groupErrors = groups
+    .filter((group) => group.error)
+    .map((group) => `[${group.index}] ${group.error}`)
+    .join('；');
+  const online = status?.success || status?.partial;
+  return (
+    <section className="sensor-array-panel">
+      <div className="sensor-array-head">
+        <div>
+          <h3>实机传感器阵列</h3>
+          <p>按 CSV 备注归类展示；检测到 PLC 信号变化时自动刷新。</p>
+        </div>
+        <div className="sensor-array-actions">
+          <span className={online ? 'online' : 'offline'}>
+            {online ? (status?.partial ? 'PARTIAL' : 'ONLINE') : 'OFFLINE'}
+          </span>
+          <button disabled={isRefreshing} onClick={() => void onRefresh()} type="button">
+            {isRefreshing ? '读取中…' : '立即刷新'}
+          </button>
+        </div>
+      </div>
+      {(error || status?.message || groupErrors) && (
+        <div className="sensor-array-error">{error || status?.message || groupErrors}</div>
+      )}
+      <div className="sensor-array-groups">
+        {categorizedGroups.map((group) => (
+          group.unmarked ? (
+            <details className="sensor-array-group sensor-array-unmarked" key={group.name}>
+              <summary>
+                <strong>{group.name}</strong>
+                <span>{group.bits.length} 个</span>
+              </summary>
+              <SensorBitRow bits={group.bits} />
+            </details>
+          ) : (
+            <article className="sensor-array-group" key={group.name}>
+              <header>
+                <strong>{group.name}</strong>
+                <span>{group.bits.length} 个</span>
+              </header>
+              <SensorBitRow bits={group.bits} />
+            </article>
+          )
+        ))}
+        {!categorizedGroups.length && (
+          <div className="opc-change-empty">{error || '正在连接实机 OPC UA…'}</div>
+        )}
+      </div>
+    </section>
   );
 }
 

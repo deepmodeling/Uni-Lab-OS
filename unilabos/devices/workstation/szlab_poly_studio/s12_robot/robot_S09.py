@@ -24,33 +24,25 @@ class SzlabRobotS09Mixin:
         sensor = s09_sensor(product_type, position)
         safe_position = self._s09_safe_position(product_type, position)
 
-        def precheck():
-            if sensor:
-                return self._ensure_sensor_gate(sensor, False, "S09 放料目标位必须为空")
-            return None
-
         return self._submit_robot_task(
             task="place",
             station="S09",
             task_number=19,
             variables=build_variables("place_to_s09", S09取放料产品=product_type, S09取放料编号=position),
             reset_variables={"S09取放料产品": 0, "S09取放料编号": 0, "任务号": 0},
-            precheck=precheck,
             product_type=int(product_type),
             position=int(position),
             s09_safe_position=safe_position,
             s09_home_signal=S09_HOME_SIGNALS[safe_position],
             target_sensor_variable=sensor,
+            pre_sensor_conditions={},
+            post_sensor_conditions={},
+            sensor_check_skipped=True,
         )
 
     def _run_s09_pick(self, product_type: int, position: int) -> dict[str, Any]:
         sensor = s09_sensor(product_type, position)
         safe_position = self._s09_safe_position(product_type, position)
-
-        def precheck():
-            if sensor:
-                return self._ensure_sensor_gate(sensor, True, "S09 取料源位必须有物料")
-            return None
 
         return self._submit_robot_task(
             task="pick",
@@ -58,10 +50,12 @@ class SzlabRobotS09Mixin:
             task_number=20,
             variables=build_variables("pick_from_s09", S09取放料产品=product_type, S09取放料编号=position),
             reset_variables={"S09取放料产品": 0, "S09取放料编号": 0, "任务号": 0},
-            precheck=precheck,
             product_type=int(product_type),
             position=int(position),
             s09_safe_position=safe_position,
             s09_home_signal=S09_HOME_SIGNALS[safe_position],
             source_sensor_variable=sensor,
+            pre_sensor_conditions={},
+            post_sensor_conditions={},
+            sensor_check_skipped=True,
         )

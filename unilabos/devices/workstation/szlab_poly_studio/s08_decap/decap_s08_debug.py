@@ -10,11 +10,13 @@
 """
 
 from __future__ import annotations
+
 from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
 from unilabos.devices.workstation.szlab_poly_studio.s08_decap.decap_s08_cap_station import (
     SZLabS08CapStationDevice,
     build_opcua_node_id_map_for_uplink_comm,
 )
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S08Sensors
 
 import argparse
 import json
@@ -104,8 +106,8 @@ def start_virtual_opcua_stack(config: dict[str, Any]) -> tuple[Any, threading.Th
         initial_values={
             "S08原点信号": True,
             "S08允许加工": True,
-            "传感器状态_上位机[3].NO[14]": True,
-            "传感器状态_上位机[3].NO[15]": True,
+            S08Sensors.CAP_STATION[1]: True,
+            S08Sensors.CAP_STATION[2]: True,
             "工站状态[7]": 2,
         },
     )

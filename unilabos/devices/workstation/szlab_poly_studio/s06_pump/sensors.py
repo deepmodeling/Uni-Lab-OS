@@ -9,10 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S06Sensors
+
+
 CSV_REFERENCE = str(Path(__file__).resolve().parent / "pump_nodes.csv")
 
 # CSV 行 60：加溶剂检测（加液位烧杯）
-ADDITION_BEAKER_SENSOR = "传感器状态_上位机[3].NO[1]"
+ADDITION_BEAKER_SENSOR = S06Sensors.MATERIAL
 
 # 新 CSV：S06 加溶液工位握手与参数
 S06_READY_VAR = "S06准备信号"
@@ -22,12 +25,6 @@ S06_DONE_VAR = "S06加工完成"
 S06_PROCESS_SELECT_VAR = "S06工艺选择"
 
 S06PipelineKind = Literal["aspirate", "dispense", "air"]
-
-# CSV 仅有液体试剂瓶在位检测（S10），无储液瓶液位点位；液量充足由 PLC 置位 S06允许加工
-STORAGE_BOTTLE_PRESENT: dict[int, str] = {
-    1: "传感器状态_上位机[4].NO[12]",  # 液体试剂瓶1-1
-    2: "传感器状态_上位机[5].NO[1]",  # 液体试剂瓶2-1
-}
 
 
 def s06_solution_amount_var(pump: int) -> str:

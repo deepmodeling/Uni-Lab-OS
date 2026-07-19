@@ -204,7 +204,7 @@ curl -X GET "http://localhost:8002/api/v1/job/b6acb586-733a-42ab-9f73-55c9a52aa8
 }
 ```
 
-> **注意**: 任务结果在首次查询后会被自动删除，请确保保存返回的结果数据。
+> **注意**: 任务状态和结果可重复查询，不会因前端第一次读取而删除。微后端仍会按任务结果存储的清理策略回收过期记录。
 
 ## API 端点列表
 
@@ -224,6 +224,17 @@ curl -X GET "http://localhost:8002/api/v1/job/b6acb586-733a-42ab-9f73-55c9a52aa8
 | ----------------------------- | ---- | ------------------ |
 | `/api/v1/job/add`             | POST | 提交新任务         |
 | `/api/v1/job/{job_id}/status` | GET  | 查询任务状态和结果 |
+
+### 动作异常决策相关
+
+| 端点                                                | 方法 | 说明                             |
+| --------------------------------------------------- | ---- | -------------------------------- |
+| `/api/v1/error-decisions`                           | GET  | 获取尚未处理的动作异常决策       |
+| `/api/v1/error-decisions/{decision_id}`             | POST | 提交一项动作异常决策             |
+| `/api/v1/monitor/events`                             | GET  | 订阅动作状态与异常决策 SSE 事件  |
+| `/api/v1/monitor/snapshot`                           | GET  | 获取异常决策及近期事件权威快照   |
+
+这组接口直接返回业务 JSON，HTTP 错误使用 FastAPI 的 `detail` 结构，不套用本页其他接口的 `code/data/message` 外层。完整字段、SSE 事件、TypeScript 示例和前端状态机见[动作异常决策：前端接入协议](action_error_decision_frontend.md)。
 
 ### 资源相关
 

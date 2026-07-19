@@ -36,7 +36,7 @@ from unilabos.registry.utils import resolve_registry_displayname
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 6       # 缓存格式版本号，格式变更时递增
+_CACHE_VERSION = 7       # 缓存格式版本号，格式变更时递增
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 # 合法的装饰器来源模块
@@ -896,6 +896,11 @@ def _extract_class_body(
             action_args.setdefault("description", "")
             action_args.setdefault("auto_prefix", False)
             action_args.setdefault("parent", False)
+            action_args.setdefault("error_policy", None)
+            if action_args["error_policy"]:
+                from unilabos.registry.action_policy import normalize_error_policy
+
+                action_args["error_policy"] = normalize_error_policy(action_args["error_policy"])
             method_params = _extract_method_params(item, import_map)
             return_type = _get_annotation_str(item.returns, import_map)
             is_async = isinstance(item, ast.AsyncFunctionDef)

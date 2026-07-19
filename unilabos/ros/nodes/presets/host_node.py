@@ -4,10 +4,11 @@ import threading
 import time
 import traceback
 import uuid
+from copy import deepcopy
 
 from unilabos.utils.tools import fast_dumps_str as _fast_dumps_str, fast_loads as _fast_loads
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Set, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Mapping, Set, Tuple, Union
 
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point
@@ -27,6 +28,13 @@ from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialComma
 from unique_identifier_msgs.msg import UUID
 
 from unilabos.registry.decorators import device, action, NodeType, ActionInputHandle, ActionOutputHandle, DataSource
+from unilabos.registry.action_policy import (
+    ERROR_DECISION_TARGET_BACKEND,
+    ERROR_DECISION_TARGET_MICRO_BACKEND,
+    SUCCESS_TYPE_OPERATOR_INTERVENTION,
+    SUCCESS_TYPE_SKIP,
+    resolve_error_options_by_names,
+)
 from unilabos.registry.placeholder_type import (
     ResourceSlot,
     DeviceSlot,
@@ -360,6 +368,10 @@ class HostNode(BaseROS2DeviceNode):
         }  # device_id -> action_value_mappings(本地+远程设备统一存储)
         self._slave_registry_configs: Dict[str, Dict] = {}  # registry_name -> registry_config(含action_value_mappings)
         self._goals: Dict[str, Any] = {}  # 用来存储多个目标的状态
+        # 异常决策只存在于 Host：设备返回结构化失败，Host 保留原 job 并负责恢复动作。
+        self._error_execution_contexts: Dict[str, Dict[str, Any]] = {}
+        self._pending_action_error_decisions: Dict[str, Dict[str, Any]] = {}
+        self._pending_action_error_decisions_lock = threading.RLock()
         self._online_devices: Set[str] = {f"{self.namespace}/{device_id}"}  # 用于跟踪在线设备
         self._last_discovery_time = 0.0  # 上次设备发现的时间
         self._discovery_lock = threading.Lock()  # 设备发现的互斥锁
@@ -857,6 +869,11 @@ class HostNode(BaseROS2DeviceNode):
         action_kwargs: Dict[str, Any],
         sample_material: Dict[str, str],
         server_info: Optional[Dict[str, Any]] = None,
+        *,
+        transport_goal_id: Optional[str] = None,
+        result_item: Optional["QueueItem"] = None,
+        recovery_suc_type: Optional[str] = None,
+        cache_error_context: bool = True,
     ) -> None:
         """
         向设备发送目标请求
@@ -866,9 +883,11 @@ class HostNode(BaseROS2DeviceNode):
             action_kwargs: 动作参数
             server_info: 服务器发送信息，包含发送时间戳等
         """
-        u = uuid.UUID(item.job_id)
+        callback_item = result_item or item
+        u = uuid.UUID(transport_goal_id or item.job_id)
         device_id = item.device_id
         action_name = item.action_name
+        original_action_kwargs = dict(action_kwargs)
 
         if BasicConfig.test_mode:
             action_id = f"/devices/{device_id}/{action_name}"
@@ -901,21 +920,50 @@ class HostNode(BaseROS2DeviceNode):
         if action_id not in self._action_clients:
             raise ValueError(f"ActionClient {action_id} not found.")
 
-        action_client: ActionClient = self._action_clients[action_id]
-        goal_msg = convert_to_ros_msg(action_client._action_type.Goal(), action_kwargs)
+        context_cached = False
+        if cache_error_context:
+            existing = self._error_execution_contexts.get(callback_item.job_id, {})
+            self._error_execution_contexts[callback_item.job_id] = {
+                "item": callback_item,
+                "action_type": action_type,
+                "action_kwargs": original_action_kwargs,
+                "sample_material": dict(sample_material),
+                "server_info": dict(server_info) if server_info else None,
+                "retry_count": int(existing.get("retry_count", 0)),
+            }
+            context_cached = True
 
-        # self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {str(goal_msg)[:1000]}")
-        self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {action_kwargs}")
-        self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {goal_msg}")
-        action_client.wait_for_server()
-        goal_uuid_obj = UUID(uuid=list(u.bytes))
+        try:
+            action_client: ActionClient = self._action_clients[action_id]
+            goal_msg = convert_to_ros_msg(action_client._action_type.Goal(), action_kwargs)
 
-        future = action_client.send_goal_async(
-            goal_msg,
-            feedback_callback=lambda feedback_msg: self.feedback_callback(item, action_id, feedback_msg),
-            goal_uuid=goal_uuid_obj,
+            # self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {str(goal_msg)[:1000]}")
+            self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {action_kwargs}")
+            self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {goal_msg}")
+            action_client.wait_for_server()
+            goal_uuid_obj = UUID(uuid=list(u.bytes))
+
+            future = action_client.send_goal_async(
+                goal_msg,
+                feedback_callback=lambda feedback_msg: self.feedback_callback(
+                    callback_item,
+                    action_id,
+                    feedback_msg,
+                ),
+                goal_uuid=goal_uuid_obj,
+            )
+        except Exception:
+            if context_cached:
+                self._error_execution_contexts.pop(callback_item.job_id, None)
+            raise
+        future.add_done_callback(
+            lambda f: self.goal_response_callback(
+                callback_item,
+                action_id,
+                f,
+                recovery_suc_type=recovery_suc_type,
+            )
         )
-        future.add_done_callback(lambda f: self.goal_response_callback(item, action_id, f))
 
     def _build_test_mode_return(
         self, device_id: str, action_name: str, action_kwargs: Dict[str, Any]
@@ -961,18 +1009,563 @@ class HostNode(BaseROS2DeviceNode):
         for bridge in self.bridges:
             if hasattr(bridge, "publish_job_status"):
                 bridge.publish_job_status(mock_return, item, status, return_info)
+        self._emit_local_action_event(
+            item,
+            "job_status",
+            self._job_status_event_data(
+                item,
+                status,
+                mock_return,
+                return_info,
+            ),
+        )
+        self._error_execution_contexts.pop(job_id, None)
 
-    def goal_response_callback(self, item: "QueueItem", action_id: str, future) -> None:
+    @staticmethod
+    def _job_status_event_data(
+        item: "QueueItem",
+        status: str,
+        feedback_data: Dict[str, Any],
+        return_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """生成与边云 ``job_status.data`` 一致的本地事件载荷。"""
+
+        return {
+            "job_id": item.job_id,
+            "task_id": item.task_id,
+            "device_id": item.device_id,
+            "notebook_id": item.notebook_id,
+            "action_name": item.action_name,
+            "status": status,
+            "feedback_data": feedback_data,
+            "return_info": return_info,
+            "timestamp": time.time(),
+        }
+
+    @staticmethod
+    def _emit_local_action_event(
+        item: "QueueItem",
+        event_type: str,
+        data: Dict[str, Any],
+    ) -> None:
+        """向 Host 微后端发布事件；事件系统故障不得影响 action。"""
+
+        if (
+            getattr(item, "error_decision_target", ERROR_DECISION_TARGET_BACKEND)
+            != ERROR_DECISION_TARGET_MICRO_BACKEND
+        ):
+            return
+        try:
+            from unilabos.app.web.event_bus import monitor_bus
+
+            monitor_bus.emit("action", event_type, data)
+        except Exception:  # noqa: BLE001 - 观测链路必须 fail-open
+            pass
+
+    def _finish_error_handled_job(
+        self,
+        item: "QueueItem",
+        status: str,
+        return_info: Dict[str, Any],
+        result_data: Dict[str, Any],
+    ) -> None:
+        """结束由 Host 管理的异常决策 job，并释放正常队列状态。"""
+
+        job_id = item.job_id
+        self._goals.pop(job_id, None)
+        self._error_execution_contexts.pop(job_id, None)
+        with self._pending_action_error_decisions_lock:
+            stale_ids = [
+                decision_id
+                for decision_id, pending in self._pending_action_error_decisions.items()
+                if pending.get("job_id") == job_id
+            ]
+            for decision_id in stale_ids:
+                pending = self._pending_action_error_decisions.pop(decision_id)
+                timer = pending.get("timer")
+                if timer is not None:
+                    timer.cancel()
+
+        try:
+            from unilabos.app.web.controller import store_job_result
+
+            store_job_result(job_id, status, return_info, result_data)
+        except ImportError:
+            pass
+        except Exception as ex:  # noqa: BLE001 - 不能阻断队列终态上报
+            self.lab_logger().warning(
+                f"[Host Node] Store job result failed for {job_id[:8]}: {ex}"
+            )
+
+        for bridge in self.bridges:
+            if hasattr(bridge, "publish_job_status"):
+                bridge.publish_job_status(result_data, item, status, return_info)
+        self._emit_local_action_event(
+            item,
+            "job_status",
+            self._job_status_event_data(
+                item,
+                status,
+                result_data,
+                return_info,
+            ),
+        )
+
+    def _begin_action_error_decision(
+        self,
+        item: "QueueItem",
+        return_info: Dict[str, Any],
+        result_data: Dict[str, Any],
+    ) -> bool:
+        """设备失败后在 Host 创建决策点；成功上报时原 job 继续保持 pending。"""
+
+        raw_error_info = return_info.get("error_info")
+        if not isinstance(raw_error_info, dict):
+            return False
+        action_mappings = self._action_value_mappings.get(item.device_id, {})
+        report_action_name = str(
+            raw_error_info.get("action_name") or item.action_name
+        )
+        candidates = [report_action_name, item.action_name]
+        candidates.extend(
+            f"auto-{candidate}"
+            for candidate in list(candidates)
+            if not candidate.startswith("auto-")
+        )
+        policy = None
+        for candidate in candidates:
+            mapping = action_mappings.get(candidate)
+            if isinstance(mapping, dict) and mapping.get("error_policy"):
+                policy = mapping["error_policy"]
+                break
+        if not isinstance(policy, Mapping):
+            return False
+        exception_mro = raw_error_info.get("exception_mro")
+        if not isinstance(exception_mro, list):
+            exception_mro = [
+                str(raw_error_info.get("exception_type") or "Exception")
+            ]
+        options = resolve_error_options_by_names(policy, exception_mro)
+        if not options:
+            return False
+        error_info = {
+            **raw_error_info,
+            "options": options,
+            "max_retries": int(policy.get("max_retries", 3)),
+            "decision_timeout_seconds": float(
+                policy.get("decision_timeout_seconds", 300.0)
+            ),
+            "default_on_decision_timeout": str(
+                policy.get("default_on_decision_timeout", "abort")
+            ),
+        }
+        decision_target = str(
+            getattr(item, "error_decision_target", ERROR_DECISION_TARGET_BACKEND)
+        )
+        if decision_target not in {
+            ERROR_DECISION_TARGET_BACKEND,
+            ERROR_DECISION_TARGET_MICRO_BACKEND,
+        }:
+            self.lab_logger().warning(
+                f"[Host Node] 未知异常决策目标 {decision_target!r}，按后端通道处理"
+            )
+            decision_target = ERROR_DECISION_TARGET_BACKEND
+
+        execution_context = self._error_execution_contexts.get(item.job_id)
+        if execution_context is None:
+            self.lab_logger().warning(
+                f"[Host Node] Job {item.job_id[:8]} 缺少重试上下文，仅支持 skip/abort"
+            )
+
+        decision_id = str(uuid.uuid4())
+        pending = {
+            "decision_id": decision_id,
+            "job_id": item.job_id,
+            "item": item,
+            "return_info": dict(return_info),
+            "result_data": dict(result_data),
+            "error_info": dict(error_info),
+            "execution_context": execution_context,
+            "decision_target": decision_target,
+            "report": None,
+            "resolving": False,
+            "timer": None,
+        }
+        with self._pending_action_error_decisions_lock:
+            self._pending_action_error_decisions[decision_id] = pending
+
+        created_at = time.time()
+        timeout_seconds = float(error_info.get("decision_timeout_seconds", 300.0))
+        report = {
+            "decision_id": decision_id,
+            "device_id": item.device_id,
+            "action_name": error_info.get("action_name") or item.action_name,
+            "task_id": item.task_id,
+            "job_id": item.job_id,
+            "exception_type": error_info.get("exception_type", "Exception"),
+            "error_message": error_info.get("error_message", return_info.get("error", "")),
+            "traceback": error_info.get("traceback", return_info.get("error", "")),
+            "options": options,
+            "retry_count": int((execution_context or {}).get("retry_count", 0)),
+            "max_retries": int(error_info.get("max_retries", 3)),
+            "created_at": created_at,
+            "decision_timeout_seconds": timeout_seconds,
+            "expires_at": created_at + timeout_seconds,
+            "default_on_decision_timeout": error_info.get(
+                "default_on_decision_timeout",
+                "abort",
+            ),
+            "require_confirmation": True,
+        }
+        for key in ("category", "severity"):
+            if error_info.get(key) is not None:
+                report[key] = error_info[key]
+        pending["report"] = report
+
+        self._goals.pop(item.job_id, None)
+        timer = threading.Timer(
+            timeout_seconds,
+            self._handle_action_error_decision_timeout,
+            args=(decision_id,),
+        )
+        timer.daemon = True
+        pending["timer"] = timer
+        timer.start()
+
+        # 本地任务由微后端直接读取 Host pending；云端任务只投递给后端 bridge。
+        accepted = decision_target == ERROR_DECISION_TARGET_MICRO_BACKEND
+        if decision_target == ERROR_DECISION_TARGET_BACKEND:
+            for bridge in self.bridges:
+                publish = getattr(bridge, "publish_job_error_decision_required", None)
+                if not callable(publish):
+                    continue
+                try:
+                    if publish(report):
+                        accepted = True
+                        break
+                except Exception as ex:  # noqa: BLE001 - 逐个尝试决策通道
+                    self.lab_logger().warning(
+                        f"[Host Node] 异常决策通道失败: {bridge!r}: {ex}"
+                    )
+
+        if not accepted:
+            with self._pending_action_error_decisions_lock:
+                removed = self._pending_action_error_decisions.pop(
+                    decision_id,
+                    None,
+                )
+            if removed is not None:
+                timer.cancel()
+            return False
+
+        with self._pending_action_error_decisions_lock:
+            still_pending = decision_id in self._pending_action_error_decisions
+        if still_pending:
+            self._emit_local_action_event(
+                item,
+                "job_error_decision_required",
+                deepcopy(report),
+            )
+            self.lab_logger().info(
+                f"[Host Node] Job {item.job_id[:8]} 等待异常决策 "
+                f"{decision_id} target={decision_target}"
+            )
+        return True
+
+    def get_pending_action_error_decisions(
+        self,
+        decision_target: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """按决策目标查询 Host 持有的 pending 报告。"""
+
+        with self._pending_action_error_decisions_lock:
+            reports = [
+                deepcopy(pending["report"])
+                for pending in self._pending_action_error_decisions.values()
+                if pending.get("report") is not None
+                and (
+                    decision_target is None
+                    or pending.get("decision_target") == decision_target
+                )
+            ]
+        return reports
+
+    def _handle_action_error_decision_timeout(self, decision_id: str) -> None:
+        with self._pending_action_error_decisions_lock:
+            pending = self._pending_action_error_decisions.get(decision_id)
+            if pending is None:
+                return
+            error_info = pending["error_info"]
+            job_id = pending["job_id"]
+        self.handle_action_error_decision(
+            decision_id,
+            job_id,
+            {
+                "decision_id": decision_id,
+                "job_id": job_id,
+                "action": error_info.get("default_on_decision_timeout", "abort"),
+                "reason": "decision_timeout",
+            },
+        )
+
+    def handle_action_error_decision(
+        self,
+        decision_id: str,
+        job_id: str,
+        decision: Dict[str, Any],
+        *,
+        decision_target: Optional[str] = None,
+    ) -> bool:
+        """在 Host 上处理决策，并通过现有 ActionClient 发起恢复动作。"""
+
+        with self._pending_action_error_decisions_lock:
+            pending = self._pending_action_error_decisions.get(decision_id) if decision_id else None
+            if pending is None and job_id:
+                matches = [
+                    candidate
+                    for candidate in self._pending_action_error_decisions.values()
+                    if candidate.get("job_id") == job_id
+                ]
+                pending = matches[0] if len(matches) == 1 else None
+            if pending is None or pending.get("resolving"):
+                return False
+            if (
+                decision_target is not None
+                and pending.get("decision_target") != decision_target
+            ):
+                return False
+            if job_id and pending["job_id"] != job_id:
+                return False
+            body_decision_id = str(decision.get("decision_id") or "")
+            body_job_id = str(decision.get("job_id") or "")
+            if body_decision_id and body_decision_id != pending["decision_id"]:
+                return False
+            if body_job_id and body_job_id != pending["job_id"]:
+                return False
+            body_device_id = str(decision.get("device_id") or "")
+            if body_device_id and body_device_id != pending["item"].device_id:
+                return False
+
+            selected_option = decision.get("option")
+            if isinstance(selected_option, dict):
+                selected = str(selected_option.get("action") or "abort")
+                for result_key in ("result", "return_value"):
+                    if result_key not in decision and result_key in selected_option:
+                        decision[result_key] = selected_option[result_key]
+            else:
+                selected = str(decision.get("action") or selected_option or "abort")
+            options = pending["error_info"]["options"]
+            option = next(
+                (candidate for candidate in options if str(candidate.get("action")) == selected),
+                None,
+            )
+            if option is None and decision.get("reason") != "decision_timeout":
+                return False
+
+            pending["resolving"] = True
+            self._pending_action_error_decisions.pop(pending["decision_id"], None)
+            timer = pending.get("timer")
+            if timer is not None:
+                timer.cancel()
+
+        item = pending["item"]
+        self._emit_local_action_event(
+            item,
+            "job_error_decision_resolved",
+            {
+                "decision_id": pending["decision_id"],
+                "job_id": pending["job_id"],
+                "task_id": item.task_id,
+                "device_id": item.device_id,
+                "action_name": item.action_name,
+                "selected_action": selected,
+                "reason": str(decision.get("reason") or ""),
+                "resolved_at": time.time(),
+            },
+        )
+        if selected == "abort":
+            self._finish_error_handled_job(
+                item,
+                "failed",
+                pending["return_info"],
+                pending["result_data"],
+            )
+            return True
+
+        if selected == "skip":
+            return_value = decision.get("result", decision.get("return_value"))
+            return_info = serialize_result_info(
+                "",
+                True,
+                return_value,
+                suc_type=SUCCESS_TYPE_SKIP,
+            )
+            result_data = dict(pending["result_data"])
+            result_data["return_info"] = json.dumps(return_info, ensure_ascii=False)
+            self._finish_error_handled_job(item, "success", return_info, result_data)
+            return True
+
+        execution_context = pending.get("execution_context")
+        if selected == "retry":
+            if execution_context is None:
+                self._finish_error_handled_job(
+                    item,
+                    "failed",
+                    serialize_result_info("缺少原动作上下文，无法重试", False, {}),
+                    pending["result_data"],
+                )
+                return True
+            retries = int(execution_context.get("retry_count", 0))
+            max_retries = int(pending["error_info"].get("max_retries", 3))
+            if retries >= max_retries:
+                self._finish_error_handled_job(
+                    item,
+                    "failed",
+                    serialize_result_info(
+                        f"action {item.action_name} exceeded {max_retries} retries",
+                        False,
+                        {},
+                    ),
+                    pending["result_data"],
+                )
+                return True
+            execution_context["retry_count"] = retries + 1
+            try:
+                self.send_goal(
+                    execution_context["item"],
+                    execution_context["action_type"],
+                    execution_context["action_kwargs"],
+                    execution_context["sample_material"],
+                    execution_context["server_info"],
+                    transport_goal_id=str(uuid.uuid4()),
+                    cache_error_context=False,
+                )
+            except Exception as ex:  # noqa: BLE001 - 转成原 job 的终态失败
+                self._finish_error_handled_job(
+                    item,
+                    "failed",
+                    serialize_result_info(traceback.format_exc(), False, {}),
+                    {"error": str(ex)},
+                )
+            return True
+
+        fallback = option.get("fallback_action") if isinstance(option, dict) else None
+        if not isinstance(fallback, dict):
+            if "result" in decision or "return_value" in decision:
+                return_value = decision.get("result", decision.get("return_value"))
+                return_info = serialize_result_info(
+                    "",
+                    True,
+                    return_value,
+                    suc_type=SUCCESS_TYPE_OPERATOR_INTERVENTION,
+                )
+                self._finish_error_handled_job(item, "success", return_info, {})
+                return True
+            self._finish_error_handled_job(
+                item,
+                "failed",
+                serialize_result_info(
+                    f"error option {selected} missing fallback_action",
+                    False,
+                    {},
+                ),
+                pending["result_data"],
+            )
+            return True
+
+        fallback_name = str(fallback.get("action_name") or "")
+        action_mappings = self._action_value_mappings.get(item.device_id, {})
+        fallback_key = fallback_name
+        mapping = action_mappings.get(fallback_key)
+        if mapping is None:
+            fallback_key = f"auto-{fallback_name}"
+            mapping = action_mappings.get(fallback_key)
+        if not fallback_name or not isinstance(mapping, dict):
+            self._finish_error_handled_job(
+                item,
+                "failed",
+                serialize_result_info(
+                    f"fallback action not registered: {fallback_name}",
+                    False,
+                    {},
+                ),
+                pending["result_data"],
+            )
+            return True
+
+        fallback_item = type(item)(
+            task_type=item.task_type,
+            device_id=item.device_id,
+            action_name=fallback_key,
+            task_id=item.task_id,
+            job_id=item.job_id,
+            notebook_id=item.notebook_id,
+            device_action_key=f"/devices/{item.device_id}/{fallback_key}",
+            error_decision_target=decision_target or pending["decision_target"],
+        )
+        try:
+            self.send_goal(
+                fallback_item,
+                str(mapping.get("type") or "UniLabJsonCommand"),
+                dict(fallback.get("params") or {}),
+                {},
+                None,
+                transport_goal_id=str(uuid.uuid4()),
+                result_item=item,
+                recovery_suc_type=SUCCESS_TYPE_OPERATOR_INTERVENTION,
+                cache_error_context=False,
+            )
+        except Exception as ex:  # noqa: BLE001 - 转成原 job 的终态失败
+            self._finish_error_handled_job(
+                item,
+                "failed",
+                serialize_result_info(traceback.format_exc(), False, {}),
+                {"error": str(ex)},
+            )
+        return True
+
+    def goal_response_callback(
+        self,
+        item: "QueueItem",
+        action_id: str,
+        future,
+        recovery_suc_type: Optional[str] = None,
+    ) -> None:
         """目标响应回调"""
-        goal_handle = future.result()
+        try:
+            goal_handle = future.result()
+        except Exception as ex:  # noqa: BLE001 - 转成 job 终态失败
+            self.lab_logger().error(
+                f"[Host Node] Goal {item.action_name} ({item.job_id}) response failed: {ex}"
+            )
+            self._finish_error_handled_job(
+                item,
+                "failed",
+                serialize_result_info(traceback.format_exc(), False, {}),
+                {},
+            )
+            return
         if not goal_handle.accepted:
             self.lab_logger().warning(f"[Host Node] Goal {item.action_name} ({item.job_id}) rejected")
+            self._finish_error_handled_job(
+                item,
+                "failed",
+                serialize_result_info("Goal was rejected", False, {}),
+                {},
+            )
             return
 
         self.lab_logger().info(f"[Host Node] Goal {action_id} ({item.job_id}) accepted")
         self._goals[item.job_id] = goal_handle
         goal_future = goal_handle.get_result_async()
-        goal_future.add_done_callback(lambda f: self.get_result_callback(item, action_id, f))
+        goal_future.add_done_callback(
+            lambda f: self.get_result_callback(
+                item,
+                action_id,
+                f,
+                recovery_suc_type=recovery_suc_type,
+            )
+        )
         goal_future.result()
 
     def feedback_callback(self, item: "QueueItem", action_id: str, feedback_msg) -> None:
@@ -984,8 +1577,19 @@ class HostNode(BaseROS2DeviceNode):
         for bridge in self.bridges:
             if hasattr(bridge, "publish_job_status"):
                 bridge.publish_job_status(feedback_data, item, "running")
+        self._emit_local_action_event(
+            item,
+            "job_status",
+            self._job_status_event_data(item, "running", feedback_data),
+        )
 
-    def get_result_callback(self, item: "QueueItem", action_id: str, future) -> None:
+    def get_result_callback(
+        self,
+        item: "QueueItem",
+        action_id: str,
+        future,
+        recovery_suc_type: Optional[str] = None,
+    ) -> None:
         """获取结果回调"""
         job_id = item.job_id
 
@@ -1035,34 +1639,39 @@ class HostNode(BaseROS2DeviceNode):
                         status = "failed"
                         return_info = serialize_result_info("缺少return_info", False, result_data)
 
+                if status == "success" and recovery_suc_type:
+                    return_info["suc_type"] = recovery_suc_type
+                    result_data["return_info"] = json.dumps(
+                        return_info,
+                        ensure_ascii=False,
+                    )
+
+            terminal_result_data = (
+                {} if goal_status == GoalStatus.STATUS_CANCELED else result_data
+            )
+            if (
+                status == "failed"
+                and recovery_suc_type is None
+                and self._begin_action_error_decision(
+                    item,
+                    return_info,
+                    terminal_result_data,
+                )
+            ):
+                self.lab_logger().info(
+                    f"[Host Node] Result for {action_id} ({job_id[:8]}): awaiting_error_decision"
+                )
+                return
+
             self.lab_logger().info(f"[Host Node] Result for {action_id} ({job_id[:8]}): {status}")
             if goal_status != GoalStatus.STATUS_CANCELED:
                 self.lab_logger().trace(f"[Host Node] Result data: {result_data}")
-
-            # 清理 _goals 中的记录
-            if job_id in self._goals:
-                del self._goals[job_id]
-                self.lab_logger().trace(f"[Host Node] Removed goal {job_id[:8]} from _goals")
-
-            # 存储结果供 HTTP API 查询
-            try:
-                from unilabos.app.web.controller import store_job_result
-
-                if goal_status == GoalStatus.STATUS_CANCELED:
-                    store_job_result(job_id, status, return_info, {})
-                else:
-                    store_job_result(job_id, status, return_info, result_data)
-            except ImportError:
-                pass  # controller 模块可能未加载
-
-            # 发布状态到桥接器
-            if job_id:
-                for bridge in self.bridges:
-                    if hasattr(bridge, "publish_job_status"):
-                        if goal_status == GoalStatus.STATUS_CANCELED:
-                            bridge.publish_job_status({}, item, status, return_info)
-                        else:
-                            bridge.publish_job_status(result_data, item, status, return_info)
+            self._finish_error_handled_job(
+                item,
+                status,
+                return_info,
+                terminal_result_data,
+            )
 
         except Exception as e:
             self.lab_logger().error(
@@ -1072,16 +1681,12 @@ class HostNode(BaseROS2DeviceNode):
 
             self.lab_logger().error(traceback.format_exc())
 
-            # 清理 _goals 中的记录
-            if job_id in self._goals:
-                del self._goals[job_id]
-
-            # 发布失败状态
-            for bridge in self.bridges:
-                if hasattr(bridge, "publish_job_status"):
-                    bridge.publish_job_status(
-                        {}, item, "failed", serialize_result_info(f"Callback error: {str(e)}", False, {})
-                    )
+            self._finish_error_handled_job(
+                item,
+                "failed",
+                serialize_result_info(f"Callback error: {str(e)}", False, {}),
+                {},
+            )
 
     def cancel_goal(self, goal_uuid: str) -> bool:
         """
@@ -1128,6 +1733,15 @@ class HostNode(BaseROS2DeviceNode):
             status = g.status
             self.lab_logger().debug(f"[Host Node] Goal status for {job_id}: {status}")
             return status
+        with self._pending_action_error_decisions_lock:
+            if any(
+                pending.get("job_id") == job_id
+                for pending in self._pending_action_error_decisions.values()
+            ):
+                return GoalStatus.STATUS_EXECUTING
+        # retry/fallback 已受理但 ROS goal response 尚未回调时，仍保持执行中投影。
+        if job_id in self._error_execution_contexts:
+            return GoalStatus.STATUS_EXECUTING
         self.lab_logger().warning(f"[Host Node] Goal {job_id} not found, status unknown")
         return GoalStatus.STATUS_UNKNOWN
 

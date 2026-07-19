@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, Tuple
 
 from unilabos.app.model import JobAddReq, JobData
+from unilabos.registry.action_policy import ERROR_DECISION_TARGET_MICRO_BACKEND
 from unilabos.ros.nodes.presets.host_node import HostNode
 from unilabos.utils import logger
 
@@ -322,6 +323,7 @@ def job_add(req: JobAddReq) -> JobData:
             job_id=job_id,
             notebook_id=req.notebook_id,
             device_action_key=device_action_key,
+            error_decision_target=ERROR_DECISION_TARGET_MICRO_BACKEND,
         )
 
         host_node.send_goal(
@@ -345,6 +347,41 @@ def job_add(req: JobAddReq) -> JobData:
         logger.error(f"[Controller] Error submitting job: {str(e)}")
         traceback.print_exc()
         return JobData(jobId=job_id, status=6)  # ABORTED
+
+
+def get_pending_action_error_decisions() -> Tuple[bool, Dict[str, Any]]:
+    """读取应由 Host 微后端处理的异常决策。"""
+
+    host_node = HostNode.get_instance(0)
+    if host_node is None:
+        return False, {"error": "Host node not initialized"}
+    return True, {
+        "decisions": host_node.get_pending_action_error_decisions(
+            decision_target=ERROR_DECISION_TARGET_MICRO_BACKEND,
+        )
+    }
+
+
+def submit_action_error_decision(
+    decision_id: str,
+    decision: Dict[str, Any],
+) -> Tuple[bool, Dict[str, Any]]:
+    """将 Host 微后端的选择提交给 HostNode。"""
+
+    host_node = HostNode.get_instance(0)
+    if host_node is None:
+        return False, {"error": "Host node not initialized"}
+    decision_id = str(decision_id or "")
+    if not decision_id:
+        return False, {"error": "decision_id is required"}
+    if not host_node.handle_action_error_decision(
+        decision_id,
+        "",
+        decision,
+        decision_target=ERROR_DECISION_TARGET_MICRO_BACKEND,
+    ):
+        return False, {"error": "pending action error decision not found or mismatched"}
+    return True, {"decision_id": decision_id, "status": "delivered"}
 
 
 def get_online_devices() -> Tuple[bool, Dict[str, Any]]:

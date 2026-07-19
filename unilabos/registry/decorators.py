@@ -357,6 +357,7 @@ def action(
     parent: bool = False,
     node_type: Optional["NodeType"] = None,
     feedback_interval: Optional[float] = None,
+    error_policy: Optional[Dict[str, Any]] = None,
 ):
     """
     动作方法装饰器
@@ -389,6 +390,8 @@ def action(
         parent: 若为 True，当方法参数为空 (*args, **kwargs) 时，通过 MRO 从父类获取真实方法参数
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
+        error_policy: 按异常类名匹配审批选项的策略。结构见
+                      unilabos.registry.action_policy.ErrorPolicy。
     """
 
     def decorator(func: F) -> F:
@@ -424,7 +427,14 @@ def action(
             meta["feedback_interval"] = feedback_interval
         if node_type is not None:
             meta["node_type"] = node_type.value if isinstance(node_type, NodeType) else str(node_type)
+        normalized_error_policy = None
+        if error_policy:
+            from unilabos.registry.action_policy import normalize_error_policy
+
+            normalized_error_policy = normalize_error_policy(error_policy)
+            meta["error_policy"] = normalized_error_policy
         wrapper._action_registry_meta = meta  # type: ignore[attr-defined]
+        wrapper._action_error_policy = normalized_error_policy  # type: ignore[attr-defined]
 
         # 设置 _is_always_free 保持与旧 @always_free 装饰器兼容
         if always_free:

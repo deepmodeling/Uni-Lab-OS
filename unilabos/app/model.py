@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -67,6 +69,15 @@ class JobAddReq(BaseModel):
     )
 
     data: dict = Field(examples=[{"position": 30, "torque": 5, "action": "push_to"}], default_factory=dict)
+
+
+class ErrorDecisionIn(BaseModel):
+    """Host 微后端提交的异常处理决策。"""
+
+    action: str = ""
+    option: Any = None
+    result: Any = None
+    reason: str = ""
 
 
 class JobStepFinishReq(BaseModel):

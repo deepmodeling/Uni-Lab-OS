@@ -977,6 +977,8 @@ class Registry:
                 entry["always_free"] = True
             _fb_iv = (action_args or {}).get("feedback_interval", method_info.get("feedback_interval", 1.0))
             entry["feedback_interval"] = _fb_iv
+            if (action_args or {}).get("error_policy"):
+                entry["error_policy"] = action_args["error_policy"]
             nt = normalize_enum_value((action_args or {}).get("node_type"), NodeType)
             if nt:
                 entry["node_type"] = nt
@@ -1115,6 +1117,8 @@ class Registry:
                 action_entry["always_free"] = True
             _fb_iv = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
             action_entry["feedback_interval"] = _fb_iv
+            if action_args.get("error_policy"):
+                action_entry["error_policy"] = action_args["error_policy"]
             nt = normalize_enum_value(action_args.get("node_type"), NodeType)
             if nt:
                 action_entry["node_type"] = nt

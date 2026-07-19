@@ -37,6 +37,9 @@ from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialComma
 
 from unilabos.config.config import BasicConfig
 from unilabos.registry.decorators import get_topic_config
+from unilabos.registry.action_policy import (
+    SUCCESS_TYPE_NORMAL,
+)
 from unilabos.registry.placeholder_type import ResourceSlotRawInput
 from unilabos.utils.decorator import get_all_subscriptions
 
@@ -460,7 +463,6 @@ class BaseROS2DeviceNode(Node, Generic[T]):
         self._cross_device_action_clients: Dict[str, ActionClient] = {}
         # 跨设备动作类型探测缓存（key: "<clean_device_id>/<function_name>"，value: 原生 Action 类型或 None）
         self._remote_action_type_cache: Dict[str, Any] = {}
-
         # 创建线程池执行器
         self._executor = ThreadPoolExecutor(
             max_workers=max(len(action_value_mappings), 1), thread_name_prefix=f"ROSDevice{self.device_id}"
@@ -2003,6 +2005,22 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             obj = getattr(instance, attr_name)
             return obj, get_type_hints(obj)
 
+    def _resolve_report_action_name(
+        self,
+        action_name: str,
+        action_kwargs: Dict[str, Any],
+    ) -> str:
+        """解析 JSON command 实际调用的业务动作名，供 Host 匹配注册表。"""
+
+        report_action_name = action_name
+        if action_name in {"_execute_driver_command", "_execute_driver_command_async"}:
+            try:
+                command = json.loads(action_kwargs.get("string", ""))
+                report_action_name = str(command["function_name"])
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                pass
+        return report_action_name
+
     def _create_execute_callback(self, action_name, action_value_mapping):
         """创建动作执行回调函数"""
 
@@ -2011,6 +2029,8 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             execution_error = ""
             execution_success = False
             action_return_value = None
+            execution_suc_type = SUCCESS_TYPE_NORMAL
+            execution_error_info = None
 
             #####    self.lab_logger().info(f"执行动作: {action_name}")
             goal = goal_handle.request
@@ -2036,6 +2056,11 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             action_kwargs = convert_from_ros_msg_with_mapping(goal, action_value_mapping["goal"])
             self.lab_logger().debug(f"任务 {ACTION.__name__} 接收到原始目标: {str(action_kwargs)[:1000]}")
             self.lab_logger().trace(f"任务 {ACTION.__name__} 接收到原始目标: {action_kwargs}")
+            report_action_name = self._resolve_report_action_name(
+                action_name,
+                action_kwargs,
+            )
+
             error_skip = False
             # 向Host查询物料当前状态，如果是host本身的增加物料的请求，则直接跳过
             if action_name not in ["create_resource_detailed", "create_resource"]:
@@ -2231,6 +2256,28 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     execution_success = True
                     action_return_value = _raw_result
 
+                if isinstance(_raw_result, BaseException):
+                    execution_error_info = {
+                        "action_name": report_action_name,
+                        "exception_type": type(_raw_result).__name__,
+                        "exception_mro": [
+                            error_class.__name__
+                            for error_class in type(_raw_result).__mro__
+                        ],
+                        "error_message": str(_raw_result),
+                        "traceback": execution_error,
+                    }
+                    category = getattr(_raw_result, "category", None)
+                    severity = getattr(_raw_result, "severity", None)
+                    if category is not None:
+                        execution_error_info["category"] = str(
+                            getattr(category, "value", category)
+                        )
+                    if severity is not None:
+                        execution_error_info["severity"] = str(
+                            getattr(severity, "value", severity)
+                        )
+
             # 清理 feedback timer
             if _feedback_timer is not None:
                 _feedback_timer.cancel()
@@ -2308,7 +2355,13 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                     setattr(
                         result_msg,
                         attr_name,
-                        get_result_info_str(execution_error, execution_success, action_return_value),
+                        get_result_info_str(
+                            execution_error,
+                            execution_success,
+                            action_return_value,
+                            suc_type=execution_suc_type,
+                            error_info=execution_error_info,
+                        ),
                     )
 
             self.lab_logger().trace(f"动作 {action_name} 完成并返回结果")

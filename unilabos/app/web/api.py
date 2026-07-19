@@ -4,10 +4,13 @@ API模块
 提供API路由和处理函数
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 import asyncio
+import queue as queue_mod
+import time
 
 import yaml
+from fastapi.responses import StreamingResponse
 
 from unilabos.app.web.controller import (
     devices,
@@ -17,6 +20,8 @@ from unilabos.app.web.controller import (
     get_device_actions,
     get_action_schema,
     get_all_available_actions,
+    get_pending_action_error_decisions,
+    submit_action_error_decision,
 )
 from unilabos.app.model import (
     Resp,
@@ -24,6 +29,7 @@ from unilabos.app.model import (
     JobStatusResp,
     JobAddResp,
     JobAddReq,
+    ErrorDecisionIn,
     JobData,
 )
 from unilabos.app.web.utils.host_utils import get_host_node_info
@@ -1302,10 +1308,115 @@ def api_get_all_actions():
     return Resp(data=data)
 
 
+@api.get("/error-decisions", summary="查询本地待处理的动作异常决策")
+def api_get_pending_action_error_decisions():
+    """查询由 Host 微后端负责处理的异常决策。"""
+
+    isok, data = get_pending_action_error_decisions()
+    if not isok:
+        raise HTTPException(
+            status_code=503,
+            detail=data.get("error", "Host node not initialized"),
+        )
+    return data
+
+
+@api.post(
+    "/error-decisions/{decision_id}",
+    summary="提交本地动作异常处理决策",
+)
+def api_submit_action_error_decision(decision_id: str, req: ErrorDecisionIn):
+    """提交 retry/skip/abort 或注册表声明的 fallback 选项。"""
+
+    if hasattr(req, "model_dump"):
+        decision = req.model_dump(exclude_unset=True)
+    else:  # Pydantic v1 compatibility
+        decision = req.dict(exclude_unset=True)
+    isok, data = submit_action_error_decision(decision_id, decision)
+    if not isok:
+        raise HTTPException(
+            status_code=404,
+            detail=data.get("error", "Pending decision not found"),
+        )
+    return data
+
+
+@api.get("/monitor/events", summary="订阅 Host 微后端实时事件")
+async def monitor_events(
+    request: Request,
+    channels: str = "",
+    backlog: int = 40,
+) -> StreamingResponse:
+    """SSE 增量流；断线后由 EventSource 重连，并以 snapshot 校准。"""
+
+    from unilabos.app.web.event_bus import (
+        CHANNELS,
+        format_sse_event,
+        monitor_bus,
+    )
+
+    requested = {channel.strip() for channel in channels.split(",") if channel.strip()}
+    channel_filter = (requested & set(CHANNELS)) or None
+    sub_id, subscriber_queue, replay = monitor_bus.subscribe(
+        channels=channel_filter,
+        backlog=max(0, min(backlog, 200)),
+    )
+
+    async def stream():
+        try:
+            active_channels = ",".join(sorted(channel_filter or set(CHANNELS)))
+            yield f"retry: 3000\n: connected channels={active_channels}\n\n"
+            for event in replay:
+                yield format_sse_event(event)
+            last_beat = time.time()
+            while True:
+                if await request.is_disconnected():
+                    break
+                sent = False
+                while True:
+                    try:
+                        event = subscriber_queue.get_nowait()
+                    except queue_mod.Empty:
+                        break
+                    yield format_sse_event(event)
+                    sent = True
+                if sent:
+                    last_beat = time.time()
+                    continue
+                if time.time() - last_beat > 15:
+                    yield ": keepalive\n\n"
+                    last_beat = time.time()
+                await asyncio.sleep(0.4)
+        finally:
+            monitor_bus.unsubscribe(sub_id)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@api.get("/monitor/snapshot", summary="获取 Host 微后端监控快照")
+def monitor_snapshot():
+    """前端初始化与 SSE 丢事件后的权威快照。"""
+
+    from unilabos.app.web.event_bus import monitor_bus
+
+    host_ready, pending = get_pending_action_error_decisions()
+    return {
+        "now": time.time(),
+        "host_ready": host_ready,
+        "pending_error_decisions": pending.get("decisions", []),
+        "recent": {"action": monitor_bus.recent("action", 40)},
+    }
+
+
 @api.get("/job/{id}/status", summary="Job status", response_model=JobStatusResp)
 def job_status(id: str):
     """获取任务状态"""
-    data = job_info(id)
+    # 前端轮询必须幂等；结果由 JobResultStore 的 TTL 统一清理。
+    data = job_info(id, remove_after_read=False)
     return JobStatusResp(data=data)
 
 

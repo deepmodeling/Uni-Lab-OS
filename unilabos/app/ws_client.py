@@ -27,6 +27,7 @@ from enum import Enum
 from typing_extensions import TypedDict
 
 from unilabos.app.model import JobAddReq
+from unilabos.registry.action_policy import ERROR_DECISION_TARGET_BACKEND
 from unilabos.resources.resource_tracker import ResourceDictType
 from unilabos.ros.nodes.presets.host_node import HostNode
 from unilabos.utils.type_check import serialize_result_info
@@ -68,6 +69,7 @@ class QueueItem:
     device_action_key: str
     next_run_time: float = 0  # 下次执行时间戳
     retry_count: int = 0  # 重试次数
+    error_decision_target: str = ERROR_DECISION_TARGET_BACKEND
 
 
 @dataclass
@@ -661,6 +663,8 @@ class MessageProcessor:
                 await self._handle_device_manage(message_data, "remove")
             elif message_type == "request_restart":
                 await self._handle_request_restart(message_data)
+            elif message_type == "job_error_decision":
+                await self._handle_job_error_decision(message_data)
             else:
                 logger.debug(f"[MessageProcessor] Unknown message type: {message_type}")
 
@@ -752,6 +756,34 @@ class MessageProcessor:
             return
         self.websocket_client.report_all_action_locks()
         logger.trace("[MessageProcessor] query_action_lock: re-reported all action locks")
+
+    async def _handle_job_error_decision(self, data: Dict[str, Any]):
+        """Route one approved error option/result to the exact pending job."""
+
+        decision_id = str(data.get("decision_id") or "")
+        job_id = str(data.get("job_id") or "")
+        device_id = str(data.get("device_id") or "")
+        if not decision_id and not job_id:
+            logger.warning("[MessageProcessor] job_error_decision missing decision_id and job_id")
+            return
+        if not device_id:
+            logger.warning("[MessageProcessor] job_error_decision missing device_id")
+            return
+
+        host_node = HostNode.get_instance(0)
+        if host_node is None:
+            logger.warning(f"[MessageProcessor] HostNode unavailable, drop error decision job={job_id[:8]}")
+            return
+        if not host_node.handle_action_error_decision(
+            decision_id,
+            job_id,
+            dict(data),
+            decision_target=ERROR_DECISION_TARGET_BACKEND,
+        ):
+            logger.warning(
+                f"[MessageProcessor] No pending error decision matched "
+                f"decision={decision_id} job={job_id[:8]} device={device_id}"
+            )
 
     async def _handle_job_start(self, data: Dict[str, Any]):
         """处理job_start消息：服务端直接下发，本地直跑或排队(不再要求先 query_action_state)。"""
@@ -1682,6 +1714,25 @@ class WebSocketClient(BaseCommunicationClient):
         self.message_processor.send_message(message)
 
         logger.trace(f"[WebSocketClient] Job status published: {job_log} - {status}")
+
+    def publish_job_error_decision_required(self, report: Dict[str, Any]) -> bool:
+        """Send an action exception and its class-matched options for approval."""
+
+        if self.is_disabled or not self.is_connected():
+            logger.warning(
+                f"[WebSocketClient] Cannot report action error while disconnected: "
+                f"job={str(report.get('job_id', ''))[:8]} "
+                f"exception={report.get('exception_type', '')}"
+            )
+            return False
+        message = {"action": "job_error_decision_required", "data": report}
+        queued = self.message_processor.send_message(message)
+        if queued:
+            logger.info(
+                f"[WebSocketClient] Action error awaiting decision: "
+                f"decision={report.get('decision_id')} job={str(report.get('job_id', ''))[:8]}"
+            )
+        return queued
 
     def send_ping(self, ping_id: str, timestamp: float) -> None:
         """发送ping消息"""

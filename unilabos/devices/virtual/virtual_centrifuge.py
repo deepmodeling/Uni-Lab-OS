@@ -1,15 +1,16 @@
 import asyncio
 import logging
 import time as time_module
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+if TYPE_CHECKING:
+    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 
 class VirtualCentrifuge:
     """Virtual centrifuge device - 简化版，只保留核心功能"""
     
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: "BaseROS2DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
         # 处理可能的不同调用方式
@@ -37,7 +38,7 @@ class VirtualCentrifuge:
             if key not in skip_keys and not hasattr(self, key):
                 setattr(self, key, value)
     
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: "BaseROS2DeviceNode"):
         self._ros_node = ros_node
 
     async def initialize(self) -> bool:

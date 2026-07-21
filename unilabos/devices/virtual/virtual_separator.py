@@ -1,14 +1,15 @@
 import asyncio
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+if TYPE_CHECKING:
+    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 
 class VirtualSeparator:
     """Virtual separator device for SeparateProtocol testing"""
     
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: "BaseROS2DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
         # 处理可能的不同调用方式
@@ -40,7 +41,7 @@ class VirtualSeparator:
             if key not in skip_keys and not hasattr(self, key):
                 setattr(self, key, value)
     
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: "BaseROS2DeviceNode"):
         self._ros_node = ros_node
 
     async def initialize(self) -> bool:

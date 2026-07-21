@@ -178,9 +178,9 @@ def parse_args():
     )
     parser.add_argument(
         "--backend",
-        choices=["ros", "simple", "automancer"],
+        choices=["ros", "dora", "simple", "automancer"],
         default="ros",
-        help="Choose the backend to run with: 'ros', 'simple', or 'automancer'.",
+        help="Choose the backend to run with: 'ros', 'dora', 'simple', or 'automancer'.",
     )
     parser.add_argument(
         "--app_bridges",

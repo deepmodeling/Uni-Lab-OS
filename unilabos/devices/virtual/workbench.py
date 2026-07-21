@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from threading import Lock, RLock
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, cast, TYPE_CHECKING
 
 from typing_extensions import TypedDict
 
@@ -33,7 +33,8 @@ from unilabos.registry.decorators import (
     topic_config,
 )
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode
+if TYPE_CHECKING:
+    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode
 from unilabos.resources.resource_tracker import (
     SampleUUIDsType,
     LabSample,
@@ -142,7 +143,7 @@ class VirtualWorkbench:
     4. 加热完成后, 机械臂将物料移动到目标位置Cn
     """
 
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: "BaseROS2DeviceNode"
 
     # 配置常量
     ARM_OPERATION_TIME: float = 2  # 机械臂操作时间(秒)
@@ -216,7 +217,7 @@ class VirtualWorkbench:
         )
 
     @not_action
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: "BaseROS2DeviceNode"):
         """ROS节点初始化后回调"""
         self._ros_node = ros_node
 

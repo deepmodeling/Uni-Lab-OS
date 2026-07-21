@@ -1,8 +1,9 @@
 import time
 import asyncio
-from typing import Union
+from typing import Union, TYPE_CHECKING
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+if TYPE_CHECKING:
+    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 
 class VirtualSolenoidValve:
@@ -10,7 +11,7 @@ class VirtualSolenoidValve:
     虚拟电磁阀门 - 简单的开关型阀门，只有开启和关闭两个状态
     """
     
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: "BaseROS2DeviceNode"
     
     def __init__(self, device_id: str = None, config: dict = None, **kwargs):
         # 从配置中获取参数，提供默认值
@@ -27,7 +28,7 @@ class VirtualSolenoidValve:
         self._valve_state = "Closed"  # "Open" or "Closed"
         self._is_open = False
     
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: "BaseROS2DeviceNode"):
         self._ros_node = ros_node
 
     async def initialize(self) -> bool:

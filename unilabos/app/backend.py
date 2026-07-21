@@ -21,6 +21,9 @@ def start_backend(
     if backend == "ros":
         # 假设 ros_main, simple_main, automancer_main 是不同 backend 的启动函数
         from unilabos.ros.main_slave_run import main, slave  # 如果选择 'ros' 作为 backend
+    elif backend == "dora":
+        # dora-rs 通信中间件后端（Apache Arrow + 共享内存），无需 ROS2
+        from unilabos.dora.main_dora_run import main, slave
     elif backend == "simple":
         # 这里假设 simple_backend 和 automancer_backend 是你定义的其他两个后端
         # from simple_backend import main as simple_main

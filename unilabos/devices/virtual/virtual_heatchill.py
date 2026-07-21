@@ -1,14 +1,15 @@
 import asyncio
 import logging
 import time as time_module  # 重命名time模块，避免与参数冲突
-from typing import Dict, Any
+from typing import Dict, Any, TYPE_CHECKING
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+if TYPE_CHECKING:
+    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 class VirtualHeatChill:
     """Virtual heat chill device for HeatChillProtocol testing 🌡️"""
     
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: "BaseROS2DeviceNode"
     
     def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
         # 处理可能的不同调用方式
@@ -39,7 +40,7 @@ class VirtualHeatChill:
         print(f"🌡️ === 虚拟温控设备 {self.device_id} 已创建 === ✨")
         print(f"🔥 温度范围: {self._min_temp}°C ~ {self._max_temp}°C | 🌪️ 最大搅拌: {self._max_stir_speed} RPM")
     
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: "BaseROS2DeviceNode"):
         self._ros_node = ros_node
     
     async def initialize(self) -> bool:

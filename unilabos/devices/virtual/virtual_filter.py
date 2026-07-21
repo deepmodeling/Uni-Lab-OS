@@ -1,16 +1,17 @@
 import asyncio
 import logging
 import time as time_module
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from unilabos.compile.utils.vessel_parser import get_vessel
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+if TYPE_CHECKING:
+    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 
 class VirtualFilter:
     """Virtual filter device - 完全按照 Filter.action 规范 🌊"""
 
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: "BaseROS2DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
         if device_id is None and "id" in kwargs:
@@ -35,7 +36,7 @@ class VirtualFilter:
             if key not in skip_keys and not hasattr(self, key):
                 setattr(self, key, value)
 
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: "BaseROS2DeviceNode"):
         self._ros_node = ros_node
 
     async def initialize(self) -> bool:

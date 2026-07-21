@@ -7,7 +7,7 @@ import logging
 import time
 import types
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from typing_extensions import TypedDict
 
@@ -22,7 +22,8 @@ from unilabos.registry.decorators import (
 )
 from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot
 from unilabos.resources.resource_tracker import ResourceDict, ResourceTreeSet
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+if TYPE_CHECKING:
+    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 
 
 class ResourceSummary(TypedDict):
@@ -70,7 +71,7 @@ class TestResourceActionReturn(TypedDict):
 class TestActionDevice:
     """集中放置测试用动作的虚拟设备。"""
 
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: "BaseROS2DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, **kwargs):
         """
@@ -93,7 +94,7 @@ class TestActionDevice:
         }
 
     @not_action
-    def post_init(self, ros_node: BaseROS2DeviceNode) -> None:
+    def post_init(self, ros_node: "BaseROS2DeviceNode") -> None:
         """保存 ROS 节点引用，供后续扩展跨设备调用使用。"""
         self._ros_node = ros_node
 

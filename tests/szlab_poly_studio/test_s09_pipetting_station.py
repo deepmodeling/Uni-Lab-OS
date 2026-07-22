@@ -85,7 +85,7 @@ def test_s09_run_process_writes_expected_variables_and_waits_done():
         "S09 液体瓶 3 剩余液量校验通过",
         f"S09 工艺 7 参数写入开始：{S09_PROCESS_LABELS[7]}",
         "S09 工艺 7 参数写入完成",
-        "S09 参数写入完成信号已触发",
+        "S09 参数写入完成信号已置位，将保持至工艺结束",
         "等待 S09 工艺 7 完成",
         "S09 工艺 7 完成信号已确认",
         "S09 液体瓶 3 剩余液量已更新：100 -> 99.995 mL",
@@ -97,7 +97,11 @@ def test_s09_run_process_writes_expected_variables_and_waits_done():
     assert ("S09液体瓶编号", 3) in client.writes
     assert ("S09抽液量", 50) in client.writes
     assert ("S09工艺选择", 7) in client.writes
-    assert client.pulses == ["S09参数写入完成"]
+    assert client.pulses == []
+    params_written_on_index = client.events.index(("write", "S09参数写入完成", True))
+    done_event_index = client.events.index(("wait_equal", "S09工艺完成", 7))
+    params_written_off_index = client.events.index(("write", "S09参数写入完成", False))
+    assert params_written_on_index < done_event_index < params_written_off_index
     assert client.wait_equal_calls == [("S09工艺完成", 7)]
     assert client.writes[-8:] == [
         ("S09液体瓶3剩余液量", 99.995),
@@ -110,7 +114,6 @@ def test_s09_run_process_writes_expected_variables_and_waits_done():
         ("S09放液量", 0),
     ]
     assert result["data"]["clear_process_params"]["success"] is True
-    done_event_index = client.events.index(("wait_equal", "S09工艺完成", 7))
     clear_event_index = client.events.index(("write", "S09工艺选择", 0))
     assert done_event_index < clear_event_index
 
@@ -616,7 +619,7 @@ def test_s09_run_nodes_orchestration_emits_action_logs_to_workflow_logger():
     messages = [message for message, _kwargs in records]
     assert "等待 S09 允许加工信号" in messages
     assert f"S09 工艺 7 参数写入开始：{S09_PROCESS_LABELS[7]}" in messages
-    assert "S09 参数写入完成信号已触发" in messages
+    assert "S09 参数写入完成信号已置位，将保持至工艺结束" in messages
     assert "等待 S09 工艺 7 完成" in messages
     assert any(
         kwargs["detail"]["node_uuid"] == "s09-run-process"

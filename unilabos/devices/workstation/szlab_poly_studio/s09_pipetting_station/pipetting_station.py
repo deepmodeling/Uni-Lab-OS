@@ -646,11 +646,11 @@ class SzlabMixerPipettingStationDevice:
                 f"S09 工艺 {process} 参数写入完成",
                 {"process": process, "written_variables": process_params},
             )
-            self._pulse_variable(S09_PARAM_WRITTEN_VAR, True, False, reset_delay=reset_delay)
+            self._write_variable(S09_PARAM_WRITTEN_VAR, True)
             self._append_log(
                 logs,
-                "S09 参数写入完成信号已触发",
-                {"variable": S09_PARAM_WRITTEN_VAR, "value": True, "reset_value": False},
+                "S09 参数写入完成信号已置位，将保持至工艺结束",
+                {"variable": S09_PARAM_WRITTEN_VAR, "value": True, "reset_delay": reset_delay},
             )
         except Exception as exc:
             self._status = "Error"

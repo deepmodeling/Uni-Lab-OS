@@ -687,6 +687,9 @@ function App() {
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [taskInstances, setTaskInstances] = useState<TaskInstance[]>([]);
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
+  const [sensorGates, setSensorGates] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(Object.entries(DEFAULT_SENSOR_GATES).map(([key, gate]) => [key, gate.free])),
+  );
   const [taskWorkspaceVersion, setTaskWorkspaceVersion] = useState<number | null>(null);
   const [taskWorkspacePath, setTaskWorkspacePath] = useState('szlab_canvas_workflow.json');
   const [taskScheduleEntries, setTaskScheduleEntries] = useState<ReturnType<typeof taskWorkspaceFromApi>['scheduleEntries']>([]);
@@ -900,6 +903,14 @@ function App() {
     ),
     [liveGateStates, sensorGates],
   );
+  const toggleSensorGate = useCallback((gate: string) => {
+    if (liveGateStates[gate] !== undefined) return;
+    setSensorGates((current) => ({ ...current, [gate]: !current[gate] }));
+    setTaskEvents((current) => [
+      ...current,
+      `${DEFAULT_SENSOR_GATES[gate]?.label || gate} 手动门控已切换。`,
+    ]);
+  }, [liveGateStates]);
   const configuredOpcVariableRows = useMemo<OpcVariableView[]>(
     () => configuredOpcVariables.map((name) => ({ name, currentValue: stackSensorValues[name] })),
     [configuredOpcVariables, stackSensorValues],
@@ -2437,6 +2448,33 @@ function App() {
             </section>
 
             <section className="task-column task-log-column">
+              <div className="task-panel-head compact">
+                <div>
+                  <h2>Sensor Gates</h2>
+                  <p>优先显示实机传感器；实机信号不可用时可点击切换手动模拟状态。</p>
+                </div>
+              </div>
+              <div className="task-gate-list">
+                {Object.entries(DEFAULT_SENSOR_GATES).map(([gate, meta]) => {
+                  const hasLiveValue = liveGateStates[gate] !== undefined;
+                  const free = effectiveSensorGates[gate] ?? true;
+                  return (
+                    <button
+                      className={`task-gate-card ${free ? 'free' : 'busy'}`}
+                      disabled={hasLiveValue}
+                      key={gate}
+                      onClick={() => toggleSensorGate(gate)}
+                      type="button"
+                    >
+                      <span>
+                        <strong>{meta.label}</strong>
+                        <small>{hasLiveValue ? '实机传感器状态' : '实机信号不可用，当前为手动模拟'}</small>
+                      </span>
+                      <em>{free ? 'FREE' : 'BUSY'}</em>
+                    </button>
+                  );
+                })}
+              </div>
               <div className="task-panel-head compact">
                 <div>
                   <h2>等待条件与调度事件</h2>

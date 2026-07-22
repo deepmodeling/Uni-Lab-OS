@@ -343,10 +343,10 @@ assert.match(
   /\.task-template-list\s*\{[\s\S]*?flex:\s*1;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
   '三列布局中 Template 列表应填满自身列并独立滚动',
 );
-assert.doesNotMatch(
+assert.match(
   mainSource,
   /<h2>Sensor Gates<\/h2>/,
-  'Task 编排主画面不应展示可手动切换的 Sensor Gates 面板',
+  'Task 编排主画面应恢复 Sensor Gates 面板',
 );
 assert.match(
   mainSource,

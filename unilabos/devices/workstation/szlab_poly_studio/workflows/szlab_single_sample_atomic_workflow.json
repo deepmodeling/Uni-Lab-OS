@@ -19,11 +19,11 @@
         "S08 取瓶",
         "S09 放料",
         "S07 粉罐扫码盘点",
-        "任务27：S072取粉罐并放回S071",
         "S07 替换粉罐旋转到进料位",
+        "任务27：S072取粉罐并放回S071",
         "任务26：S071取粉罐并放到S072",
-        "任务27：S072取粉罐并放回S071",
         "S07 替换粉罐旋转到进料位",
+        "任务27：S072取粉罐并放回S071",
         "任务26：S071取粉罐并放到S072",
         "S03 取容器",
         "S072 放料",
@@ -189,20 +189,6 @@
         {
           "action": {
             "index": 11,
-            "node": "任务27：S072取粉罐并放回S071",
-            "workflow_node_id": "p02_powder_1_transfer_s072_to_s071",
-            "device_id": "szlab_mixer_robot",
-            "method": "submit_transfer_s072_to_s071",
-            "params": {
-              "product_type": 1,
-              "position": "auto"
-            },
-            "_comment": "若上料位有旧粉罐，执行任务27；上位机自动选择S071空位并写入S071取放料编号。"
-          }
-        },
-        {
-          "action": {
-            "index": 12,
             "node": "S07 替换粉罐旋转到进料位",
             "workflow_node_id": "p02_powder_1_rotate_to_load",
             "device_id": "szlab_s07_solid_addition",
@@ -211,7 +197,21 @@
               "position": 1,
               "timeout": 300.0
             },
-            "_comment": "任务26不包含旋转；先执行S07工艺2，将位置1旋转到上下料位。"
+            "_comment": "先执行S07工艺2，将位置1旋转到上下料位；任务27和任务26均不包含旋转。"
+          }
+        },
+        {
+          "action": {
+            "index": 12,
+            "node": "任务27：S072取粉罐并放回S071",
+            "workflow_node_id": "p02_powder_1_transfer_s072_to_s071",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_transfer_s072_to_s071",
+            "params": {
+              "product_type": 1,
+              "position": "auto"
+            },
+            "_comment": "旋转到位后，若有旧粉罐则执行任务27；上位机写入S071空位编号。"
           }
         },
         {
@@ -230,20 +230,6 @@
         {
           "action": {
             "index": 14,
-            "node": "任务27：S072取粉罐并放回S071",
-            "workflow_node_id": "p02_powder_2_transfer_s072_to_s071",
-            "device_id": "szlab_mixer_robot",
-            "method": "submit_transfer_s072_to_s071",
-            "params": {
-              "product_type": 1,
-              "position": "auto"
-            },
-            "_comment": "若上料位有旧粉罐，执行任务27；上位机自动选择S071空位并写入S071取放料编号。"
-          }
-        },
-        {
-          "action": {
-            "index": 15,
             "node": "S07 替换粉罐旋转到进料位",
             "workflow_node_id": "p02_powder_2_rotate_to_load",
             "device_id": "szlab_s07_solid_addition",
@@ -252,7 +238,21 @@
               "position": 2,
               "timeout": 300.0
             },
-            "_comment": "任务26不包含旋转；先执行S07工艺2，将位置2旋转到上下料位。"
+            "_comment": "先执行S07工艺2，将位置2旋转到上下料位；任务27和任务26均不包含旋转。"
+          }
+        },
+        {
+          "action": {
+            "index": 15,
+            "node": "任务27：S072取粉罐并放回S071",
+            "workflow_node_id": "p02_powder_2_transfer_s072_to_s071",
+            "device_id": "szlab_mixer_robot",
+            "method": "submit_transfer_s072_to_s071",
+            "params": {
+              "product_type": 1,
+              "position": "auto"
+            },
+            "_comment": "旋转到位后，若有旧粉罐则执行任务27；上位机写入S071空位编号。"
           }
         },
         {

@@ -774,7 +774,7 @@ def test_single_sample_workflow_uses_internal_s09_balance_read_and_correct_robot
             "submit_transfer_s071_to_s072",
             0 if sequence == 1 else methods.index("submit_transfer_s071_to_s072") + 1,
         )
-        assert unload < rotate < load
+        assert rotate < unload < load
     assert by_id["w01_place_beaker_s072"]["params"]["product_type"] == 2
     assert by_id["w02_pick_beaker_s072"]["params"]["product_type"] == 2
     assert by_id["p03_reagent_place_s08"]["params"]["product_type"] == 3

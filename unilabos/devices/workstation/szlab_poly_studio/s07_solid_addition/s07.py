@@ -10,6 +10,7 @@ from unilabos.registry.decorators import action, device, not_action
 
 from .sensors import (
     NODE_ALLOW_PROCESS,
+    NODE_BALANCE_READING,
     NODE_COARSE_POSITION,
     NODE_COARSE_SHAKE_MAX_SPEED,
     NODE_FINE_POSITION,
@@ -24,6 +25,7 @@ from .sensors import (
     PROCESS_DOSE_POWDER,
     PROCESS_ROTATE_TO_FEED,
     PROCESS_SCAN_CARTRIDGES,
+    QR_CODE_LENGTH,
     iter_s07_powder_param_vars,
     normalize_powder_params,
     s07_powder_param_var,
@@ -123,7 +125,10 @@ class SZLabS07SolidAdditionDevice:
     @not_action
     def _read_qr_codes(self) -> dict[int, list[int]]:
         return {
-            position: [int(self._read_plc_variable(s07_qr_code_var(position, index)) or 0) for index in range(30)]
+            position: [
+                int(self._read_plc_variable(s07_qr_code_var(position, index)) or 0)
+                for index in range(QR_CODE_LENGTH)
+            ]
             for position in POSITION_RANGE
         }
 
@@ -156,6 +161,18 @@ class SZLabS07SolidAdditionDevice:
         if result.get("success"):
             result["qr_codes"] = self._read_qr_codes()
         return result
+
+    @action(auto_prefix=True, description="读取 S07 实时天平")
+    def read_s07_balance(self) -> dict[str, Any]:
+        try:
+            value = float(self._read_plc_variable(NODE_BALANCE_READING))
+        except Exception as exc:
+            return {"success": False, "message": f"读取 S07 天平失败: {exc}"}
+        return {
+            "success": True,
+            "value": value,
+            "variable": NODE_BALANCE_READING,
+        }
 
     @action(auto_prefix=True, description="S07 替换粉罐旋转到进料位")
     def rotate_powder_cartridge_to_feed(self, position: int, timeout: float = 300.0) -> dict[str, Any]:

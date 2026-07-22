@@ -20,6 +20,7 @@ class FakeS07Plc:
             sensors.NODE_HOME: True,
             sensors.NODE_ALLOW_PROCESS: True,
             sensors.NODE_PROCESS_COMPLETE: 0,
+            sensors.NODE_BALANCE_READING: 12.34,
         }
         self.writes: list[tuple[str, Any]] = []
         self.events: list[tuple[Any, ...]] = []
@@ -65,6 +66,7 @@ def test_s07_solid_addition_device_is_ast_scannable_from_own_package():
     actions = result["devices"]["szlab_s07_solid_addition"]["actions"]
     assert list(actions) == [
         "scan_powder_cartridges",
+        "read_s07_balance",
         "rotate_powder_cartridge_to_feed",
         "dose_powder",
     ]
@@ -101,6 +103,7 @@ def test_s07_scan_powder_cartridges_writes_process_and_reads_qr_codes():
     assert result["success"] is True
     assert result["process_type"] == sensors.PROCESS_SCAN_CARTRIDGES
     assert set(result["qr_codes"]) == set(sensors.POSITION_RANGE)
+    assert all(len(qr_code) == sensors.QR_CODE_LENGTH for qr_code in result["qr_codes"].values())
     assert plc.waits[:2] == [
         (sensors.NODE_HOME, True, 0.05, 0.001),
         (sensors.NODE_ALLOW_PROCESS, True, 0.05, 0.001),
@@ -108,6 +111,19 @@ def test_s07_scan_powder_cartridges_writes_process_and_reads_qr_codes():
     assert (sensors.NODE_PROCESS_SELECT, sensors.PROCESS_SCAN_CARTRIDGES) in plc.writes
     assert (sensors.NODE_PARAMS_WRITTEN, True) in plc.writes
     assert (sensors.NODE_PARAMS_WRITTEN, False) in plc.writes
+
+
+def test_s07_read_balance_returns_realtime_value():
+    plc = FakeS07Plc()
+    device = make_s07_device(plc)
+
+    result = device.read_s07_balance()
+
+    assert result == {
+        "success": True,
+        "value": 12.34,
+        "variable": sensors.NODE_BALANCE_READING,
+    }
 
 
 def test_s07_rotate_powder_cartridge_to_feed_writes_load_position():

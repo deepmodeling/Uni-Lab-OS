@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S07Sensors
+
 from .robot_tasks import build_variables, powder_container_sensor
 
 
@@ -12,7 +14,24 @@ class SzlabRobotS07Mixin:
             raise ValueError("S072 位置必须在 1-2 范围内")
         return position
 
+    def _resolve_s071_place_position(self, position: str) -> str:
+        if str(position).strip().lower() != "auto":
+            return str(position)
+        read_errors: list[str] = []
+        for candidate, sensor in S07Sensors.POWDER_CONTAINER_BY_POSITION.items():
+            try:
+                occupied = bool(self._read_variable(sensor, use_cache=False))
+            except Exception as exc:
+                read_errors.append(f"{candidate}: {exc}")
+                continue
+            if not occupied:
+                return candidate
+        if read_errors:
+            raise RuntimeError(f"无法确定 S071 空位: {'; '.join(read_errors)}")
+        raise RuntimeError("S071 没有可用于旧粉罐回库的空位")
+
     def _run_s071_place(self, position: str = "1-1") -> dict[str, Any]:
+        position = self._resolve_s071_place_position(position)
         sensor = powder_container_sensor(position)
         return self._submit_robot_task(
             task="place",

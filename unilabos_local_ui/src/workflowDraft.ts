@@ -38,6 +38,8 @@ type ParamSpecLike = {
   min?: number;
   max?: number;
   default?: unknown;
+  unit?: string;
+  options?: Array<{ value: string | number | boolean; label: string }>;
 };
 
 type ActionSpecLike = {

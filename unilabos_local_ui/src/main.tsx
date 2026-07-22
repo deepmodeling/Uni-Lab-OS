@@ -67,6 +67,8 @@ type ParamSpec = {
   min?: number;
   max?: number;
   default?: unknown;
+  unit?: string;
+  options?: Array<{ value: string | number | boolean; label: string }>;
 };
 
 type PresetPayload = {
@@ -2641,25 +2643,47 @@ function App() {
                 {editingNode.data.paramSpecs.map((param) => {
                   const name = param.name || '';
                   if (!name) return null;
+                  const currentValue = editingNode.data.params[name];
                   return (
                     <label key={name}>
-                      {param.label || name}
-                      <input
-                        type={param.type === 'boolean' ? 'checkbox' : param.type === 'string' ? 'text' : 'number'}
-                        min={param.min}
-                        max={param.max}
-                        checked={param.type === 'boolean' ? Boolean(editingNode.data.params[name]) : undefined}
-                        value={param.type === 'boolean' ? undefined : String(editingNode.data.params[name] ?? '')}
-                        onChange={(event) => {
-                          const value = param.type === 'boolean'
-                            ? event.currentTarget.checked
-                            : param.type === 'string'
-                              ? event.currentTarget.value
-                              : Number(event.currentTarget.value);
-                          updateNodeParam(editingNode.id, name, value);
-                        }}
-                      />
-                      {param.description ? <small>{param.description}</small> : null}
+                      <span className="param-label">
+                        {param.label || name}
+                        {param.unit ? <em>{param.unit}</em> : null}
+                      </span>
+                      {param.options?.length ? (
+                        <select
+                          value={String(currentValue ?? '')}
+                          onChange={(event) => {
+                            const selected = param.options?.find(
+                              (option) => String(option.value) === event.currentTarget.value,
+                            );
+                            updateNodeParam(editingNode.id, name, selected?.value ?? event.currentTarget.value);
+                          }}
+                        >
+                          {param.options.map((option) => (
+                            <option key={String(option.value)} value={String(option.value)}>
+                              {option.value} — {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={param.type === 'boolean' ? 'checkbox' : param.type === 'string' ? 'text' : 'number'}
+                          min={param.min}
+                          max={param.max}
+                          checked={param.type === 'boolean' ? Boolean(currentValue) : undefined}
+                          value={param.type === 'boolean' ? undefined : String(currentValue ?? '')}
+                          onChange={(event) => {
+                            const value = param.type === 'boolean'
+                              ? event.currentTarget.checked
+                              : param.type === 'string'
+                                ? event.currentTarget.value
+                                : Number(event.currentTarget.value);
+                            updateNodeParam(editingNode.id, name, value);
+                          }}
+                        />
+                      )}
+                      <small>{param.description || `${name} 动作参数`}</small>
                     </label>
                   );
                 })}

@@ -691,6 +691,53 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     ]
 
 
+def test_szlab_action_parameters_have_frontend_help_options_and_units():
+    preset = load_preset("szlab_robot_action_workflow")
+
+    undocumented = [
+        (action.method, param["name"])
+        for action in preset.actions.values()
+        for param in action.params
+        if not param.get("description")
+    ]
+    assert undocumented == []
+
+    s03_product = next(
+        param for param in preset.actions["submit_pick_from_s03"].params if param["name"] == "product_type"
+    )
+    assert s03_product["options"] == [
+        {"value": 1, "label": "烧杯"},
+        {"value": 2, "label": "250 mL 样品瓶"},
+        {"value": 3, "label": "500 mL 样品瓶"},
+    ]
+    target_weight = next(
+        param for param in preset.actions["dose_powder"].params if param["name"] == "target_weight"
+    )
+    assert target_weight["unit"] == "g（待 PLC 确认）"
+    aspirate = next(
+        param
+        for param in preset.actions["add_liquid_to_beaker"].params
+        if param["name"] == "aspirate_volume"
+    )
+    assert "体积单位" in aspirate["description"]
+
+
+def test_single_sample_workflow_reads_each_balance_once_after_processing():
+    workflow_path = Path(
+        "unilabos/devices/workstation/szlab_poly_studio/workflows/"
+        "szlab_single_sample_atomic_workflow.json"
+    )
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    actions = [item["action"] for item in workflow["rules"][0]["actions"]]
+    methods = [action["method"] for action in actions]
+
+    assert [action["index"] for action in actions] == list(range(1, len(actions) + 1))
+    assert methods.count("read_s07_balance") == 1
+    assert methods.count("read_balance") == 1
+    assert methods.index("read_s07_balance") == methods.index("dose_powder") + 1
+    assert methods.index("read_balance") == methods.index("add_liquid_to_beaker") + 1
+
+
 def test_szlab_robot_action_workflow_does_not_auto_apply_debug_sensor_skips(monkeypatch):
     monkeypatch.delenv("SKIP_SENSOR_PRECHECK", raising=False)
     monkeypatch.delenv("SKIP_ROBOT_PRECHECK_VARIABLES", raising=False)

@@ -74,22 +74,6 @@ ROBOT_ACTION_SPECS: dict[str, RobotActionSpec] = {
     "pick_from_s071": RobotActionSpec("pick_from_s071", "S071", "pick", 14, "S071 取粉罐", ("S071取放料编号",)),
     "place_to_s072": RobotActionSpec("place_to_s072", "S072", "place", 15, "S072 放产品", ("S072取放料产品",)),
     "pick_from_s072": RobotActionSpec("pick_from_s072", "S072", "pick", 16, "S072 取产品", ("S072取放料产品",)),
-    "transfer_s071_to_s072": RobotActionSpec(
-        "transfer_s071_to_s072",
-        "S071-S072",
-        "transfer",
-        26,
-        "S071 取粉罐并放到 S072",
-        ("S071取放料编号",),
-    ),
-    "transfer_s072_to_s071": RobotActionSpec(
-        "transfer_s072_to_s071",
-        "S072-S071",
-        "transfer",
-        27,
-        "S072 取粉罐并放回 S071",
-        ("S071取放料编号", "S072取放料产品"),
-    ),
     "place_to_s08": RobotActionSpec(
         "place_to_s08",
         "S08",

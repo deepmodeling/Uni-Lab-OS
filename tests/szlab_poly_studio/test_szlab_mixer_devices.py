@@ -346,8 +346,6 @@ def test_szlab_robot_device_is_ast_scannable_from_own_package():
         "submit_pick_from_s071",
         "submit_place_to_s072",
         "submit_pick_from_s072",
-        "submit_transfer_s071_to_s072",
-        "submit_transfer_s072_to_s071",
         "submit_place_to_s08",
         "submit_pick_from_s08",
         "submit_pour_from_s08",
@@ -1266,8 +1264,8 @@ def test_szlab_robot_s04_sensor_mapping_matches_plc_csv_positions():
 
 
 def test_szlab_robot_task_specs_cover_xlsx_task_numbers_once():
-    assert sorted(spec.task_number for spec in ROBOT_ACTION_SPECS.values()) == [1, *range(3, 28)]
-    assert len({spec.task_number for spec in ROBOT_ACTION_SPECS.values()}) == 26
+    assert sorted(spec.task_number for spec in ROBOT_ACTION_SPECS.values()) == [1, *range(3, 26)]
+    assert len({spec.task_number for spec in ROBOT_ACTION_SPECS.values()}) == 24
 
 
 def test_szlab_robot_s04_pick_requires_material_and_resets_pc_to_plc_variables():
@@ -1678,40 +1676,6 @@ def test_szlab_robot_s072_pick_skips_all_sensor_checks():
     assert gateway.sensor_wait_calls == []
     assert not any(name.startswith("传感器状态_") for name, _ in gateway.reads)
     assert ("任务号", 16) in gateway.writes
-
-
-def test_szlab_robot_task_26_transfers_s071_powder_to_s072():
-    sensor = S07Sensors.POWDER_CONTAINER_BY_POSITION["1-1"]
-    gateway = FakeRobotPlcGateway(sensor_values={sensor: True})
-    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
-    device.set_plc_gateway(gateway)
-
-    result = device.submit_transfer_s071_to_s072(position="1-1")
-
-    assert result["success"] is True
-    assert result["task_number"] == 26
-    assert ("S071取放料编号", 1) in gateway.writes
-    assert ("任务号", 26) in gateway.writes
-    assert gateway.sensor_wait_calls[0][0] == {sensor: True}
-    assert gateway.sensor_wait_calls[1][0] == {sensor: False}
-
-
-def test_szlab_robot_task_27_writes_s071_empty_slot_and_s072_product():
-    sensor = S07Sensors.POWDER_CONTAINER_BY_POSITION["1-1"]
-    gateway = FakeRobotPlcGateway(sensor_values={sensor: False})
-    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
-    device.set_plc_gateway(gateway)
-
-    result = device.submit_transfer_s072_to_s071(product_type=1, position="auto")
-
-    assert result["success"] is True
-    assert result["task_number"] == 27
-    assert result["position"] == "1-1"
-    assert ("S071取放料编号", 1) in gateway.writes
-    assert ("S072取放料产品", 1) in gateway.writes
-    assert ("任务号", 27) in gateway.writes
-    assert gateway.sensor_wait_calls[0][0] == {sensor: False}
-    assert gateway.sensor_wait_calls[1][0] == {sensor: True}
 
 
 def test_szlab_robot_s08_pick_uses_position_sensor_mapping():

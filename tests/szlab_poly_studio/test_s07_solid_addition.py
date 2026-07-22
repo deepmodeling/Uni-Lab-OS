@@ -26,10 +26,17 @@ class FakeS07Plc:
         self.events: list[tuple[Any, ...]] = []
         self.waits: list[tuple[str, Any, float, float]] = []
         self.force_process_timeout = False
+        self.dose_completion_reads_remaining = 0
 
     def read_variable(self, node_name: str, use_cache: bool = False) -> Any:
         self.events.append(("read", node_name))
         if node_name == sensors.NODE_PROCESS_COMPLETE:
+            if (
+                self.values.get(sensors.NODE_PROCESS_SELECT) == sensors.PROCESS_DOSE_POWDER
+                and self.dose_completion_reads_remaining > 0
+            ):
+                self.dose_completion_reads_remaining -= 1
+                return 0
             return self.values.get(sensors.NODE_PROCESS_SELECT, 0)
         if node_name.startswith("S07位置") and "二维码" in node_name:
             return 0
@@ -156,8 +163,28 @@ def test_s07_dose_powder_writes_positions_weight_and_powder_params():
     assert (sensors.NODE_TARGET_WEIGHT, 12.5) in plc.writes
     assert (sensors.s07_powder_param_var("粗注粉", "开口量", 0), 1000) in plc.writes
     assert (sensors.NODE_COARSE_SHAKE_MAX_SPEED, 900) in plc.writes
-    assert (sensors.s07_powder_param_var("精注粉", "落粉匀速", 1), 0.01) in plc.writes
+    default_params = json.loads(s07_module.DEFAULT_POWDER_PARAMS_PATH.read_text(encoding="utf-8"))
+    expected_feed_speed = default_params["default"]["fine_params"]["feed_speed"][1]
+    assert (sensors.s07_powder_param_var("精注粉", "落粉匀速", 1), expected_feed_speed) in plc.writes
     assert (sensors.NODE_PROCESS_SELECT, sensors.PROCESS_DOSE_POWDER) in plc.writes
+    assert result["balance_sample_count"] == 1
+    assert result["final_balance"] == 12.34
+    assert result["balance_samples"][0]["value"] == 12.34
+
+
+def test_s07_dose_powder_samples_balance_until_process_completes():
+    plc = FakeS07Plc()
+    plc.dose_completion_reads_remaining = 2
+    device = make_s07_device(plc)
+
+    result = device.dose_powder(coarse_position=2, fine_position=5, target_weight=12.5, timeout=0.05)
+
+    assert result["success"] is True
+    assert result["balance_sample_count"] == 3
+    assert [sample["value"] for sample in result["balance_samples"]] == [12.34, 12.34, 12.34]
+    first_balance_read = plc.events.index(("read", sensors.NODE_BALANCE_READING))
+    process_complete_read = plc.events.index(("read", sensors.NODE_PROCESS_COMPLETE))
+    assert first_balance_read < process_complete_read
 
 
 def test_s07_resets_all_unilab_written_params_after_dose_complete():
@@ -167,7 +194,7 @@ def test_s07_resets_all_unilab_written_params_after_dose_complete():
     device.dose_powder(coarse_position=2, fine_position=5, target_weight=12.5, timeout=0.05)
 
     first_process_write = plc.writes.index((sensors.NODE_PROCESS_SELECT, sensors.PROCESS_DOSE_POWDER))
-    process_complete_wait = plc.events.index(("wait", sensors.NODE_PROCESS_COMPLETE, sensors.PROCESS_DOSE_POWDER))
+    process_complete_read = plc.events.index(("read", sensors.NODE_PROCESS_COMPLETE))
     reset_params_written_event = plc.events.index(("write", sensors.NODE_PARAMS_WRITTEN, False))
     reset_params_written = plc.writes.index((sensors.NODE_PARAMS_WRITTEN, False))
     initial_writes = plc.writes[:first_process_write]
@@ -180,7 +207,7 @@ def test_s07_resets_all_unilab_written_params_after_dose_complete():
     assert (sensors.s07_powder_param_var("精注粉", "落粉匀速", 0), 0.0) not in initial_writes
     assert (sensors.NODE_COARSE_SHAKE_MAX_SPEED, 0) not in initial_writes
     assert (sensors.NODE_FINE_SHAKE_MAX_SPEED, 0) not in initial_writes
-    assert reset_params_written_event > process_complete_wait
+    assert reset_params_written_event > process_complete_read
     assert (sensors.NODE_LOAD_POSITION, 0) in plc.writes[reset_params_written:]
     assert (sensors.NODE_COARSE_POSITION, 0) in plc.writes[reset_params_written:]
     assert (sensors.NODE_FINE_POSITION, 0) in plc.writes[reset_params_written:]

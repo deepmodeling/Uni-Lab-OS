@@ -325,6 +325,11 @@ _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
         "description": "1=固体粉末，2=烧杯。",
         "options": _S072_PRODUCT_TYPE_OPTIONS,
     },
+    ("submit_transfer_s072_to_s071", "product_type"): {
+        "label": "S072 产品代码",
+        "description": "任务27从S072取料时使用；1=固体粉末，2=烧杯。",
+        "options": _S072_PRODUCT_TYPE_OPTIONS,
+    },
     **{
         (method, "product_type"): {
             "label": "S09 产品类型",
@@ -384,6 +389,12 @@ _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
         "description": "S071 粉罐仓位，PLC 编号范围 1–6；前端使用“行-列”格式，填 auto 时自动选择空位。"
     },
     ("submit_pick_from_s071", "position"): {"description": "S071 粉罐仓位，PLC 编号范围 1–6；前端使用“行-列”格式，例如 1-1。"},
+    ("submit_transfer_s071_to_s072", "position"): {
+        "description": "任务26从S071取粉罐的源仓位；PLC 编号范围 1–6，前端使用“行-列”格式。"
+    },
+    ("submit_transfer_s072_to_s071", "position"): {
+        "description": "任务27放回S071的目标仓位；填 auto（自动）时，上位机扫描传感器并写入第一个空位编号。"
+    },
     ("submit_place_to_s072", "position"): {"description": "兼容参数；S072 产品类型由 S072取放料产品 决定。"},
     ("submit_pick_from_s072", "position"): {"description": "兼容参数；S072 产品类型由 S072取放料产品 决定。"},
     ("submit_place_to_s08", "position"): {"description": "S08 开关盖工位：1=样品瓶，2=100 mL 液体瓶。"},
@@ -418,6 +429,8 @@ _ROBOT_TASK_NUMBERS = {
     "submit_place_to_s11": 23,
     "submit_pick_from_s11": 24,
     "submit_pour_from_s08": 25,
+    "submit_transfer_s071_to_s072": 26,
+    "submit_transfer_s072_to_s071": 27,
 }
 _ROBOT_PARAM_PLC_VARIABLES = {
     ("submit_pick_from_s01", "product_type"): "S01出入料产品",
@@ -433,6 +446,8 @@ _ROBOT_PARAM_PLC_VARIABLES = {
             ("submit_pick_from_s04", "S04取放料编号"),
             ("submit_place_to_s071", "S071取放料编号"),
             ("submit_pick_from_s071", "S071取放料编号"),
+            ("submit_transfer_s071_to_s072", "S071取放料编号"),
+            ("submit_transfer_s072_to_s071", "S071取放料编号"),
             ("submit_place_to_s08", "S08取放料编号"),
             ("submit_pick_from_s08", "S08取放料编号"),
             ("submit_place_to_s09", "S09取放料编号"),
@@ -450,6 +465,7 @@ _ROBOT_PARAM_PLC_VARIABLES = {
             ("submit_pick_from_s03", "S03取放料产品"),
             ("submit_place_to_s072", "S072取放料产品"),
             ("submit_pick_from_s072", "S072取放料产品"),
+            ("submit_transfer_s072_to_s071", "S072取放料产品"),
             ("submit_place_to_s08", "S08取放料产品"),
             ("submit_pick_from_s08", "S08取放料产品"),
             ("submit_place_to_s09", "S09取放料产品"),

@@ -82,3 +82,48 @@ class SzlabRobotS07Mixin:
             position=position,
             sensor_check_skipped_reason="S072 取放料暂不检查传感器",
         )
+
+    def _run_s071_to_s072_transfer(self, position: str = "1-1") -> dict[str, Any]:
+        sensor = powder_container_sensor(position)
+        return self._submit_robot_task(
+            task="transfer",
+            station="S071-S072",
+            task_number=26,
+            variables=build_variables(
+                "transfer_s071_to_s072",
+                S071取放料编号=self._slot_number(position),
+            ),
+            reset_variables={"S071取放料编号": 0, "任务号": 0},
+            precheck=lambda: self._ensure_sensor_gate(sensor, True, "任务26的S071取料源位必须有粉罐"),
+            pre_sensor_conditions={sensor: True},
+            post_sensor_conditions={sensor: False},
+            position=str(position),
+            source_sensor_variable=sensor,
+            sensor_check_skipped_reason="S072 取放料暂不检查传感器",
+        )
+
+    def _run_s072_to_s071_transfer(
+        self,
+        product_type: int = 1,
+        position: str = "auto",
+    ) -> dict[str, Any]:
+        position = self._resolve_s071_place_position(position)
+        sensor = powder_container_sensor(position)
+        return self._submit_robot_task(
+            task="transfer",
+            station="S072-S071",
+            task_number=27,
+            variables=build_variables(
+                "transfer_s072_to_s071",
+                S071取放料编号=self._slot_number(position),
+                S072取放料产品=product_type,
+            ),
+            reset_variables={"S071取放料编号": 0, "S072取放料产品": 0, "任务号": 0},
+            precheck=lambda: self._ensure_sensor_gate(sensor, False, "任务27的S071放料目标位必须为空"),
+            pre_sensor_conditions={sensor: False},
+            post_sensor_conditions={sensor: True},
+            product_type=int(product_type),
+            position=str(position),
+            target_sensor_variable=sensor,
+            sensor_check_skipped_reason="S072 取放料暂不检查传感器",
+        )

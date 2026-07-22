@@ -438,6 +438,7 @@ def test_s07_robot_preset_includes_robot_and_solid_addition_station():
         "S07粗注粉位置号",
         "S07精注粉位置号",
         "S07注粉重量",
+        "S07天平读数",
     ]
 
 
@@ -631,6 +632,7 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "S07粗注粉位置号",
         "S07精注粉位置号",
         "S07注粉重量",
+        "S07天平读数",
     ]
     assert collect_snapshot_variables("run_solvent_addition", {"process": 3}, runtime_config) == [
         "S06准备信号",
@@ -724,6 +726,14 @@ def test_szlab_action_parameters_have_frontend_help_options_and_units():
     )
     assert s08_product["options"][2] == {"value": 3, "label": "100 mL 液体瓶"}
     assert "S08取放料产品" in s08_product["description"]
+    task_27_position = next(
+        param
+        for param in preset.actions["submit_transfer_s072_to_s071"].params
+        if param["name"] == "position"
+    )
+    assert "自动" in task_27_position["description"]
+    assert "S071取放料编号" in task_27_position["description"]
+    assert "机器人任务号：27" in task_27_position["description"]
     target_weight = next(
         param for param in preset.actions["dose_powder"].params if param["name"] == "target_weight"
     )
@@ -746,10 +756,25 @@ def test_single_sample_workflow_uses_internal_s09_balance_read_and_correct_robot
     methods = [action["method"] for action in actions]
 
     assert [action["index"] for action in actions] == list(range(1, len(actions) + 1))
-    assert methods.count("read_s07_balance") == 1
+    assert methods.count("read_s07_balance") == 0
     assert methods.count("read_balance") == 0
-    assert methods.index("read_s07_balance") == methods.index("dose_powder") + 1
+    assert methods.count("submit_transfer_s071_to_s072") == 2
+    assert methods.count("submit_transfer_s072_to_s071") == 2
     by_id = {action["workflow_node_id"]: action for action in actions}
+    for sequence in (1, 2):
+        unload = methods.index(
+            "submit_transfer_s072_to_s071",
+            0 if sequence == 1 else methods.index("submit_transfer_s072_to_s071") + 1,
+        )
+        rotate = methods.index(
+            "rotate_powder_cartridge_to_feed",
+            0 if sequence == 1 else methods.index("rotate_powder_cartridge_to_feed") + 1,
+        )
+        load = methods.index(
+            "submit_transfer_s071_to_s072",
+            0 if sequence == 1 else methods.index("submit_transfer_s071_to_s072") + 1,
+        )
+        assert unload < rotate < load
     assert by_id["w01_place_beaker_s072"]["params"]["product_type"] == 2
     assert by_id["w02_pick_beaker_s072"]["params"]["product_type"] == 2
     assert by_id["p03_reagent_place_s08"]["params"]["product_type"] == 3

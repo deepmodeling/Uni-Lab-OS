@@ -680,6 +680,37 @@ class SzlabMixerRobotDevice(
         except Exception as exc:
             return {"success": False, "message": str(exc), "task": "pick", "station": "S072", "position": position}
 
+    @action(auto_prefix=True, description="任务26：S071取粉罐并放到S072")
+    def submit_transfer_s071_to_s072(self, position: str = "1-1") -> dict[str, Any]:
+        try:
+            return self._run_s071_to_s072_transfer(position)
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": str(exc),
+                "task": "transfer",
+                "station": "S071-S072",
+                "position": position,
+            }
+
+    @action(auto_prefix=True, description="任务27：S072取粉罐并放回S071")
+    def submit_transfer_s072_to_s071(
+        self,
+        product_type: int = 1,
+        position: str = "auto",
+    ) -> dict[str, Any]:
+        try:
+            return self._run_s072_to_s071_transfer(product_type, position)
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": str(exc),
+                "task": "transfer",
+                "station": "S072-S071",
+                "product_type": product_type,
+                "position": position,
+            }
+
     @action(auto_prefix=True, description="S08 放瓶")
     def submit_place_to_s08(
         self,

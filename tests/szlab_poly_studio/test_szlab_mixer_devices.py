@@ -19,6 +19,7 @@ from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnet
     SzlabMixerMagneticStirrerDevice,
 )
 from unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S07Sensors
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import SzlabMixerRobotDevice
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S04 import S04_SENSOR_BY_POSITION
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import ROBOT_ACTION_SPECS
@@ -61,6 +62,22 @@ def test_szlab_wait_variable_true_reuses_read_variable_and_interval(monkeypatch)
         ("S05加工完成", False),
     ]
     assert sleeps == [1.0, 1.0]
+
+
+def test_s071_auto_place_position_selects_first_empty_slot():
+    class FakePlc:
+        def read_variable(self, name, use_cache=False):
+            del use_cache
+            occupied = {
+                S07Sensors.POWDER_CONTAINER_BY_POSITION["1-1"]: True,
+                S07Sensors.POWDER_CONTAINER_BY_POSITION["1-2"]: False,
+            }
+            return occupied.get(name, True)
+
+    robot = SzlabMixerRobotDevice()
+    robot.set_plc_gateway(FakePlc())
+
+    assert robot._resolve_s071_place_position("auto") == "1-2"
 
 
 def test_szlab_wait_sensor_conditions_reads_all_values_without_cache(monkeypatch):
@@ -774,7 +791,7 @@ def test_szlab_magnetic_stirrer_rejects_invalid_mode():
 
 def test_szlab_photoshotting_debug_assets_use_current_s05_variables():
     device_dir = Path("unilabos/devices/workstation/szlab_poly_studio/s05_photoshotting")
-    latest_csv = Path("unilabos/devices/workstation/szlab_poly_studio/szlab_plc_0702.csv")
+    latest_csv = Path("unilabos/devices/workstation/szlab_poly_studio/szlab_plc_0721.csv")
     nodes_csv = device_dir / "photoshotting_nodes.csv"
     flow_path = device_dir / "photoshotting_flow.json"
     config_path = device_dir / "photoshotting_debug.json"
@@ -783,7 +800,7 @@ def test_szlab_photoshotting_debug_assets_use_current_s05_variables():
         "S05拍照结果",
     }
 
-    latest_text = latest_csv.read_text(encoding="utf-16")
+    latest_text = latest_csv.read_text(encoding="utf-8-sig")
     for name in expected_names:
         assert name in latest_text
 

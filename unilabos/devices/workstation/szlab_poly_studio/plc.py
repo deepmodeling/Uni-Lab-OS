@@ -30,7 +30,7 @@ from unilabos.registry.decorators import action, device, not_action, topic_confi
 from unilabos.utils.log import logger
 
 
-DEFAULT_CSV_NAME = "szlab_plc_0702.csv"
+DEFAULT_CSV_NAME = "szlab_plc_0721.csv"
 
 
 def _resolve_csv_path(csv_path: Optional[str]) -> str:

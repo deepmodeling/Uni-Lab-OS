@@ -36,7 +36,7 @@ class SzlabMixerPhotoShottingDevice:
         url: str = DEFAULT_OPCUA_URL,
         username: str | None = None,
         password: str | None = None,
-        csv_path: str | None = "szlab_plc_0702.csv",
+        csv_path: str | None = "szlab_plc_0721.csv",
         timeout: float = 300.0,
         save_dir: str = "unilabos_data/szlab_poly_studio/s05_photoshotting/photos",
         auto_connect: bool = True,

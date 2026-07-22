@@ -282,7 +282,7 @@ def test_s07_robot_runtime_binds_solid_addition_to_plc_gateway(monkeypatch, tmp_
         run_workflow_local,
         "load_ai4c_graph_config",
         lambda _graph_file: {
-            "szlab_poly_plc": {"url": "opc.tcp://127.0.0.1:48405/", "csv_path": "szlab_plc_0702.csv"},
+            "szlab_poly_plc": {"url": "opc.tcp://127.0.0.1:48405/", "csv_path": "szlab_plc_0721.csv"},
             "szlab_mixer_robot": {"plc_device_id": "szlab_poly_plc"},
             "szlab_s07_solid_addition": {"plc_device_id": "szlab_poly_plc"},
         },
@@ -348,7 +348,7 @@ def test_szlab_mixer_ui_preset_uses_current_csv_and_s04_s05_actions():
     runtime_config = _load_preset_runtime_config(preset)
     graph_nodes = {node["id"]: node for node in preset.device_graph["nodes"]}
 
-    assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"].endswith("szlab_plc_0702.csv")
+    assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"].endswith("szlab_plc_0721.csv")
     assert runtime_config.device_factory.plc_device_id == "szlab_poly_plc"
     assert preset.actions["run_stirring"].device_id == "szlab_mixer_stirrer"
     assert preset.actions["take_photo"].device_id == "szlab_mixer_photoshotting"
@@ -407,7 +407,7 @@ def test_s07_robot_preset_includes_robot_and_solid_addition_station():
     csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
 
     assert preset.target_device_ids == ["szlab_mixer_robot", "szlab_s07_solid_addition"]
-    assert preset.default_config["csv"] == "szlab_plc_0702.csv"
+    assert preset.default_config["csv"] == "szlab_plc_0721.csv"
     assert csv_path.exists()
     assert set(graph_nodes) == {"szlab_poly_plc", "szlab_mixer_robot", "szlab_s07_solid_addition"}
     assert graph_nodes["szlab_s07_solid_addition"]["config"] == {

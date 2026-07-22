@@ -206,6 +206,23 @@ _PRODUCT_TYPE_OPTIONS = [
     {"value": 2, "label": "250 mL 样品瓶"},
     {"value": 3, "label": "500 mL 样品瓶"},
 ]
+_S01_PRODUCT_TYPE_OPTIONS = [
+    {"value": 1, "label": "TIP"},
+    {"value": 2, "label": "烧杯"},
+    {"value": 3, "label": "250 mL 样品瓶"},
+    {"value": 4, "label": "500 mL 样品瓶"},
+    {"value": 5, "label": "100 mL 液体瓶"},
+    {"value": 6, "label": "固体粉末"},
+]
+_S072_PRODUCT_TYPE_OPTIONS = [
+    {"value": 1, "label": "固体粉末"},
+    {"value": 2, "label": "烧杯"},
+]
+_S08_PRODUCT_TYPE_OPTIONS = [
+    {"value": 1, "label": "250 mL 样品瓶"},
+    {"value": 2, "label": "500 mL 样品瓶"},
+    {"value": 3, "label": "100 mL 液体瓶"},
+]
 _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     "sample_id": {"label": "样品 ID", "description": "用于追踪物料、照片和实验结果的样品标识。"},
     "position": {"label": "位置", "description": "目标工位或仓位编号；可用范围取决于当前动作。"},
@@ -287,20 +304,26 @@ _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
             "options": _PRODUCT_TYPE_OPTIONS,
         }
         for method in (
-            "submit_pick_from_s01",
             "submit_place_to_s03",
             "submit_pick_from_s03",
             "submit_place_to_s11",
             "submit_pick_from_s11",
         )
     },
+    ("submit_pick_from_s01", "product_type"): {
+        "label": "S01 出入料产品",
+        "description": "1=TIP，2=烧杯，3=250 mL 样品瓶，4=500 mL 样品瓶，5=100 mL 液体瓶，6=固体粉末。",
+        "options": _S01_PRODUCT_TYPE_OPTIONS,
+    },
     ("submit_place_to_s072", "product_type"): {
         "label": "S072 产品代码",
-        "description": "写入 S072取放料产品 的 PLC 代码；当前粉罐和烧杯联调流程均使用 1。",
+        "description": "1=固体粉末，2=烧杯。",
+        "options": _S072_PRODUCT_TYPE_OPTIONS,
     },
     ("submit_pick_from_s072", "product_type"): {
         "label": "S072 产品代码",
-        "description": "写入 S072取放料产品 的 PLC 代码；当前粉罐和烧杯联调流程均使用 1。",
+        "description": "1=固体粉末，2=烧杯。",
+        "options": _S072_PRODUCT_TYPE_OPTIONS,
     },
     **{
         (method, "product_type"): {
@@ -316,11 +339,13 @@ _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("submit_place_to_s08", "product_type"): {
         "label": "瓶型",
-        "description": "1=100 mL 液体试剂瓶；其他代码须以 PLC 工艺定义为准。",
+        "description": "1=250 mL 样品瓶，2=500 mL 样品瓶，3=100 mL 液体瓶。",
+        "options": _S08_PRODUCT_TYPE_OPTIONS,
     },
     ("submit_pick_from_s08", "product_type"): {
         "label": "瓶型",
-        "description": "1=100 mL 液体试剂瓶；其他代码须以 PLC 工艺定义为准。",
+        "description": "1=250 mL 样品瓶，2=500 mL 样品瓶，3=100 mL 液体瓶。",
+        "options": _S08_PRODUCT_TYPE_OPTIONS,
     },
     ("submit_pour_from_s08", "product_type"): {
         "label": "倒料瓶型",
@@ -348,29 +373,105 @@ _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
             {"value": 3, "label": "1号泵 + 2号泵"},
         ],
     },
-    ("submit_pick_from_s01", "position"): {"description": "S01 上料过渡仓取料位置编号。"},
+    ("submit_pick_from_s01", "position"): {"description": "S01 上料过渡仓取料位置，范围 1–6。"},
     ("submit_place_to_s02", "position"): {"description": "S02 TIP 盒放料位，范围 1–6。"},
     ("submit_pick_from_s02", "position"): {"description": "S02 TIP 盒取料位，范围 1–6。"},
-    ("submit_place_to_s03", "position"): {"description": "S03 空容器仓位，格式为“行-列”，例如 1-1。"},
-    ("submit_pick_from_s03", "position"): {"description": "S03 空容器仓位，格式为“行-列”，例如 1-1。"},
+    ("submit_place_to_s03", "position"): {"description": "S03 空容器仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
+    ("submit_pick_from_s03", "position"): {"description": "S03 空容器仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
     ("submit_place_to_s04", "position"): {"description": "S04 磁搅工位编号，范围 1–6。"},
     ("submit_pick_from_s04", "position"): {"description": "S04 磁搅工位编号，范围 1–6。"},
     ("submit_place_to_s071", "position"): {
-        "description": "S071 粉罐仓位，格式为“行-列”；填 auto 时自动选择空位。"
+        "description": "S071 粉罐仓位，PLC 编号范围 1–6；前端使用“行-列”格式，填 auto 时自动选择空位。"
     },
-    ("submit_pick_from_s071", "position"): {"description": "S071 粉罐仓位，格式为“行-列”，例如 1-1。"},
-    ("submit_place_to_s072", "position"): {"description": "S072 上下料位编号，当前使用位置 1 或 2。"},
-    ("submit_pick_from_s072", "position"): {"description": "S072 上下料位编号，当前使用位置 1 或 2。"},
+    ("submit_pick_from_s071", "position"): {"description": "S071 粉罐仓位，PLC 编号范围 1–6；前端使用“行-列”格式，例如 1-1。"},
+    ("submit_place_to_s072", "position"): {"description": "兼容参数；S072 产品类型由 S072取放料产品 决定。"},
+    ("submit_pick_from_s072", "position"): {"description": "兼容参数；S072 产品类型由 S072取放料产品 决定。"},
     ("submit_place_to_s08", "position"): {"description": "S08 开关盖工位：1=样品瓶，2=100 mL 液体瓶。"},
     ("submit_pick_from_s08", "position"): {"description": "S08 开关盖工位：1=样品瓶，2=100 mL 液体瓶。"},
-    ("submit_place_to_s10", "position"): {"description": "S10 液体试剂瓶仓位编号。"},
-    ("submit_pick_from_s10", "position"): {"description": "S10 液体试剂瓶仓位编号。"},
-    ("submit_place_to_s11", "position"): {"description": "S11 成品仓位，格式为“行-列”，例如 1-1。"},
-    ("submit_pick_from_s11", "position"): {"description": "S11 成品仓位，格式为“行-列”，例如 1-1。"},
+    ("submit_place_to_s10", "position"): {"description": "S10 液体试剂瓶仓位，范围 1–20。"},
+    ("submit_pick_from_s10", "position"): {"description": "S10 液体试剂瓶仓位，范围 1–20。"},
+    ("submit_place_to_s11", "position"): {"description": "S11 成品仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
+    ("submit_pick_from_s11", "position"): {"description": "S11 成品仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
     ("rotate_powder_cartridge_to_feed", "position"): {
         "description": "旋转到 S07 上料位的粉罐位置，范围 1–10。"
     },
 }
+
+_ROBOT_TASK_NUMBERS = {
+    "submit_pick_from_s01": 1,
+    "submit_place_to_s02": 3,
+    "submit_pick_from_s02": 4,
+    "submit_place_to_s03": 5,
+    "submit_pick_from_s03": 6,
+    "submit_place_to_s04": 7,
+    "submit_pick_from_s04": 8,
+    "submit_place_to_s071": 13,
+    "submit_pick_from_s071": 14,
+    "submit_place_to_s072": 15,
+    "submit_pick_from_s072": 16,
+    "submit_place_to_s08": 17,
+    "submit_pick_from_s08": 18,
+    "submit_place_to_s09": 19,
+    "submit_pick_from_s09": 20,
+    "submit_place_to_s10": 21,
+    "submit_pick_from_s10": 22,
+    "submit_place_to_s11": 23,
+    "submit_pick_from_s11": 24,
+    "submit_pour_from_s08": 25,
+}
+_ROBOT_PARAM_PLC_VARIABLES = {
+    ("submit_pick_from_s01", "product_type"): "S01出入料产品",
+    ("submit_pick_from_s01", "position"): "S01取放料编号",
+    **{
+        (method, "position"): variable
+        for method, variable in (
+            ("submit_place_to_s02", "S02取放料编号"),
+            ("submit_pick_from_s02", "S02取放料编号"),
+            ("submit_place_to_s03", "S03取放料编号"),
+            ("submit_pick_from_s03", "S03取放料编号"),
+            ("submit_place_to_s04", "S04取放料编号"),
+            ("submit_pick_from_s04", "S04取放料编号"),
+            ("submit_place_to_s071", "S071取放料编号"),
+            ("submit_pick_from_s071", "S071取放料编号"),
+            ("submit_place_to_s08", "S08取放料编号"),
+            ("submit_pick_from_s08", "S08取放料编号"),
+            ("submit_place_to_s09", "S09取放料编号"),
+            ("submit_pick_from_s09", "S09取放料编号"),
+            ("submit_place_to_s10", "S10取放料编号"),
+            ("submit_pick_from_s10", "S10取放料编号"),
+            ("submit_place_to_s11", "S11取放料编号"),
+            ("submit_pick_from_s11", "S11取放料编号"),
+        )
+    },
+    **{
+        (method, "product_type"): variable
+        for method, variable in (
+            ("submit_place_to_s03", "S03取放料产品"),
+            ("submit_pick_from_s03", "S03取放料产品"),
+            ("submit_place_to_s072", "S072取放料产品"),
+            ("submit_pick_from_s072", "S072取放料产品"),
+            ("submit_place_to_s08", "S08取放料产品"),
+            ("submit_pick_from_s08", "S08取放料产品"),
+            ("submit_place_to_s09", "S09取放料产品"),
+            ("submit_pick_from_s09", "S09取放料产品"),
+            ("submit_place_to_s11", "S11取放料产品"),
+            ("submit_pick_from_s11", "S11取放料产品"),
+            ("submit_pour_from_s08", "S08倒料产品选择"),
+        )
+    },
+}
+
+
+def _robot_parameter_context(method: str, name: str) -> str:
+    task_number = _ROBOT_TASK_NUMBERS.get(method)
+    if task_number is None:
+        return ""
+    parts: list[str] = []
+    plc_variable = _ROBOT_PARAM_PLC_VARIABLES.get((method, name))
+    if plc_variable:
+        parts.append(f"对应 PLC 变量：{plc_variable}")
+    parts.append(f"机器人任务号：{task_number}")
+    return "；".join(parts) + "。"
 
 
 def _docstring_param_help(docstring: str | None) -> dict[str, dict[str, str]]:
@@ -422,6 +523,9 @@ def _params_from_ast_action(method: str, method_info: dict[str, Any]) -> list[di
             item.update(_range_from_description(description))
         else:
             item["description"] = f"{method} 动作参数 {name}；请按设备工艺定义填写。"
+        robot_context = _robot_parameter_context(method, name)
+        if robot_context:
+            item["description"] = f"{item['description'].rstrip('。')}；{robot_context}"
         if not param.get("required", False) and "default" in param:
             default = param.get("default")
             if isinstance(default, dict) and "_call" in default:

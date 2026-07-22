@@ -551,6 +551,7 @@ class SzlabMixerPipettingStationDevice:
         require_allow: bool = False,
         skip_level_check: bool = False,
         reset_delay: float = 0.1,
+        read_balance_after_done: bool | None = None,
     ) -> dict[str, Any]:
         logs: list[dict[str, Any]] = []
         try:
@@ -724,9 +725,18 @@ class SzlabMixerPipettingStationDevice:
                     self._status = "Error"
                     return {"success": False, "message": str(exc), "data": data, "logs": logs}
 
-            if process in {9, 10}:
-                self._append_log(logs, "读取 S09 天平读数", {"process": process})
-                balance = self.read_balance(require_stable=False)
+            should_read_balance = (
+                process in {9, 10}
+                if read_balance_after_done is None
+                else bool(read_balance_after_done)
+            )
+            if should_read_balance:
+                self._append_log(
+                    logs,
+                    "等待 S09 天平读数稳定",
+                    {"process": process, "variable": S09_BALANCE_STABLE_VAR, "expected": True},
+                )
+                balance = self.read_balance(require_stable=True)
                 if not balance.get("success", False):
                     self._status = "Error"
                     return {
@@ -830,19 +840,27 @@ class SzlabMixerPipettingStationDevice:
         except Exception as exc:
             return {"success": False, "message": str(exc)}
 
-        plan: list[tuple[int, str, int, int, int]] = [
-            (5, f"从 TIP盒{take_tip_box_index} 取 TIP", take_tip_box_index, 0, 0)
+        plan: list[tuple[int, str, int, int, int, bool]] = [
+            (5, f"从 TIP盒{take_tip_box_index} 取 TIP", take_tip_box_index, 0, 0, False)
         ]
-        for aspirate_chunk, dispense_chunk in transfer_chunks:
+        for chunk_index, (aspirate_chunk, dispense_chunk) in enumerate(transfer_chunks):
+            is_last_chunk = chunk_index == len(transfer_chunks) - 1
             plan.extend(
                 [
-                    (7, "液体瓶取液", take_tip_box_index, aspirate_chunk, 0),
-                    (8, "烧杯放液", take_tip_box_index, 0, dispense_chunk),
+                    (7, "液体瓶取液", take_tip_box_index, aspirate_chunk, 0, False),
+                    (8, "烧杯放液", take_tip_box_index, 0, dispense_chunk, is_last_chunk),
                 ]
             )
-        plan.append((6, f"向 TIP盒{release_tip_box_index} 放 TIP", release_tip_box_index, 0, 0))
+        plan.append((6, f"向 TIP盒{release_tip_box_index} 放 TIP", release_tip_box_index, 0, 0, False))
 
-        for process, step_name, process_tip_box_index, aspirate_chunk, dispense_chunk in plan:
+        for (
+            process,
+            step_name,
+            process_tip_box_index,
+            aspirate_chunk,
+            dispense_chunk,
+            read_balance_after_done,
+        ) in plan:
             result = self.run_process(
                 process=process,
                 tip_box_index=process_tip_box_index,
@@ -854,6 +872,7 @@ class SzlabMixerPipettingStationDevice:
                 volume_unit="raw",
                 require_allow=process in {5, 6, 7, 8},
                 skip_level_check=skip_level_check,
+                read_balance_after_done=read_balance_after_done,
             )
             steps.append({"step": step_name, **result})
             logs.extend(result.get("logs") or [])
@@ -1010,11 +1029,14 @@ class SzlabMixerPipettingStationDevice:
     @action(auto_prefix=True, description="读取 S09 天平读数")
     def read_balance(self, require_stable: bool = False) -> dict[str, Any]:
         try:
-            stable = bool(self._read_variable(S09_BALANCE_STABLE_VAR, use_cache=False))
-            if require_stable and not stable:
+            if require_stable:
+                stable = self._wait_equal(S09_BALANCE_STABLE_VAR, True)
+            else:
+                stable = bool(self._read_variable(S09_BALANCE_STABLE_VAR, use_cache=False))
+            if not stable:
                 return {
                     "success": False,
-                    "message": "S09 天平读数尚未稳定",
+                    "message": "等待 S09 天平读数稳定超时",
                     "data": {"stable": stable},
                 }
             reading = self._read_variable(S09_BALANCE_READING_VAR, use_cache=False)

@@ -710,6 +710,20 @@ def test_szlab_action_parameters_have_frontend_help_options_and_units():
         {"value": 2, "label": "250 mL 样品瓶"},
         {"value": 3, "label": "500 mL 样品瓶"},
     ]
+    s072_product = next(
+        param for param in preset.actions["submit_place_to_s072"].params if param["name"] == "product_type"
+    )
+    assert s072_product["options"] == [
+        {"value": 1, "label": "固体粉末"},
+        {"value": 2, "label": "烧杯"},
+    ]
+    assert "S072取放料产品" in s072_product["description"]
+    assert "机器人任务号：15" in s072_product["description"]
+    s08_product = next(
+        param for param in preset.actions["submit_place_to_s08"].params if param["name"] == "product_type"
+    )
+    assert s08_product["options"][2] == {"value": 3, "label": "100 mL 液体瓶"}
+    assert "S08取放料产品" in s08_product["description"]
     target_weight = next(
         param for param in preset.actions["dose_powder"].params if param["name"] == "target_weight"
     )
@@ -722,7 +736,7 @@ def test_szlab_action_parameters_have_frontend_help_options_and_units():
     assert "体积单位" in aspirate["description"]
 
 
-def test_single_sample_workflow_reads_each_balance_once_after_processing():
+def test_single_sample_workflow_uses_internal_s09_balance_read_and_correct_robot_codes():
     workflow_path = Path(
         "unilabos/devices/workstation/szlab_poly_studio/workflows/"
         "szlab_single_sample_atomic_workflow.json"
@@ -733,9 +747,13 @@ def test_single_sample_workflow_reads_each_balance_once_after_processing():
 
     assert [action["index"] for action in actions] == list(range(1, len(actions) + 1))
     assert methods.count("read_s07_balance") == 1
-    assert methods.count("read_balance") == 1
+    assert methods.count("read_balance") == 0
     assert methods.index("read_s07_balance") == methods.index("dose_powder") + 1
-    assert methods.index("read_balance") == methods.index("add_liquid_to_beaker") + 1
+    by_id = {action["workflow_node_id"]: action for action in actions}
+    assert by_id["w01_place_beaker_s072"]["params"]["product_type"] == 2
+    assert by_id["w02_pick_beaker_s072"]["params"]["product_type"] == 2
+    assert by_id["p03_reagent_place_s08"]["params"]["product_type"] == 3
+    assert by_id["p03_reagent_pick_s08"]["params"]["product_type"] == 3
 
 
 def test_szlab_robot_action_workflow_does_not_auto_apply_debug_sensor_skips(monkeypatch):

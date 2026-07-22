@@ -39,7 +39,6 @@
         "S06 取料",
         "S09 放料",
         "执行 S09 烧杯加液：取 TIP、液体瓶取液、烧杯放液、放 TIP",
-        "读取 S09 天平读数",
         "S09 取料",
         "S04 放料",
         "执行 S04 磁搅加工",
@@ -128,7 +127,7 @@
             "device_id": "szlab_mixer_robot",
             "method": "submit_place_to_s08",
             "params": {
-              "product_type": 1,
+              "product_type": 3,
               "position": 2
             },
             "_comment": "将100 mL液体试剂瓶放到S08工位2。"
@@ -160,7 +159,7 @@
             "device_id": "szlab_mixer_robot",
             "method": "submit_pick_from_s08",
             "params": {
-              "product_type": 1,
+              "product_type": 3,
               "position": 2
             }
           }
@@ -349,7 +348,7 @@
             "device_id": "szlab_mixer_robot",
             "method": "submit_place_to_s072",
             "params": {
-              "product_type": 1,
+              "product_type": 2,
               "position": 1
             }
           }
@@ -389,7 +388,7 @@
             "device_id": "szlab_mixer_robot",
             "method": "submit_pick_from_s072",
             "params": {
-              "product_type": 1,
+              "product_type": 2,
               "position": 1
             }
           }
@@ -466,19 +465,6 @@
         {
           "action": {
             "index": 31,
-            "node": "读取 S09 天平读数",
-            "workflow_node_id": "w03_read_balance_s09",
-            "device_id": "szlab_mixer_pipetting_station",
-            "method": "read_balance",
-            "params": {
-              "require_stable": false
-            },
-            "_comment": "S09 烧杯加液完成后读取一次天平值；不再重复读取。"
-          }
-        },
-        {
-          "action": {
-            "index": 32,
             "node": "S09 取料",
             "workflow_node_id": "w04_pick_beaker_s09",
             "device_id": "szlab_mixer_robot",
@@ -491,7 +477,7 @@
         },
         {
           "action": {
-            "index": 33,
+            "index": 32,
             "node": "S04 放料",
             "workflow_node_id": "w04_place_beaker_s04",
             "device_id": "szlab_mixer_robot",
@@ -504,7 +490,7 @@
         },
         {
           "action": {
-            "index": 34,
+            "index": 33,
             "node": "执行 S04 磁搅加工",
             "workflow_node_id": "w04_run_stirring_s04",
             "device_id": "szlab_s04_magnetic_stirring",
@@ -522,7 +508,7 @@
         },
         {
           "action": {
-            "index": 35,
+            "index": 34,
             "node": "S03 取容器",
             "workflow_node_id": "w05_pick_sample_vial_s03",
             "device_id": "szlab_mixer_robot",
@@ -535,7 +521,7 @@
         },
         {
           "action": {
-            "index": 36,
+            "index": 35,
             "node": "S08 放瓶",
             "workflow_node_id": "w05_place_sample_vial_s08",
             "device_id": "szlab_mixer_robot",
@@ -548,7 +534,7 @@
         },
         {
           "action": {
-            "index": 37,
+            "index": 36,
             "node": "S08 开/关盖",
             "workflow_node_id": "w05_open_sample_vial_s08",
             "device_id": "szlab_s08_cap_station",
@@ -565,7 +551,7 @@
         },
         {
           "action": {
-            "index": 38,
+            "index": 37,
             "node": "S04 取料",
             "workflow_node_id": "w06_pick_beaker_s04",
             "device_id": "szlab_mixer_robot",
@@ -577,7 +563,7 @@
         },
         {
           "action": {
-            "index": 39,
+            "index": 38,
             "node": "S05 放料",
             "workflow_node_id": "w06_place_beaker_s05",
             "device_id": "szlab_mixer_robot",
@@ -589,7 +575,7 @@
         },
         {
           "action": {
-            "index": 40,
+            "index": 39,
             "node": "执行烧杯姿势拍照检测",
             "workflow_node_id": "w06_take_photo_s05",
             "device_id": "szlab_s05_photoshotting",
@@ -604,7 +590,7 @@
         },
         {
           "action": {
-            "index": 41,
+            "index": 40,
             "node": "S05 取料",
             "workflow_node_id": "w07_pick_beaker_s05",
             "device_id": "szlab_mixer_robot",
@@ -616,7 +602,7 @@
         },
         {
           "action": {
-            "index": 42,
+            "index": 41,
             "node": "S08 倒料",
             "workflow_node_id": "w07_pour_beaker_s08",
             "device_id": "szlab_mixer_robot",
@@ -628,7 +614,7 @@
         },
         {
           "action": {
-            "index": 43,
+            "index": 42,
             "node": "S11 放成品",
             "workflow_node_id": "w07_place_beaker_s11",
             "device_id": "szlab_mixer_robot",
@@ -641,7 +627,7 @@
         },
         {
           "action": {
-            "index": 44,
+            "index": 43,
             "node": "S08 开/关盖",
             "workflow_node_id": "w07_close_sample_vial_s08",
             "device_id": "szlab_s08_cap_station",
@@ -658,7 +644,7 @@
         },
         {
           "action": {
-            "index": 45,
+            "index": 44,
             "node": "S08 取瓶",
             "workflow_node_id": "w07_pick_sample_vial_s08",
             "device_id": "szlab_mixer_robot",
@@ -671,7 +657,7 @@
         },
         {
           "action": {
-            "index": 46,
+            "index": 45,
             "node": "S11 放成品",
             "workflow_node_id": "w07_place_sample_vial_s11",
             "device_id": "szlab_mixer_robot",

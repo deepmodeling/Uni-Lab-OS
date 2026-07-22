@@ -269,6 +269,7 @@ def test_s09_add_liquid_runs_plc_process_sequence_5_7_8_6():
         ("S09工艺完成", 7),
         ("S09允许加工", True),
         ("S09工艺完成", 8),
+        ("S09天平读数稳定", True),
         ("S09允许加工", True),
         ("S09工艺完成", 6),
     ]
@@ -326,6 +327,16 @@ def test_s09_add_liquid_to_beaker_exposes_business_action_for_5_7_8_6():
     process_writes = [value for name, value in client.writes if name == "S09工艺选择"]
     assert [value for value in process_writes if value != 0] == [5, 7, 8, 6]
     assert result["data"]["process_sequence"] == [5, 7, 8, 6]
+    stable_event_index = client.events.index(("wait_equal", "S09天平读数稳定", True))
+    reading_event_index = client.events.index(("read", "S09天平读数", None))
+    process_8_clear_index = next(
+        index
+        for index, event in enumerate(client.events)
+        if index > reading_event_index and event == ("write", "S09工艺选择", 0)
+    )
+    process_6_start_index = client.events.index(("write", "S09工艺选择", 6))
+    assert stable_event_index < reading_event_index < process_8_clear_index < process_6_start_index
+    assert client.reads.count("S09天平读数") == 1
 
 
 def test_s09_run_process_converts_ul_to_plc_raw_volume():
@@ -384,6 +395,7 @@ def test_s09_add_liquid_splits_ml_volume_over_5ml():
     assert [value for value in process_writes if value != 0] == [5, 7, 8, 7, 8, 6]
     assert [value for name, value in client.writes if name == "S09抽液量" and value != 0] == [50000, 10000]
     assert [value for name, value in client.writes if name == "S09放液量" and value != 0] == [50000, 10000]
+    assert client.reads.count("S09天平读数") == 1
     assert result["data"]["split_count"] == 2
     assert result["data"]["transfer_chunks"] == [
         {
@@ -641,7 +653,8 @@ def test_s09_read_balance_returns_stability_and_reading():
 
     assert result["success"] is True
     assert result["data"] == {"balance_reading": 56.78, "stable": True}
-    assert client.reads == ["S09天平读数稳定", "S09天平读数"]
+    assert client.wait_equal_calls == [("S09天平读数稳定", True)]
+    assert client.reads == ["S09天平读数"]
 
 
 def test_s09_check_home_position_reads_only_requested_signal():

@@ -1,30 +1,7 @@
 """szlab 本地 workflow 调试界面。"""
 
 from __future__ import annotations
-
-import argparse
-import asyncio
-import csv
-import io
-import json
-import os
-import re
-import sys
-import tempfile
-import threading
-import time
-import uuid
-import webbrowser
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, replace
-from pathlib import Path
-from typing import Any
-
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-
-from unilabos.registry.ast_registry_scanner import scan_directory
+from scripts.workflow_timing import WorkflowTimingRecorder
 from scripts.run_workflow_local import (
     ROBOT_ARM_DEVICE_ID,
     RuntimeConfig,
@@ -45,9 +22,34 @@ from scripts.run_workflow_local import (
     run_nodes,
     snapshot_opc_state,
 )
+from unilabos.registry.ast_registry_scanner import scan_directory
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi import FastAPI, HTTPException
 
+import argparse
+import asyncio
+import csv
+import io
+import json
+import os
+import re
+import sys
+import tempfile
+import threading
+import time
+import uuid
+import webbrowser
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
 SZLAB_DIR = REPO_ROOT / "tests" / "szlab_poly_studio"
 PRESET_DIR = SZLAB_DIR / "presets"
 FRONTEND_DIR = REPO_ROOT / "unilabos_local_ui"
@@ -288,6 +290,7 @@ class RunRecord:
     node_statuses: dict[str, str] = field(default_factory=dict)
     cancel_requested: bool = False
     devices: dict[str, Any] = field(default_factory=dict)
+    timing_report_path: str | None = None
 
     def append_log(
         self,
@@ -435,9 +438,16 @@ def _run_node_with_live_opc_sampling(
 
 
 class WorkflowRunManager:
-    def __init__(self, preset: WorkflowPreset, runtime_config: RuntimeConfig) -> None:
+    def __init__(
+        self,
+        preset: WorkflowPreset,
+        runtime_config: RuntimeConfig,
+        *,
+        timing_enabled: bool = False,
+    ) -> None:
         self._preset = preset
         self._runtime_config = runtime_config
+        self._timing_enabled = timing_enabled
         self._lock = threading.RLock()
         self._sensor_event_condition = threading.Condition(self._lock)
         self._records: dict[str, RunRecord] = {}
@@ -673,6 +683,7 @@ class WorkflowRunManager:
         workflow_path: Path | None = None
         graph_path: Path | None = None
         devices: dict[str, Any] = {}
+        timing_recorder: WorkflowTimingRecorder | None = None
         with self._lock:
             record.status = "preparing"
         record.append_log("后台任务已启动，准备解析 workflow...")
@@ -681,6 +692,12 @@ class WorkflowRunManager:
             workflow = payload.get("workflow")
             if not isinstance(workflow, dict):
                 raise ValueError("缺少 workflow JSON")
+            if self._timing_enabled:
+                timing_recorder = WorkflowTimingRecorder(
+                    run_id=run_id,
+                    workflow_name=str(workflow.get("name") or "local_workflow"),
+                    output_dir=REPO_ROOT / "workflow_timings",
+                )
             record.node_statuses = {
                 str(node.get("uuid")): "preparing"
                 for node in workflow.get("nodes", [])
@@ -751,14 +768,26 @@ class WorkflowRunManager:
             if record.cancel_requested:
                 raise WorkflowCancelled("workflow 已终止")
             record.append_log("设备连接完成，开始执行 workflow")
+            if timing_recorder is not None:
+                timing_recorder.mark_execution_started()
             with self._lock:
                 record.status = "running"
             results: list[dict[str, Any]] = []
-            for node in ordered_nodes:
+            for node_index, node in enumerate(ordered_nodes, start=1):
                 if record.cancel_requested:
                     raise WorkflowCancelled("workflow 已终止")
                 record.node_statuses[node.uuid] = "running"
                 node_method = node.name.removeprefix("auto-")
+                device_name = route_node_device(node, self._runtime_config)
+                if timing_recorder is not None:
+                    timing_recorder.start_step(
+                        index=node_index,
+                        total=len(ordered_nodes),
+                        node_id=node.uuid,
+                        device_name=device_name,
+                        method=node_method,
+                        params=node.param,
+                    )
                 record.append_log(
                     f"开始执行节点 {node.uuid}: {node_method}",
                     node_id=node.uuid,
@@ -773,21 +802,26 @@ class WorkflowRunManager:
                     node_id: str = node.uuid,
                 ) -> None:
                     record.append_log(message, node_id=node_id, level=level, detail=detail)
+                    if timing_recorder is not None:
+                        timing_recorder.observe_log(message, detail)
 
                 logger = WorkflowLogger(writer=append_node_log)
                 try:
-                    results.extend(
-                        _run_node_with_live_opc_sampling(
-                            node,
-                            devices,
-                            logger=logger,
-                            runtime_config=self._runtime_config,
-                        )
+                    node_results = _run_node_with_live_opc_sampling(
+                        node,
+                        devices,
+                        logger=logger,
+                        runtime_config=self._runtime_config,
                     )
+                    results.extend(node_results)
                 except Exception as exc:
+                    if timing_recorder is not None:
+                        timing_recorder.finish_step(error=str(exc))
                     record.node_statuses[node.uuid] = "failed"
                     record.append_log(f"节点执行失败: {exc}", node_id=node.uuid, level="error")
                     raise
+                if timing_recorder is not None:
+                    timing_recorder.finish_step(result=node_results)
                 record.node_statuses[node.uuid] = "success"
                 record.append_log(f"节点执行完成 {node.uuid}", node_id=node.uuid)
                 if record.cancel_requested:
@@ -807,6 +841,13 @@ class WorkflowRunManager:
             with self._lock:
                 record.status = "failed"
         finally:
+            if timing_recorder is not None:
+                try:
+                    report_path = timing_recorder.finish(status=record.status, error=record.error)
+                    record.timing_report_path = str(report_path)
+                    record.append_log(f"排程计时报告已保存: {report_path}")
+                except Exception as exc:
+                    record.append_log(f"排程计时报告保存失败: {exc}", level="warning")
             if record.cancel_requested:
                 self._disconnect_cached_devices(devices)
             record.devices = {}
@@ -990,12 +1031,17 @@ def _preset_for_runtime(preset: WorkflowPreset, runtime_config: RuntimeConfig) -
     )
 
 
-def create_app(preset_name: str = "ai4c", runtime_config: RuntimeConfig | None = None) -> FastAPI:
+def create_app(
+    preset_name: str = "ai4c",
+    runtime_config: RuntimeConfig | None = None,
+    *,
+    timing_enabled: bool = False,
+) -> FastAPI:
     preset = load_preset(preset_name)
     runtime_config = runtime_config or _load_preset_runtime_config(preset)
     active_preset = _preset_for_runtime(preset, runtime_config)
     app = FastAPI(title="szlab Workflow Debugger")
-    manager = WorkflowRunManager(active_preset, runtime_config)
+    manager = WorkflowRunManager(active_preset, runtime_config, timing_enabled=timing_enabled)
     _register_shutdown_handler(app, manager.shutdown)
 
     assets_dir = FRONTEND_DIST_DIR / "assets"
@@ -1188,13 +1234,22 @@ def start_ui(
     open_browser: bool = True,
     preset_name: str = "ai4c",
     runtime_config: RuntimeConfig | None = None,
+    timing_enabled: bool = False,
 ) -> None:
     import uvicorn
 
     url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/"
     if open_browser:
         webbrowser.open(url)
-    uvicorn.run(create_app(preset_name=preset_name, runtime_config=runtime_config), host=host, port=port)
+    uvicorn.run(
+        create_app(
+            preset_name=preset_name,
+            runtime_config=runtime_config,
+            timing_enabled=timing_enabled,
+        ),
+        host=host,
+        port=port,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1205,6 +1260,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-config", type=Path, default=None, help="覆盖 preset 中的运行配置 JSON")
     parser.add_argument("--open-browser", action="store_true", help="服务启动后自动打开浏览器")
     parser.add_argument("--debug", action="store_true", help="启用 preset.debug_config 中定义的调试环境变量")
+    parser.add_argument("--timing", action="store_true", help="临时记录 workflow 排程耗时")
     return parser
 
 
@@ -1216,6 +1272,7 @@ def main() -> int:
         open_browser=args.open_browser,
         preset_name=args.preset,
         runtime_config=load_runtime_config(args.runtime_config) if args.runtime_config else None,
+        timing_enabled=args.timing,
     )
     return 0
 
@@ -1352,6 +1409,7 @@ def _record_to_dict(record: RunRecord) -> dict[str, Any]:
         "result": record.result,
         "error": record.error,
         "node_statuses": record.node_statuses,
+        "timing_report_path": record.timing_report_path,
     }
 
 
@@ -1431,6 +1489,7 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true", help="启动时不自动打开浏览器")
     parser.add_argument("--runtime-config", type=Path, default=None, help="覆盖 preset 的 runtime config")
     parser.add_argument("--debug", action="store_true", help="启用 preset.debug_config 中定义的调试环境变量")
+    parser.add_argument("--timing", action="store_true", help="临时记录 workflow 排程耗时")
     args = parser.parse_args()
 
     runtime_config = load_runtime_config(args.runtime_config) if args.runtime_config else None
@@ -1443,6 +1502,7 @@ def main() -> None:
         open_browser=not args.no_browser,
         preset_name=args.preset,
         runtime_config=runtime_config,
+        timing_enabled=args.timing,
     )
 
 

@@ -60,6 +60,22 @@ const DEFAULT_START_Y = 120;
 const LAYOUT_X_GAP = 240;
 const LAYOUT_Y_GAP = 140;
 const MAX_NODES_PER_ROW = 6;
+const MAX_OPC_VARIABLES_PER_NODE = 500;
+
+function normalizeOpcVariables(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > MAX_OPC_VARIABLES_PER_NODE) {
+    throw new Error('workflow 节点 opc_variables 必须是最多 500 项的数组');
+  }
+  const variables: string[] = [];
+  value.forEach((item) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      throw new Error('workflow 节点 opc_variables 必须是非空字符串数组');
+    }
+    const variable = item.trim();
+    if (!variables.includes(variable)) variables.push(variable);
+  });
+  return variables;
+}
 
 export function createWorkflowRequest(
   name: string,
@@ -74,6 +90,7 @@ export function createWorkflowRequest(
         label: node.data.label,
         description: node.data.description,
         params: node.data.params,
+        opc_variables: normalizeOpcVariables(node.data.opcVariables || []),
       };
       if (node.data.deviceId) {
         data.device_id = node.data.deviceId;

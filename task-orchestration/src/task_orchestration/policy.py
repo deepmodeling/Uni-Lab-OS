@@ -23,28 +23,9 @@ def policy_resource_key(resource: str) -> str:
 
 
 def constraint_resources(template: Template) -> set[str]:
-    """返回模板资源及其系统约束占用键；工位键与普通资源命名空间隔离。"""
-    resources = {policy_resource_key(resource) for resource in template.resources}
-    triggers = [*template.input_triggers]
-    if template.trigger is not None:
-        triggers.append(template.trigger)
-    for trigger in triggers:
-        kind = trigger.kind.lower()
-        if kind == "resource" and trigger.config.get("resource"):
-            resources.add(f"{POLICY_RESOURCE_PREFIX}{trigger.config['resource']}")
-        elif kind == "workstation" and trigger.config.get("workstation"):
-            resources.add(f"{POLICY_WORKSTATION_PREFIX}{trigger.config['workstation']}")
-        elif kind == "internal":
-            key = str(trigger.config.get("key", ""))
-            if key.startswith("资源锁可获取："):
-                resources.add(
-                    f"{POLICY_RESOURCE_PREFIX}{key.removeprefix('资源锁可获取：')}"
-                )
-            elif key.startswith("工位条件满足："):
-                resources.add(
-                    f"{POLICY_WORKSTATION_PREFIX}{key.removeprefix('工位条件满足：')}"
-                )
-    return resources
+    """保留旧策略接口，但 Task 层不再产生任何资源约束。"""
+    del template
+    return set()
 
 
 class SchedulingPolicy(Protocol):
@@ -79,7 +60,7 @@ class FifoResourcePolicy:
         template_by_id = {template.id: template for template in templates}
         all_instances = list(instances)
         satisfied_ids = set(condition_satisfied_instance_ids)
-        available = {policy_resource_key(resource) for resource in available_resources}
+        del available_resources
         candidates = sorted(
             (
                 instance
@@ -88,7 +69,6 @@ class FifoResourcePolicy:
             ),
             key=lambda instance: (instance.order, instance.sample_id, instance.id),
         )
-        reserved_resources: set[str] = set()
         startable_instance_ids: list[str] = []
         waiting_reasons: dict[str, WaitingReason] = {}
 
@@ -119,33 +99,7 @@ class FifoResourcePolicy:
                 )
                 continue
 
-            required_resources = constraint_resources(template)
-            free_resources = available - reserved_resources
-            unavailable = sorted(required_resources - free_resources)
-            if unavailable:
-                workstations = [
-                    resource.removeprefix(POLICY_WORKSTATION_PREFIX)
-                    for resource in unavailable
-                    if resource.startswith(POLICY_WORKSTATION_PREFIX)
-                ]
-                resources = [
-                    resource.removeprefix(POLICY_RESOURCE_PREFIX)
-                    for resource in unavailable
-                    if resource.startswith(POLICY_RESOURCE_PREFIX)
-                ]
-                waiting_reasons[instance.id] = WaitingReason(
-                    code="workstation_unavailable" if workstations else "resource_unavailable",
-                    context={"workstations": workstations} if workstations else {"resources": resources},
-                    message=(
-                        f"工位不可用：{'、'.join(workstations)}"
-                        if workstations
-                        else f"资源不可用：{'、'.join(resources)}"
-                    ),
-                )
-                continue
-
             startable_instance_ids.append(instance.id)
-            reserved_resources.update(required_resources)
 
         return SchedulingResult(
             startable_instance_ids=startable_instance_ids,

@@ -52,29 +52,15 @@ export function buildWorkspaceSummary(input: WorkspaceSummaryInput) {
 }
 
 export function groupActionsByDevice<T extends ActionLike>(actions: T[]): ActionGroup<T>[] {
-  const robotActions: T[] = [];
-  const otherActionsByDevice = new Map<string, T[]>();
+  const actionsByDevice = new Map<string, T[]>();
 
   actions.forEach((action) => {
-    const deviceId = action.device_id || '';
-    if (isRobotAction(action)) {
-      robotActions.push(action);
-    } else {
-      const key = deviceId || 'unknown_device';
-      otherActionsByDevice.set(key, [...(otherActionsByDevice.get(key) || []), action]);
-    }
+    const deviceId = action.device_id || 'unknown_device';
+    actionsByDevice.set(deviceId, [...(actionsByDevice.get(deviceId) || []), action]);
   });
 
   const groups: ActionGroup<T>[] = [];
-  if (robotActions.length) {
-    groups.push({
-      id: 'szlab_mixer_robot',
-      title: '机械臂转运',
-      device: 'szlab_mixer_robot',
-      actions: robotActions,
-    });
-  }
-  otherActionsByDevice.forEach((groupActions, deviceId) => {
+  actionsByDevice.forEach((groupActions, deviceId) => {
     groups.push({
       id: deviceId,
       title: deviceId === 'unknown_device' ? '其他动作' : deviceId,
@@ -83,11 +69,6 @@ export function groupActionsByDevice<T extends ActionLike>(actions: T[]): Action
     });
   });
   return groups;
-}
-
-function isRobotAction(action: ActionLike) {
-  const deviceId = action.device_id || '';
-  return deviceId.includes('robot') || /^submit_(pick|place)_/.test(action.method);
 }
 
 function runStatusText(status?: string | null) {

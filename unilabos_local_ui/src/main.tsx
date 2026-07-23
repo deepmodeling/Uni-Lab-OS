@@ -32,18 +32,64 @@ import {
 } from './workflowDraft';
 import { createPseudoFlowJson } from './workflowExport';
 import { WorkstationDemo } from './WorkstationDemo';
+import { OpcSimulatorDialog } from './OpcSimulatorDialog';
+import { OpcProfileSpecDialog } from './OpcProfileSpecDialog';
 import {
-  createDefaultTriggerCondition,
-  createTaskTemplateTriggers,
-  normalizeTriggerConditions,
-  type TriggerCondition,
+  beginOpcSimulatorControlOperation,
+  buildOpcActionCatalog,
+  buildOpcVariableTypeCatalog,
+  collectOpcProfileVariableNames,
+  formatOpcProfileGenerateError,
+  canonicalProfileJson,
+  collectScheduledTemplateIds,
+  createLatestOperationGate,
+  createOpcSimulatorClient,
+  createProfileSaveSnapshot,
+  DEFAULT_OPC_SIMULATOR_URL,
+  defaultOpcSimulatorFileName,
+  finishOpcSimulatorControlOperation,
+  OPC_PROFILE_FORCE_REVISION,
+  OPC_REFERENCE_TEMPLATE_FILE,
+  isSimulatorStartAllowed,
+  describeSimulatorStartBlock,
+  restoreStatusNeedsConfirm,
+  isProfileSaveSnapshotCurrent,
+  opcSimulatorStopMessage,
+  validateOpcSimulatorProfile,
+  type OpcProfileApiResponse,
+  OpcSimulatorHttpError,
+  type OpcSimulatorProfile,
+  type OpcSimulatorStatus,
+} from './opcSimulatorProfile';
+import {
+  annotateTaskGanttEntries,
+  buildTaskGanttEntries,
+  canDeleteTaskTemplate,
+  createOperationGenerationController,
+  createSynchronousActionGate,
+  createTaskTemplateDraft,
+  createTaskTemplateId,
+  createWorkspaceEpochController,
+  isTaskWaitingStatus,
+  renameTaskTemplate,
+  resolveTaskTemplateNameDraft,
+  taskLocalWaitingReason,
+  updateScheduledTemplateDraft,
 } from './taskOrchestration';
+import type { TriggerCondition } from './taskOrchestration';
 import {
+  createTaskExecutionController,
+  createTaskExecutionStatus,
   createTaskOrchestrationClient,
   fromApiTrigger,
+  pauseTaskSchedulerReliably,
+  runTaskExecutionHarvestCycle,
+  runTaskExecutionCycle,
+  runTaskSchedulerTransition,
   TaskOrchestrationBusinessError,
   TaskOrchestrationServiceUnavailableError,
   toApiTrigger,
+  type TaskExecutionStatus,
   type ApiWaitingReason,
   type ApiWorkspaceEvent,
   type ApiWorkspaceResponse,
@@ -117,6 +163,9 @@ type CsvVariable = {
   data_type: string;
   initial_value: string;
   comment: string;
+  plcDeviceId?: string;
+  display_name?: string;
+  aliases?: string[];
 };
 type TaskInstanceStatus = 'waiting' | 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 type TaskInstance = {
@@ -133,15 +182,19 @@ type TaskWorkspaceState = {
   taskInstances: TaskInstance[];
   taskEvents: string[];
 };
+type TaskPlcStatus = {
+  device_id: string;
+  url?: string;
+  connected: boolean;
+  registered_variables: string[];
+  variable_aliases?: Record<string, string>;
+};
 
 function taskTriggerLogLabel(trigger: unknown) {
   if (!trigger || typeof trigger !== 'object') return '条件已满足';
   const item = trigger as { kind?: string; config?: Record<string, unknown> };
   const config = item.config || {};
-  if (item.kind === 'resource') return `资源 ${String(config.resource || '')} 可用`;
-  if (item.kind === 'workstation') return `工位 ${String(config.workstation || '')} 可用`;
   if (item.kind === 'opc') return `OPC ${String(config.variable || '')} == ${String(config.value)}`;
-  if (item.kind === 'internal') return `内部事件 ${String(config.key || '')} 已满足`;
   return `${item.kind || '未知'} 条件已满足`;
 }
 
@@ -154,6 +207,20 @@ function taskEventText(event: ApiWorkspaceEvent, fallbackTriggers: unknown[] = [
     return `${timestamp} 已派发：${conditions || '无额外输入条件'}`;
   }
   return `${timestamp} ${event.kind}`;
+}
+
+function taskWaitingText(reason?: ApiWaitingReason) {
+  if (!reason) return '正在检查前置条件';
+  const context = reason.context || {};
+  const variable = context.variable;
+  if (!variable) return reason.message || reason.code;
+  const expected = context.expected === undefined ? '-' : formatOpcValue(context.expected);
+  const actual = context.actual === undefined ? '-' : formatOpcValue(context.actual);
+  const plc = String(context.plc_device_id || 'PLC');
+  const updatedAt = typeof context.updated_at === 'number'
+    ? `，更新于 ${new Date(context.updated_at).toLocaleTimeString('zh-CN', { hour12: false })}`
+    : '';
+  return `${reason.message || reason.code} · ${plc} / ${String(variable)}：期望 ${expected}，当前 ${actual}${updatedAt}`;
 }
 
 function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceState & {
@@ -199,7 +266,6 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
         event.template_id
           ? [
               ...(templateById.get(event.template_id)?.input_triggers || []),
-              ...(templateById.get(event.template_id)?.trigger ? [templateById.get(event.template_id)!.trigger] : []),
             ]
           : [],
       )
@@ -207,22 +273,22 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
     scheduledTemplateIds: response.workspace.scheduled_template_ids,
     isSchedulerRunning: !response.workspace.scheduler_paused,
     waitingReasons: response.schedule?.waiting_reasons || {},
-    scheduleEntries: response.workspace.schedule_entries.flatMap((entry) => entry.resources.map((resource) => ({
-      id: `${entry.instance_id}:${resource}`,
-      instanceId: entry.instance_id,
-      sample: entry.sample_id,
-      templateId: entry.template_id,
-      resource,
-      startAt: entry.start_at,
-      endAt: entry.end_at,
-      state: entry.state,
-    }))),
+    scheduleEntries: buildTaskGanttEntries(response.workspace.schedule_entries),
   };
 }
 
 function taskApiErrorMessage(error: unknown) {
   if (error instanceof TaskOrchestrationServiceUnavailableError) {
     return 'Task 编排服务不可用';
+  }
+  if (error instanceof TaskOrchestrationBusinessError && error.status === 404) {
+    return 'Task API 未找到该接口，请重启 task-orchestration 服务（8091）后再试';
+  }
+  if (error instanceof TaskOrchestrationBusinessError && error.status === 409) {
+    if (error.message.includes('pause scheduler')) {
+      return '请先点击「暂停派发」后再清空队列';
+    }
+    return `Task 状态已变化，请刷新后重试：${error.message}`;
   }
   return error instanceof Error ? error.message : 'Task 编排操作失败';
 }
@@ -304,6 +370,18 @@ type StackStatusPayload = {
   updated_at?: string;
   message?: string;
   stacks?: Record<string, StackPayload>;
+  plc?: {
+    device_id: string;
+    url?: string | null;
+    connected: boolean;
+    registered_variables: string[];
+    variable_aliases?: Record<string, string>;
+  };
+  task_orchestration?: {
+    distributed: boolean;
+    message?: string;
+    variable_count?: number;
+  };
 };
 
 type SensorBitPayload = {
@@ -374,7 +452,7 @@ type ActionNodeData = {
 
 const DEFAULT_CONFIG = {
   graph: '__generated__',
-  url: 'opc.tcp://jdht1471820.bohrium.tech:50001',
+  url: DEFAULT_OPC_SIMULATOR_URL,
   csv: '',
   timeout: 300,
   write_allowed_timeout: 5,
@@ -382,54 +460,7 @@ const DEFAULT_CONFIG = {
   show_csv: false,
 };
 const DRAFT_STORAGE_PREFIX = 'unilabos.workflowDraft';
-const DEFAULT_SENSOR_GATES: Record<string, { label: string; free: boolean }> = {
-  robot: { label: 'Robot 机械臂', free: true },
-  s04: { label: 'S04 磁搅位', free: true },
-  s05: { label: 'S05 拍照位', free: true },
-  s06: { label: 'S06 加液位', free: true },
-  s07: { label: 'S07 固体加料位', free: true },
-  s08: { label: 'S08 开关盖位', free: true },
-  s09: { label: 'S09 移液位', free: true },
-};
-const LIVE_SENSOR_GATE_BITS: Record<string, Array<[number, number]>> = {
-  s04: [[2, 10], [2, 11], [2, 12], [2, 13], [2, 14], [2, 15]],
-  s05: [[3, 0]],
-  s06: [[3, 1]],
-  s07: [[3, 14], [3, 15]],
-  s08: [[3, 14], [3, 15]],
-  s09: [[4, 7]],
-};
 const SAMPLE_NAMES = ['Sample A', 'Sample B', 'Sample C', 'Sample D', 'Sample E'];
-
-function uniqueTaskKeys(keys: string[]) {
-  return Array.from(new Set(keys.filter(Boolean)));
-}
-
-function inferTaskResources(node: Node<ActionNodeData>) {
-  const text = `${node.data.deviceId || ''} ${node.data.method} ${node.data.label}`.toLowerCase();
-  const resources: string[] = [];
-  if (text.includes('robot') || /^submit_(pick|place)_/.test(node.data.method)) {
-    resources.push('robot');
-  }
-  inferStationKeys(text).forEach((station) => resources.push(station));
-  return resources.length ? uniqueTaskKeys(resources) : [node.data.deviceId || 'unknown'];
-}
-
-function inferTaskGates(node: Node<ActionNodeData>) {
-  const text = `${node.data.deviceId || ''} ${node.data.method} ${node.data.label}`.toLowerCase();
-  return inferStationKeys(text);
-}
-
-function inferStationKeys(text: string) {
-  const stations: string[] = [];
-  (['s04', 's05', 's06', 's07', 's08', 's09'] as const).forEach((station) => {
-    const compact = station.replace('s0', 's');
-    if (text.includes(station) || text.includes(compact)) {
-      stations.push(station);
-    }
-  });
-  return stations;
-}
 
 function orderSelectedNodesByPlan(
   selectedNodes: Node<ActionNodeData>[],
@@ -443,90 +474,14 @@ function orderSelectedNodesByPlan(
 
 function summarizeTaskName(taskNodes: Node<ActionNodeData>[]) {
   if (!taskNodes.length) return '未命名 Task';
-  const stationNames = uniqueTaskKeys(taskNodes.flatMap((node) => inferTaskGates(node).map((gate) => gate.toUpperCase())));
-  if (stationNames.length) return `${stationNames.join(' + ')} 工艺 Task`;
   return taskNodes.length === 1 ? taskNodes[0].data.label : `${taskNodes[0].data.label} 等 ${taskNodes.length} 步`;
 }
 
-function chunkNodesForTaskPreview(orderedNodes: Node<ActionNodeData>[]) {
-  const chunks: Array<Node<ActionNodeData>[]> = [];
-  let index = 0;
-  while (index < orderedNodes.length) {
-    const current = orderedNodes[index];
-    const currentResources = inferTaskResources(current);
-    const next = orderedNodes[index + 1];
-    if (currentResources.includes('robot') && next) {
-      chunks.push([current, next]);
-      index += 2;
-    } else {
-      chunks.push([current]);
-      index += 1;
-    }
-  }
-  return chunks;
-}
-
-function buildRunningTaskResourceHolders(
-  instances: TaskInstance[],
-  templates: TaskTemplate[],
-) {
-  const holders: Record<string, string> = {};
-  instances.filter((task) => task.status === 'running').forEach((task) => {
-    const template = templates.find((item) => item.id === task.templateId);
-    template?.resources.forEach((resource) => {
-      holders[resource] = `${task.sample} / ${template.name}`;
-    });
-  });
-  return holders;
-}
-
-function unlockNextTaskInstances(instances: TaskInstance[]) {
-  return instances.map((task) => {
-    if (task.status !== 'waiting') return task;
-    const previousDone = instances
-      .filter((item) => item.sample === task.sample && item.order < task.order)
-      .every((item) => item.status === 'completed');
-    return previousDone ? { ...task, status: 'pending' as const } : task;
-  });
-}
-
-function taskBlockingReasons(
-  task: TaskInstance,
-  instances: TaskInstance[],
-  templates: TaskTemplate[],
-  sensorGates: Record<string, boolean>,
-) {
-  if (task.status === 'completed' || task.status === 'running') return [];
-  const template = templates.find((item) => item.id === task.templateId);
-  if (!template) return ['缺少 Task 模板'];
-  const reasons: string[] = [];
-  const previousDone = instances
-    .filter((item) => item.sample === task.sample && item.order < task.order)
-    .every((item) => item.status === 'completed');
-  if (!previousDone) reasons.push('前置 Task 未完成');
-  template.gates.forEach((gate) => {
-    if (sensorGates[gate] === false) {
-      reasons.push(`${DEFAULT_SENSOR_GATES[gate]?.label || gate} 传感器占用`);
-    }
-  });
-  const holders = buildRunningTaskResourceHolders(instances, templates);
-  template.resources.forEach((resource) => {
-    if (holders[resource]) {
-      reasons.push(`${DEFAULT_SENSOR_GATES[resource]?.label || resource} 已被 ${holders[resource]} 锁定`);
-    }
-  });
-  return reasons;
-}
-
-function taskVisualState(task: TaskInstance, blockingReasons: string[]) {
-  if (task.status === 'completed') return 'done';
-  if (task.status === 'running') return 'running';
-  return blockingReasons.length ? 'blocked' : 'ready';
-}
-
-function taskStatusText(status: ReturnType<typeof taskVisualState>) {
+function taskStatusText(status: 'done' | 'running' | 'blocked' | 'ready' | 'failed' | 'cancelled') {
   if (status === 'done') return '完成';
   if (status === 'running') return '运行中';
+  if (status === 'failed') return '失败';
+  if (status === 'cancelled') return '已取消';
   if (status === 'blocked') return '阻塞';
   return '可启动';
 }
@@ -635,22 +590,6 @@ function stackSensorValuesFromStatus(status: StackStatusPayload | null) {
   return values;
 }
 
-function sensorBitValue(status: SensorArraysPayload | null, groupIndex: number, bitIndex: number) {
-  const group = status?.groups?.find((item) => item.index === groupIndex);
-  const bit = group?.bits?.find((item) => item.index === bitIndex);
-  return bit?.value ?? group?.values?.[bitIndex] ?? null;
-}
-
-function liveSensorGateStates(status: SensorArraysPayload | null) {
-  return Object.fromEntries(
-    Object.entries(LIVE_SENSOR_GATE_BITS).map(([gate, bitRefs]) => {
-      const values = bitRefs.map(([groupIndex, bitIndex]) => sensorBitValue(status, groupIndex, bitIndex));
-      const knownValues = values.filter((value): value is boolean => value !== null);
-      return [gate, knownValues.length === values.length ? !knownValues.some(Boolean) : null];
-    }),
-  ) as Record<string, boolean | null>;
-}
-
 function App() {
   const [title, setTitle] = useState('szlab 本地调试工具');
   const [actions, setActions] = useState<ActionSpec[]>([]);
@@ -692,16 +631,42 @@ function App() {
   const [taskScheduleEntries, setTaskScheduleEntries] = useState<ReturnType<typeof taskWorkspaceFromApi>['scheduleEntries']>([]);
   const [taskWaitingReasons, setTaskWaitingReasons] = useState<Record<string, ApiWaitingReason>>({});
   const [isTaskDetailModalOpen, setIsTaskDetailModalOpen] = useState(false);
+  const [taskTemplateNameDraft, setTaskTemplateNameDraft] = useState('');
+  const [isTaskTemplateCreating, setIsTaskTemplateCreating] = useState(false);
+  const [taskMutationInFlightCount, setTaskMutationInFlightCount] = useState(0);
   const [taskServiceError, setTaskServiceError] = useState('');
   const [isTaskWorkspaceLoading, setIsTaskWorkspaceLoading] = useState(false);
+  const [taskOpcUrl, setTaskOpcUrl] = useState(DEFAULT_CONFIG.url);
+  const [taskOpcStatus, setTaskOpcStatus] = useState<TaskPlcStatus | null>(null);
+  const [taskOpcMessage, setTaskOpcMessage] = useState('');
+  const [isTaskOpcConnecting, setIsTaskOpcConnecting] = useState(false);
   const [taskSampleCount, setTaskSampleCount] = useState(3);
   const [selectedTaskTemplateId, setSelectedTaskTemplateId] = useState<string | null>(null);
   const [scheduledTemplateIds, setScheduledTemplateIds] = useState<string[]>([]);
   const [csvVariables, setCsvVariables] = useState<CsvVariable[]>([]);
-  const [activeTriggerSearch, setActiveTriggerSearch] = useState<string | null>(null);
-  const [triggerSearchQueries, setTriggerSearchQueries] = useState<Record<string, string>>({});
   const [resourceScheduleHeight, setResourceScheduleHeight] = useState(260);
   const [isSchedulerRunning, setIsSchedulerRunning] = useState(false);
+  const [isSchedulerTransitioning, setIsSchedulerTransitioning] = useState(false);
+  const [isTaskExecutionDraining, setIsTaskExecutionDraining] = useState(false);
+  const [taskExecutionWorkflow, setTaskExecutionWorkflow] = useState<WorkflowJson | null>(null);
+  const [taskExecutionStatus, setTaskExecutionStatus] = useState<TaskExecutionStatus>(
+    createTaskExecutionStatus(),
+  );
+  const [showOpcSimulatorDialog, setShowOpcSimulatorDialog] = useState(false);
+  const [showOpcSimulatorReferenceDialog, setShowOpcSimulatorReferenceDialog] = useState(false);
+  const [showOpcSimulatorSpecDialog, setShowOpcSimulatorSpecDialog] = useState(false);
+  const [opcSimulatorSpecMarkdown, setOpcSimulatorSpecMarkdown] = useState('');
+  const [opcSimulatorReferenceProfile, setOpcSimulatorReferenceProfile] = useState<OpcSimulatorProfile | null>(null);
+  const [opcSimulatorProfile, setOpcSimulatorProfile] = useState<OpcSimulatorProfile | null>(null);
+  const [opcSimulatorFileName, setOpcSimulatorFileName] = useState('opc-simulator-profile.json');
+  const [opcSimulatorProfileFiles, setOpcSimulatorProfileFiles] = useState<string[]>([]);
+  const [opcSimulatorConfigDir, setOpcSimulatorConfigDir] = useState('task-orchestration/configs');
+  const [opcSimulatorBackendErrors, setOpcSimulatorBackendErrors] = useState<string[]>([]);
+  const [opcSimulatorRevision, setOpcSimulatorRevision] = useState<string | null>(null);
+  const [opcSimulatorDirty, setOpcSimulatorDirty] = useState(false);
+  const [opcSimulatorBusy, setOpcSimulatorBusy] = useState(false);
+  const [opcSimulatorMessage, setOpcSimulatorMessage] = useState('');
+  const [opcSimulatorStatus, setOpcSimulatorStatus] = useState<OpcSimulatorStatus | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [isTaskTemplateEditing, setIsTaskTemplateEditing] = useState(false);
   const contextMenuFirstActionRef = useRef<HTMLButtonElement | null>(null);
@@ -712,13 +677,60 @@ function App() {
   const taskOrchestrationRef = useRef<HTMLDivElement | null>(null);
   const canvasToastTimerRef = useRef<number | null>(null);
   const taskWorkspaceStateRef = useRef<TaskWorkspaceState>(createEmptyTaskWorkspaceState());
+  const taskTemplatesRef = useRef<TaskTemplate[]>([]);
+  const taskInstancesRef = useRef<TaskInstance[]>([]);
+  const scheduledTemplateIdsRef = useRef<string[]>([]);
+  const selectedTaskTemplateIdRef = useRef<string | null>(null);
   const taskApiRef = useRef(createTaskOrchestrationClient());
   const taskWorkspaceVersionRef = useRef<number | null>(null);
+  const taskWorkspacePathRef = useRef(taskWorkspacePath);
+  const taskWorkspaceEpochRef = useRef(createWorkspaceEpochController());
+  const taskMutationGenerationRef = useRef(createOperationGenerationController());
+  const taskActionInFlightCountRef = useRef(0);
+  const taskTemplateCreateGateRef = useRef(createSynchronousActionGate());
+  const taskTemplateIdCounterRef = useRef(0);
+  const taskRuntimeBusyRef = useRef({
+    schedulerBusy: false,
+    actionInFlight: false,
+  });
   const taskRequestQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const taskPollingTimerRef = useRef<number | null>(null);
-  const taskPollingInFlightRef = useRef(false);
-  const taskPollingGenerationRef = useRef(0);
+  const taskSchedulerTransitionRef = useRef(false);
+  const taskExecutionControllerRef = useRef<ReturnType<typeof createTaskExecutionController> | null>(null);
+  const opcSimulatorClientRef = useRef(createOpcSimulatorClient());
+  const ownedOpcSimulatorRunIdRef = useRef<string | null>(null);
+  const opcSimulatorStatusRef = useRef<OpcSimulatorStatus | null>(null);
+  const opcSimulatorStatusGateRef = useRef(createLatestOperationGate());
+  const csvVariablesGateRef = useRef(createLatestOperationGate());
+  const opcSimulatorGenerateInFlightRef = useRef(false);
+  const opcSimulatorGenerateGateRef = useRef(createLatestOperationGate());
+  const opcSimulatorControlInFlightRef = useRef(false);
+  const opcSimulatorControlTokenRef = useRef(0);
+  const opcSimulatorSaveTokenRef = useRef(0);
+  const opcSimulatorSaveInFlightRef = useRef(false);
+  const opcSimulatorProfileRef = useRef<OpcSimulatorProfile | null>(null);
+  const opcSimulatorFileNameRef = useRef(opcSimulatorFileName);
+  const actionsRef = useRef<ActionSpec[]>(actions);
+  const csvVariablesRef = useRef<CsvVariable[]>(csvVariables);
+  opcSimulatorProfileRef.current = opcSimulatorProfile;
+  opcSimulatorFileNameRef.current = opcSimulatorFileName;
+  actionsRef.current = actions;
+  csvVariablesRef.current = csvVariables;
+  taskTemplatesRef.current = taskTemplates;
+  taskInstancesRef.current = taskInstances;
+  scheduledTemplateIdsRef.current = scheduledTemplateIds;
+  selectedTaskTemplateIdRef.current = selectedTaskTemplateId;
+  taskWorkspacePathRef.current = taskWorkspacePath;
+  taskRuntimeBusyRef.current = {
+    schedulerBusy: isSchedulerRunning
+      || isSchedulerTransitioning
+      || isTaskExecutionDraining
+      || taskExecutionStatus.tick.active > 0
+      || taskExecutionStatus.tick.in_flight > 0
+      || taskExecutionStatus.tick.claimed > 0,
+    actionInFlight: taskActionInFlightCountRef.current > 0,
+  };
   const applyTaskWorkspace = useCallback((response: ApiWorkspaceResponse) => {
+    if (response.workspace.workflow_path !== taskWorkspacePathRef.current) return;
     const next = taskWorkspaceFromApi(response);
     taskWorkspaceStateRef.current = {
       taskTemplates: next.taskTemplates,
@@ -726,10 +738,13 @@ function App() {
       taskEvents: next.taskEvents,
     };
     setTaskTemplates(next.taskTemplates);
+    taskTemplatesRef.current = next.taskTemplates;
     setTaskInstances(next.taskInstances);
+    taskInstancesRef.current = next.taskInstances;
     setTaskEvents(next.taskEvents);
     setTaskWorkspaceVersion(next.version);
     taskWorkspaceVersionRef.current = next.version;
+    scheduledTemplateIdsRef.current = next.scheduledTemplateIds;
     setScheduledTemplateIds(next.scheduledTemplateIds);
     setTaskWaitingReasons(next.waitingReasons);
     setIsSchedulerRunning(next.isSchedulerRunning);
@@ -741,9 +756,46 @@ function App() {
     ));
     setTaskServiceError('');
   }, []);
+  if (taskExecutionControllerRef.current === null) {
+    taskExecutionControllerRef.current = createTaskExecutionController({
+      runCycle: (options) => runTaskExecutionCycle({
+        ...options,
+        workflow: options.workflow,
+        fetcher: fetch,
+        taskClient: taskApiRef.current,
+      }),
+      runHarvestCycle: (options) => runTaskExecutionHarvestCycle({
+        ...options,
+        fetcher: fetch,
+        taskClient: taskApiRef.current,
+      }),
+      applyWorkspace: (response) => {
+        if (
+          taskActionInFlightCountRef.current === 0
+          || response.workspace.scheduler_paused
+        ) {
+          applyTaskWorkspace(response);
+        }
+      },
+      pauseScheduler: (workflowPath, expectedVersion) => (
+        pauseTaskSchedulerReliably({
+          taskClient: taskApiRef.current,
+          workflowPath,
+          expectedVersion,
+        })
+      ),
+      onStatus: setTaskExecutionStatus,
+      onError: setTaskServiceError,
+      onDrainingChange: setIsTaskExecutionDraining,
+      getLatestVersion: () => taskWorkspaceVersionRef.current,
+    });
+  }
   const resetTaskWorkspace = useCallback(() => {
+    taskExecutionControllerRef.current?.pause();
     const emptyTaskWorkspace = resetTaskWorkspaceState(taskWorkspaceStateRef.current);
     taskWorkspaceStateRef.current = emptyTaskWorkspace;
+    taskTemplatesRef.current = [];
+    taskInstancesRef.current = [];
     setTaskTemplates(emptyTaskWorkspace.taskTemplates);
     setTaskInstances(emptyTaskWorkspace.taskInstances);
     setTaskEvents(emptyTaskWorkspace.taskEvents);
@@ -751,9 +803,13 @@ function App() {
     setSelectedTaskTemplateId(null);
     setIsTaskDetailModalOpen(false);
     setScheduledTemplateIds([]);
+    scheduledTemplateIdsRef.current = [];
     setIsSchedulerRunning(false);
     setTaskWorkspaceVersion(null);
     setTaskScheduleEntries([]);
+    setTaskExecutionWorkflow(null);
+    setTaskExecutionStatus(createTaskExecutionStatus());
+    setIsTaskExecutionDraining(false);
   }, []);
   const closeCanvasContextMenu = useCallback(({ restoreFocus = true }: { restoreFocus?: boolean } = {}) => {
     setContextMenu(null);
@@ -867,17 +923,53 @@ function App() {
     () => taskTemplates.find((template) => template.id === selectedTaskTemplateId) || taskTemplates[0] || null,
     [selectedTaskTemplateId, taskTemplates],
   );
+  useEffect(() => {
+    setTaskTemplateNameDraft(selectedTaskTemplate?.name || '');
+  }, [selectedTaskTemplate?.id, selectedTaskTemplate?.name]);
   const taskGanttEntries = useMemo(
-    () => taskScheduleEntries,
-    [taskScheduleEntries],
+    () => annotateTaskGanttEntries(
+      taskScheduleEntries,
+      taskTemplates,
+      nodes.map((node) => ({ id: node.id, deviceId: node.data.deviceId })),
+    ),
+    [nodes, taskScheduleEntries, taskTemplates],
   );
   const scheduledResources = useMemo(() => [
-    ...new Set(
-      scheduledTemplateIds.length
-        ? taskGanttEntries.map((entry) => entry.resource)
-        : [],
-    ),
-  ], [scheduledTemplateIds.length, taskGanttEntries]);
+    ...new Set(taskGanttEntries.map((entry) => entry.resource)),
+  ], [taskGanttEntries]);
+  const scheduledOpcTemplateIds = useMemo(
+    () => collectScheduledTemplateIds(scheduledTemplateIds),
+    [scheduledTemplateIds],
+  );
+  const opcSimulatorLocalErrors = useMemo(
+    () => opcSimulatorProfile ? validateOpcSimulatorProfile(opcSimulatorProfile) : [],
+    [opcSimulatorProfile],
+  );
+  const canStartOpcSimulator = Boolean(opcSimulatorProfile) && isSimulatorStartAllowed({
+    profile: opcSimulatorProfile!,
+    localErrors: opcSimulatorLocalErrors,
+    backendErrors: opcSimulatorBackendErrors,
+    fileName: opcSimulatorFileName,
+    revision: opcSimulatorRevision,
+    dirty: opcSimulatorDirty,
+    managerState: opcSimulatorStatus?.state || 'idle',
+    managerRestoreStatus: opcSimulatorStatus?.restore_status || 'not_started',
+  });
+  const opcSimulatorStartBlockReason = describeSimulatorStartBlock({
+    profile: opcSimulatorProfile,
+    localErrors: opcSimulatorLocalErrors,
+    backendErrors: opcSimulatorBackendErrors,
+    fileName: opcSimulatorFileName,
+    revision: opcSimulatorRevision,
+    dirty: opcSimulatorDirty,
+    managerState: opcSimulatorStatus?.state || 'idle',
+    managerRestoreStatus: opcSimulatorStatus?.restore_status || 'not_started',
+    busy: opcSimulatorBusy,
+  });
+  const configuredOpcUrl = opcSimulatorProfile?.opc.url || '';
+  const runningOpcUrl = ['starting', 'running', 'stopping'].includes(opcSimulatorStatus?.state || '')
+    ? opcSimulatorStatus?.opc_url || ''
+    : '';
   const toggleActionGroup = useCallback((groupId: string) => {
     setCollapsedActionGroups((current) => ({
       ...current,
@@ -890,16 +982,7 @@ function App() {
     return uniqueOpcVariables(actions.flatMap((action) => action.opc_variables || []));
   }, [actions, nodes]);
   const stackSensorValues = useMemo(() => stackSensorValuesFromStatus(stackStatus), [stackStatus]);
-  const liveGateStates = useMemo(() => liveSensorGateStates(sensorArrays), [sensorArrays]);
-  const effectiveSensorGates = useMemo(
-    () => Object.fromEntries(
-      Object.entries(sensorGates).map(([gate, manualFree]) => [
-        gate,
-        liveGateStates[gate] ?? manualFree,
-      ]),
-    ),
-    [liveGateStates, sensorGates],
-  );
+  const taskPlcStatus = taskOpcStatus || stackStatus?.plc;
   const configuredOpcVariableRows = useMemo<OpcVariableView[]>(
     () => configuredOpcVariables.map((name) => ({ name, currentValue: stackSensorValues[name] })),
     [configuredOpcVariables, stackSensorValues],
@@ -907,24 +990,133 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams();
     if (config.csv) params.set('csv_path', config.csv);
-    fetch(`/api/csv-variables?${params.toString()}`)
+    const request = csvVariablesGateRef.current.begin();
+    fetch(`/api/csv-variables?${params.toString()}`, { signal: request.signal })
       .then((response) => response.ok ? response.json() : { variables: [] })
-      .then((payload) => setCsvVariables(Array.isArray(payload.variables) ? payload.variables : []))
-      .catch(() => setCsvVariables([]));
+      .then((payload) => {
+        if (!csvVariablesGateRef.current.isCurrent(request.generation)) return;
+        const variables = Array.isArray(payload.variables) ? payload.variables : [];
+        if (opcSimulatorGenerateInFlightRef.current) {
+          opcSimulatorGenerateGateRef.current.invalidate();
+          opcSimulatorGenerateInFlightRef.current = false;
+          setOpcSimulatorBusy(false);
+        }
+        csvVariablesRef.current = variables;
+        setCsvVariables(variables);
+      })
+      .catch((error) => {
+        if (
+          error instanceof DOMException
+          && error.name === 'AbortError'
+        ) return;
+        if (!csvVariablesGateRef.current.isCurrent(request.generation)) return;
+        if (opcSimulatorGenerateInFlightRef.current) {
+          opcSimulatorGenerateGateRef.current.invalidate();
+          opcSimulatorGenerateInFlightRef.current = false;
+          setOpcSimulatorBusy(false);
+        }
+        csvVariablesRef.current = [];
+        setCsvVariables([]);
+      });
+    return () => csvVariablesGateRef.current.invalidate();
   }, [config.csv]);
+  useEffect(() => {
+    if (!opcSimulatorGenerateInFlightRef.current) return;
+    opcSimulatorGenerateGateRef.current.invalidate();
+    opcSimulatorGenerateInFlightRef.current = false;
+    setOpcSimulatorBusy(false);
+  }, [actions, csvVariables]);
+  useEffect(() => {
+    taskMutationGenerationRef.current.invalidate();
+    taskWorkspaceEpochRef.current.begin(taskWorkspacePath);
+    taskWorkspaceVersionRef.current = null;
+    setTaskWorkspaceVersion(null);
+    setIsTaskWorkspaceLoading(false);
+    return () => taskWorkspaceEpochRef.current.abort();
+  }, [taskWorkspacePath]);
   const loadTaskWorkspace = useCallback(async () => {
+    const epoch = taskWorkspaceEpochRef.current.current();
+    if (!epoch || epoch.path !== taskWorkspacePath) return;
     setIsTaskWorkspaceLoading(true);
     try {
+      const response = await taskApiRef.current.getWorkspace(taskWorkspacePath, epoch.signal);
+      if (taskWorkspaceEpochRef.current.isCurrent(epoch)) applyTaskWorkspace(response);
+    } catch (error) {
+      if (taskWorkspaceEpochRef.current.isCurrent(epoch) && !epoch.signal.aborted) {
+        setTaskServiceError(taskApiErrorMessage(error));
+      }
+    } finally {
+      if (taskWorkspaceEpochRef.current.isCurrent(epoch)) setIsTaskWorkspaceLoading(false);
+    }
+  }, [applyTaskWorkspace, taskWorkspacePath]);
+  useEffect(() => {
+    if (workspace === 'tasks') void loadTaskWorkspace();
+  }, [loadTaskWorkspace, workspace]);
+  useEffect(() => {
+    setTaskOpcStatus(null);
+    setTaskOpcMessage('');
+  }, [taskWorkspacePath]);
+  const connectTaskOpc = useCallback(async () => {
+    const url = taskOpcUrl.trim();
+    if (!url) {
+      setTaskOpcMessage('请填写 OPC UA URL');
+      return;
+    }
+    if (!taskWorkspacePath) {
+      setTaskOpcMessage('缺少当前 workflow 路径');
+      return;
+    }
+    setIsTaskOpcConnecting(true);
+    setTaskOpcMessage('');
+    try {
+      const response = await fetch('/api/task-opc/connect', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          task_workspace_path: taskWorkspacePath,
+        }),
+      });
+      const payload = await response.json() as {
+        success?: boolean;
+        message?: string;
+        plc?: TaskPlcStatus;
+        task_orchestration?: { distributed?: boolean; message?: string };
+      };
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.message || `PLC 连接失败（HTTP ${response.status}）`);
+      }
+      if (payload.plc) setTaskOpcStatus(payload.plc);
+      setTaskOpcMessage(
+        payload.task_orchestration?.distributed
+          ? `已连接并分发 ${payload.plc?.registered_variables.length || 0} 个 PLC 注册变量`
+          : payload.task_orchestration?.message || 'PLC 已连接，但变量快照未分发',
+      );
       applyTaskWorkspace(await taskApiRef.current.getWorkspace(taskWorkspacePath));
+    } catch (error) {
+      setTaskOpcMessage(error instanceof Error ? error.message : 'PLC 连接失败');
+    } finally {
+      setIsTaskOpcConnecting(false);
+    }
+  }, [applyTaskWorkspace, taskOpcUrl, taskWorkspacePath]);
+  const resetInvalidTaskWorkspace = useCallback(async () => {
+    if (!window.confirm('仅清空当前 workflow 的 Task 模板、实例、事件、排程和 PLC 快照，是否继续？')) {
+      return;
+    }
+    taskExecutionControllerRef.current?.pause();
+    setTaskExecutionWorkflow(null);
+    setTaskExecutionStatus(createTaskExecutionStatus());
+    setIsTaskWorkspaceLoading(true);
+    try {
+      applyTaskWorkspace(await taskApiRef.current.resetWorkspace(taskWorkspacePath));
+      setTaskServiceError('');
+      setTaskOpcMessage('当前 Task 工作区已重置');
     } catch (error) {
       setTaskServiceError(taskApiErrorMessage(error));
     } finally {
       setIsTaskWorkspaceLoading(false);
     }
   }, [applyTaskWorkspace, taskWorkspacePath]);
-  useEffect(() => {
-    if (workspace === 'tasks') void loadTaskWorkspace();
-  }, [loadTaskWorkspace, workspace]);
   const stackResources = useMemo(() => stackResourcesFromStatus(stackStatus), [stackStatus]);
   const selectedStack = useMemo(
     () => stackResources.find((stack) => stack.id === selectedStackId) || stackResources[0] || null,
@@ -1004,6 +1196,12 @@ function App() {
         const payloadActions = payload.actions || [];
         const storageKey = `${DRAFT_STORAGE_PREFIX}.${payload.id || 'default'}`;
         setTitle(payload.title || 'szlab 本地调试工具');
+        if (opcSimulatorGenerateInFlightRef.current) {
+          opcSimulatorGenerateGateRef.current.invalidate();
+          opcSimulatorGenerateInFlightRef.current = false;
+          setOpcSimulatorBusy(false);
+        }
+        actionsRef.current = payloadActions;
         setActions(payloadActions);
         setDraftStorageKey(storageKey);
         setTaskWorkspacePath(`${payload.default_workflow_name || 'szlab_canvas_workflow'}.json`);
@@ -1027,6 +1225,7 @@ function App() {
           no_subscription: payload.default_config?.no_subscription ?? DEFAULT_CONFIG.no_subscription,
           show_csv: payload.default_config?.show_csv ?? DEFAULT_CONFIG.show_csv,
         }));
+        setTaskOpcUrl(payload.default_config?.url ?? DEFAULT_CONFIG.url);
         setDraftReady(true);
       })
       .catch((error) => setMessage(`preset 加载失败: ${error.message}`));
@@ -1035,7 +1234,12 @@ function App() {
   const refreshStackStatus = useCallback(async () => {
     setIsRefreshingStack(true);
     try {
-      const response = await fetch('/api/stack-status');
+      const params = new URLSearchParams();
+      if (taskWorkspacePath && taskWorkspaceVersion !== null) {
+        params.set('task_workspace_path', taskWorkspacePath);
+        params.set('task_workspace_version', String(taskWorkspaceVersion));
+      }
+      const response = await fetch(`/api/stack-status${params.size ? `?${params}` : ''}`);
       const payload: StackStatusPayload = await response.json();
       setStackStatus(payload);
       setStackError(payload.success ? '' : (payload.message || '堆栈状态暂不可用'));
@@ -1044,7 +1248,7 @@ function App() {
     } finally {
       setIsRefreshingStack(false);
     }
-  }, []);
+  }, [taskWorkspacePath, taskWorkspaceVersion]);
 
   const refreshSensorArrays = useCallback(async () => {
     setIsRefreshingSensors(true);
@@ -1225,9 +1429,24 @@ function App() {
   }, []);
   const mutateTaskWorkspace = useCallback(async (
     operation: (version: number) => Promise<ApiWorkspaceResponse>,
-    canApply: () => boolean = () => true,
   ) => {
+    const path = taskWorkspacePathRef.current;
+    const epoch = taskWorkspaceEpochRef.current.current();
+    const generation = taskMutationGenerationRef.current.begin();
+    taskActionInFlightCountRef.current += 1;
+    taskRuntimeBusyRef.current = {
+      ...taskRuntimeBusyRef.current,
+      actionInFlight: true,
+    };
+    setTaskMutationInFlightCount(taskActionInFlightCountRef.current);
+    const isCurrent = () => Boolean(
+      epoch
+      && taskWorkspaceEpochRef.current.isCurrent(epoch)
+      && taskWorkspacePathRef.current === path
+      && taskMutationGenerationRef.current.isCurrent(generation)
+    );
     const execute = async () => {
+      if (!epoch || !taskWorkspaceEpochRef.current.isCurrent(epoch) || taskWorkspacePathRef.current !== path) return;
       const run = async () => {
         const version = taskWorkspaceVersionRef.current;
         if (version === null) throw new TaskOrchestrationServiceUnavailableError();
@@ -1235,29 +1454,41 @@ function App() {
       };
       try {
         const response = await run();
-        if (canApply()) applyTaskWorkspace(response);
+        if (isCurrent()) applyTaskWorkspace(response);
       } catch (error) {
         if (error instanceof TaskOrchestrationBusinessError && error.status === 409) {
           try {
-            const latest = await taskApiRef.current.getWorkspace(taskWorkspacePath);
-            if (canApply()) applyTaskWorkspace(latest);
+            const latest = await taskApiRef.current.getWorkspace(path, epoch.signal);
+            if (!taskWorkspaceEpochRef.current.isCurrent(epoch)) return;
             const response = await operation(latest.version);
-            if (canApply()) applyTaskWorkspace(response);
+            if (isCurrent()) applyTaskWorkspace(response);
             return;
           } catch (retryError) {
-            setTaskServiceError(taskApiErrorMessage(retryError));
+            if (isCurrent()) setTaskServiceError(taskApiErrorMessage(retryError));
             return;
           }
         }
-        setTaskServiceError(taskApiErrorMessage(error));
+        if (isCurrent()) setTaskServiceError(taskApiErrorMessage(error));
       }
     };
     const queued = taskRequestQueueRef.current.then(execute, execute);
     taskRequestQueueRef.current = queued.catch(() => undefined);
-    return queued;
-  }, [applyTaskWorkspace, taskWorkspacePath]);
+    try {
+      await queued;
+    } finally {
+      taskActionInFlightCountRef.current = Math.max(0, taskActionInFlightCountRef.current - 1);
+      taskRuntimeBusyRef.current = {
+        ...taskRuntimeBusyRef.current,
+        actionInFlight: taskActionInFlightCountRef.current > 0,
+      };
+      setTaskMutationInFlightCount(taskActionInFlightCountRef.current);
+    }
+  }, [applyTaskWorkspace]);
 
-  const createTaskTemplateFromNodes = useCallback((templateName: string, templateNodes: Node<ActionNodeData>[]) => {
+  const createTaskTemplateFromNodes = useCallback(async (templateName: string, templateNodes: Node<ActionNodeData>[]) => {
+    if (!taskTemplateCreateGateRef.current.tryStart()) return;
+    setIsTaskTemplateCreating(true);
+    try {
     const orderedNodeIds = orderSelectedNodesByPlan(templateNodes, executionPlan.executableNodes).map((node) => node.id);
     if (!orderedNodeIds.length) {
       setMessage('请先在流程画布中选择节点，再保存为 Task 模板。');
@@ -1265,79 +1496,63 @@ function App() {
     }
     const selectedNodesById = new Map(nodes.map((node) => [node.id, node]));
     const orderedNodes = orderedNodeIds.map((nodeId) => selectedNodesById.get(nodeId)).filter(Boolean) as Node<ActionNodeData>[];
-    const resources = uniqueTaskKeys(orderedNodes.flatMap(inferTaskResources));
-    const gates = uniqueTaskKeys(orderedNodes.flatMap(inferTaskGates));
-    const triggers = createTaskTemplateTriggers(resources, gates);
+    const taskNodes = orderedNodes.map((node) => ({
+      id: node.id,
+      deviceId: node.data.deviceId,
+      method: node.data.method,
+      opcVariables: node.data.opcVariables || [],
+    }));
     const taskName = templateName || summarizeTaskName(orderedNodes);
-    const templateId = `task_${Date.now().toString(36)}_${taskTemplates.length + 1}`;
-    void mutateTaskWorkspace(async (version) => {
+    const templateId = createTaskTemplateId(++taskTemplateIdCounterRef.current);
+    const draft = createTaskTemplateDraft(templateId, taskName, taskNodes);
+    await mutateTaskWorkspace(async (version) => {
       const response = await taskApiRef.current.createTemplate(taskWorkspacePath, version, {
-        id: templateId,
-        name: taskName,
+        id: draft.id,
+        name: draft.name,
         workflow_path: taskWorkspacePath,
-        node_ids: orderedNodeIds,
-        resources,
-        trigger: null,
-        input_triggers: triggers.inputTriggers.map(toApiTrigger),
-        output_triggers: triggers.outputTriggers.map(toApiTrigger),
+        node_ids: draft.nodeIds,
+        resources: [],
+        input_triggers: [],
+        output_triggers: [],
       });
-      setSelectedTaskTemplateId(templateId);
-      showCanvasToast('已保存 Task 模板');
       return response;
     });
-  }, [executionPlan.executableNodes, mutateTaskWorkspace, nodes, showCanvasToast, taskTemplates.length, taskWorkspacePath]);
-
-  const createTaskTemplateFromSelection = useCallback(() => {
-    createTaskTemplateFromNodes(summarizeTaskName(selectedTaskNodes), selectedTaskNodes);
-  }, [createTaskTemplateFromNodes, selectedTaskNodes]);
-
-  const createRecommendedTaskTemplates = useCallback(() => {
-    const orderedNodes = executionPlan.executableNodes.length ? executionPlan.executableNodes : nodes;
-    const chunks = chunkNodesForTaskPreview(orderedNodes);
-    if (!chunks.length) {
-      setMessage('当前画布没有可切分的节点。');
-      return;
+    if (taskWorkspacePathRef.current === taskWorkspacePath && taskTemplatesRef.current.some((item) => item.id === templateId)) {
+      setSelectedTaskTemplateId(templateId);
+      showCanvasToast('已保存 Task 模板');
     }
-    const templates = chunks.map((chunk, index) => {
-      const resources = uniqueTaskKeys(chunk.flatMap(inferTaskResources));
-      const gates = uniqueTaskKeys(chunk.flatMap(inferTaskGates));
-      const triggers = createTaskTemplateTriggers(resources, gates);
-      return {
-        id: `auto_task_${Date.now().toString(36)}_${index + 1}`,
-        name: summarizeTaskName(chunk),
-        nodeIds: chunk.map((node) => node.id),
-        resources,
-        gates,
-        ...triggers,
-      };
-    });
-    void (async () => {
-      for (const template of templates) {
-        await mutateTaskWorkspace((version) => taskApiRef.current.createTemplate(taskWorkspacePath, version, {
-            id: template.id,
-            name: template.name,
-            workflow_path: taskWorkspacePath,
-            node_ids: template.nodeIds,
-            resources: template.resources,
-            trigger: null,
-            input_triggers: template.inputTriggers.map(toApiTrigger),
-            output_triggers: template.outputTriggers.map(toApiTrigger),
-          }));
-      }
-      setSelectedTaskTemplateId(templates[0]?.id || null);
-      showCanvasToast('已生成推荐 Task 切分');
-    })();
+    } finally {
+      taskTemplateCreateGateRef.current.finish();
+      setIsTaskTemplateCreating(false);
+    }
   }, [executionPlan.executableNodes, mutateTaskWorkspace, nodes, showCanvasToast, taskWorkspacePath]);
 
+  const createTaskTemplateFromSelection = useCallback(() => {
+    void createTaskTemplateFromNodes(summarizeTaskName(selectedTaskNodes), selectedTaskNodes);
+  }, [createTaskTemplateFromNodes, selectedTaskNodes]);
+
   const deleteTaskTemplate = useCallback((template: TaskTemplate) => {
-    if (!taskTemplates.some((item) => item.id === template.id)) {
+    if (!taskTemplatesRef.current.some((item) => item.id === template.id)) {
       return;
     }
-    const relatedInstanceCount = taskInstances.filter((task) => task.templateId === template.id).length;
+    const isAllowed = () => canDeleteTaskTemplate(
+      template.id,
+      taskInstancesRef.current,
+      taskRuntimeBusyRef.current,
+    );
+    if (!isAllowed()) {
+      showCanvasToast('模板仍有关联运行任务或调度操作，暂不能删除');
+      return;
+    }
+    const relatedInstanceCount = taskInstancesRef.current.filter((task) => task.templateId === template.id).length;
     const relatedInstancesHint = relatedInstanceCount
       ? `这将同时删除 ${relatedInstanceCount} 个关联 Task 实例。`
       : '';
     if (!window.confirm(`确定删除 Task 模板「${template.name}」吗？${relatedInstancesHint}`)) {
+      return;
+    }
+    if (!isAllowed()) {
+      showCanvasToast('模板状态已变化，请等待相关任务或操作结束后重试');
       return;
     }
     void mutateTaskWorkspace(async (version) => {
@@ -1345,30 +1560,25 @@ function App() {
       showCanvasToast('已删除 Task 模板');
       return response;
     });
-  }, [mutateTaskWorkspace, showCanvasToast, taskInstances, taskTemplates, taskWorkspacePath]);
+  }, [mutateTaskWorkspace, showCanvasToast, taskWorkspacePath]);
 
-  const renameSelectedTaskTemplate = useCallback((name: string) => {
-    if (!selectedTaskTemplate) return;
+  const commitSelectedTaskTemplateName = useCallback(() => {
+    const templateId = selectedTaskTemplateIdRef.current;
+    const template = taskTemplatesRef.current.find((item) => item.id === templateId);
+    if (!template) return;
+    const name = resolveTaskTemplateNameDraft(taskTemplateNameDraft, template.name);
+    setTaskTemplateNameDraft(name);
+    if (name === template.name) return;
+    const nextTemplates = renameTaskTemplate(taskTemplatesRef.current, template.id, name);
+    taskTemplatesRef.current = nextTemplates;
+    setTaskTemplates(nextTemplates);
     void mutateTaskWorkspace((version) => taskApiRef.current.updateTemplate(
       taskWorkspacePath,
       version,
-      selectedTaskTemplate.id,
+      template.id,
       { name },
     ));
-  }, [mutateTaskWorkspace, selectedTaskTemplate, taskWorkspacePath]);
-
-  const updateSelectedTaskTriggers = useCallback((kind: 'input' | 'output', triggers: TriggerCondition[]) => {
-    if (!selectedTaskTemplate) return;
-    const normalized = normalizeTriggerConditions(triggers, csvVariables);
-    void mutateTaskWorkspace((version) => taskApiRef.current.updateTemplate(
-      taskWorkspacePath,
-      version,
-      selectedTaskTemplate.id,
-      kind === 'input'
-        ? { input_triggers: normalized.map(toApiTrigger) }
-        : { output_triggers: normalized.map(toApiTrigger) },
-    ));
-  }, [csvVariables, mutateTaskWorkspace, selectedTaskTemplate, taskWorkspacePath]);
+  }, [mutateTaskWorkspace, taskTemplateNameDraft, taskWorkspacePath]);
 
   const startResourceScheduleResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1390,30 +1600,37 @@ function App() {
   }, [resourceScheduleHeight]);
 
   const addTemplateToSchedule = useCallback((templateId: string) => {
-    const template = taskTemplates.find((item) => item.id === templateId);
-    if (!template) return;
-    if (scheduledTemplateIds.includes(templateId)) return;
+    if (!taskTemplatesRef.current.some((item) => item.id === templateId)) return;
+    const next = updateScheduledTemplateDraft(scheduledTemplateIdsRef.current, templateId, 'add');
+    if (next === scheduledTemplateIdsRef.current) return;
+    scheduledTemplateIdsRef.current = next;
+    setScheduledTemplateIds(next);
     void mutateTaskWorkspace((version) => taskApiRef.current.updateScheduledTemplates(
-      taskWorkspacePath, version, [...scheduledTemplateIds, templateId],
+      taskWorkspacePath, version, next,
     ));
-  }, [mutateTaskWorkspace, scheduledTemplateIds, taskTemplates, taskWorkspacePath]);
+  }, [mutateTaskWorkspace, taskWorkspacePath]);
 
   const removeTemplateFromSchedule = useCallback((templateId: string) => {
+    const next = updateScheduledTemplateDraft(scheduledTemplateIdsRef.current, templateId, 'remove');
+    if (next === scheduledTemplateIdsRef.current) return;
+    scheduledTemplateIdsRef.current = next;
+    setScheduledTemplateIds(next);
     void mutateTaskWorkspace((version) => taskApiRef.current.updateScheduledTemplates(
-      taskWorkspacePath, version, scheduledTemplateIds.filter((id) => id !== templateId),
+      taskWorkspacePath, version, next,
     ));
-  }, [mutateTaskWorkspace, scheduledTemplateIds, taskWorkspacePath]);
+  }, [mutateTaskWorkspace, taskWorkspacePath]);
 
   const createTaskInstances = useCallback(() => {
-    if (!scheduledTemplateIds.length) {
+    const templateIds = scheduledTemplateIdsRef.current;
+    if (!templateIds.length) {
       setMessage('请先将 Task Template 拖入 Resource Schedule。');
       return;
     }
     const samples = SAMPLE_NAMES.slice(0, taskSampleCount);
     void mutateTaskWorkspace((version) => taskApiRef.current.generateInstances(
-      taskWorkspacePath, version, scheduledTemplateIds, samples,
+      taskWorkspacePath, version, templateIds, samples,
     ));
-  }, [mutateTaskWorkspace, scheduledTemplateIds, taskSampleCount, taskWorkspacePath]);
+  }, [mutateTaskWorkspace, taskSampleCount, taskWorkspacePath]);
 
   const moveTaskInstance = useCallback((taskId: string, direction: -1 | 1) => {
     const task = taskInstances.find((item) => item.id === taskId);
@@ -1432,42 +1649,32 @@ function App() {
     void mutateTaskWorkspace((version) => taskApiRef.current.advance(taskWorkspacePath, version));
   }, [mutateTaskWorkspace, taskWorkspacePath]);
 
-  const setTaskSchedulerPaused = useCallback((paused: boolean) => {
-    void mutateTaskWorkspace((version) => taskApiRef.current.plan(taskWorkspacePath, version, paused));
-  }, [mutateTaskWorkspace, taskWorkspacePath]);
-
-  useEffect(() => {
-    taskPollingGenerationRef.current += 1;
-    const generation = taskPollingGenerationRef.current;
-    if (taskPollingTimerRef.current !== null) {
-      window.clearInterval(taskPollingTimerRef.current);
-      taskPollingTimerRef.current = null;
+  const clearTaskQueue = useCallback(() => {
+    if (!taskInstances.length) {
+      return;
     }
-    taskPollingInFlightRef.current = false;
-    if (!isSchedulerRunning || taskServiceError) return;
-    const poll = () => {
-      if (taskPollingInFlightRef.current || generation !== taskPollingGenerationRef.current) return;
-      taskPollingInFlightRef.current = true;
-      void mutateTaskWorkspace(
-        (version) => taskApiRef.current.advance(taskWorkspacePath, version),
-        () => generation === taskPollingGenerationRef.current,
-      ).finally(() => {
-        if (generation === taskPollingGenerationRef.current) {
-          taskPollingInFlightRef.current = false;
-        }
-      });
-    };
-    poll();
-    taskPollingTimerRef.current = window.setInterval(poll, 1500);
-    return () => {
-      taskPollingGenerationRef.current += 1;
-      if (taskPollingTimerRef.current !== null) {
-        window.clearInterval(taskPollingTimerRef.current);
-        taskPollingTimerRef.current = null;
-      }
-      taskPollingInFlightRef.current = false;
-    };
-  }, [isSchedulerRunning, mutateTaskWorkspace, taskServiceError, taskWorkspacePath]);
+    if (isSchedulerRunning || isTaskExecutionDraining) {
+      showCanvasToast('请先暂停派发后再清空 Task Queue');
+      return;
+    }
+    if (!window.confirm('清空当前 workflow 的全部 Task 实例（含失败/已完成/卡在运行中）？模板与 Resource Schedule 不会删除。')) {
+      return;
+    }
+    taskExecutionControllerRef.current?.pause();
+    setTaskExecutionWorkflow(null);
+    setTaskExecutionStatus(createTaskExecutionStatus());
+    void mutateTaskWorkspace((version) => taskApiRef.current.clearInstances(
+      taskWorkspacePath,
+      version,
+    ));
+  }, [
+    isSchedulerRunning,
+    isTaskExecutionDraining,
+    mutateTaskWorkspace,
+    showCanvasToast,
+    taskInstances.length,
+    taskWorkspacePath,
+  ]);
 
   const buildWorkflow = useCallback(async () => {
     if (!executionPlan.executableNodes.length) {
@@ -1487,6 +1694,647 @@ function App() {
     setMessage('');
     return payload as WorkflowJson;
   }, [executionPlan.executableEdges, executionPlan.executableNodes, workflowName]);
+
+  const generateOpcSimulatorProfile = useCallback(async () => {
+    if (opcSimulatorGenerateInFlightRef.current) return;
+    if (!scheduledOpcTemplateIds.length) return;
+    if (
+      opcSimulatorRevision
+      && !window.confirm(
+        '已存在已保存的 OPC 模拟配置。重新生成会覆盖当前工作台内容（需再次保存才会写盘）。继续？',
+      )
+    ) {
+      return;
+    }
+    opcSimulatorGenerateInFlightRef.current = true;
+    const request = opcSimulatorGenerateGateRef.current.begin();
+    opcSimulatorSaveTokenRef.current += 1;
+    setOpcSimulatorBusy(true);
+    setOpcSimulatorMessage('');
+    try {
+      const workflowPayload = workflow || await buildWorkflow();
+      if (!opcSimulatorGenerateGateRef.current.isCurrent(request.generation)) return;
+      const actionCatalog = buildOpcActionCatalog(actionsRef.current);
+      const referencedVariableNames = collectOpcProfileVariableNames({
+        workflow: workflowPayload,
+        templates: taskTemplates.map((template) => ({
+          id: template.id,
+          nodeIds: template.nodeIds,
+        })),
+        scheduledTemplateIds: scheduledOpcTemplateIds,
+        actionCatalog,
+      });
+      const fileName = defaultOpcSimulatorFileName(workflowName);
+      const response = await fetch('/api/opc-simulator/profiles:generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workflow: workflowPayload,
+          templates: taskTemplates.map((template) => ({
+            id: template.id,
+            name: template.name,
+            workflow_path: taskWorkspacePath,
+            node_ids: template.nodeIds,
+            resources: template.resources,
+            input_triggers: [],
+            output_triggers: [],
+          })),
+          scheduled_template_ids: scheduledOpcTemplateIds,
+          action_catalog: actionCatalog,
+          variable_catalog: buildOpcVariableTypeCatalog(csvVariablesRef.current, referencedVariableNames),
+          name: `${workflowName || 'Workflow'} OPC Simulator`,
+          file_name: fileName,
+          opc_url: taskOpcUrl || DEFAULT_CONFIG.url,
+        }),
+        signal: request.signal,
+      });
+      const result = await response.json().catch(() => null) as OpcProfileApiResponse | { detail?: unknown } | null;
+      if (!opcSimulatorGenerateGateRef.current.isCurrent(request.generation)) return;
+      if (!response.ok || !result || !('profile' in result)) {
+        const detail = result && 'detail' in result ? result.detail : null;
+        throw new Error(formatOpcProfileGenerateError(response.status, detail));
+      }
+      opcSimulatorProfileRef.current = result.profile;
+      opcSimulatorFileNameRef.current = result.file_name || fileName;
+      setOpcSimulatorProfile(result.profile);
+      setOpcSimulatorFileName(result.file_name || fileName);
+      setOpcSimulatorBackendErrors(result.validation_errors || []);
+      setOpcSimulatorRevision(null);
+      setOpcSimulatorDirty(true);
+      setShowOpcSimulatorDialog(true);
+    } catch (error) {
+      if (!opcSimulatorGenerateGateRef.current.isCurrent(request.generation)) return;
+      setOpcSimulatorMessage(error instanceof Error ? error.message : '生成 OPC 模拟配置失败');
+    } finally {
+      if (opcSimulatorGenerateGateRef.current.isCurrent(request.generation)) {
+        opcSimulatorGenerateInFlightRef.current = false;
+        setOpcSimulatorBusy(false);
+      }
+    }
+  }, [
+    buildWorkflow,
+    opcSimulatorRevision,
+    scheduledOpcTemplateIds,
+    taskOpcUrl,
+    taskTemplates,
+    taskWorkspacePath,
+    workflow,
+    workflowName,
+  ]);
+
+  const updateOpcSimulatorProfile = useCallback((profile: OpcSimulatorProfile) => {
+    opcSimulatorProfileRef.current = profile;
+    setOpcSimulatorProfile(profile);
+    setOpcSimulatorDirty(true);
+    setOpcSimulatorBackendErrors([]);
+    setOpcSimulatorMessage('');
+  }, []);
+
+  const loadOpcSimulatorProfile = useCallback(async (
+    fileName = opcSimulatorFileNameRef.current || defaultOpcSimulatorFileName(workflowName),
+    options?: { openDialog?: boolean; successMessage?: string },
+  ): Promise<OpcProfileApiResponse | false> => {
+    if (!fileName) return false;
+    opcSimulatorFileNameRef.current = fileName;
+    setOpcSimulatorFileName(fileName);
+    setOpcSimulatorBusy(true);
+    try {
+      const result = await opcSimulatorClientRef.current.load(fileName);
+      opcSimulatorProfileRef.current = result.profile;
+      setOpcSimulatorProfile(result.profile);
+      setOpcSimulatorBackendErrors(result.validation_errors || []);
+      setOpcSimulatorRevision(result.revision || null);
+      setOpcSimulatorDirty(false);
+      setOpcSimulatorMessage(options?.successMessage || '已重新载入后端版本');
+      if (options?.openDialog) setShowOpcSimulatorDialog(true);
+      return result;
+    } catch (error) {
+      setOpcSimulatorMessage(error instanceof Error ? error.message : '载入 OPC 模拟配置失败');
+      return false;
+    } finally {
+      setOpcSimulatorBusy(false);
+    }
+  }, [workflowName]);
+
+  const refreshOpcSimulatorProfileFiles = useCallback(async (): Promise<string[]> => {
+    try {
+      const result = await opcSimulatorClientRef.current.listProfiles();
+      setOpcSimulatorProfileFiles(result.files);
+      setOpcSimulatorConfigDir(result.config_dir);
+      const defaultName = defaultOpcSimulatorFileName(workflowName);
+      const currentName = opcSimulatorFileNameRef.current;
+      if (result.files.includes(currentName)) return result.files;
+      if (result.files.includes(defaultName)) {
+        opcSimulatorFileNameRef.current = defaultName;
+        setOpcSimulatorFileName(defaultName);
+        return result.files;
+      }
+      if (result.files.length && !opcSimulatorProfileRef.current) {
+        opcSimulatorFileNameRef.current = result.files[0];
+        setOpcSimulatorFileName(result.files[0]);
+      }
+      return result.files;
+    } catch {
+      return [];
+    }
+  }, [workflowName]);
+
+  const openOpcSimulatorWorkbench = useCallback(async () => {
+    const files = await refreshOpcSimulatorProfileFiles();
+    const fileName = opcSimulatorFileNameRef.current || defaultOpcSimulatorFileName(workflowName);
+    if (opcSimulatorProfileRef.current && opcSimulatorDirty) {
+      opcSimulatorFileNameRef.current = fileName;
+      setOpcSimulatorFileName(fileName);
+      setShowOpcSimulatorDialog(true);
+      return;
+    }
+    if (!files.length && !opcSimulatorProfileRef.current) {
+      setOpcSimulatorMessage(`请先将 JSON 放入 ${opcSimulatorConfigDir}，再打开配置工作台`);
+      return;
+    }
+    const targetName = files.includes(fileName) ? fileName : files[0] || fileName;
+    const loaded = await loadOpcSimulatorProfile(targetName, {
+      openDialog: true,
+      successMessage: '',
+    });
+    if (loaded) return;
+    if (opcSimulatorProfileRef.current) {
+      setShowOpcSimulatorDialog(true);
+      return;
+    }
+    setOpcSimulatorMessage(`未找到已保存配置，请检查 ${opcSimulatorConfigDir}`);
+  }, [
+    loadOpcSimulatorProfile,
+    opcSimulatorConfigDir,
+    opcSimulatorDirty,
+    refreshOpcSimulatorProfileFiles,
+    workflowName,
+  ]);
+
+  const handleOpcConfigFileChange = useCallback(async (fileName: string) => {
+    if (!fileName || fileName === opcSimulatorFileNameRef.current) return;
+    if (
+      opcSimulatorDirty
+      && !window.confirm('当前修改未保存，切换配置将丢弃修改。继续？')
+    ) {
+      return;
+    }
+    await loadOpcSimulatorProfile(fileName);
+  }, [loadOpcSimulatorProfile, opcSimulatorDirty]);
+
+  const openOpcSimulatorReferenceTemplate = useCallback(async () => {
+    setOpcSimulatorBusy(true);
+    setOpcSimulatorMessage('');
+    try {
+      const result = await opcSimulatorClientRef.current.loadReferenceTemplate();
+      setOpcSimulatorReferenceProfile(result.profile);
+      setShowOpcSimulatorReferenceDialog(true);
+    } catch (error) {
+      setOpcSimulatorMessage(error instanceof Error ? error.message : '载入 OPC 配置模板失败');
+    } finally {
+      setOpcSimulatorBusy(false);
+    }
+  }, []);
+
+  const openOpcSimulatorProfileSpec = useCallback(async () => {
+    setOpcSimulatorBusy(true);
+    setOpcSimulatorMessage('');
+    try {
+      const result = await opcSimulatorClientRef.current.loadProfileSpec();
+      setOpcSimulatorSpecMarkdown(result.markdown);
+      setShowOpcSimulatorSpecDialog(true);
+    } catch (error) {
+      setOpcSimulatorMessage(error instanceof Error ? error.message : '载入 OPC 生成规范失败');
+    } finally {
+      setOpcSimulatorBusy(false);
+    }
+  }, []);
+
+  const saveOpcSimulatorProfile = useCallback(async (
+    status: 'draft' | 'runnable',
+    download: boolean,
+  ) => {
+    if (!opcSimulatorProfile || opcSimulatorSaveInFlightRef.current) return;
+    opcSimulatorSaveInFlightRef.current = true;
+    const token = ++opcSimulatorSaveTokenRef.current;
+    const snapshot = createProfileSaveSnapshot(opcSimulatorProfile, status, opcSimulatorFileName);
+    setOpcSimulatorBusy(true);
+    setOpcSimulatorMessage('');
+    try {
+      const validation = await opcSimulatorClientRef.current.validate(snapshot.profile, snapshot.fileName);
+      if (token !== opcSimulatorSaveTokenRef.current) return;
+      const snapshotIsCurrent = () => (
+        opcSimulatorProfileRef.current !== null
+        && isProfileSaveSnapshotCurrent(
+          snapshot,
+          opcSimulatorProfileRef.current,
+          opcSimulatorFileNameRef.current,
+        )
+      );
+      if (status === 'runnable' && validation.validation_errors.length) {
+        if (!snapshotIsCurrent()) {
+          setOpcSimulatorDirty(true);
+          setOpcSimulatorMessage('旧版本已保存，请重新保存当前修改');
+          return;
+        }
+        opcSimulatorProfileRef.current = validation.profile;
+        setOpcSimulatorProfile(validation.profile);
+        setOpcSimulatorBackendErrors(validation.validation_errors || []);
+        setOpcSimulatorDirty(true);
+        setOpcSimulatorMessage('后端校验未通过，请按精确路径修正');
+        return;
+      }
+      const persistProfile = async (revision: string | null) => (
+        opcSimulatorClientRef.current.save(
+          validation.profile,
+          snapshot.fileName,
+          revision,
+        )
+      );
+      let saved: OpcProfileApiResponse;
+      try {
+        saved = await persistProfile(opcSimulatorRevision);
+      } catch (error) {
+        if (
+          error instanceof OpcSimulatorHttpError
+          && error.status === 409
+          && opcSimulatorRevision === null
+        ) {
+          saved = await persistProfile(OPC_PROFILE_FORCE_REVISION);
+        } else {
+          throw error;
+        }
+      }
+      if (token !== opcSimulatorSaveTokenRef.current) return;
+      if (!snapshotIsCurrent()) {
+        setOpcSimulatorDirty(true);
+        setOpcSimulatorMessage('旧版本已保存，请重新保存当前修改');
+        return;
+      }
+      opcSimulatorProfileRef.current = saved.profile;
+      setOpcSimulatorProfile(saved.profile);
+      setOpcSimulatorBackendErrors(saved.validation_errors || []);
+      setOpcSimulatorRevision(saved.revision || null);
+      setOpcSimulatorDirty(false);
+      setOpcSimulatorMessage(status === 'runnable' ? '可运行配置已保存' : '草稿已保存');
+      void refreshOpcSimulatorProfileFiles();
+      if (
+        download
+        && saved.profile.status === 'runnable'
+        && !saved.validation_errors.length
+        && saved.revision
+      ) downloadText(saved.file_name, canonicalProfileJson(saved.profile));
+    } catch (error) {
+      if (token !== opcSimulatorSaveTokenRef.current) return;
+      if (error instanceof OpcSimulatorHttpError && error.status === 409) {
+        await loadOpcSimulatorProfile(snapshot.fileName, {
+          successMessage: '版本冲突：已载入后端最新版本，请确认后再次保存',
+        });
+      } else {
+        const payload = error instanceof OpcSimulatorHttpError ? error.payload : null;
+        const detail = payload && typeof payload === 'object' && 'detail' in payload
+          ? (payload as { detail?: unknown }).detail
+          : null;
+        const result = detail && typeof detail === 'object' && 'validation_errors' in detail
+          ? detail as { validation_errors?: unknown; profile?: unknown }
+          : null;
+        if (Array.isArray(result?.validation_errors)) {
+          setOpcSimulatorBackendErrors(result.validation_errors.filter((item): item is string => typeof item === 'string'));
+        }
+        setOpcSimulatorMessage(error instanceof Error ? error.message : '保存 OPC 模拟配置失败');
+      }
+    } finally {
+      opcSimulatorSaveInFlightRef.current = false;
+      setOpcSimulatorBusy(false);
+    }
+  }, [loadOpcSimulatorProfile, opcSimulatorFileName, opcSimulatorProfile, opcSimulatorRevision, refreshOpcSimulatorProfileFiles]);
+
+  const applyOpcSimulatorStatus = useCallback((status: OpcSimulatorStatus) => {
+    const ownedRunId = ownedOpcSimulatorRunIdRef.current;
+    if (
+      ownedRunId
+      && (
+        status.run_id !== ownedRunId
+        || !['starting', 'running', 'stopping'].includes(status.state)
+      )
+    ) {
+      ownedOpcSimulatorRunIdRef.current = null;
+    }
+    opcSimulatorStatusRef.current = status;
+    setOpcSimulatorStatus(status);
+  }, []);
+
+  const refreshOpcSimulatorStatus = useCallback(async () => {
+    if (opcSimulatorControlInFlightRef.current) return;
+    const request = opcSimulatorStatusGateRef.current.begin();
+    try {
+      const status = await opcSimulatorClientRef.current.status(request.signal);
+      if (
+        !opcSimulatorControlInFlightRef.current
+        && opcSimulatorStatusGateRef.current.isCurrent(request.generation)
+      ) applyOpcSimulatorStatus(status);
+    } catch (error) {
+      if (
+        error instanceof DOMException && error.name === 'AbortError'
+        || !opcSimulatorStatusGateRef.current.isCurrent(request.generation)
+      ) return;
+      setOpcSimulatorMessage(error instanceof Error ? error.message : '读取模拟器状态失败');
+    }
+  }, [applyOpcSimulatorStatus]);
+
+  const startOpcSimulator = useCallback(async () => {
+    if (opcSimulatorControlInFlightRef.current || opcSimulatorBusy) return;
+    if (!opcSimulatorFileName) return;
+    let profile = opcSimulatorProfileRef.current;
+    let revision = opcSimulatorRevision;
+    let backendErrors = opcSimulatorBackendErrors;
+    let dirty = opcSimulatorDirty;
+    if (
+      !profile
+      || !revision
+      || dirty
+      || opcSimulatorFileNameRef.current !== opcSimulatorFileName
+    ) {
+      const loaded = await loadOpcSimulatorProfile(opcSimulatorFileName, {
+        successMessage: '',
+      });
+      if (!loaded) return;
+      profile = loaded.profile;
+      revision = loaded.revision || null;
+      backendErrors = loaded.validation_errors || [];
+      dirty = false;
+    }
+    if (!profile || !revision) return;
+    const localErrors = validateOpcSimulatorProfile(profile);
+    if (
+      !isSimulatorStartAllowed({
+        profile,
+        localErrors,
+        backendErrors,
+        fileName: opcSimulatorFileName,
+        revision,
+        dirty,
+        managerState: opcSimulatorStatus?.state || 'idle',
+        managerRestoreStatus: opcSimulatorStatus?.restore_status || 'not_started',
+      })
+    ) {
+      setOpcSimulatorMessage(
+        describeSimulatorStartBlock({
+          profile,
+          localErrors,
+          backendErrors,
+          fileName: opcSimulatorFileName,
+          revision,
+          dirty,
+          managerState: opcSimulatorStatus?.state || 'idle',
+          managerRestoreStatus: opcSimulatorStatus?.restore_status || 'not_started',
+        }) || '当前无法启动 OPC 模拟器',
+      );
+      return;
+    }
+    const allowUnsafeUrl = profile.opc.url !== DEFAULT_OPC_SIMULATOR_URL;
+    const restoreStatus = opcSimulatorStatus?.restore_status || 'not_started';
+    const managerState = opcSimulatorStatus?.state || 'idle';
+    if (
+      restoreStatusNeedsConfirm(managerState, restoreStatus)
+      && !window.confirm(
+        `上次停止后 OPC 恢复状态为 ${restoreStatus}。请确认现场 OPC 变量已安全，再继续启动模拟器。`,
+      )
+    ) {
+      return;
+    }
+    if (
+      allowUnsafeUrl
+      && !window.confirm(
+        `风险确认：即将连接并写入非默认 OPC 地址：\n${profile.opc.url}`
+        + '\n\n该地址未经系统默认授权，错误配置可能修改真实设备。确认继续？',
+      )
+    ) return;
+    const operation = beginOpcSimulatorControlOperation(
+      opcSimulatorControlInFlightRef,
+      opcSimulatorControlTokenRef,
+    );
+    if (operation === null) return;
+    opcSimulatorStatusGateRef.current.invalidate();
+    let refreshAfterFailure = false;
+    setOpcSimulatorBusy(true);
+    try {
+      const status = await opcSimulatorClientRef.current.start(
+        opcSimulatorFileName,
+        revision,
+        allowUnsafeUrl,
+      );
+      if (operation !== opcSimulatorControlTokenRef.current) return;
+      ownedOpcSimulatorRunIdRef.current = status.run_id;
+      applyOpcSimulatorStatus(status);
+      setOpcSimulatorMessage('模拟器已启动；不会自动启动 Run Schedule');
+    } catch (error) {
+      if (operation !== opcSimulatorControlTokenRef.current) return;
+      setOpcSimulatorMessage(error instanceof Error ? error.message : '启动 OPC 模拟器失败');
+      refreshAfterFailure = true;
+    } finally {
+      finishOpcSimulatorControlOperation(
+        opcSimulatorControlInFlightRef,
+        opcSimulatorControlTokenRef,
+        operation,
+      );
+      setOpcSimulatorBusy(false);
+      if (refreshAfterFailure) void refreshOpcSimulatorStatus();
+    }
+  }, [
+    loadOpcSimulatorProfile,
+    opcSimulatorBackendErrors,
+    opcSimulatorBusy,
+    opcSimulatorDirty,
+    opcSimulatorFileName,
+    opcSimulatorRevision,
+    opcSimulatorStatus,
+    applyOpcSimulatorStatus,
+    refreshOpcSimulatorStatus,
+  ]);
+
+  const stopOpcSimulator = useCallback(async () => {
+    if (opcSimulatorControlInFlightRef.current) return;
+    if (!opcSimulatorStatus || !['starting', 'running'].includes(opcSimulatorStatus.state)) return;
+    const ownedRunId = ownedOpcSimulatorRunIdRef.current;
+    if (
+      !ownedRunId
+      && !window.confirm('当前模拟器不是由本标签页启动。确认停止其他客户端启动的运行？')
+    ) return;
+    const operation = beginOpcSimulatorControlOperation(
+      opcSimulatorControlInFlightRef,
+      opcSimulatorControlTokenRef,
+    );
+    if (operation === null) return;
+    opcSimulatorStatusGateRef.current.invalidate();
+    let refreshAfterFailure = false;
+    setOpcSimulatorBusy(true);
+    try {
+      const status = await opcSimulatorClientRef.current.stop(ownedRunId);
+      if (operation !== opcSimulatorControlTokenRef.current) return;
+      applyOpcSimulatorStatus(status);
+      setOpcSimulatorMessage(opcSimulatorStopMessage(status));
+    } catch (error) {
+      if (operation !== opcSimulatorControlTokenRef.current) return;
+      setOpcSimulatorMessage(error instanceof Error ? error.message : '停止模拟器失败，恢复结果不确定');
+      refreshAfterFailure = true;
+    } finally {
+      finishOpcSimulatorControlOperation(
+        opcSimulatorControlInFlightRef,
+        opcSimulatorControlTokenRef,
+        operation,
+      );
+      setOpcSimulatorBusy(false);
+      if (refreshAfterFailure) void refreshOpcSimulatorStatus();
+    }
+  }, [applyOpcSimulatorStatus, opcSimulatorStatus, refreshOpcSimulatorStatus]);
+
+  useEffect(() => {
+    if (workspace !== 'tasks') return;
+    void refreshOpcSimulatorProfileFiles();
+  }, [refreshOpcSimulatorProfileFiles, workspace]);
+
+  useEffect(() => {
+    if (workspace !== 'tasks') return;
+    void refreshOpcSimulatorStatus();
+    const timer = window.setInterval(refreshOpcSimulatorStatus, 1000);
+    return () => {
+      window.clearInterval(timer);
+      opcSimulatorStatusGateRef.current.invalidate();
+    };
+  }, [refreshOpcSimulatorStatus, workspace]);
+
+  useEffect(() => {
+    if (workspace !== 'tasks') return;
+    const defaultName = defaultOpcSimulatorFileName(workflowName);
+    if (opcSimulatorProfileRef.current || opcSimulatorDirty) return;
+    opcSimulatorFileNameRef.current = defaultName;
+    setOpcSimulatorFileName(defaultName);
+  }, [opcSimulatorDirty, workflowName, workspace]);
+
+  useEffect(() => {
+    opcSimulatorStatusGateRef.current.mount();
+    return () => {
+      opcSimulatorControlTokenRef.current += 1;
+      opcSimulatorStatusGateRef.current.unmount();
+      csvVariablesGateRef.current.unmount();
+      opcSimulatorGenerateGateRef.current.unmount();
+      opcSimulatorGenerateInFlightRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const stopOwnedSimulatorOnPageHide = () => {
+      const ownedRunId = ownedOpcSimulatorRunIdRef.current;
+      const latestStatus = opcSimulatorStatusRef.current;
+      if (
+        !ownedRunId
+        || !latestStatus
+        || latestStatus.run_id !== ownedRunId
+        || !['starting', 'running', 'stopping'].includes(latestStatus.state)
+      ) return;
+      ownedOpcSimulatorRunIdRef.current = null;
+      void fetch('/api/opc-simulator/stop', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expected_run_id: ownedRunId }),
+        keepalive: true,
+      });
+    };
+    window.addEventListener('pagehide', stopOwnedSimulatorOnPageHide);
+    return () => window.removeEventListener('pagehide', stopOwnedSimulatorOnPageHide);
+  }, []);
+
+  const performTaskSchedulerPause = useCallback(async () => {
+    const version = taskWorkspaceVersionRef.current;
+    if (version === null) return;
+    try {
+      await taskExecutionControllerRef.current?.pauseAndDrain({
+        workflowPath: taskWorkspacePath,
+        expectedVersion: version,
+      });
+      const latest = await taskApiRef.current.getWorkspace(taskWorkspacePath);
+      applyTaskWorkspace(latest);
+    } catch (error) {
+      setTaskServiceError(taskApiErrorMessage(error));
+    }
+  }, [applyTaskWorkspace, taskWorkspacePath]);
+
+  const handleTaskSchedulerPause = useCallback(() => runTaskSchedulerTransition(
+    taskSchedulerTransitionRef,
+    setIsSchedulerTransitioning,
+    performTaskSchedulerPause,
+  ), [performTaskSchedulerPause]);
+
+  const handleTaskSchedulerToggle = useCallback(() => runTaskSchedulerTransition(
+    taskSchedulerTransitionRef,
+    setIsSchedulerTransitioning,
+    async () => {
+      if (isSchedulerRunning || isTaskExecutionDraining) {
+        await performTaskSchedulerPause();
+        return;
+      }
+      taskExecutionControllerRef.current?.pause();
+      setTaskExecutionWorkflow(null);
+      setTaskExecutionStatus(createTaskExecutionStatus());
+      setTaskServiceError('');
+      let builtWorkflow: WorkflowJson;
+      try {
+        builtWorkflow = await buildWorkflow();
+      } catch (error) {
+        setTaskServiceError(error instanceof Error ? error.message : '构建 Task workflow 失败');
+        return;
+      }
+      setTaskExecutionWorkflow(builtWorkflow);
+      const version = taskWorkspaceVersionRef.current;
+      if (version === null) {
+        setTaskServiceError('Task 工作区尚未加载');
+        return;
+      }
+      try {
+        applyTaskWorkspace(await taskApiRef.current.plan(taskWorkspacePath, version, false));
+      } catch (error) {
+        const message = taskApiErrorMessage(error);
+        try {
+          applyTaskWorkspace(await taskApiRef.current.getWorkspace(taskWorkspacePath));
+        } catch {
+          // 保留固定 workflow；服务端可能已启动，后续刷新仍可恢复执行循环。
+        }
+        setTaskServiceError(message);
+      }
+    },
+  ), [
+    applyTaskWorkspace,
+    buildWorkflow,
+    isSchedulerRunning,
+    isTaskExecutionDraining,
+    performTaskSchedulerPause,
+    taskWorkspacePath,
+  ]);
+
+  const shouldRunTaskExecutionLoop = isSchedulerRunning || isTaskExecutionDraining;
+  useEffect(() => {
+    if (!shouldRunTaskExecutionLoop || (!isTaskExecutionDraining && !taskExecutionWorkflow)) return;
+    const controller = taskExecutionControllerRef.current;
+    if (!controller) return;
+    if (!controller.isRunning()) controller.start();
+    const runCycle = () => controller.run({
+      workflowPath: taskWorkspacePath,
+      workflow: (taskExecutionWorkflow ?? undefined) as Record<string, unknown> | undefined,
+      expectedVersion: taskWorkspaceVersionRef.current ?? 0,
+    });
+    void runCycle();
+    const timer = window.setInterval(runCycle, 1500);
+    return () => window.clearInterval(timer);
+  }, [isTaskExecutionDraining, shouldRunTaskExecutionLoop, taskExecutionWorkflow, taskWorkspacePath]);
+
+  useEffect(() => () => taskExecutionControllerRef.current?.pause(), []);
+
+  useEffect(() => {
+    if (workspace !== 'tasks' && (isSchedulerRunning || isTaskExecutionDraining)) {
+      void handleTaskSchedulerPause();
+    }
+  }, [handleTaskSchedulerPause, isSchedulerRunning, isTaskExecutionDraining, workspace]);
 
   const exportPseudoFlow = () => {
     try {
@@ -1557,7 +2405,11 @@ function App() {
       const response = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflow: builtWorkflow, ...config }),
+        body: JSON.stringify({
+          workflow: builtWorkflow,
+          task_workspace_path: taskWorkspacePath,
+          ...config,
+        }),
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -1896,7 +2748,7 @@ function App() {
                   style={{ left: contextMenu.x, top: contextMenu.y }}
                 >
                   <button
-                    disabled={!selectedTaskNodes.length}
+                    disabled={!selectedTaskNodes.length || isTaskTemplateCreating}
                     onClick={() => {
                       createTaskTemplateFromSelection();
                       closeCanvasContextMenu();
@@ -1904,7 +2756,7 @@ function App() {
                     ref={selectedTaskNodes.length ? contextMenuFirstActionRef : undefined}
                     type="button"
                   >
-                    设为 Task 模板
+                    {isTaskTemplateCreating ? '创建中…' : '设为 Task 模板'}
                   </button>
                   <button
                     onClick={() => {
@@ -2039,8 +2891,144 @@ function App() {
               {taskServiceError === 'Task 编排服务不可用' && (
                 <button onClick={() => void loadTaskWorkspace()} type="button">重试</button>
               )}
+              {taskServiceError === 'invalid task workspace sidecar' && (
+                <button
+                  disabled={isTaskWorkspaceLoading}
+                  onClick={() => void resetInvalidTaskWorkspace()}
+                  type="button"
+                >重置当前 Task 工作区</button>
+              )}
             </section>
           )}
+          <section className="opc-simulator-console" aria-label="OPC 模拟器控制">
+            <div className="opc-simulator-console-head">
+              <div>
+                <p>SIMULATION CONTROL / INDEPENDENT</p>
+                <strong>OPC 模拟器</strong>
+                <span>配置与 Resource Schedule 同源；不会自动随 Run Schedule 启动。</span>
+              </div>
+              <div className="opc-simulator-console-actions">
+                <div className="opc-simulator-profile-picker">
+                  <label className="opc-simulator-profile-picker-label">
+                    <span>配置文件 · {opcSimulatorConfigDir}</span>
+                    <select
+                      disabled={opcSimulatorBusy}
+                      onChange={(event) => {
+                        opcSimulatorFileNameRef.current = event.target.value;
+                        setOpcSimulatorFileName(event.target.value);
+                      }}
+                      value={opcSimulatorFileName}
+                    >
+                      {!opcSimulatorProfileFiles.includes(opcSimulatorFileName) && opcSimulatorFileName && (
+                        <option value={opcSimulatorFileName}>{opcSimulatorFileName}（未保存）</option>
+                      )}
+                      {opcSimulatorProfileFiles.map((file) => (
+                        <option key={file} value={file}>{file}</option>
+                      ))}
+                      {!opcSimulatorProfileFiles.length && !opcSimulatorFileName && (
+                        <option value="">暂无配置</option>
+                      )}
+                    </select>
+                  </label>
+                  <button
+                    disabled={opcSimulatorBusy}
+                    onClick={() => void openOpcSimulatorWorkbench()}
+                    title="打开所选配置文件的工作台"
+                    type="button"
+                  >打开配置工作台</button>
+                </div>
+                <button
+                  disabled={!scheduledOpcTemplateIds.length || opcSimulatorBusy}
+                  onClick={() => void generateOpcSimulatorProfile()}
+                  title={scheduledOpcTemplateIds.length ? '按已排模板生成 profile' : '请先把 Template 拖入 Resource Schedule'}
+                  type="button"
+                >生成 OPC 模拟配置</button>
+                <button
+                  disabled={opcSimulatorBusy}
+                  onClick={() => void openOpcSimulatorReferenceTemplate()}
+                  title="打开仓库内置六节点 runnable 示例，对照填写 channel/trigger/on_complete"
+                  type="button"
+                >查看配置模板</button>
+                <button
+                  disabled={opcSimulatorBusy}
+                  onClick={() => void openOpcSimulatorProfileSpec()}
+                  title="打开 schema v2 JSON 生成规范，供大模型或人工参照"
+                  type="button"
+                >查看生成规范</button>
+                <button
+                  className="opc-start-button"
+                  disabled={Boolean(opcSimulatorStartBlockReason)}
+                  onClick={() => void startOpcSimulator()}
+                  title={opcSimulatorStartBlockReason || '启动所选配置的 OPC 模拟器'}
+                  type="button"
+                >启动 OPC 模拟</button>
+                <button
+                  className="opc-stop-button"
+                  disabled={
+                    opcSimulatorBusy
+                    || !opcSimulatorStatus
+                    || !['starting', 'running'].includes(opcSimulatorStatus.state)
+                  }
+                  onClick={() => void stopOpcSimulator()}
+                  type="button"
+                >停止并恢复 OPC</button>
+              </div>
+            </div>
+            {!scheduledOpcTemplateIds.length && (
+              <p className="opc-simulator-hint">未排程：先将 Task Template 拖入 Resource Schedule，才能生成模拟配置。</p>
+            )}
+            {opcSimulatorStartBlockReason && (
+              <p className="opc-simulator-hint">{opcSimulatorStartBlockReason}</p>
+            )}
+            {opcSimulatorMessage && <p className="opc-simulator-message" role="status">{opcSimulatorMessage}</p>}
+            {(configuredOpcUrl || opcSimulatorFileName) && (
+              <dl className="opc-simulator-config-summary">
+                <div>
+                  <dt>配置文件</dt>
+                  <dd>{opcSimulatorFileName || '—'}</dd>
+                </div>
+                <div>
+                  <dt>配置 URL{opcSimulatorDirty ? '（未保存）' : ''}</dt>
+                  <dd>{configuredOpcUrl || '—'}</dd>
+                </div>
+                <div>
+                  <dt>运行 URL</dt>
+                  <dd>{runningOpcUrl || '—'}</dd>
+                </div>
+              </dl>
+            )}
+            {opcSimulatorDirty && opcSimulatorRevision && (
+              <p className="opc-simulator-hint">工作台有未保存修改；启动模拟器将使用磁盘上已保存的配置（含 URL）。</p>
+            )}
+            {opcSimulatorStatus && (
+              <dl className="opc-simulator-status-grid">
+                <div><dt>STATE</dt><dd>{opcSimulatorStatus.state}</dd></div>
+                <div><dt>PID</dt><dd>{opcSimulatorStatus.pid ?? '—'}</dd></div>
+                <div><dt>ELAPSED</dt><dd>{opcSimulatorStatus.elapsed_seconds.toFixed(1)} s</dd></div>
+                <div><dt>FILE</dt><dd>{opcSimulatorStatus.file_name || '—'}</dd></div>
+                <div><dt>RETURN</dt><dd>{opcSimulatorStatus.return_code ?? '—'}</dd></div>
+                <div><dt>RESTORE</dt><dd>{opcSimulatorStatus.restore_status}</dd></div>
+                <div><dt>LAST ERROR</dt><dd>{opcSimulatorStatus.last_error || '—'}</dd></div>
+              </dl>
+            )}
+            {opcSimulatorStatus
+              && (
+                opcSimulatorStatus.restore_status === 'uncertain'
+                || opcSimulatorStatus.restore_status === 'error'
+              )
+              && opcSimulatorStatus.state === 'stopped'
+              && (
+                <div className="opc-simulator-critical" role="alert">
+                  上次停止后 OPC 恢复未完成（{opcSimulatorStatus.restore_status}）。确认现场安全后可再次启动；启动前会二次确认。
+                </div>
+              )}
+            {opcSimulatorStatus?.recent_logs.length ? (
+              <details className="opc-simulator-logs">
+                <summary>Recent logs · {opcSimulatorStatus.recent_logs.length}</summary>
+                <pre>{opcSimulatorStatus.recent_logs.join('\n')}</pre>
+              </details>
+            ) : null}
+          </section>
           <div
             className="task-orchestration"
             ref={taskOrchestrationRef}
@@ -2054,16 +3042,43 @@ function App() {
                 </div>
                 <span>{taskTemplates.length} 个模板</span>
               </div>
-              <div className="task-action-row">
-                <button onClick={createRecommendedTaskTemplates} disabled={!nodes.length} type="button">
-                  按流程自动切分
-                </button>
+              <div className="task-plc-status">
+                <strong>Task OPC 连接</strong>
+                <label className="task-opc-connect-field">
+                  OPC UA URL
+                  <input
+                    aria-label="Task OPC UA URL"
+                    onChange={(event) => setTaskOpcUrl(event.target.value)}
+                    placeholder="opc.tcp://host:4840"
+                    value={taskOpcUrl}
+                  />
+                </label>
+                <button
+                  disabled={isTaskOpcConnecting}
+                  onClick={() => void connectTaskOpc()}
+                  type="button"
+                >{isTaskOpcConnecting ? '连接中…' : taskPlcStatus?.connected ? '重新连接' : '连接 OPC'}</button>
+                <span>{taskPlcStatus?.device_id || '未注册 PLC'} · {taskPlcStatus?.connected ? '已连接' : '未连接'}</span>
+                <small>{taskPlcStatus?.url || '尚未连接'} · 已注册 {taskPlcStatus?.registered_variables.length || 0} 个变量</small>
+                {taskOpcMessage && <em>{taskOpcMessage}</em>}
+                {stackStatus?.task_orchestration?.message && (
+                  <em>{stackStatus.task_orchestration.message}</em>
+                )}
               </div>
               <div className="task-template-list">
                 {taskTemplates.map((template, index) => {
                   const templateNodes = template.nodeIds
                     .map((nodeId) => nodesById.get(nodeId))
                     .filter(Boolean) as Node<ActionNodeData>[];
+                  const deleteDisabled = !canDeleteTaskTemplate(template.id, taskInstances, {
+                    schedulerBusy: isSchedulerRunning
+                      || isSchedulerTransitioning
+                      || isTaskExecutionDraining
+                      || taskExecutionStatus.tick.active > 0
+                      || taskExecutionStatus.tick.in_flight > 0
+                      || taskExecutionStatus.tick.claimed > 0,
+                    actionInFlight: taskMutationInFlightCount > 0,
+                  });
                   return (
                     <article
                       className="task-template-card"
@@ -2073,9 +3088,10 @@ function App() {
                     >
                       <button
                         className="task-template-delete"
+                        disabled={deleteDisabled}
                         onClick={() => deleteTaskTemplate(template)}
                         aria-label={`删除 Task 模板 ${template.name}`}
-                        title="删除 Task 模板"
+                        title={deleteDisabled ? '有关联运行任务或调度操作，暂不能删除' : '删除 Task 模板'}
                         type="button"
                       >
                         <span aria-hidden="true">×</span>
@@ -2094,7 +3110,7 @@ function App() {
                     </article>
                   );
                 })}
-                {!taskTemplates.length && <div className="task-empty">暂无模板。可按当前流程自动切分生成一版。</div>}
+                {!taskTemplates.length && <div className="task-empty">暂无模板。请在画布中选择节点并设为 Task 模板。</div>}
               </div>
             </section>
 
@@ -2106,7 +3122,7 @@ function App() {
                   <div className="task-detail-head">
                     <div>
                       <span>Template Details</span>
-                      <h3>工艺步骤与触发条件</h3>
+                      <h3>工艺步骤</h3>
                     </div>
                     <div>
                       <em>{selectedTaskTemplate.nodeIds.length} steps</em>
@@ -2116,8 +3132,16 @@ function App() {
                   <label className="task-template-name-field">
                     模板名称
                     <input
-                      value={selectedTaskTemplate?.name || ''}
-                      onBlur={(event) => renameSelectedTaskTemplate(event.target.value)}
+                      value={taskTemplateNameDraft}
+                      onChange={(event) => setTaskTemplateNameDraft(event.target.value)}
+                      onBlur={commitSelectedTaskTemplateName}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          commitSelectedTaskTemplateName();
+                          event.currentTarget.blur();
+                        }
+                      }}
                     />
                   </label>
                   <div className="task-detail-section">
@@ -2135,229 +3159,6 @@ function App() {
                       );
                     })}
                   </div>
-                  <div className="task-trigger-grid">
-                    <div>
-                      <strong>输入触发</strong>
-                      <div className="task-trigger-editor">
-                        {selectedTaskTemplate.inputTriggers.map((trigger, index) => (
-                          <div className="task-trigger-condition" key={`input-${index}`}>
-                            <input
-                              aria-label={`输入条件变量 ${index + 1}`}
-                              placeholder="搜索全部 OPC 变量"
-                              type="search"
-                              value={triggerSearchQueries[`input-${index}`] ?? trigger.variableName}
-                              onFocus={() => {
-                                setActiveTriggerSearch(`input-${index}`);
-                                setTriggerSearchQueries((current) => ({
-                                  ...current,
-                                  [`input-${index}`]: '',
-                                }));
-                              }}
-                              onChange={(event) => {
-                                setTriggerSearchQueries((current) => ({ ...current, [`input-${index}`]: event.target.value }));
-                                const variable = csvVariables.find((item) => item.name === event.target.value);
-                                if (!variable) return;
-                                updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
-                                  (item, itemIndex) => itemIndex === index ? createDefaultTriggerCondition(variable) : item,
-                                ));
-                              }}
-                            />
-                            <span aria-hidden="true">==</span>
-                            {trigger.dataType === 'BOOL' || trigger.dataType === 'BOOLEAN' ? (
-                              <select
-                                aria-label={`输入条件值 ${index + 1}`}
-                                value={String(trigger.value)}
-                                onChange={(event) => updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
-                                  (item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value === 'true' } : item,
-                                ))}
-                              >
-                                <option value="true">true</option>
-                                <option value="false">false</option>
-                              </select>
-                            ) : trigger.dataType === 'INTEGER' || trigger.dataType === 'INT' || trigger.dataType === 'FLOAT' || trigger.dataType === 'DOUBLE' || trigger.dataType === 'NUMBER' ? (
-                              <input
-                                aria-label={`输入条件值 ${index + 1}`}
-                                type="number"
-                                step={trigger.dataType === 'INTEGER' || trigger.dataType === 'INT' ? 1 : 'any'}
-                                value={String(trigger.value)}
-                                onChange={(event) => updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
-                                  (item, itemIndex) => itemIndex === index ? { ...item, value: Number(event.target.value) } : item,
-                                ))}
-                              />
-                            ) : (
-                              <input
-                                aria-label={`输入条件值 ${index + 1}`}
-                                value={String(trigger.value)}
-                                onChange={(event) => updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
-                                  (item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item,
-                                ))}
-                              />
-                            )}
-                            <button
-                              aria-label={`删除输入条件 ${trigger.variableName || index + 1}`}
-                              onClick={() => updateSelectedTaskTriggers(
-                                'input',
-                                selectedTaskTemplate.inputTriggers.filter((_, itemIndex) => itemIndex !== index),
-                              )}
-                              type="button"
-                            >×</button>
-                            {activeTriggerSearch === `input-${index}` && (
-                              <div className="task-trigger-options">
-                                {csvVariables
-                                  .filter((variable) => `${variable.name} ${variable.comment}`.toLowerCase().includes((triggerSearchQueries[`input-${index}`] ?? trigger.variableName).toLowerCase()))
-                                  .map((variable) => (
-                                    <button
-                                      className={variable.name === trigger.variableName ? 'selected' : ''}
-                                      key={variable.name}
-                                      onMouseDown={(event) => event.preventDefault()}
-                                      onClick={() => {
-                                        updateSelectedTaskTriggers('input', selectedTaskTemplate.inputTriggers.map(
-                                          (item, itemIndex) => itemIndex === index ? createDefaultTriggerCondition(variable) : item,
-                                        ));
-                                        setActiveTriggerSearch(null);
-                                        setTriggerSearchQueries((current) => {
-                                          const { [`input-${index}`]: _, ...rest } = current;
-                                          return rest;
-                                        });
-                                      }}
-                                      type="button"
-                                    >
-                                      <b>{variable.name}</b>
-                                      <small>{variable.data_type}{variable.comment ? ` · ${variable.comment}` : ''}</small>
-                                      {variable.name === trigger.variableName && <em aria-label="已选中">✓</em>}
-                                    </button>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        <div className="task-trigger-add">
-                          <button
-                            disabled={!csvVariables.length}
-                            onClick={() => updateSelectedTaskTriggers(
-                              'input',
-                              [...selectedTaskTemplate.inputTriggers, createDefaultTriggerCondition(csvVariables[0])],
-                            )}
-                            type="button"
-                          >添加输入条件</button>
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <strong>输出触发</strong>
-                      <div className="task-trigger-editor">
-                        {selectedTaskTemplate.outputTriggers.map((trigger, index) => (
-                          <div className="task-trigger-condition" key={`output-${index}`}>
-                            <input
-                              aria-label={`输出条件变量 ${index + 1}`}
-                              placeholder="搜索全部 OPC 变量"
-                              type="search"
-                              value={triggerSearchQueries[`output-${index}`] ?? trigger.variableName}
-                              onFocus={() => {
-                                setActiveTriggerSearch(`output-${index}`);
-                                setTriggerSearchQueries((current) => ({
-                                  ...current,
-                                  [`output-${index}`]: '',
-                                }));
-                              }}
-                              onChange={(event) => {
-                                setTriggerSearchQueries((current) => ({ ...current, [`output-${index}`]: event.target.value }));
-                                const variable = csvVariables.find((item) => item.name === event.target.value);
-                                if (!variable) return;
-                                updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
-                                  (item, itemIndex) => itemIndex === index ? createDefaultTriggerCondition(variable) : item,
-                                ));
-                              }}
-                            />
-                            <span aria-hidden="true">==</span>
-                            {trigger.dataType === 'BOOL' || trigger.dataType === 'BOOLEAN' ? (
-                              <select
-                                aria-label={`输出条件值 ${index + 1}`}
-                                value={String(trigger.value)}
-                                onChange={(event) => updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
-                                  (item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value === 'true' } : item,
-                                ))}
-                              >
-                                <option value="true">true</option>
-                                <option value="false">false</option>
-                              </select>
-                            ) : trigger.dataType === 'INTEGER' || trigger.dataType === 'INT' || trigger.dataType === 'FLOAT' || trigger.dataType === 'DOUBLE' || trigger.dataType === 'NUMBER' ? (
-                              <input
-                                aria-label={`输出条件值 ${index + 1}`}
-                                type="number"
-                                step={trigger.dataType === 'INTEGER' || trigger.dataType === 'INT' ? 1 : 'any'}
-                                value={String(trigger.value)}
-                                onChange={(event) => updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
-                                  (item, itemIndex) => itemIndex === index ? { ...item, value: Number(event.target.value) } : item,
-                                ))}
-                              />
-                            ) : (
-                              <input
-                                aria-label={`输出条件值 ${index + 1}`}
-                                value={String(trigger.value)}
-                                onChange={(event) => updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
-                                  (item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item,
-                                ))}
-                              />
-                            )}
-                            <button
-                              aria-label={`删除输出条件 ${trigger.variableName || index + 1}`}
-                              onClick={() => updateSelectedTaskTriggers(
-                                'output',
-                                selectedTaskTemplate.outputTriggers.filter((_, itemIndex) => itemIndex !== index),
-                              )}
-                              type="button"
-                            >×</button>
-                            {activeTriggerSearch === `output-${index}` && (
-                              <div className="task-trigger-options">
-                                {csvVariables
-                                  .filter((variable) => `${variable.name} ${variable.comment}`.toLowerCase().includes((triggerSearchQueries[`output-${index}`] ?? trigger.variableName).toLowerCase()))
-                                  .map((variable) => (
-                                    <button
-                                      className={variable.name === trigger.variableName ? 'selected' : ''}
-                                      key={variable.name}
-                                      onMouseDown={(event) => event.preventDefault()}
-                                      onClick={() => {
-                                        updateSelectedTaskTriggers('output', selectedTaskTemplate.outputTriggers.map(
-                                          (item, itemIndex) => itemIndex === index ? createDefaultTriggerCondition(variable) : item,
-                                        ));
-                                        setActiveTriggerSearch(null);
-                                        setTriggerSearchQueries((current) => {
-                                          const { [`output-${index}`]: _, ...rest } = current;
-                                          return rest;
-                                        });
-                                      }}
-                                      type="button"
-                                    >
-                                      <b>{variable.name}</b>
-                                      <small>{variable.data_type}{variable.comment ? ` · ${variable.comment}` : ''}</small>
-                                      {variable.name === trigger.variableName && <em aria-label="已选中">✓</em>}
-                                    </button>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        <div className="task-trigger-add">
-                          <button
-                            disabled={!csvVariables.length}
-                            onClick={() => updateSelectedTaskTriggers(
-                              'output',
-                              [...selectedTaskTemplate.outputTriggers, createDefaultTriggerCondition(csvVariables[0])],
-                            )}
-                            type="button"
-                          >添加输出条件</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <datalist id="csv-variable-options">
-                    {csvVariables.map((variable) => (
-                      <option key={variable.name} value={variable.name}>
-                        {variable.comment ? `${variable.data_type} · ${variable.comment}` : variable.data_type}
-                      </option>
-                    ))}
-                  </datalist>
                 </section>
               </div>
             </section>
@@ -2367,7 +3168,7 @@ function App() {
               <div className="task-panel-head">
                 <div>
                   <h2>Task Queue</h2>
-                  <p>按样品顺序与资源门控模拟调度。</p>
+                  <p>按样品顺序与 Action/OPC 握手或流程条件调度。</p>
                 </div>
                 <span>{taskInstances.length} 个实例</span>
               </div>
@@ -2385,20 +3186,64 @@ function App() {
                 </label>
                 <button onClick={createTaskInstances} disabled={!scheduledTemplateIds.length || isTaskWorkspaceLoading} type="button">生成样品任务</button>
                 <button
-                  className="primary"
-                  onClick={() => setTaskSchedulerPaused(isSchedulerRunning)}
-                  disabled={!taskInstances.length || isTaskWorkspaceLoading}
+                  onClick={clearTaskQueue}
+                  disabled={!taskInstances.length || isTaskWorkspaceLoading || isSchedulerRunning || isTaskExecutionDraining}
+                  title={isSchedulerRunning || isTaskExecutionDraining ? '请先暂停派发' : '删除队列中的全部 Task 实例'}
                   type="button"
                 >
-                  {isSchedulerRunning ? '暂停派发' : '运行调度'}
+                  清空队列
+                </button>
+                <button
+                  className="primary"
+                  onClick={handleTaskSchedulerToggle}
+                  disabled={!taskInstances.length || isTaskWorkspaceLoading || isSchedulerTransitioning}
+                  type="button"
+                >
+                  {isSchedulerTransitioning
+                    ? '切换中…'
+                    : isSchedulerRunning || isTaskExecutionDraining ? '暂停派发' : '运行调度'}
                 </button>
                 <button onClick={advanceTaskSchedule} disabled={!taskInstances.length || isTaskWorkspaceLoading} type="button">调度一步</button>
+              </div>
+              <div
+                aria-live="polite"
+                className={`task-execution-status ${taskExecutionStatus.phase}`}
+                role="status"
+              >
+                <strong>执行状态：{taskExecutionStatus.label}</strong>
+                <span>
+                  tick active {taskExecutionStatus.tick.active}
+                  {' · '}in_flight {taskExecutionStatus.tick.in_flight}
+                  {' · '}claimed {taskExecutionStatus.tick.claimed}
+                  {' · '}completed {taskExecutionStatus.tick.completed}
+                  {' · '}failed {taskExecutionStatus.tick.failed}
+                </span>
               </div>
               <div className="task-queue-list">
                 {taskInstances.map((task) => {
                   const template = taskTemplates.find((item) => item.id === task.templateId);
                   const waitingReason = taskWaitingReasons[task.id];
-                  const state = task.status === 'completed' ? 'done' : task.status === 'running' ? 'running' : task.status === 'pending' ? 'ready' : 'blocked';
+                  const localWaitingReason = taskLocalWaitingReason(task, taskInstances, taskTemplates);
+                  const state = task.status === 'completed'
+                    ? 'done'
+                    : task.status === 'running'
+                      ? 'running'
+                      : task.status === 'pending'
+                        ? 'ready'
+                        : task.status === 'failed'
+                          ? 'failed'
+                          : task.status === 'cancelled'
+                            ? 'cancelled'
+                            : 'blocked';
+                  const statusDetail = task.status === 'failed'
+                    ? '执行失败'
+                    : task.status === 'cancelled'
+                      ? '已取消'
+                      : task.status === 'completed'
+                        ? '已完成'
+                        : waitingReason
+                          ? taskWaitingText(waitingReason)
+                          : localWaitingReason || (task.status === 'waiting' ? '正在检查前置条件' : '等待调度器派发');
                   const sampleQueue = taskInstances
                     .filter((item) => item.sample === task.sample)
                     .sort((left, right) => left.order - right.order);
@@ -2410,7 +3255,7 @@ function App() {
                         <strong>{task.sample} / {template?.name || task.templateId}</strong>
                         <span>{task.startedAt
                           ? `运行记录：${new Date(task.startedAt).toLocaleTimeString('zh-CN', { hour12: false })}`
-                          : waitingReason?.message || (task.status === 'waiting' ? '正在检查前置条件' : '等待调度器派发')}</span>
+                          : statusDetail}</span>
                       </div>
                       <div className="task-queue-actions">
                         <button
@@ -2440,25 +3285,26 @@ function App() {
               <div className="task-panel-head compact">
                 <div>
                   <h2>等待条件与调度事件</h2>
-                  <p>仅展示当前未满足的前置、信号或资源条件。</p>
+                  <p>仅展示当前未满足的样品前序或用户流程条件；设备握手由 Action 内部处理。</p>
                 </div>
               </div>
               <div className="task-waiting-list">
                 {taskInstances
-                  .filter((task) => task.status !== 'completed' && task.status !== 'running')
+                  .filter((task) => isTaskWaitingStatus(task.status))
                   .map((task) => {
                     const template = taskTemplates.find((item) => item.id === task.templateId);
                     const waitingReason = taskWaitingReasons[task.id];
+                    const localWaitingReason = taskLocalWaitingReason(task, taskInstances, taskTemplates);
                     return (
                       <div key={task.id}>
                         <strong>{task.sample} / {template?.name || task.templateId}</strong>
                         <span>{waitingReason
-                          ? `${waitingReason.message}（${waitingReason.code}）`
-                          : task.status === 'waiting' ? '正在检查前置条件' : '等待调度器派发'}</span>
+                          ? `${taskWaitingText(waitingReason)}（${waitingReason.code}）`
+                          : localWaitingReason || (task.status === 'waiting' ? '正在检查前置条件' : '等待调度器派发')}</span>
                       </div>
                     );
                   })}
-                {!taskInstances.some((task) => task.status !== 'completed' && task.status !== 'running') && <div className="task-empty">当前没有等待中的 Task。</div>}
+                {!taskInstances.some((task) => isTaskWaitingStatus(task.status)) && <div className="task-empty">当前没有等待中的 Task。</div>}
               </div>
               <div className="task-event-list">
                 {taskEvents.map((event, index) => <div key={`${event}-${index}`}>{event}</div>)}
@@ -2476,7 +3322,7 @@ function App() {
               <div className="task-panel-head">
                 <div>
                   <h2>Resource Schedule</h2>
-                  <p>由 Task 编排服务返回的排程，按资源泳道展示计划、运行与完成的 Task。</p>
+                  <p>由 Task 编排服务返回的 Task 进度泳道；涉及设备仅供识别，不表示设备占用。</p>
                 </div>
                 <span>{isSchedulerRunning ? '派发中' : '已暂停'}</span>
               </div>
@@ -2518,7 +3364,7 @@ function App() {
                   const span = Math.max(1, latest - earliest);
                   return (
                     <div className="task-gantt-row" key={resource}>
-                      <strong>{DEFAULT_SENSOR_GATES[resource]?.label || resource}</strong>
+                      <strong>{resource}</strong>
                       <div className="task-gantt-track">
                         {entries.map((entry) => (
                           <button
@@ -2529,21 +3375,74 @@ function App() {
                               left: `${((entry.startAt - earliest) / span) * 100}%`,
                               width: `${Math.max(5, ((entry.endAt - entry.startAt) / span) * 100)}%`,
                             }}
-                            title={`${entry.sample} / ${taskTemplates.find((template) => template.id === entry.templateId)?.name || entry.templateId}`}
+                            title={[
+                              `${entry.sample} / ${taskTemplates.find((template) => template.id === entry.templateId)?.name || entry.templateId}`,
+                              entry.involvedDeviceIds?.length ? `涉及设备：${entry.involvedDeviceIds.join('、')}（非占用）` : '未声明涉及设备',
+                              entry.nodeInfoIncomplete ? '节点信息不完整' : '',
+                            ].filter(Boolean).join(' · ')}
                             type="button"
                           >
                             {entry.sample}
+                            {entry.involvedDeviceIds?.length ? <small>涉及：{entry.involvedDeviceIds.join('、')}</small> : null}
+                            {entry.nodeInfoIncomplete ? <em>节点信息不完整</em> : null}
                           </button>
                         ))}
                       </div>
                     </div>
                   );
                 })}
-                {!scheduledResources.length && <div className="task-empty">将 Template 拖入上方待排区后显示其需要的资源泳道。</div>}
+                {!scheduledResources.length && <div className="task-empty">创建 Task 实例后显示实际排程进度。</div>}
               </div>
             </section>
           </div>
         </main>
+      )}
+
+      {showOpcSimulatorSpecDialog && opcSimulatorSpecMarkdown && (
+        <OpcProfileSpecDialog
+          busy={opcSimulatorBusy}
+          markdown={opcSimulatorSpecMarkdown}
+          onClose={() => setShowOpcSimulatorSpecDialog(false)}
+        />
+      )}
+
+      {showOpcSimulatorReferenceDialog && opcSimulatorReferenceProfile && (
+        <OpcSimulatorDialog
+          backendErrors={[]}
+          busy={opcSimulatorBusy}
+          dirty={false}
+          errors={validateOpcSimulatorProfile(opcSimulatorReferenceProfile)}
+          fileName={OPC_REFERENCE_TEMPLATE_FILE}
+          onClose={() => setShowOpcSimulatorReferenceDialog(false)}
+          onProfileChange={() => {}}
+          onReload={() => {}}
+          onSave={() => {}}
+          profile={opcSimulatorReferenceProfile}
+          readOnly
+          revision={null}
+          subtitle="仓库示例 scripts/config/szlab_task_opc_simulator.json：含 robot / S07 / S06 的 channel、trigger、on_trigger、on_complete、reset_when 完整写法，可逐节点对照自己的配置工作台。"
+        />
+      )}
+
+      {showOpcSimulatorDialog && opcSimulatorProfile && (
+        <OpcSimulatorDialog
+          backendErrors={opcSimulatorBackendErrors}
+          busy={opcSimulatorBusy}
+          configDir={opcSimulatorConfigDir}
+          dirty={opcSimulatorDirty}
+          errors={opcSimulatorLocalErrors}
+          fileName={opcSimulatorFileName}
+          onClose={() => {
+            setShowOpcSimulatorDialog(false);
+          }}
+          onConfigFileChange={(fileName) => void handleOpcConfigFileChange(fileName)}
+          onProfileChange={updateOpcSimulatorProfile}
+          profileFiles={opcSimulatorProfileFiles}
+          onReload={() => void loadOpcSimulatorProfile(opcSimulatorFileName)}
+          onSave={(status, download) => void saveOpcSimulatorProfile(status, download)}
+          profile={opcSimulatorProfile}
+          revision={opcSimulatorRevision}
+        />
       )}
 
       {showStackModal && (
@@ -2655,7 +3554,7 @@ function App() {
               <input
                 value={config.url}
                 onChange={(event) => setConfig({ ...config, url: event.target.value })}
-                placeholder="opc.tcp://jdht1471820.bohrium.tech:50001"
+                placeholder={DEFAULT_OPC_SIMULATOR_URL}
               />
             </label>
             {config.show_csv && (
@@ -2691,7 +3590,11 @@ function App() {
 }
 
 function downloadJson(filename: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+  downloadText(filename, JSON.stringify(data, null, 2));
+}
+
+function downloadText(filename: string, text: string) {
+  const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;

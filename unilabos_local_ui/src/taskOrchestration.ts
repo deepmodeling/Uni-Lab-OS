@@ -2,9 +2,13 @@ export type CsvVariableModel = {
   name: string;
   data_type: string;
   initial_value: string;
+  plcDeviceId?: string;
+  display_name?: string;
+  aliases?: string[];
 };
 
 export type TriggerCondition = {
+  plcDeviceId?: string;
   variableName: string;
   dataType: string;
   value: string | number | boolean;
@@ -20,14 +24,11 @@ export type TaskTemplateModel = {
   outputTriggers?: TriggerCondition[];
 };
 
-export type TaskInstanceModel = {
+export type TaskNodeDescriptor = {
   id: string;
-  sample: string;
-  templateId: string;
-  order: number;
-  status: 'waiting' | 'pending' | 'running' | 'done';
-  startedAt?: number;
-  finishedAt?: number;
+  deviceId?: string;
+  method?: string;
+  opcVariables?: string[];
 };
 
 export type TaskGanttEntry = {
@@ -40,10 +41,162 @@ export type TaskGanttEntry = {
   startAt: number;
   endAt: number;
   state: 'planned' | 'running' | 'done';
+  involvedDeviceIds?: string[];
+  nodeInfoIncomplete?: boolean;
 };
 
-function templateDurationMs(template: TaskTemplateModel) {
-  return Math.max(15_000, template.nodeIds.length * 15_000);
+export type ApiTaskGanttEntry = {
+  instance_id: string;
+  template_id: string;
+  sample_id: string;
+  start_at: number;
+  end_at: number;
+  resources: string[];
+  state: 'planned' | 'running' | 'done';
+};
+
+export function buildTaskGanttEntries(
+  entries: ApiTaskGanttEntry[],
+): Array<Omit<TaskGanttEntry, 'templateName'>> {
+  return entries.map((entry) => {
+    const resource = `task:${entry.template_id}`;
+    return {
+      id: `${entry.instance_id}:${resource}`,
+      instanceId: entry.instance_id,
+      sample: entry.sample_id,
+      templateId: entry.template_id,
+      resource,
+      startAt: entry.start_at,
+      endAt: entry.end_at,
+      state: entry.state,
+    };
+  });
+}
+
+export function annotateTaskGanttEntries<T extends Omit<TaskGanttEntry, 'templateName'>>(
+  entries: T[],
+  templates: Array<Pick<TaskTemplateModel, 'id' | 'nodeIds'>>,
+  nodes: TaskNodeDescriptor[],
+) {
+  const templatesById = new Map(templates.map((template) => [template.id, template]));
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  return entries.map((entry) => {
+    const template = templatesById.get(entry.templateId);
+    const templateNodes = template?.nodeIds.map((nodeId) => nodesById.get(nodeId)) || [];
+    return {
+      ...entry,
+      involvedDeviceIds: Array.from(new Set(
+        templateNodes
+          .map((node) => node?.deviceId)
+          .filter((deviceId): deviceId is string => Boolean(deviceId)),
+      )),
+      nodeInfoIncomplete: !template
+        || templateNodes.length !== template.nodeIds.length
+        || templateNodes.some((node) => !node),
+    };
+  });
+}
+
+export function createSynchronousActionGate() {
+  let inFlight = false;
+  return {
+    tryStart() {
+      if (inFlight) return false;
+      inFlight = true;
+      return true;
+    },
+    finish() {
+      inFlight = false;
+    },
+    isInFlight() {
+      return inFlight;
+    },
+  };
+}
+
+export function createOperationGenerationController() {
+  let generation = 0;
+  return {
+    begin() {
+      return ++generation;
+    },
+    isCurrent(candidate: number) {
+      return candidate === generation;
+    },
+    invalidate() {
+      generation += 1;
+    },
+  };
+}
+
+export function createTaskTemplateId(
+  sequence: number,
+  randomUUID: () => string = () => globalThis.crypto.randomUUID(),
+) {
+  return `task_${sequence.toString(36)}_${randomUUID().replace(/-/g, '')}`;
+}
+
+export function resolveTaskTemplateNameDraft(draft: string, currentName: string) {
+  return draft.trim() || currentName;
+}
+
+export function updateScheduledTemplateDraft(
+  current: string[],
+  templateId: string,
+  operation: 'add' | 'remove',
+) {
+  if (operation === 'add') {
+    return current.includes(templateId) ? current : [...current, templateId];
+  }
+  return current.includes(templateId)
+    ? current.filter((id) => id !== templateId)
+    : current;
+}
+
+/** output_triggers 只描述完成后的输出动作，不门控 Task 完成；waiting 仅含输入阶段的 waiting/pending。 */
+export function isTaskWaitingStatus(status: string) {
+  return status === 'waiting' || status === 'pending';
+}
+
+export function canDeleteTaskTemplate(
+  templateId: string,
+  instances: Array<{ templateId: string; status: string }>,
+  state: { schedulerBusy: boolean; actionInFlight: boolean },
+) {
+  const terminalStatuses = new Set(['completed', 'failed', 'cancelled', 'done']);
+  const hasActiveInstance = instances.some((instance) => (
+    instance.templateId === templateId && !terminalStatuses.has(instance.status)
+  ));
+  return !hasActiveInstance && !state.schedulerBusy && !state.actionInFlight;
+}
+
+export type WorkspaceEpoch = {
+  path: string;
+  generation: number;
+  signal: AbortSignal;
+};
+
+export function createWorkspaceEpochController() {
+  let generation = 0;
+  let current: WorkspaceEpoch | null = null;
+  let controller: AbortController | null = null;
+  return {
+    begin(path: string): WorkspaceEpoch {
+      controller?.abort();
+      controller = new AbortController();
+      current = { path, generation: ++generation, signal: controller.signal };
+      return current;
+    },
+    isCurrent(epoch: Pick<WorkspaceEpoch, 'path' | 'generation'>) {
+      return current?.path === epoch.path && current.generation === epoch.generation;
+    },
+    current() {
+      return current;
+    },
+    abort() {
+      controller?.abort();
+    },
+  };
 }
 
 export function renameTaskTemplate<T extends TaskTemplateModel>(
@@ -58,6 +211,49 @@ export function renameTaskTemplate<T extends TaskTemplateModel>(
   ));
 }
 
+export function createTaskTemplateDraft(
+  id: string,
+  name: string,
+  nodes: TaskNodeDescriptor[],
+): TaskTemplateModel {
+  return {
+    id,
+    name,
+    nodeIds: nodes.map((node) => node.id),
+    resources: [],
+    gates: [],
+    inputTriggers: [],
+    outputTriggers: [],
+  };
+}
+
+export function taskTemplateDeviceIds(
+  template: Pick<TaskTemplateModel, 'nodeIds'>,
+  nodes: TaskNodeDescriptor[],
+) {
+  const deviceIdByNodeId = new Map(nodes.map((node) => [node.id, node.deviceId]));
+  return Array.from(new Set(
+    template.nodeIds
+      .map((nodeId) => deviceIdByNodeId.get(nodeId))
+      .filter((deviceId): deviceId is string => Boolean(deviceId)),
+  ));
+}
+
+export function taskLocalWaitingReason(
+  task: { sample: string; templateId: string; order: number; status: string },
+  instances: Array<{ sample: string; order: number; status: string }>,
+  templates: Array<Pick<TaskTemplateModel, 'id'>>,
+) {
+  if (!isTaskWaitingStatus(task.status)) return '';
+  if (!templates.some((template) => template.id === task.templateId)) {
+    return '缺少 Task 模板';
+  }
+  const previousDone = instances
+    .filter((instance) => instance.sample === task.sample && instance.order < task.order)
+    .every((instance) => instance.status === 'done' || instance.status === 'completed');
+  return previousDone ? '' : '同一样品的前序 Task 未完成';
+}
+
 function normalizedDataType(dataType: string) {
   return dataType.trim().toUpperCase();
 }
@@ -65,50 +261,25 @@ function normalizedDataType(dataType: string) {
 export function createDefaultTriggerCondition(variable?: CsvVariableModel): TriggerCondition {
   const dataType = normalizedDataType(variable?.data_type || 'STRING');
   const initialValue = variable?.initial_value ?? '';
+  const identity = {
+    ...(variable?.plcDeviceId ? { plcDeviceId: variable.plcDeviceId } : {}),
+    variableName: variable?.name || '',
+    dataType,
+  };
   if (dataType === 'BOOL' || dataType === 'BOOLEAN') {
     return {
-      variableName: variable?.name || '',
-      dataType,
+      ...identity,
       value: initialValue.trim().toLowerCase() === 'true',
     };
   }
   if (dataType === 'INTEGER' || dataType === 'INT' || dataType === 'FLOAT' || dataType === 'DOUBLE' || dataType === 'NUMBER') {
     const numericValue = Number(initialValue);
     return {
-      variableName: variable?.name || '',
-      dataType,
+      ...identity,
       value: Number.isFinite(numericValue) ? numericValue : 0,
     };
   }
-  return { variableName: variable?.name || '', dataType, value: initialValue };
-}
-
-/**
- * 将自动识别的运行约束转成可审阅的 Task 输入/输出条件。
- * 资源锁和工位门控由后端调度策略判定，输出只保留完成审计事件。
- */
-export function createTaskTemplateTriggers(resources: string[], gates: string[]) {
-  const unique = (items: string[]) => Array.from(new Set(items.filter(Boolean)));
-  const booleanCondition = (variableName: string): TriggerCondition => ({
-    variableName,
-    dataType: 'BOOL',
-    value: true,
-  });
-
-  return {
-    inputTriggers: [
-      ...unique(resources).map((resource) => booleanCondition(`系统资源可用：${resource}`)),
-      ...unique(gates).map((gate) => booleanCondition(`系统工位可用：${gate}`)),
-    ],
-    outputTriggers: [
-      ...unique(resources).map((resource) => booleanCondition(`系统资源释放：${resource}`)),
-      ...unique(gates).map((gate) => booleanCondition(`系统工位完成：${gate}`)),
-    ],
-  };
-}
-
-function isDerivedTaskTrigger(condition: TriggerCondition) {
-  return /^(系统资源可用|系统工位可用|系统资源释放|系统工位完成|资源锁可获取|工位条件满足|资源锁释放|工位任务完成|业务内部)：/.test(condition.variableName);
+  return { ...identity, value: initialValue };
 }
 
 export function normalizeTriggerConditions(
@@ -116,20 +287,29 @@ export function normalizeTriggerConditions(
   csvVariables: CsvVariableModel[],
 ): TriggerCondition[] {
   if (!csvVariables.length) {
-    return conditions.length ? conditions : [createDefaultTriggerCondition()];
+    return conditions.length ? conditions : [];
   }
-  const variablesByName = new Map(csvVariables.map((variable) => [variable.name, variable]));
   const normalized = conditions.flatMap((condition) => {
-    if (isDerivedTaskTrigger(condition)) return [condition];
-    const variable = variablesByName.get(condition.variableName);
-    if (!variable) return [];
+    if (
+      condition.plcDeviceId
+      && !csvVariables.some((variable) => variable.plcDeviceId === condition.plcDeviceId)
+    ) {
+      return [condition];
+    }
+    const candidates = csvVariables.filter((variable) => (
+      variable.name === condition.variableName
+      && (!condition.plcDeviceId || variable.plcDeviceId === condition.plcDeviceId)
+    ));
+    if (candidates.length !== 1) return [];
+    const variable = candidates[0];
     return [{
+      ...(variable.plcDeviceId ? { plcDeviceId: variable.plcDeviceId } : {}),
       variableName: variable.name,
       dataType: normalizedDataType(variable.data_type),
       value: condition.value,
     }];
   });
-  return normalized.length ? normalized : [createDefaultTriggerCondition(csvVariables[0])];
+  return normalized;
 }
 
 export function updateTaskTemplateTriggers<T extends TaskTemplateModel>(
@@ -144,53 +324,4 @@ export function updateTaskTemplateTriggers<T extends TaskTemplateModel>(
   return templates.map((template) => (
     template.id === templateId ? { ...template, [field]: normalized } : template
   ));
-}
-
-export function buildTaskGanttSchedule(
-  templates: TaskTemplateModel[],
-  instances: TaskInstanceModel[],
-  now: number,
-): TaskGanttEntry[] {
-  const templatesById = new Map(templates.map((template) => [template.id, template]));
-  const resourceAvailableAt = new Map<string, number>();
-  const sampleAvailableAt = new Map<string, number>();
-  const entries: TaskGanttEntry[] = [];
-
-  instances.forEach((instance) => {
-    const template = templatesById.get(instance.templateId);
-    if (!template) return;
-    const duration = templateDurationMs(template);
-    const previousSampleEnd = sampleAvailableAt.get(instance.sample) ?? 0;
-    const resourceReadyAt = template.resources.reduce(
-      (latest, resource) => Math.max(latest, resourceAvailableAt.get(resource) ?? 0),
-      0,
-    );
-    const plannedStart = Math.max(now, previousSampleEnd, resourceReadyAt);
-    const state = instance.status === 'done'
-      ? 'done'
-      : instance.status === 'running'
-        ? 'running'
-        : 'planned';
-    const endAt = instance.finishedAt ?? (instance.status === 'running' ? now + duration : plannedStart + duration);
-    const startAt = instance.startedAt ?? (state === 'done' ? Math.max(0, endAt - duration) : plannedStart);
-    const availableAt = Math.max(endAt, startAt);
-
-    template.resources.forEach((resource) => {
-      resourceAvailableAt.set(resource, availableAt);
-      entries.push({
-        id: `${instance.id}:${resource}`,
-        instanceId: instance.id,
-        sample: instance.sample,
-        templateId: template.id,
-        templateName: template.name,
-        resource,
-        startAt,
-        endAt,
-        state,
-      });
-    });
-    sampleAvailableAt.set(instance.sample, availableAt);
-  });
-
-  return entries;
 }

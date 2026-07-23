@@ -264,3 +264,7 @@ unilabos_local_ui/dist/
 unilabos_local_ui/*.tsbuildinfo
 unilabos_local_ui/vite.config.d.ts
 unilabos_local_ui/vite.config.js
+
+# OPC simulator profile lock files (user profiles live under task-orchestration/configs)
+task-orchestration/configs/.opc-profile-locks/
+.superpowers

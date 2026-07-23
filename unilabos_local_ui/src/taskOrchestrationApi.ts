@@ -1,14 +1,10 @@
 import type { TriggerCondition } from './taskOrchestration';
 
 export type ApiTrigger = {
-  kind: 'opc' | 'internal' | 'resource' | 'workstation';
+  kind: 'opc';
   config: {
-    provider_id?: string;
+    plc_device_id?: string;
     variable?: string;
-    key?: string;
-    resource?: string;
-    workstation?: string;
-    event?: string;
     value?: string | number | boolean;
   };
 };
@@ -19,7 +15,6 @@ export type ApiTemplate = {
   workflow_path: string;
   node_ids: string[];
   resources: string[];
-  trigger: ApiTrigger | null;
   input_triggers: ApiTrigger[];
   output_triggers: ApiTrigger[];
 };
@@ -65,13 +60,19 @@ export type ApiWorkspace = {
   events: ApiWorkspaceEvent[];
   scheduled_template_ids: string[];
   scheduler_paused: boolean;
+  pause_reason?: Record<string, unknown> | null;
   schedule_entries: ApiScheduleEntry[];
-  // 服务端公开响应只提供快照元数据，前端绝不接收或处理 raw OPC values。
   opc_snapshots: Array<{
-    provider_id: string;
+    plc_device_id: string;
     sequence: number;
-    variable_count: number;
+    values: Record<string, unknown>;
     updated_at_by_variable: Record<string, number>;
+  }>;
+  plc_registrations: Array<{
+    plc_device_id: string;
+    runtime_url: string;
+    variables: string[];
+    aliases: Record<string, string>;
   }>;
 };
 
@@ -83,6 +84,82 @@ export type ApiWorkspaceResponse = {
     waiting_reasons: Record<string, ApiWaitingReason>;
   };
 };
+
+export type TaskExecutionTickStats = {
+  active: number;
+  in_flight: number;
+  claimed: number;
+  completed: number;
+  failed: number;
+};
+
+export type TaskExecutionCycleResult = {
+  active: boolean;
+  workspace: ApiWorkspaceResponse;
+  tick: TaskExecutionTickStats | null;
+};
+
+export type TaskExecutionPhase = 'idle' | 'dispatching' | 'running' | 'completed' | 'failed';
+
+export type TaskExecutionStatus = {
+  phase: TaskExecutionPhase;
+  label: '空闲' | '采样派发' | '执行中' | '已完成' | '故障';
+  tick: TaskExecutionTickStats;
+};
+
+const EMPTY_TASK_EXECUTION_TICK: TaskExecutionTickStats = {
+  active: 0,
+  in_flight: 0,
+  claimed: 0,
+  completed: 0,
+  failed: 0,
+};
+
+export function createTaskExecutionStatus(
+  tick?: Partial<TaskExecutionTickStats> | null,
+  workspace?: ApiWorkspaceResponse | null,
+  phase?: TaskExecutionPhase,
+): TaskExecutionStatus {
+  const normalized = {
+    active: Number(tick?.active || 0),
+    in_flight: Number(tick?.in_flight || 0),
+    claimed: Number(tick?.claimed || 0),
+    completed: Number(tick?.completed || 0),
+    failed: Number(tick?.failed || 0),
+  };
+  const taskInstances = workspace?.workspace.task_instances || [];
+  const allCompleted = taskInstances.length > 0
+    && taskInstances.every((instance) => instance.status === 'completed');
+  const nextPhase = phase || (
+    normalized.failed > 0 || Boolean(workspace?.workspace.pause_reason)
+      ? 'failed'
+      : normalized.in_flight > 0
+        ? 'running'
+        : normalized.claimed > 0
+          ? 'dispatching'
+          : allCompleted
+            ? 'completed'
+            : 'idle'
+  );
+  const labels: Record<TaskExecutionPhase, TaskExecutionStatus['label']> = {
+    idle: '空闲',
+    dispatching: '采样派发',
+    running: '执行中',
+    completed: '已完成',
+    failed: '故障',
+  };
+  return { phase: nextPhase, label: labels[nextPhase], tick: normalized };
+}
+
+export class TaskExecutionCycleCancelledError extends Error {
+  readonly cause?: unknown;
+
+  constructor(message = 'Task 执行周期已取消', cause?: unknown) {
+    super(message);
+    this.name = 'TaskExecutionCycleCancelledError';
+    this.cause = cause;
+  }
+}
 
 export class TaskOrchestrationBusinessError extends Error {
   constructor(
@@ -114,57 +191,15 @@ export function resolveTaskOrchestrationApiUrl(
   return '/task-api/api/v1';
 }
 
-export function resolveTaskOrchestrationUiToken(
-  env: Record<string, string | undefined> = import.meta.env || {},
-  location: Pick<Location, 'hostname' | 'port'> | undefined = globalThis.location,
-) {
-  if (env.VITE_TASK_ORCHESTRATION_UI_TOKEN) {
-    return env.VITE_TASK_ORCHESTRATION_UI_TOKEN;
-  }
-  return location?.hostname === '127.0.0.1' && location.port === '8014'
-    ? 'local-task-ui-dev'
-    : undefined;
-}
-
 export function toApiTrigger(condition: TriggerCondition): ApiTrigger {
-  const resource = condition.variableName.match(/^(?:系统资源可用|资源锁可获取)：(.+)$/)?.[1];
-  if (resource) {
-    return {
-      kind: 'resource',
-      config: { resource },
-    };
-  }
-  const workstation = condition.variableName.match(/^(?:系统工位可用|工位条件满足)：(.+)$/)?.[1];
-  if (workstation) {
-    return {
-      kind: 'workstation',
-      config: { workstation },
-    };
-  }
-  const releasedResource = condition.variableName.match(/^(?:系统资源释放|资源锁释放)：(.+)$/)?.[1];
-  if (releasedResource) {
-    return {
-      kind: 'resource',
-      config: { resource: releasedResource, event: 'released' },
-    };
-  }
-  const completedWorkstation = condition.variableName.match(/^(?:系统工位完成|工位任务完成)：(.+)$/)?.[1];
-  if (completedWorkstation) {
-    return {
-      kind: 'workstation',
-      config: { workstation: completedWorkstation, event: 'completed' },
-    };
-  }
-  if (condition.variableName.startsWith('业务内部：')) {
-    return {
-      kind: 'internal',
-      config: { key: condition.variableName.slice('业务内部：'.length), value: condition.value },
-    };
+  const plcDeviceId = condition.plcDeviceId?.trim();
+  if (!plcDeviceId) {
+    throw new Error(`条件 ${condition.variableName || '未命名变量'} 缺少 PLC 设备 ID`);
   }
   return {
     kind: 'opc',
     config: {
-      provider_id: 'default',
+      plc_device_id: plcDeviceId,
       variable: condition.variableName,
       value: condition.value,
     },
@@ -174,14 +209,11 @@ export function toApiTrigger(condition: TriggerCondition): ApiTrigger {
 export function fromApiTrigger(trigger: ApiTrigger): TriggerCondition {
   const value = trigger.config.value ?? true;
   return {
+    ...(trigger.config.plc_device_id
+      ? { plcDeviceId: String(trigger.config.plc_device_id) }
+      : {}),
     variableName: String(
-      trigger.kind === 'internal'
-        ? `业务内部：${trigger.config.key || ''}`
-        : trigger.kind === 'resource'
-          ? `${trigger.config.event ? '系统资源释放' : '系统资源可用'}：${trigger.config.resource || ''}`
-          : trigger.kind === 'workstation'
-            ? `${trigger.config.event ? '系统工位完成' : '系统工位可用'}：${trigger.config.workstation || ''}`
-            : trigger.config.variable || '',
+      trigger.config.variable || '',
     ),
     dataType: typeof value === 'boolean' ? 'BOOL' : typeof value === 'number' ? 'FLOAT' : 'STRING',
     value,
@@ -193,7 +225,6 @@ type FetchLike = typeof fetch;
 type ClientOptions = {
   baseUrl?: string;
   fetchImpl?: FetchLike;
-  uiToken?: string;
 };
 
 function isWorkspaceResponse(payload: unknown): payload is ApiWorkspaceResponse {
@@ -209,7 +240,8 @@ function isWorkspaceResponse(payload: unknown): payload is ApiWorkspaceResponse 
     && Array.isArray(value.scheduled_template_ids)
     && typeof value.scheduler_paused === 'boolean'
     && Array.isArray(value.schedule_entries)
-    && Array.isArray(value.opc_snapshots);
+    && Array.isArray(value.opc_snapshots)
+    && Array.isArray(value.plc_registrations);
 }
 
 async function parseResponse(response: Response): Promise<ApiWorkspaceResponse> {
@@ -235,7 +267,6 @@ async function parseResponse(response: Response): Promise<ApiWorkspaceResponse> 
 export function createTaskOrchestrationClient(options: ClientOptions = {}) {
   const baseUrl = options.baseUrl || resolveTaskOrchestrationApiUrl();
   const fetchImpl = options.fetchImpl || fetch;
-  const uiToken = options.uiToken ?? resolveTaskOrchestrationUiToken();
 
   const request = async (
     path: string,
@@ -246,7 +277,6 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
         ...init,
         headers: {
           'content-type': 'application/json',
-          ...(uiToken ? { Authorization: `Bearer ${uiToken}` } : {}),
           ...init.headers,
         },
       }));
@@ -262,7 +292,13 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
   const body = (payload: unknown) => ({ method: 'POST', body: JSON.stringify(payload) });
 
   return {
-    getWorkspace: (workflowPath: string) => request(`/workspaces?workflow_path=${encodeURIComponent(workflowPath)}`, { method: 'GET' }),
+    getWorkspace: (workflowPath: string, signal?: AbortSignal) => request(`/workspaces?workflow_path=${encodeURIComponent(workflowPath)}`, {
+      method: 'GET',
+      signal,
+    }),
+    resetWorkspace: (workflowPath: string) => (
+      request('/workspaces/reset', body({ workflow_path: workflowPath }))
+    ),
     createTemplate: (workflowPath: string, expectedVersion: number, template: ApiTemplate) => (
       request('/templates', body({ workflow_path: workflowPath, expected_version: expectedVersion, template }))
     ),
@@ -270,7 +306,7 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
       workflowPath: string,
       expectedVersion: number,
       templateId: string,
-      patch: Pick<Partial<ApiTemplate>, 'name' | 'trigger' | 'input_triggers' | 'output_triggers'>,
+      patch: Pick<Partial<ApiTemplate>, 'name' | 'input_triggers' | 'output_triggers'>,
     ) => request(`/templates/${encodeURIComponent(templateId)}`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -300,6 +336,12 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
         sample_ids: sampleIds,
       }))
     ),
+    clearInstances: (workflowPath: string, expectedVersion: number) => (
+      request('/instances:clear', body({
+        workflow_path: workflowPath,
+        expected_version: expectedVersion,
+      }))
+    ),
     moveInstance: (workflowPath: string, expectedVersion: number, instanceId: string, order: number) => (
       request(`/instances/${encodeURIComponent(instanceId)}:move`, body({
         workflow_path: workflowPath,
@@ -322,4 +364,449 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
       }))
     ),
   };
+}
+
+type TaskExecutionCycleClient = {
+  advance: (
+    workflowPath: string,
+    expectedVersion: number,
+    completedInstanceIds?: string[],
+  ) => Promise<ApiWorkspaceResponse>;
+  getWorkspace: (workflowPath: string) => Promise<ApiWorkspaceResponse>;
+};
+
+type TaskExecutionCycleOptions = {
+  fetcher: FetchLike;
+  taskClient: TaskExecutionCycleClient;
+  workflowPath: string;
+  workflow: Record<string, unknown> | undefined;
+  expectedVersion: number;
+  signal?: AbortSignal;
+  isCurrent?: () => boolean;
+};
+
+type BackendResult = {
+  success?: boolean;
+  active?: boolean | number;
+  message?: string;
+  in_flight?: number;
+  claimed?: number;
+  completed?: number;
+  failed?: number;
+};
+
+async function requestExecutionBackend(
+  fetcher: FetchLike,
+  path: '/api/task-opc/poll' | '/api/task-execution/tick',
+  payload: {
+    task_workspace_path: string;
+    workflow?: Record<string, unknown>;
+    harvest_only?: boolean;
+  },
+  failureLabel: string,
+  signal?: AbortSignal,
+): Promise<BackendResult> {
+  try {
+    const response = await fetcher(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+    let result: BackendResult | null = null;
+    try {
+      result = await response.json() as BackendResult;
+    } catch (error) {
+      if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+        throw error;
+      }
+    }
+    if (!response.ok || !result?.success) {
+      const message = result?.message || '后端返回无效响应';
+      const status = response.ok ? '' : `（HTTP ${response.status}）`;
+      throw new Error(`${failureLabel}：${message}${status}`);
+    }
+    return result;
+  } catch (error) {
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+      throw new TaskExecutionCycleCancelledError('Task 执行周期请求已取消', error);
+    }
+    throw error;
+  }
+}
+
+export async function runTaskExecutionCycle({
+  fetcher,
+  taskClient,
+  workflowPath,
+  workflow,
+  expectedVersion,
+  signal,
+  isCurrent,
+}: TaskExecutionCycleOptions): Promise<TaskExecutionCycleResult> {
+  if (!workflow || typeof workflow !== 'object') {
+    throw new Error('缺少当前 workflow JSON');
+  }
+  const assertCurrent = () => {
+    if (signal?.aborted || isCurrent?.() === false) {
+      throw new TaskExecutionCycleCancelledError();
+    }
+  };
+  const payload = { task_workspace_path: workflowPath, workflow };
+  assertCurrent();
+  let workspaceSnapshot = await taskClient.getWorkspace(workflowPath);
+  assertCurrent();
+  if (
+    workspaceSnapshot.workspace.scheduler_paused
+    || workspaceSnapshot.workspace.pause_reason
+  ) {
+    return {
+      active: false,
+      workspace: workspaceSnapshot,
+      tick: null,
+    };
+  }
+  const poll = await requestExecutionBackend(
+    fetcher,
+    '/api/task-opc/poll',
+    payload,
+    'Task OPC 采样失败',
+    signal,
+  );
+  assertCurrent();
+  if (!poll.active) {
+    assertCurrent();
+    const workspace = await taskClient.getWorkspace(workflowPath);
+    assertCurrent();
+    return {
+      active: false,
+      workspace,
+      tick: null,
+    };
+  }
+
+  try {
+    await taskClient.advance(workflowPath, expectedVersion);
+  } catch (error) {
+    if (!(error instanceof TaskOrchestrationBusinessError) || error.status !== 409) {
+      throw error;
+    }
+    assertCurrent();
+    workspaceSnapshot = await taskClient.getWorkspace(workflowPath);
+    assertCurrent();
+    if (
+      workspaceSnapshot.workspace.scheduler_paused
+      || workspaceSnapshot.workspace.pause_reason
+    ) {
+      return {
+        active: false,
+        workspace: workspaceSnapshot,
+        tick: null,
+      };
+    }
+    await taskClient.advance(workflowPath, workspaceSnapshot.version);
+  }
+  assertCurrent();
+  const tick = await requestExecutionBackend(
+    fetcher,
+    '/api/task-execution/tick',
+    payload,
+    'Task action tick 失败',
+    signal,
+  );
+  assertCurrent();
+  const workspace = await taskClient.getWorkspace(workflowPath);
+  assertCurrent();
+  return {
+    active: true,
+    workspace,
+    tick: {
+      active: Number(tick.active || 0),
+      in_flight: Number(tick.in_flight || 0),
+      claimed: Number(tick.claimed || 0),
+      completed: Number(tick.completed || 0),
+      failed: Number(tick.failed || 0),
+    },
+  };
+}
+
+type TaskExecutionHarvestClient = {
+  getWorkspace: (workflowPath: string) => Promise<ApiWorkspaceResponse>;
+};
+
+type TaskExecutionHarvestOptions = {
+  fetcher: FetchLike;
+  taskClient: TaskExecutionHarvestClient;
+  workflowPath: string;
+  signal?: AbortSignal;
+  isCurrent?: () => boolean;
+};
+
+export async function runTaskExecutionHarvestCycle({
+  fetcher,
+  taskClient,
+  workflowPath,
+  signal,
+  isCurrent,
+}: TaskExecutionHarvestOptions): Promise<TaskExecutionCycleResult> {
+  const assertCurrent = () => {
+    if (signal?.aborted || isCurrent?.() === false) {
+      throw new TaskExecutionCycleCancelledError();
+    }
+  };
+  assertCurrent();
+  const tick = await requestExecutionBackend(
+    fetcher,
+    '/api/task-execution/tick',
+    { task_workspace_path: workflowPath, harvest_only: true },
+    'Task action tick 失败',
+    signal,
+  );
+  assertCurrent();
+  const workspace = await taskClient.getWorkspace(workflowPath);
+  assertCurrent();
+  const stats = {
+    active: Number(tick.active || 0),
+    in_flight: Number(tick.in_flight || 0),
+    claimed: Number(tick.claimed || 0),
+    completed: Number(tick.completed || 0),
+    failed: Number(tick.failed || 0),
+  };
+  return { active: stats.in_flight > 0, workspace, tick: stats };
+}
+
+type TaskSchedulerPlanClient = {
+  plan: (
+    workflowPath: string,
+    expectedVersion: number,
+    paused?: boolean,
+  ) => Promise<ApiWorkspaceResponse>;
+  getWorkspace: (workflowPath: string) => Promise<ApiWorkspaceResponse>;
+};
+
+export async function pauseTaskSchedulerReliably({
+  taskClient,
+  workflowPath,
+  expectedVersion,
+}: {
+  taskClient: TaskSchedulerPlanClient;
+  workflowPath: string;
+  expectedVersion: number;
+}): Promise<ApiWorkspaceResponse> {
+  try {
+    return await taskClient.plan(workflowPath, expectedVersion, true);
+  } catch (error) {
+    if (!(error instanceof TaskOrchestrationBusinessError) || error.status !== 409) {
+      throw error;
+    }
+  }
+  const latest = await taskClient.getWorkspace(workflowPath);
+  return taskClient.plan(workflowPath, latest.version, true);
+}
+
+export async function runTaskSchedulerTransition(
+  lock: { current: boolean },
+  onTransitioningChange: (transitioning: boolean) => void,
+  operation: () => Promise<void>,
+): Promise<boolean> {
+  if (lock.current) return false;
+  lock.current = true;
+  onTransitioningChange(true);
+  try {
+    await operation();
+    return true;
+  } finally {
+    lock.current = false;
+    onTransitioningChange(false);
+  }
+}
+
+type TaskExecutionControllerCycleOptions = {
+  workflowPath: string;
+  workflow?: Record<string, unknown>;
+  expectedVersion: number;
+  signal: AbortSignal;
+  isCurrent: () => boolean;
+};
+
+type TaskExecutionControllerOptions = {
+  runCycle: (options: TaskExecutionControllerCycleOptions) => Promise<TaskExecutionCycleResult>;
+  runHarvestCycle?: (options: TaskExecutionControllerCycleOptions) => Promise<TaskExecutionCycleResult>;
+  applyWorkspace: (workspace: ApiWorkspaceResponse) => void;
+  pauseScheduler: (workflowPath: string, expectedVersion: number) => Promise<ApiWorkspaceResponse>;
+  onStatus: (status: TaskExecutionStatus) => void;
+  onError: (message: string) => void;
+  onDrainingChange?: (draining: boolean) => void;
+  getLatestVersion?: () => number | null;
+};
+
+export function createTaskExecutionController({
+  runCycle,
+  runHarvestCycle,
+  applyWorkspace,
+  pauseScheduler,
+  onStatus,
+  onError,
+  onDrainingChange,
+  getLatestVersion,
+}: TaskExecutionControllerOptions) {
+  type Generation = {
+    id: number;
+    mode: 'active' | 'harvest' | 'transition';
+    running: boolean;
+    inFlight: boolean;
+    abortController: AbortController | null;
+  };
+  let nextGeneration = 0;
+  let currentGeneration: Generation | null = null;
+  let lastTick = { ...EMPTY_TASK_EXECUTION_TICK };
+  let lastWorkspace: ApiWorkspaceResponse | null = null;
+  let fatalError: string | null = null;
+
+  const isCurrent = (generation: Generation) => (
+    currentGeneration === generation && generation.running
+  );
+  const stopGeneration = (generation: Generation | null) => {
+    if (!generation) return;
+    generation.running = false;
+    generation.abortController?.abort();
+    generation.abortController = null;
+    if (currentGeneration === generation) currentGeneration = null;
+  };
+  const beginGeneration = (mode: Generation['mode']) => {
+    stopGeneration(currentGeneration);
+    const generation: Generation = {
+      id: ++nextGeneration,
+      mode,
+      running: true,
+      inFlight: false,
+      abortController: null,
+    };
+    currentGeneration = generation;
+    return generation;
+  };
+  const finishPausedTransition = (
+    generation: Generation,
+    workspace: ApiWorkspaceResponse,
+    phase?: TaskExecutionPhase,
+  ) => {
+    if (!isCurrent(generation)) throw new TaskExecutionCycleCancelledError();
+    applyWorkspace(workspace);
+    lastWorkspace = workspace;
+    generation.mode = 'harvest';
+    generation.inFlight = false;
+    onDrainingChange?.(true);
+    onStatus(createTaskExecutionStatus(lastTick, workspace, phase));
+    return true;
+  };
+
+  const controller = {
+    start() {
+      lastTick = { ...EMPTY_TASK_EXECUTION_TICK };
+      lastWorkspace = null;
+      fatalError = null;
+      beginGeneration('active');
+      onDrainingChange?.(false);
+      onStatus(createTaskExecutionStatus(lastTick, null, 'dispatching'));
+    },
+    pause() {
+      stopGeneration(currentGeneration);
+      onDrainingChange?.(false);
+    },
+    isRunning() {
+      return Boolean(currentGeneration?.running);
+    },
+    async pauseAndDrain({
+      workflowPath,
+      expectedVersion,
+    }: {
+      workflowPath: string;
+      expectedVersion: number;
+    }) {
+      const generation = beginGeneration('transition');
+      try {
+        const workspace = await pauseScheduler(workflowPath, expectedVersion);
+        return finishPausedTransition(generation, workspace);
+      } catch (error) {
+        if (error instanceof TaskExecutionCycleCancelledError) return false;
+        stopGeneration(generation);
+        onDrainingChange?.(false);
+        throw error;
+      }
+    },
+    async run(options: Omit<TaskExecutionControllerCycleOptions, 'signal' | 'isCurrent'>) {
+      const generation = currentGeneration;
+      if (!generation?.running || generation.inFlight || generation.mode === 'transition') {
+        return false;
+      }
+      generation.abortController = new AbortController();
+      generation.inFlight = true;
+      try {
+        const runner = generation.mode === 'harvest' ? runHarvestCycle : runCycle;
+        if (!runner) throw new Error('缺少 Task harvest-only 周期实现');
+        const result = await runner({
+          ...options,
+          signal: generation.abortController.signal,
+          isCurrent: () => isCurrent(generation),
+        });
+        if (!isCurrent(generation)) throw new TaskExecutionCycleCancelledError();
+        applyWorkspace(result.workspace);
+        lastWorkspace = result.workspace;
+        if (result.tick) lastTick = result.tick;
+        if (generation.mode === 'harvest') {
+          if (lastTick.in_flight === 0) {
+            stopGeneration(generation);
+            onDrainingChange?.(false);
+          }
+          onStatus(createTaskExecutionStatus(
+            lastTick,
+            result.workspace,
+            fatalError ? 'failed' : undefined,
+          ));
+          if (fatalError) onError(fatalError);
+          return true;
+        }
+        if (!result.active) {
+          const pausedWorkspace = await pauseScheduler(
+            options.workflowPath,
+            result.workspace.version,
+          );
+          finishPausedTransition(generation, pausedWorkspace);
+          return true;
+        }
+        onStatus(createTaskExecutionStatus(lastTick, result.workspace));
+        return true;
+      } catch (error) {
+        if (error instanceof TaskExecutionCycleCancelledError) return false;
+        const message = error instanceof Error ? error.message : 'Task 执行循环失败';
+        fatalError = message;
+        if (generation.mode === 'harvest') {
+          stopGeneration(generation);
+          onDrainingChange?.(false);
+          onStatus(createTaskExecutionStatus(lastTick, lastWorkspace, 'failed'));
+          onError(message);
+          return false;
+        }
+        const latestVersion = getLatestVersion?.() ?? options.expectedVersion;
+        try {
+          const pausedWorkspace = await pauseScheduler(options.workflowPath, latestVersion);
+          if (isCurrent(generation)) {
+            finishPausedTransition(generation, pausedWorkspace, 'failed');
+          }
+        } catch {
+          stopGeneration(generation);
+          onDrainingChange?.(false);
+          onStatus(createTaskExecutionStatus(lastTick, lastWorkspace, 'failed'));
+        }
+        onError(message);
+        return false;
+      } finally {
+        generation.inFlight = false;
+        if (generation.abortController?.signal.aborted) {
+          generation.abortController = null;
+        }
+      }
+    },
+  };
+  return controller;
 }

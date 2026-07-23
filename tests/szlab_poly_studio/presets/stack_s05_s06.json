@@ -11,7 +11,7 @@
   "default_workflow_name": "szlab_stack_s05_s06_workflow",
   "default_config": {
     "graph": "__generated__",
-    "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
+    "url": "opc.tcp://remote.example:4840",
     "csv": "stack_s05_s06_nodes.csv",
     "timeout": 300,
     "no_subscription": true,

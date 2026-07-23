@@ -12,7 +12,7 @@
   "default_workflow_name": "szlab_mixer_workflow",
   "default_config": {
     "graph": "__generated__",
-    "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
+    "url": "opc.tcp://remote.example:4840",
     "csv": "szlab_plc_0702.csv",
     "timeout": 300,
     "no_subscription": true,

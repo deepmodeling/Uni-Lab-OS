@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from typing import Any
 
@@ -56,6 +57,7 @@ class SzlabMixerRobotDevice(
         *args,
         **kwargs,
     ):
+        self._robot_task_lock = threading.RLock()
         self.plc_device_id = plc_device_id
         self.timeout = float(timeout)
         self.write_allowed_timeout = float(write_allowed_timeout)
@@ -380,6 +382,30 @@ class SzlabMixerRobotDevice(
         verify_reset: bool = False,
         **data: Any,
     ) -> dict[str, Any]:
+        with self._robot_task_lock:
+            return self._submit_robot_task_locked(
+                task=task,
+                station=station,
+                task_number=task_number,
+                variables=variables,
+                reset_variables=reset_variables,
+                precheck=precheck,
+                verify_reset=verify_reset,
+                **data,
+            )
+
+    @not_action
+    def _submit_robot_task_locked(
+        self,
+        task: str,
+        station: str,
+        task_number: int,
+        variables: dict[str, Any] | None = None,
+        reset_variables: dict[str, Any] | None = None,
+        precheck=None,
+        verify_reset: bool = False,
+        **data: Any,
+    ) -> dict[str, Any]:
         reset_variables = reset_variables or {ROBOT_TASK_NUMBER_VARIABLE: 0}
         try:
             pre_sensor_conditions, post_sensor_conditions = self._robot_sensor_requirements(task, station, data)
@@ -483,27 +509,72 @@ class SzlabMixerRobotDevice(
                 "reset": reset_result,
                 **data,
             }
-            return {"success": False, "message": str(exc), **self._last_task}
+            message = str(exc)
+            if not reset_result["success"]:
+                message = f"{message}；且 PC->PLC 变量复位失败"
+            return {"success": False, "message": message, **self._last_task}
 
-        complete_success, complete_message, complete_value = self._wait_robot_task_complete(task_number)
-        if os.environ.get("SKIP_RESET_AFTER_RUN") == "1":
+        complete_success = False
+        complete_message = ""
+        complete_value = None
+        sensor_postcheck = None
+        try:
             try:
-                self._write_variable(ROBOT_WRITE_DONE_VARIABLE, False)
-            except Exception:
-                pass
-            reset_result = {
-                "success": True,
-                "written_variables": {ROBOT_WRITE_DONE_VARIABLE: False},
-                "errors": {},
-                "skipped": True,
-                "message": "已跳过任务完成后的参数复位，仅复位 Robot_任务写入完成",
-            }
+                complete_success, complete_message, complete_value = (
+                    self._wait_robot_task_complete(task_number)
+                )
+            except Exception as exc:
+                complete_message = f"机器人任务完成等待失败: {exc}"
+
+            if complete_success and post_sensor_conditions:
+                try:
+                    sensor_postcheck = self._wait_sensor_conditions(
+                        post_sensor_conditions,
+                        phase="post",
+                    )
+                except Exception as exc:
+                    sensor_postcheck = {
+                        "success": False,
+                        "phase": "post",
+                        "message": str(exc),
+                        "conditions": post_sensor_conditions,
+                        "values": {},
+                    }
+        finally:
+            try:
+                if os.environ.get("SKIP_RESET_AFTER_RUN") == "1":
+                    reset_result = self._reset_pc_to_plc_variables(
+                        {ROBOT_WRITE_DONE_VARIABLE: False},
+                        verify=verify_reset,
+                    )
+                    reset_result.update(
+                        {
+                            "skipped": True,
+                            "message": "已跳过任务完成后的参数复位，仅复位 Robot_任务写入完成",
+                        }
+                    )
+                else:
+                    reset_result = self._reset_pc_to_plc_variables(
+                        {ROBOT_WRITE_DONE_VARIABLE: False, **reset_variables},
+                        verify=verify_reset,
+                    )
+            except Exception as exc:
+                reset_result = {
+                    "success": False,
+                    "written_variables": {},
+                    "readback": {},
+                    "errors": {"reset": str(exc)},
+                }
+
+        postcheck_success = (
+            sensor_postcheck is None or bool(sensor_postcheck.get("success"))
+        )
+        if not complete_success or not reset_result["success"]:
+            status = "failed"
+        elif not postcheck_success:
+            status = "verification_failed"
         else:
-            reset_result = self._reset_pc_to_plc_variables(
-                {ROBOT_WRITE_DONE_VARIABLE: False, **reset_variables},
-                verify=verify_reset,
-            )
-        status = "completed" if complete_success and reset_result["success"] else "failed"
+            status = "completed"
 
         self._last_task = {
             "task": task,
@@ -520,10 +591,15 @@ class SzlabMixerRobotDevice(
             "reset": reset_result,
             **data,
         }
+        if sensor_postcheck is not None:
+            self._last_task["sensor_postcheck"] = sensor_postcheck
         if not complete_success:
+            message = complete_message
+            if not reset_result["success"]:
+                message = f"{message}；且 PC->PLC 变量复位失败"
             return {
                 "success": False,
-                "message": complete_message,
+                "message": message,
                 **self._last_task,
             }
         if not reset_result["success"]:
@@ -532,26 +608,12 @@ class SzlabMixerRobotDevice(
                 "message": "机器人任务已完成，但 PC->PLC 变量复位失败",
                 **self._last_task,
             }
-        sensor_postcheck = None
-        if post_sensor_conditions:
-            try:
-                sensor_postcheck = self._wait_sensor_conditions(post_sensor_conditions, phase="post")
-            except Exception as exc:
-                sensor_postcheck = {
-                    "success": False,
-                    "phase": "post",
-                    "message": str(exc),
-                    "conditions": post_sensor_conditions,
-                    "values": {},
-                }
-            self._last_task["sensor_postcheck"] = sensor_postcheck
-            if not sensor_postcheck["success"]:
-                self._last_task["status"] = "verification_failed"
-                return {
-                    "success": False,
-                    "message": "机器人任务已完成，但现场传感器状态验证失败；禁止自动重试",
-                    **self._last_task,
-                }
+        if not postcheck_success:
+            return {
+                "success": False,
+                "message": "机器人任务已完成，但现场传感器状态验证失败；禁止自动重试",
+                **self._last_task,
+            }
         return {
             "success": True,
             "message": f"机器人任务已完成: {station} {task}",

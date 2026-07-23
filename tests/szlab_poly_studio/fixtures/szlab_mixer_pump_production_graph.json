@@ -6,7 +6,7 @@
       "type": "device",
       "class": "szlab_mixer_pump",
       "config": {
-        "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
+        "url": "opc.tcp://remote.example:4840",
         "timeout": 300,
         "opcua_node_id_map": {
           "S06准备信号": "ns=4;s=上位机通讯|S06准备信号",

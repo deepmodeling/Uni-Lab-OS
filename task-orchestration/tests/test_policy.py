@@ -53,7 +53,7 @@ def test_waits_for_earlier_sample_task_before_starting_later_order():
     assert reason.message == "等待样品 sample-a 的 order 1 完成"
 
 
-def test_prevents_resource_conflicts_and_explains_unavailable_resource():
+def test_static_template_resources_do_not_block_multiple_samples_from_starting():
     policy = FifoResourcePolicy()
     templates = [_template("first", ["robot"]), _template("second", ["robot"])]
     instances = [
@@ -68,11 +68,26 @@ def test_prevents_resource_conflicts_and_explains_unavailable_resource():
         condition_satisfied_instance_ids={"task-1", "task-2"},
     )
 
-    assert result.startable_instance_ids == ["task-1"]
-    reason = result.waiting_reasons["task-2"]
-    assert reason.code == "resource_unavailable"
-    assert reason.context == {"resources": ["robot"]}
-    assert reason.message == "资源不可用：robot"
+    assert result.startable_instance_ids == ["task-1", "task-2"]
+    assert result.waiting_reasons == {}
+
+
+def test_policy_receives_empty_available_resources_without_using_template_resources():
+    policy = FifoResourcePolicy()
+    templates = [_template("shared", ["legacy-robot"])]
+    instances = [
+        _instance("task-a", "shared", "sample-a", 0),
+        _instance("task-b", "shared", "sample-b", 0),
+    ]
+
+    result = policy.select(
+        templates,
+        instances,
+        available_resources=set(),
+        condition_satisfied_instance_ids={"task-a", "task-b"},
+    )
+
+    assert result.startable_instance_ids == ["task-a", "task-b"]
 
 
 def test_starts_independent_tasks_in_parallel_when_resources_do_not_conflict():
@@ -94,7 +109,7 @@ def test_starts_independent_tasks_in_parallel_when_resources_do_not_conflict():
     assert result.waiting_reasons == {}
 
 
-def test_reports_missing_resource_and_missing_template():
+def test_ignores_static_resource_availability_but_reports_missing_template():
     policy = FifoResourcePolicy()
     instances = [
         _instance("needs-station", "known-template", "sample-a", 1),
@@ -108,16 +123,14 @@ def test_reports_missing_resource_and_missing_template():
         condition_satisfied_instance_ids={"needs-station", "orphan"},
     )
 
-    assert result.startable_instance_ids == []
-    assert result.waiting_reasons["needs-station"].code == "resource_unavailable"
-    assert result.waiting_reasons["needs-station"].context == {"resources": ["station"]}
+    assert result.startable_instance_ids == ["needs-station"]
     assert result.waiting_reasons["orphan"].code == "template_missing"
     assert result.waiting_reasons["orphan"].context == {
         "template_id": "missing-template"
     }
 
 
-def test_uses_order_sample_and_instance_id_as_stable_fifo_tiebreakers():
+def test_uses_order_sample_and_instance_id_as_stable_fifo_order():
     policy = FifoResourcePolicy()
     templates = [_template("shared", ["robot"])]
     instances = [
@@ -133,12 +146,11 @@ def test_uses_order_sample_and_instance_id_as_stable_fifo_tiebreakers():
         condition_satisfied_instance_ids={instance.id for instance in instances},
     )
 
-    assert result.startable_instance_ids == ["z-task"]
-    assert result.waiting_reasons["a-task"].code == "resource_unavailable"
-    assert result.waiting_reasons["b-task"].code == "resource_unavailable"
+    assert result.startable_instance_ids == ["z-task", "a-task", "b-task"]
+    assert result.waiting_reasons == {}
 
 
-def test_uses_instance_id_when_order_and_sample_are_identical():
+def test_preserves_sample_predecessor_rule_when_instances_share_an_order():
     policy = FifoResourcePolicy()
     instances = [
         _instance("z-task", "shared", "sample-a", 1),
@@ -152,5 +164,5 @@ def test_uses_instance_id_when_order_and_sample_are_identical():
         condition_satisfied_instance_ids={"z-task", "a-task"},
     )
 
-    assert result.startable_instance_ids == ["a-task"]
-    assert result.waiting_reasons["z-task"].code == "resource_unavailable"
+    assert result.startable_instance_ids == ["a-task", "z-task"]
+    assert result.waiting_reasons == {}

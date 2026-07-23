@@ -1,4 +1,5 @@
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -12,8 +13,13 @@ from unilabos.devices.workstation.szlab_poly_studio.s06_pump.sensors import (
 )
 from unilabos.devices.workstation.szlab_poly_studio.plc import (
     SZLabPolyPLCDevice,
+    load_variable_aliases_from_csv,
+    load_variable_definitions_from_csv,
     wait_sensor_conditions,
     wait_variable_true,
+)
+from unilabos.devices.workstation.szlab_poly_studio.sensor import (
+    load_sensor_bit_metadata_from_csv,
 )
 from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnetic_stirring import (
     SzlabMixerMagneticStirrerDevice,
@@ -269,6 +275,7 @@ def test_szlab_plc_write_reports_direct_node_id_unknown_without_browse_retry(mon
     device._found_node_objects = {"Robot_任务写入完成": stale_node}
     device._name_mapping = {}
     device._direct_node_id_map = {"Robot_任务写入完成": "ns=4;s=上位机通讯|Robot_任务写入完成"}
+    device._opc_io_lock = threading.RLock()
     device.use_node = lambda node_name: device._node_registry[node_name]
 
     def fake_write(node, value):
@@ -1089,6 +1096,29 @@ def test_szlab_poly_plc_uses_csv_node_ids_without_browsing(monkeypatch, tmp_path
     assert device.use_node("S09允许加工").node_id == "ns=4;s=上位机通讯|S09允许加工"
 
 
+def test_szlab_csv_loaders_support_real_utf16_with_bom(tmp_path):
+    csv_path = tmp_path / "plc.csv"
+    sensor_name = "传感器状态_上位机[0].NO[0]"
+    csv_path.write_text(
+        "序号,变量名,EnglishName,数据类型,注释,软元件地址,node_id\n"
+        f"1,{sensor_name},material_present,BOOL,物料在位,R10000.0,ns=4;s=sensor\n",
+        encoding="utf-16",
+    )
+
+    names, node_ids = load_variable_definitions_from_csv(str(csv_path))
+    aliases = load_variable_aliases_from_csv(str(csv_path))
+    metadata = load_sensor_bit_metadata_from_csv(str(csv_path))
+
+    assert names == [sensor_name]
+    assert node_ids == {sensor_name: "ns=4;s=sensor"}
+    assert aliases == {"material_present": sensor_name}
+    assert metadata[sensor_name] == {
+        "label": "物料在位",
+        "address": "R10000.0",
+        "node_id": "ns=4;s=sensor",
+    }
+
+
 def test_szlab_plc_0628_addnodeid_excludes_non_value_sensor_parents():
     from unilabos.devices.workstation.szlab_poly_studio.plc import load_variable_names_from_csv
 
@@ -1457,6 +1487,217 @@ def test_szlab_robot_reports_verification_failed_without_resubmitting_task():
     assert gateway.writes.count(("任务号", 8)) == 1
 
 
+def test_szlab_robot_keeps_write_done_true_until_postcheck_finishes():
+    class ObservePostcheckGateway(FakeRobotPlcGateway):
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            if context == "机器人后置传感器检查":
+                assert self.written_values["Robot_任务写入完成"] is True
+                self.events.append(("postcheck", "finished"))
+            return super().wait_sensor_conditions(
+                conditions,
+                timeout=timeout,
+                interval=interval,
+                context=context,
+            )
+
+    gateway = ObservePostcheckGateway(
+        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        completion_values=[8],
+    )
+    device = SzlabMixerRobotDevice(
+        timeout=3.0,
+        write_allowed_timeout=3.0,
+        write_readback_timeout=0.0,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_pick_from_s04(position=1)
+
+    assert result["success"] is True
+    postcheck_index = gateway.events.index(("postcheck", "finished"))
+    reset_index = gateway.events.index(
+        ("write", "Robot_任务写入完成", False),
+        gateway.events.index(("write", "Robot_任务写入完成", True)) + 1,
+    )
+    assert postcheck_index < reset_index
+    assert gateway.written_values["Robot_任务写入完成"] is False
+
+
+def test_szlab_robot_serializes_complete_submit_cycles_across_threads():
+    first_in_postcheck = threading.Event()
+    release_first = threading.Event()
+    second_attempting = threading.Event()
+    second_task_written = threading.Event()
+    postcheck_barrier = threading.Barrier(2)
+
+    class BlockingPostcheckGateway(FakeRobotPlcGateway):
+        def write_variable(self, name, value):
+            if name == "任务号" and value == 9:
+                second_task_written.set()
+            return super().write_variable(name, value)
+
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            if (
+                context == "机器人后置传感器检查"
+                and self.written_values.get("任务号") == 8
+            ):
+                first_in_postcheck.set()
+                postcheck_barrier.wait(timeout=1.0)
+                assert release_first.wait(timeout=1.0)
+            return super().wait_sensor_conditions(
+                conditions,
+                timeout=timeout,
+                interval=interval,
+                context=context,
+            )
+
+    gateway = BlockingPostcheckGateway(
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+        },
+        write_allowed_values=[True, True],
+    )
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+    results = {}
+
+    def run_first():
+        results["first"] = device.submit_pick_from_s04(position=1)
+
+    def run_second():
+        assert first_in_postcheck.wait(timeout=1.0)
+        postcheck_barrier.wait(timeout=1.0)
+        second_attempting.set()
+        results["second"] = device.submit_place_to_s05(sample_id="sample-2")
+
+    first_thread = threading.Thread(target=run_first)
+    second_thread = threading.Thread(target=run_second)
+    first_thread.start()
+    second_thread.start()
+
+    assert second_attempting.wait(timeout=1.0)
+    writes_before_release = list(gateway.writes)
+    assert second_task_written.wait(timeout=0.1) is False
+    assert gateway.writes == writes_before_release
+
+    release_first.set()
+    first_thread.join(timeout=1.0)
+    second_thread.join(timeout=1.0)
+
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert results["first"]["success"] is True
+    assert results["second"]["success"] is True
+    assert second_task_written.is_set()
+
+
+@pytest.mark.parametrize("failure_mode", ["failed", "exception"])
+def test_szlab_robot_postcheck_failure_or_exception_still_resets(failure_mode):
+    write_done_during_postcheck = []
+
+    class BrokenPostcheckGateway(FakeRobotPlcGateway):
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            if context == "机器人后置传感器检查":
+                write_done_during_postcheck.append(
+                    self.written_values["Robot_任务写入完成"]
+                )
+                if failure_mode == "exception":
+                    raise RuntimeError("postcheck read failed")
+                return False, {
+                    name: not expected for name, expected in conditions.items()
+                }
+            return super().wait_sensor_conditions(
+                conditions,
+                timeout=timeout,
+                interval=interval,
+                context=context,
+            )
+
+    gateway = BrokenPostcheckGateway(
+        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        completion_values=[8],
+    )
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_pick_from_s04(position=1)
+
+    assert result["success"] is False
+    assert result["status"] == "verification_failed"
+    assert result["reset"]["success"] is True
+    assert write_done_during_postcheck == [True]
+    assert gateway.written_values["Robot_任务写入完成"] is False
+    assert gateway.written_values["任务号"] == 0
+
+
+def test_szlab_robot_reset_failure_is_explicit_after_successful_postcheck():
+    postcheck_calls = []
+
+    class ResetFailingGateway(FakeRobotPlcGateway):
+        def write_variable(self, name, value):
+            if (
+                name == "Robot_任务写入完成"
+                and value is False
+                and self.written_values.get(name) is True
+            ):
+                raise RuntimeError("write_done reset failed")
+            return super().write_variable(name, value)
+
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            if context == "机器人后置传感器检查":
+                postcheck_calls.append(self.written_values["Robot_任务写入完成"])
+            return super().wait_sensor_conditions(
+                conditions,
+                timeout=timeout,
+                interval=interval,
+                context=context,
+            )
+
+    gateway = ResetFailingGateway(
+        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        completion_values=[8],
+    )
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_pick_from_s04(position=1)
+
+    assert result["success"] is False
+    assert result["status"] == "failed"
+    assert result["reset"]["success"] is False
+    assert "复位失败" in result["message"]
+    assert postcheck_calls == [True]
+    assert "Robot_任务写入完成" in result["reset"]["errors"]
+
+
+def test_szlab_robot_completion_wait_exception_still_resets():
+    class CompletionWaitFailingGateway(FakeRobotPlcGateway):
+        def wait_variable_equal(self, name, expected, timeout=300.0, interval=1.0):
+            if name == "Robot_任务完成":
+                raise RuntimeError("completion read failed")
+            return super().wait_variable_equal(
+                name,
+                expected,
+                timeout=timeout,
+                interval=interval,
+            )
+
+    gateway = CompletionWaitFailingGateway(
+        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+    )
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_pick_from_s04(position=1)
+
+    assert result["success"] is False
+    assert "completion read failed" in result["message"]
+    assert result["reset"]["success"] is True
+    assert gateway.written_values["Robot_任务写入完成"] is False
+    assert gateway.written_values["任务号"] == 0
+
+
 def test_szlab_robot_does_not_set_write_done_when_task_params_read_back_zero():
     class ZeroReadbackGateway(FakeRobotPlcGateway):
         def read_variable(self, name, use_cache=False):
@@ -1578,9 +1819,9 @@ def test_szlab_robot_s03_pick_writes_product_position_and_task_number():
     assert gateway.reads[:1] == [
         ("传感器状态_上位机[0].NO[6]", False),
     ]
-    assert gateway.reads[-1:] == [
-        ("传感器状态_上位机[0].NO[6]", False),
-    ]
+    assert gateway.reads.count(
+        ("传感器状态_上位机[0].NO[6]", False)
+    ) == 2
     assert gateway.writes == [
         ("S03取放料产品", 1),
         ("S03取放料编号", 1),
@@ -1782,7 +2023,6 @@ def test_szlab_robot_s09_tip_place_skips_sensor_checks():
         ("S09取放料编号", 0),
         ("任务号", 0),
     ]
-    robot_task_index = gateway.events.index(("write", "任务号", 19))
     assert ("write", "S09工艺选择", 1) not in gateway.events
     assert not any(event[1] == "S09原点信号_1" for event in gateway.events)
     complete_wait_index = gateway.events.index(("wait", "Robot_任务完成", 19))
@@ -1965,10 +2205,10 @@ def test_szlab_mixer_registry_actions_expose_s04_s05_robot_actions():
 
     assert workflow["nodes"] == [
         {
-            "uuid": "stir",
-            "name": "auto-run_stirring",
-            "device_name": "szlab_mixer_stirrer",
-            "param": {
+            "workflow_node_id": "stir",
+            "device_id": "szlab_mixer_stirrer",
+            "method": "run_stirring",
+            "params": {
                 "position": 1,
                 "mode": 3,
                 "speed": 300,
@@ -1977,6 +2217,7 @@ def test_szlab_mixer_registry_actions_expose_s04_s05_robot_actions():
                 "safe_temperature": 80,
                 "reset": False,
             },
+            "opc_variables": [],
         },
     ]
     assert workflow["edges"] == []

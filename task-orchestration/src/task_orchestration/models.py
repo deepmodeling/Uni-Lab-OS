@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    field_validator,
+    model_validator,
+)
 
 POLICY_RESOURCE_PREFIX = "resource:"
 POLICY_WORKSTATION_PREFIX = "workstation:"
-POLICY_RESERVED_RESOURCE_PREFIXES = (
-    POLICY_RESOURCE_PREFIX,
-    POLICY_WORKSTATION_PREFIX,
-)
 
 
 class StrictModel(BaseModel):
@@ -20,19 +23,32 @@ class StrictModel(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    def validated_copy(self, *, update: dict[str, Any] | None = None) -> Self:
+        """复制模型并重新执行完整字段及模型校验。"""
+        data = self.model_dump(round_trip=True)
+        if update:
+            data.update(update)
+        return type(self).model_validate(data)
+
 
 class Trigger(StrictModel):
-    """Task 模板触发器的声明，具体调度语义由后续服务实现。"""
+    """由已注册 PLC 变量判定的 Task 条件。"""
 
-    kind: str
-    config: dict[str, Any] = Field(default_factory=dict)
+    kind: Literal["opc"]
+    config: dict[str, Any]
 
     @model_validator(mode="after")
-    def reject_legacy_opc_condition(self) -> Trigger:
-        """拒绝无法由条件提供者判定的旧前端 DTO。"""
-        if self.kind == "opc_condition":
+    def validate_plc_variable_condition(self) -> Trigger:
+        """拒绝旧触发器及未绑定 PLC 注册变量的 OPC 条件。"""
+        required = ("plc_device_id", "variable", "value")
+        missing = [
+            key
+            for key in required
+            if key not in self.config or self.config[key] == ""
+        ]
+        if missing:
             raise ValueError(
-                "legacy opc_condition is unsupported; use kind='opc' with provider_id and variable"
+                f"OPC trigger missing required fields: {', '.join(missing)}"
             )
         return self
 
@@ -45,19 +61,148 @@ class Template(StrictModel):
     workflow_path: str = ""
     node_ids: list[str] = Field(default_factory=list)
     resources: list[str] = Field(default_factory=list)
-    trigger: Trigger | None = None
     input_triggers: list[Trigger] = Field(default_factory=list)
     output_triggers: list[Trigger] = Field(default_factory=list)
 
+
+class NodeExecutionRecord(StrictModel):
+    """单个 workflow 节点的一次幂等执行记录。"""
+
+    node_id: str
+    attempt: int = Field(ge=1)
+    execution_id: str
+    status: Literal["pending", "running", "succeeded", "failed"] = "pending"
+    started_at: int | None = Field(default=None, ge=0)
+    finished_at: int | None = Field(default=None, ge=0)
+    result: JsonValue = None
+    error: JsonValue = None
+    resources: list[str] = Field(default_factory=list)
+    release_resources: list[str] = Field(default_factory=list)
+
+    @field_validator("node_id", "execution_id")
+    @classmethod
+    def reject_blank_ids(cls, value: str) -> str:
+        """节点与执行 ID 必须可用于稳定幂等匹配。"""
+        if not value.strip():
+            raise ValueError("node and execution ids must not be blank")
+        return value
+
+    @field_validator("resources", "release_resources")
+    @classmethod
+    def validate_resource_names(cls, values: list[str]) -> list[str]:
+        """动作资源必须是非空且无重复的稳定标识。"""
+        if any(not value.strip() for value in values):
+            raise ValueError("action resources must not be blank")
+        if len(values) != len(set(values)):
+            raise ValueError("action resources must be unique")
+        return values
+
     @model_validator(mode="after")
-    def reject_policy_resource_namespaces(self) -> Template:
-        """普通业务资源不能伪造策略内部占用键。"""
-        if any(
-            resource.startswith(POLICY_RESERVED_RESOURCE_PREFIXES)
-            for resource in self.resources
-        ):
-            raise ValueError("reserved policy resource prefix is not allowed")
+    def validate_lifecycle_timestamps(self) -> NodeExecutionRecord:
+        """保证节点执行状态与起止时间一致。"""
+        if self.finished_at is not None:
+            if self.started_at is None:
+                raise ValueError("finished_at requires started_at")
+            if self.finished_at < self.started_at:
+                raise ValueError("finished_at must be greater than or equal to started_at")
+        if self.status == "pending":
+            if self.started_at is not None or self.finished_at is not None:
+                raise ValueError("pending records must not have timestamps")
+        elif self.status == "running":
+            if self.started_at is None or self.finished_at is not None:
+                raise ValueError("running records require started_at and no finished_at")
+        elif self.started_at is None or self.finished_at is None:
+            raise ValueError("terminal records require started_at and finished_at")
         return self
+
+
+class ResourceLease(StrictModel):
+    """节点执行期间持有的动态资源租约。"""
+
+    resource: str
+    instance_id: str
+    node_id: str
+    execution_id: str
+    acquired_at: int = Field(ge=0)
+
+    @field_validator("resource", "instance_id", "node_id", "execution_id")
+    @classmethod
+    def reject_blank_ids(cls, value: str) -> str:
+        """租约定位与释放所需标识不得为空。"""
+        if not value.strip():
+            raise ValueError("resource lease ids must not be blank")
+        return value
+
+
+class TaskExecutionState(StrictModel):
+    """Task 的可恢复状态；cursor 是下一个待执行节点在 node_ids 中的下标。"""
+
+    cursor: int = Field(default=0, ge=0)
+    records: list[NodeExecutionRecord] = Field(default_factory=list)
+    active_execution_id: str | None = None
+    active_node_id: str | None = None
+
+    @field_validator("active_execution_id", "active_node_id")
+    @classmethod
+    def reject_blank_active_ids(cls, value: str | None) -> str | None:
+        """已设置的活动标识不得为空白。"""
+        if value is not None and not value.strip():
+            raise ValueError("active execution ids must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_active_execution(self) -> TaskExecutionState:
+        """活动游标必须唯一对应一条 running 执行记录。"""
+        execution_ids = [record.execution_id for record in self.records]
+        if len(execution_ids) != len(set(execution_ids)):
+            raise ValueError("execution ids must be unique")
+
+        active_ids_present = (
+            self.active_execution_id is not None,
+            self.active_node_id is not None,
+        )
+        if active_ids_present[0] != active_ids_present[1]:
+            raise ValueError("active execution and node ids must be set together")
+
+        running_records = [
+            record for record in self.records if record.status == "running"
+        ]
+        if self.active_execution_id is None:
+            if running_records:
+                raise ValueError("running records require an active execution")
+            return self
+
+        matching_records = [
+            record
+            for record in running_records
+            if record.execution_id == self.active_execution_id
+            and record.node_id == self.active_node_id
+        ]
+        if len(running_records) != 1 or len(matching_records) != 1:
+            raise ValueError("active execution must match the only running record")
+        return self
+
+
+class WorkspacePauseReason(StrictModel):
+    """工作区暂停的稳定机器码与节点执行上下文。"""
+
+    code: str
+    message: str
+    instance_id: str | None = None
+    node_id: str | None = None
+    execution_id: str | None = None
+    timestamp: int = Field(ge=0)
+    detail: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator(
+        "code", "message", "instance_id", "node_id", "execution_id"
+    )
+    @classmethod
+    def reject_blank_values(cls, value: str | None) -> str | None:
+        """暂停原因的已提供文本字段不得为空白。"""
+        if value is not None and not value.strip():
+            raise ValueError("pause reason values must not be blank")
+        return value
 
 
 class TaskInstance(StrictModel):
@@ -73,6 +218,7 @@ class TaskInstance(StrictModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     started_at: int | None = Field(default=None, ge=0)
     finished_at: int | None = Field(default=None, ge=0)
+    execution_state: TaskExecutionState = Field(default_factory=TaskExecutionState)
 
     @model_validator(mode="after")
     def validate_lifecycle_timestamps(self) -> TaskInstance:
@@ -91,6 +237,17 @@ class TaskInstance(StrictModel):
         elif self.status == "completed":
             if self.started_at is None or self.finished_at is None:
                 raise ValueError("completed instances require started_at and finished_at")
+        if self.status != "running" and (
+            self.execution_state.active_execution_id is not None
+            or self.execution_state.active_node_id is not None
+            or any(
+                record.status == "running"
+                for record in self.execution_state.records
+            )
+        ):
+            raise ValueError(
+                "only running task instances may have active execution"
+            )
         return self
 
 
@@ -114,12 +271,42 @@ class TaskScheduleEntry(StrictModel):
 
 
 class OpcSnapshotState(StrictModel):
-    """持久化的受限 OPC 快照，仅用于条件判定。"""
+    """由 PLC 运行时分发的 OPC 快照，仅用于条件判定。"""
 
-    provider_id: str = Field(min_length=1, max_length=128)
+    plc_device_id: str = Field(min_length=1, max_length=128)
     sequence: int = Field(ge=0)
     values: dict[str, Any] = Field(default_factory=dict, max_length=64)
     updated_at_by_variable: dict[str, float] = Field(default_factory=dict, max_length=64)
+
+
+class PlcRegistration(StrictModel):
+    """PLC runtime 分发给排程服务的当前变量注册名单。"""
+
+    plc_device_id: str = Field(min_length=1, max_length=128)
+    runtime_url: str = Field(min_length=1, max_length=2048)
+    variables: list[str] = Field(min_length=1, max_length=4096)
+    aliases: dict[str, str] = Field(default_factory=dict, max_length=4096)
+
+    @model_validator(mode="after")
+    def validate_variables(self) -> PlcRegistration:
+        if any(not variable.strip() for variable in self.variables):
+            raise ValueError("PLC registered variables must not be empty")
+        if len(self.variables) != len(set(self.variables)):
+            raise ValueError("PLC registered variables must be unique")
+        if any(not alias.strip() or not canonical.strip()
+               for alias, canonical in self.aliases.items()):
+            raise ValueError("PLC variable aliases must not be empty")
+        unknown_canonical_names = set(self.aliases.values()) - set(self.variables)
+        if unknown_canonical_names:
+            raise ValueError(
+                "PLC variable aliases must resolve to registered variables: "
+                f"{sorted(unknown_canonical_names)}"
+            )
+        return self
+
+    def canonical_variable_name(self, variable: str) -> str:
+        """将界面/动作别名解析为 CSV 中的真实变量名。"""
+        return self.aliases.get(variable, variable)
 
 
 class WorkspaceEvent(StrictModel):
@@ -127,7 +314,7 @@ class WorkspaceEvent(StrictModel):
 
     kind: Literal[
         "opc_snapshot", "output", "scheduled", "completed", "template_deleted",
-        "scheduled_templates_updated",
+        "scheduled_templates_updated", "instances_cleared",
     ]
     id: str = Field(default_factory=lambda: uuid4().hex)
     timestamp: int = Field(default=0, ge=0)
@@ -146,12 +333,15 @@ class Workspace(StrictModel):
     events: list[WorkspaceEvent] = Field(default_factory=list)
     scheduled_template_ids: list[str] = Field(default_factory=list)
     scheduler_paused: bool = False
+    dynamic_resource_leases: list[ResourceLease] = Field(default_factory=list)
+    pause_reason: WorkspacePauseReason | None = None
     schedule_entries: list[TaskScheduleEntry] = Field(default_factory=list)
     opc_snapshots: list[OpcSnapshotState] = Field(default_factory=list)
+    plc_registrations: list[PlcRegistration] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_unique_ids(self) -> Workspace:
-        """禁止模板或实例列表中出现重复 ID。"""
+        """校验工作区内所有持久化引用与执行状态的一致性。"""
         template_ids = [template.id for template in self.templates]
         if len(template_ids) != len(set(template_ids)):
             raise ValueError("template ids must be unique")
@@ -161,6 +351,62 @@ class Workspace(StrictModel):
         template_id_set = set(template_ids)
         if any(instance.template_id not in template_id_set for instance in self.task_instances):
             raise ValueError("task instances must reference an existing template")
+        template_by_id = {template.id: template for template in self.templates}
+        for instance in self.task_instances:
+            template = template_by_id[instance.template_id]
+            if instance.execution_state.cursor > len(template.node_ids):
+                raise ValueError(
+                    "execution cursor must not exceed template node count"
+                )
+            if (
+                instance.status == "completed"
+                and instance.execution_state.cursor != len(template.node_ids)
+            ):
+                raise ValueError(
+                    "completed instance execution must be finished"
+                )
+            if (
+                instance.status == "completed"
+                and not instance.execution_state.records
+            ):
+                continue
+            if any(
+                record.node_id not in template.node_ids
+                for record in instance.execution_state.records
+            ):
+                raise ValueError("execution record node must belong to template")
+            if instance.execution_state.active_node_id is not None and (
+                instance.execution_state.cursor >= len(template.node_ids)
+                or instance.execution_state.active_node_id
+                != template.node_ids[instance.execution_state.cursor]
+            ):
+                raise ValueError(
+                    "active execution must point to cursor node"
+                )
+            succeeded_records = [
+                record
+                for record in instance.execution_state.records
+                if record.status == "succeeded"
+            ]
+            predecessor_nodes = template.node_ids[:instance.execution_state.cursor]
+            if any(
+                sum(record.node_id == node_id for record in succeeded_records) != 1
+                for node_id in predecessor_nodes
+            ):
+                raise ValueError(
+                    "cursor predecessors must each have one succeeded record"
+                )
+            if any(
+                record.node_id in template.node_ids[instance.execution_state.cursor:]
+                for record in succeeded_records
+            ):
+                raise ValueError(
+                    "cursor and succeeded records are inconsistent"
+                )
+            if [record.node_id for record in succeeded_records] != predecessor_nodes:
+                raise ValueError(
+                    "succeeded records must follow template node order"
+                )
         sample_orders = [(item.sample_id, item.order) for item in self.task_instances]
         if len(sample_orders) != len(set(sample_orders)):
             raise ValueError("instance orders must be unique within each sample")
@@ -168,6 +414,71 @@ class Workspace(StrictModel):
             raise ValueError("scheduled template ids must exist")
         instance_id_set = set(instance_ids)
         instance_by_id = {item.id: item for item in self.task_instances}
+        leased_resources: set[str] = set()
+        for lease in self.dynamic_resource_leases:
+            instance = instance_by_id.get(lease.instance_id)
+            if instance is None:
+                raise ValueError("dynamic resource lease instance must exist")
+            template = template_by_id[instance.template_id]
+            if lease.node_id not in template.node_ids:
+                raise ValueError(
+                    "dynamic resource lease node must belong to template"
+                )
+            matching_record = next(
+                (
+                    record
+                    for record in instance.execution_state.records
+                    if record.node_id == lease.node_id
+                    and record.execution_id == lease.execution_id
+                ),
+                None,
+            )
+            if matching_record is None:
+                raise ValueError(
+                    "dynamic resource lease must match an execution record"
+                )
+            if lease.resource not in matching_record.resources:
+                raise ValueError(
+                    "dynamic resource lease must be declared by execution"
+                )
+            if lease.resource in leased_resources:
+                raise ValueError(
+                    "dynamic resources may have only one active lease"
+                )
+            leased_resources.add(lease.resource)
+
+        if self.pause_reason is not None:
+            reason = self.pause_reason
+            if reason.instance_id is None:
+                if reason.node_id is not None:
+                    raise ValueError("pause reason node requires instance_id")
+                if reason.execution_id is not None:
+                    raise ValueError(
+                        "pause reason execution requires instance_id"
+                    )
+            else:
+                instance = instance_by_id.get(reason.instance_id)
+                if instance is None:
+                    raise ValueError("pause reason instance must exist")
+                template = template_by_id[instance.template_id]
+                if reason.node_id is None:
+                    if reason.execution_id is not None:
+                        raise ValueError(
+                            "pause reason execution requires node_id"
+                        )
+                else:
+                    if reason.node_id not in template.node_ids:
+                        raise ValueError(
+                            "pause reason node must belong to template"
+                        )
+                    if reason.execution_id is not None and not any(
+                        record.node_id == reason.node_id
+                        and record.execution_id == reason.execution_id
+                        for record in instance.execution_state.records
+                    ):
+                        raise ValueError(
+                            "pause reason must match an execution record"
+                        )
         for entry in self.schedule_entries:
             if entry.instance_id not in instance_id_set or entry.template_id not in template_id_set:
                 raise ValueError("schedule entries must reference existing instances and templates")
@@ -182,6 +493,9 @@ class Workspace(StrictModel):
                     raise ValueError("event template must match its instance template")
             elif event.template_id is not None and event.template_id not in template_id_set:
                 raise ValueError("event templates must exist")
+        plc_device_ids = [item.plc_device_id for item in self.plc_registrations]
+        if len(plc_device_ids) != len(set(plc_device_ids)):
+            raise ValueError("PLC registrations must be unique by device id")
         return self
 
 
@@ -205,11 +519,17 @@ class WorkspaceUpdateRequest(StrictModel):
     workspace: Workspace
 
 
+class WorkspaceResetRequest(StrictModel):
+    """删除单个 workflow 的 Task sidecar。"""
+
+    workflow_path: str = Field(min_length=1)
+
+
 class OpcSnapshotRequest(StrictModel):
     """OPC 快照接口预留 DTO，暂不连接 provider。"""
 
     workflow_path: str
-    provider_id: str
+    plc_device_id: str
     variables: list[str] = Field(default_factory=list)
 
 
@@ -223,7 +543,6 @@ class TemplateUpdateRequest(StrictModel):
     workflow_path: str
     expected_version: int = Field(ge=0)
     name: str | None = None
-    trigger: Trigger | None = None
     input_triggers: list[Trigger] | None = None
     output_triggers: list[Trigger] | None = None
 
@@ -233,6 +552,11 @@ class GenerateInstancesRequest(StrictModel):
     expected_version: int = Field(ge=0)
     template_ids: list[str] = Field(min_length=1)
     sample_ids: list[str] = Field(min_length=1)
+
+
+class ClearInstancesRequest(StrictModel):
+    workflow_path: str
+    expected_version: int = Field(ge=0)
 
 
 class ScheduledTemplatesUpdateRequest(StrictModel):
@@ -257,10 +581,46 @@ class AdvanceRequest(ScheduleRequest):
     completed_instance_ids: list[str] = Field(default_factory=list)
 
 
+class ActionRequestBase(StrictModel):
+    """动作状态转换的共同乐观锁与幂等定位字段。"""
+
+    workflow_path: str = Field(min_length=1)
+    expected_version: int = Field(ge=0)
+    instance_id: str = Field(min_length=1)
+    node_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
+
+    @field_validator("workflow_path", "instance_id", "node_id", "execution_id")
+    @classmethod
+    def reject_blank_action_ids(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("action request ids must not be blank")
+        return value
+
+
+class ActionClaimRequest(ActionRequestBase):
+    """原子认领并启动节点；resources 仅保留旧 API 兼容。"""
+
+    resources: list[str] = Field(default_factory=list)
+
+
+class ActionSucceedRequest(ActionRequestBase):
+    """完成活动动作；release_resources 仅保留旧 API 兼容。"""
+
+    result: JsonValue = None
+    release_resources: list[str] = Field(default_factory=list)
+
+
+class ActionFailRequest(ActionRequestBase):
+    """失败活动动作并携带 JSON 兼容错误详情。"""
+
+    error: JsonValue
+
+
 class OpcPushRequest(StrictModel):
     workflow_path: str
     expected_version: int = Field(ge=0)
-    provider_id: str = Field(min_length=1, max_length=128)
+    plc_device_id: str = Field(min_length=1, max_length=128)
     sequence: int = Field(ge=0)
     values: dict[str, Any] = Field(default_factory=dict, max_length=64)
 
@@ -296,6 +656,14 @@ class OpcPushRequest(StrictModel):
 
         visit(self.values)
         return self
+
+
+class PlcRegistrationRequest(StrictModel):
+    """PLC runtime 在快照前注册可供模板引用的变量。"""
+
+    workflow_path: str
+    expected_version: int = Field(default=0, ge=0)
+    registration: PlcRegistration
 
 
 class WaitingReason(StrictModel):

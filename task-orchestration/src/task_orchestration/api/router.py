@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
-import os
-import secrets
-
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 
 from ..models import (
+    ActionClaimRequest,
+    ActionFailRequest,
+    ActionSucceedRequest,
     AdvanceRequest,
+    ClearInstancesRequest,
     GenerateInstancesRequest,
     MoveInstanceRequest,
+    PlcRegistrationRequest,
     OpcPushRequest,
     ScheduleRequest,
     ScheduledTemplatesUpdateRequest,
     TemplateCreateRequest,
     TemplateUpdateRequest,
     VersionedWorkspaceResponse,
+    WorkspaceResetRequest,
     WorkspaceUpdateRequest,
 )
 from ..service import WorkspaceService, WorkspaceServiceError
@@ -29,39 +32,14 @@ from ..store import (
 
 
 def public_workspace_response(response: VersionedWorkspaceResponse) -> dict:
-    """唯一的公网工作区投影：绝不序列化 OPC 原始值。"""
-    payload = response.model_dump(mode="json")
-    payload["workspace"]["opc_snapshots"] = [
-        {
-            "provider_id": snapshot.provider_id,
-            "sequence": snapshot.sequence,
-            "updated_at_by_variable": snapshot.updated_at_by_variable,
-            "variable_count": len(snapshot.values),
-        }
-        for snapshot in response.workspace.opc_snapshots
-    ]
-    return payload
+    """向排程 UI 返回 PLC 已分发的快照和值。"""
+    return response.model_dump(mode="json")
 
 
 def create_router(store: WorkspaceStore, service: WorkspaceService | None = None) -> APIRouter:
     """创建绑定到指定存储实例的路由。"""
     router = APIRouter()
     workspace_service = service or WorkspaceService(store)
-    admin_token = os.getenv("TASK_ORCHESTRATION_ADMIN_TOKEN")
-    gateway_token = os.getenv("TASK_ORCHESTRATION_GATEWAY_TOKEN")
-    ui_token = os.getenv("TASK_ORCHESTRATION_UI_TOKEN")
-
-    def require_token(configured_token: str | None, authorization: str | None) -> None:
-        if not configured_token:
-            raise HTTPException(status_code=403, detail="administrative write is disabled")
-        expected = f"Bearer {configured_token}"
-        if authorization is None or not secrets.compare_digest(authorization, expected):
-            raise HTTPException(status_code=403, detail="invalid bearer token")
-
-    def require_ui_token(authorization: str | None) -> None:
-        if not ui_token:
-            raise HTTPException(status_code=403, detail="UI write is disabled")
-        require_token(ui_token, authorization)
 
     def business_error(exc: WorkspaceServiceError) -> HTTPException:
         return HTTPException(
@@ -102,14 +80,12 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @router.put("/workspaces")
-    def put_workspace(
-        request: WorkspaceUpdateRequest,
-        authorization: str | None = Header(default=None),
-    ) -> dict:
-        require_token(admin_token, authorization)
+    def put_workspace(request: WorkspaceUpdateRequest) -> dict:
         try:
             return public_workspace_response(store.put(
-                request.workspace,
+                request.workspace.model_copy(
+                    update={"dynamic_resource_leases": []}
+                ),
                 expected_version=request.expected_version,
             ))
         except VersionConflictError as exc:
@@ -122,9 +98,17 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
         except WorkflowPathError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    @router.post("/workspaces/reset")
+    def reset_workspace(request: WorkspaceResetRequest) -> dict:
+        try:
+            return public_workspace_response(
+                workspace_service.reset_workspace(request.workflow_path)
+            )
+        except WorkflowPathError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @router.post("/templates")
-    def create_template(request: TemplateCreateRequest, authorization: str | None = Header(default=None)) -> dict:
-        require_ui_token(authorization)
+    def create_template(request: TemplateCreateRequest) -> dict:
         try:
             return public_workspace_response(workspace_service.create_template(
                 request.workflow_path, request.expected_version, request.template
@@ -134,16 +118,14 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
 
     @router.patch("/templates/{template_id}")
     def update_template(
-        template_id: str, request: TemplateUpdateRequest, authorization: str | None = Header(default=None)
+        template_id: str, request: TemplateUpdateRequest
     ) -> dict:
-        require_ui_token(authorization)
         try:
             return public_workspace_response(workspace_service.update_template(
                 request.workflow_path,
                 request.expected_version,
                 template_id,
                 name=request.name,
-                trigger=request.trigger,
                 input_triggers=request.input_triggers,
                 output_triggers=request.output_triggers,
             ))
@@ -153,9 +135,7 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
     @router.delete("/templates/{template_id}")
     def delete_template(
         template_id: str, workflow_path: str = Query(min_length=1), expected_version: int = Query(ge=0),
-        authorization: str | None = Header(default=None),
     ) -> dict:
-        require_ui_token(authorization)
         try:
             return public_workspace_response(workspace_service.delete_template(
                 workflow_path, expected_version, template_id
@@ -164,8 +144,7 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
             raise mutation_error(exc) from exc
 
     @router.put("/workspaces/scheduled-templates")
-    def update_scheduled_templates(request: ScheduledTemplatesUpdateRequest, authorization: str | None = Header(default=None)) -> dict:
-        require_ui_token(authorization)
+    def update_scheduled_templates(request: ScheduledTemplatesUpdateRequest) -> dict:
         try:
             return public_workspace_response(
                 workspace_service.update_scheduled_templates(
@@ -178,8 +157,7 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
             raise mutation_error(exc) from exc
 
     @router.post("/instances:generate")
-    def generate_instances(request: GenerateInstancesRequest, authorization: str | None = Header(default=None)) -> dict:
-        require_ui_token(authorization)
+    def generate_instances(request: GenerateInstancesRequest) -> dict:
         try:
             return public_workspace_response(workspace_service.generate_instances(
                 request.workflow_path,
@@ -190,11 +168,20 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
         except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
             raise mutation_error(exc) from exc
 
+    @router.post("/instances:clear")
+    def clear_instances(request: ClearInstancesRequest) -> dict:
+        try:
+            return public_workspace_response(workspace_service.clear_instances(
+                request.workflow_path,
+                request.expected_version,
+            ))
+        except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
+            raise mutation_error(exc) from exc
+
     @router.post("/instances/{instance_id}:move")
     def move_instance(
-        instance_id: str, request: MoveInstanceRequest, authorization: str | None = Header(default=None)
+        instance_id: str, request: MoveInstanceRequest
     ) -> dict:
-        require_ui_token(authorization)
         try:
             return public_workspace_response(workspace_service.move_instance(
                 request.workflow_path, request.expected_version, instance_id, request.order
@@ -206,19 +193,17 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
     async def push_opc_snapshot(
         request: OpcPushRequest,
         raw_request: Request,
-        authorization: str | None = Header(default=None),
         content_length: int | None = Header(default=None, alias="Content-Length"),
     ) -> dict:
         if content_length is not None and content_length > 16 * 1024:
             raise HTTPException(status_code=422, detail="OPC snapshot body exceeds 16 KiB")
         if len(await raw_request.body()) > 16 * 1024:
             raise HTTPException(status_code=422, detail="OPC snapshot body exceeds 16 KiB")
-        require_token(gateway_token, authorization)
         try:
             response, accepted = workspace_service.push_opc_snapshot(
                 request.workflow_path,
                 request.expected_version,
-                request.provider_id,
+                request.plc_device_id,
                 request.sequence,
                 request.values,
             )
@@ -226,9 +211,21 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
         except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
             raise mutation_error(exc) from exc
 
+    @router.post("/opc/registrations")
+    def register_plc_variables(request: PlcRegistrationRequest) -> dict:
+        try:
+            return public_workspace_response(
+                workspace_service.register_plc_variables(
+                    request.workflow_path,
+                    request.expected_version,
+                    request.registration,
+                )
+            )
+        except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
+            raise mutation_error(exc) from exc
+
     @router.post("/schedule:plan")
-    def plan(request: ScheduleRequest, authorization: str | None = Header(default=None)) -> dict:
-        require_ui_token(authorization)
+    def plan(request: ScheduleRequest) -> dict:
         try:
             response, schedule = workspace_service.plan(
                 request.workflow_path, request.expected_version, paused=request.paused
@@ -241,8 +238,7 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
             raise mutation_error(exc) from exc
 
     @router.post("/schedule:advance")
-    def advance(request: AdvanceRequest, authorization: str | None = Header(default=None)) -> dict:
-        require_ui_token(authorization)
+    def advance(request: AdvanceRequest) -> dict:
         try:
             response, schedule = workspace_service.advance(
                 request.workflow_path,
@@ -253,6 +249,49 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
                 **public_workspace_response(response),
                 "schedule": schedule.model_dump(mode="json"),
             }
+        except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
+            raise mutation_error(exc) from exc
+
+    @router.post("/actions:claim")
+    def claim_action(request: ActionClaimRequest) -> dict:
+        try:
+            return public_workspace_response(workspace_service.claim_action(
+                request.workflow_path,
+                request.expected_version,
+                request.instance_id,
+                request.node_id,
+                request.execution_id,
+                request.resources,
+            ))
+        except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
+            raise mutation_error(exc) from exc
+
+    @router.post("/actions:succeed")
+    def succeed_action(request: ActionSucceedRequest) -> dict:
+        try:
+            return public_workspace_response(workspace_service.succeed_action(
+                request.workflow_path,
+                request.expected_version,
+                request.instance_id,
+                request.node_id,
+                request.execution_id,
+                result=request.result,
+                release_resources=request.release_resources,
+            ))
+        except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
+            raise mutation_error(exc) from exc
+
+    @router.post("/actions:fail")
+    def fail_action(request: ActionFailRequest) -> dict:
+        try:
+            return public_workspace_response(workspace_service.fail_action(
+                request.workflow_path,
+                request.expected_version,
+                request.instance_id,
+                request.node_id,
+                request.execution_id,
+                error=request.error,
+            ))
         except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
             raise mutation_error(exc) from exc
 

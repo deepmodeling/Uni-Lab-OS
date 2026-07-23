@@ -8,7 +8,7 @@ def _opc_trigger(value: object) -> Trigger:
     return Trigger(
         kind="opc",
         config={
-            "provider_id": "line-1",
+            "plc_device_id": "line-1",
             "variable": "ready",
             "value": value,
         },
@@ -49,7 +49,7 @@ def test_isolates_snapshots_by_workflow_and_provider():
         "demo-a.json",
         Trigger(
             kind="opc",
-            config={"provider_id": "line-2", "variable": "ready", "value": True},
+            config={"plc_device_id": "line-2", "variable": "ready", "value": True},
         ),
     ).satisfied
 
@@ -67,7 +67,13 @@ def test_ignored_sequences_do_not_refresh_snapshot_ttl():
 
     assert not result.satisfied
     assert result.reason.code == "opc_snapshot_stale"
-    assert result.reason.context == {"provider_id": "line-1", "variable": "ready"}
+    assert result.reason.context == {
+        "plc_device_id": "line-1",
+        "variable": "ready",
+        "expected": True,
+        "actual": True,
+        "updated_at": 100.0,
+    }
 
 
 def test_compares_boolean_numbers_and_strings_without_coercing_strings():
@@ -88,28 +94,28 @@ def test_compares_boolean_numbers_and_strings_without_coercing_strings():
         "demo.json",
         Trigger(
             kind="opc",
-            config={"provider_id": "line-1", "variable": "bool_value", "value": True},
+            config={"plc_device_id": "line-1", "variable": "bool_value", "value": True},
         ),
     ).satisfied
     assert provider.evaluate(
         "demo.json",
         Trigger(
             kind="opc",
-            config={"provider_id": "line-1", "variable": "integer_value", "value": 2.0},
+            config={"plc_device_id": "line-1", "variable": "integer_value", "value": 2.0},
         ),
     ).satisfied
     assert provider.evaluate(
         "demo.json",
         Trigger(
             kind="opc",
-            config={"provider_id": "line-1", "variable": "float_value", "value": 2.5},
+            config={"plc_device_id": "line-1", "variable": "float_value", "value": 2.5},
         ),
     ).satisfied
     assert not provider.evaluate(
         "demo.json",
         Trigger(
             kind="opc",
-            config={"provider_id": "line-1", "variable": "string_value", "value": 2},
+            config={"plc_device_id": "line-1", "variable": "string_value", "value": 2},
         ),
     ).satisfied
 
@@ -132,7 +138,7 @@ def test_compares_boolean_false_and_never_equates_booleans_with_numbers():
         "demo.json",
         Trigger(
             kind="opc",
-            config={"provider_id": "line-1", "variable": "bool_false", "value": False},
+            config={"plc_device_id": "line-1", "variable": "bool_false", "value": False},
         ),
     ).satisfied
     for variable, value in (
@@ -145,7 +151,7 @@ def test_compares_boolean_false_and_never_equates_booleans_with_numbers():
             "demo.json",
             Trigger(
                 kind="opc",
-                config={"provider_id": "line-1", "variable": variable, "value": value},
+                config={"plc_device_id": "line-1", "variable": variable, "value": value},
             ),
         ).satisfied
 
@@ -164,7 +170,13 @@ def test_uses_per_variable_ttl_boundary_and_ignores_unrelated_updates():
 
     assert not stale.satisfied
     assert stale.reason.code == "opc_snapshot_stale"
-    assert stale.reason.context == {"provider_id": "line-1", "variable": "ready"}
+    assert stale.reason.context == {
+        "plc_device_id": "line-1",
+        "variable": "ready",
+        "expected": True,
+        "actual": True,
+        "updated_at": 100.0,
+    }
 
 
 def test_reports_missing_values_and_stale_snapshots():
@@ -175,7 +187,13 @@ def test_reports_missing_values_and_stale_snapshots():
     missing = provider.evaluate("demo.json", trigger)
     assert not missing.satisfied
     assert missing.reason.code == "opc_variable_missing"
-    assert missing.reason.context == {"provider_id": "line-1", "variable": "ready"}
+    assert missing.reason.context == {
+        "plc_device_id": "line-1",
+        "variable": "ready",
+        "expected": True,
+        "actual": None,
+        "updated_at": None,
+    }
     assert missing.reason.message == "缺失 OPC 变量：ready"
 
     provider.update("demo.json", "line-1", 1, {"ready": False})
@@ -183,14 +201,47 @@ def test_reports_missing_values_and_stale_snapshots():
     assert not mismatch.satisfied
     assert mismatch.reason.code == "opc_value_mismatch"
     assert mismatch.reason.context == {
-        "provider_id": "line-1",
+        "plc_device_id": "line-1",
         "variable": "ready",
         "expected": True,
+        "actual": False,
+        "updated_at": 100.0,
     }
-    assert mismatch.reason.message == "OPC 变量值不匹配：ready（期望 True）"
+    assert mismatch.reason.message == "OPC 变量值不匹配：ready（期望 True，当前值 False）"
 
     now[0] += 11
     stale = provider.evaluate("demo.json", trigger)
     assert not stale.satisfied
     assert stale.reason.code == "opc_snapshot_stale"
-    assert stale.reason.context == {"provider_id": "line-1", "variable": "ready"}
+    assert stale.reason.context == {
+        "plc_device_id": "line-1",
+        "variable": "ready",
+        "expected": True,
+        "actual": False,
+        "updated_at": 100.0,
+    }
+
+
+def test_value_mismatch_includes_plc_current_value_and_timestamp():
+    provider = OpcConditionProvider(snapshot_ttl_seconds=10, clock=lambda: 20.0)
+    trigger = Trigger(
+        kind="opc",
+        config={
+            "plc_device_id": "szlab_poly_plc",
+            "variable": "s09",
+            "value": True,
+        },
+    )
+    provider.update("demo.json", "szlab_poly_plc", 1, {"s09": False})
+
+    result = provider.evaluate("demo.json", trigger)
+
+    assert not result.satisfied
+    assert result.reason.code == "opc_value_mismatch"
+    assert result.reason.context == {
+        "plc_device_id": "szlab_poly_plc",
+        "variable": "s09",
+        "expected": True,
+        "actual": False,
+        "updated_at": 20.0,
+    }

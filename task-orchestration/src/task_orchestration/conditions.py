@@ -42,12 +42,12 @@ class OpcConditionProvider:
     def update(
         self,
         workflow_path: str,
-        provider_id: str,
+        plc_device_id: str,
         sequence: int,
         variables: Mapping[str, Any],
     ) -> bool:
         """合并一批增量变量；重复或过期 sequence 返回 False 且不修改快照。"""
-        key = (workflow_path, provider_id)
+        key = (workflow_path, plc_device_id)
         with self._lock:
             current = self._snapshots.get(key)
             if current is not None and sequence <= current.sequence:
@@ -68,20 +68,20 @@ class OpcConditionProvider:
             )
         return True
 
-    def can_update(self, workflow_path: str, provider_id: str, sequence: int) -> bool:
+    def can_update(self, workflow_path: str, plc_device_id: str, sequence: int) -> bool:
         """在不修改快照的前提下判断序列是否会被接受。"""
         with self._lock:
-            current = self._snapshots.get((workflow_path, provider_id))
+            current = self._snapshots.get((workflow_path, plc_device_id))
             return current is None or sequence > current.sequence
 
-    def export_state(self, workflow_path: str, provider_id: str) -> dict[str, Any] | None:
+    def export_state(self, workflow_path: str, plc_device_id: str) -> dict[str, Any] | None:
         """导出可持久化的快照状态。"""
         with self._lock:
-            snapshot = self._snapshots.get((workflow_path, provider_id))
+            snapshot = self._snapshots.get((workflow_path, plc_device_id))
             if snapshot is None:
                 return None
             return {
-                "provider_id": provider_id,
+                "plc_device_id": plc_device_id,
                 "sequence": snapshot.sequence,
                 "values": dict(snapshot.values),
                 "updated_at_by_variable": dict(snapshot.updated_at_by_variable),
@@ -89,24 +89,33 @@ class OpcConditionProvider:
 
     def restore_state(self, workflow_path: str, state: Mapping[str, Any]) -> None:
         """从持久化状态恢复单个 provider 快照。"""
-        provider_id = str(state["provider_id"])
+        plc_device_id = str(state["plc_device_id"])
         with self._lock:
-            self._snapshots[(workflow_path, provider_id)] = _OpcSnapshot(
+            self._snapshots[(workflow_path, plc_device_id)] = _OpcSnapshot(
                 sequence=int(state["sequence"]),
                 values=dict(state["values"]),
                 updated_at_by_variable=dict(state["updated_at_by_variable"]),
             )
 
-    def clear_state(self, workflow_path: str, provider_id: str) -> None:
+    def clear_state(self, workflow_path: str, plc_device_id: str) -> None:
         with self._lock:
-            self._snapshots.pop((workflow_path, provider_id), None)
+            self._snapshots.pop((workflow_path, plc_device_id), None)
+
+    def clear_workflow(self, workflow_path: str) -> None:
+        """清除工作区全部 PLC 的内存快照及序列水位。"""
+        with self._lock:
+            self._snapshots = {
+                key: snapshot
+                for key, snapshot in self._snapshots.items()
+                if key[0] != workflow_path
+            }
 
     def evaluate(self, workflow_path: str, trigger: Trigger) -> ConditionResult:
         """判定一个 ``kind='opc'`` Trigger 是否由最新快照满足。"""
         config = trigger.config
-        provider_id = str(config.get("provider_id", ""))
+        plc_device_id = str(config.get("plc_device_id", ""))
         variable = str(config.get("variable", ""))
-        if trigger.kind.lower() != "opc" or not provider_id or not variable:
+        if trigger.kind.lower() != "opc" or not plc_device_id or not variable:
             return ConditionResult(
                 satisfied=False,
                 reason=WaitingReason(
@@ -117,20 +126,71 @@ class OpcConditionProvider:
             )
 
         with self._lock:
-            snapshot = self._snapshots.get((workflow_path, provider_id))
+            snapshot = self._snapshots.get((workflow_path, plc_device_id))
             if snapshot is not None:
                 snapshot = _OpcSnapshot(
                     sequence=snapshot.sequence,
                     values=dict(snapshot.values),
                     updated_at_by_variable=dict(snapshot.updated_at_by_variable),
                 )
+        return self._evaluate_snapshot(trigger, snapshot)
 
+    def evaluate_states(
+        self,
+        trigger: Trigger,
+        states: list[Mapping[str, Any]],
+    ) -> ConditionResult:
+        """直接判定持久化快照，不修改 provider 内存状态。"""
+        plc_device_id = str(trigger.config.get("plc_device_id", ""))
+        state = next(
+            (
+                item
+                for item in states
+                if str(item["plc_device_id"]) == plc_device_id
+            ),
+            None,
+        )
+        snapshot = (
+            _OpcSnapshot(
+                sequence=int(state["sequence"]),
+                values=dict(state["values"]),
+                updated_at_by_variable=dict(state["updated_at_by_variable"]),
+            )
+            if state is not None
+            else None
+        )
+        return self._evaluate_snapshot(trigger, snapshot)
+
+    def _evaluate_snapshot(
+        self,
+        trigger: Trigger,
+        snapshot: _OpcSnapshot | None,
+    ) -> ConditionResult:
+        """对快照副本执行无副作用条件判定。"""
+        config = trigger.config
+        plc_device_id = str(config.get("plc_device_id", ""))
+        variable = str(config.get("variable", ""))
+        if trigger.kind.lower() != "opc" or not plc_device_id or not variable:
+            return ConditionResult(
+                satisfied=False,
+                reason=WaitingReason(
+                    code="opc_condition_invalid",
+                    context={"kind": trigger.kind},
+                    message="OPC 条件配置无效",
+                ),
+            )
         if snapshot is None or variable not in snapshot.values:
             return ConditionResult(
                 satisfied=False,
                 reason=WaitingReason(
                     code="opc_variable_missing",
-                    context={"provider_id": provider_id, "variable": variable},
+                    context={
+                        "plc_device_id": plc_device_id,
+                        "variable": variable,
+                        "expected": config.get("value"),
+                        "actual": None,
+                        "updated_at": None,
+                    },
                     message=f"缺失 OPC 变量：{variable}",
                 ),
             )
@@ -139,8 +199,14 @@ class OpcConditionProvider:
                 satisfied=False,
                 reason=WaitingReason(
                     code="opc_snapshot_stale",
-                    context={"provider_id": provider_id, "variable": variable},
-                    message=f"OPC 快照已陈旧：{provider_id}",
+                    context={
+                        "plc_device_id": plc_device_id,
+                        "variable": variable,
+                        "expected": config.get("value"),
+                        "actual": snapshot.values[variable],
+                        "updated_at": snapshot.updated_at_by_variable[variable],
+                    },
+                    message=f"OPC 快照已陈旧：{plc_device_id}",
                 ),
             )
 
@@ -153,11 +219,16 @@ class OpcConditionProvider:
             reason=WaitingReason(
                 code="opc_value_mismatch",
                 context={
-                    "provider_id": provider_id,
+                    "plc_device_id": plc_device_id,
                     "variable": variable,
                     "expected": expected,
+                    "actual": actual,
+                    "updated_at": snapshot.updated_at_by_variable[variable],
                 },
-                message=f"OPC 变量值不匹配：{variable}（期望 {expected}）",
+                message=(
+                    f"OPC 变量值不匹配：{variable}"
+                    f"（期望 {expected}，当前值 {actual}）"
+                ),
             ),
         )
 

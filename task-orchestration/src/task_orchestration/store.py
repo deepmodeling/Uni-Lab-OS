@@ -66,6 +66,23 @@ class WorkspaceStore:
             self._write_json_atomically(sidecar, result.model_dump(mode="json"))
             return result
 
+    def reset(self, workflow_path: str) -> VersionedWorkspaceResponse:
+        """安全删除指定 workflow 的 Task sidecar，不触碰 workflow 文件。"""
+        path, relative_path = self._resolve_workflow_path(workflow_path)
+        sidecar = self._sidecar_path(path)
+        with self._lock, self._sidecar_lock(sidecar, fcntl.LOCK_EX):
+            if sidecar.is_symlink():
+                raise SidecarSymlinkError("workspace sidecar must not be a symlink")
+            try:
+                sidecar.unlink()
+            except FileNotFoundError:
+                pass
+            self._fsync_directory(sidecar.parent)
+            return VersionedWorkspaceResponse(
+                version=0,
+                workspace=Workspace(workflow_path=relative_path),
+            )
+
     def mutate(
         self,
         workflow_path: str,
@@ -84,6 +101,55 @@ class WorkspaceStore:
             result = VersionedWorkspaceResponse(
                 version=current.version + 1,
                 workspace=updated.model_copy(update={"workflow_path": relative_path}),
+            )
+            self._write_json_atomically(sidecar, result.model_dump(mode="json"))
+            return result
+
+    def mutate_latest(
+        self,
+        workflow_path: str,
+        *,
+        operation: Callable[[Workspace], Workspace],
+    ) -> VersionedWorkspaceResponse:
+        """在排他锁内基于最新工作区更新，不采纳客户端乐观锁版本。"""
+        path, relative_path = self._resolve_workflow_path(workflow_path)
+        sidecar = self._sidecar_path(path)
+        with self._lock, self._sidecar_lock(sidecar, fcntl.LOCK_EX):
+            current = self._read_current(sidecar, relative_path)
+            updated = operation(current.workspace)
+            result = VersionedWorkspaceResponse(
+                version=current.version + 1,
+                workspace=updated.model_copy(update={"workflow_path": relative_path}),
+            )
+            self._write_json_atomically(sidecar, result.model_dump(mode="json"))
+            return result
+
+    def mutate_idempotent(
+        self,
+        workflow_path: str,
+        *,
+        expected_version: int,
+        operation: Callable[[Workspace], Workspace | None],
+    ) -> VersionedWorkspaceResponse:
+        """原子更新；操作返回 None 时按幂等重放返回当前版本且不写盘。"""
+        path, relative_path = self._resolve_workflow_path(workflow_path)
+        sidecar = self._sidecar_path(path)
+        with self._lock, self._sidecar_lock(sidecar, fcntl.LOCK_EX):
+            current = self._read_current(sidecar, relative_path)
+            updated = operation(current.workspace)
+            if updated is None:
+                return current
+            if current.version != expected_version:
+                raise VersionConflictError("workspace version conflict")
+            validated = Workspace.model_validate(
+                {
+                    **updated.model_dump(round_trip=True),
+                    "workflow_path": relative_path,
+                }
+            )
+            result = VersionedWorkspaceResponse(
+                version=current.version + 1,
+                workspace=validated,
             )
             self._write_json_atomically(sidecar, result.model_dump(mode="json"))
             return result
@@ -156,9 +222,58 @@ class WorkspaceStore:
             raise
         try:
             with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
-                return VersionedWorkspaceResponse.model_validate_json(handle.read())
+                payload = json.load(handle)
+            return VersionedWorkspaceResponse.model_validate(
+                self._migrate_legacy_sidecar_payload(payload)
+            )
         except (json.JSONDecodeError, ValueError) as exc:
             raise SidecarCorruptionError("invalid task workspace sidecar") from exc
+
+    @staticmethod
+    def _migrate_legacy_sidecar_payload(payload: object) -> object:
+        """仅在磁盘读取边界迁移已发布过的旧 sidecar 契约。"""
+        if not isinstance(payload, dict):
+            return payload
+        workspace = payload.get("workspace")
+        if not isinstance(workspace, dict):
+            return payload
+        templates: list[object] = []
+        template_node_counts: dict[str, int] = {}
+        for item in workspace.get("templates", []):
+            if not isinstance(item, dict):
+                templates.append(item)
+                continue
+            migrated = dict(item)
+            migrated.pop("trigger", None)
+            templates.append(migrated)
+            node_ids = migrated.get("node_ids", [])
+            template_node_counts[str(migrated.get("id"))] = (
+                len(node_ids) if isinstance(node_ids, list) else 0
+            )
+        instances: list[object] = []
+        for item in workspace.get("task_instances", []):
+            if (
+                isinstance(item, dict)
+                and item.get("status") == "completed"
+                and "execution_state" not in item
+            ):
+                item = {
+                    **item,
+                    "execution_state": {
+                        "cursor": template_node_counts.get(
+                            str(item.get("template_id")), 0
+                        )
+                    },
+                }
+            instances.append(item)
+        return {
+            **payload,
+            "workspace": {
+                **workspace,
+                "templates": templates,
+                "task_instances": instances,
+            },
+        }
 
     @staticmethod
     def _write_json_atomically(path: Path, payload: dict[str, object]) -> None:

@@ -40,27 +40,82 @@ const { formatUiError, buildWorkspaceSummary, groupActionsByDevice } = await imp
   new URL('../src/uiState.ts', import.meta.url),
 );
 const {
-  buildTaskGanttSchedule,
-  createTaskTemplateTriggers,
+  annotateTaskGanttEntries,
+  buildTaskGanttEntries,
+  canDeleteTaskTemplate,
   createDefaultTriggerCondition,
+  createOperationGenerationController,
+  createSynchronousActionGate,
+  createTaskTemplateDraft,
+  createTaskTemplateId,
+  createWorkspaceEpochController,
+  isTaskWaitingStatus,
   normalizeTriggerConditions,
   renameTaskTemplate,
+  resolveTaskTemplateNameDraft,
+  taskLocalWaitingReason,
+  taskTemplateDeviceIds,
+  updateScheduledTemplateDraft,
   updateTaskTemplateTriggers,
 } = await importTypeScriptModule(
   new URL('../src/taskOrchestration.ts', import.meta.url),
 );
 const {
   createTaskOrchestrationClient,
+  createTaskExecutionController,
+  createTaskExecutionStatus,
+  fromApiTrigger,
   resolveTaskOrchestrationApiUrl,
-  resolveTaskOrchestrationUiToken,
+  pauseTaskSchedulerReliably,
+  runTaskExecutionHarvestCycle,
+  runTaskExecutionCycle,
+  runTaskSchedulerTransition,
   TaskOrchestrationBusinessError,
+  TaskExecutionCycleCancelledError,
   TaskOrchestrationServiceUnavailableError,
   toApiTrigger,
 } = await importTypeScriptModule(
   new URL('../src/taskOrchestrationApi.ts', import.meta.url),
 );
+const {
+  addProfileCondition,
+  addProfileVariable,
+  addProfileWrite,
+  beginOpcSimulatorControlOperation,
+  buildOpcActionCatalog,
+  buildOpcVariableTypeCatalog,
+  canonicalProfileJson,
+  clearProfileVariableInitialValue,
+  collectScheduledTemplateIds,
+  countNodeMissingFields,
+  createCanonicalProfileBlob,
+  createLatestOperationGate,
+  createOpcSimulatorClient,
+  createProfileSaveSnapshot,
+  DEFAULT_OPC_SIMULATOR_URL,
+  defaultOpcSimulatorFileName,
+  finishOpcSimulatorControlOperation,
+  formatJsonScalar,
+  isProfileSaveSnapshotCurrent,
+  isSimulatorStartAllowed,
+  opcSimulatorStopMessage,
+  parseOpcSimulatorProfileJson,
+  parseJsonScalar,
+  removeProfileCondition,
+  removeProfileVariable,
+  removeProfileWrite,
+  updateProfileCondition,
+  updateProfileVariable,
+  updateProfileWrite,
+  validateOpcSimulatorProfile,
+} = await importTypeScriptModule(
+  new URL('../src/opcSimulatorProfile.ts', import.meta.url),
+);
 const mainSource = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const taskOrchestrationSource = await readFile(new URL('../src/taskOrchestration.ts', import.meta.url), 'utf8');
+const taskOrchestrationApiSource = await readFile(new URL('../src/taskOrchestrationApi.ts', import.meta.url), 'utf8');
 const styleSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+const opcSimulatorDialogSource = await readFile(new URL('../src/OpcSimulatorDialog.tsx', import.meta.url), 'utf8');
 const opcChangesSource = await readFile(new URL('../src/opcChanges.ts', import.meta.url), 'utf8');
 const taskStateSource = mainSource.match(
   /export function createEmptyTaskWorkspaceState\([\s\S]*?\n}\n\ntype StackSlotPayload/,
@@ -72,6 +127,564 @@ const {
   removeTaskTemplateState,
   resetTaskWorkspaceState,
 } = await importTypeScriptSource(taskStateSource);
+
+const opcProfileFixture = {
+  schema_version: 2,
+  status: 'draft',
+  name: 'line-a',
+  opc: {
+    url: 'opc.tcp://127.0.0.1:4840',
+    poll_interval: 0.2,
+    io_timeout: 2,
+  },
+  variables: [
+    { name: 'command', direction: 'pc_to_plc', data_type: 'int', source: 'manual' },
+    { name: 'done', direction: 'plc_to_pc', data_type: 'bool', initial_value: false, source: 'task_output' },
+  ],
+  nodes: [{
+    workflow_node_id: 'node-a',
+    task_template_ids: ['task-a'],
+    device_id: 'device-a',
+    method: 'run',
+    params: {},
+    channel: '',
+    trigger: { all: [] },
+    on_trigger: { writes: [] },
+    on_complete: { delay: 0.5, writes: [] },
+    reset_when: null,
+    after_reset: null,
+  }],
+};
+const condition = { variable: 'command', operator: 'eq', edge: 'rising', value: 1 };
+
+assert.equal(
+  DEFAULT_OPC_SIMULATOR_URL,
+  'opc.tcp://127.0.0.1:4840',
+  'OPC 模拟器默认地址必须是零远程写风险的 loopback endpoint',
+);
+assert.match(
+  mainSource,
+  /const DEFAULT_CONFIG = \{[\s\S]*?url: DEFAULT_OPC_SIMULATOR_URL,/,
+  'Task OPC 与模拟器默认地址必须引用同一安全常量',
+);
+assert.match(
+  mainSource,
+  /placeholder=\{DEFAULT_OPC_SIMULATOR_URL\}/,
+  'OPC URL 输入提示也必须使用安全 loopback 常量',
+);
+
+assert.deepEqual(
+  collectScheduledTemplateIds(['task-a', 'task-b', 'task-a', '', 'task-c']),
+  ['task-a', 'task-b', 'task-c'],
+  'Resource Schedule 模板 ID 必须去重并保持拖入顺序',
+);
+for (const [text, expected] of [
+  ['true', true],
+  ['false', false],
+  ['null', null],
+  ['12', 12],
+  ['"12"', '12'],
+  ['"中文"', '中文'],
+]) {
+  assert.deepEqual(parseJsonScalar(text), expected, `必须严格解析 JSON scalar：${text}`);
+  assert.equal(formatJsonScalar(expected), text, `必须规范格式化 JSON scalar：${text}`);
+}
+for (const invalid of ['', '01', 'NaN', '{}', '[]', 'undefined']) {
+  assert.throws(() => parseJsonScalar(invalid), /JSON scalar/, `必须拒绝非 JSON scalar：${invalid}`);
+}
+assert.throws(
+  () => parseOpcSimulatorProfileJson('{"schema_version":2,"nodes":{}}'),
+  /profile/,
+  '高级 JSON Apply 必须拒绝结构不完整的对象，避免编辑器运行时崩溃',
+);
+assert.deepEqual(
+  parseOpcSimulatorProfileJson(JSON.stringify(opcProfileFixture)),
+  opcProfileFixture,
+  '高级 JSON Apply 必须接受完整 schema v2 对象',
+);
+assert.deepEqual(
+  validateOpcSimulatorProfile({
+    ...opcProfileFixture,
+    opc: { ...opcProfileFixture.opc, poll_interval: 0.01, io_timeout: 61 },
+  }).map((error) => error.path).filter((path) => path.startsWith('opc.')),
+  ['opc.poll_interval', 'opc.io_timeout'],
+  '本地校验必须与后端一致拒绝越界 timing',
+);
+assert.deepEqual(
+  validateOpcSimulatorProfile({
+    ...opcProfileFixture,
+    variables: [{ ...opcProfileFixture.variables[0], source: 'input' }],
+  }).map((error) => error.path).filter((path) => path.includes('.source')),
+  ['variables[0].source'],
+  'source 必须严格限制为 action_node/task_input/task_output/manual',
+);
+const unknownActionProfile = {
+  ...opcProfileFixture,
+  variables: [{
+    name: 'action-ready',
+    direction: 'unknown',
+    data_type: 'unknown',
+    source: 'action_node',
+  }],
+};
+assert.deepEqual(
+  parseOpcSimulatorProfileJson(JSON.stringify(unknownActionProfile)),
+  unknownActionProfile,
+  '高级 JSON Apply 必须接受 action_node source 与 unknown 草稿字段',
+);
+assert.deepEqual(
+  validateOpcSimulatorProfile(unknownActionProfile)
+    .map((error) => error.path)
+    .filter((path) => path.startsWith('variables[0].')),
+  ['variables[0].direction', 'variables[0].data_type'],
+  'action_node unknown 草稿必须只报告待补方向与类型，不得误报 source',
+);
+assert.deepEqual(
+  buildOpcVariableTypeCatalog([
+    { name: 'bool-value', data_type: 'BOOL' },
+    { name: 'int-value', data_type: 'integer' },
+    { name: 'float-value', data_type: 'Double' },
+    { name: 'text-value', data_type: 'STRING' },
+    { name: 'ambiguous', data_type: 'BOOL' },
+    { name: 'ambiguous', data_type: 'INT' },
+    { name: 'unsupported', data_type: 'bytes' },
+  ]),
+  [
+    { name: 'bool-value', data_type: 'bool' },
+    { name: 'int-value', data_type: 'int' },
+    { name: 'float-value', data_type: 'float' },
+    { name: 'text-value', data_type: 'string' },
+  ],
+  'CSV catalog 仅可用唯一名称和严格已知类型补齐 Action 变量类型',
+);
+assert.deepEqual(
+  buildOpcActionCatalog([
+    {
+      device_id: 'device-a',
+      method: 'run',
+      opc_variables: ['ready'],
+    },
+  ]),
+  [{
+    device_id: 'device-a',
+    method: 'run',
+    opc_variables: ['ready'],
+  }],
+  'generate Action catalog 必须保留原始严格字段',
+);
+assert.throws(
+  () => buildOpcActionCatalog([
+    {
+      method: 'run',
+      opc_variables: ['ready'],
+    },
+  ]),
+  /动作 run 缺少 device_id/,
+  'generate 前必须阻止缺少 device_id 的 Action，不能发送非法 catalog',
+);
+assert.throws(
+  () => buildOpcActionCatalog([
+    {
+      device_id: ' ',
+      method: 'run',
+      opc_variables: [],
+    },
+  ]),
+  /动作 run 缺少 device_id/,
+  '空白 device_id 也必须在请求前阻止',
+);
+
+const pollGate = createLatestOperationGate();
+const stalePoll = pollGate.begin();
+const latestPoll = pollGate.begin();
+assert.equal(stalePoll.signal.aborted, true, '新 poll 必须 abort 前一个请求');
+assert.equal(pollGate.isCurrent(stalePoll.generation), false, '乱序旧 poll 不得应用');
+assert.equal(pollGate.isCurrent(latestPoll.generation), true);
+pollGate.invalidate();
+assert.equal(latestPoll.signal.aborted, true, 'start/stop 必须可 abort 当前 poll');
+assert.equal(pollGate.isCurrent(latestPoll.generation), false, 'start 后旧 poll 不得覆盖新 run_id');
+const afterOperation = pollGate.begin();
+pollGate.unmount();
+assert.equal(afterOperation.signal.aborted, true, 'unmount 必须 abort 状态请求');
+assert.equal(pollGate.isCurrent(afterOperation.generation), false);
+
+const controlInFlight = { current: false };
+const controlToken = { current: 0 };
+let startCalls = 0;
+let stopCalls = 0;
+let ownedControlRunId = null;
+let releaseStart;
+const startResponse = new Promise((resolve) => { releaseStart = resolve; });
+const simulatedStart = async () => {
+  if (controlInFlight.current) return;
+  const operation = beginOpcSimulatorControlOperation(controlInFlight, controlToken);
+  if (operation === null) return;
+  try {
+    startCalls += 1;
+    const status = await startResponse;
+    if (operation === controlToken.current) ownedControlRunId = status.run_id;
+  } finally {
+    finishOpcSimulatorControlOperation(controlInFlight, controlToken, operation);
+  }
+};
+const simulatedStop = async () => {
+  if (controlInFlight.current) return;
+  const operation = beginOpcSimulatorControlOperation(controlInFlight, controlToken);
+  if (operation === null) return;
+  try {
+    stopCalls += 1;
+  } finally {
+    finishOpcSimulatorControlOperation(controlInFlight, controlToken, operation);
+  }
+};
+const firstStart = simulatedStart();
+await simulatedStart();
+await simulatedStop();
+assert.equal(startCalls, 1, '双 start 只能调用一次 API');
+assert.equal(stopCalls, 0, 'start 期间 stop 必须同步忽略');
+releaseStart({ run_id: 'c'.repeat(32) });
+await firstStart;
+assert.equal(ownedControlRunId, 'c'.repeat(32), '成功 start 必须保存 owned run_id');
+
+let releaseStop;
+const stopResponse = new Promise((resolve) => { releaseStop = resolve; });
+const delayedStop = async () => {
+  if (controlInFlight.current) return;
+  const operation = beginOpcSimulatorControlOperation(controlInFlight, controlToken);
+  if (operation === null) return;
+  try {
+    stopCalls += 1;
+    await stopResponse;
+  } finally {
+    finishOpcSimulatorControlOperation(controlInFlight, controlToken, operation);
+  }
+};
+const firstStop = delayedStop();
+await delayedStop();
+assert.equal(stopCalls, 1, '双 stop 只能调用一次 API');
+releaseStop();
+await firstStop;
+
+const saveSnapshot = createProfileSaveSnapshot(opcProfileFixture, 'runnable', 'line-a.json');
+assert.equal(
+  isProfileSaveSnapshotCurrent(saveSnapshot, opcProfileFixture, 'line-a.json'),
+  true,
+);
+assert.equal(
+  isProfileSaveSnapshotCurrent(
+    saveSnapshot,
+    { ...opcProfileFixture, name: 'edited while saving' },
+    'line-a.json',
+  ),
+  false,
+  '保存期间发生编辑时旧响应不得覆盖当前输入',
+);
+assert.equal(
+  isProfileSaveSnapshotCurrent(saveSnapshot, opcProfileFixture, 'renamed.json'),
+  false,
+  '保存期间修改文件名时旧响应不得清除 dirty',
+);
+
+for (const [candidate, expectedPath] of [
+  [{ ...opcProfileFixture, extra: true }, 'extra'],
+  [{ ...opcProfileFixture, opc: { ...opcProfileFixture.opc, extra: true } }, 'opc.extra'],
+  [{ ...opcProfileFixture, variables: [{ ...opcProfileFixture.variables[0], extra: true }] }, 'variables[0].extra'],
+  [{ ...opcProfileFixture, nodes: [{ ...opcProfileFixture.nodes[0], extra: true }] }, 'nodes[0].extra'],
+  [{
+    ...opcProfileFixture,
+    nodes: [{
+      ...opcProfileFixture.nodes[0],
+      trigger: { all: [{ ...condition, extra: true }] },
+    }],
+  }, 'nodes[0].trigger.all[0].extra'],
+]) {
+  assert.ok(
+    validateOpcSimulatorProfile(candidate).some((error) => error.path === expectedPath),
+    `local validator 必须拒绝未知字段：${expectedPath}`,
+  );
+}
+const duplicateNodeProfile = {
+  ...opcProfileFixture,
+  nodes: [
+    { ...opcProfileFixture.nodes[0], channel: 'a', trigger: { all: [condition] } },
+    { ...opcProfileFixture.nodes[0], channel: 'b', trigger: { all: [condition] } },
+  ],
+};
+assert.ok(validateOpcSimulatorProfile(duplicateNodeProfile)
+  .some((error) => error.path === 'nodes[1].workflow_node_id'));
+assert.ok(validateOpcSimulatorProfile({
+  ...opcProfileFixture,
+  nodes: [{ ...opcProfileFixture.nodes[0], task_template_ids: [''] }],
+}).some((error) => error.path === 'nodes[0].task_template_ids[0]'));
+const missingDelayProfile = JSON.parse(JSON.stringify(opcProfileFixture));
+delete missingDelayProfile.nodes[0].on_complete.delay;
+assert.ok(validateOpcSimulatorProfile(missingDelayProfile)
+  .some((error) => error.path === 'nodes[0].on_complete.delay'));
+const missingScalarProfile = JSON.parse(JSON.stringify(opcProfileFixture));
+missingScalarProfile.nodes[0].trigger = {
+  all: [{ variable: 'missing', operator: 'eq', edge: 'level' }],
+};
+missingScalarProfile.nodes[0].on_trigger = { writes: [{ variable: 'missing' }] };
+const missingScalarErrors = validateOpcSimulatorProfile(missingScalarProfile);
+assert.ok(missingScalarErrors.some((error) => error.path === 'nodes[0].trigger.all[0].value'));
+assert.ok(missingScalarErrors.some((error) => error.path === 'nodes[0].on_trigger.writes[0].value'));
+const maliciousProfile = JSON.parse(JSON.stringify(opcProfileFixture));
+maliciousProfile.nodes[0].params = JSON.parse('{"constructor":{"polluted":true}}');
+assert.ok(validateOpcSimulatorProfile(maliciousProfile)
+  .some((error) => error.path === 'nodes[0].params.constructor'));
+assert.throws(
+  () => parseOpcSimulatorProfileJson(JSON.stringify(maliciousProfile)),
+  /禁止字段/,
+  '高级 JSON 必须在 Apply 前拒绝递归原型污染键',
+);
+assert.throws(
+  () => parseOpcSimulatorProfileJson(`${'['.repeat(101)}0${']'.repeat(101)}`),
+  /嵌套/,
+  '高级 JSON 必须在 parse 前拒绝超过 100 层嵌套',
+);
+assert.throws(
+  () => parseOpcSimulatorProfileJson(`"${'x'.repeat(2 * 1024 * 1024)}"`),
+  /2 MiB/,
+  '高级 JSON 必须在 parse 前拒绝超过 2 MiB',
+);
+assert.ok(validateOpcSimulatorProfile({
+  ...opcProfileFixture,
+  variables: Array.from({ length: 501 }, (_, index) => ({
+    name: `v-${index}`,
+    direction: 'pc_to_plc',
+    data_type: 'bool',
+    source: 'manual',
+  })),
+}).some((error) => error.path === 'variables'));
+assert.throws(
+  () => canonicalProfileJson({ ...opcProfileFixture, invalid: undefined }),
+  /JSON data/,
+  'canonicalizer 必须拒绝不能无损表达的非 JSON data',
+);
+assert.equal(
+  await createCanonicalProfileBlob(opcProfileFixture).text(),
+  `${JSON.stringify(opcProfileFixture, null, 2)}\n`,
+  '下载 Blob 必须直接使用 canonical profile 文本并保留末尾换行',
+);
+
+const localProfileErrors = validateOpcSimulatorProfile(opcProfileFixture);
+assert.ok(localProfileErrors.some((error) => error.path === 'nodes[0].channel' && error.nodeId === 'node-a'));
+assert.ok(localProfileErrors.some((error) => error.path === 'nodes[0].trigger.all' && error.nodeId === 'node-a'));
+assert.equal(countNodeMissingFields(opcProfileFixture.nodes[0], opcProfileFixture.variables), 2);
+
+const withVariable = addProfileVariable(opcProfileFixture, {
+  name: 'ready',
+  direction: 'plc_to_pc',
+  data_type: 'bool',
+  initial_value: true,
+  source: 'manual',
+});
+assert.equal(opcProfileFixture.variables.length, 2, '变量新增不得修改原对象');
+assert.equal(withVariable.variables.length, 3);
+const updatedVariable = updateProfileVariable(withVariable, 2, { direction: 'pc_to_plc' });
+assert.equal(withVariable.variables[2].direction, 'plc_to_pc', '变量更新必须不可变');
+assert.equal(updatedVariable.variables[2].direction, 'pc_to_plc');
+const clearedVariable = clearProfileVariableInitialValue(withVariable, 2);
+assert.equal(Object.hasOwn(withVariable.variables[2], 'initial_value'), true, '清空不得修改原变量');
+assert.equal(Object.hasOwn(clearedVariable.variables[2], 'initial_value'), false, '清空必须真正删除 own property');
+assert.doesNotThrow(() => canonicalProfileJson(clearedVariable));
+const undefinedPatchedVariable = updateProfileVariable(withVariable, 2, { initial_value: undefined });
+assert.equal(
+  Object.hasOwn(undefinedPatchedVariable.variables[2], 'initial_value'),
+  false,
+  'update patch 中的 undefined 必须删除字段，不能进入 JSON profile',
+);
+assert.doesNotThrow(() => canonicalProfileJson(undefinedPatchedVariable));
+assert.equal(removeProfileVariable(updatedVariable, 2).variables.length, 2);
+
+const withCondition = addProfileCondition(opcProfileFixture, 0, 'trigger', condition);
+assert.equal(opcProfileFixture.nodes[0].trigger.all.length, 0, '条件新增不得修改原对象');
+assert.deepEqual(updateProfileCondition(withCondition, 0, 'trigger', 0, { value: 2 }).nodes[0].trigger.all[0].value, 2);
+assert.equal(removeProfileCondition(withCondition, 0, 'trigger', 0).nodes[0].trigger.all.length, 0);
+
+const write = { variable: 'done', value: true };
+const withWrite = addProfileWrite(opcProfileFixture, 0, 'on_complete', write);
+assert.equal(opcProfileFixture.nodes[0].on_complete.writes.length, 0, '写值新增不得修改原对象');
+assert.equal(updateProfileWrite(withWrite, 0, 'on_complete', 0, { value: false }).nodes[0].on_complete.writes[0].value, false);
+assert.equal(removeProfileWrite(withWrite, 0, 'on_complete', 0).nodes[0].on_complete.writes.length, 0);
+
+assert.equal(
+  canonicalProfileJson({ ...opcProfileFixture, name: 'line-a' }),
+  `${JSON.stringify(opcProfileFixture, null, 2)}\n`,
+  'JSON 预览必须为稳定两空格缩进并以换行结尾',
+);
+assert.equal(
+  isSimulatorStartAllowed({
+    profile: { ...opcProfileFixture, status: 'runnable', nodes: [{ ...opcProfileFixture.nodes[0], channel: 'line-a', trigger: { all: [condition] } }] },
+    localErrors: [],
+    backendErrors: [],
+    fileName: 'line-a.json',
+    revision: 'a'.repeat(64),
+    dirty: false,
+    managerState: 'idle',
+  }),
+  true,
+  '仅已保存、未修改、runnable 且 manager 空闲的 profile 可启动',
+);
+assert.equal(
+  isSimulatorStartAllowed({
+    profile: { ...opcProfileFixture, status: 'runnable' },
+    localErrors: [],
+    backendErrors: [],
+    fileName: 'line-a.json',
+    revision: 'a'.repeat(64),
+    dirty: true,
+    managerState: 'idle',
+  }),
+  false,
+  '存在未保存修改时必须阻止启动',
+);
+assert.equal(
+  isSimulatorStartAllowed({
+    profile: { ...opcProfileFixture, status: 'runnable' },
+    localErrors: [],
+    backendErrors: [],
+    fileName: 'line-a.json',
+    revision: 'a'.repeat(64),
+    dirty: false,
+    managerState: 'failed',
+    managerRestoreStatus: 'not_started',
+  }),
+  true,
+  '模拟器进程异常退出后应允许再次启动',
+);
+assert.equal(
+  isSimulatorStartAllowed({
+    profile: { ...opcProfileFixture, status: 'runnable' },
+    localErrors: [],
+    backendErrors: [],
+    fileName: 'line-a.json',
+    revision: 'a'.repeat(64),
+    dirty: false,
+    managerState: 'stopped',
+    managerRestoreStatus: 'error',
+  }),
+  true,
+  '停止后 OPC 恢复失败时仍可通过确认再次启动',
+);
+assert.equal(
+  isSimulatorStartAllowed({
+    profile: { ...opcProfileFixture, status: 'runnable' },
+    localErrors: [],
+    backendErrors: [],
+    fileName: 'line-a.json',
+    revision: 'a'.repeat(64),
+    dirty: false,
+    managerState: 'stopping',
+    managerRestoreStatus: 'pending',
+  }),
+  false,
+  '停止进行中时必须阻止再次启动',
+);
+await assert.rejects(
+  () => createOpcSimulatorClient(async () => new Response('{}')).generate({
+    workflow: {},
+    templates: [],
+    scheduled_template_ids: ['task-a'],
+    action_catalog: [],
+    variable_catalog: [],
+    name: 'line-a',
+    file_name: 'line-a.json',
+    opc_url: 'opc.tcp://127.0.0.1:4840',
+  }),
+  /无效响应/,
+  'profile API 必须拒绝缺失 schema 字段的成功响应',
+);
+await assert.rejects(
+  () => createOpcSimulatorClient(async () => new Response(JSON.stringify({
+    state: 'running',
+    pid: 12,
+    file_name: 'line-a.json',
+    revision: 'a'.repeat(64),
+    opc_url: 'opc.tcp://127.0.0.1:4840',
+    started_at: 1,
+    ended_at: null,
+    ended_monotonic: null,
+    elapsed_seconds: 1,
+    return_code: null,
+    restore_status: 'not_started',
+    last_error: null,
+    recent_logs: [],
+  }))).status(),
+  /无效响应/,
+  'status API 缺少 run_id 时必须拒绝，禁止 PID 猜测所有权',
+);
+let stopRequest;
+const runId = 'a'.repeat(32);
+const stoppedStatus = {
+  state: 'stopped',
+  pid: 12,
+  file_name: 'line-a.json',
+  revision: 'b'.repeat(64),
+  run_id: runId,
+  opc_url: 'opc.tcp://127.0.0.1:4840',
+  started_at: 1,
+  ended_at: 2,
+  ended_monotonic: 2,
+  elapsed_seconds: 1,
+  return_code: 0,
+  restore_status: 'succeeded',
+  last_error: null,
+  recent_logs: [],
+};
+assert.equal(
+  opcSimulatorStopMessage(stoppedStatus),
+  '模拟器已停止并完成恢复',
+);
+assert.match(
+  opcSimulatorStopMessage({
+    ...stoppedStatus,
+    state: 'stopping',
+    restore_status: 'pending',
+  }),
+  /仍在恢复/,
+);
+for (const unsafeStatus of [
+  { ...stoppedStatus, state: 'failed', restore_status: 'error' },
+  { ...stoppedStatus, state: 'failed', restore_status: 'uncertain' },
+  { ...stoppedStatus, state: 'stopped', restore_status: 'error' },
+]) {
+  assert.match(opcSimulatorStopMessage(unsafeStatus), /阻断/);
+  assert.doesNotMatch(opcSimulatorStopMessage(unsafeStatus), /完成恢复/);
+}
+await createOpcSimulatorClient(async (_url, init) => {
+  stopRequest = init;
+  return new Response(JSON.stringify(stoppedStatus));
+}).stop(runId, true);
+assert.equal(stopRequest.keepalive, true);
+assert.equal(stopRequest.headers['content-type'], 'application/json');
+assert.deepEqual(JSON.parse(stopRequest.body), { expected_run_id: runId });
+const statusAbort = new AbortController();
+let statusRequest;
+await createOpcSimulatorClient(async (_url, init) => {
+  statusRequest = init;
+  return new Response(JSON.stringify(stoppedStatus));
+}).status(statusAbort.signal);
+assert.equal(statusRequest.signal, statusAbort.signal, 'status 请求必须使用独立 AbortSignal');
+let startRequest;
+await createOpcSimulatorClient(async (_url, init) => {
+  startRequest = init;
+  return new Response(JSON.stringify({ ...stoppedStatus, state: 'running', ended_at: null, ended_monotonic: null }));
+}).start('line-a.json', 'b'.repeat(64), true);
+assert.deepEqual(
+  JSON.parse(startRequest.body),
+  {
+    file_name: 'line-a.json',
+    expected_revision: 'b'.repeat(64),
+    allow_unsafe_url: true,
+  },
+  'start API 必须仅发送固定字段和严格 URL 授权布尔值',
+);
+assert.match(
+  mainSource,
+  /opcSimulatorProfile\.opc\.url !== DEFAULT_OPC_SIMULATOR_URL[\s\S]*?window\.confirm[\s\S]*?allowUnsafeUrl/,
+  '前端仅应对非默认 OPC URL 展示明确风险确认并传 true',
+);
 
 assert.equal(
   resolveTaskOrchestrationApiUrl({ VITE_TASK_ORCHESTRATION_API_URL: 'http://scheduler.test/api/v1/' }),
@@ -88,29 +701,113 @@ assert.equal(
   'http://127.0.0.1:8091/api/v1',
   '由 workflow_ui 托管时应直连排程服务，避免落入前端静态回退路由',
 );
-assert.equal(
-  resolveTaskOrchestrationUiToken({}, { hostname: '127.0.0.1', port: '8014' }),
-  'local-task-ui-dev',
-  '本地 workflow_ui 应使用与排程服务一致的开发 UI 令牌',
+assert.match(
+  mainSource,
+  /builtWorkflow = await buildWorkflow\(\);[\s\S]*?setTaskExecutionWorkflow\(builtWorkflow\)[\s\S]*?taskApiRef\.current\.plan\([\s\S]*?false/,
+  '运行调度必须先构建并固定本次 workflow，再解除排程暂停',
+);
+assert.match(
+  mainSource,
+  /runTaskExecutionCycle\([\s\S]*?window\.setInterval\(runCycle,\s*1500\)/,
+  '运行调度必须立即执行完整周期并以 1.5 秒间隔继续',
+);
+assert.match(
+  mainSource,
+  /if \(!shouldRunTaskExecutionLoop \|\| \(!isTaskExecutionDraining && !taskExecutionWorkflow\)\) return;[\s\S]*?workflow:\s*\(taskExecutionWorkflow \?\? undefined\)/,
+  'draining 模式不得依赖固定 workflow，normal 模式仍必须要求 workflow',
+);
+assert.match(
+  mainSource,
+  /return \(\) => window\.clearInterval\(timer\);[\s\S]*?useEffect\(\(\) => \(\) => taskExecutionControllerRef\.current\?\.pause\(\), \[\]\)/,
+  'normal 切换到 draining 只能重建 timer，controller 仅在页面卸载时 abort',
+);
+assert.match(
+  mainSource,
+  /taskExecutionControllerRef\.current\?\.pause\(\)[\s\S]*?taskApiRef\.current\.plan\([\s\S]*?true/,
+  '暂停必须中止当前前端请求并等待排程服务暂停',
+);
+assert.match(
+  mainSource,
+  /workspace !== 'tasks'[\s\S]*?handleTaskSchedulerPause/,
+  '离开 Task workspace 时必须自动暂停执行循环',
+);
+assert.match(
+  mainSource,
+  /const \[isSchedulerTransitioning,\s*setIsSchedulerTransitioning\] = useState\(false\)[\s\S]*?taskSchedulerTransitionRef = useRef\(false\)/,
+  '调度启停必须同时维护同步 ref 锁和可见 transition 状态',
+);
+assert.match(
+  mainSource,
+  /disabled=\{!taskInstances\.length \|\| isTaskWorkspaceLoading \|\| isSchedulerTransitioning\}/,
+  'build/plan 转换期间必须禁用运行调度按钮',
+);
+const schedulerToggleSource = mainSource.match(
+  /const handleTaskSchedulerToggle = useCallback\([\s\S]*?\n  \}, \[[^\n]+\]\);/,
+)?.[0] || '';
+assert.match(
+  schedulerToggleSource,
+  /setTaskExecutionWorkflow\(builtWorkflow\)[\s\S]*?taskApiRef\.current\.plan/,
+  'plan 前必须固定构建成功的 execution payload',
+);
+assert.doesNotMatch(
+  schedulerToggleSource.match(/catch \(error\) \{[\s\S]*?\n    \}/)?.[0] || '',
+  /setTaskExecutionWorkflow\(null\)/,
+  'plan 结果不确定时不得清空固定 payload，避免服务端 running 与前端分叉',
 );
 assert.deepEqual(
-  toApiTrigger({ variableName: 'S09 空闲', dataType: 'BOOL', value: true }),
-  { kind: 'opc', config: { provider_id: 'default', variable: 'S09 空闲', value: true } },
-  'CSV OPC 条件应映射为后端可判定的默认 provider DTO',
+  toApiTrigger({
+    plcDeviceId: 'custom_plc',
+    variableName: 'S09 空闲',
+    dataType: 'BOOL',
+    value: true,
+  }),
+  { kind: 'opc', config: { plc_device_id: 'custom_plc', variable: 'S09 空闲', value: true } },
+  'Task 条件必须映射为条件自身指定的 PLC OPC DTO',
 );
 assert.deepEqual(
-  toApiTrigger({ variableName: '系统资源可用：robot', dataType: 'BOOL', value: true }),
-  { kind: 'resource', config: { resource: 'robot' } },
-  '派生资源约束应映射为后端 resource Trigger DTO',
+  fromApiTrigger({
+    kind: 'opc',
+    config: { plc_device_id: 'custom_plc', variable: 'S09 空闲', value: true },
+  }),
+  {
+    plcDeviceId: 'custom_plc',
+    variableName: 'S09 空闲',
+    dataType: 'BOOL',
+    value: true,
+  },
+  'API trigger roundtrip 必须保留真实 PLC ID',
 );
-assert.deepEqual(
-  toApiTrigger({ variableName: '系统资源释放：robot', dataType: 'BOOL', value: true }),
-  { kind: 'resource', config: { resource: 'robot', event: 'released' } },
-  '派生资源输出应记录审计事件而不形成内部等待条件',
+assert.throws(
+  () => toApiTrigger({ variableName: 'ready', dataType: 'BOOL', value: true }),
+  /缺少 PLC 设备 ID/,
+  '缺少 PLC ID 时必须在发送请求前失败',
 );
+let missingPlcIdRequests = 0;
+const missingPlcIdClient = createTaskOrchestrationClient({
+  fetchImpl: async () => {
+    missingPlcIdRequests += 1;
+    throw new Error('不应发送请求');
+  },
+});
+assert.throws(
+  () => missingPlcIdClient.updateTemplate(
+    '/tmp/demo.json',
+    1,
+    'task-a',
+    {
+      input_triggers: [
+        { variableName: 'ready', dataType: 'BOOL', value: true },
+      ].map(toApiTrigger),
+    },
+  ),
+  /缺少 PLC 设备 ID/,
+  '保存 DTO 构建必须在 API 调用前阻止缺失 PLC ID',
+);
+assert.equal(missingPlcIdRequests, 0, '缺失 PLC ID 时不得发送请求');
 const taskApiRequests = [];
 const taskApi = createTaskOrchestrationClient({
   baseUrl: 'http://scheduler.test/api/v1',
+  uiToken: 'legacy-token',
   fetchImpl: async (url, init) => {
     taskApiRequests.push({ url, init });
     return new Response(JSON.stringify({
@@ -123,7 +820,8 @@ const taskApi = createTaskOrchestrationClient({
         scheduled_template_ids: [],
         scheduler_paused: false,
         schedule_entries: [],
-        opc_snapshots: [{ provider_id: 'gateway', sequence: 2, variable_count: 4, updated_at_by_variable: {} }],
+        opc_snapshots: [{ plc_device_id: 'szlab_poly_plc', sequence: 2, values: { ready: true }, updated_at_by_variable: {} }],
+        plc_registrations: [],
       },
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   },
@@ -139,6 +837,11 @@ assert.equal(
   'GET',
   '读取工作区必须通过 GET 请求',
 );
+assert.equal(
+  taskApiRequests[0].init.headers.Authorization,
+  undefined,
+  '本地 Task API 请求不得注入遗留 Bearer token',
+);
 await taskApi.updateScheduledTemplates('/tmp/demo.json', 3, ['second', 'first']);
 assert.equal(
   taskApiRequests[1].url,
@@ -149,6 +852,17 @@ assert.deepEqual(
   JSON.parse(taskApiRequests[1].init.body),
   { workflow_path: '/tmp/demo.json', expected_version: 3, template_ids: ['second', 'first'] },
   '待排模板请求只能包含工作区、版本和模板 ID',
+);
+await taskApi.resetWorkspace('/tmp/demo.json');
+assert.equal(
+  taskApiRequests[2].url,
+  'http://scheduler.test/api/v1/workspaces/reset',
+  '重置当前 Task 工作区必须调用专用安全 API',
+);
+assert.deepEqual(
+  JSON.parse(taskApiRequests[2].init.body),
+  { workflow_path: '/tmp/demo.json' },
+  '重置请求只能携带当前 workflow 工作区路径',
 );
 await assert.rejects(
   () => createTaskOrchestrationClient({
@@ -175,32 +889,1299 @@ await assert.rejects(
   '无效成功响应必须归类为服务协议错误',
 );
 
+const cycleWorkspace = {
+  version: 8,
+  workspace: {
+    workflow_path: '/tmp/demo.json',
+    templates: [],
+    task_instances: [],
+    events: [],
+    scheduled_template_ids: [],
+    scheduler_paused: false,
+    schedule_entries: [],
+    opc_snapshots: [],
+    plc_registrations: [],
+  },
+};
+const cycleWorkflow = { name: 'demo', nodes: [], edges: [] };
+const cycleCalls = [];
+const cycleFetcher = async (url, init) => {
+  cycleCalls.push({ kind: 'fetch', url, init });
+  if (url === '/api/task-opc/poll') {
+    return new Response(JSON.stringify({ success: true, active: true, variable_count: 2 }), { status: 200 });
+  }
+  return new Response(JSON.stringify({
+    success: true,
+    active: 1,
+    in_flight: 1,
+    claimed: 1,
+    completed: 0,
+    failed: 0,
+  }), { status: 200 });
+};
+const cycleTaskClient = {
+  advance: async (workflowPath, expectedVersion) => {
+    cycleCalls.push({ kind: 'advance', workflowPath, expectedVersion });
+    return { ...cycleWorkspace, version: expectedVersion + 1 };
+  },
+  getWorkspace: async (workflowPath) => {
+    cycleCalls.push({ kind: 'getWorkspace', workflowPath });
+    return cycleWorkspace;
+  },
+};
+const cycleAbortController = new AbortController();
+const cycleResult = await runTaskExecutionCycle({
+  fetcher: cycleFetcher,
+  taskClient: cycleTaskClient,
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+  signal: cycleAbortController.signal,
+});
+assert.deepEqual(
+  cycleCalls.map((call) => call.kind === 'fetch' ? `${call.kind}:${call.url}` : call.kind),
+  ['fetch:/api/task-opc/poll', 'advance', 'fetch:/api/task-execution/tick', 'getWorkspace'],
+  '单轮必须严格执行 poll、advance、tick，再刷新最新 workspace',
+);
+assert.deepEqual(
+  JSON.parse(cycleCalls[0].init.body),
+  { task_workspace_path: '/tmp/demo.json', workflow: cycleWorkflow },
+  'poll 请求必须携带 workspace 路径和 workflow',
+);
+assert.deepEqual(
+  JSON.parse(cycleCalls[2].init.body),
+  { task_workspace_path: '/tmp/demo.json', workflow: cycleWorkflow },
+  'tick 请求必须携带 workspace 路径和 workflow',
+);
+assert.equal(cycleCalls[0].init.signal, cycleAbortController.signal, 'poll 必须透传 AbortSignal');
+assert.equal(cycleCalls[2].init.signal, cycleAbortController.signal, 'tick 必须透传同一个 AbortSignal');
+assert.equal(cycleCalls[1].expectedVersion, 7, 'advance 必须使用调用方提供的期望版本');
+assert.deepEqual(cycleResult, {
+  active: true,
+  workspace: cycleWorkspace,
+  tick: { active: 1, in_flight: 1, claimed: 1, completed: 0, failed: 0 },
+}, '单轮应返回最终 workspace、tick 统计和 active 状态');
+
+const inactiveCalls = [];
+const inactiveResult = await runTaskExecutionCycle({
+  fetcher: async (url) => {
+    inactiveCalls.push(url);
+    return new Response(JSON.stringify({ success: true, active: false, variable_count: 0 }), { status: 200 });
+  },
+  taskClient: {
+    advance: async () => {
+      throw new Error('inactive 时不应 advance');
+    },
+    getWorkspace: async () => {
+      inactiveCalls.push('getWorkspace');
+      return cycleWorkspace;
+    },
+  },
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+assert.deepEqual(inactiveCalls, ['/api/task-opc/poll', 'getWorkspace'], 'inactive 时只允许 poll 后刷新 workspace');
+assert.deepEqual(inactiveResult, { active: false, workspace: cycleWorkspace, tick: null });
+
+let missingWorkflowRequests = 0;
+await assert.rejects(
+  () => runTaskExecutionCycle({
+    fetcher: async () => {
+      missingWorkflowRequests += 1;
+      throw new Error('不应发送请求');
+    },
+    taskClient: cycleTaskClient,
+    workflowPath: '/tmp/demo.json',
+    workflow: undefined,
+    expectedVersion: 7,
+  }),
+  /缺少当前 workflow JSON/,
+  '缺失 workflow 必须给出明确错误',
+);
+assert.equal(missingWorkflowRequests, 0, '缺失 workflow 必须在任何网络请求前失败');
+
+await assert.rejects(
+  () => runTaskExecutionCycle({
+    fetcher: async () => new Response(JSON.stringify({ message: 'PLC 未连接' }), { status: 503 }),
+    taskClient: cycleTaskClient,
+    workflowPath: '/tmp/demo.json',
+    workflow: cycleWorkflow,
+    expectedVersion: 7,
+  }),
+  /Task OPC 采样失败.*PLC 未连接.*HTTP 503/,
+  'poll 非 2xx 必须保留后端消息和 HTTP 状态',
+);
+await assert.rejects(
+  () => runTaskExecutionCycle({
+    fetcher: async () => new Response(JSON.stringify({ success: false, active: false, message: '变量读取失败' }), { status: 200 }),
+    taskClient: cycleTaskClient,
+    workflowPath: '/tmp/demo.json',
+    workflow: cycleWorkflow,
+    expectedVersion: 7,
+  }),
+  /Task OPC 采样失败.*变量读取失败/,
+  'poll success=false 必须作为清晰错误抛出',
+);
+
+const conflictCalls = [];
+const conflictResult = await runTaskExecutionCycle({
+  fetcher: async (url) => {
+    conflictCalls.push(url);
+    return new Response(JSON.stringify(
+      url === '/api/task-opc/poll'
+        ? { success: true, active: true }
+        : { success: true, active: 1, in_flight: 0, claimed: 1, completed: 0, failed: 0 },
+    ), { status: 200 });
+  },
+  taskClient: {
+    advance: async (_workflowPath, version) => {
+      conflictCalls.push(`advance:${version}`);
+      if (version === 7) throw new TaskOrchestrationBusinessError('版本冲突', 409);
+      return { ...cycleWorkspace, version: version + 1 };
+    },
+    getWorkspace: async () => {
+      conflictCalls.push('getWorkspace');
+      return { ...cycleWorkspace, version: 9 };
+    },
+  },
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+assert.deepEqual(
+  conflictCalls,
+  [
+    '/api/task-opc/poll',
+    'advance:7',
+    'getWorkspace',
+    'advance:9',
+    '/api/task-execution/tick',
+    'getWorkspace',
+  ],
+  'poll 推进版本后，409 必须刷新版本并仅重试 advance 一次，成功后才 tick',
+);
+assert.equal(conflictResult.workspace.version, 9);
+
+for (const retryError of [
+  new TaskOrchestrationBusinessError('再次冲突', 409),
+  new TaskOrchestrationBusinessError('请求非法', 422),
+]) {
+  let advanceCount = 0;
+  let tickCalled = false;
+  await assert.rejects(
+    () => runTaskExecutionCycle({
+      fetcher: async (url) => {
+        if (url === '/api/task-execution/tick') tickCalled = true;
+        return new Response(JSON.stringify({ success: true, active: true }), { status: 200 });
+      },
+      taskClient: {
+        advance: async () => {
+          advanceCount += 1;
+          if (advanceCount === 1 && retryError.status === 409) {
+            throw new TaskOrchestrationBusinessError('首次冲突', 409);
+          }
+          throw retryError;
+        },
+        getWorkspace: async () => ({ ...cycleWorkspace, version: 9 }),
+      },
+      workflowPath: '/tmp/demo.json',
+      workflow: cycleWorkflow,
+      expectedVersion: 7,
+    }),
+    (error) => error === retryError,
+    '非 409 或第二次 409 必须原样抛出',
+  );
+  assert.equal(advanceCount, retryError.status === 409 ? 2 : 1);
+  assert.equal(tickCalled, false, 'advance 最终失败时不得 tick');
+}
+
+const cancellationScenarios = [
+  {
+    name: 'poll 后 advance 前',
+    staleAt: 2,
+    conflictFirstAdvance: false,
+    expectedCalls: ['/api/task-opc/poll'],
+  },
+  {
+    name: '409 后 reload 前',
+    staleAt: 3,
+    conflictFirstAdvance: true,
+    expectedCalls: ['/api/task-opc/poll', 'advance:7'],
+  },
+  {
+    name: 'reload 后 retry 前',
+    staleAt: 4,
+    conflictFirstAdvance: true,
+    expectedCalls: ['/api/task-opc/poll', 'advance:7', 'getWorkspace'],
+  },
+  {
+    name: 'advance 后 tick 前',
+    staleAt: 3,
+    conflictFirstAdvance: false,
+    expectedCalls: ['/api/task-opc/poll', 'advance:7'],
+  },
+  {
+    name: 'tick 后最终 get 前',
+    staleAt: 4,
+    conflictFirstAdvance: false,
+    expectedCalls: ['/api/task-opc/poll', 'advance:7', '/api/task-execution/tick'],
+  },
+];
+for (const scenario of cancellationScenarios) {
+  const calls = [];
+  let currentCheckCount = 0;
+  let advanceCount = 0;
+  await assert.rejects(
+    () => runTaskExecutionCycle({
+      fetcher: async (url) => {
+        calls.push(url);
+        return new Response(JSON.stringify(
+          url === '/api/task-opc/poll'
+            ? { success: true, active: true }
+            : { success: true, active: 0, in_flight: 0, claimed: 0, completed: 0, failed: 0 },
+        ), { status: 200 });
+      },
+      taskClient: {
+        advance: async (_workflowPath, version) => {
+          calls.push(`advance:${version}`);
+          advanceCount += 1;
+          if (scenario.conflictFirstAdvance && advanceCount === 1) {
+            throw new TaskOrchestrationBusinessError('版本冲突', 409);
+          }
+          return cycleWorkspace;
+        },
+        getWorkspace: async () => {
+          calls.push('getWorkspace');
+          return { ...cycleWorkspace, version: 9 };
+        },
+      },
+      workflowPath: '/tmp/demo.json',
+      workflow: cycleWorkflow,
+      expectedVersion: 7,
+      isCurrent: () => {
+        currentCheckCount += 1;
+        return currentCheckCount !== scenario.staleAt;
+      },
+    }),
+    (error) => error instanceof TaskExecutionCycleCancelledError,
+    `${scenario.name}发现代际过期时必须抛出可识别取消错误`,
+  );
+  assert.deepEqual(calls, scenario.expectedCalls, `${scenario.name}取消后不得开始下一项操作`);
+}
+
+const abortedCycleController = new AbortController();
+let abortedCycleAdvanced = false;
+await assert.rejects(
+  () => runTaskExecutionCycle({
+    fetcher: async () => {
+      abortedCycleController.abort();
+      return new Response(JSON.stringify({ success: true, active: true }), { status: 200 });
+    },
+    taskClient: {
+      advance: async () => {
+        abortedCycleAdvanced = true;
+        return cycleWorkspace;
+      },
+      getWorkspace: async () => cycleWorkspace,
+    },
+    workflowPath: '/tmp/demo.json',
+    workflow: cycleWorkflow,
+    expectedVersion: 7,
+    signal: abortedCycleController.signal,
+  }),
+  (error) => error instanceof TaskExecutionCycleCancelledError,
+  'poll 返回时 signal 已中止必须抛出可识别取消错误',
+);
+assert.equal(abortedCycleAdvanced, false, 'signal 中止后不得开始 advance');
+
+let preStaleRequestCount = 0;
+await assert.rejects(
+  () => runTaskExecutionCycle({
+    fetcher: async () => {
+      preStaleRequestCount += 1;
+      return new Response(JSON.stringify({ success: true, active: true }), { status: 200 });
+    },
+    taskClient: {
+      advance: async () => {
+        preStaleRequestCount += 1;
+        return cycleWorkspace;
+      },
+      getWorkspace: async () => {
+        preStaleRequestCount += 1;
+        return cycleWorkspace;
+      },
+    },
+    workflowPath: '/tmp/demo.json',
+    workflow: cycleWorkflow,
+    expectedVersion: 7,
+    isCurrent: () => false,
+  }),
+  (error) => error instanceof TaskExecutionCycleCancelledError,
+  '首个 poll 前发现过期必须抛出可识别取消错误',
+);
+assert.equal(preStaleRequestCount, 0, '预先过期时不得发起任何 fetch 或 task client 请求');
+
+for (const active of [false, true]) {
+  let current = true;
+  const getDuringChangeCalls = [];
+  await assert.rejects(
+    () => runTaskExecutionCycle({
+      fetcher: async (url) => {
+        getDuringChangeCalls.push(url);
+        return new Response(JSON.stringify(
+          url === '/api/task-opc/poll'
+            ? { success: true, active }
+            : { success: true, active: 0, in_flight: 0, claimed: 0, completed: 0, failed: 0 },
+        ), { status: 200 });
+      },
+      taskClient: {
+        advance: async () => {
+          getDuringChangeCalls.push('advance');
+          return cycleWorkspace;
+        },
+        getWorkspace: async () => {
+          getDuringChangeCalls.push('getWorkspace');
+          current = false;
+          return cycleWorkspace;
+        },
+      },
+      workflowPath: '/tmp/demo.json',
+      workflow: cycleWorkflow,
+      expectedVersion: 7,
+      isCurrent: () => current,
+    }),
+    (error) => error instanceof TaskExecutionCycleCancelledError,
+    `${active ? 'active' : 'inactive'} 最终 getWorkspace 期间变代必须取消结果`,
+  );
+  assert.equal(getDuringChangeCalls.at(-1), 'getWorkspace');
+}
+
+for (const abortAt of ['/api/task-opc/poll', '/api/task-execution/tick']) {
+  const abortError = new DOMException('请求已中止', 'AbortError');
+  await assert.rejects(
+    () => runTaskExecutionCycle({
+      fetcher: async (url) => {
+        if (url === abortAt) throw abortError;
+        return new Response(JSON.stringify({ success: true, active: true }), { status: 200 });
+      },
+      taskClient: cycleTaskClient,
+      workflowPath: '/tmp/demo.json',
+      workflow: cycleWorkflow,
+      expectedVersion: 7,
+    }),
+    (error) => (
+      error instanceof TaskExecutionCycleCancelledError
+      && error.cause === abortError
+    ),
+    `${abortAt} 的 AbortError 必须统一为带 cause 的周期取消错误`,
+  );
+}
+
+const nonAbortFetchError = new TypeError('网络故障');
+await assert.rejects(
+  () => runTaskExecutionCycle({
+    fetcher: async () => { throw nonAbortFetchError; },
+    taskClient: cycleTaskClient,
+    workflowPath: '/tmp/demo.json',
+    workflow: cycleWorkflow,
+    expectedVersion: 7,
+  }),
+  (error) => error === nonAbortFetchError,
+  '非 AbortError 的 fetch 异常必须原样抛出',
+);
+
+await assert.rejects(
+  () => runTaskExecutionCycle({
+    fetcher: async (url) => url === '/api/task-opc/poll'
+      ? new Response(JSON.stringify({ success: true, active: true }), { status: 200 })
+      : new Response(JSON.stringify({ success: false, message: '动作认领失败' }), { status: 200 }),
+    taskClient: cycleTaskClient,
+    workflowPath: '/tmp/demo.json',
+    workflow: cycleWorkflow,
+    expectedVersion: 7,
+  }),
+  /Task action tick 失败.*动作认领失败/,
+  'tick success=false 必须作为清晰错误抛出',
+);
+
+assert.deepEqual(
+  createTaskExecutionStatus(
+    {
+      active: 1,
+      in_flight: 0,
+      claimed: 2,
+      completed: 1,
+      failed: 0,
+    },
+    cycleWorkspace,
+  ),
+  {
+    phase: 'dispatching',
+    label: '采样派发',
+    tick: { active: 1, in_flight: 0, claimed: 2, completed: 1, failed: 0 },
+  },
+  'claimed 且无在途动作时应显示采样派发及完整 tick 统计',
+);
+assert.equal(
+  createTaskExecutionStatus(
+    { active: 1, in_flight: 2, claimed: 0, completed: 0, failed: 0 },
+    cycleWorkspace,
+  ).phase,
+  'running',
+  '存在在途动作时应显示执行中',
+);
+const stillRunningWorkspace = {
+  ...cycleWorkspace,
+  workspace: {
+    ...cycleWorkspace.workspace,
+    task_instances: [{
+      id: 'task-1',
+      template_id: 'demo',
+      status: 'running',
+      sample_id: 'sample-1',
+      order: 0,
+      started_at: 1,
+      finished_at: null,
+    }],
+  },
+};
+assert.equal(
+  createTaskExecutionStatus(
+    { active: 0, in_flight: 0, claimed: 0, completed: 3, failed: 0 },
+    stillRunningWorkspace,
+  ).phase,
+  'idle',
+  '最后 action 已收割但实例仍 running 时不得显示整体已完成',
+);
+const completedWorkspace = {
+  ...stillRunningWorkspace,
+  workspace: {
+    ...stillRunningWorkspace.workspace,
+    task_instances: stillRunningWorkspace.workspace.task_instances.map((instance) => ({
+      ...instance,
+      status: 'completed',
+      finished_at: 2,
+    })),
+  },
+};
+assert.equal(
+  createTaskExecutionStatus(
+    { active: 0, in_flight: 0, claimed: 0, completed: 0, failed: 0 },
+    completedWorkspace,
+  ).phase,
+  'completed',
+  '只有非空实例集合全部 completed 才能显示已完成',
+);
+assert.equal(
+  createTaskExecutionStatus(
+    { active: 0, in_flight: 0, claimed: 0, completed: 1, failed: 1 },
+    completedWorkspace,
+  ).phase,
+  'failed',
+  '失败计数必须映射为故障状态',
+);
+assert.equal(
+  createTaskExecutionStatus(
+    { active: 0, in_flight: 0, claimed: 0, completed: 0, failed: 0 },
+    {
+      ...stillRunningWorkspace,
+      workspace: {
+        ...stillRunningWorkspace.workspace,
+        pause_reason: { code: 'action_failed', detail: {} },
+      },
+    },
+  ).phase,
+  'failed',
+  'workspace pause_reason 必须映射为故障状态',
+);
+
+const transitionRef = { current: false };
+const transitionStates = [];
+let transitionCalls = 0;
+let releaseTransition;
+const transitionBarrier = new Promise((resolve) => { releaseTransition = resolve; });
+const firstTransition = runTaskSchedulerTransition(
+  transitionRef,
+  (transitioning) => transitionStates.push(transitioning),
+  async () => {
+    transitionCalls += 1;
+    await transitionBarrier;
+  },
+);
+assert.equal(
+  await runTaskSchedulerTransition(
+    transitionRef,
+    (transitioning) => transitionStates.push(transitioning),
+    async () => { transitionCalls += 1; },
+  ),
+  false,
+  '同步 ref 锁必须在第一次 await 前拦截双击',
+);
+assert.equal(transitionCalls, 1, '双击只能执行一次 build/plan');
+releaseTransition();
+assert.equal(await firstTransition, true);
+assert.deepEqual(transitionStates, [true, false]);
+
+const pausedWorkspace = {
+  ...cycleWorkspace,
+  version: 9,
+  workspace: { ...cycleWorkspace.workspace, scheduler_paused: true },
+};
+const reliablePauseCalls = [];
+const reliablePausedWorkspace = await pauseTaskSchedulerReliably({
+  taskClient: {
+    plan: async (_workflowPath, version, paused) => {
+      reliablePauseCalls.push(`plan:${version}:${paused}`);
+      if (version === 7) throw new TaskOrchestrationBusinessError('版本冲突', 409);
+      return pausedWorkspace;
+    },
+    getWorkspace: async () => {
+      reliablePauseCalls.push('getWorkspace');
+      return { ...cycleWorkspace, version: 11 };
+    },
+  },
+  workflowPath: '/tmp/demo.json',
+  expectedVersion: 7,
+});
+assert.equal(reliablePausedWorkspace, pausedWorkspace);
+assert.deepEqual(
+  reliablePauseCalls,
+  ['plan:7:true', 'getWorkspace', 'plan:11:true'],
+  '可靠暂停遇到 409 必须 reload 最新版本且只重试一次',
+);
+let reliablePauseAttempts = 0;
+await assert.rejects(
+  () => pauseTaskSchedulerReliably({
+    taskClient: {
+      plan: async () => {
+        reliablePauseAttempts += 1;
+        throw new TaskOrchestrationBusinessError('仍然冲突', 409);
+      },
+      getWorkspace: async () => ({ ...cycleWorkspace, version: 12 }),
+    },
+    workflowPath: '/tmp/demo.json',
+    expectedVersion: 7,
+  }),
+  /仍然冲突/,
+  '可靠暂停第二次 409 必须原样抛出',
+);
+assert.equal(reliablePauseAttempts, 2);
+
+const harvestCalls = [];
+const harvestResult = await runTaskExecutionHarvestCycle({
+  fetcher: async (url, init) => {
+    harvestCalls.push({ kind: 'fetch', url, init });
+    return new Response(JSON.stringify({
+      success: true,
+      active: 0,
+      in_flight: 1,
+      claimed: 0,
+      completed: 1,
+      failed: 0,
+    }), { status: 200 });
+  },
+  taskClient: {
+    getWorkspace: async (workflowPath) => {
+      harvestCalls.push({ kind: 'getWorkspace', workflowPath });
+      return stillRunningWorkspace;
+    },
+  },
+  workflowPath: '/tmp/demo.json',
+});
+assert.deepEqual(
+  harvestCalls.map((call) => call.kind === 'fetch' ? call.url : call.kind),
+  ['/api/task-execution/tick', 'getWorkspace'],
+  'harvest-only 只能 tick 后刷新 workspace，不得 poll、advance 或 claim 新动作',
+);
+assert.deepEqual(JSON.parse(harvestCalls[0].init.body), {
+  task_workspace_path: '/tmp/demo.json',
+  harvest_only: true,
+});
+assert.equal(harvestResult.tick.in_flight, 1);
+
+let releaseControlledCycle;
+const controlledCycleStarted = new Promise((resolve) => {
+  releaseControlledCycle = resolve;
+});
+let controlledCycleCalls = 0;
+const controlledStatuses = [];
+const controlledController = createTaskExecutionController({
+  runCycle: async ({ signal }) => {
+    controlledCycleCalls += 1;
+    await controlledCycleStarted;
+    if (signal.aborted) throw new TaskExecutionCycleCancelledError();
+    return {
+      active: true,
+      workspace: cycleWorkspace,
+      tick: { active: 1, in_flight: 1, claimed: 1, completed: 0, failed: 0 },
+    };
+  },
+  applyWorkspace: () => {},
+  pauseScheduler: async () => cycleWorkspace,
+  onStatus: (status) => controlledStatuses.push(status),
+  onError: (message) => { throw new Error(`不应报错：${message}`); },
+});
+controlledController.start();
+const controlledFirst = controlledController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+assert.equal(
+  await controlledController.run({
+    workflowPath: '/tmp/demo.json',
+    workflow: cycleWorkflow,
+    expectedVersion: 7,
+  }),
+  false,
+  '上一轮未结束时必须跳过新一轮，避免 1.5 秒定时器重入',
+);
+assert.equal(controlledCycleCalls, 1);
+releaseControlledCycle();
+assert.equal(await controlledFirst, true);
+assert.equal(controlledStatuses.at(-1).phase, 'running');
+
+const generationResolvers = [];
+let generationConcurrent = 0;
+let generationMaxConcurrent = 0;
+let generationCycleCalls = 0;
+const generationApplied = [];
+const generationController = createTaskExecutionController({
+  runCycle: async () => {
+    generationCycleCalls += 1;
+    generationConcurrent += 1;
+    generationMaxConcurrent = Math.max(generationMaxConcurrent, generationConcurrent);
+    const call = generationCycleCalls;
+    await new Promise((resolve) => { generationResolvers[call - 1] = resolve; });
+    generationConcurrent -= 1;
+    return {
+      active: true,
+      workspace: { ...cycleWorkspace, version: 20 + call },
+      tick: { active: 1, in_flight: 1, claimed: 0, completed: 0, failed: 0 },
+    };
+  },
+  applyWorkspace: (workspace) => generationApplied.push(workspace.version),
+  pauseScheduler: async () => pausedWorkspace,
+  onStatus: () => {},
+  onError: (message) => { throw new Error(`不应报错：${message}`); },
+});
+generationController.start();
+const oldGenerationRun = generationController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+generationController.start();
+const newGenerationRun = generationController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 8,
+});
+assert.equal(await generationController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 8,
+}), false, '新代已有请求时必须拒绝同代重入');
+generationResolvers[0]();
+assert.equal(await oldGenerationRun, false, '旧代延迟结果必须静默丢弃');
+assert.equal(await generationController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 8,
+}), false, '旧代 finally 不得清除新代 inFlight 并触发第三并发');
+assert.equal(generationCycleCalls, 2);
+assert.equal(generationMaxConcurrent, 2);
+assert.deepEqual(generationApplied, []);
+generationResolvers[1]();
+assert.equal(await newGenerationRun, true);
+assert.deepEqual(generationApplied, [22], '只有当前代可以应用 workspace');
+
+const cancellationErrors = [];
+let cancellationApplied = false;
+const cancellationController = createTaskExecutionController({
+  runCycle: async ({ signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new TaskExecutionCycleCancelledError()), { once: true });
+  }),
+  applyWorkspace: () => { cancellationApplied = true; },
+  pauseScheduler: async () => cycleWorkspace,
+  onStatus: () => {},
+  onError: (message) => cancellationErrors.push(message),
+});
+cancellationController.start();
+const cancelledRun = cancellationController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+cancellationController.pause();
+assert.equal(await cancelledRun, false, 'pause/unmount abort 应作为静默取消返回');
+assert.deepEqual(cancellationErrors, []);
+assert.equal(cancellationApplied, false);
+
+const inactiveEvents = [];
+let inactiveHarvestCalls = 0;
+const inactiveController = createTaskExecutionController({
+  runCycle: async () => ({ active: false, workspace: cycleWorkspace, tick: null }),
+  runHarvestCycle: async () => {
+    inactiveHarvestCalls += 1;
+    return {
+      active: false,
+      workspace: cycleWorkspace,
+      tick: { active: 0, in_flight: 0, claimed: 0, completed: 0, failed: 0 },
+    };
+  },
+  applyWorkspace: (workspace) => inactiveEvents.push(`apply:${workspace.version}`),
+  pauseScheduler: async (workflowPath, version) => {
+    inactiveEvents.push(`pause:${workflowPath}:${version}`);
+    return pausedWorkspace;
+  },
+  onStatus: (status) => inactiveEvents.push(`status:${status.phase}`),
+  onError: (message) => inactiveEvents.push(`error:${message}`),
+});
+inactiveController.start();
+assert.equal(await inactiveController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+}), true);
+assert.equal(inactiveController.isRunning(), true, 'inactive pause 后也必须至少进入一次 harvest-only');
+await inactiveController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 9,
+});
+assert.equal(inactiveHarvestCalls, 1);
+assert.equal(inactiveController.isRunning(), false);
+assert.deepEqual(inactiveEvents.slice(0, 4), [
+  'status:dispatching',
+  'apply:8',
+  'pause:/tmp/demo.json:8',
+  'apply:9',
+], 'inactive 必须先应用最新 workspace，再以其版本 await pause 并应用刷新结果');
+
+const drainEvents = [];
+let harvestCount = 0;
+const drainController = createTaskExecutionController({
+  runCycle: async () => ({
+    active: true,
+    workspace: stillRunningWorkspace,
+    tick: { active: 1, in_flight: 1, claimed: 1, completed: 0, failed: 0 },
+  }),
+  runHarvestCycle: async () => {
+    harvestCount += 1;
+    return {
+      active: harvestCount < 2,
+      workspace: harvestCount < 2 ? stillRunningWorkspace : completedWorkspace,
+      tick: {
+        active: 0,
+        in_flight: harvestCount < 2 ? 1 : 0,
+        claimed: 0,
+        completed: 1,
+        failed: 0,
+      },
+    };
+  },
+  applyWorkspace: (workspace) => drainEvents.push(`apply:${workspace.version}`),
+  pauseScheduler: async (_workflowPath, version) => {
+    drainEvents.push(`pause:${version}`);
+    return {
+      ...stillRunningWorkspace,
+      version: version + 1,
+      workspace: { ...stillRunningWorkspace.workspace, scheduler_paused: true },
+    };
+  },
+  onStatus: (status) => drainEvents.push(`status:${status.phase}:${status.tick.in_flight}`),
+  onError: (message) => drainEvents.push(`error:${message}`),
+  onDrainingChange: (draining) => drainEvents.push(`draining:${draining}`),
+});
+drainController.start();
+await drainController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+assert.equal(await drainController.pauseAndDrain({
+  workflowPath: '/tmp/demo.json',
+  expectedVersion: 8,
+}), true, '手动暂停且仍有 in_flight 时必须进入 harvest-only');
+await drainController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 9,
+});
+await drainController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 9,
+});
+assert.equal(harvestCount, 2);
+assert.equal(drainController.isRunning(), false);
+assert.deepEqual(
+  drainEvents.filter((event) => event.startsWith('draining:')),
+  ['draining:false', 'draining:true', 'draining:false'],
+  'harvest-only 必须持续到 in_flight=0 后退出',
+);
+assert.equal(drainEvents.at(-1), 'status:completed:0');
+
+const ordinaryErrorEvents = [];
+const ordinaryError = new Error('设备动作认领失败');
+let ordinaryErrorDiagnostic = '';
+const errorController = createTaskExecutionController({
+  runCycle: async () => { throw ordinaryError; },
+  runHarvestCycle: async () => ({
+    active: false,
+    workspace: pausedWorkspace,
+    tick: { active: 0, in_flight: 0, claimed: 0, completed: 0, failed: 0 },
+  }),
+  applyWorkspace: () => { ordinaryErrorDiagnostic = ''; },
+  pauseScheduler: async (_workflowPath, version) => {
+    ordinaryErrorEvents.push(`pause:${version}`);
+    return pausedWorkspace;
+  },
+  onStatus: (status) => ordinaryErrorEvents.push(`status:${status.phase}`),
+  onError: (message) => {
+    ordinaryErrorDiagnostic = message;
+    ordinaryErrorEvents.push(`error:${message}`);
+  },
+  getLatestVersion: () => 12,
+});
+errorController.start();
+assert.equal(await errorController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+}), false);
+assert.deepEqual(
+  ordinaryErrorEvents,
+  ['status:dispatching', 'pause:12', 'status:failed', 'error:设备动作认领失败'],
+  '普通错误应保留原始诊断、停止后续循环，并尽力暂停而不覆盖原错误',
+);
+assert.equal(ordinaryErrorDiagnostic, '设备动作认领失败', '暂停返回的 workspace 不得清除原始错误诊断');
+assert.equal(errorController.isRunning(), true, '普通错误暂停后必须强制探测一次 harvest-only');
+await errorController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 13,
+});
+assert.equal(errorController.isRunning(), false);
+
+let raceBackendInFlight = 0;
+let raceHarvestCalls = 0;
+const raceController = createTaskExecutionController({
+  runCycle: async ({ signal }) => {
+    raceBackendInFlight = 1;
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener(
+        'abort',
+        () => reject(new TaskExecutionCycleCancelledError()),
+        { once: true },
+      );
+    });
+  },
+  runHarvestCycle: async () => {
+    raceHarvestCalls += 1;
+    const inFlight = raceBackendInFlight;
+    raceBackendInFlight = 0;
+    return {
+      active: inFlight > 0,
+      workspace: inFlight > 0 ? stillRunningWorkspace : completedWorkspace,
+      tick: { active: 0, in_flight: inFlight, claimed: 0, completed: inFlight ? 0 : 1, failed: 0 },
+    };
+  },
+  applyWorkspace: () => {},
+  pauseScheduler: async () => pausedWorkspace,
+  onStatus: () => {},
+  onError: (message) => { throw new Error(`不应报错：${message}`); },
+  onDrainingChange: () => {},
+});
+raceController.start();
+const unresolvedNormalTick = raceController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+await Promise.resolve();
+assert.equal(await raceController.pauseAndDrain({
+  workflowPath: '/tmp/demo.json',
+  expectedVersion: 8,
+}), true, 'normal tick 响应未到且 lastTick=0 时暂停仍必须强制 harvest');
+assert.equal(await unresolvedNormalTick, false);
+await raceController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 9,
+});
+assert.equal(raceController.isRunning(), true, '首次 harvest 发现 in_flight=1 时必须继续');
+await raceController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 9,
+});
+assert.equal(raceController.isRunning(), false);
+assert.equal(raceHarvestCalls, 2);
+
+let zeroHarvestCalls = 0;
+const zeroHarvestController = createTaskExecutionController({
+  runCycle: async () => { throw new Error('不应运行 normal cycle'); },
+  runHarvestCycle: async () => {
+    zeroHarvestCalls += 1;
+    return {
+      active: false,
+      workspace: pausedWorkspace,
+      tick: { active: 0, in_flight: 0, claimed: 0, completed: 0, failed: 0 },
+    };
+  },
+  applyWorkspace: () => {},
+  pauseScheduler: async () => pausedWorkspace,
+  onStatus: () => {},
+  onError: () => {},
+  onDrainingChange: () => {},
+});
+await zeroHarvestController.pauseAndDrain({
+  workflowPath: '/tmp/demo.json',
+  expectedVersion: 7,
+});
+await zeroHarvestController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: undefined,
+  expectedVersion: 8,
+});
+await zeroHarvestController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: undefined,
+  expectedVersion: 8,
+});
+assert.equal(zeroHarvestCalls, 1, '刷新后 workflow=null 的暂停仍应 harvest 一次，首次 0 后停止');
+
+let errorDrainCycle = 0;
+let errorDrainDiagnostic = '';
+const errorDrainStatuses = [];
+const errorDrainController = createTaskExecutionController({
+  runCycle: async () => {
+    errorDrainCycle += 1;
+    if (errorDrainCycle === 1) {
+      return {
+        active: true,
+        workspace: stillRunningWorkspace,
+        tick: { active: 1, in_flight: 1, claimed: 1, completed: 0, failed: 0 },
+      };
+    }
+    throw new Error('周期网络故障');
+  },
+  runHarvestCycle: async () => ({
+    active: false,
+    workspace: completedWorkspace,
+    tick: { active: 0, in_flight: 0, claimed: 0, completed: 1, failed: 0 },
+  }),
+  applyWorkspace: () => { errorDrainDiagnostic = ''; },
+  pauseScheduler: async () => ({
+    ...stillRunningWorkspace,
+    workspace: { ...stillRunningWorkspace.workspace, scheduler_paused: true },
+  }),
+  onStatus: (status) => errorDrainStatuses.push(status.phase),
+  onError: (message) => { errorDrainDiagnostic = message; },
+  onDrainingChange: () => {},
+});
+errorDrainController.start();
+await errorDrainController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+await errorDrainController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 8,
+});
+assert.equal(errorDrainController.isRunning(), true, '错误暂停后仍有 in_flight 必须继续 harvest-only');
+assert.equal(errorDrainDiagnostic, '周期网络故障');
+await errorDrainController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 9,
+});
+assert.equal(errorDrainDiagnostic, '周期网络故障', 'harvest workspace 刷新不得清除原始错误诊断');
+assert.equal(errorDrainStatuses.at(-1), 'failed', '错误 drain 完成后仍应显示故障而非已完成');
+
+let failedHarvestCalls = 0;
+const failedHarvestDraining = [];
+const failedHarvestErrors = [];
+const failedHarvestController = createTaskExecutionController({
+  runCycle: async () => ({
+    active: true,
+    workspace: stillRunningWorkspace,
+    tick: { active: 1, in_flight: 1, claimed: 1, completed: 0, failed: 0 },
+  }),
+  runHarvestCycle: async () => {
+    failedHarvestCalls += 1;
+    throw new Error('harvest 通信失败');
+  },
+  applyWorkspace: () => {},
+  pauseScheduler: async () => ({
+    ...stillRunningWorkspace,
+    workspace: { ...stillRunningWorkspace.workspace, scheduler_paused: true },
+  }),
+  onStatus: () => {},
+  onError: (message) => failedHarvestErrors.push(message),
+  onDrainingChange: (draining) => failedHarvestDraining.push(draining),
+});
+failedHarvestController.start();
+await failedHarvestController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 7,
+});
+await failedHarvestController.pauseAndDrain({
+  workflowPath: '/tmp/demo.json',
+  expectedVersion: 8,
+});
+assert.equal(await failedHarvestController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 9,
+}), false);
+assert.equal(failedHarvestController.isRunning(), false, 'harvest 自身失败必须停止当前 generation');
+assert.equal(failedHarvestDraining.at(-1), false);
+assert.equal(failedHarvestErrors.at(-1), 'harvest 通信失败');
+assert.equal(await failedHarvestController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 9,
+}), false, 'harvest 失败后后续 interval 不得再次调用');
+assert.equal(failedHarvestCalls, 1, '旧 in_flight 统计不得导致 harvest 无限重试');
+
 const taskTemplatesFixture = [
   { id: 'solid', name: 'S07 固体加料', nodeIds: ['n1', 'n2'], resources: ['robot', 's07'], gates: ['s07'] },
   { id: 'liquid', name: 'S09 配液', nodeIds: ['n3', 'n4', 'n5'], resources: ['robot', 's09'], gates: ['s09'] },
 ];
-const taskInstancesFixture = [
-  { id: 'a-solid', sample: 'Sample A', templateId: 'solid', order: 0, status: 'done', finishedAt: 60_000 },
-  { id: 'a-liquid', sample: 'Sample A', templateId: 'liquid', order: 1, status: 'pending' },
-  { id: 'b-solid', sample: 'Sample B', templateId: 'solid', order: 0, status: 'pending' },
-];
-const ganttSchedule = buildTaskGanttSchedule(taskTemplatesFixture, taskInstancesFixture, 60_000);
 assert.deepEqual(
-  ganttSchedule.map((item) => ({ instanceId: item.instanceId, resource: item.resource, state: item.state })),
-  [
-    { instanceId: 'a-solid', resource: 'robot', state: 'done' },
-    { instanceId: 'a-solid', resource: 's07', state: 'done' },
-    { instanceId: 'a-liquid', resource: 'robot', state: 'planned' },
-    { instanceId: 'a-liquid', resource: 's09', state: 'planned' },
-    { instanceId: 'b-solid', resource: 'robot', state: 'planned' },
-    { instanceId: 'b-solid', resource: 's07', state: 'planned' },
-  ],
-  '甘特排程应按模板资源生成泳道条目，并保留实例运行状态',
+  buildTaskGanttEntries([
+    {
+      instance_id: 'no-resource',
+      template_id: 'template-a',
+      sample_id: 'sample-a',
+      start_at: 100,
+      end_at: 200,
+      resources: [],
+      state: 'planned',
+    },
+  ]),
+  [{
+    id: 'no-resource:task:template-a',
+    instanceId: 'no-resource',
+    sample: 'sample-a',
+    templateId: 'template-a',
+    resource: 'task:template-a',
+    startAt: 100,
+    endAt: 200,
+    state: 'planned',
+  }],
+  '无资源 API 甘特条目应使用通用 Task 泳道保持可见',
+);
+assert.deepEqual(
+  buildTaskGanttEntries([
+    {
+      instance_id: 'legacy-resource',
+      template_id: 'template-a',
+      sample_id: 'sample-a',
+      start_at: 100,
+      end_at: 200,
+      resources: ['device-a'],
+      state: 'running',
+    },
+  ]).map((entry) => entry.resource),
+  ['task:template-a'],
+  'Gantt 不得把模板资源或设备投影成占用泳道',
+);
+assert.deepEqual(
+  annotateTaskGanttEntries(
+    buildTaskGanttEntries([{
+      instance_id: 'with-devices',
+      template_id: 'template-a',
+      sample_id: 'sample-a',
+      start_at: 100,
+      end_at: 200,
+      resources: [],
+      state: 'planned',
+    }]),
+    [{ id: 'template-a', nodeIds: ['node-a', 'node-missing'] }],
+    [{ id: 'node-a', deviceId: 'device-a' }],
+  ).map(({ involvedDeviceIds, nodeInfoIncomplete, resource }) => ({
+    involvedDeviceIds,
+    nodeInfoIncomplete,
+    resource,
+  })),
+  [{
+    involvedDeviceIds: ['device-a'],
+    nodeInfoIncomplete: true,
+    resource: 'task:template-a',
+  }],
+  'Gantt 设备仅作为涉及设备信息，缺失节点必须明确标记不完整',
+);
+const creationGate = createSynchronousActionGate();
+assert.equal(creationGate.tryStart(), true, '首次创建应同步获得锁');
+assert.equal(creationGate.tryStart(), false, '双击第二次必须在 React state 更新前被 ref 锁拒绝');
+creationGate.finish();
+assert.equal(creationGate.tryStart(), true, '完整请求结束后应释放创建锁');
+assert.notEqual(
+  createTaskTemplateId(1, () => 'uuid-a'),
+  createTaskTemplateId(2, () => 'uuid-a'),
+  '模板 ID 必须通过稳定 counter 避免同毫秒冲突',
+);
+assert.equal(resolveTaskTemplateNameDraft('  新名称  ', '旧名称'), '新名称');
+assert.equal(resolveTaskTemplateNameDraft('   ', '旧名称'), '旧名称', '空名称必须回退现有名称');
+assert.deepEqual(
+  updateTaskTemplateTriggers(
+    updateTaskTemplateTriggers(
+      [{ id: 'template-a', inputTriggers: [], outputTriggers: [] }],
+      'template-a',
+      'input',
+      [{ variableName: 'ready', dataType: 'BOOL', value: true }],
+    ),
+    'template-a',
+    'input',
+    [],
+  )[0].inputTriggers,
+  [],
+  '连续 trigger 增删必须基于最新本地 draft，且允许保存空数组',
+);
+assert.equal(isTaskWaitingStatus('waiting'), true);
+assert.equal(isTaskWaitingStatus('pending'), true);
+for (const terminalStatus of ['failed', 'cancelled', 'completed', 'running']) {
+  assert.equal(isTaskWaitingStatus(terminalStatus), false, `${terminalStatus} 不得显示在 waiting 区`);
+}
+assert.equal(
+  canDeleteTaskTemplate('template-a', [{ templateId: 'template-a', status: 'waiting' }], {
+    schedulerBusy: false,
+    actionInFlight: false,
+  }),
+  false,
+  '存在非终态关联实例时必须禁止删除模板',
 );
 assert.equal(
-  ganttSchedule.find((item) => item.instanceId === 'a-liquid' && item.resource === 'robot')?.startAt,
-  60_000,
-  '同一样品的后继 Task 应从前置完成时间开始排程',
+  canDeleteTaskTemplate('template-a', [{ templateId: 'template-a', status: 'completed' }], {
+    schedulerBusy: true,
+    actionInFlight: false,
+  }),
+  false,
+  '调度器运行或切换时必须禁止删除模板',
+);
+assert.equal(
+  canDeleteTaskTemplate('template-a', [{ templateId: 'template-a', status: 'completed' }], {
+    schedulerBusy: false,
+    actionInFlight: false,
+  }),
+  true,
+  '仅有终态实例且无 in-flight 操作时允许删除',
+);
+const workspaceEpoch = createWorkspaceEpochController();
+const firstWorkspace = workspaceEpoch.begin('first.json');
+const secondWorkspace = workspaceEpoch.begin('second.json');
+assert.equal(firstWorkspace.signal.aborted, true, '切换路径必须中止前一路径请求');
+assert.equal(workspaceEpoch.isCurrent(firstWorkspace), false, '旧路径响应不得 apply');
+assert.equal(workspaceEpoch.isCurrent(secondWorkspace), true);
+const operationGeneration = createOperationGenerationController();
+const firstOperation = operationGeneration.begin();
+const secondOperation = operationGeneration.begin();
+assert.equal(operationGeneration.isCurrent(firstOperation), false, '旧操作响应不得恢复后续本地编辑');
+assert.equal(operationGeneration.isCurrent(secondOperation), true);
+let scheduledDraft = [];
+scheduledDraft = updateScheduledTemplateDraft(scheduledDraft, 'task-a', 'add');
+scheduledDraft = updateScheduledTemplateDraft(scheduledDraft, 'task-b', 'add');
+assert.deepEqual(scheduledDraft, ['task-a', 'task-b'], '连续 add/add 必须保留两次最新意图');
+scheduledDraft = updateScheduledTemplateDraft(scheduledDraft, 'task-a', 'remove');
+scheduledDraft = updateScheduledTemplateDraft(scheduledDraft, 'task-b', 'remove');
+assert.deepEqual(scheduledDraft, [], '连续 remove/remove 必须基于最新 draft');
+scheduledDraft = updateScheduledTemplateDraft(scheduledDraft, 'task-a', 'add');
+scheduledDraft = updateScheduledTemplateDraft(scheduledDraft, 'task-a', 'remove');
+scheduledDraft = updateScheduledTemplateDraft(scheduledDraft, 'task-b', 'remove');
+scheduledDraft = updateScheduledTemplateDraft(scheduledDraft, 'task-b', 'add');
+assert.deepEqual(scheduledDraft, ['task-b'], 'add/remove 乱序必须以最后一次用户意图为准');
+assert.deepEqual(
+  createTaskTemplateDraft('task-a', '通用 Task', [
+    { id: 'node-b', deviceId: 'device-b' },
+    { id: 'node-a', deviceId: 'device-a', opcVariables: ['registered'] },
+  ]),
+  {
+    id: 'task-a',
+    name: '通用 Task',
+    nodeIds: ['node-b', 'node-a'],
+    resources: [],
+    gates: [],
+    inputTriggers: [],
+    outputTriggers: [],
+  },
+  '未连接 PLC 时不应推断 Task 条件',
+);
+assert.deepEqual(
+  createTaskTemplateDraft(
+    'task-a',
+    '通用 Task',
+    [
+      {
+        id: 'node-1',
+        deviceId: 'szlab_mixer_robot',
+        opcVariables: [
+          'S03取放料产品',
+          '传感器状态_上位机[0].NO[6]',
+          'S07工艺完成',
+        ],
+      },
+      {
+        id: 'node-3',
+        deviceId: 'szlab_s07_solid_addition',
+        opcVariables: ['S07原点信号', 'S07允许加工', 'S07工艺完成'],
+      },
+    ],
+  ),
+  {
+    id: 'task-a',
+    name: '通用 Task',
+    nodeIds: ['node-1', 'node-3'],
+    resources: [],
+    gates: [],
+    inputTriggers: [],
+    outputTriggers: [],
+  },
+  'Task 模板不再维护输入/输出触发条件，统一在 OPC 模拟配置',
+);
+assert.deepEqual(
+  taskTemplateDeviceIds(
+    { nodeIds: ['node-b', 'missing', 'node-a', 'node-b'] },
+    [
+      { id: 'node-a', deviceId: 'device-a' },
+      { id: 'node-b', deviceId: 'device-b' },
+    ],
+  ),
+  ['device-b', 'device-a'],
+  'Resource Schedule 应从模板节点动态投影去重后的真实设备泳道',
+);
+assert.deepEqual(
+  taskTemplateDeviceIds({ nodeIds: ['missing'] }, [{ id: 'node-a', deviceId: 'device-a' }]),
+  [],
+  '模板节点没有设备信息时必须保留 task lane fallback',
+);
+assert.equal(
+  taskLocalWaitingReason(
+    { id: 'task-a', sample: 'sample-a', templateId: 'missing', order: 0, status: 'waiting' },
+    [],
+    [],
+  ),
+  '缺少 Task 模板',
+  '等待信息应明确报告模板缺失',
+);
+assert.equal(
+  taskLocalWaitingReason(
+    { id: 'second', sample: 'sample-a', templateId: 'template-a', order: 1, status: 'waiting' },
+    [
+      { id: 'first', sample: 'sample-a', templateId: 'template-a', order: 0, status: 'running' },
+      { id: 'other', sample: 'sample-b', templateId: 'template-a', order: 0, status: 'waiting' },
+    ],
+    [{ id: 'template-a' }],
+  ),
+  '同一样品的前序 Task 未完成',
+  '等待信息只能检查同 sample 的真实前序状态',
 );
 assert.deepEqual(
   renameTaskTemplate(taskTemplatesFixture, 'liquid', 'S09 精准配液').map((template) => template.name),
@@ -222,67 +2203,100 @@ assert.deepEqual(
   '模板应支持独立更新输出触发列表',
 );
 const csvVariablesFixture = [
-  { name: 'ready', data_type: 'BOOL', initial_value: 'true' },
-  { name: 'batch', data_type: 'INTEGER', initial_value: '12' },
-  { name: 'temperature', data_type: 'FLOAT', initial_value: '23.5' },
-  { name: 'label', data_type: 'STRING', initial_value: '样品 A' },
+  { name: 'ready', data_type: 'BOOL', initial_value: 'true', plcDeviceId: 'custom_plc' },
+  { name: 'batch', data_type: 'INTEGER', initial_value: '12', plcDeviceId: 'custom_plc' },
+  { name: 'temperature', data_type: 'FLOAT', initial_value: '23.5', plcDeviceId: 'custom_plc' },
+  { name: 'label', data_type: 'STRING', initial_value: '样品 A', plcDeviceId: 'custom_plc' },
 ];
 assert.deepEqual(
-  createTaskTemplateTriggers(['robot', 's07'], ['s07']),
-  {
-    inputTriggers: [
-      { variableName: '系统资源可用：robot', dataType: 'BOOL', value: true },
-      { variableName: '系统资源可用：s07', dataType: 'BOOL', value: true },
-      { variableName: '系统工位可用：s07', dataType: 'BOOL', value: true },
-    ],
-    outputTriggers: [
-      { variableName: '系统资源释放：robot', dataType: 'BOOL', value: true },
-      { variableName: '系统资源释放：s07', dataType: 'BOOL', value: true },
-      { variableName: '系统工位完成：s07', dataType: 'BOOL', value: true },
-    ],
-  },
-  '模板应将识别出的资源锁与工位门控转换为详情中的输入和输出条件',
-);
-assert.deepEqual(
   createDefaultTriggerCondition(csvVariablesFixture[0]),
-  { variableName: 'ready', dataType: 'BOOL', value: true },
+  { plcDeviceId: 'custom_plc', variableName: 'ready', dataType: 'BOOL', value: true },
   '布尔 CSV 变量应以初始 true 值创建条件',
 );
 assert.deepEqual(
   createDefaultTriggerCondition(csvVariablesFixture[1]),
-  { variableName: 'batch', dataType: 'INTEGER', value: 12 },
+  { plcDeviceId: 'custom_plc', variableName: 'batch', dataType: 'INTEGER', value: 12 },
   '整数 CSV 变量应以数字初始值创建条件',
 );
 assert.deepEqual(
   createDefaultTriggerCondition(csvVariablesFixture[2]),
-  { variableName: 'temperature', dataType: 'FLOAT', value: 23.5 },
+  { plcDeviceId: 'custom_plc', variableName: 'temperature', dataType: 'FLOAT', value: 23.5 },
   '浮点 CSV 变量应以数字初始值创建条件',
 );
 assert.deepEqual(
   createDefaultTriggerCondition(csvVariablesFixture[3]),
-  { variableName: 'label', dataType: 'STRING', value: '样品 A' },
+  { plcDeviceId: 'custom_plc', variableName: 'label', dataType: 'STRING', value: '样品 A' },
   '字符串 CSV 变量应以文本初始值创建条件',
 );
 assert.deepEqual(
+  normalizeTriggerConditions(
+    [{ variableName: 'ready', dataType: 'BOOL', value: false }],
+    csvVariablesFixture,
+  ),
+  [{ plcDeviceId: 'custom_plc', variableName: 'ready', dataType: 'BOOL', value: false }],
+  'legacy 条件可由当前唯一注册变量补齐真实 PLC ID',
+);
+assert.deepEqual(
+  normalizeTriggerConditions(
+    [
+      { plcDeviceId: 'plc_a', variableName: 'ready', dataType: 'BOOL', value: true },
+      { plcDeviceId: 'plc_b', variableName: 'ready', dataType: 'BOOL', value: false },
+    ],
+    [
+      { name: 'ready', data_type: 'BOOL', initial_value: 'true', plcDeviceId: 'plc_a' },
+      { name: 'ready', data_type: 'BOOL', initial_value: 'false', plcDeviceId: 'plc_b' },
+    ],
+  ),
+  [
+    { plcDeviceId: 'plc_a', variableName: 'ready', dataType: 'BOOL', value: true },
+    { plcDeviceId: 'plc_b', variableName: 'ready', dataType: 'BOOL', value: false },
+  ],
+  '多设备同名 trigger 在 edit normalize 中不得互相覆盖',
+);
+assert.deepEqual(
+  normalizeTriggerConditions(
+    [
+      { plcDeviceId: 'custom_plc', variableName: 'ready', dataType: 'BOOL', value: true },
+      { plcDeviceId: 'other_plc', variableName: 'done', dataType: 'BOOL', value: false },
+    ],
+    [
+      { name: 'ready', data_type: 'BOOL', initial_value: 'true', plcDeviceId: 'custom_plc' },
+    ],
+  ),
+  [
+    { plcDeviceId: 'custom_plc', variableName: 'ready', dataType: 'BOOL', value: true },
+    { plcDeviceId: 'other_plc', variableName: 'done', dataType: 'BOOL', value: false },
+  ],
+  '编辑当前 PLC 条件时不得删除其他 PLC 的已有 trigger',
+);
+assert.deepEqual(
   normalizeTriggerConditions([], csvVariablesFixture),
-  [{ variableName: 'ready', dataType: 'BOOL', value: true }],
-  '输入或输出条件为空时必须补充至少一条默认条件',
+  [],
+  '输入或输出条件允许删除到空数组并原样保存',
 );
 assert.deepEqual(
   normalizeTriggerConditions(
     [{ variableName: 'missing', dataType: 'STRING', value: '旧值' }],
     csvVariablesFixture,
   ),
-  [{ variableName: 'ready', dataType: 'BOOL', value: true }],
-  '已不存在于 CSV 的变量应替换为默认 CSV 条件',
+  [],
+  '已不存在于注册变量列表的条件不得替换为其他变量',
 );
 assert.deepEqual(
   normalizeTriggerConditions(
     [{ variableName: '业务内部：样品已制备', dataType: 'BOOL', value: true }],
     csvVariablesFixture,
   ),
-  [{ variableName: '业务内部：样品已制备', dataType: 'BOOL', value: true }],
-  '业务内部链路条件必须保留稳定 key，而不是被 CSV 过滤',
+  [],
+  '旧内部条件必须被移除，不能替换成无关 PLC 变量',
+);
+assert.deepEqual(
+  normalizeTriggerConditions(
+    [],
+    [],
+  ),
+  [],
+  '没有注册变量时不得伪造条件',
 );
 assert.match(
   mainSource,
@@ -291,27 +2305,48 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /isSchedulerRunning \? '暂停派发' : '运行调度'/,
+  /isSchedulerRunning \|\| isTaskExecutionDraining \? '暂停派发' : '运行调度'/,
   'Task 编排应提供运行和暂停派发按钮',
 );
 assert.match(
   mainSource,
-  /value=\{selectedTaskTemplate\?\.name \|\| ''\}[\s\S]*?onBlur=\{\(event\) => renameSelectedTaskTemplate\(event\.target\.value\)\}/,
-  '选中模板详情应在失焦时通过 API 保存重命名',
+  /value=\{taskTemplateNameDraft\}[\s\S]*?onChange=\{\(event\) => setTaskTemplateNameDraft\(event\.target\.value\)\}[\s\S]*?onBlur=\{commitSelectedTaskTemplateName\}[\s\S]*?event\.key === 'Enter'/,
+  '模板名称应本地编辑，并仅在 Enter 或失焦时保存',
 );
 assert.match(mainSource, /createTaskOrchestrationClient\(\)/, 'Task 工作区应使用独立 REST API 客户端');
+assert.match(mainSource, /\/api\/task-opc\/connect/, 'Task 页面连接 OPC 必须调用 workflow_ui 后端');
+assert.doesNotMatch(mainSource, /new\s+OPC|opcua|OPCUAClient/, 'Task 前端不得直接创建 OPC 客户端');
+assert.doesNotMatch(mainSource, /updateSelectedTaskTriggers|task-trigger-grid|添加输入条件|添加输出条件/, 'Task 模板详情不应再提供输入/输出触发编辑器');
+assert.doesNotMatch(
+  `${mainSource}\n${taskOrchestrationSource}\n${taskOrchestrationApiSource}`,
+  /szlab_poly_plc/,
+  'Task 前端生产代码不得猜测默认 PLC ID',
+);
+assert.match(mainSource, /taskPlcStatus\?\.device_id \|\| '未注册 PLC'/, '无设备状态必须显示未注册 PLC');
+assert.match(mainSource, /context\.plc_device_id \|\| 'PLC'/, 'waiting 缺少设备 ID 时仅显示通用 PLC');
+assert.match(mainSource, /重置当前 Task 工作区/, 'sidecar 无效时应提供当前 Task 工作区重置入口');
+assert.match(mainSource, /taskApiRef\.current\.resetWorkspace\(taskWorkspacePath\)/, '重置操作必须调用 Task 服务专用 API');
+assert.match(
+  mainSource,
+  /const resetInvalidTaskWorkspace[\s\S]*?taskExecutionControllerRef\.current\?\.pause\(\)[\s\S]*?setTaskExecutionWorkflow\(null\)[\s\S]*?setTaskExecutionStatus\(createTaskExecutionStatus\(\)\)[\s\S]*?resetWorkspace\(taskWorkspacePath\)/,
+  '重置 Task workspace 必须中止循环并清空旧 execution workflow/status',
+);
 assert.match(mainSource, /Task 编排服务不可用[\s\S]*?重试/, '服务不可用时应显示明确状态和重试按钮');
 assert.match(mainSource, /taskApiRef\.current\.updateScheduledTemplates/, '待排模板变更必须通过专用 API');
 assert.match(mainSource, /taskApiRef\.current\.advance/, '调度推进必须通过 API');
 assert.match(mainSource, /satisfied_triggers/, '调度日志应展示启动时已经满足的输入条件');
 assert.doesNotMatch(mainSource, /scheduleOneTask/, '前端不得保留本地定时完成模拟');
 assert.match(mainSource, /taskRequestQueueRef\.current\.then\(execute, execute\)/, '所有 Task 写操作应串行进入单一请求队列');
-assert.match(mainSource, /error instanceof TaskOrchestrationBusinessError && error\.status === 409[\s\S]*?getWorkspace\(taskWorkspacePath\)[\s\S]*?operation\(latest\.version\)/, '409 应 reload 最新 workspace 后仅重试一次');
-assert.match(mainSource, /taskPollingTimerRef[\s\S]*?taskPollingInFlightRef[\s\S]*?taskPollingGenerationRef/, '轮询应维护 timer、inflight 与 generation ref');
+assert.match(mainSource, /error instanceof TaskOrchestrationBusinessError && error\.status === 409[\s\S]*?getWorkspace\(path, epoch\.signal\)[\s\S]*?operation\(latest\.version\)/, '409 应 reload 同一路径最新版本后仅重试一次');
 assert.match(
   mainSource,
-  /schedule_entries\.flatMap\(\(entry\) => entry\.resources\.map\(\(resource\)/,
-  'API 工位资源必须映射为 Resource Schedule 泳道',
+  /taskExecutionControllerRef[\s\S]*?window\.setInterval\(runCycle,\s*1500\)/,
+  '完整执行循环应由控制器维护取消、代际和无重入状态',
+);
+assert.match(
+  mainSource,
+  /buildTaskGanttEntries\(response\.workspace\.schedule_entries\)/,
+  'API 甘特条目必须通过含通用 fallback 的泳道映射',
 );
 assert.match(
   mainSource,
@@ -365,6 +2400,16 @@ assert.match(
 );
 assert.match(
   mainSource,
+  /updateScheduledTemplateDraft\(scheduledTemplateIdsRef\.current, templateId, 'add'\)[\s\S]*?scheduledTemplateIdsRef\.current = next;[\s\S]*?updateScheduledTemplates\([\s\S]*?next/,
+  '连续添加必须同步更新 ref，并将最新期望列表写入请求',
+);
+assert.match(
+  mainSource,
+  /updateScheduledTemplateDraft\(scheduledTemplateIdsRef\.current, templateId, 'remove'\)[\s\S]*?scheduledTemplateIdsRef\.current = next;[\s\S]*?updateScheduledTemplates\([\s\S]*?next/,
+  '连续移除必须同步更新 ref，并将最新期望列表写入请求',
+);
+assert.match(
+  mainSource,
   /draggable=\{true\}[\s\S]*?onDragStart=\{\(event\) => event\.dataTransfer\.setData\('application\/x-unilab-task-template', template\.id\)\}/,
   '模板卡片应支持拖入 Resource Schedule',
 );
@@ -380,8 +2425,8 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /scheduledTemplateIds\.length\s*\?\s*taskGanttEntries\.map\(\(entry\) => entry\.resource\)/,
-  'Resource Schedule 应从 API 甘特条目的资源生成泳道，并在待排为空时隐藏',
+  /\.\.\.new Set\(taskGanttEntries\.map\(\(entry\) => entry\.resource\)\)/,
+  'Task Schedule 应始终从实际 API 甘特条目生成泳道，不受待排模板开关影响',
 );
 assert.match(
   mainSource,
@@ -392,66 +2437,6 @@ assert.match(
   mainSource,
   /本次待排 \{scheduledTemplateIds\.length\} \/ \{taskTemplates\.length\}/,
   '待排区域应明确区分手动拖入数量与全部模板数量',
-);
-assert.match(
-  mainSource,
-  /const updateSelectedTaskTriggers = useCallback\(\(kind: 'input' \| 'output', triggers: TriggerCondition\[\]\) =>/,
-  'Template Detail 应提供类型化的输入与输出触发条件编辑',
-);
-assert.match(
-  mainSource,
-  /placeholder="搜索全部 OPC 变量"[\s\S]*?添加输入条件[\s\S]*?添加输出条件/,
-  '输入和输出条件均应从可搜索的全量 OPC 变量菜单新增',
-);
-assert.match(
-  mainSource,
-  /placeholder="搜索全部 OPC 变量"[\s\S]*?className="task-trigger-options"/,
-  '触发条件编辑器应提供可见的全量 OPC 变量搜索结果',
-);
-assert.match(
-  styleSource,
-  /\.task-trigger-options\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*20;/,
-  'OPC 变量搜索结果应作为置顶浮层展开',
-);
-assert.match(
-  styleSource,
-  /\.task-trigger-condition \.task-trigger-options button\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(72px,\s*0\.4fr\)\s+auto;/,
-  'OPC 变量候选项应保持单行布局，避免被删除按钮样式覆盖',
-);
-assert.match(
-  styleSource,
-  /\.task-trigger-condition \.task-trigger-options button\s*\{[\s\S]*?font-weight:\s*500;[\s\S]*?font-size:\s*12px;/,
-  'OPC 变量候选项应使用紧凑的常规字重，而非调试面板式粗体',
-);
-assert.match(
-  styleSource,
-  /\.task-trigger-condition \.task-trigger-options button\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(72px,\s*0\.4fr\)\s+auto;[\s\S]*?text-align:\s*left;/,
-  'OPC 变量候选项应将名称和类型固定为左对齐的两列',
-);
-assert.match(
-  styleSource,
-  /\.task-trigger-options\s*\{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior:\s*contain;/,
-  'OPC 变量列表应禁止横向偏移并隔离自身滚动',
-);
-assert.match(
-  styleSource,
-  /\.task-trigger-options b\s*\{[\s\S]*?justify-self:\s*stretch;[\s\S]*?text-align:\s*left;/,
-  'OPC 变量名称应锚定在候选项左侧',
-);
-assert.match(
-  mainSource,
-  /setTriggerSearchQueries\(\(current\) => \(\{[\s\S]*?\[`input-\$\{index\}`\]: '',/,
-  '聚焦输入条件变量时应清空筛选词，以展示完整 OPC 变量目录',
-);
-assert.match(
-  mainSource,
-  /trigger\.dataType === 'BOOL'[\s\S]*?<select[\s\S]*?type="number"[\s\S]*?createDefaultTriggerCondition\(variable\)/,
-  '条件值编辑器应随 BOOL、数值和字符串 CSV 类型切换，并在选变量时采用初始值',
-);
-assert.doesNotMatch(
-  mainSource,
-  /newInputTrigger|newOutputTrigger|placeholder="例如：S09 工位空闲"/,
-  '触发条件不应保留自由文本编辑入口',
 );
 assert.match(
   mainSource,
@@ -473,10 +2458,265 @@ assert.doesNotMatch(
   /<div className="task-mini-tags">/,
   'Template 卡片不应将资源锁或门控直接展示为业务触发',
 );
+assert.doesNotMatch(
+  mainSource,
+  /资源门控|资源条件/,
+  'Task 页面文案不得暗示 scheduler 仍持有资源锁',
+);
+assert.match(
+  mainSource,
+  /按样品顺序与 Action\/OPC 握手或流程条件调度/,
+  'Task Queue 应说明真实的 Action/OPC 与流程条件边界',
+);
 assert.match(
   styleSource,
   /\.task-schedule-resize-handle\s*\{[\s\S]*?cursor:\s*row-resize;/,
   'Resource Schedule 分隔条应使用垂直调整光标',
+);
+assert.match(
+  mainSource,
+  /生成 OPC 模拟配置[\s\S]*?disabled=\{!scheduledOpcTemplateIds\.length/,
+  '未排入 Resource Schedule 时必须禁用 profile 生成入口',
+);
+assert.match(
+  mainSource,
+  /查看配置模板/,
+  '应提供只读参照模板入口',
+);
+assert.match(
+  mainSource,
+  /查看生成规范/,
+  '应提供 JSON 生成规范入口',
+);
+assert.match(
+  mainSource,
+  /打开配置工作台/,
+  '应通过下拉选择配置文件并打开工作台',
+);
+assert.match(
+  mainSource,
+  /listProfiles/,
+  '应列出 task-orchestration/configs 下的配置文件',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /配置文件/,
+  '工作台应以下拉框选择配置文件',
+);
+assert.match(
+  mainSource,
+  /loadReferenceTemplate/,
+  '应通过 reference/template API 载入内置示例',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /readOnly \? '配置模板（只读参照）' : '模拟配置控制台'/,
+  '参照模板与工作台应区分标题',
+);
+assert.match(
+  mainSource,
+  /openOpcSimulatorWorkbench/,
+  '应实现 openOpcSimulatorWorkbench 从后端载入已保存草稿',
+);
+assert.match(
+  mainSource,
+  /opcSimulatorRevision[\s\S]*?重新生成会覆盖当前工作台内容/,
+  '重新生成前必须确认，避免覆盖已保存草稿',
+);
+assert.equal(
+  defaultOpcSimulatorFileName('SZLab Robot Action Workflow'),
+  'szlab-robot-action-workflow-opc-simulator.json',
+  '默认 profile 文件名应来自 workflow 名称 slug',
+);
+assert.match(
+  mainSource,
+  /\/api\/opc-simulator\/profiles:generate[\s\S]*?scheduled_template_ids:\s*scheduledOpcTemplateIds/,
+  '生成请求必须携带 Resource Schedule 去重保序 ID',
+);
+assert.match(
+  mainSource,
+  /const actionCatalog = buildOpcActionCatalog\(actionsRef\.current\)[\s\S]*?action_catalog: actionCatalog/,
+  '生成请求必须先校验 Action device_id，再携带严格 Action OPC catalog',
+);
+assert.match(
+  mainSource,
+  /variable_catalog:\s*buildOpcVariableTypeCatalog\(csvVariablesRef\.current,\s*referencedVariableNames\)/,
+  '生成请求必须携带由 CSV 严格映射的变量类型 catalog',
+);
+assert.match(
+  mainSource,
+  /csvVariablesGateRef\s*=\s*useRef\(createLatestOperationGate\(\)\)[\s\S]*?fetch\(`\/api\/csv-variables\?\$\{params\.toString\(\)\}`,\s*\{\s*signal:\s*request\.signal\s*\}\)[\s\S]*?isCurrent\(request\.generation\)[\s\S]*?setCsvVariables/,
+  'CSV fetch 必须使用 AbortController generation gate，旧响应不得覆盖新 CSV',
+);
+assert.match(
+  mainSource,
+  /const variables = Array\.isArray\(payload\.variables\)[\s\S]*?opcSimulatorGenerateGateRef\.current\.invalidate\(\)[\s\S]*?csvVariablesRef\.current = variables[\s\S]*?setCsvVariables\(variables\)/,
+  '切换 CSV 必须先作废并中止旧 generate，再发布新 catalog',
+);
+assert.match(
+  mainSource,
+  /const payloadActions = payload\.actions \|\| \[\][\s\S]*?opcSimulatorGenerateGateRef\.current\.invalidate\(\)[\s\S]*?actionsRef\.current = payloadActions[\s\S]*?setActions\(payloadActions\)/,
+  'Action catalog 更新必须先作废旧 generate，避免旧响应覆盖',
+);
+assert.match(
+  mainSource,
+  /actionsRef\.current\s*=\s*actions;[\s\S]*?csvVariablesRef\.current\s*=\s*csvVariables;/,
+  'Action 与 CSV catalog 必须同步到 latest refs',
+);
+assert.match(
+  mainSource,
+  /opcSimulatorGenerateInFlightRef\s*=\s*useRef\(false\)[\s\S]*?opcSimulatorGenerateGateRef\s*=\s*useRef\(createLatestOperationGate\(\)\)/,
+  'OPC generate 必须同时维护同步锁与 latest generation gate',
+);
+assert.match(
+  mainSource,
+  /generateOpcSimulatorProfile[\s\S]*?if \(opcSimulatorGenerateInFlightRef\.current\) return;[\s\S]*?const request = opcSimulatorGenerateGateRef\.current\.begin\(\)[\s\S]*?await buildWorkflow\(\)[\s\S]*?actionsRef\.current[\s\S]*?csvVariablesRef\.current[\s\S]*?signal:\s*request\.signal[\s\S]*?isCurrent\(request\.generation\)[\s\S]*?setOpcSimulatorProfile/,
+  '连续生成必须同步阻止，且 build 后使用最新 catalog 并只应用最新响应',
+);
+assert.match(
+  mainSource,
+  /csvVariablesGateRef\.current\.unmount\(\)[\s\S]*?opcSimulatorGenerateGateRef\.current\.unmount\(\)/,
+  '组件卸载必须中止 CSV 与 generate 请求',
+);
+assert.match(
+  mainSource,
+  /window\.setInterval\(refreshOpcSimulatorStatus,\s*1000\)/,
+  '模拟器状态必须每秒轮询',
+);
+assert.match(
+  mainSource,
+  /opcSimulatorStatusGateRef\s*=\s*useRef\(createLatestOperationGate\(\)\)/,
+  'OPC status 必须维护独立 AbortController generation gate',
+);
+assert.match(
+  mainSource,
+  /const request = opcSimulatorStatusGateRef\.current\.begin\(\)[\s\S]*?status\(request\.signal\)[\s\S]*?isCurrent\(request\.generation\)/,
+  '每次 poll 必须 abort 前次且仅最新 generation 可应用',
+);
+assert.match(
+  mainSource,
+  /beginOpcSimulatorControlOperation\([\s\S]*?opcSimulatorStatusGateRef\.current\.invalidate\(\)[\s\S]*?start\(/,
+  'start 前必须同步阻止 poll 并使旧 generation 失效',
+);
+assert.match(
+  mainSource,
+  /const startOpcSimulator = useCallback\(async \(\) => \{\s*if \(opcSimulatorControlInFlightRef\.current\) return;/,
+  'start 入口第一行必须同步拒绝重复控制操作',
+);
+assert.match(
+  mainSource,
+  /const stopOpcSimulator = useCallback\(async \(\) => \{\s*if \(opcSimulatorControlInFlightRef\.current\) return;/,
+  'stop 入口第一行必须同步拒绝 start 期间 stop 与双 stop',
+);
+assert.match(
+  mainSource,
+  /opcSimulatorStatusGateRef\.current\.unmount\(\)/,
+  '组件卸载必须 abort 当前 OPC status 请求',
+);
+assert.match(
+  mainSource,
+  /opcSimulatorSaveTokenRef[\s\S]*?createProfileSaveSnapshot\([\s\S]*?isProfileSaveSnapshotCurrent\(/,
+  '保存必须使用 operation token 与 canonical/fileName snapshot',
+);
+assert.match(
+  mainSource,
+  /旧版本已保存，请重新保存当前修改/,
+  '保存响应落后于编辑或改名时必须保留输入并提示重新保存',
+);
+assert.match(
+  mainSource,
+  /downloadText\(saved\.file_name,\s*canonicalProfileJson\(saved\.profile\)\)/,
+  '下载必须直接使用后端 saved.profile 的 canonical JSON',
+);
+assert.match(
+  mainSource,
+  /ownedOpcSimulatorRunIdRef\s*=\s*useRef<string \| null>\(null\)/,
+  '本标签所有权必须保存后端 run_id，不能保存 boolean 或猜 PID',
+);
+assert.match(
+  mainSource,
+  /status\.run_id !== ownedRunId[\s\S]*?!\['starting', 'running', 'stopping'\]\.includes\(status\.state\)[\s\S]*?ownedOpcSimulatorRunIdRef\.current = null/,
+  '轮询发现 run_id 变化或终态时必须立即清除本标签所有权',
+);
+assert.match(
+  mainSource,
+  /latestStatus\.run_id !== ownedRunId[\s\S]*?!\['starting', 'running', 'stopping'\]\.includes\(latestStatus\.state\)[\s\S]*?JSON\.stringify\(\{ expected_run_id: ownedRunId \}\)[\s\S]*?keepalive:\s*true[\s\S]*?addEventListener\('pagehide'/,
+  'pagehide 仅可停止最新状态仍匹配且活跃的本标签 run_id',
+);
+assert.doesNotMatch(
+  mainSource,
+  /handleTaskSchedulerToggle[\s\S]{0,500}startOpcSimulator|startOpcSimulator[\s\S]{0,500}handleTaskSchedulerToggle/,
+  '运行调度与 OPC 模拟器启动不得互相调用',
+);
+assert.match(opcSimulatorDialogSource, /role="dialog"/, '配置器必须声明 dialog role');
+assert.match(opcSimulatorDialogSource, /aria-modal="true"/, '配置器必须声明模态语义');
+assert.match(opcSimulatorDialogSource, /event\.key === 'Escape'/, '配置器必须支持 Escape 关闭');
+assert.match(
+  opcSimulatorDialogSource,
+  /previousActiveElementRef[\s\S]*?document\.activeElement/,
+  '配置器打开时必须保存原触发元素',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /focusableElements[\s\S]*?event\.key !== 'Tab'[\s\S]*?event\.shiftKey/,
+  '配置器必须将 Tab 与 Shift+Tab 焦点循环限制在 modal 内',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /getClientRects\(\)\.length > 0/,
+  'focus trap 必须排除折叠区等不可见控件，避免 Tab 从可见尾项逃出 modal',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /focusables\[0\]\?\.focus\(\)[\s\S]*?dialogRef\.current\?\.focus\(\)/,
+  '配置器必须优先聚焦首个可操作元素，无可聚焦项时回退到容器',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /previousActiveElement\??\.isConnected[\s\S]*?previousActiveElement\.focus\(\)/,
+  '配置器关闭或卸载时必须恢复仍连接的原触发元素',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /onCloseRef\.current\(\)[\s\S]*?document\.addEventListener\('keydown', keepFocusInDialog\)[\s\S]*?}, \[\]\);/,
+  '焦点生命周期只能在挂载与卸载执行，父组件重渲染不得反复抢焦点',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /opc-profile-grid[\s\S]*?opc-profile-nodes[\s\S]*?opc-profile-editor[\s\S]*?opc-profile-validation/,
+  '配置器必须采用节点、结构化编辑、校验问题三栏',
+);
+assert.doesNotMatch(opcSimulatorDialogSource, /JSON PREVIEW|高级 JSON 编辑/, '配置器不应展示 JSON 预览或高级 JSON 编辑');
+assert.equal(
+  (opcSimulatorDialogSource.match(/clearProfileVariableInitialValue\(/g) || []).length >= 2,
+  true,
+  '方向切到 pc_to_plc 与清空按钮都必须真正删除 initial_value own property',
+);
+assert.doesNotMatch(
+  opcSimulatorDialogSource,
+  /initial_value:\s*undefined/,
+  'Dialog 不得把 undefined 写入 profile',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /disabled=\{editLocked\}[\s\S]*opc-profile-editor-shell/,
+  '保存中必须禁用结构化 profile 编辑区',
+);
+assert.match(opcSimulatorDialogSource, /保存草稿[\s\S]*?校验并保存[\s\S]*?保存并下载/, '配置器底部必须提供三种保存动作');
+assert.match(
+  opcSimulatorDialogSource,
+  /aria-label="OPC 轮询间隔"[\s\S]*?type="number"[\s\S]*?profile\.opc\.poll_interval[\s\S]*?aria-label="OPC I\/O 超时"[\s\S]*?profile\.opc\.io_timeout/,
+  '顶部必须允许编辑 schema v2 的 poll interval 与 I/O timeout 数字字段',
+);
+assert.match(
+  opcSimulatorDialogSource,
+  /validationPathsToErrors\(backendErrors,\s*profile\)/,
+  '后端精确路径错误必须映射到对应节点，点击后可定位节点',
+);
+assert.match(
+  styleSource,
+  /\.opc-profile-dialog\s*\{[\s\S]*?background:[^;]*#[0-2][0-9a-f]{5}/i,
+  'OPC 配置器应使用暗色工业控制室视觉',
 );
 
 const toolbarSource = mainSource.match(/<div className="demo-canvas-toolbar">[\s\S]*?<div className="demo-tabbar"/)?.[0] || '';
@@ -622,7 +2862,7 @@ const taskTemplatesSource = mainSource.match(
   /<div className="task-template-list">[\s\S]*?<section className="task-column task-scheduler-column">/,
 )?.[0] || '';
 const deleteTaskTemplateSource = mainSource.match(
-  /const deleteTaskTemplate = useCallback\([\s\S]*?\n  \}, \[mutateTaskWorkspace, showCanvasToast, taskInstances, taskTemplates, taskWorkspacePath\]\);/,
+  /const deleteTaskTemplate = useCallback\([\s\S]*?\n  \}, \[mutateTaskWorkspace, showCanvasToast, taskWorkspacePath\]\);/,
 )?.[0] || '';
 assert.match(
   deleteTaskTemplateSource,
@@ -655,8 +2895,43 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /const createRecommendedTaskTemplates = useCallback\([\s\S]*?taskApiRef\.current\.createTemplate/,
-  '自动切分 Task 模板回调应写入 API',
+  /if \(!taskTemplateCreateGateRef\.current\.tryStart\(\)\) return;[\s\S]*?finally \{[\s\S]*?taskTemplateCreateGateRef\.current\.finish\(\)/,
+  '模板创建必须使用同步 ref 锁并在完整请求结束后释放',
+);
+assert.match(
+  mainSource,
+  /createTaskTemplateId\(\+\+taskTemplateIdCounterRef\.current\)/,
+  '模板 ID 必须使用稳定 counter 与随机标识生成',
+);
+assert.match(
+  mainSource,
+  /createTaskTemplateDraft\(templateId, taskName, taskNodes\)/,
+  '选择节点创建模板必须直接使用通用 Task 草稿纯函数',
+);
+assert.match(
+  mainSource,
+  /node_ids: draft\.nodeIds,\s*resources: \[\],\s*input_triggers: \[\],\s*output_triggers: \[\]/,
+  '创建 Task API payload 应始终提交空的输入/输出条件',
+);
+assert.match(
+  mainSource,
+  /taskMutationGenerationRef\.current\.isCurrent\(generation\)/,
+  'Task 写响应必须通过操作代际检查后才能 apply',
+);
+assert.match(
+  mainSource,
+  /taskWorkspaceEpochRef\.current\.begin\(taskWorkspacePath\)[\s\S]*?getWorkspace\(taskWorkspacePath, epoch\.signal\)/,
+  'workspace path 切换必须建立 epoch 并将 AbortSignal 传给加载请求',
+);
+assert.match(
+  mainSource,
+  /\.filter\(\(task\) => isTaskWaitingStatus\(task\.status\)\)/,
+  'waiting 区只能展示 waiting 与 pending',
+);
+assert.match(
+  mainSource,
+  /const deleteDisabled = !canDeleteTaskTemplate[\s\S]*?disabled=\{deleteDisabled\}/,
+  '模板删除按钮必须根据关联实例和 in-flight 状态禁用',
 );
 assert.match(
   deleteTaskTemplateSource,
@@ -865,8 +3140,8 @@ assert.match(
 );
 assert.match(
   workflowWorkspaceSource,
-  /disabled=\{!selectedTaskNodes\.length\}[\s\S]*?createTaskTemplateFromSelection\(\);[\s\S]*?closeCanvasContextMenu\(\);[\s\S]*?设为 Task 模板/,
-  '右键菜单应仅在有选中节点时允许创建 Task 模板，并在操作后关闭',
+  /disabled=\{!selectedTaskNodes\.length \|\| isTaskTemplateCreating\}[\s\S]*?createTaskTemplateFromSelection\(\);[\s\S]*?closeCanvasContextMenu\(\);[\s\S]*?isTaskTemplateCreating \? '创建中…' : '设为 Task 模板'/,
+  '右键菜单应在无选中节点或创建请求中禁用，并在操作后关闭',
 );
 const createTaskTemplateFromSelectionSource = mainSource.match(
   /const createTaskTemplateFromSelection = useCallback\([\s\S]*?\n  \}, \[createTaskTemplateFromNodes, selectedTaskNodes\]\);/,
@@ -1159,11 +3434,39 @@ assert.deepEqual(createWorkflowRequest('ai4c', baseNodes, edges), {
         label: '从上料架取孔板',
         description: '取孔板',
         params: { position: 1 },
+        opc_variables: [],
       },
     },
   ],
   edges: [{ id: 'e1', source: 'load', target: 'unload' }],
 });
+assert.deepEqual(
+  createWorkflowRequest(
+    'opc-nodes',
+    [{
+      ...baseNodes[0],
+      data: {
+        ...baseNodes[0].data,
+        opcVariables: ['ready', ' ready ', 'done', 'ready'],
+      },
+    }],
+    [],
+  ).nodes[0].data.opc_variables,
+  ['ready', 'done'],
+  'workflow payload 必须显式保留并去重节点 Action 的 opc_variables',
+);
+assert.throws(
+  () => createWorkflowRequest(
+    'invalid-opc-node',
+    [{
+      ...baseNodes[0],
+      data: { ...baseNodes[0].data, opcVariables: ['ready', ''] },
+    }],
+    [],
+  ),
+  /opc_variables/,
+  'workflow payload 必须拒绝非空字符串以外的 opc_variables',
+);
 assert.equal(
   workflowDraftKey('ai4c', baseNodes, edges),
   workflowDraftKey('ai4c', runningNodes, edges),
@@ -1793,7 +4096,7 @@ assert.deepEqual(
   [
     {
       id: 'szlab_mixer_robot',
-      title: '机械臂转运',
+      title: 'szlab_mixer_robot',
       device: 'szlab_mixer_robot',
       actions: [
         {
@@ -1831,5 +4134,41 @@ assert.deepEqual(
       ],
     },
   ],
-  '动作面板应按机械臂和单设备分层显示',
+  '动作面板必须只按后端 device_id 分组，不做 robot 特殊映射',
 );
+
+assert.deepEqual(
+  groupActionsByDevice([
+    {
+      method: 'submit_pick_from_station',
+      label: '无设备搬运动作',
+      description: '后端未提供设备',
+    },
+    {
+      method: 'plain_action',
+      label: '普通动作',
+      description: '后端未提供设备',
+    },
+  ]).map((group) => ({ id: group.id, actionCount: group.actions.length })),
+  [{ id: 'unknown_device', actionCount: 2 }],
+  'submit_pick/place 方法名不得触发 robot 特殊分组',
+);
+
+for (const forbidden of [
+  'inferTaskResources',
+  'inferTaskGates',
+  'inferStationKeys',
+  'chunkNodesForTaskPreview',
+  'SZLAB_PROCESS_TEMPLATE_SPECS',
+  'createSzlabProcessTaskTemplates',
+  'Robot_Home',
+  'Robot_任务允许写入',
+  '按流程自动切分',
+  '不能保存空条件',
+]) {
+  assert.doesNotMatch(
+    `${mainSource}\n${taskOrchestrationSource}`,
+    new RegExp(forbidden),
+    `Task 调度源码不得包含专用推断或硬编码：${forbidden}`,
+  );
+}

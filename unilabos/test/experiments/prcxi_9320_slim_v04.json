@@ -1,0 +1,111 @@
+{
+    "nodes": [
+        {
+            "id": "PRCXI",
+            "name": "PRCXI",
+            "type": "device",
+            "class": "liquid_handler.prcxi",
+            "parent": "",
+            "pose": {
+                "size": {
+                    "width": 825,
+                    "height": 400,
+                    "depth": 0
+                }
+            },
+            "config": {
+                "axis": "Left",
+                "deck": {
+                    "_resource_type": "unilabos.devices.liquid_handling.prcxi.prcxi:PRCXI9300Deck",
+                    "_resource_child_name": "PRCXI_Deck"
+                },
+                "host": "127.0.0.1",
+                "port": 9999,
+                "debug": false,
+                "setup": false,
+                "is_9320": true,
+                "timeout": 10,
+                "matrix_id": "",
+                "simulator": false,
+                "channel_num": 8,
+                "protocol_version": "v04",
+                "start_rail": 0,
+                "row_nums": 4,
+                "column_nums": 6,
+                "prc_sites_config": [
+                    {"number": 1,  "row": 0, "col": 0, "row_span": 1, "col_span": 1},
+                    {"number": 2,  "row": 1, "col": 0, "row_span": 1, "col_span": 1},
+                    {"number": 3,  "row": 2, "col": 0, "row_span": 1, "col_span": 1},
+                    {"number": 4,  "row": 3, "col": 0, "row_span": 1, "col_span": 1},
+                    {"number": 5,  "row": 0, "col": 1, "row_span": 1, "col_span": 1},
+                    {"number": 6,  "row": 1, "col": 1, "row_span": 1, "col_span": 1},
+                    {"number": 7,  "row": 2, "col": 1, "row_span": 1, "col_span": 1},
+                    {"number": 8,  "row": 3, "col": 1, "row_span": 1, "col_span": 1},
+                    {"number": 9,  "row": 0, "col": 2, "row_span": 1, "col_span": 1},
+                    {"number": 10, "row": 1, "col": 2, "row_span": 1, "col_span": 1},
+                    {"number": 11, "row": 2, "col": 2, "row_span": 1, "col_span": 1},
+                    {"number": 12, "row": 3, "col": 2, "row_span": 1, "col_span": 1},
+                    {"number": 13, "row": 0, "col": 3, "row_span": 1, "col_span": 1},
+                    {"number": 14, "row": 1, "col": 3, "row_span": 1, "col_span": 1},
+                    {"number": 15, "row": 2, "col": 3, "row_span": 1, "col_span": 1},
+                    {"number": 16, "row": 3, "col": 3, "row_span": 1, "col_span": 1},
+                    {"number": 17, "row": 0, "col": 4, "row_span": 1, "col_span": 1},
+                    {"number": 18, "row": 1, "col": 4, "row_span": 1, "col_span": 1},
+                    {"number": 19, "row": 2, "col": 4, "row_span": 1, "col_span": 1},
+                    {"number": 20, "row": 3, "col": 4, "row_span": 1, "col_span": 1},
+                    {"number": 21, "row": 0, "col": 5, "row_span": 2, "col_span": 1},
+                    {"number": 22, "row": 2, "col": 5, "row_span": 1, "col_span": 1},
+                    {"number": 23, "row": 3, "col": 5, "row_span": 1, "col_span": 1}
+                ],
+                "pip_setting": {
+                    "left": {"vol": 1000, "channels": 1},
+                    "right": {"vol": 10, "channels": 8}
+                },
+                "step_mode": false,
+                "touch_tip_mode": "native",
+                "touch_tip_wall": "follow_axis"
+            },
+            "data": {
+                "reset_ok": true
+            },
+            "schema": {},
+            "description": "",
+            "model": null,
+            "position": {
+                "x": 0,
+                "y": 240,
+                "z": 0
+            }
+        },
+        {
+            "id": "PRCXI_Deck",
+            "name": "PRCXI_Deck",
+            "children": [],
+            "parent": "PRCXI",
+            "type": "deck",
+            "class": "",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "type": "PRCXI9300Deck",
+                "size_x": 825,
+                "size_y": 400,
+                "size_z": 17,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "deck",
+                "barcode": null,
+                "preferred_pickup_location": null
+            },
+            "data": {}
+        }
+    ],
+    "edges": []
+}

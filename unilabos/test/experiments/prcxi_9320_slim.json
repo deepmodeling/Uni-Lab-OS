@@ -8,8 +8,8 @@
             "parent": "",
             "pose": {
                 "size": {
-                    "width": 562,
-                    "height": 394,
+                    "width": 550,
+                    "height": 400,
                     "depth": 0
                 }
             },
@@ -19,15 +19,26 @@
                     "_resource_type": "unilabos.devices.liquid_handling.prcxi.prcxi:PRCXI9300Deck",
                     "_resource_child_name": "PRCXI_Deck"
                 },
-                "host": "10.20.30.184",
+                "host": "192.168.2.54",
                 "port": 9999,
-                "debug": true,
-                "setup": true,
+                "debug": false,
+                "setup": false,
                 "is_9320": true,
                 "timeout": 10,
-                "matrix_id": "5de524d0-3f95-406c-86dd-f83626ebc7cb",
-                "simulator": true,
-                "channel_num": 2
+                "matrix_id": "a0b93cb0-3cf2-4d24-9fc2-bf9147a2ec08",
+                "simulator": false,
+                "channel_num": 8,
+                "pip_setting": {
+                    "left": {"vol": 1000, "channels": 1},
+                    "right": {"vol": 300, "channels": 8}
+                },
+                "step_mode": false,
+                "calibration_points": {
+                    "line_1": [[452.07,21.19], [313.88,21.19], [177.17,21.19], [39.08,21.19]],
+                    "line_2": [[451.37,116.68], [313.28,116.88], [176.58,116.69], [38.58,117.18]],
+                    "line_3": [[450.87,212.18], [312.98,212.38], [176.08,212.68], [38.08,213.18]],
+                    "line_4": [[450.08,307.68], [312.18,307.89], [175.18,308.18], [37.58,309.18]]
+                }
             },
             "data": {
                 "reset_ok": true
@@ -49,15 +60,15 @@
             "type": "deck",
             "class": "",
             "position": {
-                "x": 10,
-                "y": 10,
+                "x": 0,
+                "y": 0,
                 "z": 0
             },
             "config": {
                 "type": "PRCXI9300Deck",
-                "size_x": 542,
-                "size_y": 374,
-                "size_z": 0,
+                "size_x": 550,
+                "size_y": 400,
+                "size_z": 17,
                 "rotation": {
                     "x": 0,
                     "y": 0,
@@ -66,378 +77,7 @@
                 },
                 "category": "deck",
                 "barcode": null,
-                "preferred_pickup_location": null,
-                "sites": [
-                    {
-                        "label": "T1",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 0,
-                            "y": 0,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "container",
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T2",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 138,
-                            "y": 0,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T3",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 276,
-                            "y": 0,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T4",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 414,
-                            "y": 0,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T5",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 0,
-                            "y": 96,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T6",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 138,
-                            "y": 96,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T7",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 276,
-                            "y": 96,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T8",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 414,
-                            "y": 96,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T9",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 0,
-                            "y": 192,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T10",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 138,
-                            "y": 192,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T11",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 276,
-                            "y": 192,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T12",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 414,
-                            "y": 192,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T13",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 0,
-                            "y": 288,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T14",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 138,
-                            "y": 288,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T15",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 276,
-                            "y": 288,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    },
-                    {
-                        "label": "T16",
-                        "visible": true,
-                        "occupied_by": null,
-                        "position": {
-                            "x": 414,
-                            "y": 288,
-                            "z": 0
-                        },
-                        "size": {
-                            "width": 128.0,
-                            "height": 86,
-                            "depth": 0
-                        },
-                        "content_type": [
-                            "plate",
-                            "tip_rack",
-                            "plates",
-                            "tip_racks",
-                            "tube_rack",
-                            "adaptor"
-                        ]
-                    }
-                ]
+                "preferred_pickup_location": null
             },
             "data": {}
         }

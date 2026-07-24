@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}新建耗材{% else %}编辑 {{ item.function_name }}{% endif %} - PRCXI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{% if is_new %}新建耗材{% else %}编辑 {{ item.function_name }}{% endif %}</h1>
+    <div class="header-actions">
+        <a href="/" class="btn btn-outline">返回列表</a>
+    </div>
+</div>
+
+<div id="status-msg" class="status-msg" style="display:none;"></div>
+
+<div class="edit-layout">
+    <!-- 左侧: 表单 -->
+    <div class="edit-form">
+        <form id="labware-form" onsubmit="return false;">
+            <!-- 基本信息 -->
+            <div class="form-section">
+                <h3>基本信息</h3>
+                <div class="form-row">
+                    <label>类型</label>
+                    <select name="type" id="f-type" onchange="onTypeChange()">
+                        <option value="plate" {% if labware_type == 'plate' %}selected{% endif %}>Plate (孔板)</option>
+                        <option value="tip_rack" {% if labware_type == 'tip_rack' %}selected{% endif %}>TipRack (吸头盒)</option>
+                        <option value="trash" {% if labware_type == 'trash' %}selected{% endif %}>Trash (废弃槽)</option>
+                        <option value="tube_rack" {% if labware_type == 'tube_rack' %}selected{% endif %}>TubeRack (管架)</option>
+                        <option value="plate_adapter" {% if labware_type == 'plate_adapter' %}selected{% endif %}>PlateAdapter (适配器)</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label>函数名</label>
+                    <input type="text" name="function_name" id="f-function_name"
+                           value="{{ item.function_name if item else 'PRCXI_new_labware' }}"
+                           placeholder="PRCXI_xxx">
+                </div>
+                <div class="form-row">
+                    <label>Model</label>
+                    <input type="text" name="model" id="f-model"
+                           value="{{ item.model if item and item.model else '' }}">
+                </div>
+                <div class="form-row">
+                    <label>Docstring</label>
+                    <textarea name="docstring" id="f-docstring" rows="2">{{ item.docstring if item else '' }}</textarea>
+                </div>
+                <div class="form-row" id="row-plate_type" style="display:none;">
+                    <label>Plate Type</label>
+                    <select name="plate_type" id="f-plate_type">
+                        <option value="">-</option>
+                        <option value="skirted" {% if item and item.plate_type == 'skirted' %}selected{% endif %}>skirted</option>
+                        <option value="semi-skirted" {% if item and item.plate_type == 'semi-skirted' %}selected{% endif %}>semi-skirted</option>
+                        <option value="non-skirted" {% if item and item.plate_type == 'non-skirted' %}selected{% endif %}>non-skirted</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 物理尺寸 -->
+            <div class="form-section">
+                <h3>物理尺寸 Physical Dimensions (mm)</h3>
+                <div class="form-row-3">
+                    <div><label>size_x <span class="label-cn">板长</span></label><input type="number" step="any" name="size_x" id="f-size_x" value="{{ item.size_x if item else 127 }}"></div>
+                    <div><label>size_y <span class="label-cn">板宽</span></label><input type="number" step="any" name="size_y" id="f-size_y" value="{{ item.size_y if item else 85 }}"></div>
+                    <div><label>size_z <span class="label-cn">板高</span></label><input type="number" step="any" name="size_z" id="f-size_z" value="{{ item.size_z if item else 20 }}"></div>
+                </div>
+            </div>
+
+            <!-- 材料信息 -->
+            <div class="form-section">
+                <h3>材料信息</h3>
+                <div class="form-row">
+                    <label>UUID</label>
+                    <input type="text" name="mi_uuid" id="f-mi_uuid"
+                           value="{{ item.material_info.uuid if item else '' }}">
+                </div>
+                <div class="form-row-2">
+                    <div><label>Code</label><input type="text" name="mi_code" id="f-mi_code" value="{{ item.material_info.Code if item else '' }}"></div>
+                    <div><label>Name</label><input type="text" name="mi_name" id="f-mi_name" value="{{ item.material_info.Name if item else '' }}"></div>
+                </div>
+                <div class="form-row-2">
+                    <div><label>materialEnum</label><input type="number" name="mi_menum" id="f-mi_menum" value="{{ item.material_info.materialEnum if item and item.material_info.materialEnum is not none else '' }}"></div>
+                    <div><label>SupplyType</label><input type="number" name="mi_stype" id="f-mi_stype" value="{{ item.material_info.SupplyType if item and item.material_info.SupplyType is not none else '' }}"></div>
+                </div>
+            </div>
+
+            <!-- 网格排列 (plate/tip_rack/tube_rack) -->
+            <div class="form-section" id="section-grid" style="display:none;">
+                <h3 style="display:flex;align-items:center;justify-content:space-between;">
+                    网格排列 Grid Layout
+                    <button type="button" class="btn btn-sm btn-outline" onclick="autoCenter()">自动居中 Auto-Center</button>
+                </h3>
+                <div class="form-row-2">
+                    <div><label>num_items_x <span class="label-cn">列数</span></label><input type="number" name="grid_nx" id="f-grid_nx" value="{{ item.grid.num_items_x if item and item.grid else 12 }}"></div>
+                    <div><label>num_items_y <span class="label-cn">行数</span></label><input type="number" name="grid_ny" id="f-grid_ny" value="{{ item.grid.num_items_y if item and item.grid else 8 }}"></div>
+                </div>
+                <div class="form-row-3">
+                    <div><label>dx <span class="label-cn">首孔X偏移</span></label><input type="number" step="any" name="grid_dx" id="f-grid_dx" value="{{ item.grid.dx if item and item.grid else 0 }}"></div>
+                    <div><label>dy <span class="label-cn">首孔Y偏移</span></label><input type="number" step="any" name="grid_dy" id="f-grid_dy" value="{{ item.grid.dy if item and item.grid else 0 }}"></div>
+                    <div><label>dz <span class="label-cn">孔底Z偏移</span></label><input type="number" step="any" name="grid_dz" id="f-grid_dz" value="{{ item.grid.dz if item and item.grid else 0 }}"></div>
+                </div>
+                <div class="form-row-2">
+                    <div><label>item_dx <span class="label-cn">列间距</span></label><input type="number" step="any" name="grid_idx" id="f-grid_idx" value="{{ item.grid.item_dx if item and item.grid else 9 }}"></div>
+                    <div><label>item_dy <span class="label-cn">行间距</span></label><input type="number" step="any" name="grid_idy" id="f-grid_idy" value="{{ item.grid.item_dy if item and item.grid else 9 }}"></div>
+                </div>
+            </div>
+
+            <!-- Well 参数 (plate) -->
+            <div class="form-section" id="section-well" style="display:none;">
+                <h3>孔参数 Well</h3>
+                <div class="form-row-3">
+                    <div><label>size_x <span class="label-cn">孔长</span></label><input type="number" step="any" name="well_sx" id="f-well_sx" value="{{ item.well.size_x if item and item.well else 8 }}"></div>
+                    <div><label>size_y <span class="label-cn">孔宽</span></label><input type="number" step="any" name="well_sy" id="f-well_sy" value="{{ item.well.size_y if item and item.well else 8 }}"></div>
+                    <div><label>size_z <span class="label-cn">孔深</span></label><input type="number" step="any" name="well_sz" id="f-well_sz" value="{{ item.well.size_z if item and item.well else 10 }}"></div>
+                </div>
+                <div class="form-row-2">
+                    <div><label>max_volume <span class="label-cn">最大容量 (uL)</span></label><input type="number" step="any" name="well_vol" id="f-well_vol" value="{{ item.well.max_volume if item and item.well and item.well.max_volume is not none else '' }}"></div>
+                    <div><label>material_z_thickness <span class="label-cn">底壁厚度</span></label><input type="number" step="any" name="well_mzt" id="f-well_mzt" value="{{ item.well.material_z_thickness if item and item.well and item.well.material_z_thickness is not none else '' }}"></div>
+                </div>
+                <div class="form-row-2">
+                    <div>
+                        <label>bottom_type <span class="label-cn">底部形状</span></label>
+                        <select name="well_bt" id="f-well_bt">
+                            <option value="FLAT" {% if item and item.well and item.well.bottom_type == 'FLAT' %}selected{% endif %}>FLAT</option>
+                            <option value="V" {% if item and item.well and item.well.bottom_type == 'V' %}selected{% endif %}>V</option>
+                            <option value="U" {% if item and item.well and item.well.bottom_type == 'U' %}selected{% endif %}>U</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>cross_section_type <span class="label-cn">截面形状</span></label>
+                        <select name="well_cs" id="f-well_cs">
+                            <option value="CIRCLE" {% if item and item.well and item.well.cross_section_type == 'CIRCLE' %}selected{% endif %}>CIRCLE</option>
+                            <option value="RECTANGLE" {% if item and item.well and item.well.cross_section_type == 'RECTANGLE' %}selected{% endif %}>RECTANGLE</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label><input type="checkbox" name="has_vf" id="f-has_vf" {% if item and item.volume_functions %}checked{% endif %}> 使用 volume_functions (rectangle)</label>
+                </div>
+            </div>
+
+            <!-- Tip 参数 (tip_rack) -->
+            <div class="form-section" id="section-tip" style="display:none;">
+                <h3>枪头参数 Tip</h3>
+                <div class="form-row-3">
+                    <div><label>spot_size_x <span class="label-cn">卡槽长</span></label><input type="number" step="any" name="tip_sx" id="f-tip_sx" value="{{ item.tip.spot_size_x if item and item.tip else 7 }}"></div>
+                    <div><label>spot_size_y <span class="label-cn">卡槽宽</span></label><input type="number" step="any" name="tip_sy" id="f-tip_sy" value="{{ item.tip.spot_size_y if item and item.tip else 7 }}"></div>
+                    <div><label>spot_size_z <span class="label-cn">卡槽高</span></label><input type="number" step="any" name="tip_sz" id="f-tip_sz" value="{{ item.tip.spot_size_z if item and item.tip else 0 }}"></div>
+                </div>
+                <div class="form-row-3">
+                    <div><label>tip_volume <span class="label-cn">枪头容量 (uL)</span></label><input type="number" step="any" name="tip_vol" id="f-tip_vol" value="{{ item.tip.tip_volume if item and item.tip else 300 }}"></div>
+                    <div><label>tip_length <span class="label-cn">枪头总长度 (mm)</span></label><input type="number" step="any" name="tip_len" id="f-tip_len" value="{{ item.tip.tip_length if item and item.tip else 60 }}"></div>
+                    <div><label>fitting_depth <span class="label-cn">取枪头时插入的长度 (mm)</span></label><input type="number" step="any" name="tip_dep" id="f-tip_dep" value="{{ item.tip.tip_fitting_depth if item and item.tip else 51 }}"></div>
+                </div>
+                <div class="form-row">
+                    <label>tip_above_rack_length <span class="label-cn">枪头在枪头盒上方的部分的长度 (mm)</span></label>
+                    <input type="number" step="any" name="tip_above" id="f-tip_above"
+                           value="{{ item.tip.tip_above_rack_length if item and item.tip and item.tip.tip_above_rack_length is not none else '' }}"
+                           placeholder="tip_length - (size_z - dz)">
+                    <small style="color:#888;margin-top:2px;">公式: tip_length = tip_above + size_z - dz；填 tip_above 自动算 dz，填 dz 自动算 tip_above</small>
+                </div>
+                <div class="form-row">
+                    <label><input type="checkbox" name="tip_filter" id="f-tip_filter" {% if item and item.tip and item.tip.has_filter %}checked{% endif %}> has_filter</label>
+                </div>
+            </div>
+
+            <!-- Tube 参数 (tube_rack) -->
+            <div class="form-section" id="section-tube" style="display:none;">
+                <h3>管参数 Tube</h3>
+                <div class="form-row-3">
+                    <div><label>size_x <span class="label-cn">管径X</span></label><input type="number" step="any" name="tube_sx" id="f-tube_sx" value="{{ item.tube.size_x if item and item.tube else 10.6 }}"></div>
+                    <div><label>size_y <span class="label-cn">管径Y</span></label><input type="number" step="any" name="tube_sy" id="f-tube_sy" value="{{ item.tube.size_y if item and item.tube else 10.6 }}"></div>
+                    <div><label>size_z <span class="label-cn">管高</span></label><input type="number" step="any" name="tube_sz" id="f-tube_sz" value="{{ item.tube.size_z if item and item.tube else 40 }}"></div>
+                </div>
+                <div class="form-row">
+                    <label>max_volume <span class="label-cn">最大容量 (uL)</span></label>
+                    <input type="number" step="any" name="tube_vol" id="f-tube_vol" value="{{ item.tube.max_volume if item and item.tube else 1500 }}">
+                </div>
+            </div>
+
+            <!-- Adapter 参数 (plate_adapter) -->
+            <div class="form-section" id="section-adapter" style="display:none;">
+                <h3>适配器参数 Adapter</h3>
+                <div class="form-row-3">
+                    <div><label>hole_size_x <span class="label-cn">凹槽长</span></label><input type="number" step="any" name="adp_hsx" id="f-adp_hsx" value="{{ item.adapter.adapter_hole_size_x if item and item.adapter else 127.76 }}"></div>
+                    <div><label>hole_size_y <span class="label-cn">凹槽宽</span></label><input type="number" step="any" name="adp_hsy" id="f-adp_hsy" value="{{ item.adapter.adapter_hole_size_y if item and item.adapter else 85.48 }}"></div>
+                    <div><label>hole_size_z <span class="label-cn">凹槽深</span></label><input type="number" step="any" name="adp_hsz" id="f-adp_hsz" value="{{ item.adapter.adapter_hole_size_z if item and item.adapter else 10 }}"></div>
+                </div>
+                <div class="form-row-3">
+                    <div><label>dx <span class="label-cn">X偏移</span></label><input type="number" step="any" name="adp_dx" id="f-adp_dx" value="{{ item.adapter.dx if item and item.adapter and item.adapter.dx is not none else '' }}"></div>
+                    <div><label>dy <span class="label-cn">Y偏移</span></label><input type="number" step="any" name="adp_dy" id="f-adp_dy" value="{{ item.adapter.dy if item and item.adapter and item.adapter.dy is not none else '' }}"></div>
+                    <div><label>dz <span class="label-cn">Z偏移</span></label><input type="number" step="any" name="adp_dz" id="f-adp_dz" value="{{ item.adapter.dz if item and item.adapter else 0 }}"></div>
+                </div>
+            </div>
+
+            <!-- Registry -->
+            <div class="form-section">
+                <h3>Registry / Template</h3>
+                <div class="form-row">
+                    <label>registry_category (逗号分隔)</label>
+                    <input type="text" name="reg_cat" id="f-reg_cat"
+                           value="{{ item.registry_category | join(',') if item else 'prcxi,plates' }}">
+                </div>
+                <div class="form-row">
+                    <label>registry_description</label>
+                    <input type="text" name="reg_desc" id="f-reg_desc"
+                           value="{{ item.registry_description if item else '' }}">
+                </div>
+                <div class="form-row">
+                    <label><input type="checkbox" name="in_tpl" id="f-in_tpl" {% if item and item.include_in_template_matching %}checked{% endif %}> include_in_template_matching</label>
+                </div>
+                <div class="form-row" id="row-tpl_kind">
+                    <label>template_kind</label>
+                    <input type="text" name="tpl_kind" id="f-tpl_kind"
+                           value="{{ item.template_kind if item and item.template_kind else '' }}">
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-primary" onclick="saveForm()">
+                    {% if is_new %}创建{% else %}保存{% endif %}
+                </button>
+                <a href="/" class="btn btn-outline">取消</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- 右侧: 实时预览 -->
+    <div class="edit-preview">
+        <div class="viz-card">
+            <h3 style="display:flex;align-items:center;justify-content:space-between;">
+                预览: 俯视图
+                <button type="button" class="btn btn-sm btn-outline" onclick="resetSvgView('svg-topdown')">回中</button>
+            </h3>
+            <div id="svg-topdown"></div>
+        </div>
+        <div class="viz-card">
+            <h3 style="display:flex;align-items:center;justify-content:space-between;">
+                预览: 侧面截面图
+                <button type="button" class="btn btn-sm btn-outline" onclick="resetSvgView('svg-side')">回中</button>
+            </h3>
+            <div id="svg-side"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/labware_viz.js"></script>
+<script src="/static/form_handler.js"></script>
+<script>
+    const IS_NEW = {{ 'true' if is_new else 'false' }};
+    const ITEM_ID = "{{ item.function_name if item else '' }}";
+    document.addEventListener('DOMContentLoaded', () => {
+        onTypeChange();
+        updatePreview();
+    });
+</script>
+{% endblock %}

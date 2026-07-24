@@ -9,6 +9,9 @@ def register():
     from unilabos.devices.liquid_handling.prcxi.prcxi import PRCXI9300TipRack
     from unilabos.devices.liquid_handling.prcxi.prcxi import PRCXI9300Trash
     from unilabos.devices.liquid_handling.prcxi.prcxi import PRCXI9300TubeRack
+    from unilabos.devices.liquid_handling.prcxi.prcxi import PRCXI9300ModuleSite
+    # noinspection PyUnresolvedReferences
+    from unilabos.devices.liquid_handling.prcxi.prcxi_modules import PRCXI9300FunctionalModule
     # noinspection PyUnresolvedReferences
     from unilabos.devices.workstation.workstation_base import WorkStationContainer
 

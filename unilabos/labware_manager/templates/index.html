@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}耗材列表 - PRCXI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>耗材列表 <span class="badge">{{ total }}</span></h1>
+    <div class="header-actions">
+        <button class="btn btn-outline" onclick="importFromCode()">从代码导入</button>
+        <button class="btn btn-outline" onclick="generateCode(true)">生成代码 (测试)</button>
+        <button class="btn btn-warning" onclick="generateCode(false)">生成代码 (正式)</button>
+        <a href="/labware/new" class="btn btn-primary">+ 新建耗材</a>
+    </div>
+</div>
+
+<div id="status-msg" class="status-msg" style="display:none;"></div>
+
+{% set type_labels = {
+    "plate": "孔板 (Plate)",
+    "tip_rack": "吸头盒 (TipRack)",
+    "trash": "废弃槽 (Trash)",
+    "tube_rack": "管架 (TubeRack)",
+    "plate_adapter": "适配器 (PlateAdapter)"
+} %}
+{% set type_colors = {
+    "plate": "#3b82f6",
+    "tip_rack": "#10b981",
+    "trash": "#ef4444",
+    "tube_rack": "#f59e0b",
+    "plate_adapter": "#8b5cf6"
+} %}
+
+{% for type_key in ["plate", "tip_rack", "trash", "tube_rack", "plate_adapter"] %}
+{% if type_key in groups %}
+<section class="type-section">
+    <h2>
+        <span class="type-dot" style="background:{{ type_colors[type_key] }}"></span>
+        {{ type_labels[type_key] }}
+        <span class="badge">{{ groups[type_key]|length }}</span>
+    </h2>
+    <div class="card-grid">
+        {% for item in groups[type_key] %}
+        <div class="labware-card" onclick="location.href='/labware/{{ item.function_name }}'">
+            <div class="card-header">
+                <span class="card-title">{{ item.function_name }}</span>
+                {% if item.include_in_template_matching %}
+                <span class="tag tag-tpl">TPL</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="card-info">
+                    <span class="label">Code:</span> {{ item.material_info.Code or '-' }}
+                </div>
+                <div class="card-info">
+                    <span class="label">名称:</span> {{ item.material_info.Name or '-' }}
+                </div>
+                <div class="card-info">
+                    <span class="label">尺寸:</span>
+                    {{ item.size_x }} x {{ item.size_y }} x {{ item.size_z }} mm
+                </div>
+                {% if item.grid %}
+                <div class="card-info">
+                    <span class="label">网格:</span>
+                    {{ item.grid.num_items_x }} x {{ item.grid.num_items_y }}
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <a href="/labware/{{ item.function_name }}/edit" class="btn btn-sm btn-outline"
+                   onclick="event.stopPropagation()">编辑</a>
+                <button class="btn btn-sm btn-danger"
+                        onclick="event.stopPropagation(); deleteItem('{{ item.function_name }}')">删除</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showMsg(text, ok) {
+    const el = document.getElementById('status-msg');
+    el.textContent = text;
+    el.className = 'status-msg ' + (ok ? 'msg-ok' : 'msg-err');
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 4000);
+}
+
+async function importFromCode() {
+    if (!confirm('将从现有 prcxi_labware.py + YAML 重新导入，覆盖当前 JSON 数据？')) return;
+    const r = await fetch('/api/import-from-code', {method:'POST'});
+    const d = await r.json();
+    if (d.status === 'ok') {
+        showMsg('导入成功: ' + d.count + ' 个耗材', true);
+        setTimeout(() => location.reload(), 1000);
+    } else {
+        showMsg('导入失败: ' + JSON.stringify(d), false);
+    }
+}
+
+async function generateCode(testMode) {
+    const label = testMode ? '测试' : '正式';
+    if (!testMode && !confirm('正式模式将覆盖原有 prcxi_labware.py 和 YAML 文件，确定？')) return;
+    const r = await fetch('/api/generate-code', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({test_mode: testMode})
+    });
+    const d = await r.json();
+    if (d.status === 'ok') {
+        showMsg(`[${label}] 生成成功: ${d.python_file}`, true);
+    } else {
+        showMsg('生成失败: ' + JSON.stringify(d), false);
+    }
+}
+
+async function deleteItem(id) {
+    if (!confirm('确定删除 ' + id + '？')) return;
+    const r = await fetch('/api/labware/' + id, {method:'DELETE'});
+    const d = await r.json();
+    if (d.status === 'ok') {
+        showMsg('已删除', true);
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showMsg('删除失败', false);
+    }
+}
+</script>
+{% endblock %}

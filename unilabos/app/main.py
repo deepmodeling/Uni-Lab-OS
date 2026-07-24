@@ -354,6 +354,27 @@ def parse_args():
         default="",
         help="Workflow description, used when publishing the workflow",
     )
+    workflow_parser.add_argument(
+        "--target_device",
+        type=str,
+        default="prcxi",
+        help=(
+            "Target instrument name at vendor granularity (e.g. 'prcxi', 'beckman', 'tecan'). "
+            "Decides which target_devices.<name>.rules section in labware_mapping.yaml is used. "
+            "Unknown names fall back to target_devices.default. Default: 'prcxi'."
+        ),
+    )
+    workflow_parser.add_argument(
+        "--target_model",
+        type=str,
+        default=None,
+        help=(
+            "Optional target instrument model name within the same vendor (e.g. '9320', '4040'). "
+            "Used to look up target_devices.<target_device>.models.<target_model>.slot_remap / "
+            ".rules for model-specific deck layout or rule overrides. Falls back to the vendor-level "
+            "configuration when omitted or the model is not declared. Default: None."
+        ),
+    )
 
     # package subcommand: 社区设备包 inspect / upload
     package_parser = subparsers.add_parser(
@@ -467,6 +488,26 @@ def parse_args():
     wf_upload_parser.add_argument("--tags", type=str, nargs="*", default=[], help="Tags (space-separated)")
     wf_upload_parser.add_argument("--published", action="store_true", default=False, help="Publish after upload")
     wf_upload_parser.add_argument("--description", type=str, default="", help="Workflow description")
+    wf_upload_parser.add_argument(
+        "--target_device",
+        type=str,
+        default="prcxi",
+        help=(
+            "Target instrument name at vendor granularity (e.g. 'prcxi', 'beckman', 'tecan'). "
+            "Decides which target_devices.<name>.rules section in labware_mapping.yaml is used. "
+            "Unknown names fall back to target_devices.default. Default: 'prcxi'."
+        ),
+    )
+    wf_upload_parser.add_argument(
+        "--target_model",
+        type=str,
+        default=None,
+        help=(
+            "Optional target instrument model name within the same vendor (e.g. '9320', '4040'). "
+            "Used to look up target_devices.<target_device>.models.<target_model>.slot_remap / "
+            ".rules for model-specific deck layout or rule overrides. Default: None."
+        ),
+    )
 
     return parser
 
@@ -504,7 +545,12 @@ def main():
 
     # 处理 HTTP 客户端子命令（login, logout, whoami, config, lab, material, workflow）
     # 这些命令不需要加载完整的 UniLab-OS 环境，提前处理并退出
-    http_client_commands = ["login", "logout", "whoami", "config", "lab", "material", "workflow"]
+    # 说明：workflow_upload / wf 是历史顶层别名，与分组命令 ``workflow upload`` 等价，
+    # 统一走轻量 HTTP 客户端路径（不加载完整设备环境），避免误入设备启动流程导致“无反应”。
+    http_client_commands = [
+        "login", "logout", "whoami", "config", "lab", "material", "workflow",
+        "workflow_upload", "wf",
+    ]
     if args_dict.get("command") in http_client_commands:
         from unilabos.client import (
             SessionManager,
@@ -581,6 +627,9 @@ def main():
             else:
                 print_error("workflow 子命令需要指定: upload")
                 sys.exit(1)
+        elif command in ("workflow_upload", "wf"):
+            # 历史顶层别名：等价于 ``workflow upload``（含 --target_device/--target_model）。
+            cmd_workflow_upload(args, session_manager)
         else:
             print_error(f"{command} 命令暂未实现")
             sys.exit(1)

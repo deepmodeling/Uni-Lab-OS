@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}{{ item.function_name }} - PRCXI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ item.function_name }}</h1>
+    <div class="header-actions">
+        <a href="/labware/{{ item.function_name }}/edit" class="btn btn-primary">编辑</a>
+        <a href="/" class="btn btn-outline">返回列表</a>
+    </div>
+</div>
+
+<div class="detail-layout">
+    <!-- 左侧: 信息 -->
+    <div class="detail-info">
+        <div class="info-card">
+            <h3>基本信息</h3>
+            <table class="info-table">
+                <tr><td class="label">类型</td><td><span class="tag tag-{{ item.type }}">{{ item.type }}</span></td></tr>
+                <tr><td class="label">函数名</td><td><code>{{ item.function_name }}</code></td></tr>
+                <tr><td class="label">Model</td><td>{{ item.model or '-' }}</td></tr>
+                {% if item.plate_type %}
+                <tr><td class="label">Plate Type</td><td>{{ item.plate_type }}</td></tr>
+                {% endif %}
+                <tr><td class="label">Docstring</td><td>{{ item.docstring or '-' }}</td></tr>
+            </table>
+        </div>
+
+        <div class="info-card">
+            <h3>物理尺寸 (mm)</h3>
+            <table class="info-table">
+                <tr><td class="label">X</td><td>{{ item.size_x }}</td></tr>
+                <tr><td class="label">Y</td><td>{{ item.size_y }}</td></tr>
+                <tr><td class="label">Z</td><td>{{ item.size_z }}</td></tr>
+            </table>
+        </div>
+
+        <div class="info-card">
+            <h3>材料信息</h3>
+            <table class="info-table">
+                <tr><td class="label">UUID</td><td><code class="small">{{ item.material_info.uuid }}</code></td></tr>
+                <tr><td class="label">Code</td><td>{{ item.material_info.Code }}</td></tr>
+                <tr><td class="label">Name</td><td>{{ item.material_info.Name }}</td></tr>
+                {% if item.material_info.materialEnum is not none %}
+                <tr><td class="label">materialEnum</td><td>{{ item.material_info.materialEnum }}</td></tr>
+                {% endif %}
+                {% if item.material_info.SupplyType is not none %}
+                <tr><td class="label">SupplyType</td><td>{{ item.material_info.SupplyType }}</td></tr>
+                {% endif %}
+            </table>
+        </div>
+
+        {% if item.grid %}
+        <div class="info-card">
+            <h3>网格排列</h3>
+            <table class="info-table">
+                <tr><td class="label">列 x 行</td><td>{{ item.grid.num_items_x }} x {{ item.grid.num_items_y }}</td></tr>
+                <tr><td class="label">dx, dy, dz</td><td>{{ item.grid.dx }}, {{ item.grid.dy }}, {{ item.grid.dz }}</td></tr>
+                <tr><td class="label">item_dx, item_dy</td><td>{{ item.grid.item_dx }}, {{ item.grid.item_dy }}</td></tr>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if item.well %}
+        <div class="info-card">
+            <h3>孔参数 (Well)</h3>
+            <table class="info-table">
+                <tr><td class="label">尺寸</td><td>{{ item.well.size_x }} x {{ item.well.size_y }} x {{ item.well.size_z }}</td></tr>
+                {% if item.well.max_volume is not none %}
+                <tr><td class="label">最大体积</td><td>{{ item.well.max_volume }} uL</td></tr>
+                {% endif %}
+                <tr><td class="label">底部类型</td><td>{{ item.well.bottom_type }}</td></tr>
+                <tr><td class="label">截面类型</td><td>{{ item.well.cross_section_type }}</td></tr>
+                {% if item.well.material_z_thickness is not none %}
+                <tr><td class="label">材料Z厚度</td><td>{{ item.well.material_z_thickness }}</td></tr>
+                {% endif %}
+            </table>
+        </div>
+        {% endif %}
+
+        {% if item.tip %}
+        <div class="info-card">
+            <h3>枪头参数 (Tip)</h3>
+            <table class="info-table">
+                <tr><td class="label">Spot 尺寸</td><td>{{ item.tip.spot_size_x }} x {{ item.tip.spot_size_y }} x {{ item.tip.spot_size_z }}</td></tr>
+                <tr><td class="label">容量</td><td>{{ item.tip.tip_volume }} uL</td></tr>
+                <tr><td class="label">长度</td><td>{{ item.tip.tip_length }} mm</td></tr>
+                <tr><td class="label">取枪头插入深度</td><td>{{ item.tip.tip_fitting_depth }} mm</td></tr>
+                {% if item.tip.tip_above_rack_length is not none %}
+                <tr><td class="label">枪头露出枪头盒长度</td><td>{{ item.tip.tip_above_rack_length }} mm</td></tr>
+                {% endif %}
+                <tr><td class="label">有滤芯</td><td>{{ item.tip.has_filter }}</td></tr>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if item.tube %}
+        <div class="info-card">
+            <h3>管参数 (Tube)</h3>
+            <table class="info-table">
+                <tr><td class="label">尺寸</td><td>{{ item.tube.size_x }} x {{ item.tube.size_y }} x {{ item.tube.size_z }}</td></tr>
+                <tr><td class="label">最大体积</td><td>{{ item.tube.max_volume }} uL</td></tr>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if item.adapter %}
+        <div class="info-card">
+            <h3>适配器参数</h3>
+            <table class="info-table">
+                <tr><td class="label">Hole 尺寸</td><td>{{ item.adapter.adapter_hole_size_x }} x {{ item.adapter.adapter_hole_size_y }} x {{ item.adapter.adapter_hole_size_z }}</td></tr>
+                <tr><td class="label">dx, dy, dz</td><td>{{ item.adapter.dx }}, {{ item.adapter.dy }}, {{ item.adapter.dz }}</td></tr>
+            </table>
+        </div>
+        {% endif %}
+
+        <div class="info-card">
+            <h3>Registry</h3>
+            <table class="info-table">
+                <tr><td class="label">分类</td><td>{{ item.registry_category | join(' / ') }}</td></tr>
+                <tr><td class="label">描述</td><td>{{ item.registry_description }}</td></tr>
+                <tr><td class="label">模板匹配</td><td>{{ item.include_in_template_matching }}</td></tr>
+                {% if item.template_kind %}
+                <tr><td class="label">模板类型</td><td>{{ item.template_kind }}</td></tr>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+
+    <!-- 右侧: 可视化 -->
+    <div class="detail-viz">
+        <div class="viz-card">
+            <h3 style="display:flex;align-items:center;justify-content:space-between;">
+                俯视图 (Top-Down)
+                <button type="button" class="btn btn-sm btn-outline" onclick="resetSvgView('svg-topdown')">回中</button>
+            </h3>
+            <div id="svg-topdown"></div>
+        </div>
+        <div class="viz-card">
+            <h3 style="display:flex;align-items:center;justify-content:space-between;">
+                侧面截面图 (Side Profile)
+                <button type="button" class="btn btn-sm btn-outline" onclick="resetSvgView('svg-side')">回中</button>
+            </h3>
+            <div id="svg-side"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/labware_viz.js"></script>
+<script>
+    const itemData = {{ item.model_dump() | tojson }};
+    document.addEventListener('DOMContentLoaded', () => {
+        renderTopDown(document.getElementById('svg-topdown'), itemData);
+        renderSideProfile(document.getElementById('svg-side'), itemData);
+    });
+</script>
+{% endblock %}

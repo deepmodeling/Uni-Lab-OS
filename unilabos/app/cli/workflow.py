@@ -60,6 +60,10 @@ def cmd_workflow_upload(args, session_manager: SessionManager):
             "tags": args.tags or [],
             "published": args.published,
             "description": args.description or "",
+            # P6.1/P6.1.1：target_device/target_model 透传（旧 wf 别名与新分组命令共用；
+            # getattr 兜底默认值，兼容未声明这两个参数的旧解析器）。
+            "target_device": getattr(args, "target_device", None) or "prcxi",
+            "target_model": getattr(args, "target_model", None) or None,
         }
         handle_workflow_upload_command(args_dict)
         print_success("工作流上传完成")

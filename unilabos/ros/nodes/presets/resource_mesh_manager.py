@@ -23,17 +23,32 @@ from unilabos_msgs.action import SendCmd
 from rclpy.action.server import ServerGoalHandle
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode,DeviceNodeResourceTracker
 from unilabos.resources.graphio import initialize_resources
+from unilabos.resources.resource_tracker import EXTRA_CLASS
 from unilabos.registry.registry import lab_registry
 
 class ResourceMeshManager(BaseROS2DeviceNode):
-    def __init__(self, resource_model: dict, resource_config: list,resource_tracker, device_id: str = "resource_mesh_manager", registry_name: str = "", rate=50, **kwargs):
+    def __init__(
+        self,
+        resource_model: Optional[dict] = None,
+        resource_config: Optional[list] = None,
+        resource_tracker=None,
+        device_id: str = "resource_mesh_manager",
+        registry_name: str = "",
+        rate=50,
+        **kwargs,
+    ):
         """初始化资源网格管理器节点
-        
+
         Args:
-            resource_model (dict): 资源模型字典,包含资源的3D模型信息
-            resource_config (dict): 资源配置字典,包含资源的配置信息
-            device_id (str): 节点名称
+            resource_model: 资源模型字典（可选，为 None 时自动从 registry 构建）
+            resource_config: 资源配置列表（可选，为 None 时启动后通过 ActionServer 或 load_from_resource_tree 加载）
+            resource_tracker: 资源追踪器
+            device_id: 节点名称
+            rate: TF 发布频率
         """
+        if resource_tracker is None:
+            resource_tracker = DeviceNodeResourceTracker()
+
         super().__init__(
             driver_instance=self,
             device_id=device_id,
@@ -42,12 +57,14 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             action_value_mappings={},
             hardware_interface={},
             print_publish=False,
-            resource_tracker=resource_tracker, 
+            resource_tracker=resource_tracker,
             device_uuid=kwargs.get("uuid", str(uuid.uuid4())),
-        ) 
+        )
 
-        self.resource_model         = resource_model
-        self.resource_config_dict   = {item['uuid']: item for item in resource_config}
+        self.resource_model         = resource_model if resource_model is not None else {}
+        self.resource_config_dict   = (
+            {item['uuid']: item for item in resource_config} if resource_config else {}
+        )
         self.move_group_ready       = False
         self.resource_tf_dict       = {}
         self.tf_broadcaster         = TransformBroadcaster(self)
@@ -63,7 +80,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         self.mesh_path = Path(__file__).parent.parent.parent.parent.absolute()
         self.msg_type = 'resource_status'
         self.resource_status_dict = {}
-        
+
         callback_group = ReentrantCallbackGroup()
         self._get_planning_scene_service = self.create_client(
             srv_type=GetPlanningScene,
@@ -76,8 +93,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             ),
             callback_group=callback_group,
         )
-        
-        # Create a service for applying the planning scene
+
         self._apply_planning_scene_service = self.create_client(
             srv_type=ApplyPlanningScene,
             srv_name="/apply_planning_scene",
@@ -103,27 +119,36 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             AttachedCollisionObject, "/attached_collision_object", 0
         )
 
-        # 创建一个Action Server用于修改resource_tf_dict
         self._action_server = ActionServer(
             self,
             SendCmd,
             f"tf_update",
             self.tf_update,
-            callback_group=callback_group
+            callback_group=callback_group,
         )
 
-        # 创建一个Action Server用于添加新的资源模型与resource_tf_dict
         self._add_resource_mesh_action_server = ActionServer(
             self,
             SendCmd,
             f"add_resource_mesh",
             self.add_resource_mesh_callback,
-            callback_group=callback_group
+            callback_group=callback_group,
         )
 
-        self.resource_tf_dict = self.resource_mesh_setup(self.resource_config_dict)
-        self.create_timer(1/self.rate, self.publish_resource_tf)
-        self.create_timer(1/self.rate, self.check_resource_pose_changes)
+        self._reload_resource_mesh_action_server = ActionServer(
+            self,
+            SendCmd,
+            f"reload_resource_mesh",
+            self._reload_resource_mesh_callback,
+            callback_group=callback_group,
+        )
+
+        if self.resource_config_dict:
+            self.resource_tf_dict = self.resource_mesh_setup(self.resource_config_dict)
+        else:
+            self.get_logger().info("未提供 resource_config，将通过 ActionServer 或 load_from_resource_tree 加载")
+        self.create_timer(1 / self.rate, self.publish_resource_tf)
+        self.create_timer(1 / self.rate, self.check_resource_pose_changes)
 
     def check_move_group_ready(self):
         """检查move_group节点是否已初始化完成"""
@@ -140,56 +165,156 @@ class ResourceMeshManager(BaseROS2DeviceNode):
             self.add_resource_collision_meshes(self.resource_tf_dict)
 
        
-    def add_resource_mesh_callback(self, goal_handle : ServerGoalHandle):
+    def _build_resource_model_for_config(self, resource_config_dict: dict):
+        """从 registry 中为给定的资源配置自动构建 resource_model（mesh 信息）"""
+        registry = lab_registry
+        for _uuid, res_cfg in resource_config_dict.items():
+            resource_id = res_cfg.get('id', '')
+            resource_class = res_cfg.get('class', '')
+            if not resource_class:
+                continue
+            if resource_class not in registry.resource_type_registry:
+                continue
+            reg_entry = registry.resource_type_registry[resource_class]
+            if 'model' not in reg_entry:
+                continue
+            model_config = reg_entry['model']
+            if model_config.get('type') != 'resource':
+                continue
+            if resource_id in self.resource_model:
+                continue
+            self.resource_model[resource_id] = {
+                'mesh': f"{str(self.mesh_path)}/device_mesh/resources/{model_config['mesh']}",
+                'mesh_tf': model_config['mesh_tf'],
+            }
+            if model_config.get('children_mesh') is not None:
+                self.resource_model[f"{resource_id}_"] = {
+                    'mesh': f"{str(self.mesh_path)}/device_mesh/resources/{model_config['children_mesh']}",
+                    'mesh_tf': model_config['children_mesh_tf'],
+                }
+
+    def load_from_resource_tree(self):
+        """从 resource_tracker 中读取资源树，自动构建 resource_config_dict / resource_model 并刷新 TF"""
+        new_config_dict: dict = {}
+
+        def _collect_plr_resource(res, parent_uuid: Optional[str] = None):
+            res_uuid = getattr(res, 'unilabos_uuid', None)
+            if not res_uuid:
+                res_uuid = str(uuid.uuid4())
+            extra = getattr(res, 'unilabos_extra', {}) or {}
+            resource_class = extra.get(EXTRA_CLASS, '')
+
+            location = getattr(res, 'location', None)
+            pos_x = float(location.x) if location else 0.0
+            pos_y = float(location.y) if location else 0.0
+            pos_z = float(location.z) if location else 0.0
+
+            rotation = extra.get('rotation', {'x': 0, 'y': 0, 'z': 0})
+
+            new_config_dict[res_uuid] = {
+                'id': res.name,
+                'uuid': res_uuid,
+                'class': resource_class,
+                'parent_uuid': parent_uuid,
+                'pose': {
+                    'position': {'x': pos_x, 'y': pos_y, 'z': pos_z},
+                    'rotation': rotation,
+                },
+            }
+
+            for child in getattr(res, 'children', []) or []:
+                _collect_plr_resource(child, res_uuid)
+
+        for resource in self.resource_tracker.resources:
+            root_parent_uuid = None
+            plr_parent = getattr(resource, 'parent', None)
+            if plr_parent is not None:
+                root_parent_uuid = getattr(plr_parent, 'unilabos_uuid', None)
+            _collect_plr_resource(resource, root_parent_uuid)
+
+        if not new_config_dict:
+            self.get_logger().warning("resource_tracker 中没有找到任何资源")
+            return
+
+        self.resource_config_dict = {**self.resource_config_dict, **new_config_dict}
+        self._build_resource_model_for_config(new_config_dict)
+
+        tf_dict = self.resource_mesh_setup(new_config_dict)
+        self.resource_tf_dict = {**self.resource_tf_dict, **tf_dict}
+        self.publish_resource_tf()
+        if self.move_group_ready:
+            self.add_resource_collision_meshes(tf_dict)
+        self.get_logger().info(f"从资源树加载了 {len(new_config_dict)} 个资源")
+
+    def _reload_resource_mesh_callback(self, goal_handle: ServerGoalHandle):
+        """ActionServer 回调：重新从资源树加载所有 mesh"""
+        try:
+            self.load_from_resource_tree()
+        except Exception as e:
+            self.get_logger().error(f"重新加载资源失败: {e}")
+            goal_handle.abort()
+            return SendCmd.Result(success=False)
+        goal_handle.succeed()
+        return SendCmd.Result(success=True)
+
+    def add_resource_mesh_callback(self, goal_handle: ServerGoalHandle):
         tf_update_msg = goal_handle.request
-        try:    
-            self.add_resource_mesh(tf_update_msg.command)
+        try:
+            parsed = json.loads(tf_update_msg.command.replace("'", '"'))
+            if 'resources' in parsed:
+                for res_config in parsed['resources']:
+                    self.add_resource_mesh(json.dumps(res_config))
+            else:
+                self.add_resource_mesh(tf_update_msg.command)
         except Exception as e:
             self.get_logger().error(f"添加资源失败: {e}")
             goal_handle.abort()
             return SendCmd.Result(success=False)
         goal_handle.succeed()
         return SendCmd.Result(success=True)
-    
-    def add_resource_mesh(self,resource_config_str:str):
-        """刷新资源配置"""
 
+    def add_resource_mesh(self, resource_config_str: str):
+        """添加单个资源的 mesh 配置"""
         registry = lab_registry
-        resource_config = json.loads(resource_config_str.replace("'",'"'))
-        
+        resource_config = json.loads(resource_config_str.replace("'", '"'))
+
         if resource_config['id'] in self.resource_config_dict:
             self.get_logger().info(f'资源 {resource_config["id"]} 已存在')
             return
-        if resource_config['class'] in registry.resource_type_registry.keys():
-            model_config = registry.resource_type_registry[resource_config['class']]['model']
-            if model_config['type'] == 'resource':
-                self.resource_model[resource_config['id']] = {
-                    'mesh': f"{str(self.mesh_path)}/device_mesh/resources/{model_config['mesh']}",
-                    'mesh_tf': model_config['mesh_tf']}
-                if 'children_mesh' in model_config.keys():
-                    self.resource_model[f"{resource_config['id']}_"] = {
-                        'mesh': f"{str(self.mesh_path)}/device_mesh/resources/{model_config['children_mesh']}",
-                        'mesh_tf': model_config['children_mesh_tf']
+        resource_class = resource_config.get('class', '')
+        if resource_class and resource_class in registry.resource_type_registry:
+            reg_entry = registry.resource_type_registry[resource_class]
+            if 'model' in reg_entry:
+                model_config = reg_entry['model']
+                if model_config.get('type') == 'resource':
+                    self.resource_model[resource_config['id']] = {
+                        'mesh': f"{str(self.mesh_path)}/device_mesh/resources/{model_config['mesh']}",
+                        'mesh_tf': model_config['mesh_tf'],
                     }
+                    if model_config.get('children_mesh') is not None:
+                        self.resource_model[f"{resource_config['id']}_"] = {
+                            'mesh': f"{str(self.mesh_path)}/device_mesh/resources/{model_config['children_mesh']}",
+                            'mesh_tf': model_config['children_mesh_tf'],
+                        }
         resources = initialize_resources([resource_config])
         resource_dict = {item['id']: item for item in resources}
-        self.resource_config_dict = {**self.resource_config_dict,**resource_dict}
+        self.resource_config_dict = {**self.resource_config_dict, **resource_dict}
         tf_dict = self.resource_mesh_setup(resource_dict)
-        self.resource_tf_dict = {**self.resource_tf_dict,**tf_dict}
+        self.resource_tf_dict = {**self.resource_tf_dict, **tf_dict}
         self.publish_resource_tf()
         self.add_resource_collision_meshes(tf_dict)
 
-
-    def resource_mesh_setup(self, resource_config_dict:dict):
-        """move_group初始化完成后的设置"""
+    def resource_mesh_setup(self, resource_config_dict: dict):
+        """根据资源配置字典设置 TF 关系"""
         self.get_logger().info('开始设置资源网格管理器')
-        #遍历resource_config中的资源配置，判断panent是否在resource_model中，
         resource_tf_dict = {}
         for resource_uuid, resource_config in resource_config_dict.items():
             parent = None
             resource_id = resource_config['id']
-            if resource_config['parent_uuid'] is not None and resource_config['parent_uuid'] != "":
-                parent = resource_config_dict[resource_config['parent_uuid']]['id']
+            parent_uuid = resource_config.get('parent_uuid')
+            if parent_uuid is not None and parent_uuid != "":
+                parent_entry = resource_config_dict.get(parent_uuid) or self.resource_config_dict.get(parent_uuid)
+                parent = parent_entry['id'] if parent_entry else None
 
             parent_link = 'world'
             if parent in self.resource_model:

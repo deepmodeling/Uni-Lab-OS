@@ -532,6 +532,13 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             location = command_json["bind_location"]
             other_calling_param = command_json["other_calling_param"]
             input_resources = command_json["resource"]
+            # 归一化：单个 Resource（dict）按 create_resource_detailed 的
+            # ``Union[list[Resource], Resource]`` 约定也是合法入参，但下游
+            # ``from_raw_dict_list`` 只接受 list；若直接传 dict 会被当成可迭代对象
+            # 遍历出 key 字符串，触发 ``'str' object does not support item assignment``。
+            # 这里统一包成单元素列表，保证单资源 / 多资源两种形态都能正确建树。
+            if isinstance(input_resources, dict):
+                input_resources = [input_resources]
             initialize_full = other_calling_param.pop("initialize_full", False)
             # 用来增加液体
             ADD_LIQUID_TYPE = other_calling_param.pop("ADD_LIQUID_TYPE", [])
@@ -2374,10 +2381,25 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         elif isinstance(resource_data, dict) and "id" in resource_data:
                             function_args[arg_name] = self._convert_resources_sync(resource_data["uuid"])[0]
                     except Exception as e:
-                        self.lab_logger().error(
-                            f"转换ResourceSlot参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
+                        # UUID 在资源树中不存在，尝试从传入的完整 dict 直接构建 PLR 资源
+                        self.lab_logger().warning(
+                            f"UUID查询 {arg_name} 失败，尝试从传入数据直接构建: {e}"
                         )
-                        raise JsonCommandInitError(f"ResourceSlot参数转换失败: {arg_name}")
+                        try:
+                            fallback_tree = ResourceTreeSet.from_raw_dict_list([resource_data])
+                            if len(fallback_tree.trees) == 0:
+                                raise
+                            plr_list = fallback_tree.to_plr_resources()
+                            if not plr_list:
+                                raise
+                            plr_res = plr_list[0]
+                            figured = self.resource_tracker.figure_resource(plr_res, try_mode=True)
+                            function_args[arg_name] = figured[0] if figured else plr_res
+                        except Exception:
+                            self.lab_logger().error(
+                                f"转换ResourceSlot参数 {arg_name} 失败（含回退）: {e}\n{traceback.format_exc()}"
+                            )
+                            raise JsonCommandInitError(f"ResourceSlot参数转换失败: {arg_name}")
 
                 # 处理 ResourceSlot 列表
                 elif isinstance(arg_type, tuple) and len(arg_type) == 2:
@@ -2389,10 +2411,25 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                                 uuids = [r["uuid"] for r in resource_list if isinstance(r, dict) and "id" in r]
                                 function_args[arg_name] = self._convert_resources_sync(*uuids) if uuids else []
                             except Exception as e:
-                                self.lab_logger().error(
-                                    f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
+                                self.lab_logger().warning(
+                                    f"UUID查询列表 {arg_name} 失败，尝试从传入数据直接构建: {e}"
                                 )
-                                raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
+                                try:
+                                    dict_items = [r for r in resource_list if isinstance(r, dict) and "id" in r]
+                                    fallback_tree = ResourceTreeSet.from_raw_dict_list(dict_items)
+                                    if len(fallback_tree.trees) == 0:
+                                        raise
+                                    plr_list = fallback_tree.to_plr_resources()
+                                    resolved = []
+                                    for plr_res in plr_list:
+                                        figured = self.resource_tracker.figure_resource(plr_res, try_mode=True)
+                                        resolved.append(figured[0] if figured else plr_res)
+                                    function_args[arg_name] = resolved
+                                except Exception:
+                                    self.lab_logger().error(
+                                        f"转换ResourceSlot列表参数 {arg_name} 失败（含回退）: {e}\n{traceback.format_exc()}"
+                                    )
+                                    raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
 
             # todo: 默认反报送
             return function(**function_args)

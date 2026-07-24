@@ -52,6 +52,7 @@ def main(
     bridges: List[Any] = [],
     visual: str = "disable",
     resources_mesh_config: dict = {},
+    resources_mesh_resource_list: list = [],
     rclpy_init_args: List[str] = ["--log-level", "debug"],
     discovery_interval: float = 15.0,
 ) -> None:
@@ -78,12 +79,12 @@ def main(
     if visual != "disable":
         from unilabos.ros.nodes.presets.joint_republisher import JointRepublisher
 
-        # 将 ResourceTreeSet 转换为 list 用于 visual 组件
-        resources_list = (
-            [node.res_content.model_dump(by_alias=True) for node in resources_config.all_nodes]
-            if resources_config
-            else []
-        )
+        # 优先使用从 main.py 传入的完整资源列表（包含所有子资源）
+        if resources_mesh_resource_list:
+            resources_list = resources_mesh_resource_list
+        else:
+            # fallback: 从 ResourceTreeSet 获取
+            resources_list = [node.res_content.model_dump(by_alias=True) for node in resources_config.all_nodes]
         resource_mesh_manager = ResourceMeshManager(
             resources_mesh_config,
             resources_list,
@@ -91,7 +92,7 @@ def main(
             device_id="resource_mesh_manager",
             device_uuid=str(uuid.uuid4()),
         )
-        joint_republisher = JointRepublisher("joint_republisher", host_node.resource_tracker)
+        joint_republisher = JointRepublisher("joint_republisher","joint_republisher", host_node.resource_tracker)
         # lh_joint_pub = LiquidHandlerJointPublisher(
         #     resources_config=resources_list, resource_tracker=host_node.resource_tracker
         # )
@@ -115,6 +116,7 @@ def slave(
     bridges: List[Any] = [],
     visual: str = "disable",
     resources_mesh_config: dict = {},
+    resources_mesh_resource_list: list = [],
     rclpy_init_args: List[str] = ["--log-level", "debug"],
 ) -> None:
     """从节点函数"""
@@ -209,12 +211,12 @@ def slave(
     if visual != "disable":
         from unilabos.ros.nodes.presets.joint_republisher import JointRepublisher
 
-        # 将 ResourceTreeSet 转换为 list 用于 visual 组件
-        resources_list = (
-            [node.res_content.model_dump(by_alias=True) for node in resources_config.all_nodes]
-            if resources_config
-            else []
-        )
+        # 优先使用从 main.py 传入的完整资源列表（包含所有子资源）
+        if resources_mesh_resource_list:
+            resources_list = resources_mesh_resource_list
+        else:
+            # fallback: 从 ResourceTreeSet 获取
+            resources_list = [node.res_content.model_dump(by_alias=True) for node in resources_config.all_nodes]
         resource_mesh_manager = ResourceMeshManager(
             resources_mesh_config,
             resources_list,

@@ -39,6 +39,11 @@ class FakeLiquidHandler(LiquidHandlerAbstract):
         self.current_tip = iter(make_tip_iter())
         self.calls: List[Tuple[str, Any]] = []
 
+    def set_tiprack(self, tip_racks):
+        if not tip_racks:
+            return
+        super().set_tiprack(tip_racks)
+
     async def pick_up_tips(self, tip_spots, use_channels=None, offsets=None, **backend_kwargs):
         self.calls.append(("pick_up_tips", {"tips": list(tip_spots), "use_channels": use_channels}))
 
@@ -218,14 +223,19 @@ def test_one_to_one_eight_channel_groups_by_8():
     assert dispenses[1]["vols"] == [float(v) for v in dis_vols[8:16]]
 
 
-def test_one_to_one_eight_channel_requires_multiple_of_8_targets():
+def test_eight_channel_requires_vols_divisible_by_8():
+    """8 通道：asp_vols/dis_vols 必须为 8 的倍数（vols=9 非法）。
+
+    P1 多通道约定下 vols 长度=8×M；sources/targets 可为 8×M 或 M，
+    唯独体积数组必须被 8 整除且相等。见 01-multi-channel-flatten.md §6.1。
+    """
     lh = FakeLiquidHandler(channel_num=8)
     lh.current_tip = iter(make_tip_iter(64))
 
     sources = [DummyContainer(f"S{i}") for i in range(9)]
     targets = [DummyContainer(f"T{i}") for i in range(9)]
 
-    with pytest.raises(ValueError, match="multiple of 8"):
+    with pytest.raises(ValueError, match="divisible by 8"):
         run(
             lh.transfer_liquid(
                 sources=sources,
@@ -237,6 +247,11 @@ def test_one_to_one_eight_channel_requires_multiple_of_8_targets():
                 mix_times=0,
             )
         )
+
+
+# 注：sources=8/targets=9/vols=72 的 distribute 放行用例放在 test_transfer_liquid_8channel.py
+# （那里 mock 了 _transfer_base_method 并 patch 了返回值序列化，避免 DummyContainer 无 .parent 的
+# 末尾 ResourceTreeSet.from_plr_resources 限制——该限制是本文件 fixture 的既有问题，与本次修复无关）。
 
 
 def test_one_to_one_eight_channel_parameter_lists_are_chunked_per_8():
@@ -503,3 +518,38 @@ def test_transfer_liquid_mode_detection_unsupported_shape_raises():
             )
         )
 
+
+def test_transfer_liquid_empty_sources_raises_value_error():
+    lh = FakeLiquidHandler(channel_num=1)
+    lh.current_tip = iter(make_tip_iter(16))
+
+    with pytest.raises(ValueError, match="non-empty sources"):
+        run(
+            lh.transfer_liquid(
+                sources=[],
+                targets=[DummyContainer("T0")],
+                tip_racks=[],
+                use_channels=[0],
+                asp_vols=[1],
+                dis_vols=[1],
+                mix_times=0,
+            )
+        )
+
+
+def test_transfer_liquid_empty_asp_vols_raises_value_error():
+    lh = FakeLiquidHandler(channel_num=1)
+    lh.current_tip = iter(make_tip_iter(16))
+
+    with pytest.raises(ValueError, match="non-empty asp_vols"):
+        run(
+            lh.transfer_liquid(
+                sources=[DummyContainer("S0")],
+                targets=[DummyContainer("T0")],
+                tip_racks=[],
+                use_channels=[0],
+                asp_vols=[],
+                dis_vols=[1],
+                mix_times=0,
+            )
+        )

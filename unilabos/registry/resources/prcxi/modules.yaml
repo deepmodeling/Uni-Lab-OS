@@ -1,0 +1,70 @@
+PRCXI_Heating_Module:
+  category:
+  - prcxi
+  - modules
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_modules:PRCXI_Heating_Module
+    type: pylabrobot
+  description: '加热模块 (Code: HEAT-MOD)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+
+PRCXI_MetalCooling_Module:
+  category:
+  - prcxi
+  - modules
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_modules:PRCXI_MetalCooling_Module
+    type: pylabrobot
+  description: '金属冷却模块 (Code: METAL-COOL-MOD)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+
+PRCXI_Shaking_Module:
+  category:
+  - prcxi
+  - modules
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_modules:PRCXI_Shaking_Module
+    type: pylabrobot
+  description: '震荡模块 (Code: SHAKE-MOD)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+
+PRCXI_Heating_Shaking_Module:
+  category:
+  - prcxi
+  - modules
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_modules:PRCXI_Heating_Shaking_Module
+    type: pylabrobot
+  description: '加热震荡模块 (Code: HEAT-SHAKE-MOD)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+
+PRCXI_Magnetic_Module:
+  category:
+  - prcxi
+  - modules
+  class:
+    module: unilabos.devices.liquid_handling.prcxi.prcxi_modules:PRCXI_Magnetic_Module
+    type: pylabrobot
+  description: '磁吸模块 (Code: MAG-MOD)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+

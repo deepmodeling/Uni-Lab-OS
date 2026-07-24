@@ -201,17 +201,42 @@ class ResourceVisualization:
                 self.moveit_controllers_yaml['moveit_simple_controller_manager'][f"{name}_{controller_name}"] = moveit_dict['moveit_simple_controller_manager'][controller_name]
 
 
+    @staticmethod
+    def _ensure_ros2_env() -> dict:
+        """确保 ROS2 环境变量正确设置，返回可用于子进程的 env dict"""
+        import sys
+        env = dict(os.environ)
+        conda_prefix = os.path.dirname(os.path.dirname(sys.executable))
+
+        if "AMENT_PREFIX_PATH" not in env or not env["AMENT_PREFIX_PATH"].strip():
+            candidate = os.pathsep.join([conda_prefix, os.path.join(conda_prefix, "Library")])
+            env["AMENT_PREFIX_PATH"] = candidate
+            os.environ["AMENT_PREFIX_PATH"] = candidate
+
+        extra_bin_dirs = [
+            os.path.join(conda_prefix, "Library", "bin"),
+            os.path.join(conda_prefix, "Library", "lib"),
+            os.path.join(conda_prefix, "Scripts"),
+            conda_prefix,
+        ]
+        current_path = env.get("PATH", "")
+        for d in extra_bin_dirs:
+            if d not in current_path:
+                current_path = d + os.pathsep + current_path
+        env["PATH"] = current_path
+        os.environ["PATH"] = current_path
+
+        return env
+
     def create_launch_description(self) -> LaunchDescription:
         """
         创建launch描述，包含robot_state_publisher和move_group节点
 
-        Args:
-            urdf_str: URDF文本
-
         Returns:
             LaunchDescription: launch描述对象
         """
-        # 检查ROS 2环境变量
+        launch_env = self._ensure_ros2_env()
+
         if "AMENT_PREFIX_PATH" not in os.environ:
             raise OSError(
                 "ROS 2环境未正确设置。需要设置 AMENT_PREFIX_PATH 环境变量。\n"
@@ -290,7 +315,7 @@ class ResourceVisualization:
                         {"robot_description": robot_description},
                         ros2_controllers,
                     ],
-                    env=dict(os.environ)
+                    env=launch_env,
                 )
             )
             for controller in self.moveit_controllers_yaml['moveit_simple_controller_manager']['controller_names']:
@@ -300,7 +325,7 @@ class ResourceVisualization:
                         executable="spawner",
                         arguments=[f"{controller}", "--controller-manager", f"controller_manager"],
                         output="screen",
-                        env=dict(os.environ)
+                        env=launch_env,
                     )
                 )
             controllers.append(
@@ -309,7 +334,7 @@ class ResourceVisualization:
                         executable="spawner",
                         arguments=["joint_state_broadcaster", "--controller-manager", f"controller_manager"],
                         output="screen",
-                        env=dict(os.environ)
+                        env=launch_env,
                 )
             )
             for i in controllers:
@@ -317,7 +342,6 @@ class ResourceVisualization:
         else:
             ros2_controllers = None
 
-        # 创建robot_state_publisher节点
         robot_state_publisher = nd(
             package='robot_state_publisher',
             executable='robot_state_publisher',
@@ -327,9 +351,8 @@ class ResourceVisualization:
                 'robot_description': robot_description,
                 'use_sim_time': False
             },
-            # kinematics_dict
             ],
-            env=dict(os.environ)
+            env=launch_env,
         )
 
 
@@ -361,7 +384,7 @@ class ResourceVisualization:
             executable='move_group',
             output='screen',
             parameters=moveit_params,
-            env=dict(os.environ)
+            env=launch_env,
         )
 
 
@@ -379,13 +402,11 @@ class ResourceVisualization:
                 arguments=['-d', f"{str(self.mesh_path)}/view_robot.rviz"],
                 output='screen',
                 parameters=[
-                    {'robot_description_kinematics': kinematics_dict,
-                     },
+                    {'robot_description_kinematics': kinematics_dict},
                     robot_description_planning,
                     planning_pipelines,
-
                 ],
-                env=dict(os.environ)
+                env=launch_env,
             )
             self.launch_description.add_action(rviz_node)
 

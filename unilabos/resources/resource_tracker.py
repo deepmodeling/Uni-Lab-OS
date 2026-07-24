@@ -33,6 +33,42 @@ RETURN_UNILABOS_SAMPLES = "unilabos_samples"
 SampleUUIDsType = Dict[str, Optional["PLRResource"]]
 
 
+def _augment_states_with_liquid_history(
+    resource: "PLRResource",
+    states: Dict[str, Any],
+) -> None:
+    """P9 — 把 Uni-Lab 在 PLR tracker 上挂的 ``liquid_history`` 扩展属性并入
+    ``serialize_all_state()`` 返回的 well state dict。
+
+    PLR 原生 ``serialize_all_state()`` 只输出 ``{liquids, pending_liquids}``，
+    会丢失 ``tracker.liquid_history``。本 helper 递归遍历资源树，把每个有 tracker 的
+    节点的 ``liquid_history`` 写入 ``states[node.name]["liquid_history"]``。
+
+    设计要点：
+        - 不可变：若 ``states[name]`` 已有 ``liquid_history`` 字段则不覆盖（向后兼容）。
+        - 列表浅拷贝：避免运行时 mutation 影响 dump 结果。
+        - 节点无 tracker / tracker 无 ``liquid_history`` 属性 → 跳过（不写默认 ``[]``，
+          否则会污染非 well 节点 state）。
+
+    详见 ``product_designs/protocol_convert/09-liquid-history-unknown-debug.md`` §6.3。
+    """
+
+    def _walk(node: "PLRResource") -> None:
+        name = getattr(node, "name", None)
+        if isinstance(name, str) and name in states:
+            tracker = getattr(node, "tracker", None)
+            if tracker is not None:
+                history = getattr(tracker, "liquid_history", None)
+                if isinstance(history, list):
+                    state = states[name]
+                    if isinstance(state, dict) and "liquid_history" not in state:
+                        state["liquid_history"] = list(history)
+        for child in getattr(node, "children", ()) or ():
+            _walk(child)
+
+    _walk(resource)
+
+
 class LabSample(TypedDict):
     sample_uuid: str
     oss_path: str
@@ -123,6 +159,24 @@ class ResourceDictType(TypedDict):
     machine_name: str
     barcode: str
     barcode_symbology: str
+
+
+class ResourceDictType(TypedDict):
+    id: str
+    uuid: str
+    name: str
+    description: str
+    resource_schema: Dict[str, Any]
+    model: Dict[str, Any]
+    icon: str
+    parent_uuid: Optional[str]
+    parent: Optional["ResourceDictType"]
+    type: Union[Literal["device"], str]
+    klass: str
+    pose: ResourceDictPositionType
+    config: Dict[str, Any]
+    data: Dict[str, Any]
+    extra: Dict[str, Any]
 
 
 # 统一的资源字典模型，parent 自动序列化为 parent_uuid，children 不序列化
@@ -464,6 +518,8 @@ class ResourceTreeSet(object):
                 "reagent_bottle": "reagent_bottle",
                 "flask": "flask",
                 "beaker": "beaker",
+                "module": "module",
+                "carrier": "carrier",
             }
             if source in replace_info:
                 return replace_info[source]
@@ -492,7 +548,18 @@ class ResourceTreeSet(object):
         def resource_plr_inner(
             d: dict, parent_resource: Optional[ResourceDict], states: dict, uuids: list
         ) -> ResourceDictInstance:
-            current_uuid, parent_uuid, extra = uuids.pop(0)
+            if uuids:
+                current_uuid, parent_uuid, extra = uuids.pop(0)
+            else:
+                # serialize() 树比 res.children 树多出了节点（虚拟子节点等），兜底生成 UUID
+                current_uuid = str(uuid.uuid4())
+                parent_uuid = parent_resource.get("uuid") if isinstance(parent_resource, dict) else (
+                    getattr(parent_resource, "uuid", None) if parent_resource is not None else None
+                )
+                extra = {}
+                logger.warning(
+                    f"from_plr_resources: UUID 列表耗尽，为节点 '{d.get('name', '?')}' 生成临时 UUID {current_uuid}"
+                )
 
             raw_pos = (
                 {"x": d["location"]["x"], "y": d["location"]["y"], "z": d["location"]["z"]}
@@ -569,6 +636,11 @@ class ResourceTreeSet(object):
 
             serialized_data = resource.serialize()
             all_states = resource.serialize_all_state()
+            # P9 — PLR 原生 serialize_all_state 只输出 {liquids, pending_liquids}，
+            # 丢弃 Uni-Lab 在 tracker 上挂的扩展属性 liquid_history。在这里把它并回 state dict
+            # 以确保 OS→Cloud sync 链路完整保留液体历史。
+            # 详见 ``product_designs/protocol_convert/09-liquid-history-unknown-debug.md`` §6.3。
+            _augment_states_with_liquid_history(resource, all_states)
 
             # 根节点没有父节点，传入 None
             root_instance = resource_plr_inner(serialized_data, None, all_states, uuid_list)
@@ -576,9 +648,16 @@ class ResourceTreeSet(object):
             trees.append(tree_instance)
         return cls(trees)
 
-    def to_plr_resources(self, skip_devices=True) -> List["PLRResource"]:
+    def to_plr_resources(
+        self, skip_devices: bool = True, requested_uuids: Optional[List[str]] = None
+    ) -> List["PLRResource"]:
         """
         将 ResourceTreeSet 转换为 PLR 资源列表
+
+        Args:
+            skip_devices: 是否跳过 device 类型节点
+            requested_uuids: 若指定，则按此 UUID 顺序返回对应资源（用于批量查询时一一对应），
+                否则返回各树的根节点列表
 
         Returns:
             List[PLRResource]: PLR 资源实例列表
@@ -594,6 +673,8 @@ class ResourceTreeSet(object):
             "deck": "Deck",
             "container": "RegularContainer",
             "tip_spot": "TipSpot",
+            "module": "PRCXI9300ModuleSite",
+            "carrier": "ItemizedCarrier",
         }
 
         def collect_node_data(node: ResourceDictInstance, name_to_uuid: dict, all_states: dict, name_to_extra: dict):
@@ -645,6 +726,71 @@ class ResourceTreeSet(object):
                 d["model"] = res.config.get("model", None)
             return d
 
+        # deserialize 会单独处理的元数据 key，不传给构造函数
+        _META_KEYS = {"type", "parent_name", "location", "children", "rotation", "barcode"}
+        # deserialize 自定义逻辑使用的 key（如 TipSpot 用 prototype_tip 构建 make_tip），需保留
+        _DESERIALIZE_PRESERVED_KEYS = {"prototype_tip"}
+
+        def remove_incompatible_params(plr_d: dict) -> None:
+            """递归移除 PLR 类不接受的参数，避免 deserialize 报错。
+            - 移除构造函数不接受的参数（如 compute_height_from_volume、ordering、category）
+            - 对 TubeRack：将 ordering 转为 ordered_items
+            - 保留 deserialize 自定义逻辑需要的 key（如 prototype_tip）
+            """
+            if "type" in plr_d:
+                sub_cls = find_subclass(plr_d["type"], PLRResource)
+                if sub_cls is not None:
+                    spec = inspect.signature(sub_cls)
+                    valid_params = set(spec.parameters.keys())
+                    # TubeRack 特殊处理：先转换 ordering，再参与后续过滤
+                    if "ordering" not in valid_params and "ordering" in plr_d:
+                        ordering = plr_d.pop("ordering", None)
+                        if sub_cls.__name__ == "TubeRack":
+                            plr_d["ordered_items"] = (
+                                _ordering_to_ordered_items(plr_d, ordering)
+                                if ordering
+                                else {}
+                            )
+                    # 移除构造函数不接受的参数（保留 META 和 deserialize 自定义逻辑需要的 key）
+                    for key in list(plr_d.keys()):
+                        if (
+                            key not in _META_KEYS
+                            and key not in _DESERIALIZE_PRESERVED_KEYS
+                            and key not in valid_params
+                        ):
+                            plr_d.pop(key, None)
+            for child in plr_d.get("children", []):
+                remove_incompatible_params(child)
+
+        def _ordering_to_ordered_items(plr_d: dict, ordering: dict) -> dict:
+            """将 ordering 转为 ordered_items，从 children 构建 Tube 对象"""
+            from pylabrobot.resources import Tube, Coordinate
+            from pylabrobot.serializer import deserialize as plr_deserialize
+
+            children = plr_d.get("children", [])
+            ordered_items = {}
+            for idx, (ident, child_name) in enumerate(ordering.items()):
+                child_data = children[idx] if idx < len(children) else None
+                if child_data is None:
+                    continue
+                loc_data = child_data.get("location")
+                loc = (
+                    plr_deserialize(loc_data)
+                    if loc_data
+                    else Coordinate(0, 0, 0)
+                )
+                tube = Tube(
+                    name=child_data.get("name", child_name or ident),
+                    size_x=child_data.get("size_x", 10),
+                    size_y=child_data.get("size_y", 10),
+                    size_z=child_data.get("size_z", 50),
+                    max_volume=child_data.get("max_volume", 1000),
+                )
+                tube.location = loc
+                ordered_items[ident] = tube
+            plr_d["children"] = []  # 已并入 ordered_items，避免重复反序列化
+            return ordered_items
+
         plr_resources = []
         tracker = DeviceNodeResourceTracker()
 
@@ -664,9 +810,7 @@ class ResourceTreeSet(object):
                     raise ValueError(
                         f"无法找到类型 {plr_dict['type']} 对应的 PLR 资源类。原始信息：{tree.root_node.res_content}"
                     )
-                spec = inspect.signature(sub_cls)
-                if "category" not in spec.parameters:
-                    plr_dict.pop("category", None)
+                remove_incompatible_params(plr_dict)
                 plr_resource = sub_cls.deserialize(plr_dict, allow_marshal=True)
                 from pylabrobot.resources import Coordinate
                 from pylabrobot.serializer import deserialize
@@ -686,6 +830,18 @@ class ResourceTreeSet(object):
                 logger.error(f"堆栈: {traceback.format_exc()}")
                 raise
 
+        if requested_uuids:
+            # 按请求的 UUID 顺序返回对应资源（从整棵树中按 uuid 提取）
+            result = []
+            for uid in requested_uuids:
+                if uid in tracker.uuid_to_resources:
+                    result.append(tracker.uuid_to_resources[uid])
+                else:
+                    raise ValueError(
+                        f"请求的 UUID {uid} 在资源树中未找到。"
+                        f"可用 UUID 数量: {len(tracker.uuid_to_resources)}"
+                    )
+            return result
         return plr_resources
 
     @classmethod
@@ -773,16 +929,6 @@ class ResourceTreeSet(object):
             所有根节点的资源实例列表
         """
         return [tree.root_node for tree in self.trees]
-
-    @property
-    def root_nodes_uuid(self) -> List[ResourceDictInstance]:
-        """
-        获取所有树的根节点
-
-        Returns:
-            所有根节点的资源实例列表
-        """
-        return [tree.root_node.res_content.uuid for tree in self.trees]
 
     @property
     def all_nodes(self) -> List[ResourceDictInstance]:
@@ -901,6 +1047,17 @@ class ResourceTreeSet(object):
                                 f"从远端同步了 {added_count} 个物料子树"
                             )
                     else:
+                        # 二级是物料
+                        if remote_child_name not in local_children_map:
+                            # 本地不存在该物料，直接引入
+                            remote_child.res_content.parent = local_device.res_content
+                            local_device.children.append(remote_child)
+                            local_children_map[remote_child_name] = remote_child
+                            logger.info(
+                                f"物料 '{remote_root_id}/{remote_child_name}': "
+                                f"从远端同步了整个子树"
+                            )
+                            continue
                         # 二级物料已存在，比较三级子节点是否缺失
                         local_material = local_children_map[remote_child_name]
                         local_material_children_map = {child.res_content.name: child for child in

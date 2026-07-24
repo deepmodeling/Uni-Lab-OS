@@ -819,22 +819,6 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
             if not locations:
                 logger.debug(f"[物料位置] {unique_name} 没有location信息，跳过warehouse放置")
 
-            # ⭐ 预先检查：如果物料的任何location在竖向warehouse中，提前交换尺寸
-            # 这样可以避免多个location时尺寸不一致的问题
-            needs_size_swap = False
-            for loc in locations:
-                wh_name_check = loc.get("whName")
-                if wh_name_check in ["站内试剂存放堆栈", "测量小瓶仓库(测密度)"]:
-                    needs_size_swap = True
-                    break
-
-            if needs_size_swap and hasattr(plr_material, 'size_x') and hasattr(plr_material, 'size_y'):
-                original_x = plr_material.size_x
-                original_y = plr_material.size_y
-                plr_material.size_x = original_y
-                plr_material.size_y = original_x
-                logger.debug(f"   物料 {unique_name} 将放入竖向warehouse，预先交换尺寸: {original_x}×{original_y} → {plr_material.size_x}×{plr_material.size_y}")
-
             for loc in locations:
                 wh_name = loc.get("whName")
                 logger.debug(f"[物料位置] {unique_name} 尝试放置到 warehouse: {wh_name} (Bioyond坐标: x={loc.get('x')}, y={loc.get('y')}, z={loc.get('z')})")
@@ -851,20 +835,12 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                         logger.warning(f"物料 {material['name']} 的列号 x={x_val} 超出范围，无法映射到堆栈1左或堆栈1右")
                         continue
 
-                # 特殊处理: Bioyond的"站内Tip盒堆栈"也需要进行拆分映射
-                if wh_name == "站内Tip盒堆栈":
-                    y_val = loc.get("y", 1)
-                    if y_val == 1:
-                        wh_name = "站内Tip盒堆栈(右)"
-                    elif y_val in [2, 3]:
-                        wh_name = "站内Tip盒堆栈(左)"
-                        y = y - 1  # 调整列号，因为左侧仓库对应的 Bioyond y=2 实际上是它的第1列
-
                 if hasattr(deck, "warehouses") and wh_name in deck.warehouses:
                     warehouse = deck.warehouses[wh_name]
                     logger.debug(f"[Warehouse匹配] 找到warehouse: {wh_name} (容量: {warehouse.capacity}, 行×列: {warehouse.num_items_x}×{warehouse.num_items_y})")
 
                     # Bioyond坐标映射 (重要！): x→行(1=A,2=B...), y→列(1=01,2=02...), z→层(通常=1)
+                    # PyLabRobot warehouse是列优先存储: A01,B01,C01,D01, A02,B02,C02,D02, ...
                     x = loc.get("x", 1)  # 行号 (1-based: 1=A, 2=B, 3=C, 4=D)
                     y = loc.get("y", 1)  # 列号 (1-based: 1=01, 2=02, 3=03...)
                     z = loc.get("z", 1)  # 层号 (1-based, 通常为1)
@@ -873,23 +849,12 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                     if wh_name == "堆栈1右":
                         y = y - 4  # 将5-8映射到1-4
 
-                    # 特殊处理竖向warehouse（站内试剂存放堆栈、测量小瓶仓库）
-                    # 这些warehouse使用 vertical-col-major 布局
-                    if wh_name in ["站内试剂存放堆栈", "测量小瓶仓库(测密度)"]:
-                        # vertical-col-major 布局的坐标映射：
-                        # - Bioyond的x(1=A,2=B)对应warehouse的列(col, x方向)
-                        # - Bioyond的y(1=01,2=02,3=03)对应warehouse的行(row, y方向)，从下到上
-                        # vertical-col-major 中: row=0 对应底部，row=n-1 对应顶部
-                        # Bioyond y=1(01) 对应底部 → row=0, y=2(02) 对应中间 → row=1
-                        # 索引计算: idx = row * num_cols + col
-                        col_idx = x - 1  # Bioyond的x(A,B) → col索引(0,1)
-                        row_idx = y - 1  # Bioyond的y(01,02,03) → row索引(0,1,2)
-                        layer_idx = z - 1
-
-                        idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + row_idx * warehouse.num_items_y + col_idx
-                        logger.debug(f"🔍 竖向warehouse {wh_name}: Bioyond(x={x},y={y},z={z}) → warehouse(col={col_idx},row={row_idx},layer={layer_idx}) → idx={idx}, capacity={warehouse.capacity}")
-
-                    # 普通横向warehouse的处理
+                    # 特殊处理：对于1行×N列的横向warehouse（如站内试剂存放堆栈）
+                    # Bioyond的y坐标表示线性位置序号，而不是列号
+                    if warehouse.num_items_y == 1:
+                        # 1行warehouse: 直接用y作为线性索引
+                        idx = y - 1
+                        logger.debug(f"1行warehouse {wh_name}: y={y} → idx={idx}")
                     else:
                         # 多行warehouse: 根据 layout 使用不同的索引计算
                         row_idx = x - 1  # x表示行: 转为0-based
@@ -913,7 +878,6 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
 
                     if 0 <= idx < warehouse.capacity:
                         if warehouse[idx] is None or isinstance(warehouse[idx], ResourceHolder):
-                            # 物料尺寸已在放入warehouse前根据需要进行了交换
                             warehouse[idx] = plr_material
                             logger.debug(f"✅ 物料 {unique_name} 放置到 {wh_name}[{idx}] (Bioyond坐标: x={loc.get('x')}, y={loc.get('y')})")
                     else:
@@ -1087,24 +1051,11 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                 logger.debug(f"  📭 [单瓶物料] {resource.name} 无液体，使用资源名: {material_name}")
 
             # 🎯 处理物料默认参数和单位
-            # 优先级: typeId参数 > 物料名称参数 > 默认值
+            # 检查是否有该物料名称的默认参数配置
             default_unit = "个"  # 默认单位
             material_parameters = {}
 
-            # 1️⃣ 首先检查是否有 typeId 对应的参数配置（从 material_params 中获取，key 格式为 "type:<typeId>"）
-            type_params_key = f"type:{type_id}"
-            if type_params_key in material_params:
-                params_config = material_params[type_params_key].copy()
-
-                # 提取 unit 字段（如果有）
-                if "unit" in params_config:
-                    default_unit = params_config.pop("unit")  # 从参数中移除，放到外层
-
-                # 剩余的字段放入 Parameters
-                material_parameters = params_config
-                logger.debug(f"  🔧 [物料参数-按typeId] 为 typeId={type_id[:8]}... 应用配置: unit={default_unit}, parameters={material_parameters}")
-            # 2️⃣ 其次检查是否有该物料名称的默认参数配置
-            elif material_name in material_params:
+            if material_name in material_params:
                 params_config = material_params[material_name].copy()
 
                 # 提取 unit 字段（如果有）
@@ -1113,7 +1064,7 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
 
                 # 剩余的字段放入 Parameters
                 material_parameters = params_config
-                logger.debug(f"  🔧 [物料参数-按名称] 为 {material_name} 应用配置: unit={default_unit}, parameters={material_parameters}")
+                logger.debug(f"  🔧 [物料参数] 为 {material_name} 应用配置: unit={default_unit}, parameters={material_parameters}")
 
             # 转换为 JSON 字符串
             parameters_json = json.dumps(material_parameters) if material_parameters else "{}"

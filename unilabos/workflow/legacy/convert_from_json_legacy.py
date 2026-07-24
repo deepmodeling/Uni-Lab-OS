@@ -234,6 +234,7 @@ def convert_from_json(
     data: Union[str, PathLike, Dict[str, Any]],
     workstation_name: str = "PRCXi",
     validate: bool = True,
+    preserve_tip_rack_incoming_class: bool = False,
 ) -> WorkflowGraph:
     """
     从 JSON 数据或文件转换为 WorkflowGraph
@@ -246,6 +247,7 @@ def convert_from_json(
         data: JSON 文件路径、字典数据、或 JSON 字符串
         workstation_name: 工作站名称，默认 "PRCXi"
         validate: 是否校验句柄配置，默认 True
+        preserve_tip_rack_incoming_class: True 时仅 tip 不跑模板；False 时全部匹配；JSON 根字段同名可覆盖
 
     Returns:
         WorkflowGraph: 构建好的工作流图
@@ -295,12 +297,17 @@ def convert_from_json(
             "3. {'steps': [...], 'labware': [...]}"
         )
 
+    preserve = preserve_tip_rack_incoming_class
+    if "preserve_tip_rack_incoming_class" in json_data:
+        preserve = bool(json_data["preserve_tip_rack_incoming_class"])
+
     # 构建工作流图
     graph = build_protocol_graph(
         labware_info=labware_info,
         protocol_steps=protocol_steps,
         workstation_name=workstation_name,
         action_resource_mapping=ACTION_RESOURCE_MAPPING,
+        preserve_tip_rack_incoming_class=preserve,
     )
 
     # 校验句柄配置

@@ -459,12 +459,12 @@ class WorkstationHTTPHandler(BaseHTTPRequestHandler):
             # 验证必需字段
             if 'brand' in request_data:
                 if request_data['brand'] == "bioyond":  # 奔曜
-                    material_data = request_data["text"]
-                    logger.info(f"收到奔曜物料变更报送: {material_data}")
+                    error_msg = request_data["text"]
+                    logger.info(f"收到奔曜错误处理报送: {error_msg}")
                     return HttpResponse(
                         success=True,
-                        message=f"物料变更报送已收到: {material_data}",
-                        acknowledgment_id=f"MATERIAL_{int(time.time() * 1000)}_{material_data.get('id', 'unknown')}",
+                        message=f"错误处理报送已收到: {error_msg}",
+                        acknowledgment_id=f"ERROR_{int(time.time() * 1000)}_{error_msg.get('action_id', 'unknown')}",
                         data=None
                     )
             else:

@@ -1177,6 +1177,40 @@ class MessageProcessor:
         except Exception:
             logger.warning("[MessageProcessor] Send queue full, dropping message")
 
+    def enqueue_action_state(
+        self,
+        device_id: str,
+        action_name: str,
+        task_id: str,
+        job_id: str,
+        typ: str,
+        free: bool,
+        need_more: int,
+        notebook_id: str = "",
+    ) -> None:
+        """同步入队一条 report_action_state（供非协程线程调用，如 QueueProcessor 运行中保活）。
+
+        与 ``_send_action_state_response`` 消息结构一致，仅入队方式为同步（``Queue.put_nowait`` 线程安全），
+        因此可在 QueueProcessor 线程里直接调用，无需 await/切到 WS 事件循环。
+        """
+        message = {
+            "action": "report_action_state",
+            "data": {
+                "type": typ,
+                "device_id": device_id,
+                "action_name": action_name,
+                "task_id": task_id,
+                "job_id": job_id,
+                "notebook_id": notebook_id,
+                "free": free,
+                "need_more": need_more + 1,
+            },
+        }
+        try:
+            self.send_queue.put_nowait(message)
+        except Exception:
+            logger.warning("[MessageProcessor] Send queue full, dropping keepalive message")
+
     def send_message(self, message: Dict[str, Any]) -> bool:
         """发送消息到队列"""
         try:
@@ -1210,6 +1244,14 @@ class QueueProcessor:
         # 避免在 ROS 结果回调线程里直接 send_goal(wait_for_server) 阻塞 executor。
         self.pending_starts: "Queue[JobInfo]" = Queue()
 
+        # 运行中任务保活：周期性给后端发 report_action_state(need_more)，续期后端对每个 job 的执行窗口。
+        # 后端 callbackAction/JobWait 给每个 job 硬性 ~20s 窗口，只有 report_action_state(need_more) 能续期
+        # （"running" 反馈会被后端忽略）。长时 action（如 prcxi run_protocol）运行期若不续期会被判 job timeout。
+        # 约束：interval 必须 < 后端窗口(20s)；need_more 需 > interval 以留出续期余量。
+        self.keepalive_interval_s: float = 8.0
+        self.keepalive_need_more_s: int = 20
+        self._last_keepalive_ts: float = 0.0
+
         logger.trace("[QueueProcessor] Initialized")
 
     def set_websocket_client(self, websocket_client: "WebSocketClient"):
@@ -1242,9 +1284,11 @@ class QueueProcessor:
         while self.is_running:
             try:
                 self._drain_pending_starts()
+                # 运行中任务保活（自带节流，按 keepalive_interval_s 触发），续期后端 job 窗口。
+                self._send_running_keepalives()
 
-                # 无 READY 超时/周期上报负担，事件驱动为主，10s 兜底唤醒
-                self.queue_update_event.wait(timeout=10)
+                # 事件驱动为主；兜底唤醒间隔取 keepalive_interval_s，保证保活至少每 interval 触发一次。
+                self.queue_update_event.wait(timeout=self.keepalive_interval_s)
                 self.queue_update_event.clear()  # 清除事件
 
             except Exception as e:
@@ -1253,6 +1297,48 @@ class QueueProcessor:
                 time.sleep(1)
 
         logger.debug("[QueueProcessor] Queue processor stopped")
+
+    def _send_running_keepalives(self) -> None:
+        """给所有 STARTED job 周期性发 report_action_state(need_more)，续期后端对该 job 的执行窗口。
+
+        跑在 QueueProcessor 线程，独立于设备动作执行线程/rclpy 事件循环——即便某个 action
+        阻塞也照常续期。自带节流：距上次发送不足 keepalive_interval_s 则跳过（避免被频繁事件唤醒时刷屏）。
+        未连接时跳过，避免把 send_queue 塞满。
+        """
+        now = time.time()
+        if now - self._last_keepalive_ts < self.keepalive_interval_s:
+            return
+        self._last_keepalive_ts = now
+
+        if not self.message_processor.is_connected():
+            return
+
+        try:
+            jobs = self.device_manager.get_active_jobs()
+        except Exception as e:
+            logger.warning(f"[QueueProcessor] keepalive get_active_jobs failed: {e}")
+            return
+
+        for job in jobs:
+            if job.status != JobStatus.STARTED:
+                continue
+            try:
+                self.message_processor.enqueue_action_state(
+                    device_id=job.device_id,
+                    action_name=job.action_name,
+                    task_id=job.task_id,
+                    job_id=job.job_id,
+                    typ="job_call_back_status",
+                    free=False,
+                    need_more=self.keepalive_need_more_s,
+                    notebook_id=job.notebook_id or "",
+                )
+                logger.trace(
+                    f"[QueueProcessor] keepalive sent for job "
+                    f"{format_job_log(job.job_id, job.task_id, job.device_id, job.action_name)}"
+                )
+            except Exception as e:
+                logger.warning(f"[QueueProcessor] keepalive enqueue failed for {job.job_id}: {e}")
 
     def notify_queue_update(self):
         """通知队列有更新，触发立即检查"""

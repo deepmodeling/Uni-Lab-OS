@@ -1,0 +1,6884 @@
+lab_100ul_384_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_100ul_384_wellplate_100ul
+    type: pylabrobot
+  description: 100ul 384 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate1:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate1
+    type: pylabrobot
+  description: Plate 1 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate2:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate2
+    type: pylabrobot
+  description: Plate 2 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate3:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate3
+    type: pylabrobot
+  description: Plate 3 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate4:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate4
+    type: pylabrobot
+  description: Plate 4 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate5:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate5
+    type: pylabrobot
+  description: Plate 5 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate6:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate6
+    type: pylabrobot
+  description: Plate 6 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate7:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate7
+    type: pylabrobot
+  description: Plate 7 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate8:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate8
+    type: pylabrobot
+  description: Plate 8 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_127x85_agar_plate9:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_127x85_agar_plate9
+    type: pylabrobot
+  description: Plate 9 96 Well Plate 2.5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_3axygen96wellminitubesystemcorning_96_wellplate_1320ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_3axygen96wellminitubesystemcorning_96_wellplate_1320ul
+    type: pylabrobot
+  description: 3 Axygen 96-Well Mini Tube System, Corning 96 Well Plate 1320 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_3dprint_96_tuberack_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_3dprint_96_tuberack_200ul
+    type: pylabrobot
+  description: 3DPrint 96 Tube Rack with Nippon 0.2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_4titude_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_4titude_96_wellplate_200ul
+    type: pylabrobot
+  description: 4ti-0960/C 96 Well Full Skirted Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_4titude_framestar_pcr_plate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_4titude_framestar_pcr_plate_200ul
+    type: pylabrobot
+  description: 4titude FrameStar PCR Plate, Low Profile
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_4titudeframestar_384_wellplate_55ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_4titudeframestar_384_wellplate_55ul
+    type: pylabrobot
+  description: 4-titude FrameStar 384 Well Plate 55 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_6x4_0point6inch_t6:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_6x4_0point6inch_t6
+    type: pylabrobot
+  description: 6x4_0.6inch_t6
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_6x5_half_inch_t1_t3:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_6x5_half_inch_t1_t3
+    type: pylabrobot
+  description: 6x5_0.5inch_t1_t3
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_80_well_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_80_well_plate
+    type: pylabrobot
+  description: 80 Well Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_96_elutionplate_ubottom_by_macherey_nagel:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_96_elutionplate_ubottom_by_macherey_nagel
+    type: pylabrobot
+  description: 96_Elutionplate_ubottom_by_Macherey_Nagel
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_96_squarewell_block_macherey_nagel:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_96_squarewell_block_macherey_nagel
+    type: pylabrobot
+  description: 96 Square-Well Block by Macherey-Nagel
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_96w_pcr_plate2:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_96w_pcr_plate2
+    type: pylabrobot
+  description: 96wells_pcr_plate2
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_96well_pcr_base_200ul_strip:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_96well_pcr_base_200ul_strip
+    type: pylabrobot
+  description: MicroAmp 96-Well Base with 0.2 mL Thermo Scientific PCR Tube Strip
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_96wellplatemountedcappshaker_96_wellplate_360ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_96wellplatemountedcappshaker_96_wellplate_360ul
+    type: pylabrobot
+  description: 96 Well Plate Mounted CAPP Shaker 96 Well Plate 360 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_ab_96_aluminumblock:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_ab_96_aluminumblock
+    type: pylabrobot
+  description: Applied Biosystems 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgene_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgene_96_wellplate_2000ul
+    type: pylabrobot
+  description: Abgene 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgene_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgene_96_wellplate_200ul
+    type: pylabrobot
+  description: ABgene 96 Well PCR Plate 200uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgene_96_wellplate_200ul_isofreeze_block:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgene_96_wellplate_200ul_isofreeze_block
+    type: pylabrobot
+  description: ABGene 96 Well Plate 200µl on ISOFREEZE Block
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgene_96_wellplate_2200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgene_96_wellplate_2200ul
+    type: pylabrobot
+  description: Abgene 96 Well Plate 2200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgene_96_wellplate_330ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgene_96_wellplate_330ul
+    type: pylabrobot
+  description: Abgene 96 Well Plate 330 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgene_96_wellplate_330ul_round:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgene_96_wellplate_330ul_round
+    type: pylabrobot
+  description: Abgene 96 Wellplate 330ul Round
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgene_96_wellplate_700ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgene_96_wellplate_700ul
+    type: pylabrobot
+  description: Abgene 96 Well Plate 700 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgene_96_wellplate_800ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgene_96_wellplate_800ul
+    type: pylabrobot
+  description: Abgene 96 Well Plate 800 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_abgenemidi_96_wellplate_800ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_abgenemidi_96_wellplate_800ul
+    type: pylabrobot
+  description: Abgene Midi 96 Well Plate 800 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_ag_48_tuberack_150ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_ag_48_tuberack_150ul
+    type: pylabrobot
+  description: AG 48 Tube Rack with ReadyGo 0.15 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_12_reservoir_21ml:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_12_reservoir_21ml
+    type: pylabrobot
+  description: Agilent 12-Channel Reservoir 21ml
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_1_reservoir_290ml:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_1_reservoir_290ml
+    type: pylabrobot
+  description: Agilent 1 Well Reservoir 290 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_3_reservoir_95ml:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_3_reservoir_95ml
+    type: pylabrobot
+  description: Agilent 3-Channel Reservoir 95ml
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_48_reservoir_5000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_48_reservoir_5000ul
+    type: pylabrobot
+  description: Agilent 48 Reservoir 5000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_96_c18omix_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_96_c18omix_200ul
+    type: pylabrobot
+  description: 'Agilent 96 C18 Omix 200ul (fallback: corning 96 flat)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_96_wellplate_1200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_96_wellplate_1200ul
+    type: pylabrobot
+  description: Agilent 96 Well Plate 1200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_96_wellplate_1400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_96_wellplate_1400ul
+    type: pylabrobot
+  description: Agilent 96 Well Plate 1400 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_96_wellplate_200ul
+    type: pylabrobot
+  description: Agilent 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_96_wellplate_270ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_96_wellplate_270ul
+    type: pylabrobot
+  description: Agilent 96 Well Plate 270 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilent_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilent_96_wellplate_500ul
+    type: pylabrobot
+  description: Agilent 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_agilentwithnonskirted_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_agilentwithnonskirted_96_wellplate_200ul
+    type: pylabrobot
+  description: Agilent With Nonskirted 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_akura_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_akura_384_wellplate_50ul
+    type: pylabrobot
+  description: Akura 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_alpaqua96sneptune_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_alpaqua96sneptune_96_wellplate_200ul
+    type: pylabrobot
+  description: Alpaqua96S_Neptune 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_alpaquaprimaryv3_24_tuberack_2000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_alpaquaprimaryv3_24_tuberack_2000ul
+    type: pylabrobot
+  description: Alpaqua Primary-v3 24 Tube Rack 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_alpaquasecondaryv3_24_tuberack_750ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_alpaquasecondaryv3_24_tuberack_750ul
+    type: pylabrobot
+  description: Alpaqua Secondaryv3 24 Tube Rack 750 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_altemislab_48_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_altemislab_48_wellplate_2000ul
+    type: pylabrobot
+  description: Altemis Lab 48 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_amplifyt_96_tuberack_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_amplifyt_96_tuberack_200ul
+    type: pylabrobot
+  description: Amplifyt 96 Tube Rack with Regeneron 0.2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_amplifyt_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_amplifyt_96_wellplate_200ul
+    type: pylabrobot
+  description: Amplifyt 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_ananda_384_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_ananda_384_wellplate_100ul
+    type: pylabrobot
+  description: Ananda 384 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appleton_6_tuberack_50000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appleton_6_tuberack_50000ul
+    type: pylabrobot
+  description: Appleton 6 Tube Rack 50000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystem_384_wellplate_40ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystem_384_wellplate_40ul
+    type: pylabrobot
+  description: Appliedbiosystem 384 Well Plate 40 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystems_384_wellplate_20ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystems_384_wellplate_20ul
+    type: pylabrobot
+  description: Applied Biosystems 384 Well Plate 20 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystems_384_wellplate_40ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystems_384_wellplate_40ul
+    type: pylabrobot
+  description: Applied Biosystems 384 Well Plate 40 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystems_96_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystems_96_wellplate_100ul
+    type: pylabrobot
+  description: Applied Biosystems 96 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystems_96_wellplate_200ul_on_eppendorf_cooling_block:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystems_96_wellplate_200ul_on_eppendorf_cooling_block
+    type: pylabrobot
+  description: Applied Biosystems 96 Well Plate 200ul on Eppendorf Cooling Block
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystems_microamp_optical_384_wellplate_30ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystems_microamp_optical_384_wellplate_30ul
+    type: pylabrobot
+  description: Applied Biosystems™ MicroAmp™ Optical 384-Well Reaction Plate With
+    Barcode 384 Well Plate 30 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystemsenduraplate_96_aluminumblock_220ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystemsenduraplate_96_aluminumblock_220ul
+    type: pylabrobot
+  description: Applied Biosystems Enduraplate 96 Aluminum Block 220 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystemsmicroamp_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystemsmicroamp_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Applied Biosystems MicroAmp 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystemsmicroampoptical384wellreactionplatewithbarcode_384_wellplate_30ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystemsmicroampoptical384wellreactionplatewithbarcode_384_wellplate_30ul
+    type: pylabrobot
+  description: Applied Biosystems™ MicroAmp™ Optical 384-Well Reaction Plate With
+    Barcode 384 Well Plate 30 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_appliedbiosystemsthermofisherlife4309849withbarcode_384_wellplate_30ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_appliedbiosystemsthermofisherlife4309849withbarcode_384_wellplate_30ul
+    type: pylabrobot
+  description: Applied Biosystems (ThermoFisher/Life) 4309849 With Barcode 384 Well
+    Plate 30 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_armadillo_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_armadillo_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Armadillo 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_armadillo_96_wellplate_200ul_pcr_full_skirt:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_armadillo_96_wellplate_200ul_pcr_full_skirt
+    type: pylabrobot
+  description: Armadillo 96 Well Plate 200 µL PCR Full Skirt
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_aspir8_1_reservoir_taped:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_aspir8_1_reservoir_taped
+    type: pylabrobot
+  description: Aspir-8 Reservoir
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_aurora_384_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_aurora_384_wellplate_100ul
+    type: pylabrobot
+  description: Aurora 384 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_avantik_15_tuberack_3000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_avantik_15_tuberack_3000ul
+    type: pylabrobot
+  description: Avantik 15 Tube Rack 3000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_1_reservoir_90ml:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_1_reservoir_90ml
+    type: pylabrobot
+  description: Axygen 1 Well Reservoir 90 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_24_tuberack_1700ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_24_tuberack_1700ul
+    type: pylabrobot
+  description: Axygen 24 Tube Rack 1700 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_384_wellplate_50ul
+    type: pylabrobot
+  description: Axygen 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_4_reservoir_70ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_4_reservoir_70ul
+    type: pylabrobot
+  description: Axygen 4 Reservoir 70 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_4_reservoir_73000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_4_reservoir_73000ul
+    type: pylabrobot
+  description: Axygen 4 Reservoir 73 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_96_plate_200ul_pcr:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_96_plate_200ul_pcr
+    type: pylabrobot
+  description: Axygen 96 Well PCR Microplate 200uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_96_wellplate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_96_wellplate
+    type: pylabrobot
+  description: Axygen 96 Well Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_96_wellplate_2000ul
+    type: pylabrobot
+  description: Axygen 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_96_wellplate_300ul
+    type: pylabrobot
+  description: Axygen 96 Well Plate 300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygen_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygen_96_wellplate_500ul
+    type: pylabrobot
+  description: Axygen 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_axygenspheremag_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_axygenspheremag_96_wellplate_500ul
+    type: pylabrobot
+  description: Axygen Sphere Mag 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_azentalifesciences_12_reservoir_21000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_azentalifesciences_12_reservoir_21000ul
+    type: pylabrobot
+  description: Azenta Life Sciences 12 Reservoir 21000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_azentalifesciences_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_azentalifesciences_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Azenta Life Sciences 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_azentalifesciences_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_azentalifesciences_96_wellplate_200ul
+    type: pylabrobot
+  description: Azenta Life Sciences 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_barcode_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_barcode_96_wellplate_200ul
+    type: pylabrobot
+  description: Barcode 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_basisdx_15_tuberack_12000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_basisdx_15_tuberack_12000ul
+    type: pylabrobot
+  description: Basis DX 15 Tube Rack 12000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bd_24_tuberack_50ml_green:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bd_24_tuberack_50ml_green
+    type: pylabrobot
+  description: BD 24 Green Tube Rack with 50 mL Conical
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bd_54_tuberack_5ml_black:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bd_54_tuberack_5ml_black
+    type: pylabrobot
+  description: BD 54 Tube Rack with HPLC Black 5 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bd_72_tuberack_15ml_orange:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bd_72_tuberack_15ml_orange
+    type: pylabrobot
+  description: BD 72 Orange Tube Rack with 15 mL Conical
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_beckman_24_tuberack_1000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_beckman_24_tuberack_1000ul
+    type: pylabrobot
+  description: Beckman 24 Tube Rack with Thomas 1 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_beckman_48_wellplate_1800ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_beckman_48_wellplate_1800ul
+    type: pylabrobot
+  description: Beckman Fed Batch Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_beckman_8_reservoir_19000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_beckman_8_reservoir_19000ul
+    type: pylabrobot
+  description: Beckman 8 Reservoir 19000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_beckmancoulter_8_reservoir_19000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_beckmancoulter_8_reservoir_19000ul
+    type: pylabrobot
+  description: Beckman Coulter 8 Reservoir 19000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_binding_column_tuberack:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_binding_column_tuberack
+    type: pylabrobot
+  description: Binding Column Tube Rack
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bioplastics_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bioplastics_96_aluminumblock_200ul
+    type: pylabrobot
+  description: BIOplastics 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bioplastics_96_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bioplastics_96_wellplate_100ul
+    type: pylabrobot
+  description: Bioplastics 96 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bioplasticsbv_96_aluminumblock_100ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bioplasticsbv_96_aluminumblock_100ul
+    type: pylabrobot
+  description: BIOPlastics BV 96 Aluminum Block 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bioplasticsbv_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bioplasticsbv_96_aluminumblock_200ul
+    type: pylabrobot
+  description: BIOPlastics BV 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_384_wellplate_50ul
+    type: pylabrobot
+  description: Bio-Rad 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_384_wellplate_50ul_:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_384_wellplate_50ul_
+    type: pylabrobot
+  description: Bio-Rad 384 Wellplate 50ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_aluminumblock_120ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_aluminumblock_120ul
+    type: pylabrobot
+  description: Biorad 96 Aluminum Block 120 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Biorad 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_aluminumblock_250ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_aluminumblock_250ul
+    type: pylabrobot
+  description: Bio-Rad 96 Aluminum Block 250 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_aluminumblock_350ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_aluminumblock_350ul
+    type: pylabrobot
+  description: Bio-Rad 96 Aluminum Block 350 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_fragment_analyzer_plate_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_fragment_analyzer_plate_aluminumblock_200ul
+    type: pylabrobot
+  description: Fragment Analyzer Plate on 96 Well Aluminum Block
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_wellplate_200ul
+    type: pylabrobot
+  description: BioRad 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_wellplate_200ul_pcr:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_wellplate_200ul_pcr
+    type: pylabrobot
+  description: Bio-Rad 96 Well Plate 200 µL PCR
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_wellplate_350ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_wellplate_350ul
+    type: pylabrobot
+  description: Bio-Rad 96 Well Plate 350 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biorad_96_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biorad_96_wellplate_50ul
+    type: pylabrobot
+  description: Biorad 96 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biotix_96_filtertiprack_10ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biotix_96_filtertiprack_10ul
+    type: pylabrobot
+  description: 'Biotix 96 filtertiprack 10ul (fallback: opentrons filter 10ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_biozym_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_biozym_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Biozym 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_black_num_384:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_black_num_384
+    type: pylabrobot
+  description: Life Technologies 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_brand_384_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_brand_384_wellplate_100ul
+    type: pylabrobot
+  description: Brand 384 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_brandplates_96_wellplate_360ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_brandplates_96_wellplate_360ul
+    type: pylabrobot
+  description: 96-well BRANDplate with V-bottom
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bricklabwaretype1racklong_24_wellplate_4000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bricklabwaretype1racklong_24_wellplate_4000ul
+    type: pylabrobot
+  description: Bricklabware_type1_rack_long 24 Well Plate 4000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_bricklabwaretype2rackshort_24_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_bricklabwaretype2rackshort_24_wellplate_2000ul
+    type: pylabrobot
+  description: Bricklabware_type2_rack_short 24 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_caplugs_6_tuberack_30ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_caplugs_6_tuberack_30ml
+    type: pylabrobot
+  description: Caplugs 6 Tube Rack 30 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_cepheid:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_cepheid
+    type: pylabrobot
+  description: Cepheid
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_cerillo_stratus_armadillo_flatbottom_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_cerillo_stratus_armadillo_flatbottom_200ul
+    type: pylabrobot
+  description: Cerillo Stratus Armadillo Flat Bottom Plate 96well 200uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_charlesriver_15_tuberack_10000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_charlesriver_15_tuberack_10000ul
+    type: pylabrobot
+  description: Charles River 15 Tube Rack 10000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_checkit_8_wellplate_5ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_checkit_8_wellplate_5ul
+    type: pylabrobot
+  description: Checkit 8 Well Plate 5 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_chromtech_96_filter_wellplate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_chromtech_96_filter_wellplate
+    type: pylabrobot
+  description: Chrom Tech filter plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_coleparmer_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_coleparmer_384_wellplate_50ul
+    type: pylabrobot
+  description: COLEPARMER 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_combo_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_combo_96_wellplate_300ul
+    type: pylabrobot
+  description: Combo 96 Well Plate Black Label on Nest Plate 300µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_12_reservoir:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_12_reservoir
+    type: pylabrobot
+  description: Corning 12 Reservoir 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_24_wellplate_3point4ml_flat:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_24_wellplate_3point4ml_flat
+    type: pylabrobot
+  description: Corning 24 Well Plate 3.4 mL Flat
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_384_wellplate_112ul_flat:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_384_wellplate_112ul_flat
+    type: pylabrobot
+  description: Corning 384 Well Plate 112 µL Flat
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_384_wellplate_20ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_384_wellplate_20ul
+    type: pylabrobot
+  description: Corning 384 Well Plate 20 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_384_wellplate_90ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_384_wellplate_90ul
+    type: pylabrobot
+  description: Corning 384 Well Plate 90 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_6_wellplate_16point8ml_flat:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_6_wellplate_16point8ml_flat
+    type: pylabrobot
+  description: Corning 6 Well Plate 16.8 mL Flat
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_96_well_roundbottom_1ml:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_96_well_roundbottom_1ml
+    type: pylabrobot
+  description: Corning 96 Well Round Bottom 1mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_96_wellplate_200ul
+    type: pylabrobot
+  description: Corning 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_96_wellplate_320ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_96_wellplate_320ul
+    type: pylabrobot
+  description: Corning 96 Well Plate 320 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_96_wellplate_360ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_96_wellplate_360ul
+    type: pylabrobot
+  description: Corning 96 Well Plate 360 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_96_wellplate_360ul_flat:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_96_wellplate_360ul_flat
+    type: pylabrobot
+  description: Corning 96 Well Plate 360 µL Flat
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_corning_96_wellplate_flat_bottom_360ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_corning_96_wellplate_flat_bottom_360ul
+    type: pylabrobot
+  description: Corning 96-well Flat Clear Bottom Black Polystyrene TC-treated Microplate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_costar_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_costar_96_wellplate_200ul
+    type: pylabrobot
+  description: Costar 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_costar_96_wellplate_330ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_costar_96_wellplate_330ul
+    type: pylabrobot
+  description: Costar 96 Well Plate 330 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_cryo_35_tuberack_1800ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_cryo_35_tuberack_1800ul
+    type: pylabrobot
+  description: Cryo 35 Tube Rack with Nunc 1.8 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom1mltesttube_24_wellplate_5000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom1mltesttube_24_wellplate_5000ul
+    type: pylabrobot
+  description: Custom 1 ML Test Tube 24 Well Plate 5000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom5mltesttube_24_wellplate_5000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom5mltesttube_24_wellplate_5000ul
+    type: pylabrobot
+  description: Custom 5 ML Test Tube 24 Well Plate 5000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_15_tuberack_6000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_15_tuberack_6000ul
+    type: pylabrobot
+  description: Custom 15 Tube Rack 6000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_1_other_20ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_1_other_20ul
+    type: pylabrobot
+  description: 'Custom 1 other 20ul (fallback: corning 96 flat)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_24_shakerslide:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_24_shakerslide
+    type: pylabrobot
+  description: 'Custom 24 shaker slide (fallback: corning 24 flat)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_24_testtuberack_2ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_24_testtuberack_2ml
+    type: pylabrobot
+  description: Custom 24 Test Tube Rack 2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_24_tuberack:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_24_tuberack
+    type: pylabrobot
+  description: Custom 24 Tube Rack
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_24_tuberack_2000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_24_tuberack_2000ul
+    type: pylabrobot
+  description: custom 24 Tube Rack with Custom 2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_24_tuberack_5ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_24_tuberack_5ml
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with Blood Tube 5mL Conical
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_24_tuberack_7500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_24_tuberack_7500ul
+    type: pylabrobot
+  description: Custom 24 Tube Rack with Vacuette  6 ml 7.5 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_24_well_rack:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_24_well_rack
+    type: pylabrobot
+  description: custom_24_well_rack
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_24_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_24_wellplate_2000ul
+    type: pylabrobot
+  description: Custom 24 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_300_other_100x500ul_100x500ul_100x500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_300_other_100x500ul_100x500ul_100x500ul
+    type: pylabrobot
+  description: 'Custom 300 other (fallback: corning 96 flat)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_384_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_384_wellplate_100ul
+    type: pylabrobot
+  description: Custom 384 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_384_wellplate_50ul
+    type: pylabrobot
+  description: Custom 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_6_tuberack_100ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_6_tuberack_100ml
+    type: pylabrobot
+  description: Custom 6 Tube Rack 100 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_72_other_24x330ul_24x330ul_24x330ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_72_other_24x330ul_24x330ul_24x330ul
+    type: pylabrobot
+  description: 'Custom 72 other (fallback: corning 96 flat)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_96_striptubes_350ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_96_striptubes_350ul
+    type: pylabrobot
+  description: Custom 96 Strip Tubes 350µl
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_96_tubeholder_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_96_tubeholder_500ul
+    type: pylabrobot
+  description: Custom 500ul Tube Holder
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_96_tuberack_500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_96_tuberack_500ul
+    type: pylabrobot
+  description: Custom 96 Tube Rack with Custom 0.5 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_96_tuberack_500ul_vacuum:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_96_tuberack_500ul_vacuum
+    type: pylabrobot
+  description: Custom 96 Tube Rack with Custom 0.5 mL with vacuum
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_96_wellplate_200ul
+    type: pylabrobot
+  description: Custom 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_beaker:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_beaker
+    type: pylabrobot
+  description: Custom Beaker and Stir Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_centrifuge_tube_container:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_centrifuge_tube_container
+    type: pylabrobot
+  description: Custom Centrifuge Tube Container
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_nanosep_tube_container:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_nanosep_tube_container
+    type: pylabrobot
+  description: Custom Nanosep Tube Container
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_pcr_plate_for_tempdeck:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_pcr_plate_for_tempdeck
+    type: pylabrobot
+  description: Custom PCR Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_custom_tuberack_6ml:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_custom_tuberack_6ml
+    type: pylabrobot
+  description: Custom 6mL Tube Rack
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_customabnest_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_customabnest_96_wellplate_200ul
+    type: pylabrobot
+  description: Custom AB NEST 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_customadapter_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_customadapter_96_wellplate_200ul
+    type: pylabrobot
+  description: Custom_adapter 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_customagar_24_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_customagar_24_wellplate_200ul
+    type: pylabrobot
+  description: Q
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_customagar_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_customagar_96_wellplate_200ul
+    type: pylabrobot
+  description: Custom Agar 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_customblotpaper_1_reservoir_870000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_customblotpaper_1_reservoir_870000ul
+    type: pylabrobot
+  description: Custom Blot Paper 1 Reservoir 870000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_customendura_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_customendura_96_wellplate_200ul
+    type: pylabrobot
+  description: Custom Endura 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_customslideblockv2_8_wellplate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_customslideblockv2_8_wellplate
+    type: pylabrobot
+  description: Customslideblock V2 8 Well Plate 20000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_cytiva_24_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_cytiva_24_wellplate_2000ul
+    type: pylabrobot
+  description: Cytiva 24 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_cytiva_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_cytiva_96_wellplate_500ul
+    type: pylabrobot
+  description: Cytiva 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_deepwell_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_deepwell_96_wellplate_2000ul
+    type: pylabrobot
+  description: Quintara Deepwell 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_deepwellpro_96_wellplate_450ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_deepwellpro_96_wellplate_450ul
+    type: pylabrobot
+  description: Deepwell Pro 96 Well Plate 450 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_doublepcr_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_doublepcr_96_wellplate_300ul
+    type: pylabrobot
+  description: Quintara Combo Pcr 96 Well Plate 300 µL on Nest Pcr
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_dynamic_array_192_24:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_dynamic_array_192_24
+    type: pylabrobot
+  description: Standard Biotools Dynamic Array 192.24
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_dynamic_array_48_48:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_dynamic_array_48_48
+    type: pylabrobot
+  description: Standard Biotools Dynamic Array 48.48
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_dynamic_array_96_96:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_dynamic_array_96_96
+    type: pylabrobot
+  description: Standard Biotools Dynamic Array 96.96
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_ek_scientific_reservoir:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_ek_scientific_reservoir
+    type: pylabrobot
+  description: EK Scientific 8 Row Reservoir
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_electronmicroscopysciences_1_reservoir_100000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_electronmicroscopysciences_1_reservoir_100000ul
+    type: pylabrobot
+  description: Electron Microscopy Sciences 1 Reservoir 100000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_elutionplate_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_elutionplate_96_wellplate_500ul
+    type: pylabrobot
+  description: Elution Plate 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_enduraplate_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_enduraplate_96_wellplate_200ul
+    type: pylabrobot
+  description: EnduraPlate 96 Well Plate 200uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_epmotion_1_reservoir_100000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_epmotion_1_reservoir_100000ul
+    type: pylabrobot
+  description: EpMotion 1 Reservoir 100000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_epmotion_1_reservoir_30000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_epmotion_1_reservoir_30000ul
+    type: pylabrobot
+  description: EpMotion 1 Reservoir 30000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_24_tuberack_1500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_24_tuberack_1500ul
+    type: pylabrobot
+  description: Eppendorf 24 Tube Rack 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_24_tuberack_generic_2point0ml_screwcap:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_24_tuberack_generic_2point0ml_screwcap
+    type: pylabrobot
+  description: Eppendorf 24 Tube Rack with Generic 2.0mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_7_reservoir_30000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_7_reservoir_30000ul
+    type: pylabrobot
+  description: Eppendorf 7 Reservoir 30000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Eppendorf 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_deepwell_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_deepwell_1000ul
+    type: pylabrobot
+  description: Eppendorf 96 Deep Well Block 1000ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_deepwellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_deepwellplate_2000ul
+    type: pylabrobot
+  description: Eppendorf 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_deepwellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_deepwellplate_500ul
+    type: pylabrobot
+  description: Eppendorf 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_well_on_block:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_well_on_block
+    type: pylabrobot
+  description: Eppendorf 96 Well PCR Plate 250ul on Aluminum Block
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_wellplate_1000ul
+    type: pylabrobot
+  description: Eppendorf 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_wellplate_2000ul
+    type: pylabrobot
+  description: Eppendorf 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_wellplate_200ul
+    type: pylabrobot
+  description: Eppendorf 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_96_wellplate_500ul
+    type: pylabrobot
+  description: Eppendorf 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_twintec_on_opentrons_metal_block_033822:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_twintec_on_opentrons_metal_block_033822
+    type: pylabrobot
+  description: Eppendorf Twintec 200uL on Opentrons Metal Block March 28 2022
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorf_twintex_clickbio_adapter:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorf_twintex_clickbio_adapter
+    type: pylabrobot
+  description: Eppendorf Twintec 200uL on Clickbio adapter
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorfdeepwell_96_wellplate_1200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorfdeepwell_96_wellplate_1200ul
+    type: pylabrobot
+  description: Eppendorf Deepwell 96 Well Plate 1200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorfmetaladapter_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorfmetaladapter_96_wellplate_200ul
+    type: pylabrobot
+  description: Eppendorf+metaladapter 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorftwinpointtec96_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorftwinpointtec96_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Eppendorf Twin.Tec 96 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorftwinpointtec_96_aluminumblock_150ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorftwinpointtec_96_aluminumblock_150ul
+    type: pylabrobot
+  description: Eppendorf Twin.tec 96 Aluminum Block 150 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorftwinpointtec_96_wellplate_150ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorftwinpointtec_96_wellplate_150ul
+    type: pylabrobot
+  description: Eppendorf Twin.tec 96 Well Plate 150 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendorftwintec_96_wellplate_150ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendorftwintec_96_wellplate_150ul
+    type: pylabrobot
+  description: Eppendorf Twin.tec 96 Well Plate 150 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eppendort_96_deepwell_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eppendort_96_deepwell_1000ul
+    type: pylabrobot
+  description: Eppendorf 96 Deepwell 1000uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eptips_1000ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eptips_1000ul
+    type: pylabrobot
+  description: 'Eppendorf eptips 1000ul (fallback: opentrons 1000ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eptips_300ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eptips_300ul
+    type: pylabrobot
+  description: 'Eppendorf eptips 300ul (fallback: opentrons 300ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_eurofins_96x2ml_tuberack:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_eurofins_96x2ml_tuberack
+    type: pylabrobot
+  description: Eurofins 192 Tube Rack with 96x2 mL, 96x2 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_falcon_353077_96_wellplate_320ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_falcon_353077_96_wellplate_320ul
+    type: pylabrobot
+  description: Falcon 96 Well Plate 320 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_filters_and_eppendorfs_24_tuberack_1500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_filters_and_eppendorfs_24_tuberack_1500ul
+    type: pylabrobot
+  description: Filters_and_eppendorfs 24 Tube Rack 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_filtrouslab_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_filtrouslab_384_wellplate_50ul
+    type: pylabrobot
+  description: Filtrous Lab 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_final_96_aluminumblock_300ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_final_96_aluminumblock_300ul
+    type: pylabrobot
+  description: Final 96 Aluminum Block 300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_fisher_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_fisher_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Fisher 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_fisher_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_fisher_96_wellplate_200ul
+    type: pylabrobot
+  description: Fisher 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_fisherscientific_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_fisherscientific_96_wellplate_200ul
+    type: pylabrobot
+  description: Thermofisher Scientific 96 well 200ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_flipped_384_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_flipped_384_plate
+    type: pylabrobot
+  description: Custom 384 Well Plate Flipped
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_fluidigm_192_wellplate_96x10ul_96x10ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_fluidigm_192_wellplate_96x10ul_96x10ul
+    type: pylabrobot
+  description: Fluidigm 192 Well Plate 10uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_fluidigm_96_wellplate_48x50ul_48x50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_fluidigm_96_wellplate_48x50ul_48x50ul
+    type: pylabrobot
+  description: Fluidigm
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_fluidx_96_tuberack_1000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_fluidx_96_tuberack_1000ul
+    type: pylabrobot
+  description: fluidx 96 Tube Rack with fluidx 1 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_framestarpcr_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_framestarpcr_96_wellplate_200ul
+    type: pylabrobot
+  description: FrameStar PCR 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_froggabio_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_froggabio_96_wellplate_300ul
+    type: pylabrobot
+  description: Froggabio 96 Well Plate 300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_geb_96_tiprack_1000ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_geb_96_tiprack_1000ul
+    type: pylabrobot
+  description: GEB 96 Tip Rack 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_geb_96_tiprack_10ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_geb_96_tiprack_10ul
+    type: pylabrobot
+  description: GEB 96 Tip Rack 10 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_generic_216_wellplate_85ul_flat:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_generic_216_wellplate_85ul_flat
+    type: pylabrobot
+  description: Invoy 216-Well Cartridge Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_generic_24_tuberack_2000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_generic_24_tuberack_2000ul
+    type: pylabrobot
+  description: Generic 24 Tube Rack 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_generic_96_aluminumblock_350ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_generic_96_aluminumblock_350ul
+    type: pylabrobot
+  description: Generic 96 Aluminum Block 350 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_generic_96_tiprack_200ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_generic_96_tiprack_200ul
+    type: pylabrobot
+  description: 'Generic 96 tiprack 200ul (fallback: opentrons 300ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_generic_96_tiprack_20ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_generic_96_tiprack_20ul
+    type: pylabrobot
+  description: 'Generic 96 tiprack 20ul (fallback: opentrons 20ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_generic_96_wellplate_1500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_generic_96_wellplate_1500ul
+    type: pylabrobot
+  description: Generic 96 Well Plate 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_genericmagnet_96_wellplate_1500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_genericmagnet_96_wellplate_1500ul
+    type: pylabrobot
+  description: Generic_magnet 96 Well Plate 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_genericstrips_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_genericstrips_96_wellplate_200ul
+    type: pylabrobot
+  description: Generic Strips 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_genesee25221_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_genesee25221_96_wellplate_300ul
+    type: pylabrobot
+  description: Genesee Gene Clone 96-Well Cell Culture Plate U Bottom 300 uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_genesee_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_genesee_96_wellplate_200ul
+    type: pylabrobot
+  description: Genesee 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_genmate_96_aluminumblock_20ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_genmate_96_aluminumblock_20ul
+    type: pylabrobot
+  description: GenMate 96 Aluminum Block 20 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_gracebiolabsflexwell:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_gracebiolabsflexwell
+    type: pylabrobot
+  description: 'Grace Bio-Labs FlexWell (fallback: corning 96 flat)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greiner_384_wellplate_130ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greiner_384_wellplate_130ul
+    type: pylabrobot
+  description: Greiner 384 Well Plate 130 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greiner_384_wellplate_138ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greiner_384_wellplate_138ul
+    type: pylabrobot
+  description: Greiner 384 Well Plate 138 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greiner_384_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greiner_384_wellplate_200ul
+    type: pylabrobot
+  description: Greiner 384 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greiner_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greiner_384_wellplate_50ul
+    type: pylabrobot
+  description: Greiner 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greiner_96_wellplate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greiner_96_wellplate
+    type: pylabrobot
+  description: Greiner BioOne 96 Well Microplate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greiner_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greiner_96_wellplate_2000ul
+    type: pylabrobot
+  description: Greiner 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greiner_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greiner_96_wellplate_200ul
+    type: pylabrobot
+  description: Greiner 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greiner_96_wellplate_340ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greiner_96_wellplate_340ul
+    type: pylabrobot
+  description: Greiner 96 Well Plate 340 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinerbioone_192_wellplate_crystallization:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinerbioone_192_wellplate_crystallization
+    type: pylabrobot
+  description: Greiner Bio-One CRYSTALQUICK LP 96 Well Plate 140ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinerbioone_24_bloodrack_13x100:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinerbioone_24_bloodrack_13x100
+    type: pylabrobot
+  description: Greiner Bio-One, 24 blood collection tubes 1 ml to 6 ml (13x75 and
+    13x100)
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinerbioone_384_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinerbioone_384_wellplate_100ul
+    type: pylabrobot
+  description: Greiner Bio-One 384 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinerbioone_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinerbioone_96_wellplate_200ul
+    type: pylabrobot
+  description: Greiner Bio-One 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinerbioone_96_wellplate_200ul_650161:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinerbioone_96_wellplate_200ul_650161
+    type: pylabrobot
+  description: Greiner Bio-One 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinerbioone_96_wellplate_2ml_deep:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinerbioone_96_wellplate_2ml_deep
+    type: pylabrobot
+  description: Greiner Bio-One 96-Deepwell Plate 2ml
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinerbioone_96_wellplate_340ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinerbioone_96_wellplate_340ul
+    type: pylabrobot
+  description: Greiner Bio-One 96 Well Plate 340 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinermasterblock_384_wellplate_225ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinermasterblock_384_wellplate_225ul
+    type: pylabrobot
+  description: Greiner Masterblock 384 Well Plate 225 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinermasterblock_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinermasterblock_96_wellplate_1000ul
+    type: pylabrobot
+  description: Greiner MASTERBLOCK 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinermasterblock_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinermasterblock_96_wellplate_500ul
+    type: pylabrobot
+  description: Greiner MASTERBLOCK 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greinermicrolon_96_wellplate_340ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greinermicrolon_96_wellplate_340ul
+    type: pylabrobot
+  description: Greiner Microlon 96 Well Plate 340 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_greineruvstar_96_wellplate_392ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_greineruvstar_96_wellplate_392ul
+    type: pylabrobot
+  description: Greiner_UV-star 96 Well Plate 392 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_hardshell_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_hardshell_96_wellplate_200ul
+    type: pylabrobot
+  description: Hard-Shell 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_hardshellbioradpcr_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_hardshellbioradpcr_384_wellplate_50ul
+    type: pylabrobot
+  description: Hard-Shell Bio-Rad PCR 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_hellma_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_hellma_96_wellplate_300ul
+    type: pylabrobot
+  description: Hellma 96 Well Plate 300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_himic_96_wellplate_400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_himic_96_wellplate_400ul
+    type: pylabrobot
+  description: HiMic 96 Well Plate 400 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_htd_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_htd_96_wellplate_200ul
+    type: pylabrobot
+  description: Htd 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_iclean_15_tuberack:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_iclean_15_tuberack
+    type: pylabrobot
+  description: iClean Sample Tubes
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_illumina_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_illumina_96_wellplate_200ul
+    type: pylabrobot
+  description: Illumina 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_index_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_index_96_aluminumblock_200ul
+    type: pylabrobot
+  description: index plate on 96 well aluminum block
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_index_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_index_96_wellplate_200ul
+    type: pylabrobot
+  description: Index 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_indexplate_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_indexplate_96_wellplate_200ul
+    type: pylabrobot
+  description: Index Plate 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_innotrainot22pcrplate_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_innotrainot22pcrplate_96_wellplate_200ul
+    type: pylabrobot
+  description: 'Innotrain OT-2 #2 PCR Plate 96 Well Plate 200 µL'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_innotrainot2pcrplate_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_innotrainot2pcrplate_96_wellplate_200ul
+    type: pylabrobot
+  description: Innotrain OT-2 PCR Plate 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_innovationlaboratoryproducts_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_innovationlaboratoryproducts_96_wellplate_1000ul
+    type: pylabrobot
+  description: Innovation Laboratory Products 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_irishlifesciences_96_wellplate_2200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_irishlifesciences_96_wellplate_2200ul
+    type: pylabrobot
+  description: Irish Life Sciences 96 Well Plate 2200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_jackyshiyielution_96_wellplate_1200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_jackyshiyielution_96_wellplate_1200ul
+    type: pylabrobot
+  description: Jacky_Shiyi_elution 96 Well Plate 1200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_jackyshiyihigh_96_wellplate_1200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_jackyshiyihigh_96_wellplate_1200ul
+    type: pylabrobot
+  description: Jacky_Shiyi_high 96 Well Plate 1200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_kingfisher_96_deepwell_plate_2ml:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_kingfisher_96_deepwell_plate_2ml
+    type: pylabrobot
+  description: KingFisher 96 Deep Well Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_kingfisher_96_tuberack_1100ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_kingfisher_96_tuberack_1100ul
+    type: pylabrobot
+  description: KingFisher 96 Tube Rack with GoldStandard 1.1 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_kingfisher_96_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_kingfisher_96_wellplate_100ul
+    type: pylabrobot
+  description: Thermofisher 96 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_kingfisher_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_kingfisher_96_wellplate_2000ul
+    type: pylabrobot
+  description: Kingfisher 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_kingfisher_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_kingfisher_96_wellplate_200ul
+    type: pylabrobot
+  description: KingFisher 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_labcon_8strip_pcr_on_cooler:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_labcon_8strip_pcr_on_cooler
+    type: pylabrobot
+  description: Labcon 8 Strip on Cooler
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_labcon_96_wellplate_pcr_on_cooler:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_labcon_96_wellplate_pcr_on_cooler
+    type: pylabrobot
+  description: Labcon 96 Well Plate on Cooler
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_leo_99_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_leo_99_wellplate_50ul
+    type: pylabrobot
+  description: Leo 99 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_life_96_aluminumblock_240ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_life_96_aluminumblock_240ul
+    type: pylabrobot
+  description: Life 96 Aluminum Block 240 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_lvl_96_wellplate_1317point97ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_lvl_96_wellplate_1317point97ul
+    type: pylabrobot
+  description: LVL 96 Well Plate 1317.97 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_lvltechnologies_48_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_lvltechnologies_48_wellplate_2000ul
+    type: pylabrobot
+  description: LVL Technologies 48 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_master_block_384:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_master_block_384
+    type: pylabrobot
+  description: MASTERBLOCK®, 384 WELL, PP, DEEP WELL, V-BOTTOM,
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_microamp_384_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_microamp_384_wellplate_100ul
+    type: pylabrobot
+  description: Microamp 384 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_microamp_384_wellplate_40ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_microamp_384_wellplate_40ul
+    type: pylabrobot
+  description: Microamp 384 Well Plate 40 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_microamp_96_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_microamp_96_wellplate_100ul
+    type: pylabrobot
+  description: lockwell
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_microamp_96well_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_microamp_96well_200ul
+    type: pylabrobot
+  description: MicroAmp EnduraPlate Optical 96-Well Fast Clear Reaction Plate With
+    Barcode 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_microampenduraplate_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_microampenduraplate_96_aluminumblock_200ul
+    type: pylabrobot
+  description: MicroAmp EnduraPlate 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_microampoptical_384_wellplate_30ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_microampoptical_384_wellplate_30ul
+    type: pylabrobot
+  description: MicroAmp Optical 384 Well Plate 30 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_microampstrips_96_supportbase_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_microampstrips_96_supportbase_100ul
+    type: pylabrobot
+  description: MicroAmp Strips 96 Support Base 100 uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_micronic_96_rack_300ul_tubes:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_micronic_96_rack_300ul_tubes
+    type: pylabrobot
+  description: Micronic 96 Rack 0.30mL Tubes
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_micronic_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_micronic_96_wellplate_1000ul
+    type: pylabrobot
+  description: Micronic 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_micronicm9641point4_96_wellplate_1400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_micronicm9641point4_96_wellplate_1400ul
+    type: pylabrobot
+  description: Micronic_M96-4_1.4 96 Well Plate 1400 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_micronics_96_tubes:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_micronics_96_tubes
+    type: pylabrobot
+  description: Micronics 96 Tubes in Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_molgen_96_well_elution_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_molgen_96_well_elution_plate
+    type: pylabrobot
+  description: Molgen 96 Well Elution Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_mtcbio_15_tuberack_10000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_mtcbio_15_tuberack_10000ul
+    type: pylabrobot
+  description: MTC Bio 15 Tube Rack 10000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_neb_96_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_neb_96_wellplate_100ul
+    type: pylabrobot
+  description: NEB 96 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_neo_48_wellplate_40ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_neo_48_wellplate_40ul
+    type: pylabrobot
+  description: NEO 48 Well Chip 40 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_neptune_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_neptune_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Neptune 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_neptunegensci_pcrplate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_neptunegensci_pcrplate
+    type: pylabrobot
+  description: neptune_gen_pcr_200ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_neptunescientificgeneseescientificadaptor_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_neptunescientificgeneseescientificadaptor_96_wellplate_200ul
+    type: pylabrobot
+  description: Neptune Scientific, Genesee Scientific (adaptor) 96 Well Plate 200
+    µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest500ul_96_reservoir_500ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest500ul_96_reservoir_500ul
+    type: pylabrobot
+  description: NEST 500ul 96 Reservoir 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_12_reservoir_15ml:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_12_reservoir_15ml
+    type: pylabrobot
+  description: NEST 12 Well Reservoir 15 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_12_reservoir_15ml_icetray:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_12_reservoir_15ml_icetray
+    type: pylabrobot
+  description: NEST 12 Reservoir 15 mL with Icetray
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_1_reservoir_195ml:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_1_reservoir_195ml
+    type: pylabrobot
+  description: NEST 1 Well Reservoir 195 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_32_tuberack_8x15ml_8x15ml_8x15ml_8x15ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_32_tuberack_8x15ml_8x15ml_8x15ml_8x15ml
+    type: pylabrobot
+  description: NEST 32 Tuberack 15ml (2 Slot)
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_32_tuberack_8x5ml_8x5ml_8x5ml_8x5ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_32_tuberack_8x5ml_8x5ml_8x5ml_8x5ml
+    type: pylabrobot
+  description: NEST 32 Tuberack 5ml (2 Slot)
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_96_wellplate_1000ul
+    type: pylabrobot
+  description: NEST 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_96_wellplate_100ul_pcr_full_skirt:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_96_wellplate_100ul_pcr_full_skirt
+    type: pylabrobot
+  description: NEST 96 Well Plate 100 µL PCR Full Skirt
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_96_wellplate_2000ul
+    type: pylabrobot
+  description: nest_96_wellplate_2000ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_96_wellplate_200ul_flat:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_96_wellplate_200ul_flat
+    type: pylabrobot
+  description: NEST 96 Well Plate 200 µL Flat
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_96_wellplate_2200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_96_wellplate_2200ul
+    type: pylabrobot
+  description: Nest 96 Well Plate 2200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_96_wellplate_2ml_deep:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_96_wellplate_2ml_deep
+    type: pylabrobot
+  description: NEST 96 Deep Well Plate 2mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nest_96_wellplate_320ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nest_96_wellplate_320ul
+    type: pylabrobot
+  description: Nest 96 Well Plate 320 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nestbioshake_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nestbioshake_96_wellplate_2000ul
+    type: pylabrobot
+  description: NEST Bioshake 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_442404_96_flat_wellplate_400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_442404_96_flat_wellplate_400ul
+    type: pylabrobot
+  description: Nunc Maxisorp ELISA Plate 96-Well Flat 400 uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_96_wellplate_1000ul
+    type: pylabrobot
+  description: Nunc 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_96_wellplate_1700ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_96_wellplate_1700ul
+    type: pylabrobot
+  description: Nunc 96 Well Plate 1700 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_96_wellplate_2000ul
+    type: pylabrobot
+  description: Nunc 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_96_wellplate_400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_96_wellplate_400ul
+    type: pylabrobot
+  description: Nunc 96 Well Plate 400 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_96_wellplate_450ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_96_wellplate_450ul
+    type: pylabrobot
+  description: Nunc 96 Well Plate 450 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_96_wellplate_500ul
+    type: pylabrobot
+  description: Nunc 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_maxisorp_96_wellplate_250ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_maxisorp_96_wellplate_250ul
+    type: pylabrobot
+  description: Nunc MaxiSorp 96 Well Plate 250ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_rectangular_agar_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_rectangular_agar_plate
+    type: pylabrobot
+  description: Nunc rectangular agar plate2
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_nunc_v96_microwell_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_nunc_v96_microwell_plate
+    type: pylabrobot
+  description: Nunc V96 Microwell Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_octea_16_wellplate_40ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_octea_16_wellplate_40ul
+    type: pylabrobot
+  description: Octea 16 Well Plate 40 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_olympus_96_wellplate_200ul_pcr:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_olympus_96_wellplate_200ul_pcr
+    type: pylabrobot
+  description: Olympus 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_omegaquant_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_omegaquant_96_wellplate_1000ul
+    type: pylabrobot
+  description: Omegaquant 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_10_tuberack_falcon_4x50ml_6x15ml_conical:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_10_tuberack_falcon_4x50ml_6x15ml_conical
+    type: pylabrobot
+  description: Opentrons 10 Tube Rack with Falcon 4x50 mL, 6x15 mL Conical
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_10_tuberack_nest_4x50ml_6x15ml_conical:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_10_tuberack_nest_4x50ml_6x15ml_conical
+    type: pylabrobot
+  description: Opentrons 10 Tube Rack with NEST 4x50 mL, 6x15 mL Conical
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_15_tuberack_14000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_15_tuberack_14000ul
+    type: pylabrobot
+  description: Opentrons 15 Tube Rack with custom 14 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_15_tuberack_15000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_15_tuberack_15000ul
+    type: pylabrobot
+  description: Opentrons 15 Tube Rack with Sarstedt 15 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_15_tuberack_5000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_15_tuberack_5000ul
+    type: pylabrobot
+  description: Opentrons 15 Tube Rack with eppendorf 5 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_15_tuberack_8000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_15_tuberack_8000ul
+    type: pylabrobot
+  description: Opentrons 15 Tube Rack with BD Diagnostics 8 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_15_tuberack_falcon_15ml_conical:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_15_tuberack_falcon_15ml_conical
+    type: pylabrobot
+  description: Opentrons 15 Tube Rack with Falcon 15 mL Conical
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_15_tuberack_nest_15ml_conical:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_15_tuberack_nest_15ml_conical
+    type: pylabrobot
+  description: Opentrons 15 Tube Rack with NEST 15 mL Conical
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_1_trash_1100ml_fixed:
+  category:
+  - trash
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_1_trash_1100ml_fixed
+    type: pylabrobot
+  description: Opentrons fixed trash 1100ml
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_aluminumblock_1500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_aluminumblock_1500ul
+    type: pylabrobot
+  description: Opentrons 24 Aluminum Block 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_aluminumblock_18x0point5ml_3x1point5ml_3x1point5ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_aluminumblock_18x0point5ml_3x1point5ml_3x1point5ml
+    type: pylabrobot
+  description: Opentrons 24 Well Aluminum Block with Variant Tubes
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_aluminumblock_generic_2ml_screwcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_aluminumblock_generic_2ml_screwcap
+    type: pylabrobot
+  description: Opentrons 24 Well Aluminum Block with Generic 2 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_aluminumblock_nest_0point5ml_screwcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_aluminumblock_nest_0point5ml_screwcap
+    type: pylabrobot
+  description: Opentrons 24 Well Aluminum Block with NEST 0.5 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_aluminumblock_nest_1point5ml_screwcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_aluminumblock_nest_1point5ml_screwcap
+    type: pylabrobot
+  description: Opentrons 24 Well Aluminum Block with NEST 1.5 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_aluminumblock_nest_1point5ml_snapcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_aluminumblock_nest_1point5ml_snapcap
+    type: pylabrobot
+  description: Opentrons 24 Well Aluminum Block with NEST 1.5 mL Snapcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_aluminumblock_nest_2ml_screwcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_aluminumblock_nest_2ml_screwcap
+    type: pylabrobot
+  description: Opentrons 24 Well Aluminum Block with NEST 2 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_aluminumblock_nest_2ml_snapcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_aluminumblock_nest_2ml_snapcap
+    type: pylabrobot
+  description: Opentrons 24 Well Aluminum Block with NEST 2 mL Snapcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_1500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_1500ul
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_2000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_2000ul
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with starstedt 2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_500ul
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with Watson Biolab 0.5 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_eppendorf_1point5ml_safelock_snapcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_eppendorf_1point5ml_safelock_snapcap
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with Eppendorf 1.5 mL Safe-Lock Snapcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_eppendorf_2ml_safelock_snapcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_eppendorf_2ml_safelock_snapcap
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with Eppendorf 2 mL Safe-Lock Snapcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_eppendorf_2ml_safelock_snapcap_acrylic:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_eppendorf_2ml_safelock_snapcap_acrylic
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack (Acrylic) with Eppendorf 2 mL Safe-Lock Snapcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_generic_2ml_screwcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_generic_2ml_screwcap
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with Generic 2 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_nest_0point5ml_screwcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_nest_0point5ml_screwcap
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with NEST 0.5 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_nest_1point5ml_screwcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_nest_1point5ml_screwcap
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with NEST 1.5 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_nest_1point5ml_snapcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_nest_1point5ml_snapcap
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with NEST 1.5 mL Snapcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_nest_2ml_screwcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_nest_2ml_screwcap
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with NEST 2 mL Screwcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_nest_2ml_snapcap:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_nest_2ml_snapcap
+    type: pylabrobot
+  description: Opentrons 24 Tube Rack with NEST 2 mL Snapcap
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_24_tuberack_t4_t5:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_24_tuberack_t4_t5
+    type: pylabrobot
+  description: PoolingT4,T5
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_300ul_tiprack_flipped:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_300ul_tiprack_flipped
+    type: pylabrobot
+  description: 'Opentrons 300ul tiprack flipped (fallback: opentrons 300ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_6_tuberack_50000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_6_tuberack_50000ul
+    type: pylabrobot
+  description: Opentrons 6 Tube Rack with VWR 50 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_6_tuberack_falcon_50ml_conical:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_6_tuberack_falcon_50ml_conical
+    type: pylabrobot
+  description: Opentrons 6 Tube Rack with Falcon 50 mL Conical
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_6_tuberack_stellarsci_25ml_conical:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_6_tuberack_stellarsci_25ml_conical
+    type: pylabrobot
+  description: Tuberack with 6 Stellar Sci 25 mL tubes
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_aluminumblock_biorad_wellplate_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_aluminumblock_biorad_wellplate_200ul
+    type: pylabrobot
+  description: Opentrons 96 Well Aluminum Block with Bio-Rad Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_aluminumblock_generic_pcr_strip_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_aluminumblock_generic_pcr_strip_200ul
+    type: pylabrobot
+  description: Opentrons 96 Well Aluminum Block with Generic PCR Strip 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_aluminumblock_nest_wellplate_100ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_aluminumblock_nest_wellplate_100ul
+    type: pylabrobot
+  description: Opentrons 96 Well Aluminum Block with NEST Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_deep_well_adapter_nest_wellplate_2ml_deep:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_deep_well_adapter_nest_wellplate_2ml_deep
+    type: pylabrobot
+  description: Opentrons 96 Deep Well Heater-Shaker Adapter with NEST Deep Well Plate
+    2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_filtertiprack_1000ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_filtertiprack_1000ul
+    type: pylabrobot
+  description: Opentrons OT-2 96 Filter Tip Rack 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_filtertiprack_10ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_filtertiprack_10ul
+    type: pylabrobot
+  description: Opentrons OT-2 96 Filter Tip Rack 10 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_filtertiprack_200ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_filtertiprack_200ul
+    type: pylabrobot
+  description: Opentrons OT-2 96 Filter Tip Rack 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_filtertiprack_20ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_filtertiprack_20ul
+    type: pylabrobot
+  description: Opentrons OT-2 96 Filter Tip Rack 20 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_pcr_adapter_biorad_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_pcr_adapter_biorad_wellplate_200ul
+    type: pylabrobot
+  description: Opentrons 96 PCR Adapter with BioRad Well Plate 200 uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_tiprack_1000ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_tiprack_1000ul
+    type: pylabrobot
+  description: Opentrons OT-2 96 Tip Rack 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_tiprack_10ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_tiprack_10ul
+    type: pylabrobot
+  description: Opentrons OT-2 96 Tip Rack 10 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_tiprack_20ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_tiprack_20ul
+    type: pylabrobot
+  description: Opentrons OT-2 96 Tip Rack 20 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_tiprack_300ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_tiprack_300ul
+    type: pylabrobot
+  description: Opentrons OT-2 96 Tip Rack 300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_tiprack_sarstedt_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_tiprack_sarstedt_200ul
+    type: pylabrobot
+  description: Opentrons 96 tiprack with sarstedt 200ul PCR tube
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_96_tuberack_96x5ml_custom:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_96_tuberack_96x5ml_custom
+    type: pylabrobot
+  description: Custom 96 Tube Rack, 5mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_opentrons_goldstandarddx_17_tuberack_lysis:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_opentrons_goldstandarddx_17_tuberack_lysis
+    type: pylabrobot
+  description: Opentrons x Gold Standard 17 Tube Rack
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_optiplate_96_wellplate_400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_optiplate_96_wellplate_400ul
+    type: pylabrobot
+  description: Optiplate 96 Well Plate 400 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_pall_96_wellplate_350ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_pall_96_wellplate_350ul
+    type: pylabrobot
+  description: Pall 96 Well Plate 350 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_pcb_board_250_wells:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_pcb_board_250_wells
+    type: pylabrobot
+  description: PCB Board
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_pcr_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_pcr_384_wellplate_50ul
+    type: pylabrobot
+  description: Pcr 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_pcr_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_pcr_plate
+    type: pylabrobot
+  description: PCR plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_pcrplate_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_pcrplate_96_wellplate_200ul
+    type: pylabrobot
+  description: Pcr Plate 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_pcrstripplate_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_pcrstripplate_96_wellplate_200ul
+    type: pylabrobot
+  description: Pcr Strip Plate 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_perkinelmer_12_reservoir_21000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_perkinelmer_12_reservoir_21000ul
+    type: pylabrobot
+  description: Perkin Elmer 12 Reservoir 21000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_perkinelmer_384_wellplate_105ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_perkinelmer_384_wellplate_105ul
+    type: pylabrobot
+  description: Perkin Elmer 384 Well Plate 105 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_perkinelmer_384_wellplate_110ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_perkinelmer_384_wellplate_110ul
+    type: pylabrobot
+  description: Perkin Elmer 384 Well Plate 110 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_perkinelmer_384_wellplate_145ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_perkinelmer_384_wellplate_145ul
+    type: pylabrobot
+  description: PerkinElmer 384 Well Plate 145 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_perkinelmer_96_wellplate_450ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_perkinelmer_96_wellplate_450ul
+    type: pylabrobot
+  description: PerkinElmer 96 Well Plate 450 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_permagen_24_tuberack_1500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_permagen_24_tuberack_1500ul
+    type: pylabrobot
+  description: Permagen 24 Tube Rack with Eppendorf 1.5 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_phenoplate_96_wellplate_425ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_phenoplate_96_wellplate_425ul
+    type: pylabrobot
+  description: PhenoPlate 96 Well Plate 425 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_phynexus_96_tiprack_300ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_phynexus_96_tiprack_300ul
+    type: pylabrobot
+  description: 'PhyNexus 96 tiprack 300ul (fallback: opentrons 300ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_phytips_in_opentrons_box_96_300ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_phytips_in_opentrons_box_96_300ul
+    type: pylabrobot
+  description: 'PhyTips in Opentrons box 96 300ul (fallback: opentrons 300ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_plateone_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_plateone_96_wellplate_1000ul
+    type: pylabrobot
+  description: Plate One 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_pr1ma_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_pr1ma_384_wellplate_50ul
+    type: pylabrobot
+  description: Pr1ma 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_procartaplex_96_wellplate_655096:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_procartaplex_96_wellplate_655096
+    type: pylabrobot
+  description: Procarta Plex 96 Well Plate 340 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_protifistrap_96_wellplate_400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_protifistrap_96_wellplate_400ul
+    type: pylabrobot
+  description: Protifi_S-trap 96 Well Plate 400 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_ps_2_resevoir:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_ps_2_resevoir
+    type: pylabrobot
+  description: PS RESERVOIR
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_pyramid_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_pyramid_96_wellplate_2000ul
+    type: pylabrobot
+  description: Pyramid 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_qiacuity_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_qiacuity_96_wellplate_200ul
+    type: pylabrobot
+  description: Qiacuity 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_qiagen_96_tuberack_1200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_qiagen_96_tuberack_1200ul
+    type: pylabrobot
+  description: QIAGEN 96 Tube Rack 1.2mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_qiagen_96_wellplate_2250ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_qiagen_96_wellplate_2250ul
+    type: pylabrobot
+  description: Qiagen 96 Well Plate 2250 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_quantgene_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_quantgene_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Quantgene 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_quintara_12_reservoir_15000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_quintara_12_reservoir_15000ul
+    type: pylabrobot
+  description: Quintara 12 Reservoir 15000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_quintara_192_deepwell_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_quintara_192_deepwell_plate
+    type: pylabrobot
+  description: Quintara Vertical Plate 192 Wells
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_quintara_192_pcr_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_quintara_192_pcr_plate
+    type: pylabrobot
+  description: Quintara Vertical Plate 192 Wells
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_quintara_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_quintara_96_wellplate_300ul
+    type: pylabrobot
+  description: Quintara 96 Well Plate 300 µL on Aluminum Block
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_reagent_1_reservoir_130000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_reagent_1_reservoir_130000ul
+    type: pylabrobot
+  description: Reagent 1 Reservoir 130000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_redefinedbiorad_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_redefinedbiorad_96_wellplate_200ul
+    type: pylabrobot
+  description: BioRad 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_regeneron_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_regeneron_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Regeneron 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_roarprinted_48_wellplate_1500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_roarprinted_48_wellplate_1500ul
+    type: pylabrobot
+  description: ROAR_printed_ 48 Well Plate 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_rrl_1_wellplate_180000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_rrl_1_wellplate_180000ul
+    type: pylabrobot
+  description: RRL 1 Well Plate 180000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_rrlcustom_40_wellplate_1500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_rrlcustom_40_wellplate_1500ul
+    type: pylabrobot
+  description: RRL Custom 40 Well Plate 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_rssrack_15_tuberack_2500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_rssrack_15_tuberack_2500ul
+    type: pylabrobot
+  description: RSS Rack 15 Tube Rack 2500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_sarstedt_24_aluminumblock_screwcap_tube_2ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_sarstedt_24_aluminumblock_screwcap_tube_2ml
+    type: pylabrobot
+  description: Sarstedt 24 well aluminum block with screwcap tube 2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_sarstedt_24_tuberack_2000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_sarstedt_24_tuberack_2000ul
+    type: pylabrobot
+  description: Sarstedt 24 Tube Rack 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_sarstedt_24_tuberack_500ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_sarstedt_24_tuberack_500ul
+    type: pylabrobot
+  description: Sarstedt 24 Tube Rack 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_sarstedt_384_wellplate_40ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_sarstedt_384_wellplate_40ul
+    type: pylabrobot
+  description: Sarstedt 384 Well Plate 40 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_sequalprep_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_sequalprep_96_wellplate_200ul
+    type: pylabrobot
+  description: SequalPrep 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_sh_48_wellplate_2500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_sh_48_wellplate_2500ul
+    type: pylabrobot
+  description: SH 48 Well Plate 2500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_simport_96_wellplate_flipped:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_simport_96_wellplate_flipped
+    type: pylabrobot
+  description: SIMPORT 96 Well Plate 1200µL Flipped
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_sorenson_96_wellplate_350ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_sorenson_96_wellplate_350ul
+    type: pylabrobot
+  description: Sorenson 96 Well Plate 350 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_sorfa_15_tuberack_10000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_sorfa_15_tuberack_10000ul
+    type: pylabrobot
+  description: Sorfa 15 Tube Rack 10000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_spestackedoncollection_96_wellplate_1600ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_spestackedoncollection_96_wellplate_1600ul
+    type: pylabrobot
+  description: SPE Stacked On Collection 96 Well Plate 1600 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_spex_96_wellplate_2400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_spex_96_wellplate_2400ul
+    type: pylabrobot
+  description: SPEX 96 Well Plate 2400 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_spi_slides_4x21:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_spi_slides_4x21
+    type: pylabrobot
+  description: 'SPI slides 4x21 (fallback: corning 96 flat)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_spl_96_wellplate_200ul_flat:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_spl_96_wellplate_200ul_flat
+    type: pylabrobot
+  description: SPL Cell Culture Plate 96 Well Flat Bottom
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_spl_96_wellplate_200ul_round:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_spl_96_wellplate_200ul_round
+    type: pylabrobot
+  description: SPL Cell Culture Plate 96 Well Flat Bottom
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_ssibio_96_tuberack_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_ssibio_96_tuberack_200ul
+    type: pylabrobot
+  description: SSIbio 96 Tube Rack with NEST 0.2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_starlab10ml24wellplate_24_wellplate_10000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_starlab10ml24wellplate_24_wellplate_10000ul
+    type: pylabrobot
+  description: StarLab 10 Ml 24 Well Plate 24 Well Plate 10000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_starlab_12_reservoir_22000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_starlab_12_reservoir_22000ul
+    type: pylabrobot
+  description: Starlab 12 Reservoir 22000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_starlab_1_reservoir_240000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_starlab_1_reservoir_240000ul
+    type: pylabrobot
+  description: Starlab 1 Reservoir 240000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_starlab_96_wellplate_2200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_starlab_96_wellplate_2200ul
+    type: pylabrobot
+  description: Starlab 96 Well Plate 2200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_starstedt_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_starstedt_96_wellplate_200ul
+    type: pylabrobot
+  description: Starstedt 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_stellarscientific_96_cluster_tubes_1200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_stellarscientific_96_cluster_tubes_1200ul
+    type: pylabrobot
+  description: Stellar Scientific 96 Cluster Tubes 1200uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_stellarscientific_96_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_stellarscientific_96_wellplate_100ul
+    type: pylabrobot
+  description: Stellar Scientific 96 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_striptubes_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_striptubes_96_wellplate_1000ul
+    type: pylabrobot
+  description: Striptubes 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_tecan_96_wellplate_1300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_tecan_96_wellplate_1300ul
+    type: pylabrobot
+  description: Tecan 96 Well Plate 1300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_tecan_elisa_96well_hs:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_tecan_elisa_96well_hs
+    type: pylabrobot
+  description: Tecan ELISA 96-well on Heater Shaker
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_teleshake1536_64_slides_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_teleshake1536_64_slides_100ul
+    type: pylabrobot
+  description: 'Teleshake 1536 64 slides 100ul (fallback: corning 384 flat)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_tempassure_96_strips_200ul_pcr:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_tempassure_96_strips_200ul_pcr
+    type: pylabrobot
+  description: Tempassure 96 strip tubes 200ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_test_1_reservoir_300000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_test_1_reservoir_300000ul
+    type: pylabrobot
+  description: Test 1 Reservoir 300000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_1_reservoir_300ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_1_reservoir_300ul
+    type: pylabrobot
+  description: Thermo 1 Reservoir 300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_384_wellplate_50ul
+    type: pylabrobot
+  description: Thermo 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_96_aluminumblock_200ul
+    type: pylabrobot
+  description: Thermo 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_96_wellplate_200ul
+    type: pylabrobot
+  description: Thermo 96 Well Plate 200 ÂµL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_96_wellplate_400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_96_wellplate_400ul
+    type: pylabrobot
+  description: Thermo Maxisorb
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_96_wellplate_800ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_96_wellplate_800ul
+    type: pylabrobot
+  description: Abgene™ 96 Well 0.8mL Thermo Scientific
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_96_wellplate_ab_0800_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_96_wellplate_ab_0800_200ul
+    type: pylabrobot
+  description: Thermo-Fast 96 Well Plate AB-0800 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_ab_0600_96_aluminumblock_300ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_ab_0600_96_aluminumblock_300ul
+    type: pylabrobot
+  description: thermo_ab_0600_96_aluminumblock_300ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermo_non_skirted_96_plate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermo_non_skirted_96_plate_300ul
+    type: pylabrobot
+  description: Thermo Scientific Non Skirted 96 Well Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofast_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofast_96_wellplate_200ul
+    type: pylabrobot
+  description: Thermo-Fast 96, Skirted PCR Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofast_96well_semiskirted_eppendorf_cooler:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofast_96well_semiskirted_eppendorf_cooler
+    type: pylabrobot
+  description: Thermofisher PCR Plate, 96-well, semi-skirted, flat deck
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_384_wellplate_50ul
+    type: pylabrobot
+  description: Thermofisher 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_40_tuberack_2000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_40_tuberack_2000ul
+    type: pylabrobot
+  description: Thermofisher 40 Tube Rack with Thermofisher  2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_95040450_96_deepwell_2ml:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_95040450_96_deepwell_2ml
+    type: pylabrobot
+  description: ThermoFisher 96 Deep Well Plate 2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_96_midi_storage_plate_800ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_96_midi_storage_plate_800ul
+    type: pylabrobot
+  description: ThermoFisher 96 MIDI Storage Plate 800uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_96_skirted_pcr_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_96_skirted_pcr_200ul
+    type: pylabrobot
+  description: ThermoFisher 96 Well Skirted PCR Plate 200uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_96_well_pcrplate_200_aluminumblock:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_96_well_pcrplate_200_aluminumblock
+    type: pylabrobot
+  description: thermofisher 96-well PCR Plate semi-skirted 200 uL + aluminum block
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_96_well_pcrplate_semiskirted_200_plastic_adapter:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_96_well_pcrplate_semiskirted_200_plastic_adapter
+    type: pylabrobot
+  description: thermofisher 96 well pcr plate semi-skirted 200 uL + plastic adapter
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_96_wellplate_1400ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_96_wellplate_1400ul
+    type: pylabrobot
+  description: Thermofisher 96 Well Plate 1400 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_96_wellplate_200ul
+    type: pylabrobot
+  description: Thermo Fisher 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_96_wellplate_300ul
+    type: pylabrobot
+  description: Thermofisher 96 Well Plate 300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_96_wellplate_500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_96_wellplate_500ul
+    type: pylabrobot
+  description: Thermofisher 96 Well Plate 500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisher_nunc_96_wellplate_2ml:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisher_nunc_96_wellplate_2ml
+    type: pylabrobot
+  description: Thermofisher Nunc 96 Well Plate 2mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisherabgene_96_wellplate_2200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisherabgene_96_wellplate_2200ul
+    type: pylabrobot
+  description: ThermoFisher Abgene 96 Well Plate 2200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisherarmadillo_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisherarmadillo_96_wellplate_200ul
+    type: pylabrobot
+  description: Thermofisher Armadillo 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisherdwplate_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisherdwplate_96_wellplate_2000ul
+    type: pylabrobot
+  description: ThermoFisher DW Plate 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisherkingfisherdeepwell_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisherkingfisherdeepwell_96_wellplate_2000ul
+    type: pylabrobot
+  description: Thermo-Fisher Kingfisher Deep Well 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofishermicroamp_384_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofishermicroamp_384_wellplate_50ul
+    type: pylabrobot
+  description: ThermoFisher MicroAmp 384 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofishermicroamp_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofishermicroamp_96_aluminumblock_200ul
+    type: pylabrobot
+  description: ThermoFisher Microamp 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofishermicroamp_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofishermicroamp_96_wellplate_200ul
+    type: pylabrobot
+  description: ThermoFisher Microamp 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofishermicroampfast96well0point1_96_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofishermicroampfast96well0point1_96_wellplate_100ul
+    type: pylabrobot
+  description: ThermoFisher MicroAmp Fast 96-well 0.1 96 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofishernalgene_1_reservoir_300000ul:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofishernalgene_1_reservoir_300000ul
+    type: pylabrobot
+  description: ThermoFisher Nalgene 1 Reservoir 300000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofishernunc_96_aluminumblock_450ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofishernunc_96_aluminumblock_450ul
+    type: pylabrobot
+  description: ThermoFisher Nunc 96 Aluminum Block 450 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofishernunc_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofishernunc_96_wellplate_2000ul
+    type: pylabrobot
+  description: ThermoFisher Nunc 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofishernunc_96_wellplate_450ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofishernunc_96_wellplate_450ul
+    type: pylabrobot
+  description: ThermoFisher Nunc 96 Well Plate 450 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisherscientific_96_wellplate_450ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisherscientific_96_wellplate_450ul
+    type: pylabrobot
+  description: ThermoFisher Scientific 96 Well Plate 450 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisherscientific_96_wellplate_50ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisherscientific_96_wellplate_50ul
+    type: pylabrobot
+  description: Thermofisher Scientific 96 Well Plate 50 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisherscientificdeepwell_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisherscientificdeepwell_96_wellplate_2000ul
+    type: pylabrobot
+  description: Thermofisher Scientific Deepwell 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermofisherscientificelutiontubes_96_wellplate_650ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermofisherscientificelutiontubes_96_wellplate_650ul
+    type: pylabrobot
+  description: Thermo Fisher Scientific Elution Tubes 96 Well Plate 650 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermoscientific_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermoscientific_96_wellplate_200ul
+    type: pylabrobot
+  description: Thermo Scientific 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermoscientific_96_wellplate_300ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermoscientific_96_wellplate_300ul
+    type: pylabrobot
+  description: 'Thermo Scientific 96 wellplate 300ul #AB0600'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermoscientific_96_wellplate_v_450:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermoscientific_96_wellplate_v_450
+    type: pylabrobot
+  description: Thermo Scientific 96 Well Plate V Bottom 450 uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermoscientificmatrix_96_tuberack_1000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermoscientificmatrix_96_tuberack_1000ul
+    type: pylabrobot
+  description: ThermoScientific Matrix 96 Tube Rack with custom 1 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_thermoscientificnunc_96_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_thermoscientificnunc_96_wellplate_2000ul
+    type: pylabrobot
+  description: Thermo Scientific Nunc 96 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_tiprack_200ul_extended:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_tiprack_200ul_extended
+    type: pylabrobot
+  description: 'Tiprack 200ul extended (fallback: opentrons 300ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_tpp_96well_plate_340ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_tpp_96well_plate_340ul
+    type: pylabrobot
+  description: TPP Tissue culture testplate 96F 92096
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_tuberack_15_tuberack_5000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_tuberack_15_tuberack_5000ul
+    type: pylabrobot
+  description: Tube Rack 15 Tube Rack 5000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_tuberack_24_wellplate_1500ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_tuberack_24_wellplate_1500ul
+    type: pylabrobot
+  description: Tuberack 24 Well Plate 1500 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_twdtradewinds_24_tuberack_4000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_twdtradewinds_24_tuberack_4000ul
+    type: pylabrobot
+  description: TWD_Tradewinds 24 Tube Rack with 4mL_Scintillation_Vials 4 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_twintec_pcr_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_twintec_pcr_plate
+    type: pylabrobot
+  description: Eppendorf 96 Well Plate 150 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_two_spacing:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_two_spacing
+    type: pylabrobot
+  description: Two Spacing
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_udiplate_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_udiplate_96_wellplate_200ul
+    type: pylabrobot
+  description: UDIplate 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usa_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usa_96_wellplate_200ul
+    type: pylabrobot
+  description: USA 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usalowbind_24_aluminumblock_2000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usalowbind_24_aluminumblock_2000ul
+    type: pylabrobot
+  description: USA Low Bind 24 Aluminum Block 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usascientific8strip_96_aluminumblock_300ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usascientific8strip_96_aluminumblock_300ul
+    type: pylabrobot
+  description: USA Scientific 8-STrip 96 Aluminum Block 300 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usascientific_12_reservoir_22ml:
+  category:
+  - reservoirs
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usascientific_12_reservoir_22ml
+    type: pylabrobot
+  description: USA Scientific 12 Well Reservoir 22 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usascientific_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usascientific_96_aluminumblock_200ul
+    type: pylabrobot
+  description: USA Scientific 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usascientific_96_tiprack_200ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usascientific_96_tiprack_200ul
+    type: pylabrobot
+  description: USA Scientific 96 Tip Rack 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usascientific_96_wellplate_100ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usascientific_96_wellplate_100ul
+    type: pylabrobot
+  description: USA Scientific 96 Well Plate 100 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usascientific_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usascientific_96_wellplate_200ul
+    type: pylabrobot
+  description: USA Scientific 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usascientific_96_wellplate_2ml_deep:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usascientific_96_wellplate_2ml_deep
+    type: pylabrobot
+  description: USA Scientific 96 Deep Well Plate 2.0 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usascientific_96_wellplate_2point4ml_deep:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usascientific_96_wellplate_2point4ml_deep
+    type: pylabrobot
+  description: USA Scientific 96 Deep Well Plate 2.4 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usastrips_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usastrips_96_aluminumblock_200ul
+    type: pylabrobot
+  description: USA Strips 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_usastrips_96_supportbase_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_usastrips_96_supportbase_200ul
+    type: pylabrobot
+  description: USA Strips 96 Support Base 200 uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vial_rack_8x20ml_vials:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vial_rack_8x20ml_vials
+    type: pylabrobot
+  description: 8x20mL Vial Rack
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_visby:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_visby
+    type: pylabrobot
+  description: visby
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vpscientific_48_wellplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vpscientific_48_wellplate_2000ul
+    type: pylabrobot
+  description: V&P Scientific 48 Well Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vpscientific_8_tiprack_10ul:
+  category:
+  - tip_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vpscientific_8_tiprack_10ul
+    type: pylabrobot
+  description: 'VP Scientific 8 tiprack 10ul (fallback: opentrons 10ul)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vwr_15_tuberack_5000ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vwr_15_tuberack_5000ul
+    type: pylabrobot
+  description: VWR 15 Tube Rack 5000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vwr_15_tuberack_selfstanding_5ml_conical:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vwr_15_tuberack_selfstanding_5ml_conical
+    type: pylabrobot
+  description: VWR 3x5 self standing 5ml tuberack
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vwr_24_tuberack_1point5ml:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vwr_24_tuberack_1point5ml
+    type: pylabrobot
+  description: VWR 24 Tube Rack 1.5mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vwr_96_aluminumblock_200ul:
+  category:
+  - tube_racks
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vwr_96_aluminumblock_200ul
+    type: pylabrobot
+  description: VWR 96 Aluminum Block 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vwr_96_wellplate_1000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vwr_96_wellplate_1000ul
+    type: pylabrobot
+  description: VWR 96 Well Plate 1000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vwr_96well_pcr_plate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vwr_96well_pcr_plate_200ul
+    type: pylabrobot
+  description: VWR 96 well PCR plate 200 uL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vwr_square_96_microplate_2000ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vwr_square_96_microplate_2000ul
+    type: pylabrobot
+  description: VWR 96 Square Micro Plate 2000 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_vwrpcr_96_wellplate_200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_vwrpcr_96_wellplate_200ul
+    type: pylabrobot
+  description: VWR Pcr 96 Well Plate 200 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_wafer_6x4_grid:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_wafer_6x4_grid
+    type: pylabrobot
+  description: Custom Wafer 4x6 Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_waters_96_wellplate_2ml:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_waters_96_wellplate_2ml
+    type: pylabrobot
+  description: Waters 96 Well Plate 2 mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_white_96well_plate_340ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_white_96well_plate_340ul
+    type: pylabrobot
+  description: NUNC white 96F 236105
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_x_capper_rack_48_well_0point5ml:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_x_capper_rack_48_well_0point5ml
+    type: pylabrobot
+  description: X Capper 48 Rack 0.5mL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_ydp962_2sc_96_wellplate_2200ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_ydp962_2sc_96_wellplate_2200ul
+    type: pylabrobot
+  description: YDP-96-2.2-SC 96_wellplate_2200ul
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_zinsser_96_wellplate_1898ul:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_zinsser_96_wellplate_1898ul
+    type: pylabrobot
+  description: Zinsser 96 Well Plate 1898 µL
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_zymo_96_wellblock:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_zymo_96_wellblock
+    type: pylabrobot
+  description: Zymo 96-Well Block
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0
+lab_zymo_elution_plate:
+  category:
+  - plates
+  - lab
+  class:
+    module: unilabos.resources.lab_resources:lab_zymo_elution_plate
+    type: pylabrobot
+  description: Zymo Elution Plate
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  registry_type: resource
+  version: 1.0.0

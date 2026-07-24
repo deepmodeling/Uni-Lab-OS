@@ -42,6 +42,7 @@ class LiquidHandlerJointPublisher(Node):
             while self.resource_action is None:
                 self.resource_action = self.check_tf_update_actions()
                 time.sleep(1)
+                self.get_logger().info(f'Waiting for TfUpdate server: {self.resource_action}')
 
             self.resource_action_client = ActionClient(self, SendCmd, self.resource_action)
             while not self.resource_action_client.wait_for_server(timeout_sec=1.0):

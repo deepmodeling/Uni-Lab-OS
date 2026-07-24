@@ -3,9 +3,33 @@ PRCXI_EP_Adapter:
   - prcxi
   - tube_racks
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_EP_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_EP_Adapter'
     type: pylabrobot
   description: 'ep适配器 (Code: 1)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+PRCXI_2_Reagent_Rack_50mL:
+  category:
+  - prcxi
+  - tube_racks
+  class:
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_2_Reagent_Rack_50mL'
+    type: pylabrobot
+  description: '2孔试剂架 (Code: zx-004-50)'
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0
+PRCXI_8_Reagent_Rack_10mL:
+  category:
+  - prcxi
+  - tube_racks
+  class:
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_8_Reagent_Rack_10mL'
+    type: pylabrobot
+  description: '8孔试剂架 (Code: zx-003-10)'
   handles: []
   icon: ''
   init_param_schema: {}

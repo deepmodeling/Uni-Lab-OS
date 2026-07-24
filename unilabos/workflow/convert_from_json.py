@@ -21,11 +21,12 @@ JSON 工作流转换模块
 """
 
 import json
+import warnings
 from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from unilabos.workflow.common import WorkflowGraph, build_protocol_graph
+from unilabos.workflow.common import DEFAULT_TARGET_DEVICE, WorkflowGraph, build_protocol_graph
 from unilabos.registry.registry import lab_registry
 
 
@@ -206,10 +207,40 @@ def normalize_workflow_steps(workflow: List[Dict[str, Any]]) -> List[Dict[str, A
     return normalized
 
 
+def _load_json_data(data: Union[str, PathLike, Dict[str, Any]]) -> Dict[str, Any]:
+    """统一加载 JSON 输入。
+
+    支持三种形态：
+    1. ``str`` / ``PathLike`` 指向磁盘文件 → ``json.load``
+    2. ``str``（非文件路径）→ ``json.loads`` 解析为 dict
+    3. ``dict`` → 直接返回
+
+    抽出此 helper 是为了让 :func:`convert_from_json` 和
+    :func:`convert_json_to_workflow_envelope` 都能复用，
+    后者需要在传给 :func:`convert_from_json` **之前**先读出顶层
+    ``metadata`` 段，而 :func:`convert_from_json` 自身的 schema 校验
+    不感知 ``metadata`` 字段。
+    """
+    if isinstance(data, (str, PathLike)):
+        path = Path(data)
+        if path.exists():
+            with path.open("r", encoding="utf-8") as fp:
+                return json.load(fp)
+        if isinstance(data, str):
+            return json.loads(data)
+        raise FileNotFoundError(f"文件不存在: {data}")
+    if isinstance(data, dict):
+        return data
+    raise TypeError(f"不支持的数据类型: {type(data)}")
+
+
 def convert_from_json(
     data: Union[str, PathLike, Dict[str, Any]],
     workstation_name: str = DEFAULT_WORKSTATION,
     validate: bool = True,
+    preserve_tip_rack_incoming_class: bool = False,
+    target_device: str = DEFAULT_TARGET_DEVICE,
+    target_model: Optional[str] = None,
 ) -> WorkflowGraph:
     """
     从 JSON 数据或文件转换为 WorkflowGraph
@@ -221,6 +252,14 @@ def convert_from_json(
         data: JSON 文件路径、字典数据、或 JSON 字符串
         workstation_name: 工作站名称，默认 "PRCXi"
         validate: 是否校验句柄配置，默认 True
+        preserve_tip_rack_incoming_class: True（默认）时仅 tip_rack 不跑模板、按传入类名/labware；其它载体仍自动匹配。
+            False 时全部走模板。JSON 根 ``preserve_tip_rack_incoming_class`` 可覆盖此参数。
+        target_device: P6.1 新增。目标仪器名（厂商粒度，如 ``prcxi`` / ``beckman`` / ``tecan``）。
+            决定查 ``labware_mapping.yaml`` 中 ``target_devices.<target_device>.rules`` 段；未声明
+            的名字由 loader 自动 fallback 到固定段 ``target_devices.default``。默认 ``"prcxi"``。
+        target_model: P6.1.1 新增。同厂商内的目标型号名（如 ``"9320"`` / ``"4040"``）；
+            决定 ``target_devices.<target_device>.models.<target_model>`` 段的 ``slot_remap`` /
+            ``rules`` 覆盖。``None`` 表示走厂商级配置。
 
     Returns:
         WorkflowGraph: 构建好的工作流图
@@ -230,22 +269,9 @@ def convert_from_json(
         FileNotFoundError: 文件不存在
         json.JSONDecodeError: JSON 解析失败
     """
-    # 处理输入数据
-    if isinstance(data, (str, PathLike)):
-        path = Path(data)
-        if path.exists():
-            with path.open("r", encoding="utf-8") as fp:
-                json_data = json.load(fp)
-        elif isinstance(data, str):
-            json_data = json.loads(data)
-        else:
-            raise FileNotFoundError(f"文件不存在: {data}")
-    elif isinstance(data, dict):
-        json_data = data
-    else:
-        raise TypeError(f"不支持的数据类型: {type(data)}")
+    json_data = _load_json_data(data)
 
-    # 校验格式
+    # 校验格式（``metadata`` 段为 P5 新增可选顶层字段，不参与校验）
     if "workflow" not in json_data or "reagent" not in json_data:
         raise ValueError(
             "不支持的 JSON 格式。请使用标准格式:\n"
@@ -263,6 +289,10 @@ def convert_from_json(
     # reagent 已经是字典格式，用于 set_liquid 和 well 数量查找
     labware_info = reagent
 
+    preserve = preserve_tip_rack_incoming_class
+    if "preserve_tip_rack_incoming_class" in json_data:
+        preserve = bool(json_data["preserve_tip_rack_incoming_class"])
+
     # 构建工作流图
     graph = build_protocol_graph(
         labware_info=labware_info,
@@ -270,16 +300,33 @@ def convert_from_json(
         workstation_name=workstation_name,
         action_resource_mapping=ACTION_RESOURCE_MAPPING,
         labware_defs=labware_defs,
+        preserve_tip_rack_incoming_class=preserve,
+        target_device=target_device,
+        target_model=target_model,
     )
 
     # 校验句柄配置
     if validate:
-        is_valid, errors = validate_workflow_handles(graph)
-        if not is_valid:
-            import warnings
+        # 句柄校验依赖 registry 中各设备动作的端口定义（action_value_mappings.handles）。
+        # wf / workflow_upload 走轻量 HTTP 客户端路径时从不调用 build_registry()，
+        # 此时 device_type_registry 为空表，校验只认硬加的 "ready" 端口，导致每条数据边
+        # 都误报「端口不存在，支持的端口: ['ready']」。这里按需构建一次（空表才建，幂等；
+        # 完整 unilab 启动已建表时自动跳过，避免触发 setup() 的重复调用告警）。
+        import warnings
 
-            for error in errors:
-                warnings.warn(f"句柄校验警告: {error}")
+        if not lab_registry.device_type_registry:
+            try:
+                from unilabos.registry.registry import build_registry
+
+                build_registry()
+            except Exception as exc:  # 构建失败降级为原行为，绝不让上传因建表异常而崩
+                warnings.warn(f"注册表构建失败，跳过句柄校验: {exc}")
+
+        if lab_registry.device_type_registry:
+            is_valid, errors = validate_workflow_handles(graph)
+            if not is_valid:
+                for error in errors:
+                    warnings.warn(f"句柄校验警告: {error}")
 
     return graph
 
@@ -287,6 +334,9 @@ def convert_from_json(
 def convert_json_to_node_link(
     data: Union[str, PathLike, Dict[str, Any]],
     workstation_name: str = DEFAULT_WORKSTATION,
+    preserve_tip_rack_incoming_class: bool = False,
+    target_device: str = DEFAULT_TARGET_DEVICE,
+    target_model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     将 JSON 数据转换为 node-link 格式的字典
@@ -294,17 +344,28 @@ def convert_json_to_node_link(
     Args:
         data: JSON 文件路径、字典数据、或 JSON 字符串
         workstation_name: 工作站名称，默认 "PRCXi"
+        target_device: P6.1 新增，目标仪器名；透传给 :func:`convert_from_json`。
+        target_model: P6.1.1 新增，同厂商内的型号名；透传给 :func:`convert_from_json`。
 
     Returns:
         Dict: node-link 格式的工作流数据
     """
-    graph = convert_from_json(data, workstation_name)
+    graph = convert_from_json(
+        data,
+        workstation_name,
+        preserve_tip_rack_incoming_class=preserve_tip_rack_incoming_class,
+        target_device=target_device,
+        target_model=target_model,
+    )
     return graph.to_node_link_dict()
 
 
 def convert_json_to_workflow_list(
     data: Union[str, PathLike, Dict[str, Any]],
     workstation_name: str = DEFAULT_WORKSTATION,
+    preserve_tip_rack_incoming_class: bool = True,
+    target_device: str = DEFAULT_TARGET_DEVICE,
+    target_model: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     将 JSON 数据转换为工作流列表格式
@@ -312,9 +373,129 @@ def convert_json_to_workflow_list(
     Args:
         data: JSON 文件路径、字典数据、或 JSON 字符串
         workstation_name: 工作站名称，默认 "PRCXi"
+        target_device: P6.1 新增，目标仪器名；透传给 :func:`convert_from_json`。
+        target_model: P6.1.1 新增，同厂商内的型号名；透传给 :func:`convert_from_json`。
 
     Returns:
         List: 工作流节点列表
     """
-    graph = convert_from_json(data, workstation_name)
+    graph = convert_from_json(
+        data,
+        workstation_name,
+        preserve_tip_rack_incoming_class=preserve_tip_rack_incoming_class,
+        target_device=target_device,
+        target_model=target_model,
+    )
     return graph.to_dict()
+
+
+# ==================== P5 — Workflow envelope ====================
+
+
+def convert_json_to_workflow_envelope(
+    data: Union[str, PathLike, Dict[str, Any]],
+    *,
+    target_lab_uuid: str = "",
+    workflow_uuid: str = "",
+    workflow_name: Optional[str] = None,
+    name: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    workstation_name: str = DEFAULT_WORKSTATION,
+    preserve_tip_rack_incoming_class: bool = False,
+    target_device: str = DEFAULT_TARGET_DEVICE,
+    target_model: Optional[str] = None,
+) -> Dict[str, Any]:
+    """把 transfer_actions JSON 转换为带「外壳」的 Cloud Lab 上传格式。
+
+    与 :func:`convert_json_to_node_link` 的差异：本函数在 ``nodes / edges``
+    之外补齐了前端 / Cloud 上传接口期望的顶层字段
+    （``target_lab_uuid`` / ``name`` / ``data.workflow_uuid`` /
+    ``data.workflow_name`` / ``data.tags``），并保持 ``nodes / edges`` 字节级
+    与 :func:`convert_json_to_node_link` 完全一致。
+
+    参数优先级（自顶向下取首个非空）：
+
+    1. 显式传入：``workflow_name`` / ``tags`` / ``name``。
+    2. 输入 JSON 顶层 ``metadata`` 段：``metadata.workflow_name`` /
+       ``metadata.tags``（由 Stage 2 ``export_transfer_actions`` 写入）。
+    3. 回退：空字符串 / 空列表，并打 :mod:`warnings` warning。
+
+    UUID 类字段（``target_lab_uuid`` / ``workflow_uuid``）**不**自动生成；
+    缺省保留空字符串，由调用方（前端 / 上传接口）写入。这样转换器输出
+    的同一份协议是字节稳定的，便于 batch diff 与回归。
+
+    Args:
+        data: JSON 文件路径、字典数据、或 JSON 字符串。
+            支持 P5 新增的顶层 ``metadata`` 字段，缺失时 fallback 空。
+        target_lab_uuid: 目标实验台 UUID；默认空字符串。
+        workflow_uuid: 工作流 UUID；默认空字符串（后端持久化时生成）。
+        workflow_name: 工作流名称；缺省时取 ``metadata.workflow_name``。
+        name: 列表页面展示标题；缺省时镜像 ``workflow_name``。
+        tags: 工作流标签；缺省时取 ``metadata.tags``。
+        workstation_name: 透传给 :func:`convert_from_json`。
+        preserve_tip_rack_incoming_class: 透传给 :func:`convert_from_json`。
+        target_device: P6.1 新增，目标仪器名；透传给 :func:`convert_from_json`。
+        target_model: P6.1.1 新增，同厂商内的型号名；透传给 :func:`convert_from_json`。
+
+    Returns:
+        外壳化的 dict::
+
+            {
+                "target_lab_uuid": str,
+                "name": str,
+                "data": {
+                    "workflow_uuid": str,
+                    "workflow_name": str,
+                    "tags": List[str],
+                    "nodes": [...],
+                    "edges": [...]
+                }
+            }
+    """
+    json_data = _load_json_data(data)
+
+    # 1) 解析 P5 新增的顶层 metadata 段
+    meta = json_data.get("metadata") if isinstance(json_data, dict) else None
+    if not isinstance(meta, dict):
+        meta = {}
+
+    resolved_name = workflow_name if workflow_name else str(meta.get("workflow_name") or "")
+    if tags is None:
+        meta_tags = meta.get("tags")
+        resolved_tags: List[str] = list(meta_tags) if isinstance(meta_tags, (list, tuple)) else []
+    else:
+        resolved_tags = list(tags)
+
+    if not resolved_name:
+        warnings.warn(
+            "convert_json_to_workflow_envelope: workflow_name 为空，"
+            "请检查 transfer_actions JSON 的 metadata.workflow_name 或显式传入 workflow_name"
+        )
+    if not resolved_tags:
+        warnings.warn(
+            "convert_json_to_workflow_envelope: tags 为空，"
+            "请检查 README.md 的 ## Categories 段或显式传入 tags"
+        )
+
+    # 2) 复用 convert_from_json 构图（metadata 段对图构建透明）
+    graph = convert_from_json(
+        json_data,
+        workstation_name,
+        preserve_tip_rack_incoming_class=preserve_tip_rack_incoming_class,
+        target_device=target_device,
+        target_model=target_model,
+    )
+    node_link = graph.to_node_link_dict()
+
+    # 3) 组装外壳；name 默认镜像 workflow_name，显式传入时覆盖
+    return {
+        "target_lab_uuid": target_lab_uuid,
+        "name": name if name is not None else resolved_name,
+        "data": {
+            "workflow_uuid": workflow_uuid,
+            "workflow_name": resolved_name,
+            "tags": resolved_tags,
+            "nodes": node_link.get("nodes", []),
+            "edges": node_link.get("edges", []),
+        },
+    }

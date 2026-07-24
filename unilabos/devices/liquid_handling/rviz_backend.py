@@ -54,11 +54,14 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
   def __init__(self, num_channels: int = 8 , tip_length: float = 0 , total_height: float = 310, **kwargs):
     """Initialize a chatter box backend."""
     super().__init__()
+    # 声明 96 头能力：与真实/chatterbox 后端一致，使 is_96_well 整板模拟不至于 head96 为空。
+    self._head96_installed = True
     self._num_channels = num_channels
     self.tip_length = tip_length
     self.total_height = total_height
     self.joint_config = kwargs.get("joint_config", None)
     self.lh_device_id = kwargs.get("lh_device_id", "lh_joint_publisher")
+    self.simulate_rviz = kwargs.get("simulate_rviz", False)
     if not rclpy.ok():
         rclpy.init()
     self.joint_state_publisher = None
@@ -69,7 +72,7 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
     self.joint_state_publisher = LiquidHandlerJointPublisher(
                                 joint_config=self.joint_config,
                                 lh_device_id=self.lh_device_id,
-                                simulate_rviz=True)
+                                simulate_rviz=self.simulate_rviz)
 
     # 启动ROS executor
     self.executor = rclpy.executors.MultiThreadedExecutor()

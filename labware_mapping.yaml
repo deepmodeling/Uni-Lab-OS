@@ -1,0 +1,156 @@
+# Opentrons → 目标仪器 物料映射表（P6.1.1）
+#
+# 两段顶层 key（P6.1.1 起 slot_remap 从顶层下沉到 target_devices 内）：
+#   kinds          : labware 字符串 → kind 归类（与目标仪器无关，**保留全局**）
+#   target_devices : 按目标仪器 + 型号组织；rule = kind + hole_count + volume_min/max → class_name；
+#                    slot_remap 也内嵌在 target_devices 下（按 deck 物理布局变化）
+#
+# target_devices 段内结构：
+#   target_devices.<device>:                    # 厂商段（必填）
+#     slot_remap: {...}                         # 厂商级默认 slot 映射（缺失 → 继承 default 段）
+#     rules:     [...]                          # 厂商级规则（缺失 → 继承 default 段）
+#     models:                                   # 同厂商多型号（可选；缺失 = 仅厂商级，不区分型号）
+#       <model_name>:                           # 型号子段
+#         slot_remap: {...}                     # 型号级覆盖（缺失 → 继承厂商级）
+#         rules:     [...]                      # 型号级覆盖（缺失 → 继承厂商级）
+#
+# 段名约定：
+#   target_devices.default : 兜底物料集 + 兜底 slot_remap。caller 传未声明的 target_device 时使用此段。
+#                            **不支持 models 子段**（型号粒度差异必须落到具体仪器段，否则歧义）。
+#   target_devices.<name>  : 具体仪器段（prcxi / beckman / tecan ...）。
+#
+# 解析链（remap_slot / resolve_target_class 共用，字段级 fallback）：
+#   1. target_devices.<device>.models.<model>.<field>   (caller 同时传 device + model)
+#   2. target_devices.<device>.<field>                  (caller 传 device，或步骤 1 缺字段)
+#   3. target_devices.default.<field>                   (caller 传未声明 device，或步骤 2 缺字段)
+#   4. _BUILTIN_DEFAULT.target_devices.default.<field>  (YAML 误删 default 段时的最后兜底)
+#
+# 编辑建议：
+#   1. 顺序敏感：kinds 与 rules 内首个命中胜出；窄规则在前、宽规则在后。
+#   2. volume_min / volume_max 是闭区间（µL）。任一字段可省略；都省略 = 不限制体积。
+#   3. notes 仅作注释，不参与匹配。
+#   4. 新增目标仪器：复制 target_devices.prcxi 段、改 device 名、改 slot_remap + rules。
+#   5. 同厂商不同型号：在 target_devices.<device>.models.<model> 下显式覆盖差异字段；
+#      没声明的字段自动继承厂商级。
+#   6. P6.1.1 不再支持顶层 slot_remap；检出顶层 slot_remap → warning + fallback 到 builtin。
+#
+# 设计文档：product_designs/protocol_convert/06-labware-mapping-table.md（§11.8）
+
+kinds:
+  # 顺序敏感的 regex；第一个命中胜出
+  # 注意：trash 必须在 tip_rack 之前；tip_rack 必须在 tube_rack 之前（"tuberack" 含 "rack"）
+  - { pattern: "trash",                                                         kind: trash }
+  - { pattern: "tiprack|tip[_ ]?rack|opentrons_\\d+_tiprack",                    kind: tip_rack }
+  - { pattern: "tuberack|tube[_ ]rack|eppendorf.*rack|safelock.*rack",          kind: tube_rack }
+  # 「<labware> 含 'rack' 但不含 'tip'」也归到 tube_rack（与历史 _infer_reagent_kind 行为一致）
+  - { pattern: "(?:^|[^a-z])rack(?:[^a-z]|$)",                                  kind: tube_rack }
+  - { pattern: ".*",                                                            kind: plate }
+
+target_devices:
+  # ─────────────────────────────────────────────────────────────────────────
+  # default：兜底物料集 + 兜底 slot_remap。
+  # caller 传未声明的 target_device 时使用本段；**不支持 models 子段**。
+  # 第一版内容按 prcxi 拷贝填充（值仍是 PRCXI_*），但语义独立，可独立演进。
+  # ─────────────────────────────────────────────────────────────────────────
+  default:
+    notes: "默认兜底物料集；caller 传未声明 target_device 时使用此段。第一版按 prcxi 拷贝填充。"
+    slot_remap:
+      # raw slot → deck slot；与对象类型无关
+      default:
+        "4": "13"
+        "8": "14"
+      # 按 object 字段覆盖 default
+      by_object:
+        trash:
+          "12": "16"
+    rules:
+      # ─ tip rack（默认量程档：≤10 / <300 / 否则 1000） ─
+      - { kind: tip_rack,  hole_count: 96, volume_max: 10,    class_name: PRCXI_10uL_Tips }
+      - { kind: tip_rack,  hole_count: 96, volume_max: 299.9, class_name: PRCXI_300ul_Tips }
+      - { kind: tip_rack,  hole_count: 96,                    class_name: PRCXI_1000uL_Tips }
+      # ─ tube rack ─
+      - { kind: tube_rack, hole_count: 2,  class_name: PRCXI_2_Reagent_Rack_50mL, notes: "2 孔 50 mL 试剂架" }
+      - { kind: tube_rack, hole_count: 8,  class_name: PRCXI_8_Reagent_Rack_10mL, notes: "8 孔 10 mL 试剂架" }
+      - { kind: tube_rack, hole_count: 24, class_name: PRCXI_EP_Adapter, notes: "Eppendorf 1.5/2 mL 24 位 4×6" }
+      - { kind: tube_rack, hole_count: 10, class_name: PRCXI_EP_Adapter, notes: "Falcon 4x50 + 6x15 mL（10 位兼容 4×6 适配器）" }
+      - { kind: tube_rack, hole_count: 96,  class_name: PRCXI_BioER_96_wellplate,  notes: "96 孔管架 → 96 网格 8×12（覆盖 E-H 行 / 7-12 列；避免误配 4×6 适配器）" }
+      - { kind: tube_rack, hole_count: 384, class_name: PRCXI_BioRad_384_wellplate, notes: "384 孔管架 → 384 网格 16×24" }
+      # ─ reservoir / trough（在 kind=plate 下按孔数映射） ─
+      - { kind: plate,     hole_count: 1,  class_name: PRCXI_nest_1_troughplate }
+      - { kind: plate,     hole_count: 4,  class_name: PRCXI_AGenBio_4_troughplate }
+      - { kind: plate,     hole_count: 12, class_name: PRCXI_nest_12_troughplate }
+      # ─ plate ─
+      - { kind: plate,     hole_count: 96,  class_name: PRCXI_BioER_96_wellplate }
+      - { kind: plate,     hole_count: 384, class_name: PRCXI_BioRad_384_wellplate }
+      # ─ trash ─
+      - { kind: trash,                       class_name: PRCXI_trash }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # prcxi：PRCXI 仪器专用段。caller 显式传 --target_device prcxi 时命中此段。
+  # 厂商级 slot_remap + rules 适用于"未声明 model"的调用；
+  # models 子段下声明同厂商不同型号的 deck 物理布局差异。
+  # ─────────────────────────────────────────────────────────────────────────
+  prcxi:
+    slot_remap:
+      # PRCXI 多数型号通用的 deck 物理布局映射
+      default:
+        "4": "13"
+        "8": "14"
+      by_object:
+        trash:
+          "12": "16"
+    rules:
+      # ─ tip rack（PRCXI 量程档：≤10 / <300 / 否则 1000） ─
+      - { kind: tip_rack,  hole_count: 96, volume_max: 10,    class_name: PRCXI_10uL_Tips }
+      - { kind: tip_rack,  hole_count: 96, volume_max: 299.9, class_name: PRCXI_300ul_Tips }
+      - { kind: tip_rack,  hole_count: 96,                    class_name: PRCXI_1000uL_Tips }
+      # ─ tube rack ─
+      - { kind: tube_rack, hole_count: 2,  class_name: PRCXI_2_Reagent_Rack_50mL, notes: "2 孔 50 mL 试剂架" }
+      - { kind: tube_rack, hole_count: 8,  class_name: PRCXI_8_Reagent_Rack_10mL, notes: "8 孔 10 mL 试剂架" }
+      - { kind: tube_rack, hole_count: 24, class_name: PRCXI_EP_Adapter, notes: "Eppendorf 1.5/2 mL 24 位 4×6" }
+      - { kind: tube_rack, hole_count: 10, class_name: PRCXI_EP_Adapter, notes: "Falcon 4x50 + 6x15 mL（10 位兼容 4×6 适配器）" }
+      - { kind: tube_rack, hole_count: 96,  class_name: PRCXI_BioER_96_wellplate,  notes: "96 孔管架 → 96 网格 8×12（覆盖 E-H 行 / 7-12 列；避免误配 4×6 适配器）" }
+      - { kind: tube_rack, hole_count: 384, class_name: PRCXI_BioRad_384_wellplate, notes: "384 孔管架 → 384 网格 16×24" }
+      # ─ reservoir / trough（在 kind=plate 下按孔数映射） ─
+      - { kind: plate,     hole_count: 1,  class_name: PRCXI_nest_1_troughplate }
+      - { kind: plate,     hole_count: 4,  class_name: PRCXI_AGenBio_4_troughplate }
+      - { kind: plate,     hole_count: 12, class_name: PRCXI_nest_12_troughplate }
+      # ─ plate ─
+      - { kind: plate,     hole_count: 96,  class_name: PRCXI_BioER_96_wellplate }
+      - { kind: plate,     hole_count: 384, class_name: PRCXI_BioRad_384_wellplate }
+      # ─ trash ─
+      - { kind: trash,                       class_name: PRCXI_trash }
+    models:
+      # PRCXI 9320 —— 与厂商级完全一致（空 dict 仅作为合法 model 名占位）。
+      # caller `--target_model 9320` 时所有字段继承厂商级 prcxi 段。
+      "9320": {}
+      # 演示：假想 PRCXI 4040 把 slot 4 物理位换到 16、trash 槽换到 20。
+      # 仅 slot_remap 不同；rules 与厂商级一致 → 不重复声明（自动继承）。
+      "4040":
+        slot_remap:
+          default:
+            "4": "16"
+            "8": "14"
+          by_object:
+            trash:
+              "12": "20"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 演示：未来加新仪器只复制 prcxi 段、改 device 名 + slot_remap + rules。
+  # 特别注意 tip 量程档可与 PRCXI 不同。
+  # ─────────────────────────────────────────────────────────────────────────
+  # beckman:
+  #   slot_remap:
+  #     default: {"4": "13"}
+  #     by_object: {trash: {"12": "16"}}
+  #   rules:
+  #     - { kind: tip_rack,  hole_count: 96, volume_max: 20,    class_name: Beckman_20uL_Tips }
+  #     - { kind: tip_rack,  hole_count: 96, volume_max: 199.9, class_name: Beckman_200uL_Tips }
+  #     - { kind: tip_rack,  hole_count: 96,                    class_name: Beckman_1000uL_Tips }
+  #     - { kind: tube_rack, hole_count: 24, class_name: Beckman_24_TubeRack }
+  #     - { kind: plate,     hole_count: 96, class_name: Beckman_BioMek_96_wellplate }
+  #     - { kind: trash,                      class_name: Beckman_Trash }
+  #   models:
+  #     "i7":
+  #       slot_remap:
+  #         default: {"4": "13", "5": "14"}    # 假想 i7 多一个 slot 重映射

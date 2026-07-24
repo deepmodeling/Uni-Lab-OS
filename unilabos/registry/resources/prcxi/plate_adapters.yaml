@@ -3,7 +3,7 @@ PRCXI_30mm_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_30mm_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_30mm_Adapter'
     type: pylabrobot
   description: '30mm适配器 (Code: ZX-58-30)'
   handles: []
@@ -15,7 +15,7 @@ PRCXI_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Adapter'
     type: pylabrobot
   description: '适配器 (Code: Fhh478)'
   handles: []
@@ -27,7 +27,7 @@ PRCXI_Deep10_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Deep10_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Deep10_Adapter'
     type: pylabrobot
   description: '10ul专用深孔板适配器 (Code: ZX-002-10)'
   handles: []
@@ -39,7 +39,7 @@ PRCXI_Deep300_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Deep300_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Deep300_Adapter'
     type: pylabrobot
   description: '300ul深孔板适配器 (Code: ZX-002-300)'
   handles: []
@@ -51,7 +51,7 @@ PRCXI_PCR_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_PCR_Adapter'
     type: pylabrobot
   description: '全裙边 PCR适配器 (Code: ZX-58-0001)'
   handles: []
@@ -63,7 +63,7 @@ PRCXI_Reservoir_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Reservoir_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Reservoir_Adapter'
     type: pylabrobot
   description: '储液槽 适配器 (Code: ZX-ADP-001)'
   handles: []
@@ -75,7 +75,7 @@ PRCXI_Tip10_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip10_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip10_Adapter'
     type: pylabrobot
   description: '吸头10ul 适配器 (Code: ZX-58-10)'
   handles: []
@@ -87,7 +87,7 @@ PRCXI_Tip1250_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip1250_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip1250_Adapter'
     type: pylabrobot
   description: 'Tip头适配器 1250uL (Code: ZX-58-1250)'
   handles: []
@@ -99,7 +99,7 @@ PRCXI_Tip300_Adapter:
   - prcxi
   - plate_adapters
   class:
-    module: unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip300_Adapter
+    module: 'unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_Tip300_Adapter'
     type: pylabrobot
   description: 'ZHONGXI 适配器 300uL (Code: ZX-58-300)'
   handles: []

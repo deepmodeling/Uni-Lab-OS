@@ -1,4 +1,5 @@
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnet
 )
 from unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
 from unilabos.devices.workstation.szlab_poly_studio.sensor import S07Sensors
+from unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07 import SZLabS07SolidAdditionDevice
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import SzlabMixerRobotDevice
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S04 import S04_SENSOR_BY_POSITION
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import ROBOT_ACTION_SPECS
@@ -78,6 +80,74 @@ def test_s071_auto_place_position_selects_first_empty_slot():
     robot.set_plc_gateway(FakePlc())
 
     assert robot._resolve_s071_place_position("auto") == "1-2"
+
+
+def test_s071_pick_and_rotate_run_in_parallel(monkeypatch):
+    barrier = threading.Barrier(2)
+    calls = []
+    robot = SzlabMixerRobotDevice()
+    robot.set_plc_gateway(object())
+    monkeypatch.setattr(robot, "_ensure_sensor_gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(robot, "_run_robot_handshake_precheck", lambda station: {"target_station": station})
+
+    def pick(position):
+        calls.append(("pick", position))
+        barrier.wait(timeout=1.0)
+        return {"success": True, "task": "pick"}
+
+    def wait_ready(_self, _name, _expected, _timeout, _description):
+        return True
+
+    def rotate(_self, position, timeout=300.0):
+        calls.append(("rotate", position, timeout))
+        barrier.wait(timeout=1.0)
+        return {"success": True, "process_type": 2}
+
+    monkeypatch.setattr(robot, "_run_s071_pick", pick)
+    monkeypatch.setattr(SZLabS07SolidAdditionDevice, "_wait_plc_bool", wait_ready)
+    monkeypatch.setattr(SZLabS07SolidAdditionDevice, "rotate_powder_cartridge_to_feed", rotate)
+
+    result = robot.submit_pick_from_s071_and_rotate_to_feed(
+        position="1-1",
+        load_position=2,
+        timeout=3.0,
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "completed"
+    assert sorted(call[0] for call in calls) == ["pick", "rotate"]
+    assert result["robot_pick"]["success"] is True
+    assert result["s07_rotate"]["success"] is True
+
+
+def test_s071_pick_and_rotate_partial_failure_is_not_retried(monkeypatch):
+    calls = {"pick": 0, "rotate": 0}
+    robot = SzlabMixerRobotDevice()
+    robot.set_plc_gateway(object())
+    monkeypatch.setattr(robot, "_ensure_sensor_gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(robot, "_run_robot_handshake_precheck", lambda station: {"target_station": station})
+
+    def pick(_position):
+        calls["pick"] += 1
+        return {"success": True}
+
+    def wait_ready(_self, _name, _expected, _timeout, _description):
+        return True
+
+    def rotate(_self, _position, _timeout=300.0):
+        calls["rotate"] += 1
+        return {"success": False, "message": "旋转失败"}
+
+    monkeypatch.setattr(robot, "_run_s071_pick", pick)
+    monkeypatch.setattr(SZLabS07SolidAdditionDevice, "_wait_plc_bool", wait_ready)
+    monkeypatch.setattr(SZLabS07SolidAdditionDevice, "rotate_powder_cartridge_to_feed", rotate)
+
+    result = robot.submit_pick_from_s071_and_rotate_to_feed()
+
+    assert result["success"] is False
+    assert result["status"] == "partial_failure"
+    assert "禁止自动重试" in result["message"]
+    assert calls == {"pick": 1, "rotate": 1}
 
 
 def test_szlab_wait_sensor_conditions_reads_all_values_without_cache(monkeypatch):
@@ -344,6 +414,7 @@ def test_szlab_robot_device_is_ast_scannable_from_own_package():
         "submit_pick_from_s06",
         "submit_place_to_s071",
         "submit_pick_from_s071",
+        "submit_pick_from_s071_and_rotate_to_feed",
         "submit_place_to_s072",
         "submit_pick_from_s072",
         "submit_place_to_s08",

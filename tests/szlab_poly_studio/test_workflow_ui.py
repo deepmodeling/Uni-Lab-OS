@@ -750,19 +750,19 @@ def test_single_sample_workflow_uses_internal_s09_balance_read_and_correct_robot
     assert [action["index"] for action in actions] == list(range(1, len(actions) + 1))
     assert methods.count("read_s07_balance") == 0
     assert methods.count("read_balance") == 0
-    assert methods[10:20] == [
+    assert methods[10:18] == [
         "submit_pick_from_s072",
         "submit_place_to_s071",
-        "submit_pick_from_s071",
-        "rotate_powder_cartridge_to_feed",
+        "submit_pick_from_s071_and_rotate_to_feed",
         "submit_place_to_s072",
         "submit_pick_from_s072",
         "submit_place_to_s071",
-        "submit_pick_from_s071",
-        "rotate_powder_cartridge_to_feed",
+        "submit_pick_from_s071_and_rotate_to_feed",
         "submit_place_to_s072",
     ]
     by_id = {action["workflow_node_id"]: action for action in actions}
+    assert by_id["p02_powder_1_pick_and_rotate"]["params"]["load_position"] == 1
+    assert by_id["p02_powder_2_pick_and_rotate"]["params"]["load_position"] == 2
     assert by_id["w01_place_beaker_s072"]["params"]["product_type"] == 2
     assert by_id["w02_pick_beaker_s072"]["params"]["product_type"] == 2
     assert by_id["p03_reagent_place_s08"]["params"]["product_type"] == 3

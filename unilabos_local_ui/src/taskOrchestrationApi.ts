@@ -27,6 +27,11 @@ export type ApiTaskInstance = {
   order: number;
   started_at: number | null;
   finished_at: number | null;
+  execution_state?: {
+    cursor?: number;
+    active_node_id?: string | null;
+    active_execution_id?: string | null;
+  };
 };
 
 export type ApiWorkspaceEvent = {
@@ -349,11 +354,17 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
         order,
       }))
     ),
-    plan: (workflowPath: string, expectedVersion: number, paused?: boolean) => (
+    plan: (
+      workflowPath: string,
+      expectedVersion: number,
+      paused?: boolean,
+      acknowledgePeerFailure?: boolean,
+    ) => (
       request('/schedule:plan', body({
         workflow_path: workflowPath,
         expected_version: expectedVersion,
         ...(paused === undefined ? {} : { paused }),
+        ...(acknowledgePeerFailure ? { acknowledge_peer_failure: true } : {}),
       }))
     ),
     advance: (workflowPath: string, expectedVersion: number, completedInstanceIds: string[] = []) => (

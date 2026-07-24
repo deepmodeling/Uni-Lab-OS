@@ -3025,6 +3025,115 @@ code {
 .task-gantt-bar.done { background: #8096aa; opacity: .78; }
 .task-gantt-bar:focus-visible { outline: 3px solid rgba(37, 99, 235, .35); outline-offset: 2px; }
 
+.task-sample-schedule {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.task-sample-row {
+  display: grid;
+  grid-template-columns: 95px minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.task-sample-row > strong {
+  color: #475569;
+  font-size: 11px;
+  text-align: right;
+  padding-top: 8px;
+}
+
+.task-sample-track {
+  display: flex;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px;
+  border-radius: 7px;
+  background: repeating-linear-gradient(90deg, #edf3f7 0, #edf3f7 calc(20% - 1px), #d8e5eb calc(20% - 1px), #d8e5eb 20%);
+}
+
+.task-sample-block {
+  flex: 1 1 120px;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  align-content: center;
+  border: 1px solid rgba(15, 23, 42, .12);
+  border-radius: 6px;
+  background: #62aabc;
+  color: #fff;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.task-sample-block small {
+  font-size: 9px;
+  font-weight: 700;
+  opacity: .92;
+}
+
+.task-sample-block.running { background: #e9a23b; }
+.task-sample-block.completed { background: #8096aa; opacity: .88; }
+.task-sample-block.failed { background: #c45c5c; }
+.task-sample-block.waiting,
+.task-sample-block.pending { background: #94a3b8; }
+.task-sample-block.selected {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.task-action-inspector {
+  border-top: 1px solid #dbe4ea;
+  padding-top: 10px;
+  display: grid;
+  gap: 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.task-action-log-section h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #334155;
+}
+
+.task-variable-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.task-variable-log-table th,
+.task-variable-log-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.task-variable-log-table th {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.task-process-log-list {
+  margin-top: 6px;
+  display: grid;
+  gap: 3px;
+  font-size: 10px;
+  color: #475569;
+}
+
+.task-log-error {
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .task-mini-tags {
   display: flex;
   flex-wrap: wrap;

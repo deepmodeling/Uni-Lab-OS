@@ -86,7 +86,12 @@ class TaskExecutionCoordinator:
         *,
         task_client: Any,
         node_runner: Callable[
-            [WorkflowNode, dict[str, Any], Callable[..., Any]], Any
+            [WorkflowNode, dict[str, Any], Callable[..., Any]],
+            Any,
+        ]
+        | Callable[
+            [WorkflowNode, dict[str, Any], Callable[..., Any], dict[str, Any]],
+            Any,
         ],
         device_provider: Callable[[], dict[str, Any]],
         max_workers: int = 4,
@@ -105,6 +110,18 @@ class TaskExecutionCoordinator:
         ] = {}
         self._reported_execution_ids: set[str] = set()
         self._closing = threading.Event()
+
+    def _invoke_node_runner(
+        self,
+        node: WorkflowNode,
+        devices: dict[str, Any],
+        action_callable: Callable[..., Any],
+        context: dict[str, Any],
+    ) -> Any:
+        try:
+            return self._node_runner(node, devices, action_callable, context)
+        except TypeError:
+            return self._node_runner(node, devices, action_callable)
 
     def shutdown(self) -> dict[str, Any]:
         """停止认领，等待实体动作结束，再尽力上报其终态。"""
@@ -288,10 +305,17 @@ class TaskExecutionCoordinator:
                 stats["claimed"] = int(stats["claimed"]) + 1
                 try:
                     future = self._executor.submit(
-                        self._node_runner,
+                        self._invoke_node_runner,
                         node,
                         devices,
                         action_callable,
+                        {
+                            "workflow_path": workflow_path,
+                            "instance_id": str(instance.get("id")),
+                            "node_id": node_id,
+                            "execution_id": execution_id,
+                            "sample_id": str(instance.get("sample_id") or ""),
+                        },
                     )
                 except Exception as exc:
                     pending = _PendingTerminalReport(

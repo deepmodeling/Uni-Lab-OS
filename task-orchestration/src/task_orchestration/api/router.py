@@ -228,7 +228,10 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
     def plan(request: ScheduleRequest) -> dict:
         try:
             response, schedule = workspace_service.plan(
-                request.workflow_path, request.expected_version, paused=request.paused
+                request.workflow_path,
+                request.expected_version,
+                paused=request.paused,
+                acknowledge_peer_failure=request.acknowledge_peer_failure,
             )
             return {
                 **public_workspace_response(response),

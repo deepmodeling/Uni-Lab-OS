@@ -200,7 +200,7 @@ class SZLabPolyPLCDevice(BaseClient):
         if OpcUaNode is None and not standalone_opcua_client:
             raise ModuleNotFoundError("SZLabPolyPLCDevice 需要可选依赖 pylabrobot，请在 unilab 环境中运行")
         super().__init__()
-        self._opc_wait_events: List[Dict[str, Any]] = []
+        self._opc_wait_tls = threading.local()
         self._node_registry: Dict[str, Any] = {}
         self._variables_to_find: Dict[str, Dict[str, Any]] = {}
         self._found_node_objects: Dict[str, Any] = {}
@@ -301,7 +301,11 @@ class SZLabPolyPLCDevice(BaseClient):
                     if missing:
                         logger.warning(f"以下节点缺少 NodeId 映射，未执行自动浏览: {', '.join(missing)}")
             except Exception as exc:
-                logger.error(f"client connect failed: {exc}")
+                logger.error(
+                    "client connect failed: %r",
+                    exc,
+                    exc_info=True,
+                )
                 raise
 
     @not_action
@@ -463,7 +467,13 @@ class SZLabPolyPLCDevice(BaseClient):
                     return self._read_sensor_array(sensor_bit[0])[sensor_bit[1]]
                 if node_name in self._direct_node_id_map:
                     direct_node_id = self._direct_node_id_map[node_name]
-                    raise RuntimeError(f"读取 PLC 变量失败: {node_name}: 直连 NodeId 无效: {direct_node_id}")
+                    detail = getattr(node, "_last_read_error", None) or (
+                        f"OPC read 失败（{type(node).__name__}，未记录底层异常）"
+                    )
+                    raise RuntimeError(
+                        f"读取 PLC 变量失败: {node_name}: NodeId={direct_node_id}: {detail} "
+                        f"(endpoint={self.url})"
+                    )
                 raise RuntimeError(f"读取 PLC 变量失败: {node_name}")
             return value
 
@@ -687,22 +697,43 @@ class SZLabPolyPLCDevice(BaseClient):
         return wait_sensor_conditions(self, conditions, timeout=timeout, interval=interval, context=context)
 
     @not_action
+    def _opc_wait_thread_state(self) -> Any:
+        tls = getattr(self, "_opc_wait_tls", None)
+        if tls is None:
+            tls = threading.local()
+            self._opc_wait_tls = tls
+        return tls
+
+    @not_action
     def drain_opc_wait_events(self) -> List[Dict[str, Any]]:
-        events = list(getattr(self, "_opc_wait_events", []))
-        self._opc_wait_events = []
+        """仅回收当前线程缓存的 OPC 等待事件，避免并行 Action 串日志。"""
+        state = self._opc_wait_thread_state()
+        events = list(getattr(state, "events", None) or [])
+        state.events = []
         return events
 
     @not_action
     def set_opc_wait_event_writer(self, writer: Any | None) -> None:
-        self._opc_wait_event_writer = writer
+        """绑定当前线程的 OPC 等待日志回调；并行 Task 动作互不覆盖。"""
+        state = self._opc_wait_thread_state()
+        if writer is None:
+            if hasattr(state, "writer"):
+                del state.writer
+            return
+        state.writer = writer
 
     @not_action
     def _emit_or_store_opc_wait_event(self, event: Dict[str, Any]) -> None:
-        writer = getattr(self, "_opc_wait_event_writer", None)
+        state = self._opc_wait_thread_state()
+        writer = getattr(state, "writer", None)
         if callable(writer):
             writer(event)
             return
-        self._opc_wait_events.append(event)
+        pending = getattr(state, "events", None)
+        if pending is None:
+            pending = []
+            state.events = pending
+        pending.append(event)
 
     @not_action
     def _opc_wait_variable_detail(self, node_name: str) -> Dict[str, Any]:
@@ -881,6 +912,36 @@ class SZLabPolyPLCDevice(BaseClient):
                 "message": f"等待 OPC 变量 {node_name} == {expected} (timeout={timeout}s, interval={interval}s)",
                 "detail": detail,
             }
+        )
+
+    @not_action
+    def _record_opc_wait_change(
+        self,
+        node_name: str,
+        expected: Any,
+        previous_value: Any,
+        current_value: Any,
+        *,
+        timeout: float,
+        interval: float,
+    ) -> None:
+        detail = {
+            "type": "opc_wait",
+            "phase": "change",
+            "variable": node_name,
+            "expected": expected,
+            "previous_value": previous_value,
+            "last_value": current_value,
+            "timeout": timeout,
+            "interval": interval,
+        }
+        detail.update(self._opc_wait_variable_detail(node_name))
+        message = (
+            f"OPC 变量变化 {node_name}: {previous_value} → {current_value} "
+            f"(期望 {expected})"
+        )
+        self._emit_or_store_opc_wait_event(
+            {"phase": "change", "message": message, "detail": detail}
         )
 
     @not_action

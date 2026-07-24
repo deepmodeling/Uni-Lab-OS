@@ -28,6 +28,8 @@ except ImportError:  # pragma: no cover - 生产目标为 macOS/Linux
 
 
 DEFAULT_URL = "opc.tcp://127.0.0.1:4840"
+# 远端 OPC 建连常超过 2s；io_timeout 仍用于单次读写，Client 会话超时单独抬高下限
+MIN_OPC_SESSION_TIMEOUT = 15.0
 DEFAULT_PROFILE_PATH = (
     Path(__file__).with_name("config") / "szlab_task_opc_simulator.json"
 )
@@ -785,6 +787,8 @@ class TaskOpcStateMachine:
                     self._busy_channels.discard(node.channel)
                 else:
                     self._node_states[event.node_index] = "awaiting_reset"
+                    # on_complete 结束后即可释放 channel；after_reset 只延迟写回变量，不占用通道
+                    self._busy_channels.discard(node.channel)
             elif event.kind == "after_reset":
                 node = self.profile.nodes[event.node_index]
                 self._node_states[event.node_index] = "idle"
@@ -832,8 +836,31 @@ class SZLabOpcAdapter:
     def __init__(self, device: Any) -> None:
         self._device = device
 
+    def _reconnect(self) -> None:
+        disconnect = getattr(self._device, "disconnect", None)
+        connect = getattr(self._device, "_connect", None)
+        if callable(disconnect):
+            try:
+                disconnect()
+            except Exception:
+                pass
+        if callable(connect):
+            connect()
+
     def read(self, name: str) -> Any:
-        return self._device.read_variable(name, use_cache=False)
+        last_exc: BaseException | None = None
+        for attempt in range(2):
+            try:
+                return self._device.read_variable(name, use_cache=False)
+            except RuntimeError as exc:
+                last_exc = exc
+                if attempt == 0:
+                    self._reconnect()
+                    continue
+                raise
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"读取 OPC 变量失败: {name}")
 
     def read_many(self, names: Sequence[str]) -> dict[str, Any]:
         return {name: self.read(name) for name in names}
@@ -937,7 +964,6 @@ class TrackedWriter:
                     )
                     self._logger.warning(message)
                     skipped.append(name)
-                    errors.append(message)
                     continue
                 self._adapter.write(name, self._originals[name])
                 restored.append(name)
@@ -1012,11 +1038,21 @@ def validate_url(
 def create_opc_adapter(config: SimulatorConfig) -> OpcAdapter:
     from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice
 
+    repo_root = Path(__file__).resolve().parents[1]
+    csv_path = (
+        repo_root
+        / "unilabos"
+        / "devices"
+        / "workstation"
+        / "szlab_poly_studio"
+        / "szlab_plc_0702.csv"
+    )
     return SZLabOpcAdapter(
         SZLabPolyPLCDevice(
             url=str(config.url),
+            csv_path=str(csv_path),
             auto_connect=True,
-            opcua_timeout=float(config.io_timeout),
+            opcua_timeout=max(float(config.io_timeout), MIN_OPC_SESSION_TIMEOUT),
         )
     )
 
@@ -1175,6 +1211,7 @@ def run_simulator(
     endpoint_lock: Any = None
     lock_acquired = False
     exit_code = 0
+    log.info("OPC 模拟器连接地址: %s", config.url)
     deadline = (
         None
         if config.timeout is None
@@ -1348,7 +1385,10 @@ def main(argv: Iterable[str] | None = None) -> int:
             logger=log,
         )
     except Exception as exc:
-        log.error("模拟器退出：%s", exc)
+        if str(exc).strip():
+            log.error("模拟器退出：%s", exc)
+        else:
+            log.error("模拟器退出：%r", exc, exc_info=True)
         return 1
 
 

@@ -62,7 +62,15 @@ import {
   type OpcSimulatorStatus,
 } from './opcSimulatorProfile';
 import {
-  annotateTaskGanttEntries,
+  buildTaskProcessLogLines,
+  buildTaskVariableRows,
+  fetchTaskActionLogs,
+  groupTaskActionLogsByNode,
+  mergeTaskActionLogs,
+  type TaskActionLogEntry,
+} from './taskActionLog';
+import {
+  buildSampleProcessRows,
   buildTaskGanttEntries,
   canDeleteTaskTemplate,
   createOperationGenerationController,
@@ -176,6 +184,7 @@ type TaskInstance = {
   status: TaskInstanceStatus;
   startedAt?: number;
   finishedAt?: number;
+  executionCursor?: number;
 };
 type TaskWorkspaceState = {
   taskTemplates: TaskTemplate[];
@@ -259,6 +268,7 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
       status: instance.status,
       startedAt: instance.started_at ?? undefined,
       finishedAt: instance.finished_at ?? undefined,
+      executionCursor: instance.execution_state?.cursor,
     })),
     taskEvents: response.workspace.events.map((event) => (
       taskEventText(
@@ -287,6 +297,9 @@ function taskApiErrorMessage(error: unknown) {
   if (error instanceof TaskOrchestrationBusinessError && error.status === 409) {
     if (error.message.includes('pause scheduler')) {
       return '请先点击「暂停派发」后再清空队列';
+    }
+    if (error.message.includes('explicit recovery')) {
+      return '存在失败动作导致的暂停，请先「清空队列」后再点「运行调度」';
     }
     return `Task 状态已变化，请刷新后重试：${error.message}`;
   }
@@ -642,12 +655,18 @@ function App() {
   const [isTaskOpcConnecting, setIsTaskOpcConnecting] = useState(false);
   const [taskSampleCount, setTaskSampleCount] = useState(3);
   const [selectedTaskTemplateId, setSelectedTaskTemplateId] = useState<string | null>(null);
+  const [selectedTaskInstanceId, setSelectedTaskInstanceId] = useState<string | null>(null);
   const [scheduledTemplateIds, setScheduledTemplateIds] = useState<string[]>([]);
   const [csvVariables, setCsvVariables] = useState<CsvVariable[]>([]);
-  const [resourceScheduleHeight, setResourceScheduleHeight] = useState(260);
+  const [resourceScheduleHeight, setResourceScheduleHeight] = useState(360);
+  const [taskActionLogs, setTaskActionLogs] = useState<TaskActionLogEntry[]>([]);
+  const [taskLogError, setTaskLogError] = useState('');
+  const taskLogAfterSeqRef = useRef(0);
+  const taskLogBootstrappedRef = useRef(false);
   const [isSchedulerRunning, setIsSchedulerRunning] = useState(false);
   const [isSchedulerTransitioning, setIsSchedulerTransitioning] = useState(false);
   const [isTaskExecutionDraining, setIsTaskExecutionDraining] = useState(false);
+  const [hasActiveServerExecution, setHasActiveServerExecution] = useState(false);
   const [taskExecutionWorkflow, setTaskExecutionWorkflow] = useState<WorkflowJson | null>(null);
   const [taskExecutionStatus, setTaskExecutionStatus] = useState<TaskExecutionStatus>(
     createTaskExecutionStatus(),
@@ -748,6 +767,14 @@ function App() {
     setScheduledTemplateIds(next.scheduledTemplateIds);
     setTaskWaitingReasons(next.waitingReasons);
     setIsSchedulerRunning(next.isSchedulerRunning);
+    setHasActiveServerExecution(
+      response.workspace.task_instances.some(
+        (instance) => (
+          instance.status === 'running'
+          && Boolean(instance.execution_state?.active_execution_id)
+        ),
+      ),
+    );
     setTaskScheduleEntries(next.scheduleEntries);
     setSelectedTaskTemplateId((current) => (
       next.taskTemplates.some((template) => template.id === current)
@@ -926,17 +953,29 @@ function App() {
   useEffect(() => {
     setTaskTemplateNameDraft(selectedTaskTemplate?.name || '');
   }, [selectedTaskTemplate?.id, selectedTaskTemplate?.name]);
-  const taskGanttEntries = useMemo(
-    () => annotateTaskGanttEntries(
-      taskScheduleEntries,
-      taskTemplates,
-      nodes.map((node) => ({ id: node.id, deviceId: node.data.deviceId })),
-    ),
-    [nodes, taskScheduleEntries, taskTemplates],
+  const sampleProcessRows = useMemo(
+    () => buildSampleProcessRows(taskInstances, taskTemplates),
+    [taskInstances, taskTemplates],
   );
-  const scheduledResources = useMemo(() => [
-    ...new Set(taskGanttEntries.map((entry) => entry.resource)),
-  ], [taskGanttEntries]);
+  const selectedTaskInstance = useMemo(
+    () => taskInstances.find((item) => item.id === selectedTaskInstanceId) || null,
+    [selectedTaskInstanceId, taskInstances],
+  );
+  const selectedTaskInstanceLogs = useMemo(
+    () => (
+      selectedTaskInstanceId
+        ? taskActionLogs.filter((entry) => entry.instance_id === selectedTaskInstanceId)
+        : []
+    ),
+    [selectedTaskInstanceId, taskActionLogs],
+  );
+  const selectedTaskLogSections = useMemo(() => {
+    const template = taskTemplates.find((item) => item.id === selectedTaskInstance?.templateId);
+    return groupTaskActionLogsByNode(
+      selectedTaskInstanceLogs,
+      template?.nodeIds || [],
+    );
+  }, [selectedTaskInstance?.templateId, selectedTaskInstanceLogs, taskTemplates]);
   const scheduledOpcTemplateIds = useMemo(
     () => collectScheduledTemplateIds(scheduledTemplateIds),
     [scheduledTemplateIds],
@@ -1056,6 +1095,76 @@ function App() {
     setTaskOpcStatus(null);
     setTaskOpcMessage('');
   }, [taskWorkspacePath]);
+  useEffect(() => {
+    if (workspace !== 'tasks') return;
+    let cancelled = false;
+    taskLogBootstrappedRef.current = false;
+    setTaskActionLogs([]);
+    setTaskLogError('');
+    void fetchTaskActionLogs(fetch, taskWorkspacePath, { afterSeq: 0 })
+      .then((result) => {
+        if (cancelled) return;
+        taskLogAfterSeqRef.current = result.latest_seq;
+        taskLogBootstrappedRef.current = true;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        taskLogAfterSeqRef.current = 0;
+        taskLogBootstrappedRef.current = true;
+        setTaskLogError('日志暂不可用');
+      });
+    return () => {
+      cancelled = true;
+      taskLogBootstrappedRef.current = false;
+    };
+  }, [taskWorkspacePath, workspace]);
+  useEffect(() => {
+    if (workspace !== 'tasks' || !taskLogBootstrappedRef.current) return;
+    const poll = () => {
+      void fetchTaskActionLogs(fetch, taskWorkspacePath, {
+        afterSeq: taskLogAfterSeqRef.current,
+      })
+        .then((result) => {
+          setTaskLogError('');
+          if (result.entries.length) {
+            setTaskActionLogs((previous) => mergeTaskActionLogs(previous, result.entries));
+          }
+          if (result.latest_seq >= taskLogAfterSeqRef.current) {
+            taskLogAfterSeqRef.current = result.latest_seq;
+          }
+        })
+        .catch(() => {
+          setTaskLogError('日志暂不可用');
+        });
+    };
+    poll();
+    const timer = window.setInterval(poll, 1000);
+    return () => window.clearInterval(timer);
+  }, [taskWorkspacePath, workspace]);
+  useEffect(() => {
+    if (workspace !== 'tasks' || !selectedTaskInstanceId || !taskLogBootstrappedRef.current) {
+      return;
+    }
+    let cancelled = false;
+    void fetchTaskActionLogs(fetch, taskWorkspacePath, {
+      afterSeq: 0,
+      instanceId: selectedTaskInstanceId,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setTaskLogError('');
+        setTaskActionLogs((previous) => {
+          const retained = previous.filter((entry) => entry.instance_id !== selectedTaskInstanceId);
+          return mergeTaskActionLogs(retained, result.entries);
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setTaskLogError('日志暂不可用');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTaskInstanceId, taskWorkspacePath, workspace]);
   const connectTaskOpc = useCallback(async () => {
     const url = taskOpcUrl.trim();
     if (!url) {
@@ -2292,7 +2401,15 @@ function App() {
         return;
       }
       try {
-        applyTaskWorkspace(await taskApiRef.current.plan(taskWorkspacePath, version, false));
+        const hasRunningPeer = taskInstancesRef.current.some(
+          (instance) => instance.status === 'running',
+        );
+        applyTaskWorkspace(await taskApiRef.current.plan(
+          taskWorkspacePath,
+          version,
+          false,
+          hasRunningPeer,
+        ));
       } catch (error) {
         const message = taskApiErrorMessage(error);
         try {
@@ -2312,9 +2429,13 @@ function App() {
     taskWorkspacePath,
   ]);
 
-  const shouldRunTaskExecutionLoop = isSchedulerRunning || isTaskExecutionDraining;
+  const shouldRunTaskExecutionLoop = (
+    isSchedulerRunning
+    || isTaskExecutionDraining
+    || hasActiveServerExecution
+  );
   useEffect(() => {
-    if (!shouldRunTaskExecutionLoop || (!isTaskExecutionDraining && !taskExecutionWorkflow)) return;
+    if (!shouldRunTaskExecutionLoop || (!isTaskExecutionDraining && !hasActiveServerExecution && !taskExecutionWorkflow)) return;
     const controller = taskExecutionControllerRef.current;
     if (!controller) return;
     if (!controller.isRunning()) controller.start();
@@ -2326,7 +2447,13 @@ function App() {
     void runCycle();
     const timer = window.setInterval(runCycle, 1500);
     return () => window.clearInterval(timer);
-  }, [isTaskExecutionDraining, shouldRunTaskExecutionLoop, taskExecutionWorkflow, taskWorkspacePath]);
+  }, [
+    hasActiveServerExecution,
+    isTaskExecutionDraining,
+    shouldRunTaskExecutionLoop,
+    taskExecutionWorkflow,
+    taskWorkspacePath,
+  ]);
 
   useEffect(() => () => taskExecutionControllerRef.current?.pause(), []);
 
@@ -3321,8 +3448,8 @@ function App() {
               />
               <div className="task-panel-head">
                 <div>
-                  <h2>Resource Schedule</h2>
-                  <p>由 Task 编排服务返回的 Task 进度泳道；涉及设备仅供识别，不表示设备占用。</p>
+                  <h2>样品工艺进度</h2>
+                  <p>每行一个 Sample，横向按 Task 顺序展示工艺块；点击工艺块查看变量检查与过程日志。</p>
                 </div>
                 <span>{isSchedulerRunning ? '派发中' : '已暂停'}</span>
               </div>
@@ -3356,43 +3483,107 @@ function App() {
                   {!scheduledTemplateIds.length && <em>拖入 Template 以建立本次运行队列</em>}
                 </div>
               </div>
-              <div className="task-gantt">
-                {scheduledResources.map((resource) => {
-                  const entries = taskGanttEntries.filter((entry) => entry.resource === resource);
-                  const earliest = Math.min(...taskGanttEntries.map((entry) => entry.startAt), Date.now());
-                  const latest = Math.max(...taskGanttEntries.map((entry) => entry.endAt), Date.now() + 60_000);
-                  const span = Math.max(1, latest - earliest);
+              <div className="task-sample-schedule">
+                {sampleProcessRows.map((row) => (
+                  <div className="task-sample-row" key={row.sample}>
+                    <strong>{row.sample}</strong>
+                    <div className="task-sample-track">
+                      {row.blocks.map((block) => (
+                        <button
+                          className={[
+                            'task-sample-block',
+                            block.state,
+                            selectedTaskInstanceId === block.instanceId ? 'selected' : '',
+                          ].filter(Boolean).join(' ')}
+                          key={block.id}
+                          onClick={() => {
+                            setSelectedTaskInstanceId(block.instanceId);
+                            setSelectedTaskTemplateId(block.templateId);
+                          }}
+                          title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
+                          type="button"
+                        >
+                          <span>{block.templateName}</span>
+                          <small>{block.actionDone}/{block.actionTotal}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {!sampleProcessRows.length && (
+                  <div className="task-empty">创建 Task 实例后显示各 Sample 的工艺进度。</div>
+                )}
+              </div>
+              <section className="task-action-inspector">
+                <div className="task-panel-head compact">
+                  <div>
+                    <h2>工艺变量与过程日志</h2>
+                    <p>
+                      {selectedTaskInstance
+                        ? `${selectedTaskInstance.sample} / ${
+                          taskTemplates.find((item) => item.id === selectedTaskInstance.templateId)?.name
+                            || selectedTaskInstance.templateId
+                        }`
+                        : '点击上方工艺块查看该 Task 的变量检查与提交过程'}
+                    </p>
+                  </div>
+                  {taskLogError ? <span className="task-log-error">{taskLogError}</span> : null}
+                </div>
+                {!selectedTaskInstance && (
+                  <div className="task-empty">未选择工艺块。</div>
+                )}
+                {selectedTaskInstance && selectedTaskLogSections.map((section) => {
+                  const variableRows = buildTaskVariableRows(section.entries);
+                  const processLines = buildTaskProcessLogLines(section.entries);
+                  const nodeLabel = nodes.find((node) => node.id === section.nodeId)?.data.label
+                    || section.nodeId;
                   return (
-                    <div className="task-gantt-row" key={resource}>
-                      <strong>{resource}</strong>
-                      <div className="task-gantt-track">
-                        {entries.map((entry) => (
-                          <button
-                            className={`task-gantt-bar ${entry.state}`}
-                            key={entry.id}
-                            onClick={() => setSelectedTaskTemplateId(entry.templateId)}
-                            style={{
-                              left: `${((entry.startAt - earliest) / span) * 100}%`,
-                              width: `${Math.max(5, ((entry.endAt - entry.startAt) / span) * 100)}%`,
-                            }}
-                            title={[
-                              `${entry.sample} / ${taskTemplates.find((template) => template.id === entry.templateId)?.name || entry.templateId}`,
-                              entry.involvedDeviceIds?.length ? `涉及设备：${entry.involvedDeviceIds.join('、')}（非占用）` : '未声明涉及设备',
-                              entry.nodeInfoIncomplete ? '节点信息不完整' : '',
-                            ].filter(Boolean).join(' · ')}
-                            type="button"
-                          >
-                            {entry.sample}
-                            {entry.involvedDeviceIds?.length ? <small>涉及：{entry.involvedDeviceIds.join('、')}</small> : null}
-                            {entry.nodeInfoIncomplete ? <em>节点信息不完整</em> : null}
-                          </button>
-                        ))}
-                      </div>
+                    <div className="task-action-log-section" key={section.nodeId}>
+                      <h3>{nodeLabel}</h3>
+                      {variableRows.length ? (
+                        <table className="task-variable-log-table">
+                          <thead>
+                            <tr>
+                              <th>阶段</th>
+                              <th>变量</th>
+                              <th>期望</th>
+                              <th>当前</th>
+                              <th>结果</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {variableRows.map((row) => (
+                              <tr key={row.key}>
+                                <td>{row.phase}</td>
+                                <td>{row.variable}</td>
+                                <td>{row.expected}</td>
+                                <td>{row.current}</td>
+                                <td>{row.result}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="task-empty">该 Action 暂无变量检查记录。</div>
+                      )}
+                      {processLines.length ? (
+                        <div className="task-process-log-list">
+                          {processLines.map((line) => (
+                            <div key={`${line.seq}-${line.message}`}>
+                              {new Date(line.timestamp).toLocaleTimeString()}
+                              {' · '}
+                              {line.message}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
-                {!scheduledResources.length && <div className="task-empty">创建 Task 实例后显示实际排程进度。</div>}
-              </div>
+                {selectedTaskInstance && !selectedTaskLogSections.length && (
+                  <div className="task-empty">该工艺尚未产生运行日志，派发 Action 后会在此显示。</div>
+                )}
+              </section>
             </section>
           </div>
         </main>

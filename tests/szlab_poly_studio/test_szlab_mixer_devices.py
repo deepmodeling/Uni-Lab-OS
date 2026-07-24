@@ -119,7 +119,6 @@ def test_szlab_wait_sensor_conditions_propagates_read_errors():
 
 def test_szlab_plc_wait_variable_equal_records_start_and_finish_events(monkeypatch):
     device = object.__new__(SZLabPolyPLCDevice)
-    device._opc_wait_events = []
     device.values = [False, True]
     device.reads = []
 
@@ -1317,8 +1316,7 @@ def test_szlab_robot_s04_pick_requires_material_and_resets_pc_to_plc_variables()
 
 def test_szlab_robot_waits_emit_plc_opc_wait_events():
     plc = object.__new__(SZLabPolyPLCDevice)
-    plc._opc_wait_events = []
-    plc._opc_wait_event_writer = None
+    plc.set_opc_wait_event_writer(None)
     values = {
         "传感器状态_上位机[0].NO[6]": True,
         "Robot_Home": True,
@@ -1365,8 +1363,7 @@ def test_szlab_robot_waits_emit_plc_opc_wait_events():
 
 def test_sensor_condition_wait_logs_start_change_and_finish():
     plc = object.__new__(SZLabPolyPLCDevice)
-    plc._opc_wait_events = []
-    plc._opc_wait_event_writer = None
+    plc.set_opc_wait_event_writer(None)
     plc._sensor_bit_metadata = {
         "传感器状态_上位机[3].NO[1]": {"label": "加溶剂检测"},
         "传感器状态_上位机[4].NO[12]": {"label": "液体试剂瓶1-1"},
@@ -1406,8 +1403,7 @@ def test_sensor_condition_wait_logs_start_change_and_finish():
 
 def test_sensor_condition_wait_timeout_lists_unmet_signals_once():
     plc = object.__new__(SZLabPolyPLCDevice)
-    plc._opc_wait_events = []
-    plc._opc_wait_event_writer = None
+    plc.set_opc_wait_event_writer(None)
     plc._sensor_bit_metadata = {
         "传感器状态_上位机[5].NO[1]": {"label": "液体试剂瓶2-1"},
     }
@@ -1427,6 +1423,34 @@ def test_sensor_condition_wait_timeout_lists_unmet_signals_once():
     assert [event["phase"] for event in events] == ["start", "finish"]
     assert "液体试剂瓶2-1" in events[-1]["message"]
     assert "当前 False" in events[-1]["message"]
+
+
+def test_opc_wait_event_writer_is_thread_local():
+    """并行 Action 绑定 wait logger 时，事件应落在各自线程的 writer。"""
+    plc = object.__new__(SZLabPolyPLCDevice)
+    received_a: list[str] = []
+    received_b: list[str] = []
+    ready = threading.Barrier(2)
+
+    def worker(bucket: list[str], marker: str) -> None:
+        plc.set_opc_wait_event_writer(
+            lambda event: bucket.append(str(event.get("message") or marker))
+        )
+        ready.wait()
+        plc._emit_or_store_opc_wait_event({"message": marker, "detail": {"type": "opc_wait"}})
+        plc.set_opc_wait_event_writer(None)
+
+    threads = [
+        threading.Thread(target=worker, args=(received_a, "action-a")),
+        threading.Thread(target=worker, args=(received_b, "action-b")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5.0)
+
+    assert received_a == ["action-a"]
+    assert received_b == ["action-b"]
 
 
 def test_szlab_robot_s04_pick_rejects_empty_position_without_writing_task():
@@ -2100,13 +2124,13 @@ def test_szlab_robot_home_signal_blocks_task_before_pc_to_plc_write():
         sensor_values={"传感器状态_上位机[2].NO[10]": True},
         home_value=False,
     )
-    device = SzlabMixerRobotDevice()
+    device = SzlabMixerRobotDevice(timeout=0.2, write_allowed_timeout=0.2, poll_interval=0.05)
     device.set_plc_gateway(gateway)
 
     result = device.submit_pick_from_s04(position=1)
 
     assert result["success"] is False
-    assert "Robot_Home 未确认" in result["message"]
+    assert "等待 Robot_Home 为 True 超时" in result["message"]
     assert gateway.writes == []
 
 

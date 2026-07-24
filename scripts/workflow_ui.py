@@ -49,6 +49,7 @@ from scripts.opc_simulator_process_manager import (
     StopTimeout,
     UnsafeSimulatorUrlConfirmationRequired,
 )
+from scripts.task_action_log_store import TaskActionLogStore
 from scripts.task_execution_coordinator import (
     TaskApiConflict,
     TaskExecutionCoordinator,
@@ -80,6 +81,7 @@ from scripts.run_workflow_local import (
     create_local_devices,
     format_snapshot_detail,
     ignore_opcua_token_time_drift,
+    iter_action_logs,
     iter_opc_wait_logs,
     load_workflow_nodes,
     load_runtime_config,
@@ -537,6 +539,11 @@ def _run_node_with_live_opc_sampling(
         )
     if sampling_errors:
         logger.log(f"OPC实时采样异常: {sampling_errors[-1]}", level="warning")
+    for action_log in iter_action_logs(result):
+        logger.log(
+            action_log["message"],
+            detail={"action_log": action_log.get("detail")},
+        )
     for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
         logger.log(wait_log["message"], detail=wait_log.get("detail"))
     logger.log(f"动作结果: {result}", detail={"result": result})
@@ -570,16 +577,71 @@ class WorkflowRunManager:
         self._sensor_event_version = 0
         self._sensor_event_plc: Any = None
         self._task_snapshot_publisher = TaskOrchestrationSnapshotPublisher()
+        self._task_action_log_store = TaskActionLogStore()
         self._task_execution_coordinator = TaskExecutionCoordinator(
             task_client=self._task_snapshot_publisher,
-            node_runner=lambda node, devices, action_callable: _run_node_with_live_opc_sampling(
-                node,
-                devices,
-                action_callable=action_callable,
-                logger=WorkflowLogger(writer=lambda _message, **_kwargs: None),
-                runtime_config=self._runtime_config,
-            ),
+            node_runner=self._run_task_action_node,
             device_provider=self._task_execution_devices,
+        )
+
+    def _append_task_action_log(
+        self,
+        context: dict[str, Any],
+        message: str,
+        *,
+        level: str = "info",
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            self._task_action_log_store.append(
+                workflow_path=str(context.get("workflow_path") or ""),
+                instance_id=str(context.get("instance_id") or ""),
+                node_id=str(context.get("node_id") or ""),
+                execution_id=str(context.get("execution_id") or ""),
+                sample_id=str(context.get("sample_id") or ""),
+                level=level,
+                message=message,
+                detail=detail,
+            )
+        except Exception:
+            # 日志收集失败不得影响 Action 执行
+            return
+
+    def _run_task_action_node(
+        self,
+        node: WorkflowNode,
+        devices: dict[str, Any],
+        action_callable: Callable[..., Any],
+        context: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        def writer(message: str, *, level: str = "info", detail: dict[str, Any] | None = None) -> None:
+            self._append_task_action_log(
+                context,
+                message,
+                level=level,
+                detail=detail,
+            )
+
+        logger = WorkflowLogger(writer=writer)
+        return _run_node_with_live_opc_sampling(
+            node,
+            devices,
+            action_callable=action_callable,
+            logger=logger,
+            runtime_config=self._runtime_config,
+        )
+
+    def list_task_action_logs(
+        self,
+        *,
+        workflow_path: str,
+        after_seq: int = 0,
+        instance_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self._task_action_log_store.list_since(
+            workflow_path,
+            after_seq=after_seq,
+            instance_id=instance_id,
         )
 
     def start(self, payload: dict[str, Any]) -> RunRecord:
@@ -2110,6 +2172,35 @@ def create_app(
                 "claimed": 0,
                 "completed": 0,
                 "failed": 0,
+            }
+
+    @app.get("/api/task-execution/logs", response_class=JSONResponse)
+    async def get_task_execution_logs(
+        task_workspace_path: str = "",
+        after_seq: int = 0,
+        instance_id: str = "",
+    ) -> dict[str, Any]:
+        workflow_path = str(task_workspace_path or "").strip()
+        if not workflow_path:
+            return {
+                "success": False,
+                "message": "缺少当前 workflow 路径",
+                "latest_seq": 0,
+                "entries": [],
+            }
+        try:
+            payload = manager.list_task_action_logs(
+                workflow_path=workflow_path,
+                after_seq=max(0, int(after_seq)),
+                instance_id=str(instance_id).strip() or None,
+            )
+            return {"success": True, **payload}
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": str(exc),
+                "latest_seq": 0,
+                "entries": [],
             }
 
     @app.post("/api/opc-simulator/profiles:generate", response_class=JSONResponse)

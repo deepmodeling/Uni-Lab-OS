@@ -1,5 +1,5 @@
 {
-  "version": 1572,
+  "version": 3971,
   "workspace": {
     "workflow_path": "szlab_robot_action_workflow.json",
     "templates": [
@@ -32,24 +32,24 @@
     ],
     "task_instances": [
       {
-        "id": "e5eaa23ccadb4f9b8611f64ce13da323",
+        "id": "3f9e6dab3b0b4f4490a6357437211573",
         "template_id": "szlab-e2e-s07",
         "status": "completed",
         "sample_id": "Sample A",
         "order": 0,
         "payload": {},
-        "started_at": 1784713108835,
-        "finished_at": 1784713185174,
+        "started_at": 1784803010497,
+        "finished_at": 1784803339627,
         "execution_state": {
           "cursor": 3,
           "records": [
             {
               "node_id": "node_001_pick_from_s03",
               "attempt": 1,
-              "execution_id": "task-action-f3547822fb3791c300d5a582b7b8fb0e",
+              "execution_id": "task-action-bcc790d2232a898f010739cfea84f1bb",
               "status": "succeeded",
-              "started_at": 1784713108843,
-              "finished_at": 1784713116230,
+              "started_at": 1784803010512,
+              "finished_at": 1784803021145,
               "result": [
                 {
                   "uuid": "node_001_pick_from_s03",
@@ -170,10 +170,10 @@
             {
               "node_id": "node_002_place_to_s072",
               "attempt": 1,
-              "execution_id": "task-action-b67342fee0d3ca38d3bb9d6772a61926",
+              "execution_id": "task-action-07b70733f682441d16552c382c5c37eb",
               "status": "succeeded",
-              "started_at": 1784713116239,
-              "finished_at": 1784713137171,
+              "started_at": 1784803021156,
+              "finished_at": 1784803323976,
               "result": [
                 {
                   "uuid": "node_002_place_to_s072",
@@ -255,10 +255,10 @@
             {
               "node_id": "node_003_dose_powder",
               "attempt": 1,
-              "execution_id": "task-action-a91586a6cd72cc8930989d58a90dbefc",
+              "execution_id": "task-action-c424b0e5cee35324b51b81f01b105c2e",
               "status": "succeeded",
-              "started_at": 1784713137188,
-              "finished_at": 1784713185174,
+              "started_at": 1784803323985,
+              "finished_at": 1784803339627,
               "result": [
                 {
                   "uuid": "node_003_dose_powder",
@@ -290,7 +290,7 @@
                     },
                     "S07参数写入完成": {
                       "success": true,
-                      "value": true,
+                      "value": false,
                       "node_id": "ns=4;s=上位机通讯|S07参数写入完成"
                     },
                     "S07工艺完成": {
@@ -377,498 +377,29 @@
         }
       },
       {
-        "id": "70f7f66f9f754fa2b37b009678e4ed61",
-        "template_id": "szlab-e2e-s07",
-        "status": "completed",
-        "sample_id": "Sample B",
-        "order": 0,
-        "payload": {},
-        "started_at": 1784713108835,
-        "finished_at": 1784713185186,
-        "execution_state": {
-          "cursor": 3,
-          "records": [
-            {
-              "node_id": "node_001_pick_from_s03",
-              "attempt": 1,
-              "execution_id": "task-action-e1762b1f2406a9fe5f22b2eba67bdc83",
-              "status": "succeeded",
-              "started_at": 1784713108847,
-              "finished_at": 1784713130092,
-              "result": [
-                {
-                  "uuid": "node_001_pick_from_s03",
-                  "device_name": "szlab_mixer_robot",
-                  "method": "submit_pick_from_s03",
-                  "param": {
-                    "product_type": 1,
-                    "position": "1-1"
-                  },
-                  "opc_before": {
-                    "S03取放料产品": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料产品"
-                    },
-                    "S03取放料编号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料编号"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "opc_after": {
-                    "S03取放料产品": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料产品"
-                    },
-                    "S03取放料编号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料编号"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 15,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "result": {
-                    "success": true,
-                    "message": "机器人任务已完成: S03 pick",
-                    "task": "pick",
-                    "station": "S03",
-                    "task_number": 6,
-                    "status": "completed",
-                    "written_variables": {
-                      "S03取放料产品": 1,
-                      "S03取放料编号": 1,
-                      "任务号": 6,
-                      "Robot_任务写入完成": true
-                    },
-                    "write_readback": {
-                      "S03取放料产品": 1,
-                      "S03取放料编号": 1,
-                      "任务号": 6
-                    },
-                    "completion_variable": "Robot_任务完成",
-                    "completion_value": 6,
-                    "completion_message": "Robot_任务完成 == 6",
-                    "handshake_precheck": {
-                      "target_station": "S03",
-                      "Robot_Home": true,
-                      "Robot_任务允许写入": true
-                    },
-                    "sensor_precheck": {
-                      "success": true,
-                      "phase": "pre",
-                      "conditions": {
-                        "传感器状态_上位机[0].NO[6]": true
-                      },
-                      "values": {
-                        "传感器状态_上位机[0].NO[6]": true
-                      },
-                      "mismatches": {}
-                    },
-                    "reset": {
-                      "success": true,
-                      "written_variables": {
-                        "Robot_任务写入完成": false,
-                        "S03取放料产品": 0,
-                        "S03取放料编号": 0,
-                        "任务号": 0
-                      },
-                      "readback": {
-                        "Robot_任务写入完成": false,
-                        "S03取放料产品": 0,
-                        "S03取放料编号": 0,
-                        "任务号": 0
-                      },
-                      "errors": {}
-                    },
-                    "product_type": 1,
-                    "position": "1-1",
-                    "source_sensor_variable": "传感器状态_上位机[0].NO[6]",
-                    "sensor_postcheck": {
-                      "success": true,
-                      "phase": "post",
-                      "conditions": {
-                        "传感器状态_上位机[0].NO[6]": false
-                      },
-                      "values": {
-                        "传感器状态_上位机[0].NO[6]": false
-                      },
-                      "mismatches": {}
-                    }
-                  }
-                }
-              ],
-              "error": null,
-              "resources": [],
-              "release_resources": []
-            },
-            {
-              "node_id": "node_002_place_to_s072",
-              "attempt": 1,
-              "execution_id": "task-action-5f2fdb89fa91b5184ef7c689c189f812",
-              "status": "succeeded",
-              "started_at": 1784713130100,
-              "finished_at": 1784713137180,
-              "result": [
-                {
-                  "uuid": "node_002_place_to_s072",
-                  "device_name": "szlab_mixer_robot",
-                  "method": "submit_place_to_s072",
-                  "param": {
-                    "product_type": 2,
-                    "position": 1
-                  },
-                  "opc_before": {
-                    "S072取放料产品": {
-                      "success": true,
-                      "value": 2,
-                      "node_id": "ns=4;s=上位机通讯|S072取放料产品"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 15,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "opc_after": {
-                    "S072取放料产品": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S072取放料产品"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "result": {
-                    "success": true,
-                    "message": "机器人任务已完成: S072 place",
-                    "task": "place",
-                    "station": "S072",
-                    "task_number": 15,
-                    "status": "completed",
-                    "written_variables": {
-                      "S072取放料产品": 2,
-                      "任务号": 15,
-                      "Robot_任务写入完成": true
-                    },
-                    "write_readback": {
-                      "S072取放料产品": 2,
-                      "任务号": 15
-                    },
-                    "completion_variable": "Robot_任务完成",
-                    "completion_value": 15,
-                    "completion_message": "Robot_任务完成 == 15",
-                    "handshake_precheck": {
-                      "target_station": "S072",
-                      "Robot_Home": true,
-                      "Robot_任务允许写入": true
-                    },
-                    "sensor_precheck": null,
-                    "reset": {
-                      "success": true,
-                      "written_variables": {
-                        "Robot_任务写入完成": false,
-                        "S072取放料产品": 0,
-                        "任务号": 0
-                      },
-                      "readback": {},
-                      "errors": {}
-                    },
-                    "product_type": 2,
-                    "position": 1,
-                    "sensor_check_skipped_reason": "S072 取放料暂不检查传感器"
-                  }
-                }
-              ],
-              "error": null,
-              "resources": [],
-              "release_resources": []
-            },
-            {
-              "node_id": "node_003_dose_powder",
-              "attempt": 1,
-              "execution_id": "task-action-d80d44cc3b0c6df1876a83a5ab64f76d",
-              "status": "succeeded",
-              "started_at": 1784713137193,
-              "finished_at": 1784713185186,
-              "result": [
-                {
-                  "uuid": "node_003_dose_powder",
-                  "device_name": "szlab_s07_solid_addition",
-                  "method": "dose_powder",
-                  "param": {
-                    "coarse_position": 1,
-                    "fine_position": 2,
-                    "target_weight": 1,
-                    "timeout": 300,
-                    "params_json": null,
-                    "recipe_name": "default"
-                  },
-                  "opc_before": {
-                    "S07原点信号": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07原点信号"
-                    },
-                    "S07允许加工": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07允许加工"
-                    },
-                    "S07工艺选择": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺选择"
-                    },
-                    "S07参数写入完成": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07参数写入完成"
-                    },
-                    "S07工艺完成": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺完成"
-                    },
-                    "S07粗注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07粗注粉位置号"
-                    },
-                    "S07精注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07精注粉位置号"
-                    },
-                    "S07注粉重量": {
-                      "success": true,
-                      "value": 0.0,
-                      "node_id": "ns=4;s=上位机通讯|S07注粉重量"
-                    }
-                  },
-                  "opc_after": {
-                    "S07原点信号": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07原点信号"
-                    },
-                    "S07允许加工": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07允许加工"
-                    },
-                    "S07工艺选择": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺选择"
-                    },
-                    "S07参数写入完成": {
-                      "success": true,
-                      "value": false,
-                      "node_id": "ns=4;s=上位机通讯|S07参数写入完成"
-                    },
-                    "S07工艺完成": {
-                      "success": true,
-                      "value": 3,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺完成"
-                    },
-                    "S07粗注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07粗注粉位置号"
-                    },
-                    "S07精注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07精注粉位置号"
-                    },
-                    "S07注粉重量": {
-                      "success": true,
-                      "value": 0.0,
-                      "node_id": "ns=4;s=上位机通讯|S07注粉重量"
-                    }
-                  },
-                  "result": {
-                    "success": true,
-                    "process_type": 3,
-                    "status": {
-                      "process_complete": 3
-                    },
-                    "target_weight": 1,
-                    "recipe_name": "default"
-                  }
-                }
-              ],
-              "error": null,
-              "resources": [],
-              "release_resources": []
-            }
-          ],
-          "active_execution_id": null,
-          "active_node_id": null
-        }
-      },
-      {
-        "id": "127e700d7404461d821ac3367320f42c",
-        "template_id": "szlab-e2e-s07",
+        "id": "5f020415b0504759b32ab02aa190a703",
+        "template_id": "szlab-e2e-s06",
         "status": "completed",
         "sample_id": "Sample A",
         "order": 1,
         "payload": {},
-        "started_at": 1784713247631,
-        "finished_at": 1784713306988,
+        "started_at": 1784803340434,
+        "finished_at": 1784803355738,
         "execution_state": {
           "cursor": 3,
           "records": [
             {
-              "node_id": "node_001_pick_from_s03",
+              "node_id": "node_004_pick_from_s072",
               "attempt": 1,
-              "execution_id": "task-action-f674a7230d3bac92f2f4b10e4983acc6",
+              "execution_id": "task-action-4e0c2c50c938d0e7bbdfa1938d8a7336",
               "status": "succeeded",
-              "started_at": 1784713249404,
-              "finished_at": 1784713254841,
+              "started_at": 1784803340445,
+              "finished_at": 1784803344798,
               "result": [
                 {
-                  "uuid": "node_001_pick_from_s03",
+                  "uuid": "node_004_pick_from_s072",
                   "device_name": "szlab_mixer_robot",
-                  "method": "submit_pick_from_s03",
-                  "param": {
-                    "product_type": 1,
-                    "position": "1-1"
-                  },
-                  "opc_before": {
-                    "S03取放料产品": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料产品"
-                    },
-                    "S03取放料编号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料编号"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "opc_after": {
-                    "S03取放料产品": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料产品"
-                    },
-                    "S03取放料编号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料编号"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "result": {
-                    "success": true,
-                    "message": "机器人任务已完成: S03 pick",
-                    "task": "pick",
-                    "station": "S03",
-                    "task_number": 6,
-                    "status": "completed",
-                    "written_variables": {
-                      "S03取放料产品": 1,
-                      "S03取放料编号": 1,
-                      "任务号": 6,
-                      "Robot_任务写入完成": true
-                    },
-                    "write_readback": {
-                      "S03取放料产品": 1,
-                      "S03取放料编号": 1,
-                      "任务号": 6
-                    },
-                    "completion_variable": "Robot_任务完成",
-                    "completion_value": 6,
-                    "completion_message": "Robot_任务完成 == 6",
-                    "handshake_precheck": {
-                      "target_station": "S03",
-                      "Robot_Home": true,
-                      "Robot_任务允许写入": true
-                    },
-                    "sensor_precheck": {
-                      "success": true,
-                      "phase": "pre",
-                      "conditions": {
-                        "传感器状态_上位机[0].NO[6]": true
-                      },
-                      "values": {
-                        "传感器状态_上位机[0].NO[6]": true
-                      },
-                      "mismatches": {}
-                    },
-                    "reset": {
-                      "success": true,
-                      "written_variables": {
-                        "Robot_任务写入完成": false,
-                        "S03取放料产品": 0,
-                        "S03取放料编号": 0,
-                        "任务号": 0
-                      },
-                      "readback": {
-                        "Robot_任务写入完成": false,
-                        "S03取放料产品": 0,
-                        "S03取放料编号": 0,
-                        "任务号": 0
-                      },
-                      "errors": {}
-                    },
-                    "product_type": 1,
-                    "position": "1-1",
-                    "source_sensor_variable": "传感器状态_上位机[0].NO[6]",
-                    "sensor_postcheck": {
-                      "success": true,
-                      "phase": "post",
-                      "conditions": {
-                        "传感器状态_上位机[0].NO[6]": false
-                      },
-                      "values": {
-                        "传感器状态_上位机[0].NO[6]": false
-                      },
-                      "mismatches": {}
-                    }
-                  }
-                }
-              ],
-              "error": null,
-              "resources": [],
-              "release_resources": []
-            },
-            {
-              "node_id": "node_002_place_to_s072",
-              "attempt": 1,
-              "execution_id": "task-action-e3ca202e25715fb5670232e03a119a30",
-              "status": "succeeded",
-              "started_at": 1784713254852,
-              "finished_at": 1784713274271,
-              "result": [
-                {
-                  "uuid": "node_002_place_to_s072",
-                  "device_name": "szlab_mixer_robot",
-                  "method": "submit_place_to_s072",
+                  "method": "submit_pick_from_s072",
                   "param": {
                     "product_type": 2,
                     "position": 1
@@ -888,34 +419,34 @@
                   "opc_after": {
                     "S072取放料产品": {
                       "success": true,
-                      "value": 2,
+                      "value": 0,
                       "node_id": "ns=4;s=上位机通讯|S072取放料产品"
                     },
                     "任务号": {
                       "success": true,
-                      "value": 15,
+                      "value": 0,
                       "node_id": "ns=4;s=上位机通讯|任务号"
                     }
                   },
                   "result": {
                     "success": true,
-                    "message": "机器人任务已完成: S072 place",
-                    "task": "place",
+                    "message": "机器人任务已完成: S072 pick",
+                    "task": "pick",
                     "station": "S072",
-                    "task_number": 15,
+                    "task_number": 16,
                     "status": "completed",
                     "written_variables": {
                       "S072取放料产品": 2,
-                      "任务号": 15,
+                      "任务号": 16,
                       "Robot_任务写入完成": true
                     },
                     "write_readback": {
                       "S072取放料产品": 2,
-                      "任务号": 15
+                      "任务号": 16
                     },
                     "completion_variable": "Robot_任务完成",
-                    "completion_value": 15,
-                    "completion_message": "Robot_任务完成 == 15",
+                    "completion_value": 16,
+                    "completion_message": "Robot_任务完成 == 16",
                     "handshake_precheck": {
                       "target_station": "S072",
                       "Robot_Home": true,
@@ -943,117 +474,232 @@
               "release_resources": []
             },
             {
-              "node_id": "node_003_dose_powder",
+              "node_id": "node_005_place_to_s06",
               "attempt": 1,
-              "execution_id": "task-action-d28f9f39e784cd77fca657044f08ada6",
+              "execution_id": "task-action-fb3daf9b8107a88281e33b569181a922",
               "status": "succeeded",
-              "started_at": 1784713274290,
-              "finished_at": 1784713306988,
+              "started_at": 1784803344812,
+              "finished_at": 1784803351233,
               "result": [
                 {
-                  "uuid": "node_003_dose_powder",
-                  "device_name": "szlab_s07_solid_addition",
-                  "method": "dose_powder",
-                  "param": {
-                    "coarse_position": 1,
-                    "fine_position": 2,
-                    "target_weight": 1,
-                    "timeout": 300,
-                    "params_json": null,
-                    "recipe_name": "default"
-                  },
+                  "uuid": "node_005_place_to_s06",
+                  "device_name": "szlab_mixer_robot",
+                  "method": "submit_place_to_s06",
+                  "param": {},
                   "opc_before": {
-                    "S07原点信号": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07原点信号"
-                    },
-                    "S07允许加工": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07允许加工"
-                    },
-                    "S07工艺选择": {
+                    "任务号": {
                       "success": true,
                       "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺选择"
-                    },
-                    "S07参数写入完成": {
-                      "success": true,
-                      "value": false,
-                      "node_id": "ns=4;s=上位机通讯|S07参数写入完成"
-                    },
-                    "S07工艺完成": {
-                      "success": true,
-                      "value": 3,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺完成"
-                    },
-                    "S07粗注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07粗注粉位置号"
-                    },
-                    "S07精注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07精注粉位置号"
-                    },
-                    "S07注粉重量": {
-                      "success": true,
-                      "value": 0.0,
-                      "node_id": "ns=4;s=上位机通讯|S07注粉重量"
+                      "node_id": "ns=4;s=上位机通讯|任务号"
                     }
                   },
                   "opc_after": {
-                    "S07原点信号": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07原点信号"
-                    },
-                    "S07允许加工": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07允许加工"
-                    },
-                    "S07工艺选择": {
+                    "任务号": {
                       "success": true,
                       "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺选择"
-                    },
-                    "S07参数写入完成": {
-                      "success": true,
-                      "value": false,
-                      "node_id": "ns=4;s=上位机通讯|S07参数写入完成"
-                    },
-                    "S07工艺完成": {
-                      "success": true,
-                      "value": 3,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺完成"
-                    },
-                    "S07粗注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07粗注粉位置号"
-                    },
-                    "S07精注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07精注粉位置号"
-                    },
-                    "S07注粉重量": {
-                      "success": true,
-                      "value": 0.0,
-                      "node_id": "ns=4;s=上位机通讯|S07注粉重量"
+                      "node_id": "ns=4;s=上位机通讯|任务号"
                     }
                   },
                   "result": {
                     "success": true,
-                    "process_type": 3,
-                    "status": {
-                      "process_complete": 3
+                    "message": "机器人任务已完成: S06 place",
+                    "task": "place",
+                    "station": "S06",
+                    "task_number": 11,
+                    "status": "completed",
+                    "written_variables": {
+                      "任务号": 11,
+                      "Robot_任务写入完成": true
                     },
-                    "target_weight": 1,
-                    "recipe_name": "default"
+                    "write_readback": {
+                      "任务号": 11
+                    },
+                    "completion_variable": "Robot_任务完成",
+                    "completion_value": 11,
+                    "completion_message": "Robot_任务完成 == 11",
+                    "handshake_precheck": {
+                      "target_station": "S06",
+                      "Robot_Home": true,
+                      "Robot_任务允许写入": true
+                    },
+                    "sensor_precheck": {
+                      "success": true,
+                      "phase": "pre",
+                      "conditions": {
+                        "传感器状态_上位机[3].NO[1]": false
+                      },
+                      "values": {
+                        "传感器状态_上位机[3].NO[1]": false
+                      },
+                      "mismatches": {}
+                    },
+                    "reset": {
+                      "success": true,
+                      "written_variables": {
+                        "Robot_任务写入完成": false,
+                        "任务号": 0
+                      },
+                      "readback": {},
+                      "errors": {}
+                    },
+                    "target_sensor_variable": "传感器状态_上位机[3].NO[1]",
+                    "sensor_postcheck": {
+                      "success": true,
+                      "phase": "post",
+                      "conditions": {
+                        "传感器状态_上位机[3].NO[1]": true
+                      },
+                      "values": {
+                        "传感器状态_上位机[3].NO[1]": true
+                      },
+                      "mismatches": {}
+                    }
+                  }
+                }
+              ],
+              "error": null,
+              "resources": [],
+              "release_resources": []
+            },
+            {
+              "node_id": "node_006_run_solvent_addition",
+              "attempt": 1,
+              "execution_id": "task-action-75e0bf495909d242f207c50de478d2ff",
+              "status": "succeeded",
+              "started_at": 1784803351243,
+              "finished_at": 1784803355738,
+              "result": [
+                {
+                  "uuid": "node_006_run_solvent_addition",
+                  "device_name": "szlab_s06_pump",
+                  "method": "run_solvent_addition",
+                  "param": {
+                    "process": 3,
+                    "volume_pump_1": 10,
+                    "volume_pump_2": 10,
+                    "skip_level_check": true,
+                    "beaker_true_means_present": false
+                  },
+                  "opc_before": {
+                    "S06准备信号": {
+                      "success": true,
+                      "value": true,
+                      "node_id": "ns=4;s=上位机通讯|S06准备信号"
+                    },
+                    "S06允许加工": {
+                      "success": true,
+                      "value": true,
+                      "node_id": "ns=4;s=上位机通讯|S06允许加工"
+                    },
+                    "S06工艺选择": {
+                      "success": true,
+                      "value": 0,
+                      "node_id": "ns=4;s=上位机通讯|S06工艺选择"
+                    },
+                    "S06_1号溶液添加量": {
+                      "success": true,
+                      "value": 0,
+                      "node_id": "ns=4;s=上位机通讯|S06_1号溶液添加量"
+                    },
+                    "S06_2号溶液添加量": {
+                      "success": true,
+                      "value": 0,
+                      "node_id": "ns=4;s=上位机通讯|S06_2号溶液添加量"
+                    },
+                    "S06参数写入完成": {
+                      "success": true,
+                      "value": false,
+                      "node_id": "ns=4;s=上位机通讯|S06参数写入完成"
+                    },
+                    "S06加工完成": {
+                      "success": true,
+                      "value": false,
+                      "node_id": "ns=4;s=上位机通讯|S06加工完成"
+                    }
+                  },
+                  "opc_after": {
+                    "S06准备信号": {
+                      "success": true,
+                      "value": true,
+                      "node_id": "ns=4;s=上位机通讯|S06准备信号"
+                    },
+                    "S06允许加工": {
+                      "success": true,
+                      "value": true,
+                      "node_id": "ns=4;s=上位机通讯|S06允许加工"
+                    },
+                    "S06工艺选择": {
+                      "success": true,
+                      "value": 0,
+                      "node_id": "ns=4;s=上位机通讯|S06工艺选择"
+                    },
+                    "S06_1号溶液添加量": {
+                      "success": true,
+                      "value": 0,
+                      "node_id": "ns=4;s=上位机通讯|S06_1号溶液添加量"
+                    },
+                    "S06_2号溶液添加量": {
+                      "success": true,
+                      "value": 0,
+                      "node_id": "ns=4;s=上位机通讯|S06_2号溶液添加量"
+                    },
+                    "S06参数写入完成": {
+                      "success": true,
+                      "value": false,
+                      "node_id": "ns=4;s=上位机通讯|S06参数写入完成"
+                    },
+                    "S06加工完成": {
+                      "success": true,
+                      "value": true,
+                      "node_id": "ns=4;s=上位机通讯|S06加工完成"
+                    }
+                  },
+                  "result": {
+                    "success": true,
+                    "message": "S06 工艺 3 加液流程完成",
+                    "data": {
+                      "process": 3,
+                      "volume_pump_1": 10,
+                      "volume_pump_2": 10
+                    },
+                    "steps": [
+                      {
+                        "step": "写入溶液添加量并启动 S06",
+                        "success": true,
+                        "message": "S06 工艺 3 溶液添加完成",
+                        "data": {
+                          "process": 3,
+                          "volume_pump_1": 10,
+                          "volume_pump_2": 10,
+                          "amount_values": {
+                            "S06_1号溶液添加量": 10,
+                            "S06_2号溶液添加量": 10
+                          },
+                          "sensor_precheck": {
+                            "success": true,
+                            "phase": "pre",
+                            "conditions": {
+                              "传感器状态_上位机[3].NO[1]": true
+                            },
+                            "values": {
+                              "传感器状态_上位机[3].NO[1]": true
+                            },
+                            "mismatches": {}
+                          },
+                          "sensor_postcheck": {
+                            "success": true,
+                            "phase": "post",
+                            "conditions": {
+                              "传感器状态_上位机[3].NO[1]": true
+                            },
+                            "values": {
+                              "传感器状态_上位机[3].NO[1]": true
+                            },
+                            "mismatches": {}
+                          }
+                        }
+                      }
+                    ]
                   }
                 }
               ],
@@ -1067,346 +713,49 @@
         }
       },
       {
-        "id": "375db045c4ca46cb9bd7d40f63d46464",
+        "id": "2e0cb19687d541edaa2b330d7dcfc4eb",
         "template_id": "szlab-e2e-s07",
-        "status": "completed",
+        "status": "failed",
         "sample_id": "Sample B",
-        "order": 1,
+        "order": 0,
         "payload": {},
-        "started_at": 1784713247631,
-        "finished_at": 1784713306999,
+        "started_at": 1784803010497,
+        "finished_at": 1784803321369,
         "execution_state": {
-          "cursor": 3,
+          "cursor": 0,
           "records": [
             {
               "node_id": "node_001_pick_from_s03",
               "attempt": 1,
-              "execution_id": "task-action-1022c3abafacff9e9b537b37e4897d22",
-              "status": "succeeded",
-              "started_at": 1784713249415,
-              "finished_at": 1784713269763,
-              "result": [
-                {
-                  "uuid": "node_001_pick_from_s03",
-                  "device_name": "szlab_mixer_robot",
-                  "method": "submit_pick_from_s03",
-                  "param": {
-                    "product_type": 1,
-                    "position": "1-1"
-                  },
-                  "opc_before": {
-                    "S03取放料产品": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料产品"
-                    },
-                    "S03取放料编号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料编号"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "opc_after": {
-                    "S03取放料产品": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料产品"
-                    },
-                    "S03取放料编号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S03取放料编号"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "result": {
-                    "success": true,
-                    "message": "机器人任务已完成: S03 pick",
-                    "task": "pick",
-                    "station": "S03",
-                    "task_number": 6,
-                    "status": "completed",
-                    "written_variables": {
-                      "S03取放料产品": 1,
-                      "S03取放料编号": 1,
-                      "任务号": 6,
-                      "Robot_任务写入完成": true
-                    },
-                    "write_readback": {
-                      "S03取放料产品": 1,
-                      "S03取放料编号": 1,
-                      "任务号": 6
-                    },
-                    "completion_variable": "Robot_任务完成",
-                    "completion_value": 6,
-                    "completion_message": "Robot_任务完成 == 6",
-                    "handshake_precheck": {
-                      "target_station": "S03",
-                      "Robot_Home": true,
-                      "Robot_任务允许写入": true
-                    },
-                    "sensor_precheck": {
-                      "success": true,
-                      "phase": "pre",
-                      "conditions": {
-                        "传感器状态_上位机[0].NO[6]": true
-                      },
-                      "values": {
-                        "传感器状态_上位机[0].NO[6]": true
-                      },
-                      "mismatches": {}
-                    },
-                    "reset": {
-                      "success": true,
-                      "written_variables": {
-                        "Robot_任务写入完成": false,
-                        "S03取放料产品": 0,
-                        "S03取放料编号": 0,
-                        "任务号": 0
-                      },
-                      "readback": {
-                        "Robot_任务写入完成": false,
-                        "S03取放料产品": 0,
-                        "S03取放料编号": 0,
-                        "任务号": 0
-                      },
-                      "errors": {}
-                    },
-                    "product_type": 1,
-                    "position": "1-1",
-                    "source_sensor_variable": "传感器状态_上位机[0].NO[6]",
-                    "sensor_postcheck": {
-                      "success": true,
-                      "phase": "post",
-                      "conditions": {
-                        "传感器状态_上位机[0].NO[6]": false
-                      },
-                      "values": {
-                        "传感器状态_上位机[0].NO[6]": false
-                      },
-                      "mismatches": {}
-                    }
-                  }
-                }
-              ],
-              "error": null,
-              "resources": [],
-              "release_resources": []
-            },
-            {
-              "node_id": "node_002_place_to_s072",
-              "attempt": 1,
-              "execution_id": "task-action-875fbe1358918ad01551fdc840335697",
-              "status": "succeeded",
-              "started_at": 1784713269774,
-              "finished_at": 1784713274282,
-              "result": [
-                {
-                  "uuid": "node_002_place_to_s072",
-                  "device_name": "szlab_mixer_robot",
-                  "method": "submit_place_to_s072",
-                  "param": {
-                    "product_type": 2,
-                    "position": 1
-                  },
-                  "opc_before": {
-                    "S072取放料产品": {
-                      "success": true,
-                      "value": 2,
-                      "node_id": "ns=4;s=上位机通讯|S072取放料产品"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 15,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "opc_after": {
-                    "S072取放料产品": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S072取放料产品"
-                    },
-                    "任务号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|任务号"
-                    }
-                  },
-                  "result": {
-                    "success": true,
-                    "message": "机器人任务已完成: S072 place",
-                    "task": "place",
-                    "station": "S072",
-                    "task_number": 15,
-                    "status": "completed",
-                    "written_variables": {
-                      "S072取放料产品": 2,
-                      "任务号": 15,
-                      "Robot_任务写入完成": true
-                    },
-                    "write_readback": {
-                      "S072取放料产品": 2,
-                      "任务号": 15
-                    },
-                    "completion_variable": "Robot_任务完成",
-                    "completion_value": 15,
-                    "completion_message": "Robot_任务完成 == 15",
-                    "handshake_precheck": {
-                      "target_station": "S072",
-                      "Robot_Home": true,
-                      "Robot_任务允许写入": true
-                    },
-                    "sensor_precheck": null,
-                    "reset": {
-                      "success": true,
-                      "written_variables": {
-                        "Robot_任务写入完成": false,
-                        "S072取放料产品": 0,
-                        "任务号": 0
-                      },
-                      "readback": {},
-                      "errors": {}
-                    },
-                    "product_type": 2,
-                    "position": 1,
-                    "sensor_check_skipped_reason": "S072 取放料暂不检查传感器"
-                  }
-                }
-              ],
-              "error": null,
-              "resources": [],
-              "release_resources": []
-            },
-            {
-              "node_id": "node_003_dose_powder",
-              "attempt": 1,
-              "execution_id": "task-action-6589be3dbc467f12fe5481bbae75fdf5",
-              "status": "succeeded",
-              "started_at": 1784713274297,
-              "finished_at": 1784713306999,
-              "result": [
-                {
-                  "uuid": "node_003_dose_powder",
-                  "device_name": "szlab_s07_solid_addition",
-                  "method": "dose_powder",
-                  "param": {
-                    "coarse_position": 1,
-                    "fine_position": 2,
-                    "target_weight": 1,
-                    "timeout": 300,
-                    "params_json": null,
-                    "recipe_name": "default"
-                  },
-                  "opc_before": {
-                    "S07原点信号": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07原点信号"
-                    },
-                    "S07允许加工": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07允许加工"
-                    },
-                    "S07工艺选择": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺选择"
-                    },
-                    "S07参数写入完成": {
-                      "success": true,
-                      "value": false,
-                      "node_id": "ns=4;s=上位机通讯|S07参数写入完成"
-                    },
-                    "S07工艺完成": {
-                      "success": true,
-                      "value": 3,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺完成"
-                    },
-                    "S07粗注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07粗注粉位置号"
-                    },
-                    "S07精注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07精注粉位置号"
-                    },
-                    "S07注粉重量": {
-                      "success": true,
-                      "value": 0.0,
-                      "node_id": "ns=4;s=上位机通讯|S07注粉重量"
-                    }
-                  },
-                  "opc_after": {
-                    "S07原点信号": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07原点信号"
-                    },
-                    "S07允许加工": {
-                      "success": true,
-                      "value": true,
-                      "node_id": "ns=4;s=上位机通讯|S07允许加工"
-                    },
-                    "S07工艺选择": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺选择"
-                    },
-                    "S07参数写入完成": {
-                      "success": true,
-                      "value": false,
-                      "node_id": "ns=4;s=上位机通讯|S07参数写入完成"
-                    },
-                    "S07工艺完成": {
-                      "success": true,
-                      "value": 3,
-                      "node_id": "ns=4;s=上位机通讯|S07工艺完成"
-                    },
-                    "S07粗注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07粗注粉位置号"
-                    },
-                    "S07精注粉位置号": {
-                      "success": true,
-                      "value": 0,
-                      "node_id": "ns=4;s=上位机通讯|S07精注粉位置号"
-                    },
-                    "S07注粉重量": {
-                      "success": true,
-                      "value": 0.0,
-                      "node_id": "ns=4;s=上位机通讯|S07注粉重量"
-                    }
-                  },
-                  "result": {
-                    "success": true,
-                    "process_type": 3,
-                    "status": {
-                      "process_complete": 3
-                    },
-                    "target_weight": 1,
-                    "recipe_name": "default"
-                  }
-                }
-              ],
-              "error": null,
+              "execution_id": "task-action-69c4bf3a0fbd032828df093bd85e814d",
+              "status": "failed",
+              "started_at": 1784803010519,
+              "finished_at": 1784803321369,
+              "result": null,
+              "error": {
+                "code": "action_failed",
+                "message": "动作失败: szlab_mixer_robot.submit_pick_from_s03: {'success': False, 'message': 'S03 pick 前置传感器状态等待超时', 'task': 'pick', 'station': 'S03', 'task_number': 6, 'status': 'rejected', 'sensor_precheck': {'success': False, 'phase': 'pre', 'conditions': {'传感器状态_上位机[0].NO[6]': True}, 'values': {'传感器状态_上位机[0].NO[6]': False}, 'mismatches': {'传感器状态_上位机[0].NO[6]': {'expected': True, 'actual': False}}}, 'product_type': 1, 'position': '1-1', 'source_sensor_variable': '传感器状态_上位机[0].NO[6]'}"
+              },
               "resources": [],
               "release_resources": []
             }
           ],
+          "active_execution_id": null,
+          "active_node_id": null
+        }
+      },
+      {
+        "id": "fe018226aee044659094e531a665d45d",
+        "template_id": "szlab-e2e-s06",
+        "status": "pending",
+        "sample_id": "Sample B",
+        "order": 1,
+        "payload": {},
+        "started_at": null,
+        "finished_at": null,
+        "execution_state": {
+          "cursor": 0,
+          "records": [],
           "active_execution_id": null,
           "active_node_id": null
         }
@@ -1616,11 +965,469 @@
         }
       },
       {
+        "kind": "instances_cleared",
+        "id": "24ab627be4594f35b71d71c3f69c627a",
+        "timestamp": 1784777070697,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/1572",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "e5eaa23ccadb4f9b8611f64ce13da323",
+            "70f7f66f9f754fa2b37b009678e4ed61",
+            "127e700d7404461d821ac3367320f42c",
+            "375db045c4ca46cb9bd7d40f63d46464"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "c4815329f0fb4eb2af2bb1e3c8e944c6",
+        "timestamp": 1784777158038,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/1609",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "szlab-e2e-s07",
+            "szlab-e2e-s06"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "154e2bbe68984ece888359c1dab8cdc7",
+        "timestamp": 1784777160984,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/1610",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "7cd66047976e4ff6af085df225c0ab5b",
+            "714023f0699b4210bfb67d6a449cae42"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "3f1553fd857c4eb3941f1d66612855f4",
+        "timestamp": 1784782703304,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/1749",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "d4a33d91b1b741c6b44db2daa678b9f9",
+            "86203fee12594533a49079f0f1b1757b",
+            "078ae7e1f9324a13ba8d14c10303c2e4",
+            "4d2b537322294473b8a1c5e5cc479d21"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "c80e1551e12e4d74925741521ab319fa",
+        "timestamp": 1784783288298,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/1786",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "d97dfea198b7435bbf451a7aac5bb242",
+            "c2c8e3b2937d4eac8e2cb592ad5d07d0",
+            "5b6ee815847145308888c40ddcc5046b",
+            "500c055bd5914859816992f3c605b0c2",
+            "f295cdb1a15044cf88deda0c4c15ce90",
+            "b607af2650ce49819a8dd6686e87af51"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "798cd30dd92f4b239211bc506c391149",
+        "timestamp": 1784783781449,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/1924",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "f536e752c2624272a9baeb157dc3e219",
+            "60c26394b70440faacf1893762cff7b8",
+            "ccafee72b51f402db93e181ed95c97de",
+            "630c694050e5447e9eba49b5be6648a9",
+            "14d34d7e8eb34105b000d8a8906eb962",
+            "b2c210bbc2c54e489b7cf37e367694de"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "fabddd210732482d81040ca85a70bdda",
+        "timestamp": 1784783868538,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/1959",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "115e2673088046efb4a016e62e636434",
+            "ccfb27480d5c4ca78b82d9d533b9463c",
+            "8f9c50e6d3f449a8a659c46b04c5e26f",
+            "0a81bedc3475493a973006fdbb783618",
+            "c6fa007097934902ba5af94cd2468f9b",
+            "5a5220f786d74129a5a32f9113982d92"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "9821e6ddd54d486fb51dba6200f348aa",
+        "timestamp": 1784784312625,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2154",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "2aa4925218ee4d6f942cd5426b6f28e2",
+            "4caf767742984a5bab18ef697975279f",
+            "6debe347c4a94cff8122f9702d52f9ab",
+            "3b043b76b48a4b0993930dda1511d2cc",
+            "ae504a673e88444791cab8bf495cd3fe",
+            "f0d37c6ef14c408f9105a0f581372e3e"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "21a094e6179e4a1387ca4930897cc394",
+        "timestamp": 1784784620157,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2290",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "635d3f4d81ae4bdb8e5a29275e6c0f37",
+            "c8f61919c7e94b84b5895a148f6721d7",
+            "b57bdf76ad534d17a003975b457c2ecf",
+            "90f911cd65774ad7bb5456252641b183"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "306e65392a604a2eb732e14fc50d5297",
+        "timestamp": 1784784943382,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2353",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "d3de40d92b8643a0999bdacbb65acdb8",
+            "6a054c6922704e128d1a8f2af946e6f6",
+            "db0c1f145a8b44809df304ec467184b1",
+            "905fb0c6d1d6485c9d457b5865dc8065",
+            "4ec6e63a2eec43dbb3eaa8ca92d2c3cd",
+            "349a64858ca94eeab6acb1fa3704af58"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "f829bf4edeb5406ab5839e1bae4b2d07",
+        "timestamp": 1784785778152,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2523",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "78346a515a5f4fbe8c57d57b5ab5c3d3",
+            "9869766ca3174f259088ce2513c9240c",
+            "30bc3fe9b7534e358b07e40fc1f1de1d",
+            "31328ea2320c4671ad4893a44250698b"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "5d5cb7e5f952433ca36a8c166e5e184f",
+        "timestamp": 1784787970881,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2535",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "f99d77ff3666451692e4365c32f5965c",
+            "35c418f3d4a44824adc825dd46d47978",
+            "e104168bd4d145dfb9b18885d10405de",
+            "73df9087693f4de7baf151f06f98d48d",
+            "e2657d1f97eb44cdb3d5e50c84add97f",
+            "8e6ffab1edb24723a22d82aa2ad2641a"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "fffa23ece644468d8e18e5e94852fd36",
+        "timestamp": 1784788863756,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2684",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "023516de746d4e8ca63d0cc00fba1461",
+            "72adfa2f9c9241c899c457b991bacc47",
+            "db805283a758406099aab048774f5b8b",
+            "0b3d2df561304c78af355ecb1ad78126",
+            "b5b47f41898148158cfbeadb5a1f3ad9",
+            "282e760ded0a4c62a7443711f5888eac"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "3f08c42fe40a491394f027bec8bd5c69",
+        "timestamp": 1784788987555,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2719",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "f31edfb6b53347f4bca1ba39915244b9",
+            "489533b039be4887b5ae2078c5d005b8",
+            "077a63a544da42589fbe6063ef818a13",
+            "dad09eee7e2b4d75ad11bdc91a105f09",
+            "2316c3a2c6eb4b97afdd9d7ceebd254b",
+            "4826c676f24c453fb93c6228766e1642"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "9b4e80409f0b4c5f8b9cbdce134350f2",
+        "timestamp": 1784789146838,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2752",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "a80dd108bc764818ae92db69331a9c04",
+            "243dcaab09ca4ffb8382297c05837de9",
+            "bf20f356a206477d9acb509eac6ef632",
+            "ad7a170fcc8a41d08b7931fc2f609dec",
+            "cf03c5cd858047c38e41a688705bbcc9",
+            "9432f23618cc4e0eb6a42b97a05fb35e"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "9d311a7ef5ea41caa8ee186fc418b6be",
+        "timestamp": 1784791619351,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2869",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "a76c7576489c4e059a2957632010205d",
+            "061ccdbb88954a7483c79d1fa322e006",
+            "12f9d991560b401cb06f331257e25af6",
+            "ef1375c2d38c459e8e59176c8e6f1e74",
+            "86373b1f91494cd3a69f5e6bc84dd889",
+            "b4a607dd26a649d598b0adc7a55794ca"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "62eeba77714741ce99d476ffd4da9817",
+        "timestamp": 1784792305524,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2915",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "aca73219950c4ee3907efab0552bd61c",
+            "26ffaaf1d9e249d6963a16499c1baaec",
+            "0a314c84bff54ce0b1c6f433523ac985",
+            "3443bb21a453474db707b08aef9cb000",
+            "bbdaea1f07ff4c9b966890fcaed37467",
+            "6cb194e2e93d4937bc2a01d7f25e90e5"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "a1824f1cdfac432fbd94473b1be9a936",
+        "timestamp": 1784793049086,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/2959",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "50d4c78aaa3d4d338649e2954b403236",
+            "b8fd07414d0b44cb88fb2a841f03bc1d",
+            "97963afe24a446638c6838f2ae82260b",
+            "f353944eed3d404c95f2e89cde72696e",
+            "7cf8edb8b135475f91ce03fbb61459f9",
+            "44ead42e7c084174839a541c5e1add5e"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "d309424f5dbd4c9bb27fcb3550fd22e4",
+        "timestamp": 1784793994397,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3054",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "e90f8b6223404c9f95322edb698267e0",
+            "9a1510cbcffd4c8d95271c3fad5e920b",
+            "a14a91a5d475491db20dcc560c3d9881",
+            "bcb1817b90a2497a93ebe1d6eef6583f",
+            "88f0c14a089a4ef9bd4826cdb35f352d",
+            "23a4662fd1d04b0f8f202d447d5180a8"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "42818e8dab8a41c0afd0b11f2a6f4223",
+        "timestamp": 1784794204481,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3137",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "ae94eedd0d444c6ab2f3ca5d10b4d1b1",
+            "9c08f5d6bbd44521b13a710a1430d4da",
+            "975d2ce54a93439b84ce5c283a9af1a7",
+            "97a55593511d413da47f00baa249d02f",
+            "386cebcc4ec9416f9c0e079760425c6e",
+            "6566a37beb19421898c7d609fed3613e"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "700f7d5a64f64c408e0ebc50da824cfa",
+        "timestamp": 1784794566654,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3159",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "f0f49ea4493b481f8f6345deb7748756",
+            "930e3186eeac41b7a9247f36f0057aa0",
+            "1c00755e22bb4abb81cd9c54aaee5f1e",
+            "36c959bb2c3e4f6c94e8a30e2828bae9"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "21dba92ed6d04b7a91249a205169c502",
+        "timestamp": 1784795117602,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3258",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "88d10b3d53334de2926cfbf16b894a62",
+            "0f3f7c08c50f4de682710eb646461ee9",
+            "3e17e7ecf7624d50bb66549bcaeca878",
+            "db46d95629aa46ba85f5e8a365abbff8"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "4a764e63430949adb37c12976eaa15a1",
+        "timestamp": 1784797254772,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3388",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "8341d829d9c1465cb7c9b98578e399b2",
+            "018f327e68c940bea690d0e958c48621",
+            "61d6a71dfbdf40628d2fc0a6a44bf9b7",
+            "00f9161e3e6c4ad09ca9fc85e1f8ea96"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "097f486e7c5e4f2fb8e470eb232d5b58",
+        "timestamp": 1784797356768,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3428",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "d70d183ffbcf419984e4349419068fd1",
+            "47898ab59fe14aa4bd552df36734a719",
+            "e6e934e57eef4db4ab4cf2f9982b26c3",
+            "9a602cc5913d497b85c9fdaba44a468f",
+            "12356ff2b886450a8538899625a3289c",
+            "5fa40273320e4dd8b0db4f464da72916"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "85e24fc3416b41f393c1206df594fa37",
+        "timestamp": 1784800795590,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3570",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "1b3150ab6df94abcab7b35c5d598c27a",
+            "1d385a0422ff476b8aae0e13cc6a4b17",
+            "3d5d932b9c6f4c1dbd9b60c0225e86f3",
+            "4fcc43ee824e4f1594585129d01bf6a1"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "df8e89fe9f894591ba61a1184dadb11f",
+        "timestamp": 1784802716880,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3735",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "af2acbb0efa749f684054653b41bcf94",
+            "9df21cf9fffb4fdab7dcee8410b73924",
+            "a5ab59d9d7e4410ebd81d3020439e58b",
+            "026d6b919dcf4ec29901efdb0f76c2f5"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "200ad1f6a4824f9b9c4b74ac5da31883",
+        "timestamp": 1784802799302,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/3739",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "29e652848ce44ad2994af3b742b3a360",
+            "8f1209387c534faea5ba8a45073c9570",
+            "97386237edb142f7990bd81c5aff7b04",
+            "0f28a46399a44f45b4fbca2bcee0b0ac"
+          ]
+        }
+      },
+      {
         "kind": "scheduled",
-        "id": "a1716f54e59545b4bd13861e3601a1b3",
-        "timestamp": 1784713108835,
-        "idempotency_key": "instance/e5eaa23ccadb4f9b8611f64ce13da323/scheduled",
-        "instance_id": "e5eaa23ccadb4f9b8611f64ce13da323",
+        "id": "6f4b3b86b9db46c7b7c2cfae1df3d391",
+        "timestamp": 1784803010497,
+        "idempotency_key": "instance/3f9e6dab3b0b4f4490a6357437211573/scheduled",
+        "instance_id": "3f9e6dab3b0b4f4490a6357437211573",
         "template_id": "szlab-e2e-s07",
         "payload": {
           "satisfied_triggers": []
@@ -1628,10 +1435,10 @@
       },
       {
         "kind": "scheduled",
-        "id": "57dff1ec1fad49a7a2f9dcce27f811fb",
-        "timestamp": 1784713108835,
-        "idempotency_key": "instance/70f7f66f9f754fa2b37b009678e4ed61/scheduled",
-        "instance_id": "70f7f66f9f754fa2b37b009678e4ed61",
+        "id": "e4a6cf10ceda40408f6b69fbfca5d4cc",
+        "timestamp": 1784803010497,
+        "idempotency_key": "instance/2e0cb19687d541edaa2b330d7dcfc4eb/scheduled",
+        "instance_id": "2e0cb19687d541edaa2b330d7dcfc4eb",
         "template_id": "szlab-e2e-s07",
         "payload": {
           "satisfied_triggers": []
@@ -1639,105 +1446,77 @@
       },
       {
         "kind": "completed",
-        "id": "17152771373a4ece91ebd0d78fb465ca",
-        "timestamp": 1784713185174,
-        "idempotency_key": "instance/e5eaa23ccadb4f9b8611f64ce13da323/completed",
-        "instance_id": "e5eaa23ccadb4f9b8611f64ce13da323",
+        "id": "b7674da7bc2c40c58f10148dfcdd3f8a",
+        "timestamp": 1784803339627,
+        "idempotency_key": "instance/3f9e6dab3b0b4f4490a6357437211573/completed",
+        "instance_id": "3f9e6dab3b0b4f4490a6357437211573",
         "template_id": null,
         "payload": {}
       },
       {
-        "kind": "completed",
-        "id": "f42e54cd004d4068a3469ba716bbaddb",
-        "timestamp": 1784713185186,
-        "idempotency_key": "instance/70f7f66f9f754fa2b37b009678e4ed61/completed",
-        "instance_id": "70f7f66f9f754fa2b37b009678e4ed61",
-        "template_id": null,
-        "payload": {}
-      },
-      {
         "kind": "scheduled",
-        "id": "42749c8ea99c482bb61989e9b8e8e762",
-        "timestamp": 1784713247631,
-        "idempotency_key": "instance/127e700d7404461d821ac3367320f42c/scheduled",
-        "instance_id": "127e700d7404461d821ac3367320f42c",
-        "template_id": "szlab-e2e-s07",
-        "payload": {
-          "satisfied_triggers": []
-        }
-      },
-      {
-        "kind": "scheduled",
-        "id": "80c583987d3e43349fd6f39a9610ca03",
-        "timestamp": 1784713247631,
-        "idempotency_key": "instance/375db045c4ca46cb9bd7d40f63d46464/scheduled",
-        "instance_id": "375db045c4ca46cb9bd7d40f63d46464",
-        "template_id": "szlab-e2e-s07",
+        "id": "69df6bc303fc43918db9af72b6e5f520",
+        "timestamp": 1784803340434,
+        "idempotency_key": "instance/5f020415b0504759b32ab02aa190a703/scheduled",
+        "instance_id": "5f020415b0504759b32ab02aa190a703",
+        "template_id": "szlab-e2e-s06",
         "payload": {
           "satisfied_triggers": []
         }
       },
       {
         "kind": "completed",
-        "id": "d72a994863c14a55b8c23c0c72057026",
-        "timestamp": 1784713306988,
-        "idempotency_key": "instance/127e700d7404461d821ac3367320f42c/completed",
-        "instance_id": "127e700d7404461d821ac3367320f42c",
-        "template_id": null,
-        "payload": {}
-      },
-      {
-        "kind": "completed",
-        "id": "2aabe7fde6434b21bac23ee905910211",
-        "timestamp": 1784713306999,
-        "idempotency_key": "instance/375db045c4ca46cb9bd7d40f63d46464/completed",
-        "instance_id": "375db045c4ca46cb9bd7d40f63d46464",
+        "id": "e8e96d76b3c2428dbfe9eba8e7fe31d8",
+        "timestamp": 1784803355738,
+        "idempotency_key": "instance/5f020415b0504759b32ab02aa190a703/completed",
+        "instance_id": "5f020415b0504759b32ab02aa190a703",
         "template_id": null,
         "payload": {}
       }
     ],
     "scheduled_template_ids": [
-      "szlab-e2e-s07"
+      "szlab-e2e-s07",
+      "szlab-e2e-s06"
     ],
     "scheduler_paused": true,
     "dynamic_resource_leases": [],
     "pause_reason": null,
     "schedule_entries": [
       {
-        "instance_id": "e5eaa23ccadb4f9b8611f64ce13da323",
+        "instance_id": "3f9e6dab3b0b4f4490a6357437211573",
         "template_id": "szlab-e2e-s07",
         "sample_id": "Sample A",
-        "start_at": 1784713108835,
-        "end_at": 1784713185174,
+        "start_at": 1784803010497,
+        "end_at": 1784803339627,
         "resources": [],
         "state": "done"
       },
       {
-        "instance_id": "70f7f66f9f754fa2b37b009678e4ed61",
+        "instance_id": "2e0cb19687d541edaa2b330d7dcfc4eb",
         "template_id": "szlab-e2e-s07",
         "sample_id": "Sample B",
-        "start_at": 1784713108835,
-        "end_at": 1784713185186,
+        "start_at": 1784814934307,
+        "end_at": 1784814979307,
         "resources": [],
-        "state": "done"
+        "state": "planned"
       },
       {
-        "instance_id": "127e700d7404461d821ac3367320f42c",
-        "template_id": "szlab-e2e-s07",
+        "instance_id": "5f020415b0504759b32ab02aa190a703",
+        "template_id": "szlab-e2e-s06",
         "sample_id": "Sample A",
-        "start_at": 1784713247631,
-        "end_at": 1784713306988,
+        "start_at": 1784803340434,
+        "end_at": 1784803355738,
         "resources": [],
         "state": "done"
       },
       {
-        "instance_id": "375db045c4ca46cb9bd7d40f63d46464",
-        "template_id": "szlab-e2e-s07",
+        "instance_id": "fe018226aee044659094e531a665d45d",
+        "template_id": "szlab-e2e-s06",
         "sample_id": "Sample B",
-        "start_at": 1784713247631,
-        "end_at": 1784713306999,
+        "start_at": 1784814979307,
+        "end_at": 1784815024307,
         "resources": [],
-        "state": "done"
+        "state": "planned"
       }
     ],
     "opc_snapshots": [],

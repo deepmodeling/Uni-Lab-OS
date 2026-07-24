@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable
 import json
 import threading
 import time
+from typing import Any
 from uuid import uuid4
 
 from .conditions import OpcConditionProvider
@@ -483,19 +484,45 @@ class WorkspaceService:
                 raise
             return response, accepted
 
-    def plan(self, workflow_path: str, expected_version: int, *, paused: bool | None = None):
+    def plan(
+        self,
+        workflow_path: str,
+        expected_version: int,
+        *,
+        paused: bool | None = None,
+        acknowledge_peer_failure: bool = False,
+    ):
         schedule: SchedulingResult | None = None
 
         def operation(workspace: Workspace) -> Workspace:
             nonlocal schedule
             self._hydrate_conditions(workspace)
-            if paused is False and workspace.pause_reason is not None:
+            workspace_for_plan = workspace
+            if (
+                paused is False
+                and workspace.pause_reason is not None
+                and acknowledge_peer_failure
+            ):
+                if not any(item.status == "running" for item in workspace.task_instances):
+                    raise WorkspaceServiceError(
+                        "workspace_recovery_required",
+                        "no running instance remains after peer failure",
+                    )
+                workspace_for_plan = workspace.model_copy(
+                    update={
+                        "pause_reason": None,
+                        "scheduler_paused": False,
+                    }
+                )
+            elif paused is False and workspace_for_plan.pause_reason is not None:
                 raise WorkspaceServiceError(
                     "workspace_recovery_required",
                     "failed workspace requires an explicit recovery operation",
                 )
-            paused_value = workspace.scheduler_paused if paused is None else paused
-            evaluated, reasons = self._evaluate(workspace)
+            paused_value = (
+                workspace_for_plan.scheduler_paused if paused is None else paused
+            )
+            evaluated, reasons = self._evaluate(workspace_for_plan)
             instances = [
                 item.model_copy(
                     update={
@@ -506,9 +533,9 @@ class WorkspaceService:
                         )
                     }
                 )
-                for item in workspace.task_instances
+                for item in workspace_for_plan.task_instances
             ]
-            provisional = workspace.model_copy(
+            provisional = workspace_for_plan.model_copy(
                 update={"task_instances": instances, "scheduler_paused": paused_value}
             )
             schedule = self._schedule(provisional, evaluated, reasons)
@@ -769,16 +796,20 @@ class WorkspaceService:
                 timestamp=transition_time,
                 detail={"error": error},
             )
-            return workspace.validated_copy(
-                update={
-                    "task_instances": self._replace_instance(
-                        workspace, updated_instance
-                    ),
-                    "scheduler_paused": True,
-                    "pause_reason": pause_reason,
-                    "dynamic_resource_leases": [],
-                }
+            others_still_running = any(
+                item.status == "running" and item.id != instance_id
+                for item in workspace.task_instances
             )
+            workspace_updates: dict[str, Any] = {
+                "task_instances": self._replace_instance(
+                    workspace, updated_instance
+                ),
+                "dynamic_resource_leases": [],
+            }
+            if not others_still_running:
+                workspace_updates["scheduler_paused"] = True
+                workspace_updates["pause_reason"] = pause_reason
+            return workspace.validated_copy(update=workspace_updates)
 
         return self._mutate_idempotent(
             workflow_path,

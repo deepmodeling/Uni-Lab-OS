@@ -133,10 +133,23 @@ class SensorBase:
 
         success = False
         last_value = None
+        previous_value = None
         error = None
         try:
             while time.time() - started_at <= timeout:
                 last_value = reader.read_variable(variable_name, use_cache=False)
+                if previous_value is not None and last_value != previous_value:
+                    change_recorder = getattr(reader, "_record_opc_wait_change", None)
+                    if callable(change_recorder):
+                        change_recorder(
+                            variable_name,
+                            expected,
+                            previous_value,
+                            last_value,
+                            timeout=timeout,
+                            interval=interval,
+                        )
+                previous_value = last_value
                 if last_value == expected:
                     success = True
                     return True

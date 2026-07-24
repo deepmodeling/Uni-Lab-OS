@@ -1096,7 +1096,8 @@ def shared_channel_payload():
     return value
 
 
-def test_busy_channel_latches_full_trigger_until_after_reset_finishes(tmp_path):
+def test_shared_channel_releases_after_on_complete_not_after_reset_delay(tmp_path):
+    """after_reset 的 delay 只推迟写回，不阻塞同 channel 的其它 workflow 节点。"""
     profile = load_simulator_profile(
         profile_path(tmp_path, shared_channel_payload())
     )
@@ -1117,17 +1118,21 @@ def test_busy_channel_latches_full_trigger_until_after_reset_finishes(tmp_path):
         machine,
         {"command": False, "number": 7, "other_command": True},
         2,
-    ) == [("done", 7), ("ready", True)]
-    assert ops(
-        machine,
-        {"command": False, "number": 7, "other_command": True},
-        2.9,
-    ) == []
+    ) == [
+        ("done", 7),
+        ("ready", True),
+        ("other_done", False),
+    ]
     assert ops(
         machine,
         {"command": False, "number": 7, "other_command": True},
         3,
-    ) == [("done", 0), ("other_done", False)]
+    ) == [("done", 0)]
+    assert ops(
+        machine,
+        {"command": False, "number": 7, "other_command": True},
+        4,
+    ) == [("other_done", True)]
 
 
 def test_edge_partial_completes_when_level_becomes_true_while_edge_stays_high(
@@ -1157,12 +1162,21 @@ def test_edge_partial_completes_when_level_becomes_true_while_edge_stays_high(
         machine,
         {"command": False, "number": 9, "other_command": True},
         2,
-    ) == [("done", 7), ("ready", True)]
+    ) == [
+        ("done", 7),
+        ("ready", True),
+        ("other_done", False),
+    ]
     assert ops(
         machine,
         {"command": False, "number": 9, "other_command": True},
         3,
-    ) == [("done", 0), ("other_done", False)]
+    ) == [("done", 0)]
+    assert ops(
+        machine,
+        {"command": False, "number": 9, "other_command": True},
+        4,
+    ) == [("other_done", True)]
 
 
 def test_partial_edge_is_cancelled_when_source_reverses_before_levels_match(
@@ -1409,12 +1423,21 @@ def test_pure_level_trigger_latches_while_shared_channel_is_busy(tmp_path):
         machine,
         {"command": False, "number": 7, "other_command": True},
         2,
-    ) == [("done", 7), ("ready", True)]
+    ) == [
+        ("done", 7),
+        ("ready", True),
+        ("other_done", False),
+    ]
     assert ops(
         machine,
         {"command": False, "number": 7, "other_command": True},
         3,
-    ) == [("done", 0), ("other_done", False)]
+    ) == [("done", 0)]
+    assert ops(
+        machine,
+        {"command": False, "number": 7, "other_command": True},
+        4,
+    ) == [("other_done", True)]
 
 
 def test_mixed_edge_trigger_still_primes_stale_high_without_firing(tmp_path):

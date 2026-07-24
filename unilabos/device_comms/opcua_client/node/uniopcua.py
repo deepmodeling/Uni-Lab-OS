@@ -135,16 +135,26 @@ class Base(ABC):
         return self._name
 
 
+def _format_opc_io_error(exc: BaseException) -> str:
+    text = str(exc).strip()
+    if text:
+        return text
+    return f"{type(exc).__name__}({exc!r})"
+
+
 class Variable(Base):
     def __init__(self, client: Client, name: str, node_id: str, data_type: DataType):
         super().__init__(client, name, node_id, NodeType.VARIABLE, data_type)
+        self._last_read_error: str | None = None
 
     def read(self) -> Tuple[Any, bool]:
+        self._last_read_error = None
         try:
             value = self._get_node().get_value()
             return value, False
         except Exception as e:
-            print(f"读取变量 {self._name} 失败: {e}")
+            self._last_read_error = _format_opc_io_error(e)
+            print(f"读取变量 {self._name} 失败: {self._last_read_error}")
             return None, True
 
     def write(self, value: Any) -> bool:
@@ -266,6 +276,7 @@ class Method(Base):
 
     def read(self) -> Tuple[Any, bool]:
         """方法节点不支持读取操作"""
+        self._last_read_error = "方法节点不支持 read"
         return None, True
 
     def write(self, value: Any) -> bool:
@@ -288,6 +299,7 @@ class Object(Base):
 
     def read(self) -> Tuple[Any, bool]:
         """对象节点不支持直接读取操作"""
+        self._last_read_error = "对象节点不支持 read"
         return None, True
 
     def write(self, value: Any) -> bool:

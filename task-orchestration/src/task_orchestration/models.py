@@ -575,6 +575,7 @@ class ScheduleRequest(StrictModel):
     workflow_path: str
     expected_version: int = Field(ge=0)
     paused: bool | None = None
+    acknowledge_peer_failure: bool = False
 
 
 class AdvanceRequest(ScheduleRequest):

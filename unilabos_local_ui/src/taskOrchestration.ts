@@ -55,6 +55,88 @@ export type ApiTaskGanttEntry = {
   state: 'planned' | 'running' | 'done';
 };
 
+export type SampleProcessBlockState =
+  | 'waiting'
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type SampleProcessBlock = {
+  id: string;
+  instanceId: string;
+  sample: string;
+  templateId: string;
+  templateName: string;
+  order: number;
+  state: SampleProcessBlockState;
+  actionDone: number;
+  actionTotal: number;
+};
+
+export type SampleProcessRow = {
+  sample: string;
+  blocks: SampleProcessBlock[];
+};
+
+export type TaskInstanceProcessInput = {
+  id: string;
+  sample: string;
+  templateId: string;
+  order: number;
+  status: string;
+  executionCursor?: number;
+};
+
+function blockVisualState(status: string): SampleProcessBlockState {
+  if (status === 'waiting'
+    || status === 'pending'
+    || status === 'running'
+    || status === 'completed'
+    || status === 'failed'
+    || status === 'cancelled') {
+    return status;
+  }
+  return 'waiting';
+}
+
+export function buildSampleProcessRows(
+  instances: TaskInstanceProcessInput[],
+  templates: Array<Pick<TaskTemplateModel, 'id' | 'name' | 'nodeIds'>>,
+): SampleProcessRow[] {
+  const templatesById = new Map(templates.map((template) => [template.id, template]));
+  const bySample = new Map<string, SampleProcessBlock[]>();
+  for (const instance of instances) {
+    const template = templatesById.get(instance.templateId);
+    const actionTotal = template?.nodeIds.length || 0;
+    const cursor = Math.max(0, Number(instance.executionCursor || 0));
+    const actionDone = instance.status === 'completed'
+      ? actionTotal
+      : Math.min(cursor, actionTotal);
+    const block: SampleProcessBlock = {
+      id: instance.id,
+      instanceId: instance.id,
+      sample: instance.sample,
+      templateId: instance.templateId,
+      templateName: template?.name || instance.templateId,
+      order: instance.order,
+      state: blockVisualState(instance.status),
+      actionDone,
+      actionTotal,
+    };
+    const bucket = bySample.get(instance.sample) || [];
+    bucket.push(block);
+    bySample.set(instance.sample, bucket);
+  }
+  return Array.from(bySample.entries())
+    .sort(([left], [right]) => left.localeCompare(right, 'zh-CN'))
+    .map(([sample, blocks]) => ({
+      sample,
+      blocks: blocks.sort((left, right) => left.order - right.order || left.templateId.localeCompare(right.templateId)),
+    }));
+}
+
 export function buildTaskGanttEntries(
   entries: ApiTaskGanttEntry[],
 ): Array<Omit<TaskGanttEntry, 'templateName'>> {

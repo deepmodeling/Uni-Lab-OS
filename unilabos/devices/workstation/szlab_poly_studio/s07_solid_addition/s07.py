@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from unilabos.registry.decorators import action, device, not_action
 
 from .sensors import (
     NODE_ALLOW_PROCESS,
+    NODE_BALANCE_READING,
     NODE_COARSE_POSITION,
     NODE_COARSE_SHAKE_MAX_SPEED,
     NODE_FINE_POSITION,
@@ -24,6 +26,7 @@ from .sensors import (
     PROCESS_DOSE_POWDER,
     PROCESS_ROTATE_TO_FEED,
     PROCESS_SCAN_CARTRIDGES,
+    QR_CODE_LENGTH,
     iter_s07_powder_param_vars,
     normalize_powder_params,
     s07_powder_param_var,
@@ -121,9 +124,63 @@ class SZLabS07SolidAdditionDevice:
             self._reset_unilab_written_params()
 
     @not_action
+    def _run_dose_process_with_balance(self, timeout: float) -> dict[str, Any]:
+        timeout = self.process_timeout if timeout is None else timeout
+        balance_samples: list[dict[str, float]] = []
+        balance_read_errors: list[dict[str, Any]] = []
+        started = time.monotonic()
+        try:
+            if not self._wait_plc_bool(NODE_HOME, True, timeout, "S07 原点信号"):
+                return {"success": False, "message": "等待 S07 原点信号超时"}
+            if not self._wait_plc_bool(NODE_ALLOW_PROCESS, True, timeout, "S07 允许加工"):
+                return {"success": False, "message": "等待 S07 允许加工超时"}
+            self._write_plc_variable(NODE_PROCESS_SELECT, PROCESS_DOSE_POWDER)
+            self._write_plc_variable(NODE_PARAMS_WRITTEN, True)
+            started = time.monotonic()
+            deadline = started + timeout
+            process_complete = 0
+            while time.monotonic() <= deadline:
+                elapsed = time.monotonic() - started
+                try:
+                    balance_samples.append(
+                        {
+                            "elapsed_s": round(elapsed, 3),
+                            "value": float(self._read_plc_variable(NODE_BALANCE_READING)),
+                        }
+                    )
+                except Exception as exc:
+                    balance_read_errors.append({"elapsed_s": round(elapsed, 3), "message": str(exc)})
+                process_complete = int(self._read_plc_variable(NODE_PROCESS_COMPLETE) or 0)
+                if process_complete == PROCESS_DOSE_POWDER:
+                    break
+                time.sleep(self.poll_interval)
+            else:
+                return {
+                    "success": False,
+                    "message": f"等待 S07 工艺完成超时（期望 {PROCESS_DOSE_POWDER}）",
+                    "process_type": PROCESS_DOSE_POWDER,
+                    "balance_samples": balance_samples,
+                    "balance_read_errors": balance_read_errors,
+                }
+            return {
+                "success": True,
+                "process_type": PROCESS_DOSE_POWDER,
+                "status": {"process_complete": process_complete},
+                "balance_samples": balance_samples,
+                "balance_read_errors": balance_read_errors,
+                "balance_sample_count": len(balance_samples),
+                "final_balance": balance_samples[-1]["value"] if balance_samples else None,
+            }
+        finally:
+            self._reset_unilab_written_params()
+
+    @not_action
     def _read_qr_codes(self) -> dict[int, list[int]]:
         return {
-            position: [int(self._read_plc_variable(s07_qr_code_var(position, index)) or 0) for index in range(30)]
+            position: [
+                int(self._read_plc_variable(s07_qr_code_var(position, index)) or 0)
+                for index in range(QR_CODE_LENGTH)
+            ]
             for position in POSITION_RANGE
         }
 
@@ -156,6 +213,18 @@ class SZLabS07SolidAdditionDevice:
         if result.get("success"):
             result["qr_codes"] = self._read_qr_codes()
         return result
+
+    @action(auto_prefix=True, description="读取 S07 实时天平")
+    def read_s07_balance(self) -> dict[str, Any]:
+        try:
+            value = float(self._read_plc_variable(NODE_BALANCE_READING))
+        except Exception as exc:
+            return {"success": False, "message": f"读取 S07 天平失败: {exc}"}
+        return {
+            "success": True,
+            "value": value,
+            "variable": NODE_BALANCE_READING,
+        }
 
     @action(auto_prefix=True, description="S07 替换粉罐旋转到进料位")
     def rotate_powder_cartridge_to_feed(self, position: int, timeout: float = 300.0) -> dict[str, Any]:
@@ -192,7 +261,7 @@ class SZLabS07SolidAdditionDevice:
         except Exception:
             self._reset_unilab_written_params()
             raise
-        result = self._run_s07_process(PROCESS_DOSE_POWDER, timeout)
+        result = self._run_dose_process_with_balance(timeout)
         result["target_weight"] = target_weight
         result["recipe_name"] = recipe_name
         return result

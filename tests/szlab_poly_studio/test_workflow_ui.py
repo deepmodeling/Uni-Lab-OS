@@ -282,7 +282,7 @@ def test_s07_robot_runtime_binds_solid_addition_to_plc_gateway(monkeypatch, tmp_
         run_workflow_local,
         "load_ai4c_graph_config",
         lambda _graph_file: {
-            "szlab_poly_plc": {"url": "opc.tcp://127.0.0.1:48405/", "csv_path": "szlab_plc_0702.csv"},
+            "szlab_poly_plc": {"url": "opc.tcp://127.0.0.1:48405/", "csv_path": "szlab_plc_0721.csv"},
             "szlab_mixer_robot": {"plc_device_id": "szlab_poly_plc"},
             "szlab_s07_solid_addition": {"plc_device_id": "szlab_poly_plc"},
         },
@@ -348,7 +348,7 @@ def test_szlab_mixer_ui_preset_uses_current_csv_and_s04_s05_actions():
     runtime_config = _load_preset_runtime_config(preset)
     graph_nodes = {node["id"]: node for node in preset.device_graph["nodes"]}
 
-    assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"].endswith("szlab_plc_0702.csv")
+    assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"].endswith("szlab_plc_0721.csv")
     assert runtime_config.device_factory.plc_device_id == "szlab_poly_plc"
     assert preset.actions["run_stirring"].device_id == "szlab_mixer_stirrer"
     assert preset.actions["take_photo"].device_id == "szlab_mixer_photoshotting"
@@ -407,7 +407,7 @@ def test_s07_robot_preset_includes_robot_and_solid_addition_station():
     csv_path = _resolve_ui_path(preset.default_config["csv"], preset)
 
     assert preset.target_device_ids == ["szlab_mixer_robot", "szlab_s07_solid_addition"]
-    assert preset.default_config["csv"] == "szlab_plc_0702.csv"
+    assert preset.default_config["csv"] == "szlab_plc_0721.csv"
     assert csv_path.exists()
     assert set(graph_nodes) == {"szlab_poly_plc", "szlab_mixer_robot", "szlab_s07_solid_addition"}
     assert graph_nodes["szlab_s07_solid_addition"]["config"] == {
@@ -438,6 +438,7 @@ def test_s07_robot_preset_includes_robot_and_solid_addition_station():
         "S07粗注粉位置号",
         "S07精注粉位置号",
         "S07注粉重量",
+        "S07天平读数",
     ]
 
 
@@ -631,6 +632,7 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "S07粗注粉位置号",
         "S07精注粉位置号",
         "S07注粉重量",
+        "S07天平读数",
     ]
     assert collect_snapshot_variables("run_solvent_addition", {"process": 3}, runtime_config) == [
         "S06准备信号",
@@ -689,6 +691,82 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "S09取放料编号",
         "任务号",
     ]
+
+
+def test_szlab_action_parameters_have_frontend_help_options_and_units():
+    preset = load_preset("szlab_robot_action_workflow")
+
+    undocumented = [
+        (action.method, param["name"])
+        for action in preset.actions.values()
+        for param in action.params
+        if not param.get("description")
+    ]
+    assert undocumented == []
+
+    s03_product = next(
+        param for param in preset.actions["submit_pick_from_s03"].params if param["name"] == "product_type"
+    )
+    assert s03_product["options"] == [
+        {"value": 1, "label": "烧杯"},
+        {"value": 2, "label": "250 mL 样品瓶"},
+        {"value": 3, "label": "500 mL 样品瓶"},
+    ]
+    s072_product = next(
+        param for param in preset.actions["submit_place_to_s072"].params if param["name"] == "product_type"
+    )
+    assert s072_product["options"] == [
+        {"value": 1, "label": "固体粉末"},
+        {"value": 2, "label": "烧杯"},
+    ]
+    assert "S072取放料产品" in s072_product["description"]
+    assert "机器人任务号：15" in s072_product["description"]
+    s08_product = next(
+        param for param in preset.actions["submit_place_to_s08"].params if param["name"] == "product_type"
+    )
+    assert s08_product["options"][2] == {"value": 3, "label": "100 mL 液体瓶"}
+    assert "S08取放料产品" in s08_product["description"]
+    target_weight = next(
+        param for param in preset.actions["dose_powder"].params if param["name"] == "target_weight"
+    )
+    assert target_weight["unit"] == "g（待 PLC 确认）"
+    aspirate = next(
+        param
+        for param in preset.actions["add_liquid_to_beaker"].params
+        if param["name"] == "aspirate_volume"
+    )
+    assert "体积单位" in aspirate["description"]
+
+
+def test_single_sample_workflow_uses_internal_s09_balance_read_and_correct_robot_codes():
+    workflow_path = Path(
+        "unilabos/devices/workstation/szlab_poly_studio/workflows/"
+        "szlab_single_sample_atomic_workflow.json"
+    )
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    actions = [item["action"] for item in workflow["rules"][0]["actions"]]
+    methods = [action["method"] for action in actions]
+
+    assert [action["index"] for action in actions] == list(range(1, len(actions) + 1))
+    assert methods.count("read_s07_balance") == 0
+    assert methods.count("read_balance") == 0
+    assert methods[10:18] == [
+        "submit_pick_from_s072",
+        "submit_place_to_s071",
+        "submit_pick_from_s071_and_rotate_to_feed",
+        "submit_place_to_s072",
+        "submit_pick_from_s072",
+        "submit_place_to_s071",
+        "submit_pick_from_s071_and_rotate_to_feed",
+        "submit_place_to_s072",
+    ]
+    by_id = {action["workflow_node_id"]: action for action in actions}
+    assert by_id["p02_powder_1_pick_and_rotate"]["params"]["load_position"] == 1
+    assert by_id["p02_powder_2_pick_and_rotate"]["params"]["load_position"] == 2
+    assert by_id["w01_place_beaker_s072"]["params"]["product_type"] == 2
+    assert by_id["w02_pick_beaker_s072"]["params"]["product_type"] == 2
+    assert by_id["p03_reagent_place_s08"]["params"]["product_type"] == 3
+    assert by_id["p03_reagent_pick_s08"]["params"]["product_type"] == 3
 
 
 def test_szlab_robot_action_workflow_does_not_auto_apply_debug_sensor_skips(monkeypatch):

@@ -30,7 +30,7 @@ from unilabos.registry.decorators import action, device, not_action, topic_confi
 from unilabos.utils.log import logger
 
 
-DEFAULT_CSV_NAME = "szlab_plc_0702.csv"
+DEFAULT_CSV_NAME = "szlab_plc_0721.csv"
 
 
 def _resolve_csv_path(csv_path: Optional[str]) -> str:
@@ -157,6 +157,11 @@ class SZLabPolyPLCDevice(BaseClient):
         opcua_browse_limit: int = 5000,
         opcua_allow_recursive_browse: bool = False,
         opcua_timeout: Optional[float] = None,
+        opcua_session_timeout_ms: float = 8 * 60 * 60 * 1000,
+        opcua_secure_channel_timeout_ms: float = 60 * 60 * 1000,
+        auto_reconnect: bool = True,
+        reconnect_attempts: int = 3,
+        reconnect_interval: float = 1.0,
         stack_sensor_layout_path: Optional[str] = None,
         ignore_opcua_token_time_drift: bool = False,
         *args,
@@ -183,7 +188,13 @@ class SZLabPolyPLCDevice(BaseClient):
         self._sensor_array_node_indexes: Dict[str, int] = {}
         self._sensor_array_subscription_values: Dict[int, List[bool]] = {}
         self._sensor_change_callbacks: List[Callable[[int, List[bool]], None]] = []
+        self._sensor_array_subscription_interval_ms = 200
         self._sensor_subscription_lock = threading.RLock()
+        self._reconnect_lock = threading.RLock()
+        self._session_generation = 0
+        self._auto_reconnect = bool(auto_reconnect)
+        self._reconnect_attempts = max(int(reconnect_attempts), 1)
+        self._reconnect_interval = max(float(reconnect_interval), 0.0)
         self._fallback_node_id_prefix = fallback_node_id_prefix
         self._opcua_object_name = opcua_object_name
         self._opcua_browse_depth = int(opcua_browse_depth)
@@ -229,6 +240,8 @@ class SZLabPolyPLCDevice(BaseClient):
         if ignore_opcua_token_time_drift:
             _patch_opcua_token_time_drift_check()
         client = Client(url, timeout=opcua_timeout) if opcua_timeout is not None else Client(url)
+        client.session_timeout = int(opcua_session_timeout_ms)
+        client.secure_channel_timeout = int(opcua_secure_channel_timeout_ms)
         if username and password:
             client.set_user(username)
             client.set_password(password)
@@ -260,6 +273,121 @@ class SZLabPolyPLCDevice(BaseClient):
         except Exception as exc:
             logger.error(f"client connect failed: {exc}")
             raise
+
+    @not_action
+    def _is_recoverable_connection_error(self, exc: BaseException) -> bool:
+        markers = (
+            "BadSessionIdInvalid",
+            "BadSessionClosed",
+            "BadSecureChannelIdInvalid",
+            "BadSecureChannelClosed",
+            "BadConnectionClosed",
+            "BadServerNotConnected",
+            "BadCommunicationError",
+            "BadNoCommunication",
+            "BadRequestTimeout",
+            "BadTimeout",
+            "BadShutdown",
+            "The session id is not valid",
+            "The secure channel id is not valid",
+            "Connection is closed",
+            "Not connected",
+            "Socket is closed",
+            "Broken pipe",
+            "Connection reset",
+            "Connection aborted",
+            "'NoneType' object has no attribute 'write'",
+            "EOFError",
+            "TimeoutError",
+            "timed out",
+        )
+        current: BaseException | None = exc
+        while current is not None:
+            text = f"{type(current).__name__}: {current}"
+            if any(marker in text for marker in markers):
+                return True
+            current = current.__cause__ or current.__context__
+        return False
+
+    @not_action
+    def _drop_sensor_array_subscription(self, *, clear_callbacks: bool, delete: bool = True) -> None:
+        with self._sensor_subscription_lock:
+            subscription = self._sensor_array_subscription
+            self._sensor_array_subscription = None
+            self._sensor_array_subscription_handles = []
+            self._sensor_array_node_indexes = {}
+            self._sensor_array_subscription_values = {}
+            if clear_callbacks:
+                self._sensor_change_callbacks = []
+        if delete and subscription is not None:
+            try:
+                subscription.delete()
+            except Exception as exc:
+                logger.warning(f"删除 PLC 传感器订阅失败: {exc}")
+
+    @not_action
+    def _reconnect_after_failure(
+        self,
+        observed_generation: int,
+        reason: BaseException,
+        *,
+        force: bool = False,
+    ) -> None:
+        if not self._auto_reconnect and not force:
+            raise RuntimeError(f"OPC UA 会话已失效，自动重连未启用: {reason}") from reason
+        with self._reconnect_lock:
+            if observed_generation != self._session_generation:
+                return
+            callbacks = list(self._sensor_change_callbacks)
+            subscription_was_active = self._sensor_array_subscription is not None
+            interval_ms = self._sensor_array_subscription_interval_ms
+            self._drop_sensor_array_subscription(clear_callbacks=False, delete=False)
+            last_error: BaseException = reason
+            for attempt in range(1, self._reconnect_attempts + 1):
+                try:
+                    if self.client is None:
+                        raise RuntimeError("PLC OPC UA 客户端尚未初始化")
+                    try:
+                        self.client.disconnect()
+                    except Exception:
+                        pass
+                    self.client.connect()
+                    if subscription_was_active and callbacks:
+                        self.start_sensor_array_subscription(callbacks[0], interval_ms=interval_ms)
+                    self._session_generation += 1
+                    logger.info(
+                        "PLC OPC UA 会话重连成功: generation=%s attempt=%s",
+                        self._session_generation,
+                        attempt,
+                    )
+                    return
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning(
+                        "PLC OPC UA 会话重连失败 (%s/%s): %s",
+                        attempt,
+                        self._reconnect_attempts,
+                        exc,
+                    )
+                    if attempt < self._reconnect_attempts and self._reconnect_interval > 0:
+                        time.sleep(self._reconnect_interval)
+            raise RuntimeError(f"OPC UA 会话失效且重连失败: {last_error}") from last_error
+
+    @action(auto_prefix=True, always_free=True, description="重新建立 PLC OPC UA 会话")
+    def reconnect(self) -> Dict[str, Any]:
+        try:
+            self._reconnect_after_failure(
+                self._session_generation,
+                RuntimeError("用户请求手动重连"),
+                force=True,
+            )
+        except Exception as exc:
+            return {"success": False, "message": str(exc)}
+        return {
+            "success": True,
+            "message": "PLC OPC UA 会话重连成功",
+            "session_generation": self._session_generation,
+        }
 
     @not_action
     def _register_variable_definitions(self, variable_names: List[str]) -> None:
@@ -401,17 +529,29 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def read_variable(self, node_name: str, use_cache: bool = True) -> Any:
         del use_cache  # BaseClient reads directly from the OPC UA node.
+        observed_generation = getattr(self, "_session_generation", 0)
+        try:
+            return self._read_variable_once(node_name)
+        except Exception as exc:
+            if not self._is_recoverable_connection_error(exc):
+                raise
+            self._reconnect_after_failure(observed_generation, exc)
+            return self._read_variable_once(node_name)
+
+    @not_action
+    def _read_variable_once(self, node_name: str) -> Any:
         node = self.use_node(node_name)
-        value, error = node.read()
-        if error:
-            sensor_bit = self._parse_sensor_bit_name(node_name)
-            if sensor_bit is not None:
-                return self._read_sensor_array(sensor_bit[0])[sensor_bit[1]]
-            if node_name in self._direct_node_id_map:
-                direct_node_id = self._direct_node_id_map[node_name]
-                raise RuntimeError(f"读取 PLC 变量失败: {node_name}: 直连 NodeId 无效: {direct_node_id}")
-            raise RuntimeError(f"读取 PLC 变量失败: {node_name}")
-        return value
+        try:
+            return node._get_node().get_value()
+        except Exception as exc:
+            if self._is_bad_node_id_unknown(exc):
+                sensor_bit = self._parse_sensor_bit_name(node_name)
+                if sensor_bit is not None:
+                    return self._read_sensor_array(sensor_bit[0])[sensor_bit[1]]
+                direct_node_id = self._direct_node_id_map.get(node_name)
+                direct_node_detail = f": {direct_node_id}" if direct_node_id else ""
+                raise RuntimeError(f"读取 PLC 变量失败: {node_name}: 直连 NodeId 无效{direct_node_detail}") from exc
+            raise RuntimeError(f"读取 PLC 变量失败: {node_name}: {exc}") from exc
 
     @not_action
     def _parse_sensor_bit_name(self, variable_name: str) -> Optional[tuple[int, int]]:
@@ -420,10 +560,10 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def _read_sensor_array(self, group_index: int) -> List[bool]:
         variable_name = SensorBase.array(group_index)
-        node = self.use_node(variable_name)
-        value, error = node.read()
-        if error:
-            raise RuntimeError(f"读取 PLC 传感器数组失败: {variable_name}")
+        try:
+            value = self.read_variable(variable_name, use_cache=False)
+        except Exception as exc:
+            raise RuntimeError(f"读取 PLC 传感器数组失败: {variable_name}: {exc}") from exc
         if not isinstance(value, (list, tuple)):
             raise TypeError(f"PLC 传感器数组类型错误: {variable_name}: {type(value).__name__}")
         if len(value) < SENSOR_BITS_PER_ARRAY:
@@ -443,6 +583,7 @@ class SZLabPolyPLCDevice(BaseClient):
         with self._sensor_subscription_lock:
             if callback not in self._sensor_change_callbacks:
                 self._sensor_change_callbacks.append(callback)
+            self._sensor_array_subscription_interval_ms = int(interval_ms)
             if self._sensor_array_subscription is not None:
                 return
             if not self.client:
@@ -499,25 +640,24 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def stop_sensor_array_subscription(self) -> None:
-        with self._sensor_subscription_lock:
-            subscription = self._sensor_array_subscription
-            self._sensor_array_subscription = None
-            self._sensor_array_subscription_handles = []
-            self._sensor_array_node_indexes = {}
-            self._sensor_array_subscription_values = {}
-            self._sensor_change_callbacks = []
-        if subscription is not None:
-            try:
-                subscription.delete()
-            except Exception as exc:
-                logger.warning(f"删除 PLC 传感器订阅失败: {exc}")
+        self._drop_sensor_array_subscription(clear_callbacks=True)
 
     @not_action
     def write_variable(self, node_name: str, value: Any) -> bool:
         node = self.use_node(node_name)
+        observed_generation = getattr(self, "_session_generation", 0)
         try:
             self._write_value_only(node, value)
         except Exception as exc:
+            if self._is_recoverable_connection_error(exc):
+                try:
+                    self._reconnect_after_failure(observed_generation, exc)
+                except Exception as reconnect_exc:
+                    raise RuntimeError(f"写入 PLC 变量失败: {node_name}: {reconnect_exc}") from exc
+                raise RuntimeError(
+                    f"写入 PLC 变量失败: {node_name}: OPC UA 会话已恢复；"
+                    "为避免重复写入，本次写操作未自动重试"
+                ) from exc
             if self._is_bad_node_id_unknown(exc):
                 direct_node_id = self._direct_node_id_map.get(node_name)
                 direct_node_detail = f": {direct_node_id}" if direct_node_id else ""
@@ -890,20 +1030,22 @@ class SZLabPolyPLCDevice(BaseClient):
         del use_cache
         names = node_names or list(self._variables_to_find)
         result: Dict[str, Any] = {}
+        connection_error: Optional[str] = None
         for name in names:
+            if connection_error is not None:
+                result[name] = {"success": False, "error": connection_error}
+                continue
             try:
-                node = self.use_node(name)
-                value, error = node.read()
-                if error:
-                    result[name] = {"success": False, "error": f"读取 PLC 变量失败: {name}"}
-                else:
-                    result[name] = {
-                        "success": True,
-                        "value": value,
-                        "node_id": node.node_id,
-                    }
+                value = self.read_variable(name, use_cache=False)
+                result[name] = {
+                    "success": True,
+                    "value": value,
+                    "node_id": self.use_node(name).node_id,
+                }
             except Exception as exc:
                 result[name] = {"success": False, "error": str(exc)}
+                if self._is_recoverable_connection_error(exc):
+                    connection_error = str(exc)
         return result
 
     @not_action
@@ -926,11 +1068,7 @@ class SZLabPolyPLCDevice(BaseClient):
                 if array_value is not None:
                     result[site_key] = array_value[bit_index]
                     continue
-                node = self.use_node(variable_name)
-                value, error = node.read()
-                if error:
-                    raise RuntimeError(f"读取 PLC 传感器位失败: {variable_name}")
-                result[site_key] = bool(value)
+                result[site_key] = bool(self.read_variable(variable_name, use_cache=False))
             except Exception as exc:
                 if variable_name not in self._sensor_read_warning_names:
                     logger.warning(f"读取传感器 {variable_name} 失败: {exc}")
@@ -1046,25 +1184,32 @@ class SZLabPolyPLCDevice(BaseClient):
     def get_sensor_arrays(self) -> Dict[str, Any]:
         groups: List[Dict[str, Any]] = []
         successful_groups = 0
+        connection_error: Optional[str] = None
         for group_index in range(SENSOR_ARRAY_COUNT):
             array_name = SensorBase.array(group_index)
             error: Optional[str] = None
-            try:
-                values: List[Optional[bool]] = self._read_sensor_array(group_index)
-                successful_groups += 1
-            except Exception as exc:
-                error = str(exc)
-                values = []
-                for bit_index in range(SENSOR_BITS_PER_ARRAY):
-                    bit_name = f"{array_name}[{bit_index}]"
-                    try:
-                        node = self.use_node(bit_name)
-                        value, read_error = node.read()
-                        values.append(None if read_error else bool(value))
-                    except Exception:
-                        values.append(None)
-                if any(value is not None for value in values):
+            if connection_error is not None:
+                values = [None] * SENSOR_BITS_PER_ARRAY
+                error = connection_error
+            else:
+                try:
+                    values = self._read_sensor_array(group_index)
                     successful_groups += 1
+                except Exception as exc:
+                    error = str(exc)
+                    values = []
+                    if self._is_recoverable_connection_error(exc):
+                        connection_error = error
+                        values = [None] * SENSOR_BITS_PER_ARRAY
+                    else:
+                        for bit_index in range(SENSOR_BITS_PER_ARRAY):
+                            bit_name = f"{array_name}[{bit_index}]"
+                            try:
+                                values.append(bool(self.read_variable(bit_name, use_cache=False)))
+                            except Exception:
+                                values.append(None)
+                        if any(value is not None for value in values):
+                            successful_groups += 1
 
             bits = []
             for bit_index, value in enumerate(values):

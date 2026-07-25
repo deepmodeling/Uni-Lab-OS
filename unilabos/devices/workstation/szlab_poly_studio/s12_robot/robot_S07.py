@@ -1,6 +1,17 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S07Sensors
+from unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07 import (
+    SZLabS07SolidAdditionDevice,
+)
+from unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.sensors import (
+    NODE_ALLOW_PROCESS,
+    NODE_HOME,
+    POSITION_RANGE,
+)
 
 from .robot_tasks import build_variables, powder_container_sensor
 
@@ -12,7 +23,24 @@ class SzlabRobotS07Mixin:
             raise ValueError("S072 位置必须在 1-2 范围内")
         return position
 
+    def _resolve_s071_place_position(self, position: str) -> str:
+        if str(position).strip().lower() != "auto":
+            return str(position)
+        read_errors: list[str] = []
+        for candidate, sensor in S07Sensors.POWDER_CONTAINER_BY_POSITION.items():
+            try:
+                occupied = bool(self._read_variable(sensor, use_cache=False))
+            except Exception as exc:
+                read_errors.append(f"{candidate}: {exc}")
+                continue
+            if not occupied:
+                return candidate
+        if read_errors:
+            raise RuntimeError(f"无法确定 S071 空位: {'; '.join(read_errors)}")
+        raise RuntimeError("S071 没有可用于旧粉罐回库的空位")
+
     def _run_s071_place(self, position: str = "1-1") -> dict[str, Any]:
+        position = self._resolve_s071_place_position(position)
         sensor = powder_container_sensor(position)
         return self._submit_robot_task(
             task="place",
@@ -37,6 +65,87 @@ class SzlabRobotS07Mixin:
             position=str(position),
             source_sensor_variable=sensor,
         )
+
+    def _run_s071_pick_and_rotate_to_feed(
+        self,
+        position: str = "1-1",
+        load_position: int = 1,
+        timeout: float = 300.0,
+    ) -> dict[str, Any]:
+        position = str(position)
+        load_position = int(load_position)
+        timeout = float(timeout)
+        sensor = powder_container_sensor(position)
+        self._slot_number(position)
+        if load_position not in POSITION_RANGE:
+            raise ValueError("load_position 必须在 1-10 范围内")
+        if self._plc_gateway is None:
+            raise RuntimeError("S071 并行上料需要注入 szlab_poly_plc 网关")
+
+        sensor_rejection = self._ensure_sensor_gate(sensor, True, "S071 取粉罐源位必须有粉罐")
+        if sensor_rejection is not None:
+            return {
+                **sensor_rejection,
+                "status": "rejected",
+                "position": position,
+                "load_position": load_position,
+            }
+        handshake_precheck = self._run_robot_handshake_precheck("S071")
+
+        s07 = SZLabS07SolidAdditionDevice(
+            plc_device_id=self.plc_device_id,
+            process_timeout=timeout,
+            poll_interval=0.2,
+        )
+        s07.set_plc_gateway(self._plc_gateway)
+        if not s07._wait_plc_bool(NODE_HOME, True, timeout, "S07 原点信号"):
+            return {
+                "success": False,
+                "message": "等待 S07 原点信号超时",
+                "status": "rejected",
+                "position": position,
+                "load_position": load_position,
+            }
+        if not s07._wait_plc_bool(NODE_ALLOW_PROCESS, True, timeout, "S07 允许加工"):
+            return {
+                "success": False,
+                "message": "等待 S07 允许加工超时",
+                "status": "rejected",
+                "position": position,
+                "load_position": load_position,
+            }
+
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="S071ParallelLoading") as executor:
+            robot_future = executor.submit(self._run_s071_pick, position)
+            rotate_future = executor.submit(
+                s07.rotate_powder_cartridge_to_feed,
+                load_position,
+                timeout,
+            )
+            try:
+                robot_result = robot_future.result()
+            except Exception as exc:
+                robot_result = {"success": False, "message": str(exc)}
+            try:
+                rotate_result = rotate_future.result()
+            except Exception as exc:
+                rotate_result = {"success": False, "message": str(exc)}
+
+        success = bool(robot_result.get("success")) and bool(rotate_result.get("success"))
+        return {
+            "success": success,
+            "message": (
+                "S071 取粉罐与 S07 旋转到上料位均已完成"
+                if success
+                else "S071 并行上料部分失败；现场状态可能已变化，禁止自动重试"
+            ),
+            "status": "completed" if success else "partial_failure",
+            "position": position,
+            "load_position": load_position,
+            "handshake_precheck": handshake_precheck,
+            "robot_pick": robot_result,
+            "s07_rotate": rotate_result,
+        }
 
     def _run_s072_place(self, product_type: int, position: int) -> dict[str, Any]:
         position = self._validate_s072_position(position)

@@ -666,6 +666,24 @@ class SzlabMixerRobotDevice(
         except Exception as exc:
             return {"success": False, "message": str(exc), "task": "pick", "station": "S071", "position": position}
 
+    @action(auto_prefix=True, description="并行执行 S071 取粉罐与 S07 旋转到上料位")
+    def submit_pick_from_s071_and_rotate_to_feed(
+        self,
+        position: str = "1-1",
+        load_position: int = 1,
+        timeout: float = 300.0,
+    ) -> dict[str, Any]:
+        try:
+            return self._run_s071_pick_and_rotate_to_feed(position, load_position, timeout)
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": str(exc),
+                "status": "rejected",
+                "position": position,
+                "load_position": load_position,
+            }
+
     @action(auto_prefix=True, description="S072 放料")
     def submit_place_to_s072(self, product_type: int = 1, position: int = 1) -> dict[str, Any]:
         try:

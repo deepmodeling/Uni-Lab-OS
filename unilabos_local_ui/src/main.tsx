@@ -67,6 +67,8 @@ type ParamSpec = {
   min?: number;
   max?: number;
   default?: unknown;
+  unit?: string;
+  options?: Array<{ value: string | number | boolean; label: string }>;
 };
 
 type PresetPayload = {
@@ -687,6 +689,9 @@ function App() {
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [taskInstances, setTaskInstances] = useState<TaskInstance[]>([]);
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
+  const [sensorGates, setSensorGates] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(Object.entries(DEFAULT_SENSOR_GATES).map(([key, gate]) => [key, gate.free])),
+  );
   const [taskWorkspaceVersion, setTaskWorkspaceVersion] = useState<number | null>(null);
   const [taskWorkspacePath, setTaskWorkspacePath] = useState('szlab_canvas_workflow.json');
   const [taskScheduleEntries, setTaskScheduleEntries] = useState<ReturnType<typeof taskWorkspaceFromApi>['scheduleEntries']>([]);
@@ -900,6 +905,14 @@ function App() {
     ),
     [liveGateStates, sensorGates],
   );
+  const toggleSensorGate = useCallback((gate: string) => {
+    if (liveGateStates[gate] !== undefined) return;
+    setSensorGates((current) => ({ ...current, [gate]: !current[gate] }));
+    setTaskEvents((current) => [
+      ...current,
+      `${DEFAULT_SENSOR_GATES[gate]?.label || gate} 手动门控已切换。`,
+    ]);
+  }, [liveGateStates]);
   const configuredOpcVariableRows = useMemo<OpcVariableView[]>(
     () => configuredOpcVariables.map((name) => ({ name, currentValue: stackSensorValues[name] })),
     [configuredOpcVariables, stackSensorValues],
@@ -2439,6 +2452,33 @@ function App() {
             <section className="task-column task-log-column">
               <div className="task-panel-head compact">
                 <div>
+                  <h2>Sensor Gates</h2>
+                  <p>优先显示实机传感器；实机信号不可用时可点击切换手动模拟状态。</p>
+                </div>
+              </div>
+              <div className="task-gate-list">
+                {Object.entries(DEFAULT_SENSOR_GATES).map(([gate, meta]) => {
+                  const hasLiveValue = liveGateStates[gate] !== undefined;
+                  const free = effectiveSensorGates[gate] ?? true;
+                  return (
+                    <button
+                      className={`task-gate-card ${free ? 'free' : 'busy'}`}
+                      disabled={hasLiveValue}
+                      key={gate}
+                      onClick={() => toggleSensorGate(gate)}
+                      type="button"
+                    >
+                      <span>
+                        <strong>{meta.label}</strong>
+                        <small>{hasLiveValue ? '实机传感器状态' : '实机信号不可用，当前为手动模拟'}</small>
+                      </span>
+                      <em>{free ? 'FREE' : 'BUSY'}</em>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="task-panel-head compact">
+                <div>
                   <h2>等待条件与调度事件</h2>
                   <p>仅展示当前未满足的前置、信号或资源条件。</p>
                 </div>
@@ -2603,25 +2643,47 @@ function App() {
                 {editingNode.data.paramSpecs.map((param) => {
                   const name = param.name || '';
                   if (!name) return null;
+                  const currentValue = editingNode.data.params[name];
                   return (
                     <label key={name}>
-                      {param.label || name}
-                      <input
-                        type={param.type === 'boolean' ? 'checkbox' : param.type === 'string' ? 'text' : 'number'}
-                        min={param.min}
-                        max={param.max}
-                        checked={param.type === 'boolean' ? Boolean(editingNode.data.params[name]) : undefined}
-                        value={param.type === 'boolean' ? undefined : String(editingNode.data.params[name] ?? '')}
-                        onChange={(event) => {
-                          const value = param.type === 'boolean'
-                            ? event.currentTarget.checked
-                            : param.type === 'string'
-                              ? event.currentTarget.value
-                              : Number(event.currentTarget.value);
-                          updateNodeParam(editingNode.id, name, value);
-                        }}
-                      />
-                      {param.description ? <small>{param.description}</small> : null}
+                      <span className="param-label">
+                        {param.label || name}
+                        {param.unit ? <em>{param.unit}</em> : null}
+                      </span>
+                      {param.options?.length ? (
+                        <select
+                          value={String(currentValue ?? '')}
+                          onChange={(event) => {
+                            const selected = param.options?.find(
+                              (option) => String(option.value) === event.currentTarget.value,
+                            );
+                            updateNodeParam(editingNode.id, name, selected?.value ?? event.currentTarget.value);
+                          }}
+                        >
+                          {param.options.map((option) => (
+                            <option key={String(option.value)} value={String(option.value)}>
+                              {option.value} — {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={param.type === 'boolean' ? 'checkbox' : param.type === 'string' ? 'text' : 'number'}
+                          min={param.min}
+                          max={param.max}
+                          checked={param.type === 'boolean' ? Boolean(currentValue) : undefined}
+                          value={param.type === 'boolean' ? undefined : String(currentValue ?? '')}
+                          onChange={(event) => {
+                            const value = param.type === 'boolean'
+                              ? event.currentTarget.checked
+                              : param.type === 'string'
+                                ? event.currentTarget.value
+                                : Number(event.currentTarget.value);
+                            updateNodeParam(editingNode.id, name, value);
+                          }}
+                        />
+                      )}
+                      <small>{param.description || `${name} 动作参数`}</small>
                     </label>
                   );
                 })}

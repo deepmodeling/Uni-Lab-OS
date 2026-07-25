@@ -1,30 +1,7 @@
 """szlab 本地 workflow 调试界面。"""
 
 from __future__ import annotations
-
-import argparse
-import asyncio
-import csv
-import io
-import json
-import os
-import re
-import sys
-import tempfile
-import threading
-import time
-import uuid
-import webbrowser
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, replace
-from pathlib import Path
-from typing import Any
-
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-
-from unilabos.registry.ast_registry_scanner import scan_directory
+from scripts.workflow_timing import WorkflowTimingRecorder
 from scripts.run_workflow_local import (
     ROBOT_ARM_DEVICE_ID,
     RuntimeConfig,
@@ -45,9 +22,34 @@ from scripts.run_workflow_local import (
     run_nodes,
     snapshot_opc_state,
 )
+from unilabos.registry.ast_registry_scanner import scan_directory
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi import FastAPI, HTTPException
 
+import argparse
+import asyncio
+import csv
+import io
+import json
+import os
+import re
+import sys
+import tempfile
+import threading
+import time
+import uuid
+import webbrowser
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
 SZLAB_DIR = REPO_ROOT / "tests" / "szlab_poly_studio"
 PRESET_DIR = SZLAB_DIR / "presets"
 FRONTEND_DIR = REPO_ROOT / "unilabos_local_ui"
@@ -182,7 +184,7 @@ def _actions_from_ast_device_meta(device_id: str, device_meta: dict[str, Any]) -
             method=method,
             label=description,
             description=description,
-            params=_params_from_ast_action(method_info),
+            params=_params_from_ast_action(method, method_info),
             device_id=device_id,
         )
     for method, method_info in device_meta.get("auto_methods", {}).items():
@@ -192,16 +194,312 @@ def _actions_from_ast_device_meta(device_id: str, device_meta: dict[str, Any]) -
                 method=method,
                 label=method,
                 description=method_info.get("docstring") or "",
-                params=_params_from_ast_action(method_info),
+                params=_params_from_ast_action(method, method_info),
                 device_id=device_id,
             ),
         )
     return actions
 
 
-def _params_from_ast_action(method_info: dict[str, Any]) -> list[dict[str, Any]]:
+_PRODUCT_TYPE_OPTIONS = [
+    {"value": 1, "label": "烧杯"},
+    {"value": 2, "label": "250 mL 样品瓶"},
+    {"value": 3, "label": "500 mL 样品瓶"},
+]
+_S01_PRODUCT_TYPE_OPTIONS = [
+    {"value": 1, "label": "TIP"},
+    {"value": 2, "label": "烧杯"},
+    {"value": 3, "label": "250 mL 样品瓶"},
+    {"value": 4, "label": "500 mL 样品瓶"},
+    {"value": 5, "label": "100 mL 液体瓶"},
+    {"value": 6, "label": "固体粉末"},
+]
+_S072_PRODUCT_TYPE_OPTIONS = [
+    {"value": 1, "label": "固体粉末"},
+    {"value": 2, "label": "烧杯"},
+]
+_S08_PRODUCT_TYPE_OPTIONS = [
+    {"value": 1, "label": "250 mL 样品瓶"},
+    {"value": 2, "label": "500 mL 样品瓶"},
+    {"value": 3, "label": "100 mL 液体瓶"},
+]
+_PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
+    "sample_id": {"label": "样品 ID", "description": "用于追踪物料、照片和实验结果的样品标识。"},
+    "position": {"label": "位置", "description": "目标工位或仓位编号；可用范围取决于当前动作。"},
+    "timeout": {"label": "超时时间", "description": "等待 PLC 工艺完成的最长时间。", "unit": "s"},
+    "超时时间": {"description": "等待 S08 开关盖工艺完成的最长时间。", "unit": "s"},
+    "duration": {"label": "持续时间", "description": "工艺持续运行时间。", "unit": "s"},
+    "speed": {"label": "搅拌速度", "description": "S04 磁力搅拌转速设定。", "unit": "rpm"},
+    "temperature": {"label": "目标温度", "description": "S04 磁搅目标温度。", "unit": "°C"},
+    "safe_temperature": {"label": "安全温度", "description": "S04 超温保护阈值。", "unit": "°C"},
+    "reset": {"label": "仅复位", "description": "开启后只恢复 PLC 参数初始值，不启动加工。"},
+    "photo_path": {"label": "照片路径", "description": "预留的照片输出路径；当前由设备侧生成实际照片地址。"},
+    "inspection_result": {"label": "检测结果", "description": "预留的算法检测结果；当前以 PLC 拍照结果为准。"},
+    "require_material": {"label": "要求有料", "description": "兼容参数；实机拍照动作始终检查拍照位有料。"},
+    "volume": {"label": "输送体积", "description": "S06 单次管路输送量，使用 PLC 原始体积单位。", "unit": "PLC raw"},
+    "volume_pump_1": {"label": "1号泵加液量", "description": "S06 1号泵本次工艺的加液设定量。", "unit": "PLC raw"},
+    "volume_pump_2": {"label": "2号泵加液量", "description": "S06 2号泵本次工艺的加液设定量。", "unit": "PLC raw"},
+    "direction": {
+        "label": "输送方向",
+        "description": "液体输送方向。",
+        "options": [{"value": "aspirate", "label": "吸液"}, {"value": "dispense", "label": "排液"}],
+    },
+    "pipeline": {
+        "label": "管路",
+        "description": "选择执行动作的 S06 管路。",
+        "options": [
+            {"value": "aspirate", "label": "吸液管路"},
+            {"value": "dispense", "label": "排液管路"},
+            {"value": "air", "label": "空气管路"},
+        ],
+    },
+    "skip_level_check": {"label": "跳过液位检查", "description": "仅调试使用；开启后不执行前置液位检查。"},
+    "beaker_true_means_present": {"label": "烧杯信号极性", "description": "开启表示传感器 True 代表烧杯在位。"},
+    "coarse_position": {"label": "粗注粉粉罐位", "description": "参与粗注粉的 S07 粉罐位置，范围 1–10。"},
+    "fine_position": {"label": "精注粉粉罐位", "description": "参与精注粉的 S07 粉罐位置，范围 1–10。"},
+    "target_weight": {"label": "目标注粉重量", "description": "S07 本次注粉的目标重量。", "unit": "g（待 PLC 确认）"},
+    "params_json": {"label": "配方文件", "description": "粗/精注粉参数 JSON 路径；留空使用设备默认文件。"},
+    "recipe_name": {"label": "配方名称", "description": "注粉参数 JSON 中选用的配方键名。"},
+    "工艺选择": {
+        "description": "S08 开关盖工艺编号。",
+        "options": [
+            {"value": 1, "label": "开启 500 mL 样品瓶"},
+            {"value": 2, "label": "关闭 500 mL 样品瓶"},
+            {"value": 3, "label": "开启 250 mL 样品瓶"},
+            {"value": 4, "label": "关闭 250 mL 样品瓶"},
+            {"value": 5, "label": "开启 100 mL 液体瓶"},
+            {"value": 6, "label": "关闭 100 mL 液体瓶"},
+        ],
+    },
+    "样品ID": {"description": "S08 处理的样品 ID 数组，用于动作追踪。"},
+    "瓶盖暂存位": {"description": "S08 瓶盖暂存位置编号。"},
+    "home_position": {"label": "原点编号", "description": "需要检查的 S09 原点信号编号。"},
+    "take_tip_box_index": {"label": "取 TIP 盒", "description": "S09 取新 TIP 的盒位编号，通常为 1。"},
+    "release_tip_box_index": {"label": "废 TIP 盒", "description": "S09 释放已用 TIP 的盒位编号，通常为 2。"},
+    "tip_index": {"label": "TIP 编号", "description": "当前 TIP 盒内使用的 TIP 位置编号。"},
+    "liquid_bottle_index": {"label": "液体瓶编号", "description": "S09 液体试剂瓶工位编号，范围 1–5。"},
+    "station": {"label": "烧杯工位", "description": "S09 承接加液的烧杯工位编号。"},
+    "aspirate_volume": {"label": "吸液体积", "description": "吸取体积；实际单位由“体积单位”决定。"},
+    "dispense_volume": {"label": "放液体积", "description": "排出体积；实际单位由“体积单位”决定。"},
+    "volume_unit": {
+        "label": "体积单位",
+        "description": "raw=0.1 µL/单位，也可直接选择 µL 或 mL。",
+        "options": [
+            {"value": "raw", "label": "PLC raw（0.1 µL）"},
+            {"value": "ul", "label": "µL"},
+            {"value": "ml", "label": "mL"},
+        ],
+    },
+    "liquid_steps": {"label": "移液步骤", "description": "S09 批量移液步骤数组；每项包含取 TIP、吸液和放液参数。"},
+    "release_after": {"label": "结束后释放", "description": "流程完成后是否释放样品与工站绑定。"},
+    "bottle": {"label": "液体瓶编号", "description": "S09 液体试剂瓶编号，范围 1–5。"},
+    "remaining_volume": {"label": "剩余液量", "description": "液体瓶当前或初始化剩余体积。", "unit": "mL"},
+    "require_stable": {"label": "要求稳定", "description": "开启后仅在 S09 天平稳定信号有效时返回读数。"},
+}
+_METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
+    **{
+        (method, "product_type"): {
+            "label": "产品类型",
+            "description": "1=烧杯，2=250 mL 样品瓶，3=500 mL 样品瓶。",
+            "options": _PRODUCT_TYPE_OPTIONS,
+        }
+        for method in (
+            "submit_place_to_s03",
+            "submit_pick_from_s03",
+            "submit_place_to_s11",
+            "submit_pick_from_s11",
+        )
+    },
+    ("submit_pick_from_s01", "product_type"): {
+        "label": "S01 出入料产品",
+        "description": "1=TIP，2=烧杯，3=250 mL 样品瓶，4=500 mL 样品瓶，5=100 mL 液体瓶，6=固体粉末。",
+        "options": _S01_PRODUCT_TYPE_OPTIONS,
+    },
+    ("submit_place_to_s072", "product_type"): {
+        "label": "S072 产品代码",
+        "description": "1=固体粉末，2=烧杯。",
+        "options": _S072_PRODUCT_TYPE_OPTIONS,
+    },
+    ("submit_pick_from_s072", "product_type"): {
+        "label": "S072 产品代码",
+        "description": "1=固体粉末，2=烧杯。",
+        "options": _S072_PRODUCT_TYPE_OPTIONS,
+    },
+    **{
+        (method, "product_type"): {
+            "label": "S09 产品类型",
+            "description": "1=TIP盒，2=液体试剂瓶，3=烧杯。",
+            "options": [
+                {"value": 1, "label": "TIP 盒"},
+                {"value": 2, "label": "液体试剂瓶"},
+                {"value": 3, "label": "烧杯"},
+            ],
+        }
+        for method in ("submit_place_to_s09", "submit_pick_from_s09")
+    },
+    ("submit_place_to_s08", "product_type"): {
+        "label": "瓶型",
+        "description": "1=250 mL 样品瓶，2=500 mL 样品瓶，3=100 mL 液体瓶。",
+        "options": _S08_PRODUCT_TYPE_OPTIONS,
+    },
+    ("submit_pick_from_s08", "product_type"): {
+        "label": "瓶型",
+        "description": "1=250 mL 样品瓶，2=500 mL 样品瓶，3=100 mL 液体瓶。",
+        "options": _S08_PRODUCT_TYPE_OPTIONS,
+    },
+    ("submit_pour_from_s08", "product_type"): {
+        "label": "倒料瓶型",
+        "description": "1=250 mL 样品瓶，2=500 mL 样品瓶。",
+        "options": [
+            {"value": 1, "label": "250 mL 样品瓶"},
+            {"value": 2, "label": "500 mL 样品瓶"},
+        ],
+    },
+    ("run_stirring", "mode"): {
+        "label": "工艺模式",
+        "description": "1=仅搅拌，2=仅加热，3=搅拌并加热。",
+        "options": [
+            {"value": 1, "label": "搅拌"},
+            {"value": 2, "label": "加热"},
+            {"value": 3, "label": "搅拌 + 加热"},
+        ],
+    },
+    ("run_solvent_addition", "process"): {
+        "label": "S06 工艺",
+        "description": "1=仅1号泵，2=仅2号泵，3=两路泵均执行。",
+        "options": [
+            {"value": 1, "label": "1号泵"},
+            {"value": 2, "label": "2号泵"},
+            {"value": 3, "label": "1号泵 + 2号泵"},
+        ],
+    },
+    ("submit_pick_from_s01", "position"): {"description": "S01 上料过渡仓取料位置，范围 1–6。"},
+    ("submit_place_to_s02", "position"): {"description": "S02 TIP 盒放料位，范围 1–6。"},
+    ("submit_pick_from_s02", "position"): {"description": "S02 TIP 盒取料位，范围 1–6。"},
+    ("submit_place_to_s03", "position"): {"description": "S03 空容器仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
+    ("submit_pick_from_s03", "position"): {"description": "S03 空容器仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
+    ("submit_place_to_s04", "position"): {"description": "S04 磁搅工位编号，范围 1–6。"},
+    ("submit_pick_from_s04", "position"): {"description": "S04 磁搅工位编号，范围 1–6。"},
+    ("submit_place_to_s071", "position"): {
+        "description": "S071 粉罐仓位，PLC 编号范围 1–6；前端使用“行-列”格式，填 auto 时自动选择空位。"
+    },
+    ("submit_pick_from_s071", "position"): {"description": "S071 粉罐仓位，PLC 编号范围 1–6；前端使用“行-列”格式，例如 1-1。"},
+    ("submit_place_to_s072", "position"): {"description": "兼容参数；S072 产品类型由 S072取放料产品 决定。"},
+    ("submit_pick_from_s072", "position"): {"description": "兼容参数；S072 产品类型由 S072取放料产品 决定。"},
+    ("submit_place_to_s08", "position"): {"description": "S08 开关盖工位：1=样品瓶，2=100 mL 液体瓶。"},
+    ("submit_pick_from_s08", "position"): {"description": "S08 开关盖工位：1=样品瓶，2=100 mL 液体瓶。"},
+    ("submit_place_to_s10", "position"): {"description": "S10 液体试剂瓶仓位，范围 1–20。"},
+    ("submit_pick_from_s10", "position"): {"description": "S10 液体试剂瓶仓位，范围 1–20。"},
+    ("submit_place_to_s11", "position"): {"description": "S11 成品仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
+    ("submit_pick_from_s11", "position"): {"description": "S11 成品仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
+    ("rotate_powder_cartridge_to_feed", "position"): {
+        "description": "旋转到 S07 上料位的粉罐位置，范围 1–10。"
+    },
+}
+
+_ROBOT_TASK_NUMBERS = {
+    "submit_pick_from_s01": 1,
+    "submit_place_to_s02": 3,
+    "submit_pick_from_s02": 4,
+    "submit_place_to_s03": 5,
+    "submit_pick_from_s03": 6,
+    "submit_place_to_s04": 7,
+    "submit_pick_from_s04": 8,
+    "submit_place_to_s071": 13,
+    "submit_pick_from_s071": 14,
+    "submit_place_to_s072": 15,
+    "submit_pick_from_s072": 16,
+    "submit_place_to_s08": 17,
+    "submit_pick_from_s08": 18,
+    "submit_place_to_s09": 19,
+    "submit_pick_from_s09": 20,
+    "submit_place_to_s10": 21,
+    "submit_pick_from_s10": 22,
+    "submit_place_to_s11": 23,
+    "submit_pick_from_s11": 24,
+    "submit_pour_from_s08": 25,
+}
+_ROBOT_PARAM_PLC_VARIABLES = {
+    ("submit_pick_from_s01", "product_type"): "S01出入料产品",
+    ("submit_pick_from_s01", "position"): "S01取放料编号",
+    **{
+        (method, "position"): variable
+        for method, variable in (
+            ("submit_place_to_s02", "S02取放料编号"),
+            ("submit_pick_from_s02", "S02取放料编号"),
+            ("submit_place_to_s03", "S03取放料编号"),
+            ("submit_pick_from_s03", "S03取放料编号"),
+            ("submit_place_to_s04", "S04取放料编号"),
+            ("submit_pick_from_s04", "S04取放料编号"),
+            ("submit_place_to_s071", "S071取放料编号"),
+            ("submit_pick_from_s071", "S071取放料编号"),
+            ("submit_place_to_s08", "S08取放料编号"),
+            ("submit_pick_from_s08", "S08取放料编号"),
+            ("submit_place_to_s09", "S09取放料编号"),
+            ("submit_pick_from_s09", "S09取放料编号"),
+            ("submit_place_to_s10", "S10取放料编号"),
+            ("submit_pick_from_s10", "S10取放料编号"),
+            ("submit_place_to_s11", "S11取放料编号"),
+            ("submit_pick_from_s11", "S11取放料编号"),
+        )
+    },
+    **{
+        (method, "product_type"): variable
+        for method, variable in (
+            ("submit_place_to_s03", "S03取放料产品"),
+            ("submit_pick_from_s03", "S03取放料产品"),
+            ("submit_place_to_s072", "S072取放料产品"),
+            ("submit_pick_from_s072", "S072取放料产品"),
+            ("submit_place_to_s08", "S08取放料产品"),
+            ("submit_pick_from_s08", "S08取放料产品"),
+            ("submit_place_to_s09", "S09取放料产品"),
+            ("submit_pick_from_s09", "S09取放料产品"),
+            ("submit_place_to_s11", "S11取放料产品"),
+            ("submit_pick_from_s11", "S11取放料产品"),
+            ("submit_pour_from_s08", "S08倒料产品选择"),
+        )
+    },
+}
+
+
+def _robot_parameter_context(method: str, name: str) -> str:
+    task_number = _ROBOT_TASK_NUMBERS.get(method)
+    if task_number is None:
+        return ""
+    parts: list[str] = []
+    plc_variable = _ROBOT_PARAM_PLC_VARIABLES.get((method, name))
+    if plc_variable:
+        parts.append(f"对应 PLC 变量：{plc_variable}")
+    parts.append(f"机器人任务号：{task_number}")
+    return "；".join(parts) + "。"
+
+
+def _docstring_param_help(docstring: str | None) -> dict[str, dict[str, str]]:
+    help_by_name: dict[str, dict[str, str]] = {}
+    for line in str(docstring or "").splitlines():
+        match = re.match(r"\s*([^\s:\[]+)(?:\[([^\]]+)\])?\s*:\s*(.+)", line)
+        if match:
+            name, label, description = match.groups()
+            help_by_name[name] = {"description": description.strip()}
+            if label:
+                help_by_name[name]["label"] = label.strip()
+    return help_by_name
+
+
+def _inferred_parameter_help(name: str) -> dict[str, Any]:
+    if re.fullmatch(r"S09液体瓶[1-5]剩余液量", name):
+        return {
+            "label": name,
+            "description": "可选：覆盖该 S09 液体瓶执行前的剩余液量；留空则读取 PLC 当前值。",
+            "unit": "mL",
+        }
+    return {}
+
+
+def _params_from_ast_action(method: str, method_info: dict[str, Any]) -> list[dict[str, Any]]:
     action_args = method_info.get("action_args") or {}
     handles = action_args.get("handles") or []
+    doc_help = _docstring_param_help(method_info.get("docstring"))
     params = []
     for param in method_info.get("params", []):
         name = param.get("name")
@@ -213,12 +511,26 @@ def _params_from_ast_action(method_info: dict[str, Any]) -> list[dict[str, Any]]
             "label": (handle or {}).get("label") or name,
             "type": _json_type_from_python_type(param.get("type")),
         }
-        description = (handle or {}).get("description")
+        for key, value in _PARAM_HELP_BY_NAME.get(name, {}).items():
+            item.setdefault(key, value)
+        for key, value in _inferred_parameter_help(name).items():
+            item.setdefault(key, value)
+        item.update(doc_help.get(name, {}))
+        item.update(_METHOD_PARAM_HELP.get((method, name), {}))
+        description = (handle or {}).get("description") or item.get("description")
         if description:
             item["description"] = description
             item.update(_range_from_description(description))
+        else:
+            item["description"] = f"{method} 动作参数 {name}；请按设备工艺定义填写。"
+        robot_context = _robot_parameter_context(method, name)
+        if robot_context:
+            item["description"] = f"{item['description'].rstrip('。')}；{robot_context}"
         if not param.get("required", False) and "default" in param:
-            item["default"] = param.get("default")
+            default = param.get("default")
+            if isinstance(default, dict) and "_call" in default:
+                default = item.get("options", [{}])[0].get("value", 1)
+            item["default"] = default
         params.append(item)
     return params
 
@@ -288,6 +600,8 @@ class RunRecord:
     node_statuses: dict[str, str] = field(default_factory=dict)
     cancel_requested: bool = False
     devices: dict[str, Any] = field(default_factory=dict)
+    timing_report_path: str | None = None
+    timing_summary_path: str | None = None
 
     def append_log(
         self,
@@ -435,9 +749,16 @@ def _run_node_with_live_opc_sampling(
 
 
 class WorkflowRunManager:
-    def __init__(self, preset: WorkflowPreset, runtime_config: RuntimeConfig) -> None:
+    def __init__(
+        self,
+        preset: WorkflowPreset,
+        runtime_config: RuntimeConfig,
+        *,
+        timing_enabled: bool = False,
+    ) -> None:
         self._preset = preset
         self._runtime_config = runtime_config
+        self._timing_enabled = timing_enabled
         self._lock = threading.RLock()
         self._sensor_event_condition = threading.Condition(self._lock)
         self._records: dict[str, RunRecord] = {}
@@ -673,6 +994,7 @@ class WorkflowRunManager:
         workflow_path: Path | None = None
         graph_path: Path | None = None
         devices: dict[str, Any] = {}
+        timing_recorder: WorkflowTimingRecorder | None = None
         with self._lock:
             record.status = "preparing"
         record.append_log("后台任务已启动，准备解析 workflow...")
@@ -681,6 +1003,12 @@ class WorkflowRunManager:
             workflow = payload.get("workflow")
             if not isinstance(workflow, dict):
                 raise ValueError("缺少 workflow JSON")
+            if self._timing_enabled:
+                timing_recorder = WorkflowTimingRecorder(
+                    run_id=run_id,
+                    workflow_name=str(workflow.get("name") or "local_workflow"),
+                    output_dir=REPO_ROOT / "workflow_timings",
+                )
             record.node_statuses = {
                 str(node.get("uuid")): "preparing"
                 for node in workflow.get("nodes", [])
@@ -751,14 +1079,26 @@ class WorkflowRunManager:
             if record.cancel_requested:
                 raise WorkflowCancelled("workflow 已终止")
             record.append_log("设备连接完成，开始执行 workflow")
+            if timing_recorder is not None:
+                timing_recorder.mark_execution_started()
             with self._lock:
                 record.status = "running"
             results: list[dict[str, Any]] = []
-            for node in ordered_nodes:
+            for node_index, node in enumerate(ordered_nodes, start=1):
                 if record.cancel_requested:
                     raise WorkflowCancelled("workflow 已终止")
                 record.node_statuses[node.uuid] = "running"
                 node_method = node.name.removeprefix("auto-")
+                device_name = route_node_device(node, self._runtime_config)
+                if timing_recorder is not None:
+                    timing_recorder.start_step(
+                        index=node_index,
+                        total=len(ordered_nodes),
+                        node_id=node.uuid,
+                        device_name=device_name,
+                        method=node_method,
+                        params=node.param,
+                    )
                 record.append_log(
                     f"开始执行节点 {node.uuid}: {node_method}",
                     node_id=node.uuid,
@@ -773,21 +1113,26 @@ class WorkflowRunManager:
                     node_id: str = node.uuid,
                 ) -> None:
                     record.append_log(message, node_id=node_id, level=level, detail=detail)
+                    if timing_recorder is not None:
+                        timing_recorder.observe_log(message, detail)
 
                 logger = WorkflowLogger(writer=append_node_log)
                 try:
-                    results.extend(
-                        _run_node_with_live_opc_sampling(
-                            node,
-                            devices,
-                            logger=logger,
-                            runtime_config=self._runtime_config,
-                        )
+                    node_results = _run_node_with_live_opc_sampling(
+                        node,
+                        devices,
+                        logger=logger,
+                        runtime_config=self._runtime_config,
                     )
+                    results.extend(node_results)
                 except Exception as exc:
+                    if timing_recorder is not None:
+                        timing_recorder.finish_step(error=str(exc))
                     record.node_statuses[node.uuid] = "failed"
                     record.append_log(f"节点执行失败: {exc}", node_id=node.uuid, level="error")
                     raise
+                if timing_recorder is not None:
+                    timing_recorder.finish_step(result=node_results)
                 record.node_statuses[node.uuid] = "success"
                 record.append_log(f"节点执行完成 {node.uuid}", node_id=node.uuid)
                 if record.cancel_requested:
@@ -807,6 +1152,16 @@ class WorkflowRunManager:
             with self._lock:
                 record.status = "failed"
         finally:
+            if timing_recorder is not None:
+                try:
+                    report_path = timing_recorder.finish(status=record.status, error=record.error)
+                    record.timing_report_path = str(report_path)
+                    record.append_log(f"排程计时报告已保存: {report_path}")
+                    if timing_recorder.summary_path is not None:
+                        record.timing_summary_path = str(timing_recorder.summary_path)
+                        record.append_log(f"排程时间轴已保存: {timing_recorder.summary_path}")
+                except Exception as exc:
+                    record.append_log(f"排程计时报告保存失败: {exc}", level="warning")
             if record.cancel_requested:
                 self._disconnect_cached_devices(devices)
             record.devices = {}
@@ -990,12 +1345,17 @@ def _preset_for_runtime(preset: WorkflowPreset, runtime_config: RuntimeConfig) -
     )
 
 
-def create_app(preset_name: str = "ai4c", runtime_config: RuntimeConfig | None = None) -> FastAPI:
+def create_app(
+    preset_name: str = "ai4c",
+    runtime_config: RuntimeConfig | None = None,
+    *,
+    timing_enabled: bool = False,
+) -> FastAPI:
     preset = load_preset(preset_name)
     runtime_config = runtime_config or _load_preset_runtime_config(preset)
     active_preset = _preset_for_runtime(preset, runtime_config)
     app = FastAPI(title="szlab Workflow Debugger")
-    manager = WorkflowRunManager(active_preset, runtime_config)
+    manager = WorkflowRunManager(active_preset, runtime_config, timing_enabled=timing_enabled)
     _register_shutdown_handler(app, manager.shutdown)
 
     assets_dir = FRONTEND_DIST_DIR / "assets"
@@ -1188,13 +1548,22 @@ def start_ui(
     open_browser: bool = True,
     preset_name: str = "ai4c",
     runtime_config: RuntimeConfig | None = None,
+    timing_enabled: bool = False,
 ) -> None:
     import uvicorn
 
     url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/"
     if open_browser:
         webbrowser.open(url)
-    uvicorn.run(create_app(preset_name=preset_name, runtime_config=runtime_config), host=host, port=port)
+    uvicorn.run(
+        create_app(
+            preset_name=preset_name,
+            runtime_config=runtime_config,
+            timing_enabled=timing_enabled,
+        ),
+        host=host,
+        port=port,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1205,6 +1574,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-config", type=Path, default=None, help="覆盖 preset 中的运行配置 JSON")
     parser.add_argument("--open-browser", action="store_true", help="服务启动后自动打开浏览器")
     parser.add_argument("--debug", action="store_true", help="启用 preset.debug_config 中定义的调试环境变量")
+    parser.add_argument("--timing", action="store_true", help="临时记录 workflow 排程耗时")
     return parser
 
 
@@ -1216,6 +1586,7 @@ def main() -> int:
         open_browser=args.open_browser,
         preset_name=args.preset,
         runtime_config=load_runtime_config(args.runtime_config) if args.runtime_config else None,
+        timing_enabled=args.timing,
     )
     return 0
 
@@ -1352,6 +1723,8 @@ def _record_to_dict(record: RunRecord) -> dict[str, Any]:
         "result": record.result,
         "error": record.error,
         "node_statuses": record.node_statuses,
+        "timing_report_path": record.timing_report_path,
+        "timing_summary_path": record.timing_summary_path,
     }
 
 
@@ -1431,6 +1804,7 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true", help="启动时不自动打开浏览器")
     parser.add_argument("--runtime-config", type=Path, default=None, help="覆盖 preset 的 runtime config")
     parser.add_argument("--debug", action="store_true", help="启用 preset.debug_config 中定义的调试环境变量")
+    parser.add_argument("--timing", action="store_true", help="临时记录 workflow 排程耗时")
     args = parser.parse_args()
 
     runtime_config = load_runtime_config(args.runtime_config) if args.runtime_config else None
@@ -1443,6 +1817,7 @@ def main() -> None:
         open_browser=not args.no_browser,
         preset_name=args.preset,
         runtime_config=runtime_config,
+        timing_enabled=args.timing,
     )
 
 

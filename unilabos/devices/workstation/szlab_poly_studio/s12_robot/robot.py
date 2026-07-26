@@ -145,6 +145,7 @@ class SzlabMixerRobotDevice(
         conditions: dict[str, bool],
         *,
         phase: str,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         if os.environ.get("SKIP_SENSOR_PRECHECK") == "1":
             return {
@@ -175,10 +176,11 @@ class SzlabMixerRobotDevice(
 
         waiter = getattr(self._plc_gateway, "wait_sensor_conditions", None)
         context = f"机器人{'前置' if phase == 'pre' else '后置'}传感器检查"
+        wait_timeout = self.timeout if timeout is None else max(0.0, float(timeout))
         if callable(waiter):
             success, values = waiter(
                 active_conditions,
-                timeout=self.timeout,
+                timeout=wait_timeout,
                 interval=self.poll_interval,
                 context=context,
             )
@@ -186,7 +188,7 @@ class SzlabMixerRobotDevice(
             success, values = wait_sensor_conditions(
                 self._plc_gateway,
                 active_conditions,
-                timeout=self.timeout,
+                timeout=wait_timeout,
                 interval=self.poll_interval,
                 context=context,
             )
@@ -197,6 +199,58 @@ class SzlabMixerRobotDevice(
         }
         return {
             "success": bool(success),
+            "phase": phase,
+            "conditions": active_conditions,
+            "values": values,
+            "mismatches": mismatches,
+        }
+
+    @not_action
+    def _read_sensor_conditions_once(
+        self,
+        conditions: dict[str, bool],
+        *,
+        phase: str,
+    ) -> dict[str, Any]:
+        """持锁后只复核一次传感器，状态不满足时立即释放机械臂。"""
+        if os.environ.get("SKIP_SENSOR_PRECHECK") == "1":
+            return {
+                "success": True,
+                "phase": phase,
+                "skipped": True,
+                "message": "已跳过机器人传感器检查",
+                "conditions": conditions,
+                "values": {},
+                "mismatches": {},
+            }
+        active_conditions = {
+            name: expected
+            for name, expected in conditions.items()
+            if not self._should_skip_robot_precheck_variable(name)
+        }
+        if not active_conditions:
+            return {
+                "success": True,
+                "phase": phase,
+                "skipped": True,
+                "message": "配置中的传感器均已跳过",
+                "conditions": conditions,
+                "values": {},
+                "mismatches": {},
+            }
+        if self._plc_gateway is None:
+            raise RuntimeError("机器人任务需要注入 szlab_poly_plc 网关")
+        values = {
+            name: bool(self._read_variable(name, use_cache=False))
+            for name in active_conditions
+        }
+        mismatches = {
+            name: {"expected": expected, "actual": values.get(name)}
+            for name, expected in active_conditions.items()
+            if values.get(name) != expected
+        }
+        return {
+            "success": not mismatches,
             "phase": phase,
             "conditions": active_conditions,
             "values": values,
@@ -386,33 +440,10 @@ class SzlabMixerRobotDevice(
         verify_reset: bool = False,
         **data: Any,
     ) -> dict[str, Any]:
-        with self._robot_task_lock:
-            return self._submit_robot_task_locked(
-                task=task,
-                station=station,
-                task_number=task_number,
-                variables=variables,
-                reset_variables=reset_variables,
-                precheck=precheck,
-                verify_reset=verify_reset,
-                **data,
-            )
-
-    @not_action
-    def _submit_robot_task_locked(
-        self,
-        task: str,
-        station: str,
-        task_number: int,
-        variables: dict[str, Any] | None = None,
-        reset_variables: dict[str, Any] | None = None,
-        precheck=None,
-        verify_reset: bool = False,
-        **data: Any,
-    ) -> dict[str, Any]:
-        reset_variables = reset_variables or {ROBOT_TASK_NUMBER_VARIABLE: 0}
         try:
-            pre_sensor_conditions, post_sensor_conditions = self._robot_sensor_requirements(task, station, data)
+            pre_sensor_conditions, post_sensor_conditions = (
+                self._robot_sensor_requirements(task, station, data)
+            )
         except Exception as exc:
             result = {
                 "success": False,
@@ -426,26 +457,47 @@ class SzlabMixerRobotDevice(
             self._last_task = result
             return result
 
+        deadline = time.monotonic() + self.timeout
         sensor_precheck = None
-        if pre_sensor_conditions:
-            try:
-                sensor_precheck = self._wait_sensor_conditions(pre_sensor_conditions, phase="pre")
-            except Exception as exc:
+        while True:
+            if pre_sensor_conditions:
+                try:
+                    sensor_precheck = self._wait_sensor_conditions(
+                        pre_sensor_conditions,
+                        phase="pre",
+                        timeout=deadline - time.monotonic(),
+                    )
+                except Exception as exc:
+                    result = {
+                        "success": False,
+                        "message": f"机器人动作前传感器读取失败: {exc}",
+                        "task": task,
+                        "station": station,
+                        "task_number": int(task_number),
+                        "status": "rejected",
+                        **data,
+                    }
+                    self._last_task = result
+                    return result
+                if not sensor_precheck["success"]:
+                    result = {
+                        "success": False,
+                        "message": f"{station} {task} 前置传感器状态等待超时",
+                        "task": task,
+                        "station": station,
+                        "task_number": int(task_number),
+                        "status": "rejected",
+                        "sensor_precheck": sensor_precheck,
+                        **data,
+                    }
+                    self._last_task = result
+                    return result
+
+            remaining = max(0.0, deadline - time.monotonic())
+            if not self._robot_task_lock.acquire(timeout=remaining):
                 result = {
                     "success": False,
-                    "message": f"机器人动作前传感器读取失败: {exc}",
-                    "task": task,
-                    "station": station,
-                    "task_number": int(task_number),
-                    "status": "rejected",
-                    **data,
-                }
-                self._last_task = result
-                return result
-            if not sensor_precheck["success"]:
-                result = {
-                    "success": False,
-                    "message": f"{station} {task} 前置传感器状态等待超时",
+                    "message": f"{station} {task} 等待机械臂空闲超时",
                     "task": task,
                     "station": station,
                     "task_number": int(task_number),
@@ -455,7 +507,55 @@ class SzlabMixerRobotDevice(
                 }
                 self._last_task = result
                 return result
-        elif precheck is not None:
+            try:
+                if pre_sensor_conditions:
+                    current_sensor_state = self._read_sensor_conditions_once(
+                        pre_sensor_conditions,
+                        phase="pre",
+                    )
+                    if not current_sensor_state["success"]:
+                        continue
+                    sensor_precheck = {
+                        **(sensor_precheck or {}),
+                        "recheck_values": current_sensor_state["values"],
+                    }
+                return self._submit_robot_task_locked(
+                    task=task,
+                    station=station,
+                    task_number=task_number,
+                    variables=variables,
+                    reset_variables=reset_variables,
+                    precheck=precheck,
+                    verify_reset=verify_reset,
+                    sensor_requirements=(
+                        pre_sensor_conditions,
+                        post_sensor_conditions,
+                    ),
+                    sensor_precheck=sensor_precheck,
+                    **data,
+                )
+            finally:
+                self._robot_task_lock.release()
+
+    @not_action
+    def _submit_robot_task_locked(
+        self,
+        task: str,
+        station: str,
+        task_number: int,
+        variables: dict[str, Any] | None = None,
+        reset_variables: dict[str, Any] | None = None,
+        precheck=None,
+        verify_reset: bool = False,
+        sensor_requirements: tuple[dict[str, bool], dict[str, bool]] | None = None,
+        sensor_precheck: dict[str, Any] | None = None,
+        **data: Any,
+    ) -> dict[str, Any]:
+        reset_variables = reset_variables or {ROBOT_TASK_NUMBER_VARIABLE: 0}
+        if sensor_requirements is None:
+            sensor_requirements = self._robot_sensor_requirements(task, station, data)
+        pre_sensor_conditions, post_sensor_conditions = sensor_requirements
+        if not pre_sensor_conditions and precheck is not None:
             precheck_result = precheck()
             if precheck_result is not None:
                 self._last_task = {**precheck_result, "status": "rejected"}

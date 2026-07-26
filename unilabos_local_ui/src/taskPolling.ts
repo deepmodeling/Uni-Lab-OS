@@ -1,0 +1,1 @@
+export const TASK_EXECUTION_POLL_INTERVAL_MS = 5000;

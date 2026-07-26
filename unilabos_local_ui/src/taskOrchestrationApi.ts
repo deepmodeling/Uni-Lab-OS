@@ -25,6 +25,7 @@ export type ApiTaskInstance = {
   status: 'waiting' | 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   sample_id: string;
   order: number;
+  not_before: number | null;
   started_at: number | null;
   finished_at: number | null;
   execution_state?: {
@@ -333,12 +334,19 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
         }),
       })
     ),
-    generateInstances: (workflowPath: string, expectedVersion: number, templateIds: string[], sampleIds: string[]) => (
+    generateInstances: (
+      workflowPath: string,
+      expectedVersion: number,
+      templateIds: string[],
+      sampleIds: string[],
+      sampleStartIntervalSeconds = 0,
+    ) => (
       request('/instances:generate', body({
         workflow_path: workflowPath,
         expected_version: expectedVersion,
         template_ids: templateIds,
         sample_ids: sampleIds,
+        sample_start_interval_seconds: sampleStartIntervalSeconds,
       }))
     ),
     clearInstances: (workflowPath: string, expectedVersion: number) => (

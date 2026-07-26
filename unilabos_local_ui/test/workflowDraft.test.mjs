@@ -117,6 +117,117 @@ const taskOrchestrationApiSource = await readFile(new URL('../src/taskOrchestrat
 const styleSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 const opcSimulatorDialogSource = await readFile(new URL('../src/OpcSimulatorDialog.tsx', import.meta.url), 'utf8');
 const opcChangesSource = await readFile(new URL('../src/opcChanges.ts', import.meta.url), 'utf8');
+assert.match(
+  mainSource,
+  /const \[taskUtilityDrawer, setTaskUtilityDrawer\] = useState<'opc-connection' \| null>\(null\);/,
+  '只有 Task OPC 连接应使用工具抽屉，测试配置与队列必须常驻主区',
+);
+assert.match(
+  mainSource,
+  /const \[taskExecutionEnvironment, setTaskExecutionEnvironment\] = useState<'simulated' \| 'real'>\('simulated'\);/,
+  'Task 调试台必须显式区分模拟 OPC 与真实执行环境',
+);
+assert.match(
+  mainSource,
+  /const \[taskTemplateDrawerTab, setTaskTemplateDrawerTab\] = useState<'templates' \| 'scheduled'>\('templates'\);/,
+  '模板抽屉应组合模板库与待排模板',
+);
+assert.match(
+  mainSource,
+  /const \[taskLogTab, setTaskLogTab\] = useState<'waiting' \| 'events' \| 'action'>\('waiting'\);/,
+  '右侧日志应通过 Tab 组合等待、事件和 Action 日志',
+);
+assert.match(
+  mainSource,
+  /const \[isOpcSimulatorDrawerOpen, setIsOpcSimulatorDrawerOpen\] = useState\(false\);/,
+  'OPC 模拟器应使用独立抽屉开关状态',
+);
+assert.match(
+  mainSource,
+  /className="task-workspace-commandbar"[\s\S]*?setTaskExecutionEnvironment\('simulated'\)[\s\S]*?setTaskExecutionEnvironment\('real'\)[\s\S]*?setTaskUtilityDrawer\('opc-connection'\)[\s\S]*?setIsOpcSimulatorDrawerOpen\(true\)/,
+  'Task 命令栏应提供环境切换、Task OPC 与模拟器入口',
+);
+assert.match(
+  mainSource,
+  /className="task-orchestration task-focus-layout task-debug-bench"/,
+  'Task 主页面应使用演示稿定义的三栏调试台布局',
+);
+assert.match(mainSource, /className="task-column task-test-config"/, 'Task 测试配置必须常驻左侧栏');
+assert.match(
+  mainSource,
+  /className="task-column task-queue-column"/,
+  'Task 队列必须常驻在主区',
+);
+assert.doesNotMatch(
+  mainSource,
+  /taskUtilityDrawer === 'queue'/,
+  '常驻队列不能再依赖工具抽屉状态',
+);
+assert.match(
+  mainSource,
+  /className=\{`task-opc-connection-drawer task-utility-drawer\$\{taskUtilityDrawer === 'opc-connection' \? ' open' : ''\}`\}/,
+  'Task OPC 连接应使用与模拟器一致的右侧抽屉',
+);
+assert.match(
+  mainSource,
+  /className=\{`task-opc-drawer\$\{isOpcSimulatorDrawerOpen \? ' open' : ''\}`\}/,
+  'OPC 模拟器内容应渲染在抽屉容器内',
+);
+assert.match(
+  styleSource,
+  /\.task-opc-drawer\s*\{[\s\S]*?background:\s*#f8fafc;/,
+  'OPC 模拟器抽屉应复用工作区浅色表面',
+);
+assert.match(
+  styleSource,
+  /\.task-focus-layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\);/,
+  'Task 主页面应以队列与日志作为等宽双主列',
+);
+assert.match(
+  mainSource,
+  /<section className="task-column task-sample-strip">[\s\S]*?<div[\s\S]*?'task-sample-block'[\s\S]*?title=\{`\$\{block\.templateName\} · \$\{block\.actionDone\}\/\$\{block\.actionTotal\}`\}/,
+  '样品进度只能作为只读缩略图展示',
+);
+assert.doesNotMatch(
+  mainSource,
+  /task-sample-block[\s\S]*?onClick=\{\(\) => \{[\s\S]*?setTaskLogTab\('action'\)/,
+  '只读进度缩略图不得切换日志或改变选中任务',
+);
+assert.match(
+  mainSource,
+  /taskExecutionEnvironment === 'real'[\s\S]*?disabled=\{taskExecutionEnvironment === 'real'\}[\s\S]*?OPC 模拟器/,
+  '真实执行环境必须禁用 OPC 模拟器入口',
+);
+assert.match(
+  mainSource,
+  /className="task-orchestration task-focus-layout task-debug-bench"[\s\S]*?className="task-column task-test-config"[\s\S]*?className="task-column task-queue-column"[\s\S]*?className="task-column task-log-column"/,
+  '调试台必须按演示稿保持测试配置、队列和日志三栏结构',
+);
+assert.match(
+  styleSource,
+  /\.task-debug-bench\s*\{[\s\S]*?grid-template-columns:\s*240px\s+minmax\(420px,\s*1fr\)\s+minmax\(360px,\s*0\.88fr\);/,
+  '调试台三栏尺寸必须以演示稿为准，避免被旧工作区样式挤压',
+);
+assert.match(
+  mainSource,
+  /<h2>本次测试配置<\/h2>[\s\S]*?样品数[\s\S]*?选择 Task 模板（按顺序执行）[\s\S]*?OPC 环境/,
+  '左侧必须保留演示稿中的测试配置入口',
+);
+assert.match(
+  mainSource,
+  /import \{ TaskSchedulerBench \} from '\.\/TaskSchedulerBench';[\s\S]*?<TaskSchedulerBench/,
+  'Task 工作区必须改用独立联调台组件，而不是继续拼装旧工作区 JSX',
+);
+assert.match(
+  mainSource,
+  /className="task-template-drawer-tabs"[\s\S]*?taskTemplateDrawerTab === 'templates'[\s\S]*?taskTemplateDrawerTab === 'scheduled'/,
+  '模板抽屉应使用 Tab 切换模板库与待排模板',
+);
+assert.match(
+  mainSource,
+  /className="task-log-tabs"[\s\S]*?taskLogTab === 'waiting'[\s\S]*?taskLogTab === 'events'[\s\S]*?taskLogTab === 'action'/,
+  '日志栏应使用 Tab 切换三类日志',
+);
 const taskStateSource = mainSource.match(
   /export function createEmptyTaskWorkspaceState\([\s\S]*?\n}\n\ntype StackSlotPayload/,
 )?.[0].replace(/\n\ntype StackSlotPayload$/, '') || '';
@@ -3195,6 +3306,16 @@ assert.doesNotMatch(
   taskWorkspaceSource,
   /demo-action-panel|demo-canvas-toolbar|demo-right-panel/,
   'Task 工作区不应渲染流程设计三栏专属区域',
+);
+assert.match(
+  styleSource,
+  /\.task-recipe-column\s*\{[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/,
+  'Task 模板栏应整体纵向滚动',
+);
+assert.match(
+  styleSource,
+  /\.task-template-list\s*\{[^}]*flex:\s*none;[^}]*overflow:\s*visible;/,
+  'Task 模板列表应随整栏展开，避免 OPC 状态区挤占后无法看到模板',
 );
 assert.doesNotMatch(
   canvasTabsSource,

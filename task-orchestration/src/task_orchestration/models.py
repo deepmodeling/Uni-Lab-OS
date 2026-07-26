@@ -216,6 +216,7 @@ class TaskInstance(StrictModel):
     sample_id: str = ""
     order: int = Field(default=0, ge=0)
     payload: dict[str, Any] = Field(default_factory=dict)
+    not_before: int | None = Field(default=None, ge=0)
     started_at: int | None = Field(default=None, ge=0)
     finished_at: int | None = Field(default=None, ge=0)
     execution_state: TaskExecutionState = Field(default_factory=TaskExecutionState)
@@ -552,6 +553,7 @@ class GenerateInstancesRequest(StrictModel):
     expected_version: int = Field(ge=0)
     template_ids: list[str] = Field(min_length=1)
     sample_ids: list[str] = Field(min_length=1)
+    sample_start_interval_seconds: float = Field(default=0, ge=0, le=86_400)
 
 
 class ClearInstancesRequest(StrictModel):

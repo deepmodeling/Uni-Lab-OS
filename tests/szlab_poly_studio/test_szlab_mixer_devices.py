@@ -1845,7 +1845,7 @@ def test_szlab_robot_s03_pick_writes_product_position_and_task_number():
     ]
     assert gateway.reads.count(
         ("传感器状态_上位机[0].NO[6]", False)
-    ) == 2
+    ) == 3
     assert gateway.writes == [
         ("S03取放料产品", 1),
         ("S03取放料编号", 1),
@@ -1863,6 +1863,52 @@ def test_szlab_robot_s03_pick_writes_product_position_and_task_number():
         "S03取放料编号": 0,
         "任务号": 0,
     }
+
+
+def test_szlab_robot_pre_sensor_wait_does_not_hold_robot_task_lock():
+    class BlockingPreSensorGateway(FakeRobotPlcGateway):
+        def __init__(self):
+            super().__init__(
+                sensor_values={"传感器状态_上位机[0].NO[6]": True},
+                write_allowed_values=[True, True],
+            )
+            self.precheck_started = threading.Event()
+            self.release_precheck = threading.Event()
+
+        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+            if context == "机器人前置传感器检查":
+                self.precheck_started.set()
+                self.release_precheck.wait(timeout=1.0)
+            return super().wait_sensor_conditions(
+                conditions,
+                timeout=timeout,
+                interval=interval,
+                context=context,
+            )
+
+    gateway = BlockingPreSensorGateway()
+    device = SzlabMixerRobotDevice(timeout=3.0, write_allowed_timeout=3.0)
+    device.set_plc_gateway(gateway)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pick_future = executor.submit(
+            device.submit_pick_from_s03,
+            product_type=1,
+            position="1-1",
+        )
+        assert gateway.precheck_started.wait(timeout=1.0)
+        place_future = executor.submit(
+            device.submit_place_to_s072,
+            product_type=1,
+            position=1,
+        )
+        try:
+            place_result = place_future.result(timeout=0.2)
+        finally:
+            gateway.release_precheck.set()
+
+        assert place_result["success"] is True
+        assert pick_future.result(timeout=1.0)["success"] is True
 
 
 def test_szlab_robot_s03_reset_retries_until_pc_to_plc_variables_are_clear():

@@ -786,6 +786,7 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     graph_nodes = {node["id"]: node for node in preset.device_graph["nodes"]}
 
     assert preset.id == "szlab_robot_action_workflow"
+    assert preset.default_config["task_sample_start_interval_seconds"] == 1
     assert preset.target_device_ids == [
         "szlab_mixer_robot",
         "szlab_s04_magnetic_stirring",

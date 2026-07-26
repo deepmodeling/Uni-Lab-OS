@@ -1503,6 +1503,135 @@ def test_advance_records_injected_start_and_finish_times_in_schedule_entries(tmp
     assert completed.workspace.schedule_entries[0].end_at == 250
 
 
+def test_sample_start_interval_delays_each_sample_and_rechecks_trigger(tmp_path):
+    (tmp_path / "demo.json").write_text("{}", encoding="utf-8")
+    now_ms = [1_000]
+    condition_now = [1.0]
+    conditions = OpcConditionProvider(
+        snapshot_ttl_seconds=30.0,
+        clock=lambda: condition_now[0],
+    )
+    store = WorkspaceStore(tmp_path)
+    trigger = Trigger(
+        kind="opc",
+        config={
+            "plc_device_id": "line",
+            "variable": "ready",
+            "value": True,
+        },
+    )
+    store.put(
+        Workspace(
+            workflow_path="demo.json",
+            templates=[
+                Template(
+                    id="task",
+                    name="task",
+                    node_ids=[],
+                    input_triggers=[trigger],
+                )
+            ],
+            plc_registrations=[
+                PlcRegistration(
+                    plc_device_id="line",
+                    runtime_url="opc.tcp://test:4840",
+                    variables=["ready"],
+                )
+            ],
+        ),
+        expected_version=0,
+    )
+    service = WorkspaceService(
+        store,
+        conditions=conditions,
+        clock=lambda: now_ms[0],
+    )
+    conditions.update("demo.json", "line", 1, {"ready": True})
+
+    generated = service.generate_instances(
+        "demo.json",
+        1,
+        ["task"],
+        ["Sample A", "Sample B"],
+        sample_start_interval_seconds=1.0,
+    )
+    instances = {
+        item.sample_id: item for item in generated.workspace.task_instances
+    }
+    entries = {
+        item.sample_id: item for item in generated.workspace.schedule_entries
+    }
+
+    assert instances["Sample A"].not_before == 1_000
+    assert instances["Sample B"].not_before == 2_000
+    assert entries["Sample A"].start_at == 1_000
+    assert entries["Sample B"].start_at == 2_000
+
+    started_a, _ = service.advance("demo.json", 2)
+    states = {
+        item.sample_id: item.status for item in started_a.workspace.task_instances
+    }
+    assert states == {"Sample A": "running", "Sample B": "waiting"}
+
+    now_ms[0] = 2_000
+    condition_now[0] = 2.0
+    conditions.update("demo.json", "line", 2, {"ready": False})
+    blocked_b, schedule = service.advance("demo.json", 3)
+    states = {
+        item.sample_id: item.status for item in blocked_b.workspace.task_instances
+    }
+    assert states == {"Sample A": "completed", "Sample B": "waiting"}
+    sample_b = instances["Sample B"]
+    assert schedule.waiting_reasons[sample_b.id].code == "opc_value_mismatch"
+
+    conditions.update("demo.json", "line", 3, {"ready": True})
+    started_b, _ = service.advance("demo.json", 4)
+    states = {
+        item.sample_id: item.status for item in started_b.workspace.task_instances
+    }
+    assert states == {"Sample A": "completed", "Sample B": "running"}
+
+
+def test_sample_start_interval_is_shared_by_templates_of_the_same_sample(tmp_path):
+    (tmp_path / "demo.json").write_text("{}", encoding="utf-8")
+    store = WorkspaceStore(tmp_path)
+    store.put(
+        Workspace(
+            workflow_path="demo.json",
+            templates=[
+                Template(id="first", name="first", node_ids=["first-node"]),
+                Template(id="second", name="second", node_ids=["second-node"]),
+            ],
+        ),
+        expected_version=0,
+    )
+    service = WorkspaceService(store, clock=lambda: 10_000)
+
+    generated = service.generate_instances(
+        "demo.json",
+        1,
+        ["first", "second"],
+        ["Sample A", "Sample B"],
+        sample_start_interval_seconds=1.0,
+    )
+    by_sample = {
+        sample_id: sorted(
+            (
+                item
+                for item in generated.workspace.task_instances
+                if item.sample_id == sample_id
+            ),
+            key=lambda item: item.order,
+        )
+        for sample_id in ("Sample A", "Sample B")
+    }
+
+    assert [item.order for item in by_sample["Sample A"]] == [0, 1]
+    assert [item.not_before for item in by_sample["Sample A"]] == [10_000, 10_000]
+    assert [item.order for item in by_sample["Sample B"]] == [0, 1]
+    assert [item.not_before for item in by_sample["Sample B"]] == [11_000, 11_000]
+
+
 def test_running_gantt_entry_extends_through_current_time(tmp_path):
     (tmp_path / "demo.json").write_text("{}", encoding="utf-8")
     store = WorkspaceStore(tmp_path)

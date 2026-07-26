@@ -32,6 +32,7 @@ import {
 } from './workflowDraft';
 import { createPseudoFlowJson } from './workflowExport';
 import { WorkstationDemo } from './WorkstationDemo';
+import { TaskSchedulerBench } from './TaskSchedulerBench';
 import { OpcSimulatorDialog } from './OpcSimulatorDialog';
 import { OpcProfileSpecDialog } from './OpcProfileSpecDialog';
 import {
@@ -69,6 +70,12 @@ import {
   mergeTaskActionLogs,
   type TaskActionLogEntry,
 } from './taskActionLog';
+import {
+  buildTaskLogLines,
+  type TaskLogSession,
+  type TaskWorkspaceLogEvent,
+} from './taskLogSession';
+import { TASK_EXECUTION_POLL_INTERVAL_MS } from './taskPolling';
 import {
   buildSampleProcessRows,
   buildTaskGanttEntries,
@@ -133,6 +140,7 @@ type PresetPayload = {
     csv?: string;
     timeout?: number;
     write_allowed_timeout?: number;
+    task_sample_start_interval_seconds?: number;
     no_subscription?: boolean;
     show_csv?: boolean;
   };
@@ -190,6 +198,7 @@ type TaskWorkspaceState = {
   taskTemplates: TaskTemplate[];
   taskInstances: TaskInstance[];
   taskEvents: string[];
+  taskEventRecords: TaskWorkspaceLogEvent[];
 };
 type TaskPlcStatus = {
   device_id: string;
@@ -249,6 +258,18 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
   }>;
 } {
   const templateById = new Map(response.workspace.templates.map((template) => [template.id, template]));
+  const taskEventRecords = response.workspace.events.map((event) => ({
+    kind: event.kind,
+    timestamp: event.timestamp,
+    text: taskEventText(
+      event,
+      event.template_id
+        ? [
+            ...(templateById.get(event.template_id)?.input_triggers || []),
+          ]
+        : [],
+    ),
+  }));
   return {
     version: response.version,
     taskTemplates: response.workspace.templates.map((template) => ({
@@ -270,16 +291,8 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
       finishedAt: instance.finished_at ?? undefined,
       executionCursor: instance.execution_state?.cursor,
     })),
-    taskEvents: response.workspace.events.map((event) => (
-      taskEventText(
-        event,
-        event.template_id
-          ? [
-              ...(templateById.get(event.template_id)?.input_triggers || []),
-            ]
-          : [],
-      )
-    )).slice(-20).reverse(),
+    taskEvents: taskEventRecords.map((event) => event.text).slice(-20).reverse(),
+    taskEventRecords,
     scheduledTemplateIds: response.workspace.scheduled_template_ids,
     isSchedulerRunning: !response.workspace.scheduler_paused,
     waitingReasons: response.schedule?.waiting_reasons || {},
@@ -311,6 +324,7 @@ export function createEmptyTaskWorkspaceState() {
     taskTemplates: [] as TaskTemplate[],
     taskInstances: [] as TaskInstance[],
     taskEvents: [] as string[],
+    taskEventRecords: [] as TaskWorkspaceLogEvent[],
   };
 }
 
@@ -639,6 +653,7 @@ function App() {
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [taskInstances, setTaskInstances] = useState<TaskInstance[]>([]);
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
+  const [taskEventRecords, setTaskEventRecords] = useState<TaskWorkspaceLogEvent[]>([]);
   const [taskWorkspaceVersion, setTaskWorkspaceVersion] = useState<number | null>(null);
   const [taskWorkspacePath, setTaskWorkspacePath] = useState('szlab_canvas_workflow.json');
   const [taskScheduleEntries, setTaskScheduleEntries] = useState<ReturnType<typeof taskWorkspaceFromApi>['scheduleEntries']>([]);
@@ -654,13 +669,19 @@ function App() {
   const [taskOpcMessage, setTaskOpcMessage] = useState('');
   const [isTaskOpcConnecting, setIsTaskOpcConnecting] = useState(false);
   const [taskSampleCount, setTaskSampleCount] = useState(3);
+  const [taskSampleStartIntervalSeconds, setTaskSampleStartIntervalSeconds] = useState(0);
   const [selectedTaskTemplateId, setSelectedTaskTemplateId] = useState<string | null>(null);
   const [selectedTaskInstanceId, setSelectedTaskInstanceId] = useState<string | null>(null);
   const [scheduledTemplateIds, setScheduledTemplateIds] = useState<string[]>([]);
+  const [taskUtilityDrawer, setTaskUtilityDrawer] = useState<'opc-connection' | null>(null);
+  const [taskExecutionEnvironment, setTaskExecutionEnvironment] = useState<'simulated' | 'real'>('simulated');
+  const [taskTemplateDrawerTab, setTaskTemplateDrawerTab] = useState<'templates' | 'scheduled'>('templates');
+  const [taskLogTab, setTaskLogTab] = useState<'waiting' | 'events' | 'action'>('waiting');
+  const [isOpcSimulatorDrawerOpen, setIsOpcSimulatorDrawerOpen] = useState(false);
   const [csvVariables, setCsvVariables] = useState<CsvVariable[]>([]);
-  const [resourceScheduleHeight, setResourceScheduleHeight] = useState(360);
   const [taskActionLogs, setTaskActionLogs] = useState<TaskActionLogEntry[]>([]);
   const [taskLogError, setTaskLogError] = useState('');
+  const [taskLogSession, setTaskLogSession] = useState<TaskLogSession | null>(null);
   const taskLogAfterSeqRef = useRef(0);
   const taskLogBootstrappedRef = useRef(false);
   const [isSchedulerRunning, setIsSchedulerRunning] = useState(false);
@@ -755,12 +776,14 @@ function App() {
       taskTemplates: next.taskTemplates,
       taskInstances: next.taskInstances,
       taskEvents: next.taskEvents,
+      taskEventRecords: next.taskEventRecords,
     };
     setTaskTemplates(next.taskTemplates);
     taskTemplatesRef.current = next.taskTemplates;
     setTaskInstances(next.taskInstances);
     taskInstancesRef.current = next.taskInstances;
     setTaskEvents(next.taskEvents);
+    setTaskEventRecords(next.taskEventRecords);
     setTaskWorkspaceVersion(next.version);
     taskWorkspaceVersionRef.current = next.version;
     scheduledTemplateIdsRef.current = next.scheduledTemplateIds;
@@ -826,6 +849,8 @@ function App() {
     setTaskTemplates(emptyTaskWorkspace.taskTemplates);
     setTaskInstances(emptyTaskWorkspace.taskInstances);
     setTaskEvents(emptyTaskWorkspace.taskEvents);
+    setTaskEventRecords(emptyTaskWorkspace.taskEventRecords);
+    setTaskLogSession(null);
     setTaskWaitingReasons({});
     setSelectedTaskTemplateId(null);
     setIsTaskDetailModalOpen(false);
@@ -976,6 +1001,24 @@ function App() {
       template?.nodeIds || [],
     );
   }, [selectedTaskInstance?.templateId, selectedTaskInstanceLogs, taskTemplates]);
+  const selectedTaskVariableRows = useMemo(
+    () => selectedTaskLogSections.flatMap((section) => buildTaskVariableRows(section.entries)),
+    [selectedTaskLogSections],
+  );
+  const selectedTaskProcessLines = useMemo(
+    () => selectedTaskLogSections.flatMap((section) => buildTaskProcessLogLines(section.entries)),
+    [selectedTaskLogSections],
+  );
+  const taskLogLines = useMemo(
+    () => taskLogSession
+      ? buildTaskLogLines({
+          events: taskEventRecords,
+          actionEntries: taskActionLogs,
+          session: taskLogSession,
+        })
+      : [],
+    [taskActionLogs, taskEventRecords, taskLogSession],
+  );
   const scheduledOpcTemplateIds = useMemo(
     () => collectScheduledTemplateIds(scheduledTemplateIds),
     [scheduledTemplateIds],
@@ -1261,8 +1304,13 @@ function App() {
   }, [nodes, selectedLogNodeId]);
 
   useEffect(() => {
-    taskWorkspaceStateRef.current = { taskTemplates, taskInstances, taskEvents };
-  }, [taskEvents, taskInstances, taskTemplates]);
+    taskWorkspaceStateRef.current = {
+      taskTemplates,
+      taskInstances,
+      taskEvents,
+      taskEventRecords,
+    };
+  }, [taskEventRecords, taskEvents, taskInstances, taskTemplates]);
 
   useEffect(() => {
     return () => {
@@ -1335,6 +1383,14 @@ function App() {
           show_csv: payload.default_config?.show_csv ?? DEFAULT_CONFIG.show_csv,
         }));
         setTaskOpcUrl(payload.default_config?.url ?? DEFAULT_CONFIG.url);
+        const configuredInterval = Number(
+          payload.default_config?.task_sample_start_interval_seconds ?? 0,
+        );
+        setTaskSampleStartIntervalSeconds(
+          Number.isFinite(configuredInterval) && configuredInterval >= 0
+            ? configuredInterval
+            : 0,
+        );
         setDraftReady(true);
       })
       .catch((error) => setMessage(`preset 加载失败: ${error.message}`));
@@ -1378,6 +1434,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (workspace === 'tasks') return;
     let stopped = false;
     let refreshTimer: number | null = null;
     const refresh = async () => {
@@ -1400,7 +1457,7 @@ function App() {
       sensorEvents.close();
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
     };
-  }, [refreshSensorArrays, refreshStackStatus]);
+  }, [refreshSensorArrays, refreshStackStatus, workspace]);
 
   useEffect(() => {
     if (!stackResources.length) {
@@ -1689,25 +1746,6 @@ function App() {
     ));
   }, [mutateTaskWorkspace, taskTemplateNameDraft, taskWorkspacePath]);
 
-  const startResourceScheduleResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const startY = event.clientY;
-    const startHeight = resourceScheduleHeight;
-    const containerHeight = taskOrchestrationRef.current?.clientHeight || window.innerHeight;
-    const maxHeight = Math.max(180, containerHeight - 260);
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      setResourceScheduleHeight(Math.max(180, Math.min(maxHeight, startHeight + startY - moveEvent.clientY)));
-    };
-    const onPointerUp = () => {
-      document.body.style.userSelect = '';
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-    };
-    document.body.style.userSelect = 'none';
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-  }, [resourceScheduleHeight]);
-
   const addTemplateToSchedule = useCallback((templateId: string) => {
     if (!taskTemplatesRef.current.some((item) => item.id === templateId)) return;
     const next = updateScheduledTemplateDraft(scheduledTemplateIdsRef.current, templateId, 'add');
@@ -1737,9 +1775,18 @@ function App() {
     }
     const samples = SAMPLE_NAMES.slice(0, taskSampleCount);
     void mutateTaskWorkspace((version) => taskApiRef.current.generateInstances(
-      taskWorkspacePath, version, templateIds, samples,
+      taskWorkspacePath,
+      version,
+      templateIds,
+      samples,
+      taskSampleStartIntervalSeconds,
     ));
-  }, [mutateTaskWorkspace, taskSampleCount, taskWorkspacePath]);
+  }, [
+    mutateTaskWorkspace,
+    taskSampleCount,
+    taskSampleStartIntervalSeconds,
+    taskWorkspacePath,
+  ]);
 
   const moveTaskInstance = useCallback((taskId: string, direction: -1 | 1) => {
     const task = taskInstances.find((item) => item.id === taskId);
@@ -1762,7 +1809,7 @@ function App() {
     if (!taskInstances.length) {
       return;
     }
-    if (isSchedulerRunning || isTaskExecutionDraining) {
+    if (isSchedulerRunning) {
       showCanvasToast('请先暂停派发后再清空 Task Queue');
       return;
     }
@@ -1778,7 +1825,6 @@ function App() {
     ));
   }, [
     isSchedulerRunning,
-    isTaskExecutionDraining,
     mutateTaskWorkspace,
     showCanvasToast,
     taskInstances.length,
@@ -2153,6 +2199,10 @@ function App() {
 
   const startOpcSimulator = useCallback(async () => {
     if (opcSimulatorControlInFlightRef.current || opcSimulatorBusy) return;
+    if (taskExecutionEnvironment === 'real') {
+      setOpcSimulatorMessage('真实执行环境禁止从页面启动 OPC 模拟器，请切回「模拟 OPC」环境后再操作。');
+      return;
+    }
     if (!opcSimulatorFileName) return;
     let profile = opcSimulatorProfileRef.current;
     let revision = opcSimulatorRevision;
@@ -2258,6 +2308,7 @@ function App() {
     opcSimulatorFileName,
     opcSimulatorRevision,
     opcSimulatorStatus,
+    taskExecutionEnvironment,
     applyOpcSimulatorStatus,
     refreshOpcSimulatorStatus,
   ]);
@@ -2404,12 +2455,22 @@ function App() {
         const hasRunningPeer = taskInstancesRef.current.some(
           (instance) => instance.status === 'running',
         );
-        applyTaskWorkspace(await taskApiRef.current.plan(
+        const plannedWorkspace = await taskApiRef.current.plan(
           taskWorkspacePath,
           version,
           false,
           hasRunningPeer,
-        ));
+        );
+        applyTaskWorkspace(plannedWorkspace);
+        const advancedWorkspace = await taskApiRef.current.advance(
+          taskWorkspacePath,
+          plannedWorkspace.version,
+        );
+        applyTaskWorkspace(advancedWorkspace);
+        setTaskLogSession({
+          startedAt: Date.now(),
+          actionAfterSeq: taskLogAfterSeqRef.current,
+        });
       } catch (error) {
         const message = taskApiErrorMessage(error);
         try {
@@ -2445,7 +2506,7 @@ function App() {
       expectedVersion: taskWorkspaceVersionRef.current ?? 0,
     });
     void runCycle();
-    const timer = window.setInterval(runCycle, 1500);
+    const timer = window.setInterval(runCycle, TASK_EXECUTION_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [
     hasActiveServerExecution,
@@ -3011,7 +3072,108 @@ function App() {
       )}
 
       {workspace === 'tasks' && (
-        <main className="task-workspace">
+        <TaskSchedulerBench
+          environment={taskExecutionEnvironment}
+          events={taskEvents}
+          isRunning={isSchedulerRunning}
+          isTransitioning={isSchedulerTransitioning}
+          onAdvance={advanceTaskSchedule}
+          onClear={clearTaskQueue}
+          onEnvironmentChange={(environment) => {
+            setTaskExecutionEnvironment(environment);
+            if (environment === 'real') setIsOpcSimulatorDrawerOpen(false);
+          }}
+          onGenerate={createTaskInstances}
+          onConnectOpc={() => void connectTaskOpc()}
+          onOpenSimulator={() => {
+            if (taskExecutionEnvironment === 'real') return;
+            if (!opcSimulatorProfile && scheduledOpcTemplateIds.length) {
+              void generateOpcSimulatorProfile();
+              return;
+            }
+            void openOpcSimulatorWorkbench();
+          }}
+          onSampleCountChange={(value) => setTaskSampleCount(Math.min(5, Math.max(1, Math.round(value) || 1)))}
+          onSelectTask={(task) => {
+            setSelectedTaskInstanceId(task.id);
+            setSelectedTaskTemplateId(task.templateId);
+          }}
+          onOpcUrlChange={setTaskOpcUrl}
+          onStartSimulator={() => {
+            if (taskExecutionEnvironment === 'real') return;
+            if (!opcSimulatorProfile || opcSimulatorDirty || !opcSimulatorRevision) {
+              void openOpcSimulatorWorkbench();
+              return;
+            }
+            void startOpcSimulator();
+          }}
+          onStopSimulator={() => void stopOpcSimulator()}
+          onToggleRun={handleTaskSchedulerToggle}
+          onToggleTemplate={(templateId) => {
+            if (scheduledTemplateIds.includes(templateId)) removeTemplateFromSchedule(templateId);
+            else addTemplateToSchedule(templateId);
+          }}
+          sampleCount={taskSampleCount}
+          scheduledTemplateIds={scheduledTemplateIds}
+          selectedTaskId={selectedTaskInstanceId}
+          tasks={taskInstances}
+          templates={taskTemplates}
+          simulatorRunning={opcSimulatorStatus?.state === 'running'}
+          simulatorMessage={opcSimulatorMessage}
+          simulatorStatus={opcSimulatorStatus}
+          opcConnected={Boolean(taskOpcStatus?.connected)}
+          opcMessage={taskOpcMessage}
+          opcUrl={taskOpcUrl}
+          processLines={selectedTaskProcessLines}
+          logLines={taskLogLines}
+          variableRows={selectedTaskVariableRows}
+          waitingReasons={taskWaitingReasons}
+        />
+      )}
+
+      {workspace === 'tasks' && (
+        <main className="task-workspace legacy-task-workspace">
+          <header className="task-workspace-commandbar">
+            <div className="task-workspace-heading">
+              <div>
+                <span>Task orchestration</span>
+                <h2>运行排程</h2>
+              </div>
+            </div>
+            <div className="task-workspace-actions">
+              <div className="task-execution-environment" role="group" aria-label="Task 执行环境">
+                <button
+                  aria-pressed={taskExecutionEnvironment === 'simulated'}
+                  className={taskExecutionEnvironment === 'simulated' ? 'active' : ''}
+                  disabled={isSchedulerRunning || isTaskExecutionDraining}
+                  onClick={() => setTaskExecutionEnvironment('simulated')}
+                  type="button"
+                >模拟 OPC</button>
+                <button
+                  aria-pressed={taskExecutionEnvironment === 'real'}
+                  className={taskExecutionEnvironment === 'real' ? 'active real' : ''}
+                  disabled={isSchedulerRunning || isTaskExecutionDraining}
+                  onClick={() => {
+                    setTaskExecutionEnvironment('real');
+                    setIsOpcSimulatorDrawerOpen(false);
+                  }}
+                  type="button"
+                >真实执行</button>
+              </div>
+              <button onClick={() => setTaskUtilityDrawer('opc-connection')} type="button">
+                Task OPC <i className={taskPlcStatus?.connected ? 'online' : ''} aria-hidden="true" />
+              </button>
+              <button
+                aria-haspopup="dialog"
+                disabled={taskExecutionEnvironment === 'real'}
+                onClick={() => setIsOpcSimulatorDrawerOpen(true)}
+                title={taskExecutionEnvironment === 'real' ? '真实执行时禁止从页面启动 OPC 模拟器' : '打开 OPC 模拟器'}
+                type="button"
+              >
+                OPC 模拟器 <i className={opcSimulatorStatus?.state === 'running' ? 'online' : ''} aria-hidden="true" />
+              </button>
+            </div>
+          </header>
           {taskServiceError && (
             <section className="task-service-error" role="alert">
               <strong>{taskServiceError}</strong>
@@ -3027,7 +3189,80 @@ function App() {
               )}
             </section>
           )}
-          <section className="opc-simulator-console" aria-label="OPC 模拟器控制">
+          <button
+            aria-label="关闭 Task 工具抽屉"
+            className={`task-utility-drawer-backdrop${taskUtilityDrawer ? ' open' : ''}`}
+            onClick={() => setTaskUtilityDrawer(null)}
+            tabIndex={taskUtilityDrawer ? 0 : -1}
+            type="button"
+          />
+          <section
+            aria-hidden={taskUtilityDrawer !== 'opc-connection'}
+            aria-label="Task OPC 连接"
+            aria-modal="true"
+            className={`task-opc-connection-drawer task-utility-drawer${taskUtilityDrawer === 'opc-connection' ? ' open' : ''}`}
+            role="dialog"
+          >
+            <header className="task-utility-drawer-head">
+              <div>
+                <span>Task connection</span>
+                <h2>Task OPC 连接</h2>
+                <p>配置 Task 调度器读取的 PLC 连接与变量注册。</p>
+              </div>
+              <button aria-label="关闭 Task OPC 连接" onClick={() => setTaskUtilityDrawer(null)} type="button">×</button>
+            </header>
+            <div className="task-utility-drawer-body">
+              <div className="task-plc-status">
+                <strong>连接配置</strong>
+                <label className="task-opc-connect-field">
+                  OPC UA URL
+                  <input
+                    aria-label="Task OPC UA URL"
+                    onChange={(event) => setTaskOpcUrl(event.target.value)}
+                    placeholder="opc.tcp://host:4840"
+                    value={taskOpcUrl}
+                  />
+                </label>
+                <button
+                  disabled={isTaskOpcConnecting}
+                  onClick={() => void connectTaskOpc()}
+                  type="button"
+                >{isTaskOpcConnecting ? '连接中…' : taskPlcStatus?.connected ? '重新连接' : '连接 OPC'}</button>
+                <span>{taskPlcStatus?.device_id || '未注册 PLC'} · {taskPlcStatus?.connected ? '已连接' : '未连接'}</span>
+                <small>{taskPlcStatus?.url || '尚未连接'} · 已注册 {taskPlcStatus?.registered_variables.length || 0} 个变量</small>
+                {taskOpcMessage && <em>{taskOpcMessage}</em>}
+                {stackStatus?.task_orchestration?.message && (
+                  <em>{stackStatus.task_orchestration.message}</em>
+                )}
+              </div>
+            </div>
+          </section>
+          <button
+            aria-label="关闭 OPC 模拟器"
+            className={`task-opc-drawer-backdrop${isOpcSimulatorDrawerOpen ? ' open' : ''}`}
+            onClick={() => setIsOpcSimulatorDrawerOpen(false)}
+            tabIndex={isOpcSimulatorDrawerOpen ? 0 : -1}
+            type="button"
+          />
+          <section
+            aria-hidden={!isOpcSimulatorDrawerOpen}
+            aria-label="OPC 模拟器控制"
+            aria-modal="true"
+            className={`task-opc-drawer${isOpcSimulatorDrawerOpen ? ' open' : ''}`}
+            role="dialog"
+          >
+            <header className="task-opc-drawer-head">
+              <div>
+                <span>Simulation control</span>
+                <h2>OPC 模拟器</h2>
+                <p>独立运行，不随 Task 调度自动启动。</p>
+              </div>
+              <button
+                aria-label="关闭 OPC 模拟器"
+                onClick={() => setIsOpcSimulatorDrawerOpen(false)}
+                type="button"
+              >×</button>
+            </header>
             <div className="opc-simulator-console-head">
               <div>
                 <p>SIMULATION CONTROL / INDEPENDENT</p>
@@ -3157,42 +3392,52 @@ function App() {
             ) : null}
           </section>
           <div
-            className="task-orchestration"
+            className="task-orchestration task-focus-layout task-debug-bench"
             ref={taskOrchestrationRef}
-            style={{ gridTemplateRows: `minmax(0, 1fr) ${resourceScheduleHeight}px` }}
           >
-            <section className="task-column task-recipe-column">
+            <section className="task-column task-test-config">
               <div className="task-panel-head">
                 <div>
-                  <h2>Task Templates</h2>
-                  <p>模板仅属于当前 workflow；导入或切换流程后会自动清空。</p>
+                  <h2>本次测试配置</h2>
+                  <p>定义要生成的测试队列</p>
                 </div>
-                <span>{taskTemplates.length} 个模板</span>
+                <div className="task-panel-head-actions">
+                  <span>草稿已保存</span>
+                </div>
               </div>
-              <div className="task-plc-status">
-                <strong>Task OPC 连接</strong>
-                <label className="task-opc-connect-field">
-                  OPC UA URL
+              <div className="task-config-section">
+                <label className="task-sample-count">
+                  样品数
                   <input
-                    aria-label="Task OPC UA URL"
-                    onChange={(event) => setTaskOpcUrl(event.target.value)}
-                    placeholder="opc.tcp://host:4840"
-                    value={taskOpcUrl}
+                    type="number"
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={taskSampleCount}
+                    onChange={(event) => setTaskSampleCount(Math.min(5, Math.max(1, Math.round(Number(event.target.value)) || 1)))}
                   />
                 </label>
-                <button
-                  disabled={isTaskOpcConnecting}
-                  onClick={() => void connectTaskOpc()}
-                  type="button"
-                >{isTaskOpcConnecting ? '连接中…' : taskPlcStatus?.connected ? '重新连接' : '连接 OPC'}</button>
-                <span>{taskPlcStatus?.device_id || '未注册 PLC'} · {taskPlcStatus?.connected ? '已连接' : '未连接'}</span>
-                <small>{taskPlcStatus?.url || '尚未连接'} · 已注册 {taskPlcStatus?.registered_variables.length || 0} 个变量</small>
-                {taskOpcMessage && <em>{taskOpcMessage}</em>}
-                {stackStatus?.task_orchestration?.message && (
-                  <em>{stackStatus.task_orchestration.message}</em>
-                )}
+                <button onClick={createTaskInstances} disabled={!scheduledTemplateIds.length || isTaskWorkspaceLoading} type="button">生成队列</button>
               </div>
-              <div className="task-template-list">
+              <div className="task-config-section task-template-config">
+                <span className="task-config-label">选择 Task 模板（按顺序执行）</span>
+              <div className="task-template-drawer-tabs" role="tablist" aria-label="模板与排程">
+                <button
+                  aria-selected={taskTemplateDrawerTab === 'templates'}
+                  className={taskTemplateDrawerTab === 'templates' ? 'active' : ''}
+                  onClick={() => setTaskTemplateDrawerTab('templates')}
+                  role="tab"
+                  type="button"
+                >Task 模板</button>
+                <button
+                  aria-selected={taskTemplateDrawerTab === 'scheduled'}
+                  className={taskTemplateDrawerTab === 'scheduled' ? 'active' : ''}
+                  onClick={() => setTaskTemplateDrawerTab('scheduled')}
+                  role="tab"
+                  type="button"
+                >待排模板 · {scheduledTemplateIds.length}</button>
+              </div>
+              <div className={`task-template-list${taskTemplateDrawerTab === 'templates' ? ' active' : ''}`}>
                 {taskTemplates.map((template, index) => {
                   const templateNodes = template.nodeIds
                     .map((nodeId) => nodesById.get(nodeId))
@@ -3234,10 +3479,62 @@ function App() {
                         <strong>{index + 1}. {template.name}</strong>
                         <span>{templateNodes.map((node) => node.data.label).join(' → ')}</span>
                       </button>
+                      <button
+                        className="task-template-schedule-button"
+                        disabled={scheduledTemplateIds.includes(template.id)}
+                        onClick={() => addTemplateToSchedule(template.id)}
+                        type="button"
+                      >
+                        {scheduledTemplateIds.includes(template.id) ? '已加入本次排程' : '加入本次排程'}
+                      </button>
                     </article>
                   );
                 })}
                 {!taskTemplates.length && <div className="task-empty">暂无模板。请在画布中选择节点并设为 Task 模板。</div>}
+              </div>
+              <div
+                className={`task-template-schedule-panel${taskTemplateDrawerTab === 'scheduled' ? ' active' : ''}`}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const templateId = event.dataTransfer.getData('application/x-unilab-task-template');
+                  addTemplateToSchedule(templateId);
+                }}
+              >
+                <div className="task-panel-head compact">
+                  <div>
+                    <h2>待排模板</h2>
+                    <p>按当前顺序生成每个样品的 Task 实例。</p>
+                  </div>
+                  <span>本次待排 {scheduledTemplateIds.length} / {taskTemplates.length}</span>
+                </div>
+                <div className="task-scheduled-template-list">
+                  {scheduledTemplateIds.map((templateId, index) => {
+                    const template = taskTemplates.find((item) => item.id === templateId);
+                    if (!template) return null;
+                    return (
+                      <div key={templateId}>
+                        <b>{index + 1}</b>
+                        <span>{template.name}</span>
+                        <button
+                          aria-label={`移除待排模板 ${template.name}`}
+                          onClick={() => removeTemplateFromSchedule(templateId)}
+                          type="button"
+                        >×</button>
+                      </div>
+                    );
+                  })}
+                  {!scheduledTemplateIds.length && <em>在「Task 模板」页签中加入本次排程</em>}
+                </div>
+              </div>
+              </div>
+              <div className="task-config-section task-opc-environment">
+                <span className="task-config-label">OPC 环境</span>
+                <p>
+                  {taskExecutionEnvironment === 'simulated'
+                    ? '模拟器配置、条件编辑与脚本生成在右上角「OPC 模拟器」抽屉中完成。'
+                    : '真实执行模式：排程页只读取 PLC 状态；设备控制写入仅由 Task Action / 设备驱动发起。'}
+                </p>
               </div>
             </section>
 
@@ -3291,27 +3588,17 @@ function App() {
             </section>
             )}
 
-            <section className="task-column task-scheduler-column">
+            <section className="task-column task-queue-column">
               <div className="task-panel-head">
                 <div>
                   <h2>Task Queue</h2>
-                  <p>按样品顺序与 Action/OPC 握手或流程条件调度。</p>
+                  <p>按样品顺序与 Action / OPC 握手条件调度；从此处选择实例查看 Action 日志。</p>
                 </div>
-                <span>{taskInstances.length} 个实例</span>
+                <div className="task-panel-head-actions">
+                  <span>{taskInstances.length} 个实例</span>
+                </div>
               </div>
               <div className="task-action-row">
-                <label className="task-sample-count">
-                  样品数
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    step={1}
-                    value={taskSampleCount}
-                    onChange={(event) => setTaskSampleCount(Math.min(5, Math.max(1, Math.round(Number(event.target.value)) || 1)))}
-                  />
-                </label>
-                <button onClick={createTaskInstances} disabled={!scheduledTemplateIds.length || isTaskWorkspaceLoading} type="button">生成样品任务</button>
                 <button
                   onClick={clearTaskQueue}
                   disabled={!taskInstances.length || isTaskWorkspaceLoading || isSchedulerRunning || isTaskExecutionDraining}
@@ -3345,6 +3632,11 @@ function App() {
                   {' · '}completed {taskExecutionStatus.tick.completed}
                   {' · '}failed {taskExecutionStatus.tick.failed}
                 </span>
+              </div>
+              <div className="task-queue-table-head" aria-hidden="true">
+                <span>样品</span>
+                <span>当前 Task</span>
+                <span>状态 / 等待原因</span>
               </div>
               <div className="task-queue-list">
                 {taskInstances.map((task) => {
@@ -3399,6 +3691,17 @@ function App() {
                           title="延后执行"
                           type="button"
                         >↓</button>
+                        <button
+                          aria-label={`查看 ${task.sample}/${template?.name || task.templateId} 的 Action 日志`}
+                          className="task-queue-inspect"
+                          onClick={() => {
+                            setSelectedTaskInstanceId(task.id);
+                            setSelectedTaskTemplateId(task.templateId);
+                            setTaskLogTab('action');
+                          }}
+                          title="查看 Action 日志"
+                          type="button"
+                        >日志</button>
                         <em>{taskStatusText(state)}</em>
                       </div>
                     </article>
@@ -3411,11 +3714,39 @@ function App() {
             <section className="task-column task-log-column">
               <div className="task-panel-head compact">
                 <div>
-                  <h2>等待条件与调度事件</h2>
-                  <p>仅展示当前未满足的样品前序或用户流程条件；设备握手由 Action 内部处理。</p>
+                  <h2>运行日志</h2>
+                  <p>调度、Action 与 OPC 条件的实时输出</p>
                 </div>
+                <span className="task-log-realtime">实时</span>
               </div>
-              <div className="task-waiting-list">
+              <div className="task-live-log-head">
+                <span>● 正在跟随最新日志</span>
+                <button type="button" onClick={() => setTaskLogTab('events')}>查看调度事件</button>
+              </div>
+              <div className="task-log-tabs" role="tablist" aria-label="运行日志分类">
+                <button
+                  aria-selected={taskLogTab === 'waiting'}
+                  className={taskLogTab === 'waiting' ? 'active' : ''}
+                  onClick={() => setTaskLogTab('waiting')}
+                  role="tab"
+                  type="button"
+                >等待 · {taskInstances.filter((task) => isTaskWaitingStatus(task.status)).length}</button>
+                <button
+                  aria-selected={taskLogTab === 'events'}
+                  className={taskLogTab === 'events' ? 'active' : ''}
+                  onClick={() => setTaskLogTab('events')}
+                  role="tab"
+                  type="button"
+                >事件 · {taskEvents.length}</button>
+                <button
+                  aria-selected={taskLogTab === 'action'}
+                  className={taskLogTab === 'action' ? 'active' : ''}
+                  onClick={() => setTaskLogTab('action')}
+                  role="tab"
+                  type="button"
+                >Action 日志</button>
+              </div>
+              {taskLogTab === 'waiting' && <div className="task-waiting-list task-log-tab-panel" role="tabpanel">
                 {taskInstances
                   .filter((task) => isTaskWaitingStatus(task.status))
                   .map((task) => {
@@ -3432,89 +3763,12 @@ function App() {
                     );
                   })}
                 {!taskInstances.some((task) => isTaskWaitingStatus(task.status)) && <div className="task-empty">当前没有等待中的 Task。</div>}
-              </div>
-              <div className="task-event-list">
+              </div>}
+              {taskLogTab === 'events' && <div className="task-event-list task-log-tab-panel" role="tabpanel">
                 {taskEvents.map((event, index) => <div key={`${event}-${index}`}>{event}</div>)}
                 {!taskEvents.length && <div className="task-empty">暂无 Task 事件。</div>}
-              </div>
-            </section>
-
-            <section className="task-column task-gantt-column">
-              <div
-                aria-label="调整 Resource Schedule 高度"
-                className="task-schedule-resize-handle"
-                onPointerDown={startResourceScheduleResize}
-                role="separator"
-              />
-              <div className="task-panel-head">
-                <div>
-                  <h2>样品工艺进度</h2>
-                  <p>每行一个 Sample，横向按 Task 顺序展示工艺块；点击工艺块查看变量检查与过程日志。</p>
-                </div>
-                <span>{isSchedulerRunning ? '派发中' : '已暂停'}</span>
-              </div>
-              <div
-                className="task-schedule-dropzone"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const templateId = event.dataTransfer.getData('application/x-unilab-task-template');
-                  addTemplateToSchedule(templateId);
-                }}
-              >
-                <strong>待排模板</strong>
-                <span>从左侧 Template 拖入此处，确定本次需要运行的 Task。本次待排 {scheduledTemplateIds.length} / {taskTemplates.length}</span>
-                <div className="task-scheduled-template-list">
-                  {scheduledTemplateIds.map((templateId, index) => {
-                    const template = taskTemplates.find((item) => item.id === templateId);
-                    if (!template) return null;
-                    return (
-                      <div key={templateId}>
-                        <b>{index + 1}</b>
-                        <span>{template.name}</span>
-                        <button
-                          aria-label={`移除待排模板 ${template.name}`}
-                          onClick={() => removeTemplateFromSchedule(templateId)}
-                          type="button"
-                        >×</button>
-                      </div>
-                    );
-                  })}
-                  {!scheduledTemplateIds.length && <em>拖入 Template 以建立本次运行队列</em>}
-                </div>
-              </div>
-              <div className="task-sample-schedule">
-                {sampleProcessRows.map((row) => (
-                  <div className="task-sample-row" key={row.sample}>
-                    <strong>{row.sample}</strong>
-                    <div className="task-sample-track">
-                      {row.blocks.map((block) => (
-                        <button
-                          className={[
-                            'task-sample-block',
-                            block.state,
-                            selectedTaskInstanceId === block.instanceId ? 'selected' : '',
-                          ].filter(Boolean).join(' ')}
-                          key={block.id}
-                          onClick={() => {
-                            setSelectedTaskInstanceId(block.instanceId);
-                            setSelectedTaskTemplateId(block.templateId);
-                          }}
-                          title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
-                          type="button"
-                        >
-                          <span>{block.templateName}</span>
-                          <small>{block.actionDone}/{block.actionTotal}</small>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {!sampleProcessRows.length && (
-                  <div className="task-empty">创建 Task 实例后显示各 Sample 的工艺进度。</div>
-                )}
-              </div>
-              <section className="task-action-inspector">
+              </div>}
+              {taskLogTab === 'action' && <section className="task-action-inspector task-log-tab-panel" role="tabpanel">
                 <div className="task-panel-head compact">
                   <div>
                     <h2>工艺变量与过程日志</h2>
@@ -3524,13 +3778,13 @@ function App() {
                           taskTemplates.find((item) => item.id === selectedTaskInstance.templateId)?.name
                             || selectedTaskInstance.templateId
                         }`
-                        : '点击上方工艺块查看该 Task 的变量检查与提交过程'}
+                        : '在 Task Queue 中点击「日志」查看该 Task 的变量检查与提交过程'}
                     </p>
                   </div>
                   {taskLogError ? <span className="task-log-error">{taskLogError}</span> : null}
                 </div>
                 {!selectedTaskInstance && (
-                  <div className="task-empty">未选择工艺块。</div>
+                  <div className="task-empty">未选择 Task 实例。</div>
                 )}
                 {selectedTaskInstance && selectedTaskLogSections.map((section) => {
                   const variableRows = buildTaskVariableRows(section.entries);
@@ -3583,7 +3837,42 @@ function App() {
                 {selectedTaskInstance && !selectedTaskLogSections.length && (
                   <div className="task-empty">该工艺尚未产生运行日志，派发 Action 后会在此显示。</div>
                 )}
-              </section>
+              </section>}
+            </section>
+
+            <section className="task-column task-sample-strip">
+              <div className="task-panel-head compact">
+                <div>
+                  <h2>样品进度缩略图</h2>
+                  <p>只读概览，按样品与 Task 顺序显示当前工艺状态。</p>
+                </div>
+                <span>{isSchedulerRunning ? '派发中' : '已暂停'}</span>
+              </div>
+              <div className="task-sample-schedule">
+                {sampleProcessRows.map((row) => (
+                  <div className="task-sample-row" key={row.sample}>
+                    <strong>{row.sample}</strong>
+                    <div className="task-sample-track">
+                      {row.blocks.map((block) => (
+                        <div
+                          className={[
+                            'task-sample-block',
+                            block.state,
+                          ].filter(Boolean).join(' ')}
+                          key={block.id}
+                          title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
+                        >
+                          <span>{block.templateName}</span>
+                          <small>{block.actionDone}/{block.actionTotal}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {!sampleProcessRows.length && (
+                  <div className="task-empty">创建 Task 实例后显示各 Sample 的工艺进度。</div>
+                )}
+              </div>
             </section>
           </div>
         </main>

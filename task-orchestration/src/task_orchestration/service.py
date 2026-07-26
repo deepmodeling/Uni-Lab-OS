@@ -322,13 +322,18 @@ class WorkspaceService:
         expected_version: int,
         template_ids: list[str],
         sample_ids: list[str],
+        *,
+        sample_start_interval_seconds: float = 0,
     ):
         def operation(workspace: Workspace) -> Workspace:
             templates = [self._template(workspace, item) for item in template_ids]
             generated: list[TaskInstance] = []
-            for sample_id in sample_ids:
+            batch_anchor = self._clock()
+            interval_ms = round(sample_start_interval_seconds * 1_000)
+            for sample_index, sample_id in enumerate(sample_ids):
                 if not sample_id:
                     raise WorkspaceServiceError("invalid_sample_id", "sample_id is required")
+                sample_not_before = batch_anchor + sample_index * interval_ms
                 next_order = max(
                     (item.order for item in workspace.task_instances if item.sample_id == sample_id),
                     default=-1,
@@ -341,11 +346,15 @@ class WorkspaceService:
                             status="waiting",
                             sample_id=sample_id,
                             order=next_order,
+                            not_before=sample_not_before,
                         )
                     )
                     next_order += 1
-            return workspace.model_copy(
+            updated = workspace.model_copy(
                 update={"task_instances": [*workspace.task_instances, *generated]}
+            )
+            return updated.model_copy(
+                update={"schedule_entries": self._build_schedule_entries(updated)}
             )
 
         return self._mutate(
@@ -955,8 +964,21 @@ class WorkspaceService:
     def _evaluate(self, workspace: Workspace) -> tuple[set[str], dict[str, WaitingReason]]:
         satisfied: set[str] = set()
         reasons: dict[str, WaitingReason] = {}
+        now = self._clock()
         for instance in workspace.task_instances:
             if instance.status in {"completed", "failed", "cancelled", "running"}:
+                continue
+            if instance.not_before is not None and now < instance.not_before:
+                reasons[instance.id] = WaitingReason(
+                    code="not_before_pending",
+                    context={
+                        "not_before": instance.not_before,
+                        "remaining_ms": instance.not_before - now,
+                    },
+                    message=(
+                        f"等待样品错峰启动时间：{instance.not_before}"
+                    ),
+                )
                 continue
             template = self._template(workspace, instance.template_id)
             reason = self._evaluate_triggers(workspace, template.input_triggers)
@@ -1154,7 +1176,15 @@ class WorkspaceService:
                 continue
             template = self._template(workspace, instance.template_id)
             duration = max(15_000, len(template.node_ids) * 15_000)
-            start_at = sample_available_at.get(instance.sample_id, anchor)
+            earliest_start = (
+                instance.not_before
+                if instance.not_before is not None
+                else anchor
+            )
+            start_at = max(
+                sample_available_at.get(instance.sample_id, anchor),
+                earliest_start,
+            )
             end_at = start_at + duration
             entry = TaskScheduleEntry(
                 instance_id=instance.id,

@@ -597,6 +597,97 @@ def _template(
     }
 
 
+def test_instance_parameter_overrides_are_saved_only_on_the_target_instance(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    workspace = {
+        "workflow_path": "demo.json",
+        "templates": [{
+            **_template("prepare"),
+            "node_ids": ["s06-action", "s07-action"],
+        }],
+        "task_instances": [
+            {
+                "id": "sample-a-prepare",
+                "template_id": "prepare",
+                "sample_id": "Sample A",
+                "status": "waiting",
+            },
+            {
+                "id": "sample-b-prepare",
+                "template_id": "prepare",
+                "sample_id": "Sample B",
+                "status": "waiting",
+            },
+        ],
+    }
+    assert client.put(
+        "/workspaces",
+        json={"expected_version": 0, "workspace": workspace},
+    ).status_code == 200
+
+    response = client.patch(
+        "/instances/sample-a-prepare/parameters",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 1,
+            "node_parameters": {
+                "s06-action": {"volume_ml": 12.5},
+                "s07-action": {"temperature_c": 80},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    instances = response.json()["workspace"]["task_instances"]
+    assert instances[0]["payload"]["node_parameters"] == {
+        "s06-action": {"volume_ml": 12.5},
+        "s07-action": {"temperature_c": 80},
+    }
+    assert instances[1]["payload"] == {}
+
+
+def test_instance_parameter_overrides_reject_running_instances(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    workspace = {
+        "workflow_path": "demo.json",
+        "templates": [_template("prepare")],
+        "task_instances": [{
+            "id": "sample-a-prepare",
+            "template_id": "prepare",
+            "sample_id": "Sample A",
+            "status": "running",
+            "started_at": 1,
+            "execution_state": {
+                "active_node_id": "prepare-node",
+                "active_execution_id": "execution-1",
+                "records": [{
+                    "node_id": "prepare-node",
+                    "execution_id": "execution-1",
+                    "attempt": 1,
+                    "status": "running",
+                    "started_at": 1,
+                }],
+            },
+        }],
+    }
+    assert client.put(
+        "/workspaces",
+        json={"expected_version": 0, "workspace": workspace},
+    ).status_code == 200
+
+    response = client.patch(
+        "/instances/sample-a-prepare/parameters",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 1,
+            "node_parameters": {"prepare-node": {"volume_ml": 12.5}},
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "instance_parameters_locked"
+
+
 def test_template_lifecycle_cascades_instances_and_pending_generation(tmp_path):
     client = _client_with_workflow(tmp_path)
     created = client.post(

@@ -11,6 +11,7 @@ from ..models import (
     AdvanceRequest,
     ClearInstancesRequest,
     GenerateInstancesRequest,
+    InstanceParametersUpdateRequest,
     MoveInstanceRequest,
     PlcRegistrationRequest,
     OpcPushRequest,
@@ -187,6 +188,22 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
             return public_workspace_response(workspace_service.move_instance(
                 request.workflow_path, request.expected_version, instance_id, request.order
             ))
+        except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
+            raise mutation_error(exc) from exc
+
+    @router.patch("/instances/{instance_id}/parameters")
+    def update_instance_parameters(
+        instance_id: str, request: InstanceParametersUpdateRequest
+    ) -> dict:
+        try:
+            return public_workspace_response(
+                workspace_service.update_instance_parameters(
+                    request.workflow_path,
+                    request.expected_version,
+                    instance_id,
+                    request.node_parameters,
+                )
+            )
         except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
             raise mutation_error(exc) from exc
 

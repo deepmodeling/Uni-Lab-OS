@@ -433,6 +433,57 @@ class WorkspaceService:
             workflow_path, expected_version=expected_version, operation=operation
         )
 
+    def update_instance_parameters(
+        self,
+        workflow_path: str,
+        expected_version: int,
+        instance_id: str,
+        node_parameters: dict[str, dict[str, Any]],
+    ):
+        """保存单个未运行实例的 Action 节点参数覆盖。"""
+        def operation(workspace: Workspace) -> Workspace:
+            instance = self._instance(workspace, instance_id)
+            if instance.status not in {"waiting", "pending"}:
+                raise WorkspaceServiceError(
+                    "instance_parameters_locked",
+                    "only waiting or pending instances can update action parameters",
+                )
+            template = self._template(workspace, instance.template_id)
+            unknown_nodes = set(node_parameters) - set(template.node_ids)
+            if unknown_nodes:
+                raise WorkspaceServiceError(
+                    "unknown_action_node",
+                    f"action nodes are not in template: {sorted(unknown_nodes)}",
+                )
+            payload = {
+                **instance.payload,
+                "node_parameters": node_parameters,
+            }
+            updated_instance = instance.validated_copy(update={"payload": payload})
+            event = WorkspaceEvent(
+                kind="instance_parameters_updated",
+                timestamp=self._clock(),
+                instance_id=instance.id,
+                template_id=template.id,
+                idempotency_key=(
+                    f"{workspace.workflow_path}/instances/{instance.id}/parameters/"
+                    f"{expected_version}"
+                ),
+                payload={"node_ids": sorted(node_parameters)},
+            )
+            return workspace.validated_copy(
+                update={
+                    "task_instances": self._replace_instance(
+                        workspace, updated_instance
+                    ),
+                    "events": [*workspace.events, event],
+                }
+            )
+
+        return self._mutate(
+            workflow_path, expected_version=expected_version, operation=operation
+        )
+
     def push_opc_snapshot(
         self,
         workflow_path: str,

@@ -11,6 +11,7 @@ import ReactFlow, {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  useReactFlow,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -27,12 +28,14 @@ import {
   createExecutionPlan,
   createImportedDraft,
   createWorkflowRequest,
+  expandLayoutToWidth,
   layoutFlowGraph,
   workflowDraftKey,
 } from './workflowDraft';
 import { createPseudoFlowJson } from './workflowExport';
 import { WorkstationDemo } from './WorkstationDemo';
-import { TaskSchedulerBench } from './TaskSchedulerBench';
+import './taskSchedulerBench.css';
+import { TaskSchedulerBench, TaskSchedulerHeaderActions } from './TaskSchedulerBench';
 import { OpcSimulatorDialog } from './OpcSimulatorDialog';
 import { OpcProfileSpecDialog } from './OpcProfileSpecDialog';
 import {
@@ -193,6 +196,7 @@ type TaskInstance = {
   startedAt?: number;
   finishedAt?: number;
   executionCursor?: number;
+  nodeParameters: Record<string, Record<string, unknown>>;
 };
 type TaskWorkspaceState = {
   taskTemplates: TaskTemplate[];
@@ -290,6 +294,7 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
       startedAt: instance.started_at ?? undefined,
       finishedAt: instance.finished_at ?? undefined,
       executionCursor: instance.execution_state?.cursor,
+      nodeParameters: instance.payload?.node_parameters || {},
     })),
     taskEvents: taskEventRecords.map((event) => event.text).slice(-20).reverse(),
     taskEventRecords,
@@ -617,6 +622,22 @@ function stackSensorValuesFromStatus(status: StackStatusPayload | null) {
   return values;
 }
 
+const FLOW_FIT_VIEW_OPTIONS = { padding: 0.06, maxZoom: 1.2, duration: 180 };
+
+function FlowViewportFitter({ enabled, fitKey }: { enabled: boolean; fitKey: number }) {
+  const { fitView } = useReactFlow();
+
+  useEffect(() => {
+    if (!enabled) return;
+    const frame = window.requestAnimationFrame(() => {
+      void fitView(FLOW_FIT_VIEW_OPTIONS);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [enabled, fitKey, fitView]);
+
+  return null;
+}
+
 function App() {
   const [title, setTitle] = useState('szlab 本地调试工具');
   const [actions, setActions] = useState<ActionSpec[]>([]);
@@ -638,6 +659,8 @@ function App() {
   const [selectedLogCategory, setSelectedLogCategory] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<'devices' | 'stacks'>('devices');
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [viewportFitKey, setViewportFitKey] = useState(0);
+  const bumpViewportFit = useCallback(() => setViewportFitKey((current) => current + 1), []);
   const [collapsedActionGroups, setCollapsedActionGroups] = useState<Record<string, boolean>>({});
   const [workspace, setWorkspace] = useState<Workspace>('workflow');
   const [canvasTab, setCanvasTab] = useState<CanvasTab>('workflow');
@@ -714,6 +737,7 @@ function App() {
   const contextMenuTriggerRef = useRef<HTMLElement | null>(null);
   const contextMenuFocusTargetRef = useRef<HTMLElement | null>(null);
   const canvasWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const didInitialCanvasExpandRef = useRef(false);
   const taskOrchestrationRef = useRef<HTMLDivElement | null>(null);
   const canvasToastTimerRef = useRef<number | null>(null);
   const taskWorkspaceStateRef = useRef<TaskWorkspaceState>(createEmptyTaskWorkspaceState());
@@ -1347,6 +1371,22 @@ function App() {
   }, [closeCanvasContextMenu, contextMenu]);
 
   useEffect(() => {
+    bumpViewportFit();
+  }, [bumpViewportFit, leftPanelCollapsed]);
+
+  useEffect(() => {
+    if (!draftReady || !nodes.length || didInitialCanvasExpandRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const canvasWidth = canvasWorkspaceRef.current?.clientWidth ?? 0;
+      if (!canvasWidth) return;
+      didInitialCanvasExpandRef.current = true;
+      setNodes((current) => expandLayoutToWidth(current, canvasWidth));
+      bumpViewportFit();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [bumpViewportFit, draftReady, nodes.length]);
+
+  useEffect(() => {
     fetch('/api/preset')
       .then((response) => response.json())
       .then((payload: PresetPayload) => {
@@ -1368,6 +1408,7 @@ function App() {
           setNodes(savedDraft.nodes);
           setEdges(savedDraft.edges.map((edge) => ({ ...edge, animated: true })));
           setStartNodeId(loadSavedStartNodeId(storageKey, savedDraft.nodes));
+          setViewportFitKey((current) => current + 1);
         } else {
           setWorkflowName(payload.default_workflow_name || 'szlab_canvas_workflow');
           setStartNodeId(null);
@@ -1800,6 +1841,18 @@ function App() {
       taskWorkspacePath, version, taskId, targetOrder,
     ));
   }, [mutateTaskWorkspace, taskInstances, taskWorkspacePath]);
+
+  const updateTaskInstanceParameters = useCallback((
+    taskId: string,
+    nodeParameters: Record<string, Record<string, unknown>>,
+  ) => {
+    void mutateTaskWorkspace((version) => taskApiRef.current.updateInstanceParameters(
+      taskWorkspacePath,
+      version,
+      taskId,
+      nodeParameters,
+    ));
+  }, [mutateTaskWorkspace, taskWorkspacePath]);
 
   const advanceTaskSchedule = useCallback(() => {
     void mutateTaskWorkspace((version) => taskApiRef.current.advance(taskWorkspacePath, version));
@@ -2535,7 +2588,9 @@ function App() {
   };
 
   const autoLayoutNodes = () => {
-    setNodes((current) => layoutFlowGraph(current, edges));
+    const canvasWidth = canvasWorkspaceRef.current?.clientWidth ?? 0;
+    setNodes((current) => expandLayoutToWidth(layoutFlowGraph(current, edges), canvasWidth));
+    bumpViewportFit();
     showCanvasToast('已自动优化节点布局');
   };
 
@@ -2551,10 +2606,13 @@ function App() {
         nodes: Node<ActionNodeData>[];
         edges: Edge[];
       };
+      const canvasWidth = canvasWorkspaceRef.current?.clientWidth ?? 0;
+      const laidOutNodes = expandLayoutToWidth(imported.nodes, canvasWidth);
       setWorkflowName(imported.name);
       setTaskWorkspacePath(file.name);
-      setNodes(imported.nodes);
+      setNodes(laidOutNodes);
       setEdges(imported.edges.map((edge) => ({ ...edge, animated: true })));
+      bumpViewportFit();
       setStartNodeId(null);
       setWorkflow(null);
       setRunStatus(null);
@@ -2673,24 +2731,60 @@ function App() {
         <div>
           <h1>{title}</h1>
         </div>
-        <dl className="demo-header-metrics" aria-label="联调状态摘要">
-          <div>
-            <dt>状态</dt>
-            <dd>{workspaceSummary.runStatusText}</dd>
-          </div>
-          <div>
-            <dt>节点</dt>
-            <dd>{workspaceSummary.totalNodes}</dd>
-          </div>
-          <div>
-            <dt>设备</dt>
-            <dd>{workspaceSummary.deviceCount}</dd>
-          </div>
-          <div>
-            <dt>OPC</dt>
-            <dd>{workspaceSummary.opcChangeCount}</dd>
-          </div>
-        </dl>
+        {workspace === 'workflow' ? (
+          <dl className="demo-header-metrics" aria-label="联调状态摘要">
+            <div>
+              <dt>状态</dt>
+              <dd>{workspaceSummary.runStatusText}</dd>
+            </div>
+            <div>
+              <dt>节点</dt>
+              <dd>{workspaceSummary.totalNodes}</dd>
+            </div>
+            <div>
+              <dt>设备</dt>
+              <dd>{workspaceSummary.deviceCount}</dd>
+            </div>
+            <div>
+              <dt>OPC</dt>
+              <dd>{workspaceSummary.opcChangeCount}</dd>
+            </div>
+          </dl>
+        ) : (
+          <TaskSchedulerHeaderActions
+            environment={taskExecutionEnvironment}
+            isRunning={isSchedulerRunning}
+            isTransitioning={isSchedulerTransitioning}
+            onConnectOpc={() => void connectTaskOpc()}
+            onEnvironmentChange={(environment) => {
+              setTaskExecutionEnvironment(environment);
+              if (environment === 'real') setIsOpcSimulatorDrawerOpen(false);
+            }}
+            onOpenSimulator={() => {
+              if (taskExecutionEnvironment === 'real') return;
+              if (!opcSimulatorProfile && scheduledOpcTemplateIds.length) {
+                void generateOpcSimulatorProfile();
+                return;
+              }
+              void openOpcSimulatorWorkbench();
+            }}
+            onOpcUrlChange={setTaskOpcUrl}
+            onStartSimulator={() => {
+              if (taskExecutionEnvironment === 'real') return;
+              if (!opcSimulatorProfile || opcSimulatorDirty || !opcSimulatorRevision) {
+                void openOpcSimulatorWorkbench();
+                return;
+              }
+              void startOpcSimulator();
+            }}
+            onStopSimulator={() => void stopOpcSimulator()}
+            onToggleRun={handleTaskSchedulerToggle}
+            opcConnected={Boolean(taskOpcStatus?.connected)}
+            opcMessage={taskOpcMessage}
+            opcUrl={taskOpcUrl}
+            simulatorRunning={opcSimulatorStatus?.state === 'running'}
+          />
+        )}
       </header>
 
       <nav className="workspace-navigation" aria-label="一级工作区">
@@ -2894,7 +2988,10 @@ function App() {
                 selectionOnDrag={isTaskTemplateEditing}
                 panOnDrag={!isTaskTemplateEditing}
                 defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
+                fitView
+                fitViewOptions={FLOW_FIT_VIEW_OPTIONS}
               >
+                <FlowViewportFitter enabled={canvasTab === 'workflow' && nodes.length > 0} fitKey={viewportFitKey} />
                 <Background />
                 <MiniMap />
                 <Controls>
@@ -3098,6 +3195,7 @@ function App() {
             setSelectedTaskInstanceId(task.id);
             setSelectedTaskTemplateId(task.templateId);
           }}
+          onUpdateTaskParameters={updateTaskInstanceParameters}
           onOpcUrlChange={setTaskOpcUrl}
           onStartSimulator={() => {
             if (taskExecutionEnvironment === 'real') return;
@@ -3116,6 +3214,13 @@ function App() {
           sampleCount={taskSampleCount}
           scheduledTemplateIds={scheduledTemplateIds}
           selectedTaskId={selectedTaskInstanceId}
+          actionNodes={nodes.map((node) => ({
+            id: node.id,
+            label: node.data.label,
+            method: node.data.method,
+            params: node.data.params,
+            paramSpecs: node.data.paramSpecs,
+          }))}
           tasks={taskInstances}
           templates={taskTemplates}
           simulatorRunning={opcSimulatorStatus?.state === 'running'}

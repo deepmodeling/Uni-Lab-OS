@@ -263,6 +263,33 @@ export function layoutFlowGraph<T extends { id: string; position: unknown }>(
   });
 }
 
+const ESTIMATED_NODE_WIDTH = 220;
+
+export function expandLayoutToWidth<T extends { position: { x: number; y: number } }>(
+  nodes: T[],
+  targetWidth: number,
+  sidePadding = 72,
+): T[] {
+  if (!nodes.length || targetWidth <= sidePadding * 2) return nodes;
+
+  const xs = nodes.map((node) => Number(node.position.x) || DEFAULT_START_X);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const contentWidth = maxX - minX + ESTIMATED_NODE_WIDTH;
+  const availableWidth = targetWidth - sidePadding * 2;
+
+  if (contentWidth >= availableWidth) return nodes;
+
+  const scale = availableWidth / contentWidth;
+  return nodes.map((node) => ({
+    ...node,
+    position: {
+      x: sidePadding + (((Number(node.position.x) || DEFAULT_START_X) - minX) * scale),
+      y: Number(node.position.y) || DEFAULT_START_Y,
+    },
+  }));
+}
+
 function applyBranchedLayout<T extends { id: string; position: unknown }>(
   nodes: T[],
   ordered: string[],

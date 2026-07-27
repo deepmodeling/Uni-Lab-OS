@@ -316,6 +316,7 @@ class WorkspaceEvent(StrictModel):
     kind: Literal[
         "opc_snapshot", "output", "scheduled", "completed", "template_deleted",
         "scheduled_templates_updated", "instances_cleared",
+        "instance_parameters_updated",
     ]
     id: str = Field(default_factory=lambda: uuid4().hex)
     timestamp: int = Field(default=0, ge=0)
@@ -571,6 +572,14 @@ class MoveInstanceRequest(StrictModel):
     workflow_path: str
     expected_version: int = Field(ge=0)
     order: int = Field(ge=0)
+
+
+class InstanceParametersUpdateRequest(StrictModel):
+    """更新单个未运行 Task 实例的 Action 节点参数覆盖。"""
+
+    workflow_path: str
+    expected_version: int = Field(ge=0)
+    node_parameters: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ScheduleRequest(StrictModel):

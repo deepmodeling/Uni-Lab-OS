@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Iterable
 
 from scripts.run_workflow_local import (
@@ -236,6 +236,19 @@ class TaskExecutionCoordinator:
 
                 node_id = str(node_ids[cursor])
                 node = nodes_by_id.get(node_id)
+                payload = instance.get("payload")
+                node_parameters = (
+                    payload.get("node_parameters")
+                    if isinstance(payload, dict)
+                    else None
+                )
+                override = (
+                    node_parameters.get(node_id)
+                    if isinstance(node_parameters, dict)
+                    else None
+                )
+                if node is not None and isinstance(override, dict):
+                    node = replace(node, param={**node.param, **override})
                 execution_id = deterministic_execution_id(
                     str(instance.get("id")), cursor, node_id
                 )

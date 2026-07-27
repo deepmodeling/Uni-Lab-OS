@@ -16,6 +16,7 @@ body {
 }
 
 #root {
+  width: 100%;
   height: 100%;
 }
 
@@ -1478,6 +1479,9 @@ code {
 .demo-tool-shell {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: none;
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -1488,14 +1492,35 @@ code {
   padding: 10px;
 }
 
+.demo-shell.demo-tool-shell {
+  min-height: 100%;
+  padding: 10px;
+}
+
+.demo-tool-shell > .demo-tool-header,
+.demo-tool-shell > .workspace-navigation,
+.demo-tool-shell > .demo-workbench,
+.demo-tool-shell > .task-workspace,
+.demo-tool-shell > .scheduler-bench {
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.demo-tool-header > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .demo-tool-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  width: min(1680px, 100%);
-  height: 48px;
-  margin: 0 auto 8px;
+  width: 100%;
+  min-height: 48px;
+  margin: 0 0 8px;
 }
 
 .demo-tool-header p {
@@ -1562,10 +1587,9 @@ code {
   display: grid;
   grid-template-columns: 310px minmax(600px, 1fr) 340px;
   gap: 8px;
-  width: min(1680px, 100%);
+  width: 100%;
   flex: 1;
   min-height: 0;
-  margin: 0 auto;
 }
 
 .demo-workbench.left-collapsed {
@@ -1575,8 +1599,8 @@ code {
 .workspace-navigation {
   display: flex;
   gap: 4px;
-  width: min(1680px, 100%);
-  margin: 0 auto 8px;
+  width: 100%;
+  margin: 0 0 8px;
   padding: 4px;
   border: 1px solid #dbe3ef;
   border-radius: 12px;
@@ -1615,10 +1639,9 @@ code {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(1680px, 100%);
+  width: 100%;
   flex: 1;
   min-height: 0;
-  margin: 0 auto;
 }
 
 .demo-card {
@@ -3311,6 +3334,11 @@ code {
   background-size: auto, 18px 18px, auto;
 }
 
+.real-flow-canvas {
+  height: 100%;
+  min-height: 0;
+}
+
 .task-template-editing-hint {
   pointer-events: none;
   position: absolute;
@@ -4074,7 +4102,7 @@ code {
 }
 
 /* Demo: compact list/table visual language, no capsule-shaped controls. */
-.demo-tool-shell button,
+.demo-tool-shell button:not(.scheduler-btn):not(.scheduler-bench__environment button),
 .demo-card,
 .demo-left-section,
 .demo-action-group,

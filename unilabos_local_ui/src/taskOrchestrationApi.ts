@@ -28,6 +28,9 @@ export type ApiTaskInstance = {
   not_before: number | null;
   started_at: number | null;
   finished_at: number | null;
+  payload?: {
+    node_parameters?: Record<string, Record<string, unknown>>;
+  };
   execution_state?: {
     cursor?: number;
     active_node_id?: string | null;
@@ -362,6 +365,19 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
         order,
       }))
     ),
+    updateInstanceParameters: (
+      workflowPath: string,
+      expectedVersion: number,
+      instanceId: string,
+      nodeParameters: Record<string, Record<string, unknown>>,
+    ) => request(`/instances/${encodeURIComponent(instanceId)}/parameters`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        workflow_path: workflowPath,
+        expected_version: expectedVersion,
+        node_parameters: nodeParameters,
+      }),
+    }),
     plan: (
       workflowPath: string,
       expectedVersion: number,

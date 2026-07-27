@@ -5,7 +5,28 @@ import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import type { TaskLogCategory, TaskLogLine } from './taskLogSession';
 
 type Template = { id: string; name: string; nodeIds: string[] };
-type Task = { id: string; sample: string; templateId: string; order: number; status: string };
+type Task = {
+  id: string;
+  sample: string;
+  templateId: string;
+  order: number;
+  status: string;
+  nodeParameters: Record<string, Record<string, unknown>>;
+};
+type ActionNode = {
+  id: string;
+  label: string;
+  method: string;
+  params: Record<string, unknown>;
+  paramSpecs?: Array<{
+    name?: string;
+    label?: string;
+    description?: string;
+    type?: string;
+    min?: number;
+    max?: number;
+  }>;
+};
 
 type Props = {
   templates: Template[];
@@ -25,6 +46,10 @@ type Props = {
   onToggleRun: () => void;
   onAdvance: () => void;
   onSelectTask: (task: Task) => void;
+  onUpdateTaskParameters: (
+    taskId: string,
+    nodeParameters: Record<string, Record<string, unknown>>,
+  ) => void;
   onEnvironmentChange: (environment: 'simulated' | 'real') => void;
   onOpenSimulator: () => void;
   onStartSimulator: () => void;
@@ -40,6 +65,7 @@ type Props = {
   processLines: TaskProcessLogLine[];
   variableRows: TaskVariableRow[];
   logLines: TaskLogLine[];
+  actionNodes: ActionNode[];
 };
 
 function stateLabel(status: string) {
@@ -51,8 +77,73 @@ function stateLabel(status: string) {
   return '待派发';
 }
 
-export function TaskSchedulerBench(props: Props) {
+type HeaderActionsProps = Pick<
+  Props,
+  | 'environment'
+  | 'isRunning'
+  | 'isTransitioning'
+  | 'onEnvironmentChange'
+  | 'onOpenSimulator'
+  | 'onStartSimulator'
+  | 'onStopSimulator'
+  | 'simulatorRunning'
+  | 'opcConnected'
+  | 'opcMessage'
+  | 'opcUrl'
+  | 'onOpcUrlChange'
+  | 'onConnectOpc'
+  | 'onToggleRun'
+>;
+
+export function TaskSchedulerHeaderActions(props: HeaderActionsProps) {
   const [isOpcConnectionOpen, setIsOpcConnectionOpen] = React.useState(false);
+
+  return (
+    <>
+      <div className="scheduler-header-bar demo-tool-header__task-actions" role="toolbar" aria-label="Task 排程控制">
+        <div className="scheduler-header-bar__group">
+          <div className="scheduler-bench__environment" role="group" aria-label="执行环境">
+            <button className={props.environment === 'simulated' ? 'active' : ''} onClick={() => props.onEnvironmentChange('simulated')} type="button">模拟 OPC</button>
+            <button className={props.environment === 'real' ? 'active' : ''} onClick={() => props.onEnvironmentChange('real')} type="button">真实执行</button>
+          </div>
+        </div>
+        <div className="scheduler-header-bar__divider" aria-hidden="true" />
+        <div className="scheduler-header-bar__group">
+          <button className="scheduler-btn scheduler-btn--ghost" disabled={props.environment === 'real'} onClick={props.onOpenSimulator} type="button">OPC 模拟器</button>
+          <button
+            className="scheduler-btn scheduler-btn--accent"
+            disabled={props.environment === 'real'}
+            onClick={props.simulatorRunning ? props.onStopSimulator : props.onStartSimulator}
+            type="button"
+          >{props.simulatorRunning ? '停止并恢复' : '启动模拟'}</button>
+        </div>
+        <div className="scheduler-header-bar__divider" aria-hidden="true" />
+        <div className="scheduler-header-bar__group">
+          <button className="scheduler-btn scheduler-btn--ghost scheduler-btn--status" onClick={() => setIsOpcConnectionOpen(true)} type="button">
+            <i className={props.opcConnected ? 'online' : ''} aria-hidden="true" />
+            {props.opcConnected ? 'OPC 已连接' : '配置 OPC 连接'}
+          </button>
+          <button className="scheduler-btn scheduler-btn--primary" disabled={props.isTransitioning} onClick={props.onToggleRun} type="button">
+            {props.isRunning ? '暂停派发' : '开始派发'}
+          </button>
+        </div>
+      </div>
+      {isOpcConnectionOpen && (
+        <div className="scheduler-bench__modal-backdrop" onMouseDown={() => setIsOpcConnectionOpen(false)}>
+          <section aria-label="Task OPC 连接" className="scheduler-bench__modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+            <header><div><span>Task connection</span><h2>Task OPC 连接</h2><p>选择排程条件检查使用的 OPC UA 地址。</p></div><button onClick={() => setIsOpcConnectionOpen(false)} type="button">×</button></header>
+            <label>OPC UA URL<input onChange={(event) => props.onOpcUrlChange(event.target.value)} placeholder="opc.tcp://host:4840" value={props.opcUrl} /></label>
+            <div className="scheduler-bench__modal-actions"><button className="scheduler-btn scheduler-btn--primary" onClick={props.onConnectOpc} type="button">{props.opcConnected ? '重新连接' : '连接 OPC'}</button><span>{props.opcMessage || (props.opcConnected ? '已连接，可用于排程条件检查。' : '未连接')}</span></div>
+          </section>
+        </div>
+      )}
+    </>
+  );
+}
+
+export function TaskSchedulerBench(props: Props) {
+  const [editingTask, setEditingTask] = React.useState<Task | null>(null);
+  const [parameterDraft, setParameterDraft] = React.useState<Record<string, Record<string, unknown>>>({});
   const [logFilter, setLogFilter] = React.useState<TaskLogCategory>('all');
   const [isFollowingLogs, setIsFollowingLogs] = React.useState(true);
   const logContainerRef = React.useRef<HTMLDivElement>(null);
@@ -60,6 +151,13 @@ export function TaskSchedulerBench(props: Props) {
   const selectedTemplate = props.templates.find((template) => template.id === selected?.templateId);
   const sampleNames = [...new Set(props.tasks.map((task) => task.sample))];
   const visibleLogLines = props.logLines.filter((line) => logFilter === 'all' || line.category === logFilter);
+  const editingTemplate = props.templates.find((template) => template.id === editingTask?.templateId);
+  const editingNodes = editingTemplate
+    ? editingTemplate.nodeIds
+      .map((nodeId) => props.actionNodes.find((node) => node.id === nodeId))
+      .filter(Boolean) as ActionNode[]
+    : [];
+  const parametersEditable = editingTask?.status === 'waiting' || editingTask?.status === 'pending';
 
   React.useEffect(() => {
     if (isFollowingLogs && logContainerRef.current) {
@@ -79,29 +177,25 @@ export function TaskSchedulerBench(props: Props) {
     URL.revokeObjectURL(link.href);
   };
 
+  const openParameterEditor = (task: Task) => {
+    setEditingTask(task);
+    setParameterDraft(Object.fromEntries(
+      Object.entries(task.nodeParameters).map(([nodeId, parameters]) => [
+        nodeId,
+        { ...parameters },
+      ]),
+    ));
+  };
+
+  const updateParameter = (nodeId: string, parameter: string, value: unknown) => {
+    setParameterDraft((current) => ({
+      ...current,
+      [nodeId]: { ...current[nodeId], [parameter]: value },
+    }));
+  };
+
   return (
     <main className="scheduler-bench">
-      <header className="scheduler-bench__top">
-        <div>
-          <div className="scheduler-bench__eyebrow">SZLab Poly Studio · Scheduler test bench</div>
-          <h1>Task 排程联调台</h1>
-        </div>
-        <div className="scheduler-bench__top-actions">
-          <div className="scheduler-bench__environment">
-            <button className={props.environment === 'simulated' ? 'active' : ''} onClick={() => props.onEnvironmentChange('simulated')} type="button">模拟 OPC</button>
-            <button className={props.environment === 'real' ? 'active' : ''} onClick={() => props.onEnvironmentChange('real')} type="button">真实执行</button>
-          </div>
-          <button className="scheduler-bench__simulator" disabled={props.environment === 'real'} onClick={props.onOpenSimulator} type="button">OPC 模拟器</button>
-          <button
-            className="scheduler-bench__simulator-start"
-            disabled={props.environment === 'real'}
-            onClick={props.simulatorRunning ? props.onStopSimulator : props.onStartSimulator}
-            type="button"
-          >{props.simulatorRunning ? '停止并恢复' : '启动模拟'}</button>
-          <button className="scheduler-bench__connection" onClick={() => setIsOpcConnectionOpen(true)} type="button"><i className={props.opcConnected ? 'online' : ''} />{props.opcConnected ? 'OPC 已连接' : '配置 OPC 连接'}</button>
-          <button className="scheduler-bench__start" disabled={props.isTransitioning} onClick={props.onToggleRun} type="button">{props.isRunning ? '暂停派发' : '开始派发'}</button>
-        </div>
-      </header>
       {props.simulatorMessage && <p className="scheduler-bench__simulator-message" role="status">{props.simulatorMessage}</p>}
 
       <section className="scheduler-bench__layout">
@@ -109,7 +203,7 @@ export function TaskSchedulerBench(props: Props) {
           <PanelHead title="本次测试配置" sub="定义要生成的测试队列" badge="草稿已保存" />
           <div className="scheduler-bench__section">
             <label>样品数</label>
-            <div className="scheduler-bench__sample-input"><input min="1" max="5" type="number" value={props.sampleCount} onChange={(event) => props.onSampleCountChange(Number(event.target.value))} /><button onClick={props.onGenerate} type="button">生成队列</button></div>
+            <div className="scheduler-bench__sample-input"><input min="1" max="5" type="number" value={props.sampleCount} onChange={(event) => props.onSampleCountChange(Number(event.target.value))} /><button className="scheduler-btn scheduler-btn--primary" onClick={props.onGenerate} type="button">生成队列</button></div>
           </div>
           <div className="scheduler-bench__section">
             <label>选择 Task 模板（按顺序执行）</label>
@@ -152,12 +246,21 @@ export function TaskSchedulerBench(props: Props) {
         <section className="scheduler-bench__middle">
           <section className="scheduler-bench__panel">
             <PanelHead title="Task 测试队列" sub="点击一行查看其 OPC 条件和过程日志" badge="顺序派发" />
-            <div className="scheduler-bench__queue-actions"><span>共 {props.tasks.length} 个 Task · {props.isRunning ? '正在派发' : '当前未派发'}</span><button onClick={props.onAdvance} type="button">调度一步</button><button onClick={props.onToggleRun} type="button">{props.isRunning ? '暂停后续派发' : '开始派发'}</button><button onClick={props.onClear} type="button">清空队列</button></div>
+            <div className="scheduler-bench__queue-actions">
+              <span>共 {props.tasks.length} 个 Task · {props.isRunning ? '正在派发' : '当前未派发'}</span>
+              <div className="scheduler-bench__queue-buttons">
+                <button className="scheduler-btn scheduler-btn--ghost" onClick={props.onAdvance} type="button">调度一步</button>
+                <button className="scheduler-btn scheduler-btn--primary" onClick={props.onToggleRun} type="button">{props.isRunning ? '暂停后续派发' : '开始派发'}</button>
+                <button className="scheduler-btn scheduler-btn--danger" onClick={props.onClear} type="button">清空队列</button>
+              </div>
+            </div>
+            <div className="scheduler-bench__queue-wrap">
             <table className="scheduler-bench__queue"><thead><tr><th>样品</th><th>当前 Task</th><th>状态</th><th>等待原因</th></tr></thead><tbody>{props.tasks.map((task) => {
               const template = props.templates.find((item) => item.id === task.templateId);
               const waiting = props.waitingReasons[task.id]?.message || (task.status === 'waiting' ? '正在检查前置条件' : '—');
-              return <tr className={task.id === selected?.id ? 'selected' : ''} key={task.id} onClick={() => props.onSelectTask(task)}><td><strong>{task.sample}</strong></td><td>{template?.name || task.templateId}</td><td><span className={`scheduler-bench__state ${task.status}`}>{stateLabel(task.status)}</span></td><td>{waiting}</td></tr>;
+              return <tr className={task.id === selected?.id ? 'selected' : ''} key={task.id} onClick={() => props.onSelectTask(task)} onDoubleClick={() => openParameterEditor(task)}><td><strong>{task.sample}</strong></td><td>{template?.name || task.templateId}</td><td><span className={`scheduler-bench__state ${task.status}`}>{stateLabel(task.status)}</span></td><td className="scheduler-bench__queue-waiting">{waiting}</td></tr>;
             })}</tbody></table>
+            </div>
           </section>
           <section className="scheduler-bench__panel scheduler-bench__progress">
             <PanelHead title="样品进度缩略图" badge="仅显示" />
@@ -193,12 +296,61 @@ export function TaskSchedulerBench(props: Props) {
           </section>
         </aside>
       </section>
-      {isOpcConnectionOpen && (
-        <div className="scheduler-bench__modal-backdrop" onMouseDown={() => setIsOpcConnectionOpen(false)}>
-          <section aria-label="Task OPC 连接" className="scheduler-bench__modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
-            <header><div><span>Task connection</span><h2>Task OPC 连接</h2><p>选择排程条件检查使用的 OPC UA 地址。</p></div><button onClick={() => setIsOpcConnectionOpen(false)} type="button">×</button></header>
-            <label>OPC UA URL<input onChange={(event) => props.onOpcUrlChange(event.target.value)} placeholder="opc.tcp://host:4840" value={props.opcUrl} /></label>
-            <div className="scheduler-bench__modal-actions"><button onClick={props.onConnectOpc} type="button">{props.opcConnected ? '重新连接' : '连接 OPC'}</button><span>{props.opcMessage || (props.opcConnected ? '已连接，可用于排程条件检查。' : '未连接')}</span></div>
+      {editingTask && (
+        <div className="scheduler-bench__modal-backdrop" onMouseDown={() => setEditingTask(null)}>
+          <section aria-label="Task 实例入参" className="scheduler-bench__modal scheduler-bench__parameter-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+            <header>
+              <div>
+                <span>Task instance parameters</span>
+                <h2>{editingTask.sample} / {editingTemplate?.name || editingTask.templateId}</h2>
+                <p>{parametersEditable ? '修改仅应用于当前 Task 实例。' : `当前状态为「${stateLabel(editingTask.status)}」，入参仅可查看。`}</p>
+              </div>
+              <button aria-label="关闭参数编辑" onClick={() => setEditingTask(null)} type="button">×</button>
+            </header>
+            <div className="scheduler-bench__parameter-body">
+              {editingNodes.map((node, index) => {
+                const values = { ...node.params, ...parameterDraft[node.id] };
+                const specs: NonNullable<ActionNode['paramSpecs']> = node.paramSpecs?.filter((spec) => spec.name)
+                  || Object.keys(values).map((name) => ({ name }));
+                return <section className="scheduler-bench__parameter-group" key={node.id}>
+                  <h3>{String(index + 1).padStart(2, '0')} · {node.label}</h3>
+                  <small>{node.method} · {node.id}</small>
+                  {specs.map((spec) => {
+                    const name = spec.name as string;
+                    const value = values[name];
+                    const inputType = spec.type === 'boolean' ? 'checkbox' : spec.type === 'integer' || spec.type === 'number' ? 'number' : 'text';
+                    return <label key={name}>
+                      <span>{spec.label || name}{spec.description ? ` · ${spec.description}` : ''}</span>
+                      {inputType === 'checkbox' ? (
+                        <input checked={Boolean(value)} disabled={!parametersEditable} onChange={(event) => updateParameter(node.id, name, event.target.checked)} type="checkbox" />
+                      ) : (
+                        <input
+                          disabled={!parametersEditable}
+                          max={spec.max}
+                          min={spec.min}
+                          onChange={(event) => updateParameter(
+                            node.id,
+                            name,
+                            inputType === 'number' && event.target.value !== '' ? Number(event.target.value) : event.target.value,
+                          )}
+                          step={spec.type === 'integer' ? 1 : 'any'}
+                          type={inputType}
+                          value={typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}
+                        />
+                      )}
+                    </label>;
+                  })}
+                </section>;
+              })}
+              {!editingNodes.length && <p className="scheduler-bench__empty">该 Task 未找到可编辑的 Action 节点。</p>}
+            </div>
+            <div className="scheduler-bench__modal-actions">
+              {parametersEditable && <button className="scheduler-btn scheduler-btn--primary" onClick={() => {
+                props.onUpdateTaskParameters(editingTask.id, parameterDraft);
+                setEditingTask(null);
+              }} type="button">保存当前实例入参</button>}
+              <span>实例 ID：{editingTask.id}</span>
+            </div>
           </section>
         </div>
       )}

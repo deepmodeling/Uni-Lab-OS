@@ -184,6 +184,40 @@ def test_claim_submits_action_once_and_tick_returns_without_waiting():
     coordinator.shutdown()
 
 
+def test_instance_parameter_overrides_are_passed_to_the_action_node():
+    instance = _workspace_response()["workspace"]["task_instances"][0]
+    instance["payload"] = {
+        "node_parameters": {
+            "node_001_pick_from_s03": {"volume_ml": 12.5},
+        }
+    }
+    client = FakeTaskClient(_workspace_response(instances=[instance]))
+    started = threading.Event()
+    seen_params = {}
+
+    def runner(node, _devices, _action_callable):
+        seen_params.update(node.param)
+        started.set()
+        return [{"success": True}]
+
+    coordinator = _coordinator(client, runner)
+    coordinator.cycle(
+        workflow_path=WORKFLOW_PATH,
+        workflow_nodes=[
+            WorkflowNode(
+                uuid="node_001_pick_from_s03",
+                name="auto-submit_pick_from_s03",
+                device_name="device",
+                param={"volume_ml": 5, "target": "S03"},
+            )
+        ],
+    )
+
+    assert started.wait(timeout=1)
+    assert seen_params == {"volume_ml": 12.5, "target": "S03"}
+    coordinator.shutdown()
+
+
 def test_completed_future_is_reported_with_json_safe_summary_and_empty_release():
     client = FakeTaskClient(
         _workspace_response(node_ids=["node_003_dose_powder"])

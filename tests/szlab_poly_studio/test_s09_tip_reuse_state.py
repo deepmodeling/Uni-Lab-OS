@@ -67,6 +67,36 @@ def test_tip_at_use_limit_is_retired_and_replaced(tmp_path):
     assert state["solvents"]["S10-1"]["tip_history"] == [1, 2]
 
 
+def test_tip_is_replaced_early_when_operation_needs_more_remaining_cycles(tmp_path):
+    store = ReusableTipStateStore(
+        tmp_path / "tip_state.json",
+        max_use_count=3,
+    )
+    store.initialize()
+    store.prepare_tip("S10-1")
+    store.record_tip_use("S10-1", cycles=2)
+
+    replacement = store.prepare_tip("S10-1", required_cycles=2)
+    state = store.snapshot()
+
+    assert replacement["tip_index"] == 2
+    assert state["tips"]["1"]["status"] == TIP_STATUS_EXHAUSTED
+    assert state["tips"]["1"]["use_count"] == 2
+
+
+def test_tip_preparation_rejects_operation_larger_than_tip_limit(tmp_path):
+    store = ReusableTipStateStore(
+        tmp_path / "tip_state.json",
+        max_use_count=2,
+    )
+    store.initialize()
+
+    with pytest.raises(ValueError, match="单次操作"):
+        store.prepare_tip("S10-1", required_cycles=3)
+
+    assert store.snapshot()["solvents"] == {}
+
+
 def test_tip_bindings_survive_store_restart(tmp_path):
     state_path = tmp_path / "tip_state.json"
     first_store = ReusableTipStateStore(state_path)

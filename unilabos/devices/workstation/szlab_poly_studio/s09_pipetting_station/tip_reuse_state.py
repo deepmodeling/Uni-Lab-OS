@@ -141,9 +141,21 @@ class ReusableTipStateStore:
             solvent = self._state["solvents"].get(key)
             return copy.deepcopy(solvent) if solvent is not None else None
 
-    def prepare_tip(self, solvent_key: str | int) -> dict[str, Any]:
-        """返回溶剂当前 TIP；达到上限时废弃旧 TIP 并分配新 TIP。"""
+    def prepare_tip(
+        self,
+        solvent_key: str | int,
+        *,
+        required_cycles: int = 1,
+    ) -> dict[str, Any]:
+        """返回容量足够的当前 TIP；不足时废弃旧 TIP 并分配新 TIP。"""
         key = self._normalize_solvent_key(solvent_key)
+        required_cycles = int(required_cycles)
+        if required_cycles <= 0:
+            raise ValueError("S09 TIP 预计使用次数必须大于 0")
+        if required_cycles > self.max_use_count:
+            raise ValueError(
+                f"S09 单次操作需要使用 TIP {required_cycles} 次，超过上限 {self.max_use_count}"
+            )
         with self._lock:
             self._require_initialized_locked()
             solvent = self._state["solvents"].setdefault(
@@ -167,7 +179,7 @@ class ReusableTipStateStore:
                     or active_tip["solvent_key"] != key
                 ):
                     raise RuntimeError(f"S09 溶剂 {key} 的 TIP 绑定状态不一致")
-                if int(active_tip["use_count"]) < self.max_use_count:
+                if int(active_tip["use_count"]) + required_cycles <= self.max_use_count:
                     return copy.deepcopy(active_tip | {"tip_index": active_tip_index})
 
                 active_tip["status"] = TIP_STATUS_EXHAUSTED

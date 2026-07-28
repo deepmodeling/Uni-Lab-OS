@@ -10,7 +10,6 @@
     "endpoint": "opc.tcp://127.0.0.1:48507/"
   },
   "device": {
-    "process_timeout": 300.0,
     "poll_interval": 0.05,
     "require_station_ready": true,
     "opcua_timeout": 30.0,
@@ -25,7 +24,10 @@
     }
   },
   "action": {
-    "name": "scan_powder_cartridges",
-    "timeout": 300.0
+    "name": "dose_powder",
+    "coarse_position": 1,
+    "fine_position": 1,
+    "target_weight": 1.0,
+    "recipe_name": "default"
   }
 }

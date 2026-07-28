@@ -3688,8 +3688,64 @@ code {
 
 .demo-log-section {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 0;
+}
+
+.live-status-panel {
+  display: grid;
+  gap: 6px;
+  padding: 0 0 10px;
+}
+
+.live-status-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.3);
+  border-radius: 10px;
+  background: rgba(30, 64, 175, 0.12);
+  padding: 9px 10px;
+}
+
+.live-status-row.error {
+  border-color: rgba(220, 38, 38, 0.38);
+  background: rgba(127, 29, 29, 0.12);
+}
+
+.live-status-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+}
+
+.live-status-row.error .live-status-pulse {
+  background: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.14);
+}
+
+.live-status-label {
+  overflow: hidden;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-status-row strong {
+  color: #f8fafc;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 14px;
+}
+
+.live-status-note {
+  grid-column: 2 / -1;
+  color: #94a3b8;
+  font-size: 10px;
 }
 
 .demo-event-row {

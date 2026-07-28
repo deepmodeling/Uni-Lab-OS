@@ -590,6 +590,8 @@ def run_nodes(
             )
         for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
             logger.log(wait_log["message"], detail=wait_log.get("detail"))
+        if isinstance(result, dict) and result.get("display_message"):
+            logger.log(str(result["display_message"]))
         logger.log(f"动作结果: {result}", detail={"result": result})
         results.append(
             {

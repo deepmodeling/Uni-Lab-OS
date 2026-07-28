@@ -100,6 +100,16 @@ type RunStatus = {
   log_events?: LogEvent[];
   error?: string | null;
   node_statuses?: Record<string, NodeRunStatus>;
+  live_statuses?: Record<string, Record<string, LiveStatus>>;
+};
+
+type LiveStatus = {
+  label: string;
+  value?: number | null;
+  unit?: string;
+  state?: 'ok' | 'error' | 'final' | string;
+  message?: string;
+  updated_at?: number;
 };
 
 type NodeRunStatus = 'idle' | 'preparing' | 'running' | 'success' | 'failed' | 'cancelled';
@@ -2030,6 +2040,9 @@ function App() {
                 <h2>运行日志</h2>
                 <span>Timeline</span>
               </div>
+              <div className="live-status-slot">
+                <LiveStatusPanel statuses={runStatus?.live_statuses} nodes={nodes} />
+              </div>
               <LogPanel
                 events={logEvents}
                 nodes={nodes}
@@ -2889,6 +2902,42 @@ function nodeStatusText(status: NodeRunStatus) {
   if (status === 'failed') return '失败';
   if (status === 'cancelled') return '已终止';
   return '待运行';
+}
+
+function LiveStatusPanel({
+  statuses,
+  nodes,
+}: {
+  statuses?: Record<string, Record<string, LiveStatus>>;
+  nodes: Node<ActionNodeData>[];
+}) {
+  if (!statuses) return null;
+  const nodeLabels = new Map(nodes.map((node) => [node.id, node.data.label]));
+  const entries = Object.entries(statuses).flatMap(([nodeId, nodeStatuses]) =>
+    Object.entries(nodeStatuses).map(([key, status]) => ({ nodeId, key, status })),
+  );
+  if (!entries.length) return null;
+
+  return (
+    <div className="live-status-panel" aria-live="polite">
+      {entries.map(({ nodeId, key, status }) => {
+        const hasValue = typeof status.value === 'number' && Number.isFinite(status.value);
+        const displayValue = hasValue ? Number(status.value).toFixed(3) : '--';
+        return (
+          <div className={`live-status-row ${status.state === 'error' ? 'error' : ''}`} key={`${nodeId}:${key}`}>
+            <span className="live-status-pulse" aria-hidden="true" />
+            <span className="live-status-label">
+              {nodeLabels.get(nodeId) || nodeId} · {status.label}
+            </span>
+            <strong>{displayValue} {status.unit || ''}</strong>
+            <span className="live-status-note">
+              {status.state === 'error' ? status.message || '读取暂时失败' : '每 2 秒刷新'}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function LogPanel({

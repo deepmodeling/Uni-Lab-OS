@@ -598,6 +598,8 @@ class RunRecord:
     result: list[dict[str, Any]] | None = None
     error: str | None = None
     node_statuses: dict[str, str] = field(default_factory=dict)
+    live_statuses: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    live_log_indexes: dict[tuple[str, str], int] = field(default_factory=dict)
     cancel_requested: bool = False
     devices: dict[str, Any] = field(default_factory=dict)
     timing_report_path: str | None = None
@@ -625,6 +627,48 @@ class RunRecord:
                 detail=detail,
             )
         )
+
+    def update_live_status(
+        self,
+        node_id: str,
+        key: str,
+        payload: dict[str, Any],
+    ) -> None:
+        self.live_statuses.setdefault(node_id, {})[key] = dict(payload)
+
+    def clear_live_status(self, node_id: str, key: str | None = None) -> None:
+        if key is None:
+            self.live_statuses.pop(node_id, None)
+            return
+        statuses = self.live_statuses.get(node_id)
+        if statuses is None:
+            return
+        statuses.pop(key, None)
+        if not statuses:
+            self.live_statuses.pop(node_id, None)
+
+    def update_live_log(
+        self,
+        node_id: str,
+        key: str,
+        message: str,
+        *,
+        level: str = "info",
+    ) -> None:
+        live_key = (node_id, key)
+        index = self.live_log_indexes.get(live_key)
+        if index is None:
+            self.append_log(
+                message,
+                node_id=node_id,
+                level=level,
+            )
+            self.live_log_indexes[live_key] = len(self.log_events) - 1
+            return
+        self.logs[index] = message
+        event = self.log_events[index]
+        event.message = message
+        event.level = level
 
 
 def _infer_log_category(message: str, *, scope: str, detail: dict[str, Any] | None) -> str:
@@ -732,6 +776,8 @@ def _run_node_with_live_opc_sampling(
         logger.log(f"OPC实时采样异常: {sampling_errors[-1]}", level="warning")
     for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
         logger.log(wait_log["message"], detail=wait_log.get("detail"))
+    if isinstance(result, dict) and result.get("display_message"):
+        logger.log(str(result["display_message"]))
     logger.log(f"动作结果: {result}", detail={"result": result})
 
     output = {
@@ -1117,6 +1163,40 @@ class WorkflowRunManager:
                         timing_recorder.observe_log(message, detail)
 
                 logger = WorkflowLogger(writer=append_node_log)
+                device = devices.get(device_name)
+                balance_status_setter = (
+                    getattr(device, "set_balance_status_callback", None)
+                    if node_method == "dose_powder"
+                    else None
+                )
+                if callable(balance_status_setter):
+
+                    def update_balance_status(
+                        payload: dict[str, Any],
+                        node_id: str = node.uuid,
+                    ) -> None:
+                        value = payload.get("value")
+                        value_text = f"{float(value):.3f} g" if isinstance(value, (int, float)) else "-- g"
+                        state = str(payload.get("state") or "ok")
+                        if state == "error":
+                            suffix = f"（{payload.get('message') or '读取暂时失败'}）"
+                            level = "warning"
+                        elif state == "final":
+                            suffix = "（最终读数）"
+                            level = "info"
+                        else:
+                            suffix = "（每 2 秒刷新）"
+                            level = "info"
+                        with self._lock:
+                            record.update_live_status(node_id, "s07_balance", payload)
+                            record.update_live_log(
+                                node_id,
+                                "s07_balance",
+                                f"S07 实时天平：{value_text}{suffix}",
+                                level=level,
+                            )
+
+                    balance_status_setter(update_balance_status)
                 try:
                     node_results = _run_node_with_live_opc_sampling(
                         node,
@@ -1131,6 +1211,11 @@ class WorkflowRunManager:
                     record.node_statuses[node.uuid] = "failed"
                     record.append_log(f"节点执行失败: {exc}", node_id=node.uuid, level="error")
                     raise
+                finally:
+                    if callable(balance_status_setter):
+                        balance_status_setter(None)
+                        with self._lock:
+                            record.clear_live_status(node.uuid, "s07_balance")
                 if timing_recorder is not None:
                     timing_recorder.finish_step(result=node_results)
                 record.node_statuses[node.uuid] = "success"
@@ -1723,6 +1808,10 @@ def _record_to_dict(record: RunRecord) -> dict[str, Any]:
         "result": record.result,
         "error": record.error,
         "node_statuses": record.node_statuses,
+        "live_statuses": {
+            node_id: {key: dict(payload) for key, payload in statuses.items()}
+            for node_id, statuses in record.live_statuses.items()
+        },
         "timing_report_path": record.timing_report_path,
         "timing_summary_path": record.timing_summary_path,
     }

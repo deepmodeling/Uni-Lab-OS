@@ -1,6 +1,74 @@
 """szlab 本地 workflow 调试界面。"""
 
 from __future__ import annotations
+
+import argparse
+import asyncio
+import csv
+import errno
+import io
+import json
+import os
+import re
+import tempfile
+import threading
+import time
+import uuid
+import webbrowser
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any, Callable
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+from fastapi import FastAPI, HTTPException, Request as FastAPIRequest
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    Response,
+    StreamingResponse,
+)
+from fastapi.staticfiles import StaticFiles
+
+from unilabos.registry.ast_registry_scanner import scan_directory
+from scripts.opc_simulator_process_manager import (
+    InvalidSimulatorConfig,
+    InvalidSimulatorRevision,
+    OpcSimulatorProcessManager,
+    SimulatorAlreadyRunning,
+    SimulatorConfigNotFound,
+    SimulatorInputError,
+    SimulatorRevisionConflict,
+    SimulatorRunIdentityConflict,
+    SimulatorSpawnError,
+    SimulatorStorageError,
+    SimulatorStorageFull,
+    StopTimeout,
+    UnsafeSimulatorUrlConfirmationRequired,
+)
+from scripts.task_action_log_store import TaskActionLogStore
+from scripts.task_execution_coordinator import (
+    TaskApiConflict,
+    TaskExecutionCoordinator,
+    workflow_nodes_from_payload,
+)
+from scripts.szlab_task_opc_simulator import DEFAULT_URL as DEFAULT_OPC_SIMULATOR_URL
+from scripts.opc_simulator_profiles import (
+    MAX_JSON_BYTES,
+    ProfileLimitError,
+    ProfileValidationError,
+    RevisionConflict,
+    generate_opc_simulator_draft,
+    list_profile_files,
+    migrate_legacy_opc_profiles,
+    read_profile,
+    resolve_profile_path,
+    save_profile,
+    validate_profile,
+)
 from scripts.workflow_timing import WorkflowTimingRecorder
 from scripts.run_workflow_local import (
     ROBOT_ARM_DEVICE_ID,
@@ -14,47 +82,29 @@ from scripts.run_workflow_local import (
     create_local_devices,
     format_snapshot_detail,
     ignore_opcua_token_time_drift,
+    iter_action_logs,
     iter_opc_wait_logs,
     load_workflow_nodes,
     load_runtime_config,
-    method_name_from_template,
+    node_method,
     route_node_device,
     run_nodes,
     snapshot_opc_state,
 )
-from unilabos.registry.ast_registry_scanner import scan_directory
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
-from fastapi import FastAPI, HTTPException
 
-import argparse
-import asyncio
-import csv
-import io
-import json
-import os
-import re
-import sys
-import tempfile
-import threading
-import time
-import uuid
-import webbrowser
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, replace
-from pathlib import Path
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-
 SZLAB_DIR = REPO_ROOT / "tests" / "szlab_poly_studio"
 PRESET_DIR = SZLAB_DIR / "presets"
 FRONTEND_DIR = REPO_ROOT / "unilabos_local_ui"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
+OPC_SIMULATOR_CONFIG_DIR = REPO_ROOT / "task-orchestration" / "configs"
+OPC_SIMULATOR_REFERENCE_DIR = Path(__file__).with_name("config")
+OPC_SIMULATOR_REFERENCE_PROFILE = "szlab_task_opc_simulator.json"
+OPC_SIMULATOR_PROFILE_SPEC_PATH = (
+    REPO_ROOT / "docs" / "developer_guide" / "opc_simulator_profile_v2.md"
+)
 GENERATED_GRAPH_SENTINEL = "__generated__"
 
 
@@ -100,11 +150,17 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
     action_device_id_aliases = dict(data.get("action_device_id_aliases") or {})
     path_roots = data.get("path_roots", ["tests/szlab_poly_studio"])
     if data.get("actions_source") == "registry":
-        actions = _load_registry_actions(registry_device_ids, path_roots, preset_path.parent)
+        actions = _load_registry_actions(
+            registry_device_ids, path_roots, preset_path.parent
+        )
         if action_device_id_aliases:
             actions = {
-                method: replace(action, device_id=action_device_id_aliases.get(
-                    action.device_id or "", action.device_id))
+                method: replace(
+                    action,
+                    device_id=action_device_id_aliases.get(
+                        action.device_id or "", action.device_id
+                    ),
+                )
                 for method, action in actions.items()
             }
         hidden_actions = set(data.get("hidden_actions") or [])
@@ -131,7 +187,9 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
         target_device_id=target_device_id,
         target_device_ids=target_device_ids,
         runtime_config=data.get("runtime_config"),
-        default_workflow_name=data.get("default_workflow_name", "szlab_canvas_workflow"),
+        default_workflow_name=data.get(
+            "default_workflow_name", "szlab_canvas_workflow"
+        ),
         default_config=data.get("default_config", {}),
         debug_config=data.get("debug_config", {}),
         path_roots=path_roots,
@@ -141,20 +199,28 @@ def load_preset(name: str = "ai4c") -> WorkflowPreset:
     )
 
 
-def _load_registry_actions(device_ids: list[str], path_roots: list[str], base_dir: Path) -> dict[str, ActionSpec]:
+def _load_registry_actions(
+    device_ids: list[str], path_roots: list[str], base_dir: Path
+) -> dict[str, ActionSpec]:
     repo_root = REPO_ROOT
     pending = set(device_ids)
     actions_by_device: dict[str, dict[str, ActionSpec]] = {}
-    with ThreadPoolExecutor(max_workers=4, thread_name_prefix="SzlabRegistryScan") as executor:
+    with ThreadPoolExecutor(
+        max_workers=4, thread_name_prefix="SzlabRegistryScan"
+    ) as executor:
         for root in path_roots:
             root_path = _resolve_registry_scan_root(root, base_dir, repo_root)
             if not root_path.exists():
                 continue
-            scan_result = scan_directory(root_path, python_path=repo_root, executor=executor)
+            scan_result = scan_directory(
+                root_path, python_path=repo_root, executor=executor
+            )
             for device_id in list(pending):
                 device_meta = scan_result.get("devices", {}).get(device_id)
                 if device_meta:
-                    actions_by_device[device_id] = _actions_from_ast_device_meta(device_id, device_meta)
+                    actions_by_device[device_id] = _actions_from_ast_device_meta(
+                        device_id, device_meta
+                    )
                     pending.remove(device_id)
             if not pending:
                 return {
@@ -175,7 +241,9 @@ def _resolve_registry_scan_root(root: str, base_dir: Path, repo_root: Path) -> P
     return base_dir / candidate
 
 
-def _actions_from_ast_device_meta(device_id: str, device_meta: dict[str, Any]) -> dict[str, ActionSpec]:
+def _actions_from_ast_device_meta(
+    device_id: str, device_meta: dict[str, Any]
+) -> dict[str, ActionSpec]:
     actions: dict[str, ActionSpec] = {}
     for method, method_info in device_meta.get("actions", {}).items():
         action_args = method_info.get("action_args") or {}
@@ -542,7 +610,9 @@ def _range_from_description(description: str) -> dict[str, int]:
     return {"min": int(match.group(1)), "max": int(match.group(2))}
 
 
-def _find_action_handle_for_param(handles: Any, param_name: str) -> dict[str, Any] | None:
+def _find_action_handle_for_param(
+    handles: Any, param_name: str
+) -> dict[str, Any] | None:
     if isinstance(handles, dict):
         handles = handles.values()
     if not isinstance(handles, list):
@@ -619,7 +689,8 @@ class RunRecord:
                 sequence=len(self.log_events) + 1,
                 message=message,
                 level=level,
-                category=category or _infer_log_category(message, scope=scope, detail=detail),
+                category=category
+                or _infer_log_category(message, scope=scope, detail=detail),
                 scope=scope,
                 node_id=node_id,
                 detail=detail,
@@ -627,7 +698,9 @@ class RunRecord:
         )
 
 
-def _infer_log_category(message: str, *, scope: str, detail: dict[str, Any] | None) -> str:
+def _infer_log_category(
+    message: str, *, scope: str, detail: dict[str, Any] | None
+) -> str:
     detail_type = detail.get("type") if isinstance(detail, dict) else None
     if detail_type == "opc_wait":
         return "opc_wait"
@@ -654,25 +727,56 @@ def _run_node_with_live_opc_sampling(
     node: WorkflowNode,
     devices: dict[str, Any],
     *,
+    action_callable: Callable[..., Any] | None = None,
     logger: WorkflowLogger,
     runtime_config: RuntimeConfig,
     sample_interval: float = 0.5,
 ) -> list[dict[str, Any]]:
-    device_name = route_node_device(node, runtime_config)
+    bound_action_provided = action_callable is not None
+    device_name = (
+        node.device_name
+        if bound_action_provided
+        else route_node_device(node, runtime_config)
+    )
     device = devices.get(device_name)
     if device is None:
         raise KeyError(f"未创建本地设备实例: {device_name}")
 
-    method_name = method_name_from_template(node.name)
-    snapshot_variables = collect_snapshot_variables(method_name, node.param, runtime_config)
+    method_name = node_method(node)
+    snapshot_variables = collect_snapshot_variables(
+        method_name, node.param, runtime_config
+    )
     default_plc = devices.get(runtime_config.device_factory.plc_device_id)
-    snapshot_client = default_plc or (device if hasattr(device, "get_variables") else None)
-    if not snapshot_variables or snapshot_client is None or not hasattr(snapshot_client, "get_variables"):
-        return run_nodes([node], devices, logger=logger, runtime_config=runtime_config)
-
-    if not hasattr(device, method_name):
+    snapshot_client = default_plc or (
+        device if hasattr(device, "get_variables") else None
+    )
+    if (
+        not bound_action_provided
+        and (
+            not snapshot_variables
+            or snapshot_client is None
+            or not hasattr(snapshot_client, "get_variables")
+        )
+    ):
+        return run_nodes(
+            [node],
+            devices,
+            logger=logger,
+            runtime_config=runtime_config,
+        )
+    if action_callable is None:
+        action_callable = getattr(device, method_name, None)
+    if not callable(action_callable):
         raise AttributeError(f"{device_name} 不存在动作方法: {method_name}")
-    before = snapshot_opc_state(snapshot_client, snapshot_variables) if snapshot_client is not None else {}
+    before = (
+        snapshot_opc_state(snapshot_client, snapshot_variables)
+        if (
+            snapshot_client is not None
+            and snapshot_variables
+            and hasattr(snapshot_client, "get_variables")
+        )
+        else {}
+    )
 
     logger.log(
         f"[1/1] {device_name}.{method_name}({node.param})",
@@ -687,13 +791,17 @@ def _run_node_with_live_opc_sampling(
     stop_sampling = threading.Event()
     last_snapshot = dict(before)
     sampling_errors: list[Exception] = []
-    skip_parallel_sampling = bool(runtime_config.device_factory.devices) and snapshot_client is device
+    skip_parallel_sampling = (
+        bool(runtime_config.device_factory.devices) and snapshot_client is device
+    )
 
     def sample_live_changes() -> None:
         nonlocal last_snapshot
         while not stop_sampling.wait(sample_interval):
             current = snapshot_opc_state(snapshot_client, snapshot_variables)
-            diff_detail = build_snapshot_diff_detail(last_snapshot, current, plc=snapshot_client)
+            diff_detail = build_snapshot_diff_detail(
+                last_snapshot, current, plc=snapshot_client
+            )
             last_snapshot = current
             if diff_detail["changes"]:
                 logger.log(
@@ -702,22 +810,36 @@ def _run_node_with_live_opc_sampling(
                 )
 
     sampler: threading.Thread | None = None
-    if snapshot_client is not None and snapshot_variables and not skip_parallel_sampling:
-        sampler = threading.Thread(target=sample_live_changes, name="SzlabLiveOpcSampler", daemon=True)
+    if (
+        snapshot_client is not None
+        and snapshot_variables
+        and not skip_parallel_sampling
+    ):
+        sampler = threading.Thread(
+            target=sample_live_changes, name="SzlabLiveOpcSampler", daemon=True
+        )
         sampler.start()
 
-    unbind_wait_logger = bind_opc_wait_logger(logger, default_plc, device, snapshot_client)
+    unbind_wait_logger = bind_opc_wait_logger(
+        logger, default_plc, device, snapshot_client
+    )
     try:
-        result = getattr(device, method_name)(**node.param)
+        result = action_callable(**node.param)
     finally:
         unbind_wait_logger()
         stop_sampling.set()
         if sampler is not None:
             sampler.join(timeout=max(sample_interval * 2, 0.1))
 
-    after = snapshot_opc_state(snapshot_client, snapshot_variables) if snapshot_client is not None else {}
+    after = (
+        snapshot_opc_state(snapshot_client, snapshot_variables)
+        if snapshot_client is not None
+        else {}
+    )
     if after:
-        final_live_diff = build_snapshot_diff_detail(last_snapshot, after, plc=snapshot_client)
+        final_live_diff = build_snapshot_diff_detail(
+            last_snapshot, after, plc=snapshot_client
+        )
         if sampler is not None and final_live_diff["changes"]:
             logger.log(
                 f"OPC实时变化: {len(final_live_diff['changes'])}/{len(after)} 个变量变化",
@@ -730,6 +852,11 @@ def _run_node_with_live_opc_sampling(
         )
     if sampling_errors:
         logger.log(f"OPC实时采样异常: {sampling_errors[-1]}", level="warning")
+    for action_log in iter_action_logs(result):
+        logger.log(
+            action_log["message"],
+            detail={"action_log": action_log.get("detail")},
+        )
     for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
         logger.log(wait_log["message"], detail=wait_log.get("detail"))
     logger.log(f"动作结果: {result}", detail={"result": result})
@@ -769,12 +896,84 @@ class WorkflowRunManager:
         self._sensor_arrays_cache: tuple[float, dict[str, Any]] | None = None
         self._sensor_event_version = 0
         self._sensor_event_plc: Any = None
+        self._task_snapshot_publisher = TaskOrchestrationSnapshotPublisher()
+        self._task_action_log_store = TaskActionLogStore()
+        self._task_execution_coordinator = TaskExecutionCoordinator(
+            task_client=self._task_snapshot_publisher,
+            node_runner=self._run_task_action_node,
+            device_provider=self._task_execution_devices,
+        )
+
+    def _append_task_action_log(
+        self,
+        context: dict[str, Any],
+        message: str,
+        *,
+        level: str = "info",
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            self._task_action_log_store.append(
+                workflow_path=str(context.get("workflow_path") or ""),
+                instance_id=str(context.get("instance_id") or ""),
+                node_id=str(context.get("node_id") or ""),
+                execution_id=str(context.get("execution_id") or ""),
+                sample_id=str(context.get("sample_id") or ""),
+                level=level,
+                message=message,
+                detail=detail,
+            )
+        except Exception:
+            # 日志收集失败不得影响 Action 执行
+            return
+
+    def _run_task_action_node(
+        self,
+        node: WorkflowNode,
+        devices: dict[str, Any],
+        action_callable: Callable[..., Any],
+        context: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        def writer(message: str, *, level: str = "info", detail: dict[str, Any] | None = None) -> None:
+            self._append_task_action_log(
+                context,
+                message,
+                level=level,
+                detail=detail,
+            )
+
+        logger = WorkflowLogger(writer=writer)
+        return _run_node_with_live_opc_sampling(
+            node,
+            devices,
+            action_callable=action_callable,
+            logger=logger,
+            runtime_config=self._runtime_config,
+        )
+
+    def list_task_action_logs(
+        self,
+        *,
+        workflow_path: str,
+        after_seq: int = 0,
+        instance_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self._task_action_log_store.list_since(
+            workflow_path,
+            after_seq=after_seq,
+            instance_id=instance_id,
+        )
 
     def start(self, payload: dict[str, Any]) -> RunRecord:
         with self._lock:
             if self._active_run_id:
                 active = self._records.get(self._active_run_id)
-                if active and active.status in {"pending", "preparing", "running", "cancelling"}:
+                if active and active.status in {
+                    "pending",
+                    "preparing",
+                    "running",
+                    "cancelling",
+                }:
                     raise RuntimeError("已有 workflow 正在运行，请等待结束后再启动")
 
             run_id = uuid.uuid4().hex
@@ -815,8 +1014,38 @@ class WorkflowRunManager:
         self._disconnect_cached_devices(devices, record.append_log)
         return record
 
-    def shutdown(self) -> None:
+    def shutdown(self) -> dict[str, Any]:
+        shutdown_result = self._task_execution_coordinator.shutdown()
         self._disconnect_cached_devices()
+        return shutdown_result
+
+    def _task_execution_devices(self) -> dict[str, Any]:
+        """只返回 Task 页面已经连接的设备，避免 tick 隐式重连。"""
+        with self._lock:
+            return dict(self._cached_devices)
+
+    def run_task_execution_cycle(
+        self,
+        *,
+        workflow_path: str,
+        workflow_payload: dict[str, Any] | None = None,
+        harvest_only: bool = False,
+    ) -> dict[str, int | bool]:
+        """解析当前 workflow，并推进一次非阻塞动作协调周期。"""
+        if type(harvest_only) is not bool:
+            raise TypeError("harvest_only 必须为 bool")
+        if not harvest_only and not isinstance(workflow_payload, dict):
+            raise ValueError("缺少当前 workflow JSON")
+        workflow_nodes = (
+            []
+            if harvest_only
+            else workflow_nodes_from_payload(workflow_payload)
+        )
+        return self._task_execution_coordinator.cycle(
+            workflow_path=workflow_path,
+            workflow_nodes=workflow_nodes,
+            harvest_only=harvest_only,
+        )
 
     def get_live_devices(self) -> dict[str, Any]:
         with self._lock:
@@ -828,7 +1057,9 @@ class WorkflowRunManager:
         csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
         timeout = float(default_config.get("timeout") or 300.0)
         no_subscription = bool(default_config.get("no_subscription", True))
-        graph_value = str(default_config.get("graph") or GENERATED_GRAPH_SENTINEL).strip()
+        graph_value = str(
+            default_config.get("graph") or GENERATED_GRAPH_SENTINEL
+        ).strip()
         opcua_url = str(default_config.get("url") or "").strip()
 
         if graph_value == GENERATED_GRAPH_SENTINEL:
@@ -867,7 +1098,9 @@ class WorkflowRunManager:
 
     def ensure_sensor_event_subscription(self) -> None:
         devices = self.get_live_devices()
-        plc_device_id = self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        plc_device_id = (
+            self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        )
         plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
         if plc is None or not hasattr(plc, "start_sensor_array_subscription"):
             raise RuntimeError("当前设备图中的 PLC 不支持传感器变化订阅")
@@ -898,6 +1131,57 @@ class WorkflowRunManager:
             )
             return self._sensor_event_version
 
+    def connect_task_opc(
+        self,
+        *,
+        opcua_url: str,
+        workflow_path: str,
+    ) -> dict[str, Any]:
+        """通过既有 PLC 设备工厂连接 Task 页面请求的 OPC runtime。"""
+        del workflow_path
+        normalized_url = opcua_url.strip()
+        if not normalized_url:
+            raise ValueError("请填写 OPC UA URL")
+        default_config = self._preset.default_config
+        csv_value = str(default_config.get("csv") or "").strip()
+        csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
+        timeout = float(default_config.get("timeout") or 300.0)
+        no_subscription = bool(default_config.get("no_subscription", True))
+        graph_value = str(
+            default_config.get("graph") or GENERATED_GRAPH_SENTINEL
+        ).strip()
+        if graph_value == GENERATED_GRAPH_SENTINEL:
+            graph_file = _write_temp_json(
+                build_local_device_graph(
+                    opcua_url=normalized_url,
+                    csv_path=str(csv_path or csv_value),
+                    use_subscription=not no_subscription,
+                    preset=self._preset,
+                )
+            )
+        else:
+            graph_file = _resolve_ui_path(graph_value, self._preset)
+        device_key = (
+            self._preset.id,
+            graph_value,
+            normalized_url,
+            str(csv_path or ""),
+            no_subscription,
+            timeout,
+        )
+        return self._get_or_create_devices(
+            device_key,
+            {
+                "graph_file": graph_file,
+                "opcua_url": normalized_url,
+                "csv_path": csv_path,
+                "use_subscription": False if no_subscription else None,
+                "plc_action_timeout": timeout,
+                "runtime_config": self._runtime_config,
+            },
+            lambda message: None,
+        )
+
     def _get_or_create_devices(
         self,
         device_key: tuple[Any, ...],
@@ -926,7 +1210,9 @@ class WorkflowRunManager:
             self._sensor_arrays_cache = None
         return devices
 
-    def _disconnect_cached_devices(self, devices: dict[str, Any] | None = None, log: Any = None) -> None:
+    def _disconnect_cached_devices(
+        self, devices: dict[str, Any] | None = None, log: Any = None
+    ) -> None:
         with self._lock:
             target_devices = devices or self._cached_devices
             if not target_devices or target_devices is not self._cached_devices:
@@ -939,14 +1225,28 @@ class WorkflowRunManager:
 
         _disconnect_devices(target_devices, log)
 
-    def get_stack_status(self) -> dict[str, Any]:
+    def get_stack_status(
+        self,
+        *,
+        task_workspace_path: str | None = None,
+        task_workspace_version: int | None = None,
+    ) -> dict[str, Any]:
         now = time.monotonic()
         with self._lock:
-            if self._stack_status_cache and now - self._stack_status_cache[0] < 2.0:
+            if (
+                task_workspace_path is None
+                and self._stack_status_cache
+                and now - self._stack_status_cache[0] < 2.0
+            ):
                 return self._stack_status_cache[1]
 
-        devices = self.get_live_devices()
-        plc_device_id = self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        plc_device_id = (
+            self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        )
+        with self._lock:
+            devices = dict(self._cached_devices)
+        if not devices and task_workspace_path is None:
+            devices = self.get_live_devices()
         plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
         if plc is None or not hasattr(plc, "get_stack_status"):
             status = {
@@ -958,7 +1258,18 @@ class WorkflowRunManager:
         else:
             group_names = self._preset.default_config.get("stack_status_groups")
             status = plc.get_stack_status(group_names=group_names)
-
+        registered_variables = []
+        registered = getattr(plc, "registered_variables", None)
+        if callable(registered):
+            registered_variables = list(registered())
+        registered_aliases = self._registered_plc_variable_aliases(plc)
+        status["plc"] = {
+            "device_id": plc_device_id,
+            "url": getattr(plc, "url", None),
+            "connected": bool(getattr(plc, "client", None)),
+            "registered_variables": registered_variables,
+            "variable_aliases": registered_aliases,
+        }
         with self._lock:
             self._stack_status_cache = (time.monotonic(), status)
         return status
@@ -970,7 +1281,9 @@ class WorkflowRunManager:
                 return self._sensor_arrays_cache[1]
 
         devices = self.get_live_devices()
-        plc_device_id = self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        plc_device_id = (
+            self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        )
         plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
         if plc is None or not hasattr(plc, "get_sensor_arrays"):
             status = {
@@ -985,6 +1298,246 @@ class WorkflowRunManager:
         with self._lock:
             self._sensor_arrays_cache = (time.monotonic(), status)
         return status
+
+    def _publish_registered_plc_snapshot(
+        self,
+        devices: dict[str, Any],
+        *,
+        workflow_path: str,
+        read_snapshot: bool = False,
+    ) -> dict[str, Any]:
+        """分发 PLC 注册表；仅在调度前读取模板条件引用的变量。"""
+        plc_device_id = (
+            self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        )
+        plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
+        registered = getattr(plc, "registered_variables", None)
+        get_variables = getattr(plc, "get_variables", None)
+        if not callable(registered):
+            return {
+                "distributed": False,
+                "message": "当前运行时未提供可分发的 PLC 注册变量",
+            }
+        variable_names = list(registered())
+        variable_aliases = self._registered_plc_variable_aliases(plc)
+        if not variable_names:
+            return {"distributed": False, "message": "PLC 尚未注册任何变量"}
+        try:
+            registration = self._task_snapshot_publisher.register(
+                workflow_path=workflow_path,
+                plc_device_id=plc_device_id,
+                runtime_url=str(getattr(plc, "url", "") or ""),
+                registered_variables=variable_names,
+                variable_aliases=variable_aliases,
+            )
+            if not read_snapshot:
+                return {"distributed": True, "variable_count": 0}
+            if not callable(get_variables):
+                return {
+                    "distributed": False,
+                    "message": "当前运行时未提供 PLC 变量读取接口",
+                }
+            condition_variables = self._template_condition_variables(
+                registration, plc_device_id, variable_names, variable_aliases
+            )
+            if not condition_variables:
+                return {"distributed": True, "variable_count": 0}
+            values = extract_registered_opc_values(
+                get_variables(condition_variables, use_cache=False)
+            )
+            if not values:
+                return {"distributed": False, "message": "模板条件变量当前均无法读取"}
+            self._task_snapshot_publisher.publish_snapshot(
+                workflow_path=workflow_path,
+                expected_version=int(registration["version"]),
+                plc_device_id=plc_device_id,
+                values=values,
+            )
+        except Exception as exc:
+            return {"distributed": False, "message": str(exc)}
+        return {"distributed": True, "variable_count": len(values)}
+
+    def poll_task_opc(self, *, workflow_path: str) -> dict[str, Any]:
+        """按当前非终态 Task 的条件读取 PLC，并分发最小快照。"""
+        with self._lock:
+            devices = dict(self._cached_devices)
+        plc_device_id = (
+            self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        )
+        plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
+        if plc is None or not bool(getattr(plc, "client", None)):
+            return {"success": False, "active": False, "message": "Task OPC 尚未连接"}
+        registered = getattr(plc, "registered_variables", None)
+        get_variables = getattr(plc, "get_variables", None)
+        if not callable(registered) or not callable(get_variables):
+            return {
+                "success": False,
+                "active": False,
+                "message": "当前 PLC 不支持按需变量采样",
+            }
+        variable_names = list(registered())
+        workspace_response = self._task_snapshot_publisher.get_workspace(
+            workflow_path=workflow_path
+        )
+        workspace = workspace_response.get("workspace")
+        if not isinstance(workspace, dict):
+            return {"success": False, "active": False, "message": "Task 工作区内容无效"}
+        active = any(
+            isinstance(instance, dict)
+            and instance.get("status") not in {"completed", "failed", "cancelled"}
+            for instance in workspace.get("task_instances", [])
+        )
+        if not active:
+            return {"success": True, "active": False, "variable_count": 0}
+        condition_variables = self._active_task_condition_variables(
+            workspace,
+            plc_device_id,
+            variable_names,
+            self._registered_plc_variable_aliases(plc),
+        )
+        input_variables = self._active_task_condition_variables(
+            workspace,
+            plc_device_id,
+            variable_names,
+            self._registered_plc_variable_aliases(plc),
+            include_running_outputs=False,
+        )
+        if not condition_variables:
+            return {"success": True, "active": True, "variable_count": 0}
+        try:
+            values = extract_registered_opc_values(
+                get_variables(condition_variables, use_cache=False)
+            )
+        except Exception as exc:
+            if input_variables:
+                return {"success": False, "active": True, "message": str(exc)}
+            return {
+                "success": True,
+                "active": True,
+                "variable_count": 0,
+                "message": f"Task 输出状态采样失败：{exc}",
+            }
+        if any(variable not in values for variable in input_variables):
+            return {
+                "success": False,
+                "active": True,
+                "message": "当前 Task 条件变量均无法读取",
+            }
+        output_variables = [
+            variable
+            for variable in condition_variables
+            if variable not in input_variables
+        ]
+        missing_output = any(
+            variable not in values for variable in output_variables
+        )
+        if not values:
+            return {
+                "success": True,
+                "active": True,
+                "variable_count": 0,
+                "message": "当前 Task 输出状态变量均无法读取",
+            }
+        self._task_snapshot_publisher.publish_snapshot(
+            workflow_path=workflow_path,
+            expected_version=int(workspace_response["version"]),
+            plc_device_id=plc_device_id,
+            values=values,
+        )
+        result = {"success": True, "active": True, "variable_count": len(values)}
+        if missing_output:
+            result["message"] = "部分 Task 输出状态变量无法读取"
+        return result
+
+    @staticmethod
+    def _template_condition_variables(
+        registration: dict[str, Any],
+        plc_device_id: str,
+        registered_variables: list[str],
+        variable_aliases: dict[str, str],
+    ) -> list[str]:
+        """提取当前模板输入/输出条件需要的已注册 PLC 变量。"""
+        workspace = (
+            registration.get("workspace") if isinstance(registration, dict) else None
+        )
+        templates = (
+            workspace.get("templates", []) if isinstance(workspace, dict) else []
+        )
+        registered = set(registered_variables)
+        required: list[str] = []
+        for template in templates:
+            if not isinstance(template, dict):
+                continue
+            for key in ("input_triggers", "output_triggers"):
+                for trigger in template.get(key, []):
+                    config = (
+                        trigger.get("config", {}) if isinstance(trigger, dict) else {}
+                    )
+                    if config.get("plc_device_id") != plc_device_id:
+                        continue
+                    variable = variable_aliases.get(
+                        str(config.get("variable", "")), str(config.get("variable", ""))
+                    )
+                    if variable in registered and variable not in required:
+                        required.append(variable)
+        return required
+
+    @staticmethod
+    def _active_task_condition_variables(
+        workspace: dict[str, Any],
+        plc_device_id: str,
+        registered_variables: list[str],
+        variable_aliases: dict[str, str],
+        *,
+        include_running_outputs: bool = True,
+    ) -> list[str]:
+        """提取非终态 Task 当前需要采样的 PLC 条件变量。"""
+        templates = {
+            str(template.get("id")): template
+            for template in workspace.get("templates", [])
+            if isinstance(template, dict)
+        }
+        registered = set(registered_variables)
+        required: list[str] = []
+        for instance in workspace.get("task_instances", []):
+            if not isinstance(instance, dict):
+                continue
+            status = instance.get("status")
+            trigger_key = (
+                "input_triggers"
+                if status in {"waiting", "pending"}
+                else "output_triggers"
+                if status == "running" and include_running_outputs
+                else None
+            )
+            template = templates.get(str(instance.get("template_id")))
+            if trigger_key is None or template is None:
+                continue
+            for trigger in template.get(trigger_key, []):
+                config = trigger.get("config", {}) if isinstance(trigger, dict) else {}
+                if config.get("plc_device_id") != plc_device_id:
+                    continue
+                configured_name = str(config.get("variable", ""))
+                variable = variable_aliases.get(configured_name, configured_name)
+                if variable in registered and variable not in required:
+                    required.append(variable)
+        return required
+
+    @staticmethod
+    def _registered_plc_variable_aliases(plc: Any) -> dict[str, str]:
+        """仅公开已注册真实节点名对应的动作/界面别名。"""
+        aliases = getattr(plc, "registered_variable_aliases", None)
+        if callable(aliases):
+            return {
+                str(alias): str(canonical)
+                for alias, canonical in dict(aliases()).items()
+            }
+        canonical_names = set(getattr(plc, "registered_variables", lambda: [])())
+        return {
+            str(alias): str(canonical)
+            for alias, canonical in (getattr(plc, "_name_mapping", {}) or {}).items()
+            if canonical in canonical_names
+        }
 
     def _run_payload(self, run_id: str, payload: dict[str, Any]) -> None:
         record = self.get(run_id)
@@ -1010,36 +1563,57 @@ class WorkflowRunManager:
                     output_dir=REPO_ROOT / "workflow_timings",
                 )
             record.node_statuses = {
-                str(node.get("uuid")): "preparing"
+                str(node.get("workflow_node_id") or node.get("uuid")): "preparing"
                 for node in workflow.get("nodes", [])
-                if node.get("uuid")
+                if isinstance(node, dict)
+                and (node.get("workflow_node_id") or node.get("uuid"))
             }
 
             workflow_path = _write_temp_workflow(workflow)
             nodes, edges = load_workflow_nodes(workflow_path)
             ordered_nodes = build_execution_order(nodes, edges)
-            record.append_log(f"workflow 解析完成，共 {len(ordered_nodes)} 个待执行节点")
+            record.append_log(
+                f"workflow 解析完成，共 {len(ordered_nodes)} 个待执行节点"
+            )
             if record.cancel_requested:
                 raise WorkflowCancelled("workflow 已终止")
             default_config = self._preset.default_config
-            csv_value = str(payload.get("csv") or default_config.get("csv") or "").strip()
+            csv_value = str(
+                payload.get("csv") or default_config.get("csv") or ""
+            ).strip()
             csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
-            timeout = float(payload.get("timeout") or default_config.get("timeout") or 300.0)
+            timeout = float(
+                payload.get("timeout") or default_config.get("timeout") or 300.0
+            )
             write_allowed_timeout = float(
                 payload.get("write_allowed_timeout")
                 or default_config.get("write_allowed_timeout")
                 or 5.0
             )
-            no_subscription = bool(payload.get("no_subscription", default_config.get("no_subscription", True)))
-            graph_value = str(payload.get("graph") or default_config.get("graph") or GENERATED_GRAPH_SENTINEL).strip()
-            opcua_url = str(payload.get("url") or default_config.get("url") or "").strip()
+            no_subscription = bool(
+                payload.get(
+                    "no_subscription", default_config.get("no_subscription", True)
+                )
+            )
+            graph_value = str(
+                payload.get("graph")
+                or default_config.get("graph")
+                or GENERATED_GRAPH_SENTINEL
+            ).strip()
+            opcua_url = str(
+                payload.get("url") or default_config.get("url") or ""
+            ).strip()
 
             if graph_value == GENERATED_GRAPH_SENTINEL:
                 if not opcua_url:
-                    raise ValueError("生成设备图需要填写 OPC UA URL，或指定已有 graph JSON")
+                    raise ValueError(
+                        "生成设备图需要填写 OPC UA URL，或指定已有 graph JSON"
+                    )
                 generated_graph = build_local_device_graph(
                     opcua_url=opcua_url,
-                    csv_path=str(csv_path or csv_value or default_config.get("csv") or ""),
+                    csv_path=str(
+                        csv_path or csv_value or default_config.get("csv") or ""
+                    ),
                     timeout=timeout,
                     write_allowed_timeout=write_allowed_timeout,
                     use_subscription=not no_subscription,
@@ -1054,7 +1628,9 @@ class WorkflowRunManager:
             if csv_path is not None:
                 record.append_log(f"使用 CSV: {csv_path}")
 
-            record.append_log("正在连接 OPC UA 并加载设备节点，这一步可能需要一些时间...")
+            record.append_log(
+                "正在连接 OPC UA 并加载设备节点，这一步可能需要一些时间..."
+            )
             device_key = (
                 self._preset.id,
                 graph_value,
@@ -1076,6 +1652,23 @@ class WorkflowRunManager:
                 record.append_log,
             )
             record.devices = devices
+            task_workspace_path = str(
+                payload.get("task_workspace_path")
+                or f"{workflow.get('name', 'workflow')}.json"
+            )
+            distribution = self._publish_registered_plc_snapshot(
+                devices,
+                workflow_path=task_workspace_path,
+                read_snapshot=True,
+            )
+            record.append_log(
+                "已向 Task 排程分发 PLC 注册变量"
+                if distribution.get("distributed")
+                else f"PLC 变量未分发到 Task 排程：{distribution.get('message', '未知原因')}",
+                level="info" if distribution.get("distributed") else "warning",
+                category="opc",
+                detail=distribution,
+            )
             if record.cancel_requested:
                 raise WorkflowCancelled("workflow 已终止")
             record.append_log("设备连接完成，开始执行 workflow")
@@ -1088,7 +1681,7 @@ class WorkflowRunManager:
                 if record.cancel_requested:
                     raise WorkflowCancelled("workflow 已终止")
                 record.node_statuses[node.uuid] = "running"
-                node_method = node.name.removeprefix("auto-")
+                method_name = node_method(node)
                 device_name = route_node_device(node, self._runtime_config)
                 if timing_recorder is not None:
                     timing_recorder.start_step(
@@ -1096,13 +1689,13 @@ class WorkflowRunManager:
                         total=len(ordered_nodes),
                         node_id=node.uuid,
                         device_name=device_name,
-                        method=node_method,
+                        method=method_name,
                         params=node.param,
                     )
                 record.append_log(
-                    f"开始执行节点 {node.uuid}: {node_method}",
+                    f"开始执行节点 {node.uuid}: {method_name}",
                     node_id=node.uuid,
-                    detail={"method": node_method, "params": node.param},
+                    detail={"method": method_name, "params": node.param},
                 )
 
                 def append_node_log(
@@ -1129,7 +1722,9 @@ class WorkflowRunManager:
                     if timing_recorder is not None:
                         timing_recorder.finish_step(error=str(exc))
                     record.node_statuses[node.uuid] = "failed"
-                    record.append_log(f"节点执行失败: {exc}", node_id=node.uuid, level="error")
+                    record.append_log(
+                        f"节点执行失败: {exc}", node_id=node.uuid, level="error"
+                    )
                     raise
                 if timing_recorder is not None:
                     timing_recorder.finish_step(result=node_results)
@@ -1178,6 +1773,198 @@ class WorkflowCancelled(RuntimeError):
     pass
 
 
+def extract_registered_opc_values(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """只分发 PLC 成功读取到的原始值，避免将客户端状态对象传给排程服务。"""
+    values: dict[str, Any] = {}
+    for name, item in snapshot.items():
+        if isinstance(item, dict):
+            if item.get("success") is False or "value" not in item:
+                continue
+            value = item["value"]
+        else:
+            value = item
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            values[name] = value
+    return values
+
+
+class TaskOrchestrationSnapshotPublisher:
+    """将已由 PLC 注册的变量快照推送给 Task 排程服务。"""
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        sender: Any | None = None,
+    ) -> None:
+        self._base_url = (
+            base_url
+            or os.getenv("TASK_ORCHESTRATION_API_URL", "http://127.0.0.1:8091/api/v1")
+        ).rstrip("/")
+        self._sender = sender or self._send
+        self._sequence = 0
+
+    def publish(
+        self,
+        *,
+        workflow_path: str,
+        expected_version: int | None = None,
+        plc_device_id: str,
+        runtime_url: str,
+        registered_variables: list[str],
+        variable_aliases: dict[str, str] | None = None,
+        values: dict[str, Any],
+    ) -> None:
+        """兼容旧调用：先注册，再按注册结果版本推送快照。"""
+        registration = self.register(
+            workflow_path=workflow_path,
+            plc_device_id=plc_device_id,
+            runtime_url=runtime_url,
+            registered_variables=registered_variables,
+            variable_aliases=variable_aliases,
+        )
+        self.publish_snapshot(
+            workflow_path=workflow_path,
+            expected_version=int(registration["version"]),
+            plc_device_id=plc_device_id,
+            values=values,
+        )
+
+    def register(
+        self,
+        *,
+        workflow_path: str,
+        plc_device_id: str,
+        runtime_url: str,
+        registered_variables: list[str],
+        variable_aliases: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        if not runtime_url:
+            raise RuntimeError("PLC runtime 未提供 OPC UA URL，无法分发变量注册表")
+        if not registered_variables:
+            raise RuntimeError("PLC runtime 未注册变量，无法分发快照")
+        registration = self._sender(
+            f"{self._base_url}/opc/registrations",
+            {
+                "workflow_path": workflow_path,
+                "registration": {
+                    "plc_device_id": plc_device_id,
+                    "runtime_url": runtime_url,
+                    "variables": registered_variables,
+                    "aliases": variable_aliases or {},
+                },
+            },
+        )
+        if not isinstance(registration, dict) or not isinstance(
+            registration.get("version"), int
+        ):
+            raise RuntimeError("Task 排程服务未返回 PLC 注册后的工作区版本")
+        return registration
+
+    def get_workspace(self, *, workflow_path: str) -> dict[str, Any]:
+        """读取当前 Task 工作区，不重复写入 PLC 注册表。"""
+        url = (
+            f"{self._base_url}/workspaces?{urlencode({'workflow_path': workflow_path})}"
+        )
+        with urlopen(url, timeout=3) as response:
+            if response.status >= 400:
+                raise RuntimeError(
+                    f"Task 排程服务拒绝读取工作区（HTTP {response.status}）"
+                )
+            workspace = json.loads(response.read().decode("utf-8"))
+        if not isinstance(workspace, dict) or not isinstance(
+            workspace.get("version"), int
+        ):
+            raise RuntimeError("Task 排程服务未返回有效工作区")
+        return workspace
+
+    def claim_action(self, **payload: Any) -> dict[str, Any]:
+        """原子认领当前游标节点。"""
+        return self._action_request("claim", payload)
+
+    def succeed_action(self, **payload: Any) -> dict[str, Any]:
+        """上报动作成功及资源释放计划。"""
+        return self._action_request("succeed", payload)
+
+    def fail_action(self, **payload: Any) -> dict[str, Any]:
+        """上报动作失败，由服务端暂停整个工作区。"""
+        return self._action_request("fail", payload)
+
+    def _action_request(
+        self,
+        action: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            response = self._sender(
+                f"{self._base_url}/actions:{action}",
+                payload,
+            )
+        except HTTPError as exc:
+            if exc.code != 409:
+                raise
+            body = exc.read().decode("utf-8", errors="replace")
+            try:
+                detail = json.loads(body).get("detail")
+            except json.JSONDecodeError:
+                detail = body
+            if isinstance(detail, dict):
+                code = str(detail.get("code") or "version_conflict")
+                message = str(detail.get("message") or detail)
+            else:
+                code = "version_conflict"
+                message = str(detail)
+            raise TaskApiConflict(code, message) from exc
+        if not isinstance(response, dict) or not isinstance(
+            response.get("version"), int
+        ):
+            raise RuntimeError("Task 排程服务未返回动作更新后的工作区版本")
+        return response
+
+    def publish_snapshot(
+        self,
+        *,
+        workflow_path: str,
+        expected_version: int,
+        plc_device_id: str,
+        values: dict[str, Any],
+    ) -> None:
+        current_version = expected_version
+        items = list(values.items())
+        for start in range(0, len(items), 64):
+            self._sequence += 1
+            response = self._sender(
+                f"{self._base_url}/opc/snapshots",
+                {
+                    "workflow_path": workflow_path,
+                    "expected_version": current_version,
+                    "plc_device_id": plc_device_id,
+                    "sequence": self._sequence,
+                    "values": dict(items[start: start + 64]),
+                },
+            )
+            if isinstance(response, dict) and isinstance(response.get("version"), int):
+                current_version = response["version"]
+            else:
+                current_version += 1
+
+    @staticmethod
+    def _send(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urlopen(request, timeout=3) as response:
+            if response.status >= 400:
+                raise RuntimeError(
+                    f"Task 排程服务拒绝 PLC 快照（HTTP {response.status}）"
+                )
+            return json.loads(response.read().decode("utf-8"))
+
+
 def build_linear_workflow(
     steps: list[dict[str, Any]],
     name: str = "szlab_local_workflow",
@@ -1194,7 +1981,9 @@ def build_linear_workflow(
             raise ValueError(f"不支持的动作: {method}")
 
         spec = preset.actions[method]
-        params = _build_action_params(spec, dict(step.get("params") or step.get("param") or {}))
+        params = _build_action_params(
+            spec, dict(step.get("params") or step.get("param") or {})
+        )
 
         nodes.append(
             {
@@ -1212,7 +2001,11 @@ def build_linear_workflow(
         }
         for index in range(len(nodes) - 1)
     ]
-    return {"name": name or preset.default_workflow_name, "nodes": nodes, "edges": edges}
+    return {
+        "name": name or preset.default_workflow_name,
+        "nodes": nodes,
+        "edges": edges,
+    }
 
 
 def build_graph_workflow(
@@ -1256,7 +2049,9 @@ def build_graph_workflow(
     while ready:
         current = ready.pop(0)
         ordered_ids.append(current)
-        for target in sorted(outgoing[current], key=lambda node_id: original_index[node_id]):
+        for target in sorted(
+            outgoing[current], key=lambda node_id: original_index[node_id]
+        ):
             incoming_count[target] -= 1
             if incoming_count[target] == 0:
                 ready.append(target)
@@ -1265,8 +2060,15 @@ def build_graph_workflow(
     if len(ordered_ids) != len(nodes_by_id):
         raise ValueError("workflow 不能包含环，请删除形成循环依赖的连线")
 
-    workflow_nodes = [_build_workflow_node_from_flow_node(nodes_by_id[node_id], preset) for node_id in ordered_ids]
-    return {"name": name or preset.default_workflow_name, "nodes": workflow_nodes, "edges": workflow_edges}
+    workflow_nodes = [
+        _build_workflow_node_from_flow_node(nodes_by_id[node_id], preset)
+        for node_id in ordered_ids
+    ]
+    return {
+        "name": name or preset.default_workflow_name,
+        "nodes": workflow_nodes,
+        "edges": workflow_edges,
+    }
 
 
 def build_local_device_graph(
@@ -1286,7 +2088,9 @@ def build_local_device_graph(
         {
             "opcua_url": opcua_url,
             "csv_path": csv_path,
-            "timeout": timeout if timeout is not None else preset.default_config.get("timeout", 300),
+            "timeout": timeout
+            if timeout is not None
+            else preset.default_config.get("timeout", 300),
             "write_allowed_timeout": (
                 write_allowed_timeout
                 if write_allowed_timeout is not None
@@ -1314,7 +2118,9 @@ def _load_preset_runtime_config(preset: WorkflowPreset) -> RuntimeConfig:
     return load_runtime_config()
 
 
-def _runtime_supported_actions(preset: WorkflowPreset, runtime_config: RuntimeConfig) -> dict[str, ActionSpec]:
+def _runtime_supported_actions(
+    preset: WorkflowPreset, runtime_config: RuntimeConfig
+) -> dict[str, ActionSpec]:
     device_ids = set(runtime_config.device_factory.devices)
     if not device_ids:
         return preset.actions
@@ -1325,7 +2131,9 @@ def _runtime_supported_actions(preset: WorkflowPreset, runtime_config: RuntimeCo
     }
 
 
-def _preset_for_runtime(preset: WorkflowPreset, runtime_config: RuntimeConfig) -> WorkflowPreset:
+def _preset_for_runtime(
+    preset: WorkflowPreset, runtime_config: RuntimeConfig
+) -> WorkflowPreset:
     actions = _runtime_supported_actions(preset, runtime_config)
     if actions is preset.actions:
         return preset
@@ -1345,22 +2153,113 @@ def _preset_for_runtime(preset: WorkflowPreset, runtime_config: RuntimeConfig) -
     )
 
 
+def _validate_json_nesting(raw: bytes, max_depth: int = 100) -> None:
+    """扫描原始 JSON bytes；字符串及转义中的括号不计入嵌套。"""
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:  # backslash
+                escaped = True
+            elif byte == 0x22:  # quote
+                in_string = False
+            continue
+        if byte == 0x22:
+            in_string = True
+        elif byte in (0x7B, 0x5B):  # { [
+            depth += 1
+            if depth > max_depth:
+                raise HTTPException(status_code=413, detail="请求 JSON 嵌套超过 100 层")
+        elif byte in (0x7D, 0x5D) and depth > 0:  # } ]
+            depth -= 1
+
+
+async def _read_bounded_json(request: FastAPIRequest) -> dict[str, Any]:
+    """单次流式读取 JSON，避免 Starlette 预先缓存无界 body。"""
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_JSON_BYTES:
+            raise HTTPException(status_code=413, detail="请求 body 超过 2 MiB")
+        body.extend(chunk)
+    raw = bytes(body)
+    _validate_json_nesting(raw)
+    try:
+        payload = await asyncio.to_thread(json.loads, raw)
+    except RecursionError as exc:
+        raise HTTPException(status_code=400, detail="请求 JSON 嵌套过深") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="请求 JSON 无效") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求 JSON 必须是对象")
+    return payload
+
+
+def _profile_http_exception(
+    exc: BaseException,
+    *,
+    missing_status: int = 500,
+) -> HTTPException:
+    """稳定映射 profile API 错误，不暴露路径或系统异常文本。"""
+    if isinstance(exc, ProfileLimitError):
+        return HTTPException(
+            status_code=422,
+            detail={"validation_errors": exc.validation_errors},
+        )
+    if isinstance(exc, ProfileValidationError):
+        return HTTPException(status_code=422, detail=exc.result)
+    if isinstance(exc, RevisionConflict):
+        return HTTPException(status_code=409, detail="profile revision 冲突")
+    if isinstance(exc, FileNotFoundError):
+        return HTTPException(status_code=missing_status, detail="模拟器配置不存在")
+    if isinstance(exc, json.JSONDecodeError):
+        return HTTPException(status_code=400, detail="profile JSON 无效")
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=400, detail=str(exc))
+    if isinstance(exc, OSError):
+        if exc.errno in (errno.ENOSPC, errno.EDQUOT):
+            return HTTPException(status_code=507, detail="profile 存储空间不足")
+        return HTTPException(status_code=500, detail="profile 存储操作失败")
+    return HTTPException(status_code=500, detail="profile 操作失败")
+
+
 def create_app(
     preset_name: str = "ai4c",
     runtime_config: RuntimeConfig | None = None,
     *,
     timing_enabled: bool = False,
+    opc_simulator_manager: OpcSimulatorProcessManager | None = None,
 ) -> FastAPI:
     preset = load_preset(preset_name)
     runtime_config = runtime_config or _load_preset_runtime_config(preset)
     active_preset = _preset_for_runtime(preset, runtime_config)
     app = FastAPI(title="szlab Workflow Debugger")
-    manager = WorkflowRunManager(active_preset, runtime_config, timing_enabled=timing_enabled)
+    manager = WorkflowRunManager(
+        active_preset, runtime_config, timing_enabled=timing_enabled
+    )
+    opc_simulator_manager = opc_simulator_manager or OpcSimulatorProcessManager(
+        config_dir=OPC_SIMULATOR_CONFIG_DIR
+    )
+    OPC_SIMULATOR_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    migrate_legacy_opc_profiles(
+        OPC_SIMULATOR_CONFIG_DIR,
+        OPC_SIMULATOR_REFERENCE_DIR,
+        reference_profile=OPC_SIMULATOR_REFERENCE_PROFILE,
+    )
     _register_shutdown_handler(app, manager.shutdown)
+
+    async def shutdown_opc_simulator() -> None:
+        await asyncio.to_thread(opc_simulator_manager.shutdown)
+
+    _register_shutdown_handler(app, shutdown_opc_simulator)
 
     assets_dir = FRONTEND_DIST_DIR / "assets"
     if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="szlab_workflow_assets")
+        app.mount(
+            "/assets", StaticFiles(directory=assets_dir), name="szlab_workflow_assets"
+        )
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> Response:
@@ -1368,7 +2267,12 @@ def create_app(
 
     @app.get("/api/actions", response_class=JSONResponse)
     async def list_actions() -> dict[str, Any]:
-        return {"actions": [_action_to_dict(action, runtime_config) for action in active_preset.actions.values()]}
+        return {
+            "actions": [
+                _action_to_dict(action, runtime_config)
+                for action in active_preset.actions.values()
+            ]
+        }
 
     @app.get("/api/preset", response_class=JSONResponse)
     async def get_preset() -> dict[str, Any]:
@@ -1378,12 +2282,18 @@ def create_app(
             "runtime_config": preset.runtime_config,
             "default_workflow_name": active_preset.default_workflow_name,
             "default_config": active_preset.default_config,
-            "actions": [_action_to_dict(action, runtime_config) for action in active_preset.actions.values()],
+            "actions": [
+                _action_to_dict(action, runtime_config)
+                for action in active_preset.actions.values()
+            ],
         }
 
     @app.get("/api/csv-variables", response_class=JSONResponse)
     async def csv_variables(csv_path: str = "") -> dict[str, Any]:
-        value = csv_path.strip() or str(active_preset.default_config.get("csv") or "").strip()
+        value = (
+            csv_path.strip()
+            or str(active_preset.default_config.get("csv") or "").strip()
+        )
         path = _resolve_ui_path(value, active_preset) if value else None
         if path is None or not path.exists():
             return {"variables": []}
@@ -1396,7 +2306,9 @@ def create_app(
             except UnicodeDecodeError:
                 continue
         if not text:
-            raise HTTPException(status_code=400, detail=f"无法识别 CSV 文件编码: {path.name}")
+            raise HTTPException(
+                status_code=400, detail=f"无法识别 CSV 文件编码: {path.name}"
+            )
         sample = text[:4096]
         try:
             dialect = csv.Sniffer().sniff(sample, delimiters=",\t")
@@ -1416,9 +2328,15 @@ def create_app(
         return {"variables": variables}
 
     @app.get("/api/stack-status", response_class=JSONResponse)
-    async def get_stack_status() -> dict[str, Any]:
+    async def get_stack_status(
+        task_workspace_path: str | None = None,
+        task_workspace_version: int | None = None,
+    ) -> dict[str, Any]:
         try:
-            return manager.get_stack_status()
+            return manager.get_stack_status(
+                task_workspace_path=task_workspace_path,
+                task_workspace_version=task_workspace_version,
+            )
         except Exception as exc:
             return {
                 "success": False,
@@ -1476,6 +2394,449 @@ def create_app(
                 "X-Accel-Buffering": "no",
             },
         )
+
+    @app.post("/api/task-opc/connect", response_class=JSONResponse)
+    async def connect_task_opc(payload: dict[str, Any]) -> dict[str, Any]:
+        opcua_url = str(payload.get("url") or "").strip()
+        workspace_path = str(payload.get("task_workspace_path") or "").strip()
+        if not opcua_url:
+            return {
+                "success": False,
+                "message": "请填写 OPC UA URL",
+                "plc": {
+                    "device_id": runtime_config.device_factory.plc_device_id
+                    or "szlab_poly_plc",
+                    "connected": False,
+                    "registered_variables": [],
+                },
+            }
+        if not workspace_path:
+            return {
+                "success": False,
+                "message": "缺少当前 workflow 路径",
+                "plc": {
+                    "device_id": runtime_config.device_factory.plc_device_id
+                    or "szlab_poly_plc",
+                    "connected": False,
+                    "registered_variables": [],
+                },
+            }
+        plc_device_id = runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
+        try:
+            devices = manager.connect_task_opc(
+                opcua_url=opcua_url,
+                workflow_path=workspace_path,
+            )
+            plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
+            if plc is None:
+                raise RuntimeError("当前运行时未创建 SZLabPolyPLCDevice")
+            registered = getattr(plc, "registered_variables", None)
+            registered_variables = list(registered()) if callable(registered) else []
+            registered_aliases = manager._registered_plc_variable_aliases(plc)
+            distribution = manager._publish_registered_plc_snapshot(
+                devices,
+                workflow_path=workspace_path,
+                read_snapshot=False,
+            )
+            return {
+                "success": True,
+                "plc": {
+                    "device_id": plc_device_id,
+                    "url": getattr(plc, "url", opcua_url),
+                    "connected": bool(getattr(plc, "client", None)),
+                    "registered_variables": registered_variables,
+                    "variable_aliases": registered_aliases,
+                },
+                "task_orchestration": distribution,
+            }
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": str(exc),
+                "plc": {
+                    "device_id": plc_device_id,
+                    "connected": False,
+                    "registered_variables": [],
+                },
+            }
+
+    @app.post("/api/task-opc/poll", response_class=JSONResponse)
+    async def poll_task_opc(payload: dict[str, Any]) -> dict[str, Any]:
+        workspace_path = str(payload.get("task_workspace_path") or "").strip()
+        if not workspace_path:
+            return {
+                "success": False,
+                "active": False,
+                "message": "缺少当前 workflow 路径",
+            }
+        try:
+            return manager.poll_task_opc(workflow_path=workspace_path)
+        except Exception as exc:
+            return {"success": False, "active": False, "message": str(exc)}
+
+    @app.post("/api/task-execution/tick", response_class=JSONResponse)
+    async def run_task_execution_tick(
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        workspace_path = str(payload.get("task_workspace_path") or "").strip()
+        workflow_payload = payload.get("workflow")
+        harvest_only = payload.get("harvest_only", False)
+        if not workspace_path:
+            return {
+                "success": False,
+                "message": "缺少当前 workflow 路径",
+                "active": 0,
+                "in_flight": 0,
+                "claimed": 0,
+                "completed": 0,
+                "failed": 0,
+            }
+        if type(harvest_only) is not bool:
+            return {
+                "success": False,
+                "message": "harvest_only 必须为 bool",
+                "active": 0,
+                "in_flight": 0,
+                "claimed": 0,
+                "completed": 0,
+                "failed": 0,
+            }
+        if not harvest_only and not isinstance(workflow_payload, dict):
+            return {
+                "success": False,
+                "message": "缺少当前 workflow JSON",
+                "active": 0,
+                "in_flight": 0,
+                "claimed": 0,
+                "completed": 0,
+                "failed": 0,
+            }
+        try:
+            return await asyncio.to_thread(
+                manager.run_task_execution_cycle,
+                workflow_path=workspace_path,
+                workflow_payload=workflow_payload,
+                harvest_only=harvest_only,
+            )
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": str(exc),
+                "active": 0,
+                "in_flight": 0,
+                "claimed": 0,
+                "completed": 0,
+                "failed": 0,
+            }
+
+    @app.get("/api/task-execution/logs", response_class=JSONResponse)
+    async def get_task_execution_logs(
+        task_workspace_path: str = "",
+        after_seq: int = 0,
+        instance_id: str = "",
+    ) -> dict[str, Any]:
+        workflow_path = str(task_workspace_path or "").strip()
+        if not workflow_path:
+            return {
+                "success": False,
+                "message": "缺少当前 workflow 路径",
+                "latest_seq": 0,
+                "entries": [],
+            }
+        try:
+            payload = manager.list_task_action_logs(
+                workflow_path=workflow_path,
+                after_seq=max(0, int(after_seq)),
+                instance_id=str(instance_id).strip() or None,
+            )
+            return {"success": True, **payload}
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": str(exc),
+                "latest_seq": 0,
+                "entries": [],
+            }
+
+    @app.post("/api/opc-simulator/profiles:generate", response_class=JSONResponse)
+    async def generate_opc_simulator_profile(
+        request: FastAPIRequest,
+    ) -> dict[str, Any]:
+        payload = await _read_bounded_json(request)
+        allowed_fields = {
+            "workflow",
+            "templates",
+            "scheduled_template_ids",
+            "action_catalog",
+            "variable_catalog",
+            "name",
+            "file_name",
+            "opc_url",
+        }
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            raise HTTPException(
+                status_code=400,
+                detail=f"生成请求含未知字段: {sorted(unknown_fields)[0]}",
+            )
+        if "action_catalog" not in payload:
+            raise HTTPException(status_code=400, detail="生成请求缺少 action_catalog")
+        file_name = payload.get("file_name") or "opc-simulator-profile.json"
+        try:
+            resolve_profile_path(file_name, OPC_SIMULATOR_CONFIG_DIR)
+            generated = await asyncio.to_thread(
+                generate_opc_simulator_draft,
+                payload.get("workflow"),
+                payload.get("templates"),
+                payload.get("scheduled_template_ids"),
+                payload.get("name"),
+                payload.get("opc_url") or DEFAULT_OPC_SIMULATOR_URL,
+                action_catalog=payload.get("action_catalog"),
+                variable_catalog=payload.get("variable_catalog", []),
+            )
+            result = await asyncio.to_thread(
+                validate_profile,
+                generated["profile"],
+                file_name,
+            )
+        except Exception as exc:
+            raise _profile_http_exception(exc) from exc
+        result["validation_errors"] = list(
+            dict.fromkeys(
+                [
+                    *generated["validation_errors"],
+                    *result["validation_errors"],
+                ]
+            )
+        )
+        return result
+
+    @app.post("/api/opc-simulator/profiles:validate", response_class=JSONResponse)
+    async def validate_opc_simulator_profile(
+        request: FastAPIRequest,
+    ) -> dict[str, Any]:
+        payload = await _read_bounded_json(request)
+        if set(payload) != {"profile", "file_name"}:
+            raise HTTPException(
+                status_code=400,
+                detail="校验请求必须且只能包含 profile、file_name",
+            )
+        profile = payload["profile"]
+        file_name = payload["file_name"]
+        try:
+            resolve_profile_path(file_name, OPC_SIMULATOR_CONFIG_DIR)
+            return await asyncio.to_thread(validate_profile, profile, file_name)
+        except Exception as exc:
+            raise _profile_http_exception(exc) from exc
+
+    @app.put(
+        "/api/opc-simulator/profiles/{file_name}",
+        response_class=JSONResponse,
+    )
+    async def save_opc_simulator_profile(
+        file_name: str,
+        request: FastAPIRequest,
+    ) -> dict[str, Any]:
+        payload = await _read_bounded_json(request)
+        if set(payload) != {"profile"}:
+            raise HTTPException(
+                status_code=400,
+                detail="保存请求必须且只能包含 profile",
+            )
+        try:
+            return await asyncio.to_thread(
+                save_profile,
+                file_name,
+                payload["profile"],
+                OPC_SIMULATOR_CONFIG_DIR,
+                expected_revision=request.headers.get("if-match"),
+            )
+        except Exception as exc:
+            raise _profile_http_exception(exc) from exc
+
+    @app.get(
+        "/api/opc-simulator/profile-spec",
+        response_class=JSONResponse,
+    )
+    async def read_opc_simulator_profile_spec() -> dict[str, Any]:
+        """返回 OPC profile v2 生成规范 Markdown，供前端展示与大模型参照。"""
+        path = OPC_SIMULATOR_PROFILE_SPEC_PATH
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="OPC profile 生成规范不存在")
+        try:
+            markdown = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"无法读取 OPC profile 生成规范: {exc}",
+            ) from exc
+        if len(markdown.encode("utf-8")) > 512 * 1024:
+            raise HTTPException(status_code=500, detail="OPC profile 生成规范过大")
+        return {
+            "schema_version": 2,
+            "path": str(path.relative_to(REPO_ROOT)),
+            "markdown": markdown,
+        }
+
+    @app.get(
+        "/api/opc-simulator/profiles/reference/template",
+        response_class=JSONResponse,
+    )
+    async def read_opc_simulator_reference_template() -> dict[str, Any]:
+        """返回仓库内置 schema v2 可运行示例，供前端只读对照。"""
+        try:
+            return await asyncio.to_thread(
+                read_profile,
+                OPC_SIMULATOR_REFERENCE_PROFILE,
+                OPC_SIMULATOR_REFERENCE_DIR,
+            )
+        except Exception as exc:
+            raise _profile_http_exception(exc, missing_status=404) from exc
+
+    @app.get("/api/opc-simulator/profiles", response_class=JSONResponse)
+    async def list_opc_simulator_profiles() -> dict[str, Any]:
+        """列出 task-orchestration/configs 下已保存的 profile JSON。"""
+        try:
+            config_dir = str(OPC_SIMULATOR_CONFIG_DIR.relative_to(REPO_ROOT))
+        except ValueError:
+            config_dir = str(OPC_SIMULATOR_CONFIG_DIR)
+        try:
+            await asyncio.to_thread(
+                migrate_legacy_opc_profiles,
+                OPC_SIMULATOR_CONFIG_DIR,
+                OPC_SIMULATOR_REFERENCE_DIR,
+                reference_profile=OPC_SIMULATOR_REFERENCE_PROFILE,
+            )
+            return {
+                "config_dir": config_dir,
+                "files": await asyncio.to_thread(
+                    list_profile_files,
+                    OPC_SIMULATOR_CONFIG_DIR,
+                ),
+            }
+        except Exception as exc:
+            raise _profile_http_exception(exc) from exc
+
+    @app.get(
+        "/api/opc-simulator/profiles/{file_name}",
+        response_class=JSONResponse,
+    )
+    async def read_opc_simulator_profile(file_name: str) -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(
+                read_profile,
+                file_name,
+                OPC_SIMULATOR_CONFIG_DIR,
+            )
+        except Exception as exc:
+            raise _profile_http_exception(exc, missing_status=404) from exc
+
+    @app.post("/api/opc-simulator/start", response_class=JSONResponse)
+    async def start_opc_simulator(
+        request: FastAPIRequest,
+    ) -> dict[str, Any]:
+        payload = await _read_bounded_json(request)
+        allowed_fields = {
+            "file_name",
+            "expected_revision",
+            "allow_unsafe_url",
+        }
+        if set(payload) - allowed_fields:
+            raise HTTPException(status_code=400, detail="模拟器启动请求含未知字段")
+        file_name = payload.get("file_name")
+        expected_revision = payload.get("expected_revision")
+        allow_unsafe_url = payload.get("allow_unsafe_url", False)
+        if not isinstance(file_name, str) or not file_name:
+            raise HTTPException(status_code=400, detail="file_name 必须是非空字符串")
+        if not isinstance(expected_revision, str) or not expected_revision:
+            raise HTTPException(
+                status_code=400,
+                detail="expected_revision 必须是非空字符串",
+            )
+        if type(allow_unsafe_url) is not bool:
+            raise HTTPException(
+                status_code=400,
+                detail="allow_unsafe_url 必须是严格布尔值",
+            )
+        try:
+            return await asyncio.to_thread(
+                opc_simulator_manager.start,
+                file_name,
+                expected_revision,
+                allow_unsafe_url=allow_unsafe_url,
+            )
+        except InvalidSimulatorRevision as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="模拟器 revision 格式无效",
+            ) from exc
+        except SimulatorInputError as exc:
+            raise HTTPException(status_code=400, detail="模拟器启动参数无效") from exc
+        except SimulatorConfigNotFound as exc:
+            raise HTTPException(status_code=404, detail="模拟器配置不存在") from exc
+        except SimulatorRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail="profile revision 冲突") from exc
+        except UnsafeSimulatorUrlConfirmationRequired as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="非默认 OPC URL 需明确确认风险",
+            ) from exc
+        except InvalidSimulatorConfig as exc:
+            raise HTTPException(status_code=422, detail="模拟器配置不可运行") from exc
+        except SimulatorAlreadyRunning as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="已有 OPC 模拟器正在运行",
+            ) from exc
+        except SimulatorSpawnError as exc:
+            raise HTTPException(status_code=500, detail="启动模拟器进程失败") from exc
+        except SimulatorStorageFull as exc:
+            raise HTTPException(status_code=507, detail="模拟器存储空间不足") from exc
+        except SimulatorStorageError as exc:
+            raise HTTPException(status_code=500, detail="模拟器存储操作失败") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="模拟器系统操作失败") from exc
+
+    @app.get("/api/opc-simulator/status", response_class=JSONResponse)
+    async def get_opc_simulator_status() -> dict[str, Any]:
+        try:
+            return opc_simulator_manager.status()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="读取模拟器状态失败") from exc
+
+    @app.post("/api/opc-simulator/stop", response_class=JSONResponse)
+    async def stop_opc_simulator(
+        request: FastAPIRequest,
+    ) -> dict[str, Any]:
+        payload = await _read_bounded_json(request)
+        if set(payload) - {"expected_run_id"}:
+            raise HTTPException(status_code=400, detail="停止请求含未知字段")
+        expected_run_id = payload.get("expected_run_id")
+        if expected_run_id is not None and (
+            not isinstance(expected_run_id, str)
+            or re.fullmatch(r"[0-9a-f]{32}", expected_run_id) is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="expected_run_id 格式无效",
+            )
+        try:
+            return await asyncio.to_thread(
+                opc_simulator_manager.stop,
+                expected_run_id=expected_run_id,
+            )
+        except SimulatorRunIdentityConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="模拟器运行身份冲突",
+            ) from exc
+        except StopTimeout as exc:
+            raise HTTPException(
+                status_code=504,
+                detail="模拟器停止超时，恢复结果不确定",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="停止模拟器失败") from exc
 
     @app.post("/api/workflow/build", response_class=JSONResponse)
     async def build_workflow(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1567,31 +2928,35 @@ def start_ui(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run szlab workflow runner service.")
-    parser.add_argument("--host", default="0.0.0.0", help="服务监听地址")
-    parser.add_argument("--port", type=int, default=8000, help="服务监听端口")
-    parser.add_argument("--preset", default="ai4c", help="服务使用的 workflow preset 名称或 JSON 路径")
-    parser.add_argument("--runtime-config", type=Path, default=None, help="覆盖 preset 中的运行配置 JSON")
-    parser.add_argument("--open-browser", action="store_true", help="服务启动后自动打开浏览器")
-    parser.add_argument("--debug", action="store_true", help="启用 preset.debug_config 中定义的调试环境变量")
-    parser.add_argument("--timing", action="store_true", help="临时记录 workflow 排程耗时")
+    parser = argparse.ArgumentParser(description="Uni-Lab 本地 workflow 调试界面")
+    parser.add_argument("--host", default="127.0.0.1", help="监听地址")
+    parser.add_argument("--port", type=int, default=8014, help="监听端口")
+    parser.add_argument(
+        "--preset", default="ai4c", help="preset 名称，Docker 默认使用 szlab_mixer"
+    )
+    parser.add_argument(
+        "--runtime-config",
+        type=Path,
+        default=None,
+        help="覆盖 preset 中的运行配置 JSON",
+    )
+    parser.add_argument(
+        "--no-browser", action="store_true", help="启动时不自动打开浏览器"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="启用 preset.debug_config 中定义的调试环境变量",
+    )
+    parser.add_argument(
+        "--timing", action="store_true", help="临时记录 workflow 排程耗时"
+    )
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
-    start_ui(
-        host=args.host,
-        port=args.port,
-        open_browser=args.open_browser,
-        preset_name=args.preset,
-        runtime_config=load_runtime_config(args.runtime_config) if args.runtime_config else None,
-        timing_enabled=args.timing,
-    )
-    return 0
-
-
-def _build_action_params(spec: ActionSpec, raw_params: dict[str, Any]) -> dict[str, Any]:
+def _build_action_params(
+    spec: ActionSpec, raw_params: dict[str, Any]
+) -> dict[str, Any]:
     params: dict[str, Any] = {}
     for param_spec in spec.params:
         name = str(param_spec.get("name", "")).strip()
@@ -1621,7 +2986,9 @@ def _range_message(name: str, param_spec: dict[str, Any]) -> str:
     return f"{name} 参数无效"
 
 
-def _build_workflow_node_from_flow_node(flow_node: dict[str, Any], preset: WorkflowPreset) -> dict[str, Any]:
+def _build_workflow_node_from_flow_node(
+    flow_node: dict[str, Any], preset: WorkflowPreset
+) -> dict[str, Any]:
     node_id = str(flow_node.get("id", "")).strip()
     data = flow_node.get("data") or {}
     method = str(data.get("method", "")).strip()
@@ -1629,14 +2996,34 @@ def _build_workflow_node_from_flow_node(flow_node: dict[str, Any], preset: Workf
         raise ValueError(f"不支持的动作: {method}")
 
     spec = preset.actions[method]
-    params = _build_action_params(spec, dict(data.get("params") or data.get("param") or {}))
+    params = _build_action_params(
+        spec, dict(data.get("params") or data.get("param") or {})
+    )
+    raw_opc_variables = data.get("opc_variables", [])
+    if not isinstance(raw_opc_variables, list):
+        raise ValueError("workflow 节点 opc_variables 必须是数组")
+    if len(raw_opc_variables) > 500:
+        raise ValueError("workflow 节点 opc_variables 超过 500 项")
+    opc_variables: list[str] = []
+    for variable in raw_opc_variables:
+        if not isinstance(variable, str) or not variable.strip():
+            raise ValueError("workflow 节点 opc_variables 必须是非空字符串数组")
+        normalized = variable.strip()
+        if normalized not in opc_variables:
+            opc_variables.append(normalized)
 
-    return {
-        "uuid": node_id,
-        "name": f"auto-{method}",
-        "device_name": data.get("device_id") or spec.device_id or preset.target_device_id,
-        "param": params,
+    node = {
+        "workflow_node_id": node_id,
+        "device_id": data.get("device_id")
+        or spec.device_id
+        or preset.target_device_id,
+        "method": method,
+        "params": params,
+        "opc_variables": opc_variables,
     }
+    if data.get("execution_disabled") is True or data.get("disabled") is True:
+        node["disabled"] = True
+    return node
 
 
 def _resolve_ui_path(path: str | Path, preset: WorkflowPreset = DEFAULT_PRESET) -> Path:
@@ -1664,7 +3051,9 @@ def _write_temp_workflow(workflow: dict[str, Any]) -> Path:
 
 
 def _write_temp_json(data: dict[str, Any]) -> Path:
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", suffix=".json", delete=False
+    ) as handle:
         json.dump(data, handle, ensure_ascii=False, indent=2)
         return Path(handle.name)
 
@@ -1676,7 +3065,10 @@ def _render_template_value(value: Any, replacements: dict[str, Any]) -> Any:
     if isinstance(value, list):
         return [_render_template_value(item, replacements) for item in value]
     if isinstance(value, dict):
-        return {key: _render_template_value(item, replacements) for key, item in value.items()}
+        return {
+            key: _render_template_value(item, replacements)
+            for key, item in value.items()
+        }
     return value
 
 
@@ -1693,7 +3085,9 @@ def _disconnect_devices(devices: dict[str, Any], log: Any | None = None) -> None
                 log(f"断开设备 {device_id} 连接时出错: {exc}")
 
 
-def _action_to_dict(action: ActionSpec, runtime_config: RuntimeConfig | None = None) -> dict[str, Any]:
+def _action_to_dict(
+    action: ActionSpec, runtime_config: RuntimeConfig | None = None
+) -> dict[str, Any]:
     data = {
         "method": action.method,
         "label": action.label,
@@ -1703,14 +3097,22 @@ def _action_to_dict(action: ActionSpec, runtime_config: RuntimeConfig | None = N
         "device_id": action.device_id,
     }
     if runtime_config is not None:
-        data["opc_variables"] = _collect_action_level_opc_variables(action.method, runtime_config)
+        data["opc_variables"] = _collect_action_level_opc_variables(
+            action.method, runtime_config
+        )
     return data
 
 
-def _collect_action_level_opc_variables(method: str, runtime_config: RuntimeConfig) -> list[str]:
+def _collect_action_level_opc_variables(
+    method: str, runtime_config: RuntimeConfig
+) -> list[str]:
+    from scripts.szlab_action_sensor_variables import resolve_robot_action_opc_variables
+
     snapshot_config = runtime_config.opc_snapshot
     variables = list(snapshot_config.common_variables)
     variables.extend(snapshot_config.action_variables.get(method, []))
+    if method.startswith("submit_"):
+        variables.extend(resolve_robot_action_opc_variables("szlab_mixer_robot", method))
     return list(dict.fromkeys(variables))
 
 
@@ -1777,7 +3179,9 @@ def apply_preset_debug_config(preset_name: str) -> dict[str, str]:
     applied: dict[str, str] = {}
     skip_variables = preset.debug_config.get("skip_robot_precheck_variables", [])
     if isinstance(skip_variables, list):
-        variable_names = [str(name).strip() for name in skip_variables if str(name).strip()]
+        variable_names = [
+            str(name).strip() for name in skip_variables if str(name).strip()
+        ]
         if variable_names:
             value = ",".join(variable_names)
             os.environ["SKIP_ROBOT_PRECHECK_VARIABLES"] = value
@@ -1794,20 +3198,11 @@ def apply_preset_debug_config(preset_name: str) -> dict[str, str]:
     return applied
 
 
-def main() -> None:
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Uni-Lab 本地 workflow 调试界面")
-    parser.add_argument("--host", default="127.0.0.1", help="监听地址")
-    parser.add_argument("--port", type=int, default=8014, help="监听端口")
-    parser.add_argument("--preset", default="ai4c", help="preset 名称，Docker 默认使用 szlab_mixer")
-    parser.add_argument("--no-browser", action="store_true", help="启动时不自动打开浏览器")
-    parser.add_argument("--runtime-config", type=Path, default=None, help="覆盖 preset 的 runtime config")
-    parser.add_argument("--debug", action="store_true", help="启用 preset.debug_config 中定义的调试环境变量")
-    parser.add_argument("--timing", action="store_true", help="临时记录 workflow 排程耗时")
-    args = parser.parse_args()
-
-    runtime_config = load_runtime_config(args.runtime_config) if args.runtime_config else None
+def main() -> int:
+    args = build_parser().parse_args()
+    runtime_config = (
+        load_runtime_config(args.runtime_config) if args.runtime_config else None
+    )
     ignore_opcua_token_time_drift()
     if args.debug:
         apply_preset_debug_config(args.preset)
@@ -1819,6 +3214,7 @@ def main() -> None:
         runtime_config=runtime_config,
         timing_enabled=args.timing,
     )
+    return 0
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import csv
+import io
 import logging
 import os
 import threading
@@ -13,7 +14,20 @@ try:
 except ModuleNotFoundError as exc:
     if exc.name != "pylabrobot":
         raise
-    BaseClient = object
+
+    class BaseClient:  # type: ignore[no-redef]
+        """无 pylabrobot 时为 standalone OPC 客户端保留最小基类契约。"""
+
+        def __init__(self) -> None:
+            self._name_mapping: Dict[str, str] = {}
+            self._reverse_mapping: Dict[str, str] = {}
+
+        def use_node(self, _node_name: str) -> Any:
+            raise RuntimeError("当前环境缺少 pylabrobot，不能使用 BaseClient 节点")
+
+        def _connect(self) -> None:
+            raise RuntimeError("当前环境缺少 pylabrobot，不能连接 BaseClient")
+
     OpcUaNode = None
 from unilabos.devices.workstation.szlab_poly_studio.sensor import (
     SENSOR_ARRAY_COUNT,
@@ -21,6 +35,7 @@ from unilabos.devices.workstation.szlab_poly_studio.sensor import (
     SensorBase,
     load_sensor_bit_metadata_from_csv,
     load_stack_sensor_groups_from_json,
+    read_plc_csv_text,
     wait_sensor_conditions,
     wait_variable_equal,
     wait_variable_true,
@@ -43,46 +58,63 @@ def _resolve_csv_path(csv_path: Optional[str]) -> str:
 
 def load_variable_definitions_from_csv(csv_path: str) -> tuple[List[str], Dict[str, str]]:
     """Load PLC variable names and optional NodeId mappings from CSV."""
-    names: List[str] = []
-    node_id_map: Dict[str, str] = {}
-    seen = set()
-    last_error: Optional[UnicodeDecodeError] = None
-    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "gb18030", "gbk"):
-        for delimiter in (",", "\t"):
-            try:
-                with open(csv_path, newline="", encoding=encoding) as csv_file:
-                    reader = csv.DictReader(csv_file, delimiter=delimiter)
-                    fieldnames = reader.fieldnames or []
-                    if "变量名" not in fieldnames:
-                        names.clear()
-                        node_id_map.clear()
-                        seen.clear()
-                        continue
-                    node_id_field = next(
-                        (field for field in fieldnames if field.strip().lower() in {"node_id", "nodeid"}),
-                        None,
-                    )
-                    for row in reader:
-                        name = (row.get("变量名") or "").strip()
-                        node_id = (row.get(node_id_field) or "").strip() if node_id_field else ""
-                        if node_id_field and not node_id:
-                            continue
-                        if not name or name in seen:
-                            continue
-                        seen.add(name)
-                        names.append(name)
-                        if node_id:
-                            node_id_map[name] = node_id
-                return names, node_id_map
-            except UnicodeDecodeError as exc:
-                names.clear()
-                node_id_map.clear()
-                seen.clear()
-                last_error = exc
-                break
-    if last_error:
-        raise last_error
-    return names, node_id_map
+    text = read_plc_csv_text(csv_path)
+    for delimiter in (",", "\t"):
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        fieldnames = reader.fieldnames or []
+        if "变量名" not in fieldnames:
+            continue
+        names: List[str] = []
+        node_id_map: Dict[str, str] = {}
+        seen = set()
+        node_id_field = next(
+            (
+                field
+                for field in fieldnames
+                if field.strip().lower() in {"node_id", "nodeid"}
+            ),
+            None,
+        )
+        for row in reader:
+            name = (row.get("变量名") or "").strip()
+            node_id = (
+                (row.get(node_id_field) or "").strip()
+                if node_id_field
+                else ""
+            )
+            if node_id_field and not node_id:
+                continue
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+            if node_id:
+                node_id_map[name] = node_id
+        return names, node_id_map
+    return [], {}
+
+
+def load_variable_aliases_from_csv(csv_path: str) -> Dict[str, str]:
+    """加载 ``EnglishName -> CSV Name`` 映射；CSV Name 始终是 PLC 真实节点名。"""
+    text = read_plc_csv_text(csv_path)
+    for delimiter in (",", "\t"):
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        fieldnames = reader.fieldnames or []
+        canonical_field = (
+            "变量名" if "变量名" in fieldnames
+            else "Name" if "Name" in fieldnames
+            else None
+        )
+        if canonical_field is None or "EnglishName" not in fieldnames:
+            continue
+        aliases: Dict[str, str] = {}
+        for row in reader:
+            canonical = (row.get(canonical_field) or "").strip()
+            alias = (row.get("EnglishName") or "").strip()
+            if canonical and alias and alias != canonical:
+                aliases[alias] = canonical
+        return aliases
+    return {}
 
 
 def load_variable_names_from_csv(csv_path: str) -> List[str]:
@@ -169,10 +201,11 @@ class SZLabPolyPLCDevice(BaseClient):
     ):
         standalone_opcua_client = csv_path is False
         self._standalone_opcua_client = standalone_opcua_client
+        self._opc_io_lock = threading.RLock()
         if OpcUaNode is None and not standalone_opcua_client:
             raise ModuleNotFoundError("SZLabPolyPLCDevice 需要可选依赖 pylabrobot，请在 unilab 环境中运行")
         super().__init__()
-        self._opc_wait_events: List[Dict[str, Any]] = []
+        self._opc_wait_tls = threading.local()
         self._node_registry: Dict[str, Any] = {}
         self._variables_to_find: Dict[str, Dict[str, Any]] = {}
         self._found_node_objects: Dict[str, Any] = {}
@@ -208,6 +241,15 @@ class SZLabPolyPLCDevice(BaseClient):
         else:
             variable_names, csv_node_id_map = load_variable_definitions_from_csv(self.csv_path)
             self._sensor_bit_metadata = load_sensor_bit_metadata_from_csv(self.csv_path)
+        csv_name_mapping = (
+            load_variable_aliases_from_csv(self.csv_path)
+            if self.csv_path is not None
+            else {}
+        )
+        self._name_mapping.update(csv_name_mapping)
+        self._reverse_mapping.update(
+            {canonical: alias for alias, canonical in csv_name_mapping.items()}
+        )
         explicit_node_id_map = {
             **dict(node_id_map or {}),
             **dict(opcua_node_id_map or {}),
@@ -256,23 +298,28 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def _connect(self) -> None:
-        if not self._direct_node_id_map and not self._opcua_object_name and not self._opcua_allow_recursive_browse:
-            return super()._connect()
-        logger.info("try to connect client...")
-        if not self.client:
-            raise ValueError("client is not initialized")
-        try:
-            self.client.connect()
-            logger.info("client connected!")
-            if not self._direct_node_id_map:
-                self._register_browsed_opcua_nodes()
-            else:
-                missing = sorted(set(self._variables_to_find) - set(self._node_registry))
-                if missing:
-                    logger.warning(f"以下节点缺少 NodeId 映射，未执行自动浏览: {', '.join(missing)}")
-        except Exception as exc:
-            logger.error(f"client connect failed: {exc}")
-            raise
+        with self._opc_io_lock:
+            if not self._direct_node_id_map and not self._opcua_object_name and not self._opcua_allow_recursive_browse:
+                return super()._connect()
+            logger.info("try to connect client...")
+            if not self.client:
+                raise ValueError("client is not initialized")
+            try:
+                self.client.connect()
+                logger.info("client connected!")
+                if not self._direct_node_id_map:
+                    self._register_browsed_opcua_nodes()
+                else:
+                    missing = sorted(set(self._variables_to_find) - set(self._node_registry))
+                    if missing:
+                        logger.warning(f"以下节点缺少 NodeId 映射，未执行自动浏览: {', '.join(missing)}")
+            except Exception as exc:
+                logger.error(
+                    "client connect failed: %r",
+                    exc,
+                    exc_info=True,
+                )
+                raise
 
     @not_action
     def _is_recoverable_connection_error(self, exc: BaseException) -> bool:
@@ -425,74 +472,77 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def _register_browsed_opcua_nodes(self) -> None:
-        for name, opc_node in self._browse_device_nodes().items():
-            self._register_variable_node_id(name, str(opc_node.nodeid))
+        with self._opc_io_lock:
+            for name, opc_node in self._browse_device_nodes().items():
+                self._register_variable_node_id(name, str(opc_node.nodeid))
 
     @not_action
     def _browse_device_nodes(self) -> Dict[str, Any]:
-        if not self.client:
-            raise ValueError("client is not initialized")
-        objects = self.client.get_objects_node()
-        top_children = objects.get_children()
-        if self._opcua_object_name:
-            for child in top_children:
-                if child.get_browse_name().Name == self._opcua_object_name:
-                    return {node.get_browse_name().Name: node for node in child.get_children()}
+        with self._opc_io_lock:
+            if not self.client:
+                raise ValueError("client is not initialized")
+            objects = self.client.get_objects_node()
+            top_children = objects.get_children()
+            if self._opcua_object_name:
+                for child in top_children:
+                    if child.get_browse_name().Name == self._opcua_object_name:
+                        return {node.get_browse_name().Name: node for node in child.get_children()}
 
-        if not self._opcua_allow_recursive_browse:
-            top_names = []
-            for child in top_children:
-                try:
-                    top_names.append(f"{child.get_browse_name().Name}({child.nodeid})")
-                except Exception:
-                    top_names.append(str(child.nodeid))
-            object_hint = f"{self._opcua_object_name} 对象" if self._opcua_object_name else "指定对象"
-            raise RuntimeError(
-                f"OPC UA 中未找到 {object_hint}。真机节点树较大，已停止自动递归扫描以避免卡住；"
-                "请先用 OPC UA 浏览工具找到变量 NodeId，并写入设备配置的 opcua_node_id_map。"
-                f"顶层对象: {top_names}"
-            )
+            if not self._opcua_allow_recursive_browse:
+                top_names = []
+                for child in top_children:
+                    try:
+                        top_names.append(f"{child.get_browse_name().Name}({child.nodeid})")
+                    except Exception:
+                        top_names.append(str(child.nodeid))
+                object_hint = f"{self._opcua_object_name} 对象" if self._opcua_object_name else "指定对象"
+                raise RuntimeError(
+                    f"OPC UA 中未找到 {object_hint}。真机节点树较大，已停止自动递归扫描以避免卡住；"
+                    "请先用 OPC UA 浏览工具找到变量 NodeId，并写入设备配置的 opcua_node_id_map。"
+                    f"顶层对象: {top_names}"
+                )
 
-        nodes = self._browse_nodes_recursively(objects)
-        if not nodes:
-            raise RuntimeError("OPC UA 中没有递归扫描到可用变量节点；请确认变量是否已发布")
-        return nodes
+            nodes = self._browse_nodes_recursively(objects)
+            if not nodes:
+                raise RuntimeError("OPC UA 中没有递归扫描到可用变量节点；请确认变量是否已发布")
+            return nodes
 
     @not_action
     def _browse_nodes_recursively(self, root: Any) -> Dict[str, Any]:
-        nodes_by_name: Dict[str, Any] = {}
-        visited = 0
-        stack: list[tuple[Any, int]] = [(root, 0)]
+        with self._opc_io_lock:
+            nodes_by_name: Dict[str, Any] = {}
+            visited = 0
+            stack: list[tuple[Any, int]] = [(root, 0)]
 
-        while stack and visited < self._opcua_browse_limit:
-            node, depth = stack.pop()
-            visited += 1
-            try:
-                children = node.get_children()
-            except Exception:
-                continue
-            for child in children:
+            while stack and visited < self._opcua_browse_limit:
+                node, depth = stack.pop()
+                visited += 1
                 try:
-                    browse_name = child.get_browse_name().Name
+                    children = node.get_children()
                 except Exception:
-                    browse_name = ""
-                try:
-                    display_name = child.get_display_name().Text
-                except Exception:
-                    display_name = ""
-                for name in (browse_name, display_name):
-                    if name and name not in nodes_by_name:
-                        nodes_by_name[name] = child
-                if depth < self._opcua_browse_depth:
-                    stack.append((child, depth + 1))
+                    continue
+                for child in children:
+                    try:
+                        browse_name = child.get_browse_name().Name
+                    except Exception:
+                        browse_name = ""
+                    try:
+                        display_name = child.get_display_name().Text
+                    except Exception:
+                        display_name = ""
+                    for name in (browse_name, display_name):
+                        if name and name not in nodes_by_name:
+                            nodes_by_name[name] = child
+                    if depth < self._opcua_browse_depth:
+                        stack.append((child, depth + 1))
 
-        logging.getLogger(__name__).info(
-            "已递归扫描 OPC UA 节点: object=%s visited=%s indexed=%s",
-            self._opcua_object_name,
-            visited,
-            len(nodes_by_name),
-        )
-        return nodes_by_name
+            logging.getLogger(__name__).info(
+                "已递归扫描 OPC UA 节点: object=%s visited=%s indexed=%s",
+                self._opcua_object_name,
+                visited,
+                len(nodes_by_name),
+            )
+            return nodes_by_name
 
     @not_action
     def _register_variable_node_id(self, name: str, node_id: str) -> None:
@@ -510,21 +560,22 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def use_node(self, node_name: str) -> Any:
-        if not self._standalone_opcua_client:
-            try:
-                return super().use_node(node_name)
-            except Exception:
-                if not self._fallback_node_id_prefix:
-                    raise
+        with self._opc_io_lock:
+            if not self._standalone_opcua_client:
+                try:
+                    return super().use_node(node_name)
+                except Exception:
+                    if not self._fallback_node_id_prefix:
+                        raise
 
-        node = self._node_registry.get(node_name)
-        if node is not None:
-            return node
-        if self._fallback_node_id_prefix:
-            node_id = f"{self._fallback_node_id_prefix}{node_name}"
-            self._register_variable_node_id(node_name, node_id)
-            return self._node_registry[node_name]
-        raise KeyError(f"未找到 OPC UA 节点: {node_name}")
+            node = self._node_registry.get(node_name)
+            if node is not None:
+                return node
+            if self._fallback_node_id_prefix:
+                node_id = f"{self._fallback_node_id_prefix}{node_name}"
+                self._register_variable_node_id(node_name, node_id)
+                return self._node_registry[node_name]
+            raise KeyError(f"未找到 OPC UA 节点: {node_name}")
 
     @not_action
     def read_variable(self, node_name: str, use_cache: bool = True) -> Any:
@@ -541,17 +592,29 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def _read_variable_once(self, node_name: str) -> Any:
         node = self.use_node(node_name)
-        try:
-            return node._get_node().get_value()
-        except Exception as exc:
-            if self._is_bad_node_id_unknown(exc):
+        with self._opc_io_lock:
+            value, error = node.read()
+            if error:
                 sensor_bit = self._parse_sensor_bit_name(node_name)
                 if sensor_bit is not None:
+                    if node_name not in self._sensor_read_warning_names:
+                        self._sensor_read_warning_names.add(node_name)
+                        logger.warning(
+                            f"读取 PLC 传感器标量失败，回退到数组读取: "
+                            f"variable={node_name}, error={error}"
+                        )
                     return self._read_sensor_array(sensor_bit[0])[sensor_bit[1]]
-                direct_node_id = self._direct_node_id_map.get(node_name)
-                direct_node_detail = f": {direct_node_id}" if direct_node_id else ""
-                raise RuntimeError(f"读取 PLC 变量失败: {node_name}: 直连 NodeId 无效{direct_node_detail}") from exc
-            raise RuntimeError(f"读取 PLC 变量失败: {node_name}: {exc}") from exc
+                if node_name in self._direct_node_id_map:
+                    direct_node_id = self._direct_node_id_map[node_name]
+                    detail = getattr(node, "_last_read_error", None) or (
+                        f"OPC read 失败（{type(node).__name__}，未记录底层异常）"
+                    )
+                    raise RuntimeError(
+                        f"读取 PLC 变量失败: {node_name}: NodeId={direct_node_id}: {detail} "
+                        f"(endpoint={self.url})"
+                    )
+                raise RuntimeError(f"读取 PLC 变量失败: {node_name}")
+            return value
 
     @not_action
     def _parse_sensor_bit_name(self, variable_name: str) -> Optional[tuple[int, int]]:
@@ -560,10 +623,11 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def _read_sensor_array(self, group_index: int) -> List[bool]:
         variable_name = SensorBase.array(group_index)
-        try:
-            value = self.read_variable(variable_name, use_cache=False)
-        except Exception as exc:
-            raise RuntimeError(f"读取 PLC 传感器数组失败: {variable_name}: {exc}") from exc
+        node = self.use_node(variable_name)
+        with self._opc_io_lock:
+            value, error = node.read()
+        if error:
+            raise RuntimeError(f"读取 PLC 传感器数组失败: {variable_name}")
         if not isinstance(value, (list, tuple)):
             raise TypeError(f"PLC 传感器数组类型错误: {variable_name}: {type(value).__name__}")
         if len(value) < SENSOR_BITS_PER_ARRAY:
@@ -580,42 +644,43 @@ class SZLabPolyPLCDevice(BaseClient):
         interval_ms: int = 200,
     ) -> None:
         """只订阅 10 个传感器数组，并在数组内容变化时通知前端。"""
-        with self._sensor_subscription_lock:
-            if callback not in self._sensor_change_callbacks:
-                self._sensor_change_callbacks.append(callback)
-            self._sensor_array_subscription_interval_ms = int(interval_ms)
-            if self._sensor_array_subscription is not None:
-                return
-            if not self.client:
-                raise RuntimeError("PLC OPC UA 客户端尚未连接")
+        with self._opc_io_lock:
+            with self._sensor_subscription_lock:
+                if callback not in self._sensor_change_callbacks:
+                    self._sensor_change_callbacks.append(callback)
+                self._sensor_array_subscription_interval_ms = int(interval_ms)
+                if self._sensor_array_subscription is not None:
+                    return
+                if not self.client:
+                    raise RuntimeError("PLC OPC UA 客户端尚未连接")
 
-            subscription = self.client.create_subscription(
-                interval_ms,
-                self._SensorArraySubscriptionHandler(self),
-            )
-            self._sensor_array_subscription = subscription
-
-        handles: List[Any] = []
-        try:
-            for group_index in range(SENSOR_ARRAY_COUNT):
-                variable_name = SensorBase.array(group_index)
-                node_id = self._direct_node_id_map.get(variable_name)
-                opc_node = self.client.get_node(node_id) if node_id else self.use_node(variable_name)._get_node()
-                with self._sensor_subscription_lock:
-                    self._sensor_array_node_indexes[str(opc_node.nodeid)] = group_index
-                handles.append(subscription.subscribe_data_change(opc_node))
-        except Exception:
+            subscription: Any = None
+            handles: List[Any] = []
+            node_indexes: Dict[str, int] = {}
             try:
-                subscription.delete()
-            finally:
+                subscription = self.client.create_subscription(
+                    interval_ms,
+                    self._SensorArraySubscriptionHandler(self),
+                )
+                for group_index in range(SENSOR_ARRAY_COUNT):
+                    variable_name = SensorBase.array(group_index)
+                    node_id = self._direct_node_id_map.get(variable_name)
+                    opc_node = self.client.get_node(node_id) if node_id else self.use_node(variable_name)._get_node()
+                    node_indexes[str(opc_node.nodeid)] = group_index
+                    handles.append(subscription.subscribe_data_change(opc_node))
+            except Exception:
+                if subscription is not None:
+                    subscription.delete()
                 with self._sensor_subscription_lock:
                     self._sensor_array_subscription = None
                     self._sensor_array_subscription_handles = []
                     self._sensor_array_node_indexes = {}
-            raise
+                raise
 
-        with self._sensor_subscription_lock:
-            self._sensor_array_subscription_handles = handles
+            with self._sensor_subscription_lock:
+                self._sensor_array_subscription = subscription
+                self._sensor_array_subscription_handles = handles
+                self._sensor_array_node_indexes = node_indexes
 
     @not_action
     def _on_sensor_array_datachange(self, node: Any, value: Any) -> None:
@@ -641,13 +706,27 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def stop_sensor_array_subscription(self) -> None:
         self._drop_sensor_array_subscription(clear_callbacks=True)
+        with self._opc_io_lock:
+            with self._sensor_subscription_lock:
+                subscription = self._sensor_array_subscription
+                self._sensor_array_subscription = None
+                self._sensor_array_subscription_handles = []
+                self._sensor_array_node_indexes = {}
+                self._sensor_array_subscription_values = {}
+                self._sensor_change_callbacks = []
+            if subscription is not None:
+                try:
+                    subscription.delete()
+                except Exception as exc:
+                    logger.warning(f"删除 PLC 传感器订阅失败: {exc}")
 
     @not_action
     def write_variable(self, node_name: str, value: Any) -> bool:
         node = self.use_node(node_name)
         observed_generation = getattr(self, "_session_generation", 0)
         try:
-            self._write_value_only(node, value)
+            with self._opc_io_lock:
+                self._write_value_only(node, value)
         except Exception as exc:
             if self._is_recoverable_connection_error(exc):
                 try:
@@ -676,36 +755,38 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def _write_value_only(self, node: Any, value: Any) -> None:
-        opc_node = node._get_node()
-        variant_type = opc_node.get_data_type_as_variant_type()
-        data_value = ua.DataValue()
-        data_value.Value = ua.Variant(value, variant_type)
-        data_value.StatusCode = None
-        data_value.SourceTimestamp = None
-        data_value.ServerTimestamp = None
-        data_value.SourcePicoseconds = None
-        data_value.ServerPicoseconds = None
+        with self._opc_io_lock:
+            opc_node = node._get_node()
+            variant_type = opc_node.get_data_type_as_variant_type()
+            data_value = ua.DataValue()
+            data_value.Value = ua.Variant(value, variant_type)
+            data_value.StatusCode = None
+            data_value.SourceTimestamp = None
+            data_value.ServerTimestamp = None
+            data_value.SourcePicoseconds = None
+            data_value.ServerPicoseconds = None
 
-        write_value = ua.WriteValue()
-        write_value.NodeId = opc_node.nodeid
-        write_value.AttributeId = ua.AttributeIds.Value
-        write_value.Value = data_value
+            write_value = ua.WriteValue()
+            write_value.NodeId = opc_node.nodeid
+            write_value.AttributeId = ua.AttributeIds.Value
+            write_value.Value = data_value
 
-        params = ua.WriteParameters()
-        params.NodesToWrite = [write_value]
-        results = self.client.uaclient.write(params)
-        if results and not results[0].is_good():
-            raise RuntimeError(str(results[0]))
+            params = ua.WriteParameters()
+            params.NodesToWrite = [write_value]
+            results = self.client.uaclient.write(params)
+            if results and not results[0].is_good():
+                raise RuntimeError(str(results[0]))
 
     @not_action
     def disconnect(self) -> None:
-        self.heartbeat_on = False
-        if self._heartbeat_timer:
-            self._heartbeat_timer.cancel()
-            self._heartbeat_timer = None
-        self.stop_sensor_array_subscription()
-        if self.client:
-            self.client.disconnect()
+        with self._opc_io_lock:
+            self.heartbeat_on = False
+            if self._heartbeat_timer:
+                self._heartbeat_timer.cancel()
+                self._heartbeat_timer = None
+            self.stop_sensor_array_subscription()
+            if self.client:
+                self.client.disconnect()
 
     @not_action
     def read(self, node_name: str, use_cache: bool = True) -> Any:
@@ -767,22 +848,43 @@ class SZLabPolyPLCDevice(BaseClient):
         return wait_sensor_conditions(self, conditions, timeout=timeout, interval=interval, context=context)
 
     @not_action
+    def _opc_wait_thread_state(self) -> Any:
+        tls = getattr(self, "_opc_wait_tls", None)
+        if tls is None:
+            tls = threading.local()
+            self._opc_wait_tls = tls
+        return tls
+
+    @not_action
     def drain_opc_wait_events(self) -> List[Dict[str, Any]]:
-        events = list(getattr(self, "_opc_wait_events", []))
-        self._opc_wait_events = []
+        """仅回收当前线程缓存的 OPC 等待事件，避免并行 Action 串日志。"""
+        state = self._opc_wait_thread_state()
+        events = list(getattr(state, "events", None) or [])
+        state.events = []
         return events
 
     @not_action
     def set_opc_wait_event_writer(self, writer: Any | None) -> None:
-        self._opc_wait_event_writer = writer
+        """绑定当前线程的 OPC 等待日志回调；并行 Task 动作互不覆盖。"""
+        state = self._opc_wait_thread_state()
+        if writer is None:
+            if hasattr(state, "writer"):
+                del state.writer
+            return
+        state.writer = writer
 
     @not_action
     def _emit_or_store_opc_wait_event(self, event: Dict[str, Any]) -> None:
-        writer = getattr(self, "_opc_wait_event_writer", None)
+        state = self._opc_wait_thread_state()
+        writer = getattr(state, "writer", None)
         if callable(writer):
             writer(event)
             return
-        self._opc_wait_events.append(event)
+        pending = getattr(state, "events", None)
+        if pending is None:
+            pending = []
+            state.events = pending
+        pending.append(event)
 
     @not_action
     def _opc_wait_variable_detail(self, node_name: str) -> Dict[str, Any]:
@@ -964,6 +1066,36 @@ class SZLabPolyPLCDevice(BaseClient):
         )
 
     @not_action
+    def _record_opc_wait_change(
+        self,
+        node_name: str,
+        expected: Any,
+        previous_value: Any,
+        current_value: Any,
+        *,
+        timeout: float,
+        interval: float,
+    ) -> None:
+        detail = {
+            "type": "opc_wait",
+            "phase": "change",
+            "variable": node_name,
+            "expected": expected,
+            "previous_value": previous_value,
+            "last_value": current_value,
+            "timeout": timeout,
+            "interval": interval,
+        }
+        detail.update(self._opc_wait_variable_detail(node_name))
+        message = (
+            f"OPC 变量变化 {node_name}: {previous_value} → {current_value} "
+            f"(期望 {expected})"
+        )
+        self._emit_or_store_opc_wait_event(
+            {"phase": "change", "message": message, "detail": detail}
+        )
+
+    @not_action
     def _record_opc_wait_finish(
         self,
         node_name: str,
@@ -1020,7 +1152,8 @@ class SZLabPolyPLCDevice(BaseClient):
     def check_variable_accessible(self, node_name: str) -> tuple[bool, str | None]:
         try:
             node = self.use_node(node_name)
-            node._get_node().get_data_type_as_variant_type()
+            with self._opc_io_lock:
+                node._get_node().get_data_type_as_variant_type()
         except Exception as exc:
             return False, str(exc)
         return True, node.node_id
@@ -1068,6 +1201,11 @@ class SZLabPolyPLCDevice(BaseClient):
                 if array_value is not None:
                     result[site_key] = array_value[bit_index]
                     continue
+                node = self.use_node(variable_name)
+                with self._opc_io_lock:
+                    value, error = node.read()
+                if error:
+                    raise RuntimeError(f"读取 PLC 传感器位失败: {variable_name}")
                 result[site_key] = bool(self.read_variable(variable_name, use_cache=False))
             except Exception as exc:
                 if variable_name not in self._sensor_read_warning_names:
@@ -1205,7 +1343,10 @@ class SZLabPolyPLCDevice(BaseClient):
                         for bit_index in range(SENSOR_BITS_PER_ARRAY):
                             bit_name = f"{array_name}[{bit_index}]"
                             try:
-                                values.append(bool(self.read_variable(bit_name, use_cache=False)))
+                                node = self.use_node(bit_name)
+                                with self._opc_io_lock:
+                                    value, read_error = node.read()
+                                values.append(None if read_error else bool(value))
                             except Exception:
                                 values.append(None)
                         if any(value is not None for value in values):
@@ -1290,6 +1431,16 @@ class SZLabPolyPLCDevice(BaseClient):
     @topic_config(period=5.0)
     def registered_variables(self) -> List[str]:
         return sorted(self._variables_to_find)
+
+    @not_action
+    def registered_variable_aliases(self) -> Dict[str, str]:
+        """返回已注册变量的 ``EnglishName -> CSV Name`` 安全公开映射。"""
+        registered = set(self._variables_to_find)
+        return {
+            alias: canonical
+            for alias, canonical in self._name_mapping.items()
+            if canonical in registered
+        }
 
     @topic_config(period=1.0)
     def stack_status(self) -> Dict[str, Any]:

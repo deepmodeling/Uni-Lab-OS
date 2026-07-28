@@ -1,0 +1,230 @@
+export type TaskActionLogEntry = {
+  seq: number;
+  timestamp: number;
+  instance_id: string;
+  node_id: string;
+  execution_id: string;
+  sample_id: string;
+  level: string;
+  message: string;
+  detail: Record<string, unknown>;
+};
+
+export type TaskVariableRow = {
+  key: string;
+  nodeId: string;
+  phase: string;
+  variable: string;
+  expected: string;
+  current: string;
+  result: string;
+};
+
+export type TaskProcessLogLine = {
+  seq: number;
+  timestamp: number;
+  nodeId: string;
+  level: string;
+  message: string;
+};
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function opcWaitPhaseLabel(phase: string | undefined): string {
+  switch (phase) {
+    case 'start':
+      return '检查';
+    case 'change':
+      return '变化';
+    case 'finish':
+      return '完成';
+    default:
+      return phase || '检查';
+  }
+}
+
+function resultFromOpcWait(detail: Record<string, unknown>, phase: string | undefined): string {
+  if (phase === 'finish') {
+    if (detail.error) return '错误';
+    if (detail.success === true) return '满足';
+    if (detail.success === false) return '超时';
+  }
+  if (detail.satisfied === true) return '满足';
+  if (detail.satisfied === false) return '等待';
+  const expected = detail.expected;
+  const actual = detail.last_value ?? detail.actual;
+  if (expected !== undefined && actual !== undefined && actual === expected) return '满足';
+  return phase === 'start' ? '检查中' : '等待';
+}
+
+function resultForSensorConditionRow(
+  parentDetail: Record<string, unknown>,
+  row: Record<string, unknown>,
+  phase: string | undefined,
+): string {
+  if (phase === 'finish') {
+    return resultFromOpcWait(parentDetail, phase);
+  }
+  if (row.satisfied === true) return '满足';
+  return resultFromOpcWait(row, phase);
+}
+
+function currentForSensorConditionRow(
+  parentDetail: Record<string, unknown>,
+  row: Record<string, unknown>,
+  phase: string | undefined,
+): string {
+  if (phase === 'finish' && parentDetail.success === true) {
+    return formatValue(row.expected);
+  }
+  return formatValue(row.actual);
+}
+
+function upsertVariableRow(
+  rows: Map<string, TaskVariableRow>,
+  nodeId: string,
+  variable: string,
+  patch: Partial<TaskVariableRow> & Pick<TaskVariableRow, 'expected' | 'current' | 'result' | 'phase'>,
+) {
+  const key = `${nodeId}:${variable}`;
+  const previous = rows.get(key);
+  rows.set(key, {
+    key,
+    nodeId,
+    phase: patch.phase || previous?.phase || '检查',
+    variable,
+    expected: patch.expected ?? previous?.expected ?? '—',
+    current: patch.current ?? previous?.current ?? '—',
+    result: patch.result ?? previous?.result ?? '等待',
+  });
+}
+
+function absorbOpcWaitDetail(
+  rows: Map<string, TaskVariableRow>,
+  nodeId: string,
+  detail: Record<string, unknown>,
+) {
+  const phase = typeof detail.phase === 'string' ? detail.phase : undefined;
+  if (detail.wait_kind === 'sensor_conditions' && Array.isArray(detail.conditions)) {
+    for (const item of detail.conditions) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as Record<string, unknown>;
+      const variable = String(row.display_name || row.variable || '传感器');
+      upsertVariableRow(rows, nodeId, variable, {
+        phase: typeof detail.context === 'string' ? detail.context : opcWaitPhaseLabel(phase),
+        expected: formatValue(row.expected),
+        current: currentForSensorConditionRow(detail, row, phase),
+        result: resultForSensorConditionRow(detail, row, phase),
+      });
+    }
+    return;
+  }
+  const variable = String(detail.display_name || detail.variable || detail.label || '变量');
+  const expected = formatValue(detail.expected);
+  const current = formatValue(
+    detail.last_value ?? detail.actual ?? detail.previous_value,
+  );
+  upsertVariableRow(rows, nodeId, variable, {
+    phase: opcWaitPhaseLabel(phase),
+    expected,
+    current,
+    result: resultFromOpcWait(detail, phase),
+  });
+}
+
+export function buildTaskVariableRows(entries: TaskActionLogEntry[]): TaskVariableRow[] {
+  const rows = new Map<string, TaskVariableRow>();
+  for (const entry of entries) {
+    const detail = entry.detail || {};
+    if (detail.type === 'opc_wait') {
+      absorbOpcWaitDetail(rows, entry.node_id, detail);
+    }
+  }
+  return Array.from(rows.values());
+}
+
+export function buildTaskProcessLogLines(entries: TaskActionLogEntry[]): TaskProcessLogLine[] {
+  return entries
+    .filter((entry) => {
+      const detail = entry.detail || {};
+      return detail.type !== 'opc_wait';
+    })
+    .map((entry) => ({
+      seq: entry.seq,
+      timestamp: entry.timestamp,
+      nodeId: entry.node_id,
+      level: entry.level,
+      message: entry.message,
+    }));
+}
+
+export function mergeTaskActionLogs(
+  previous: TaskActionLogEntry[],
+  incoming: TaskActionLogEntry[],
+): TaskActionLogEntry[] {
+  const bySeq = new Map<number, TaskActionLogEntry>();
+  for (const entry of [...previous, ...incoming]) {
+    bySeq.set(entry.seq, entry);
+  }
+  return Array.from(bySeq.values())
+    .sort((left, right) => left.seq - right.seq)
+    .slice(-2000);
+}
+
+export function groupTaskActionLogsByNode(
+  entries: TaskActionLogEntry[],
+  nodeIds: string[],
+): Array<{ nodeId: string; entries: TaskActionLogEntry[] }> {
+  const byNode = new Map<string, TaskActionLogEntry[]>();
+  for (const entry of entries) {
+    const bucket = byNode.get(entry.node_id) || [];
+    bucket.push(entry);
+    byNode.set(entry.node_id, bucket);
+  }
+  const ordered = [...nodeIds];
+  for (const nodeId of byNode.keys()) {
+    if (!ordered.includes(nodeId)) {
+      ordered.push(nodeId);
+    }
+  }
+  if (!ordered.length) {
+    return Array.from(byNode.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([nodeId, nodeEntries]) => ({ nodeId, entries: nodeEntries }));
+  }
+  return ordered
+    .filter((nodeId) => byNode.has(nodeId))
+    .map((nodeId) => ({ nodeId, entries: byNode.get(nodeId) || [] }));
+}
+
+export async function fetchTaskActionLogs(
+  fetcher: typeof fetch,
+  workflowPath: string,
+  options: { afterSeq?: number; instanceId?: string } = {},
+): Promise<{ latest_seq: number; entries: TaskActionLogEntry[] }> {
+  const params = new URLSearchParams({
+    task_workspace_path: workflowPath,
+    after_seq: String(options.afterSeq ?? 0),
+  });
+  if (options.instanceId) {
+    params.set('instance_id', options.instanceId);
+  }
+  const response = await fetcher(`/api/task-execution/logs?${params.toString()}`);
+  const payload = await response.json() as {
+    success?: boolean;
+    latest_seq?: number;
+    entries?: TaskActionLogEntry[];
+    message?: string;
+  };
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.message || 'Task 日志不可用');
+  }
+  return {
+    latest_seq: Number(payload.latest_seq || 0),
+    entries: Array.isArray(payload.entries) ? payload.entries : [],
+  };
+}

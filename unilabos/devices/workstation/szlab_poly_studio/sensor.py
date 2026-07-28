@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import codecs
+import io
 import json
 import re
 import time
@@ -14,6 +16,29 @@ DEFAULT_STACK_SENSOR_LAYOUT_NAME = "stack_sensor_layout.json"
 SENSOR_ARRAY_COUNT = 10
 SENSOR_BITS_PER_ARRAY = 16
 SENSOR_BIT_NAME_PATTERN = re.compile(r"^传感器状态_上位机\[(\d+)\]\.NO\[(\d+)\]$")
+
+
+def read_plc_csv_text(csv_path: str) -> str:
+    """按 BOM 和内容特征安全解码 PLC CSV。"""
+    raw = Path(csv_path).read_bytes()
+    if raw.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return raw.decode("utf-16")
+    if raw.startswith(codecs.BOM_UTF8):
+        return raw.decode("utf-8-sig")
+
+    sample = raw[:256]
+    if sample:
+        odd_nuls = sample[1::2].count(0)
+        even_nuls = sample[0::2].count(0)
+        if odd_nuls > len(sample) // 8:
+            return raw.decode("utf-16-le")
+        if even_nuls > len(sample) // 8:
+            return raw.decode("utf-16-be")
+
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("gb18030")
 
 
 def _resolve_config_path(config_path: Optional[str]) -> Path:
@@ -39,30 +64,22 @@ def load_stack_sensor_groups_from_json(config_path: Optional[str] = None) -> Dic
 
 def load_sensor_bit_metadata_from_csv(csv_path: str) -> Dict[str, Dict[str, str]]:
     """读取传感器位的现场标签、软元件地址和 NodeId。"""
-    last_error: Optional[UnicodeDecodeError] = None
-    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "gb18030", "gbk"):
-        for delimiter in (",", "\t"):
-            try:
-                with open(csv_path, newline="", encoding=encoding) as csv_file:
-                    reader = csv.DictReader(csv_file, delimiter=delimiter)
-                    if "变量名" not in (reader.fieldnames or []):
-                        continue
-                    metadata: Dict[str, Dict[str, str]] = {}
-                    for row in reader:
-                        name = (row.get("变量名") or "").strip()
-                        if not SENSOR_BIT_NAME_PATTERN.fullmatch(name):
-                            continue
-                        metadata[name] = {
-                            "label": (row.get("注释") or "").strip(),
-                            "address": (row.get("软元件地址") or "").strip(),
-                            "node_id": (row.get("node_id") or row.get("nodeid") or "").strip(),
-                        }
-                    return metadata
-            except UnicodeDecodeError as exc:
-                last_error = exc
-                break
-    if last_error:
-        raise last_error
+    text = read_plc_csv_text(csv_path)
+    for delimiter in (",", "\t"):
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        if "变量名" not in (reader.fieldnames or []):
+            continue
+        metadata: Dict[str, Dict[str, str]] = {}
+        for row in reader:
+            name = (row.get("变量名") or "").strip()
+            if not SENSOR_BIT_NAME_PATTERN.fullmatch(name):
+                continue
+            metadata[name] = {
+                "label": (row.get("注释") or "").strip(),
+                "address": (row.get("软元件地址") or "").strip(),
+                "node_id": (row.get("node_id") or row.get("nodeid") or "").strip(),
+            }
+        return metadata
     return {}
 
 
@@ -116,10 +133,23 @@ class SensorBase:
 
         success = False
         last_value = None
+        previous_value = None
         error = None
         try:
             while time.time() - started_at <= timeout:
                 last_value = reader.read_variable(variable_name, use_cache=False)
+                if previous_value is not None and last_value != previous_value:
+                    change_recorder = getattr(reader, "_record_opc_wait_change", None)
+                    if callable(change_recorder):
+                        change_recorder(
+                            variable_name,
+                            expected,
+                            previous_value,
+                            last_value,
+                            timeout=timeout,
+                            interval=interval,
+                        )
+                previous_value = last_value
                 if last_value == expected:
                     success = True
                     return True

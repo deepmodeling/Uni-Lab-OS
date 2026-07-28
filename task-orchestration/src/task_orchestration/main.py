@@ -28,7 +28,7 @@ def create_app(workspace_root: Path | str | None = None) -> FastAPI:
             "http://localhost:8014",
         ],
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Content-Type"],
     )
     store = WorkspaceStore(workspace_root or Path.cwd())
     router = create_router(store, WorkspaceService(store))

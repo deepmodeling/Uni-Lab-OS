@@ -1,0 +1,205 @@
+{
+  "schema_version": 2,
+  "status": "draft",
+  "name": "szlab_robot_action_workflow OPC Simulator",
+  "opc": {
+    "url": "opc.tcp://192.168.1.10:4840",
+    "poll_interval": 0.2,
+    "io_timeout": 2.0
+  },
+  "variables": [
+    {
+      "name": "S03取放料产品",
+      "direction": "pc_to_plc",
+      "data_type": "bool",
+      "source": "action_node"
+    },
+    {
+      "name": "S03取放料编号",
+      "direction": "pc_to_plc",
+      "data_type": "bool",
+      "source": "action_node"
+    },
+    {
+      "name": "任务号",
+      "direction": "pc_to_plc",
+      "data_type": "int",
+      "source": "action_node"
+    },
+    {
+      "name": "Robot_Home",
+      "direction": "plc_to_pc",
+      "data_type": "bool",
+      "source": "manual",
+      "initial_value": true
+    },
+    {
+      "name": "Robot_任务允许写入",
+      "direction": "plc_to_pc",
+      "data_type": "bool",
+      "source": "manual",
+      "initial_value": true
+    },
+    {
+      "name": "Robot_任务写入完成",
+      "direction": "pc_to_plc",
+      "data_type": "bool",
+      "source": "manual"
+    },
+    {
+      "name": "Robot_任务完成",
+      "direction": "plc_to_pc",
+      "data_type": "int",
+      "source": "manual",
+      "initial_value": 0
+    },
+    {
+      "name": "S072取放料产品",
+      "direction": "pc_to_plc",
+      "data_type": "bool",
+      "source": "action_node"
+    },
+    {
+      "name": "S07原点信号",
+      "direction": "plc_to_pc",
+      "data_type": "bool",
+      "source": "action_node",
+      "initial_value": false
+    },
+    {
+      "name": "S07允许加工",
+      "direction": "plc_to_pc",
+      "data_type": "bool",
+      "source": "action_node",
+      "initial_value": false
+    },
+    {
+      "name": "S07工艺选择",
+      "direction": "pc_to_plc",
+      "data_type": "int",
+      "source": "action_node"
+    },
+    {
+      "name": "S07参数写入完成",
+      "direction": "pc_to_plc",
+      "data_type": "bool",
+      "source": "action_node"
+    },
+    {
+      "name": "S07工艺完成",
+      "direction": "plc_to_pc",
+      "data_type": "int",
+      "source": "action_node",
+      "initial_value": 0
+    },
+    {
+      "name": "S07粗注粉位置号",
+      "direction": "plc_to_pc",
+      "data_type": "int",
+      "source": "action_node",
+      "initial_value": 0
+    },
+    {
+      "name": "S07精注粉位置号",
+      "direction": "plc_to_pc",
+      "data_type": "int",
+      "source": "action_node",
+      "initial_value": 0
+    },
+    {
+      "name": "S07注粉重量",
+      "direction": "plc_to_pc",
+      "data_type": "float",
+      "source": "action_node",
+      "initial_value": 0
+    },
+    {
+      "name": "传感器状态_上位机[0].NO[6]",
+      "direction": "plc_to_pc",
+      "data_type": "bool",
+      "source": "action_sensor",
+      "initial_value": false
+    }
+  ],
+  "nodes": [
+    {
+      "workflow_node_id": "node_001_pick_from_s03",
+      "task_template_ids": [
+        "szlab-e2e-s07"
+      ],
+      "device_id": "szlab_mixer_robot",
+      "method": "submit_pick_from_s03",
+      "params": {
+        "product_type": 1,
+        "position": "1-1"
+      },
+      "channel": "",
+      "trigger": {
+        "all": []
+      },
+      "on_trigger": {
+        "writes": []
+      },
+      "on_complete": {
+        "writes": [],
+        "delay": 0.5
+      },
+      "reset_when": null,
+      "after_reset": null
+    },
+    {
+      "workflow_node_id": "node_002_place_to_s072",
+      "task_template_ids": [
+        "szlab-e2e-s07"
+      ],
+      "device_id": "szlab_mixer_robot",
+      "method": "submit_place_to_s072",
+      "params": {
+        "product_type": 2,
+        "position": 1
+      },
+      "channel": "",
+      "trigger": {
+        "all": []
+      },
+      "on_trigger": {
+        "writes": []
+      },
+      "on_complete": {
+        "writes": [],
+        "delay": 0.5
+      },
+      "reset_when": null,
+      "after_reset": null
+    },
+    {
+      "workflow_node_id": "node_003_dose_powder",
+      "task_template_ids": [
+        "szlab-e2e-s07"
+      ],
+      "device_id": "szlab_s07_solid_addition",
+      "method": "dose_powder",
+      "params": {
+        "coarse_position": 1,
+        "fine_position": 2,
+        "target_weight": 1,
+        "timeout": 300,
+        "params_json": null,
+        "recipe_name": "default"
+      },
+      "channel": "",
+      "trigger": {
+        "all": []
+      },
+      "on_trigger": {
+        "writes": []
+      },
+      "on_complete": {
+        "writes": [],
+        "delay": 0.5
+      },
+      "reset_when": null,
+      "after_reset": null
+    }
+  ]
+}

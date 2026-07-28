@@ -35,6 +35,7 @@
     "csv": "szlab_plc_0721.csv",
     "timeout": 300,
     "write_allowed_timeout": 60,
+    "task_sample_start_interval_seconds": 1,
     "no_subscription": true,
     "show_csv": false,
     "stack_status_groups": [

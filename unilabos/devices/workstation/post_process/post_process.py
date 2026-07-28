@@ -387,7 +387,7 @@ class BaseClient(UniversalDriver):
                 "data_type": node.data_type
             }
             new_nodes_count += 1
-            logger.debug(f'添加节点 "{node.name}" ({node.node_type}) 到待查找列表')
+            # logger.debug(f'添加节点 "{node.name}" ({node.node_type}) 到待查找列表')
 
         logger.info(f'节点注册完成：新增 {new_nodes_count} 个待查找节点，总计 {len(self._variables_to_find)} 个')
 

@@ -267,3 +267,6 @@ unilabos_local_ui/vite.config.js
 
 # Local workflow scheduling timing reports
 workflow_timings/
+# OPC simulator profile lock files (user profiles live under task-orchestration/configs)
+task-orchestration/configs/.opc-profile-locks/
+.superpowers

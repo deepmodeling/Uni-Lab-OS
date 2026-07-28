@@ -6,13 +6,14 @@ from collections.abc import Callable, Iterable
 import json
 import threading
 import time
+from typing import Any
 from uuid import uuid4
 
 from .conditions import OpcConditionProvider
 from .models import (
-    POLICY_RESOURCE_PREFIX,
-    POLICY_WORKSTATION_PREFIX,
+    NodeExecutionRecord,
     SchedulingResult,
+    PlcRegistration,
     OpcSnapshotState,
     TaskScheduleEntry,
     TaskInstance,
@@ -21,9 +22,10 @@ from .models import (
     WaitingReason,
     Workspace,
     WorkspaceEvent,
+    WorkspacePauseReason,
 )
-from .policy import FifoResourcePolicy, SchedulingPolicy, constraint_resources
-from .store import VersionConflictError, WorkspaceStore
+from .policy import FifoResourcePolicy, SchedulingPolicy
+from .store import WorkspaceStore
 
 
 class WorkspaceServiceError(ValueError):
@@ -32,6 +34,22 @@ class WorkspaceServiceError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+def _json_values_equal(left, right) -> bool:
+    """递归比较 JSON 值，同时保留 bool、int、float 等类型差异。"""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(
+            _json_values_equal(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _json_values_equal(left_item, right_item)
+            for left_item, right_item in zip(left, right)
+        )
+    return left == right
 
 
 class WorkspaceService:
@@ -51,16 +69,80 @@ class WorkspaceService:
         self._opc_lock = threading.RLock()
         self._clock = clock or (lambda: int(time.time() * 1000))
 
+    def _mutate(
+        self,
+        workflow_path: str,
+        *,
+        expected_version: int,
+        operation: Callable[[Workspace], Workspace],
+    ):
+        """所有服务写事务在业务操作前统一清除旧 Task 资源租约。"""
+        return self.store.mutate(
+            workflow_path,
+            expected_version=expected_version,
+            operation=lambda workspace: operation(
+                self._normalize_runtime_resources(workspace)
+            ),
+        )
+
+    def _mutate_latest(
+        self,
+        workflow_path: str,
+        *,
+        operation: Callable[[Workspace], Workspace],
+    ):
+        return self.store.mutate_latest(
+            workflow_path,
+            operation=lambda workspace: operation(
+                self._normalize_runtime_resources(workspace)
+            ),
+        )
+
+    def _mutate_idempotent(
+        self,
+        workflow_path: str,
+        *,
+        expected_version: int,
+        operation: Callable[[Workspace], Workspace | None],
+    ):
+        def normalize_and_apply(workspace: Workspace) -> Workspace | None:
+            had_legacy_leases = bool(workspace.dynamic_resource_leases)
+            normalized = self._normalize_runtime_resources(workspace)
+            updated = operation(normalized)
+            if updated is None and had_legacy_leases:
+                return normalized
+            return updated
+
+        return self.store.mutate_idempotent(
+            workflow_path,
+            expected_version=expected_version,
+            operation=normalize_and_apply,
+        )
+
+    def reset_workspace(self, workflow_path: str):
+        """原子清理 sidecar 及对应 OPC 内存序列，允许 runtime 从 1 重启。"""
+        with self._opc_lock:
+            response = self.store.reset(workflow_path)
+            self.conditions.clear_workflow(workflow_path)
+            return response
+
     def create_template(
         self, workflow_path: str, expected_version: int, template: Template
     ):
         def operation(workspace: Workspace) -> Workspace:
             if any(item.id == template.id for item in workspace.templates):
                 raise WorkspaceServiceError("template_exists", "template already exists")
-            item = template.model_copy(update={"workflow_path": workspace.workflow_path})
+            item = self._canonicalize_template_triggers(workspace, template)
+            self._validate_template_conditions(workspace, item)
+            item = item.model_copy(
+                update={
+                    "workflow_path": workspace.workflow_path,
+                    "resources": [],
+                }
+            )
             return workspace.model_copy(update={"templates": [*workspace.templates, item]})
 
-        return self.store.mutate(
+        return self._mutate(
             workflow_path, expected_version=expected_version, operation=operation
         )
 
@@ -71,7 +153,6 @@ class WorkspaceService:
         template_id: str,
         *,
         name: str | None = None,
-        trigger: Trigger | None = None,
         input_triggers: list[Trigger] | None = None,
         output_triggers: list[Trigger] | None = None,
     ):
@@ -82,12 +163,15 @@ class WorkspaceService:
                 if not name.strip():
                     raise WorkspaceServiceError("invalid_template_name", "template name is required")
                 updates["name"] = name.strip()
-            if trigger is not None:
-                updates["trigger"] = trigger
             if input_triggers is not None:
-                updates["input_triggers"] = input_triggers
+                updates["input_triggers"] = self._canonicalize_triggers(
+                    workspace, input_triggers, "input"
+                )
             if output_triggers is not None:
-                updates["output_triggers"] = output_triggers
+                updates["output_triggers"] = self._canonicalize_triggers(
+                    workspace, output_triggers, "output"
+                )
+            updates["resources"] = []
             replacement = template.model_copy(update=updates)
             return workspace.model_copy(
                 update={
@@ -98,9 +182,63 @@ class WorkspaceService:
                 }
             )
 
-        return self.store.mutate(
+        return self._mutate(
             workflow_path, expected_version=expected_version, operation=operation
         )
+
+    def register_plc_variables(
+        self,
+        workflow_path: str,
+        expected_version: int,
+        registration: PlcRegistration,
+    ):
+        """记录 PLC runtime 当前注册表；忽略浏览器版本，始终原子写入最新工作区。"""
+        del expected_version
+        canonical_path = self.store.get(workflow_path).workspace.workflow_path
+        with self._opc_lock:
+            runtime_changed = False
+
+            def operation(workspace: Workspace) -> Workspace:
+                nonlocal runtime_changed
+                previous_registration = self._registration(
+                    workspace, registration.plc_device_id
+                )
+                runtime_changed = (
+                    previous_registration is not None
+                    and previous_registration.runtime_url != registration.runtime_url
+                )
+                registrations = [
+                    item
+                    for item in workspace.plc_registrations
+                    if item.plc_device_id != registration.plc_device_id
+                ]
+                registrations.append(registration)
+                templates = [
+                    self._canonicalize_template_triggers(
+                        workspace.model_copy(update={"plc_registrations": registrations}),
+                        template,
+                    )
+                    for template in workspace.templates
+                ]
+                return workspace.model_copy(
+                    update={
+                        "plc_registrations": registrations,
+                        "templates": templates,
+                        "opc_snapshots": [
+                            item
+                            for item in workspace.opc_snapshots
+                            if item.plc_device_id != registration.plc_device_id
+                        ] if runtime_changed else workspace.opc_snapshots,
+                        "scheduler_paused": (
+                            True if runtime_changed else workspace.scheduler_paused
+                        ),
+                    }
+                )
+
+            response = self._mutate_latest(canonical_path, operation=operation)
+            if runtime_changed:
+                self.conditions.clear_state(canonical_path, registration.plc_device_id)
+            return response
 
     def delete_template(self, workflow_path: str, expected_version: int, template_id: str):
         def operation(workspace: Workspace) -> Workspace:
@@ -145,7 +283,7 @@ class WorkspaceService:
                 }
             )
 
-        return self.store.mutate(
+        return self._mutate(
             workflow_path, expected_version=expected_version, operation=operation
         )
 
@@ -174,7 +312,7 @@ class WorkspaceService:
                 }
             )
 
-        return self.store.mutate(
+        return self._mutate(
             workflow_path, expected_version=expected_version, operation=operation
         )
 
@@ -184,13 +322,18 @@ class WorkspaceService:
         expected_version: int,
         template_ids: list[str],
         sample_ids: list[str],
+        *,
+        sample_start_interval_seconds: float = 0,
     ):
         def operation(workspace: Workspace) -> Workspace:
             templates = [self._template(workspace, item) for item in template_ids]
             generated: list[TaskInstance] = []
-            for sample_id in sample_ids:
+            batch_anchor = self._clock()
+            interval_ms = round(sample_start_interval_seconds * 1_000)
+            for sample_index, sample_id in enumerate(sample_ids):
                 if not sample_id:
                     raise WorkspaceServiceError("invalid_sample_id", "sample_id is required")
+                sample_not_before = batch_anchor + sample_index * interval_ms
                 next_order = max(
                     (item.order for item in workspace.task_instances if item.sample_id == sample_id),
                     default=-1,
@@ -203,14 +346,56 @@ class WorkspaceService:
                             status="waiting",
                             sample_id=sample_id,
                             order=next_order,
+                            not_before=sample_not_before,
                         )
                     )
                     next_order += 1
-            return workspace.model_copy(
+            updated = workspace.model_copy(
                 update={"task_instances": [*workspace.task_instances, *generated]}
             )
+            return updated.model_copy(
+                update={"schedule_entries": self._build_schedule_entries(updated)}
+            )
 
-        return self.store.mutate(
+        return self._mutate(
+            workflow_path, expected_version=expected_version, operation=operation
+        )
+
+    def clear_instances(self, workflow_path: str, expected_version: int):
+        """清空 Task 队列实例；保留模板、排程模板列表与 OPC/PLC 注册。"""
+
+        def operation(workspace: Workspace) -> Workspace:
+            if not workspace.scheduler_paused:
+                raise WorkspaceServiceError(
+                    "scheduler_active",
+                    "pause scheduler before clearing task queue",
+                )
+            deleted_instance_ids = [item.id for item in workspace.task_instances]
+            if not deleted_instance_ids and workspace.pause_reason is None:
+                return workspace
+            retained_events = [
+                item for item in workspace.events if item.instance_id is None
+            ]
+            event = WorkspaceEvent(
+                kind="instances_cleared",
+                timestamp=self._clock(),
+                idempotency_key=(
+                    f"{workspace.workflow_path}/instances/clear/{expected_version}"
+                ),
+                payload={"deleted_instance_ids": deleted_instance_ids},
+            )
+            return workspace.model_copy(
+                update={
+                    "task_instances": [],
+                    "schedule_entries": [],
+                    "pause_reason": None,
+                    "scheduler_paused": True,
+                    "dynamic_resource_leases": [],
+                    "events": [*retained_events, event],
+                }
+            )
+
+        return self._mutate(
             workflow_path, expected_version=expected_version, operation=operation
         )
 
@@ -244,7 +429,58 @@ class WorkspaceService:
                 }
             )
 
-        return self.store.mutate(
+        return self._mutate(
+            workflow_path, expected_version=expected_version, operation=operation
+        )
+
+    def update_instance_parameters(
+        self,
+        workflow_path: str,
+        expected_version: int,
+        instance_id: str,
+        node_parameters: dict[str, dict[str, Any]],
+    ):
+        """保存单个未运行实例的 Action 节点参数覆盖。"""
+        def operation(workspace: Workspace) -> Workspace:
+            instance = self._instance(workspace, instance_id)
+            if instance.status not in {"waiting", "pending"}:
+                raise WorkspaceServiceError(
+                    "instance_parameters_locked",
+                    "only waiting or pending instances can update action parameters",
+                )
+            template = self._template(workspace, instance.template_id)
+            unknown_nodes = set(node_parameters) - set(template.node_ids)
+            if unknown_nodes:
+                raise WorkspaceServiceError(
+                    "unknown_action_node",
+                    f"action nodes are not in template: {sorted(unknown_nodes)}",
+                )
+            payload = {
+                **instance.payload,
+                "node_parameters": node_parameters,
+            }
+            updated_instance = instance.validated_copy(update={"payload": payload})
+            event = WorkspaceEvent(
+                kind="instance_parameters_updated",
+                timestamp=self._clock(),
+                instance_id=instance.id,
+                template_id=template.id,
+                idempotency_key=(
+                    f"{workspace.workflow_path}/instances/{instance.id}/parameters/"
+                    f"{expected_version}"
+                ),
+                payload={"node_ids": sorted(node_parameters)},
+            )
+            return workspace.validated_copy(
+                update={
+                    "task_instances": self._replace_instance(
+                        workspace, updated_instance
+                    ),
+                    "events": [*workspace.events, event],
+                }
+            )
+
+        return self._mutate(
             workflow_path, expected_version=expected_version, operation=operation
         )
 
@@ -252,38 +488,43 @@ class WorkspaceService:
         self,
         workflow_path: str,
         expected_version: int,
-        provider_id: str,
+        plc_device_id: str,
         sequence: int,
         values: dict,
     ):
         canonical_path = self.store.get(workflow_path).workspace.workflow_path
         with self._opc_lock:
             current_workspace = self.store.get(canonical_path).workspace
+            canonical_values = self._canonicalize_snapshot_values(
+                current_workspace, plc_device_id, values
+            )
             self._hydrate_conditions(current_workspace)
-            previous = self.conditions.export_state(canonical_path, provider_id)
+            previous = self.conditions.export_state(canonical_path, plc_device_id)
             accepted = self.conditions.can_update(
-                canonical_path, provider_id, sequence
+                canonical_path, plc_device_id, sequence
             )
             if not accepted:
                 return self.store.get(canonical_path), False
             if accepted:
-                self.conditions.update(canonical_path, provider_id, sequence, values)
-            snapshot_state = self.conditions.export_state(canonical_path, provider_id)
+                self.conditions.update(
+                    canonical_path, plc_device_id, sequence, canonical_values
+                )
+            snapshot_state = self.conditions.export_state(canonical_path, plc_device_id)
 
             def operation(workspace: Workspace) -> Workspace:
                 event = WorkspaceEvent(
                     kind="opc_snapshot",
                     timestamp=self._clock(),
-                    idempotency_key=f"{workspace.workflow_path}/{provider_id}/{sequence}",
+                    idempotency_key=f"{workspace.workflow_path}/{plc_device_id}/{sequence}",
                     payload={
-                        "provider_id": provider_id,
+                        "plc_device_id": plc_device_id,
                         "sequence": sequence,
                         "accepted": accepted,
-                        "variable_count": len(values),
+                        "variable_count": len(canonical_values),
                     },
                 )
                 snapshots = [
-                    item for item in workspace.opc_snapshots if item.provider_id != provider_id
+                    item for item in workspace.opc_snapshots if item.plc_device_id != plc_device_id
                 ]
                 if snapshot_state is not None:
                     snapshots.append(OpcSnapshotState.model_validate(snapshot_state))
@@ -292,25 +533,56 @@ class WorkspaceService:
                 )
 
             try:
-                response = self.store.mutate(
+                response = self._mutate(
                     canonical_path, expected_version=expected_version, operation=operation
                 )
             except Exception:
                 if previous is None:
-                    self.conditions.clear_state(canonical_path, provider_id)
+                    self.conditions.clear_state(canonical_path, plc_device_id)
                 else:
                     self.conditions.restore_state(canonical_path, previous)
                 raise
             return response, accepted
 
-    def plan(self, workflow_path: str, expected_version: int, *, paused: bool | None = None):
+    def plan(
+        self,
+        workflow_path: str,
+        expected_version: int,
+        *,
+        paused: bool | None = None,
+        acknowledge_peer_failure: bool = False,
+    ):
         schedule: SchedulingResult | None = None
 
         def operation(workspace: Workspace) -> Workspace:
             nonlocal schedule
             self._hydrate_conditions(workspace)
-            paused_value = workspace.scheduler_paused if paused is None else paused
-            evaluated, reasons = self._evaluate(workspace)
+            workspace_for_plan = workspace
+            if (
+                paused is False
+                and workspace.pause_reason is not None
+                and acknowledge_peer_failure
+            ):
+                if not any(item.status == "running" for item in workspace.task_instances):
+                    raise WorkspaceServiceError(
+                        "workspace_recovery_required",
+                        "no running instance remains after peer failure",
+                    )
+                workspace_for_plan = workspace.model_copy(
+                    update={
+                        "pause_reason": None,
+                        "scheduler_paused": False,
+                    }
+                )
+            elif paused is False and workspace_for_plan.pause_reason is not None:
+                raise WorkspaceServiceError(
+                    "workspace_recovery_required",
+                    "failed workspace requires an explicit recovery operation",
+                )
+            paused_value = (
+                workspace_for_plan.scheduler_paused if paused is None else paused
+            )
+            evaluated, reasons = self._evaluate(workspace_for_plan)
             instances = [
                 item.model_copy(
                     update={
@@ -321,9 +593,9 @@ class WorkspaceService:
                         )
                     }
                 )
-                for item in workspace.task_instances
+                for item in workspace_for_plan.task_instances
             ]
-            provisional = workspace.model_copy(
+            provisional = workspace_for_plan.model_copy(
                 update={"task_instances": instances, "scheduler_paused": paused_value}
             )
             schedule = self._schedule(provisional, evaluated, reasons)
@@ -336,11 +608,274 @@ class WorkspaceService:
                 }
             )
 
-        response = self.store.mutate(
+        response = self._mutate(
             workflow_path, expected_version=expected_version, operation=operation
         )
         assert schedule is not None
         return response, schedule
+
+    def claim_action(
+        self,
+        workflow_path: str,
+        expected_version: int,
+        instance_id: str,
+        node_id: str,
+        execution_id: str,
+        resources: Iterable[str],
+    ):
+        """原子认领节点动作；resources 仅作为旧 API 兼容输入。"""
+        del resources
+
+        def operation(workspace: Workspace) -> Workspace | None:
+            instance = self._instance(workspace, instance_id)
+            existing = self._execution_record(instance, execution_id)
+            if existing is not None:
+                if existing.node_id == node_id:
+                    return None
+                raise WorkspaceServiceError(
+                    "action_replay_conflict",
+                    "execution_id was already used with different claim semantics",
+                )
+            if workspace.scheduler_paused or workspace.pause_reason is not None:
+                raise WorkspaceServiceError(
+                    "workspace_paused", "workspace scheduler is paused"
+                )
+            if instance.status != "running":
+                raise WorkspaceServiceError(
+                    "instance_not_running", "action instance must be running"
+                )
+            template = self._template(workspace, instance.template_id)
+            state = instance.execution_state
+            if state.cursor >= len(template.node_ids):
+                raise WorkspaceServiceError(
+                    "action_cursor_exhausted", "task has no remaining action nodes"
+                )
+            expected_node_id = template.node_ids[state.cursor]
+            if node_id != expected_node_id:
+                raise WorkspaceServiceError(
+                    "action_node_mismatch",
+                    f"expected action node {expected_node_id}, got {node_id}",
+                )
+            if state.active_execution_id is not None:
+                raise WorkspaceServiceError(
+                    "action_already_active", "task already has an active action"
+                )
+
+            transition_time = self._clock()
+            record = NodeExecutionRecord(
+                node_id=node_id,
+                attempt=1 + sum(
+                    item.node_id == node_id for item in state.records
+                ),
+                execution_id=execution_id,
+                status="running",
+                started_at=transition_time,
+                resources=[],
+            )
+            updated_state = state.validated_copy(
+                update={
+                    "records": [*state.records, record],
+                    "active_node_id": node_id,
+                    "active_execution_id": execution_id,
+                }
+            )
+            updated_instance = instance.validated_copy(
+                update={"execution_state": updated_state}
+            )
+            return workspace.validated_copy(
+                update={
+                    "task_instances": self._replace_instance(
+                        workspace, updated_instance
+                    ),
+                    "dynamic_resource_leases": [],
+                }
+            )
+
+        return self._mutate_idempotent(
+            workflow_path,
+            expected_version=expected_version,
+            operation=operation,
+        )
+
+    def succeed_action(
+        self,
+        workflow_path: str,
+        expected_version: int,
+        instance_id: str,
+        node_id: str,
+        execution_id: str,
+        *,
+        result,
+        release_resources: Iterable[str],
+    ):
+        """幂等完成活动动作，推进游标并通过输出条件门控 Task 完成。"""
+        del release_resources
+
+        def operation(workspace: Workspace) -> Workspace | None:
+            instance = self._instance(workspace, instance_id)
+            record = self._execution_record(instance, execution_id)
+            if record is None:
+                raise WorkspaceServiceError(
+                    "action_execution_not_found", "action execution was not found"
+                )
+            if record.status != "running":
+                if (
+                    record.status == "succeeded"
+                    and record.node_id == node_id
+                    and _json_values_equal(record.result, result)
+                ):
+                    return None
+                raise WorkspaceServiceError(
+                    "action_replay_conflict",
+                    "execution_id was already completed with different semantics",
+                )
+            self._require_active_execution(instance, node_id, execution_id)
+
+            transition_time = self._clock()
+            updated_record = record.validated_copy(
+                update={
+                    "status": "succeeded",
+                    "finished_at": transition_time,
+                    "result": result,
+                    "release_resources": [],
+                }
+            )
+            state = instance.execution_state
+            updated_state = state.validated_copy(
+                update={
+                    "cursor": state.cursor + 1,
+                    "records": [
+                        updated_record
+                        if item.execution_id == execution_id
+                        else item
+                        for item in state.records
+                    ],
+                    "active_node_id": None,
+                    "active_execution_id": None,
+                }
+            )
+            template = self._template(workspace, instance.template_id)
+            completed = updated_state.cursor == len(template.node_ids)
+            updated_instance = instance.validated_copy(
+                update={
+                    "execution_state": updated_state,
+                    "status": "completed" if completed else "running",
+                    "finished_at": transition_time if completed else None,
+                }
+            )
+            events = list(workspace.events)
+            if completed:
+                events.extend(
+                    self._completion_events(
+                        instance=updated_instance,
+                        template=template,
+                        timestamp=transition_time,
+                    )
+                )
+            return workspace.validated_copy(
+                update={
+                    "task_instances": self._replace_instance(
+                        workspace, updated_instance
+                    ),
+                    "dynamic_resource_leases": [],
+                    "events": events,
+                }
+            )
+
+        return self._mutate_idempotent(
+            workflow_path,
+            expected_version=expected_version,
+            operation=operation,
+        )
+
+    def fail_action(
+        self,
+        workflow_path: str,
+        expected_version: int,
+        instance_id: str,
+        node_id: str,
+        execution_id: str,
+        *,
+        error,
+    ):
+        """幂等失败活动动作，并在同一事务内暂停整个工作区。"""
+
+        def operation(workspace: Workspace) -> Workspace | None:
+            instance = self._instance(workspace, instance_id)
+            record = self._execution_record(instance, execution_id)
+            if record is None:
+                raise WorkspaceServiceError(
+                    "action_execution_not_found", "action execution was not found"
+                )
+            if record.status != "running":
+                if (
+                    record.status == "failed"
+                    and record.node_id == node_id
+                    and _json_values_equal(record.error, error)
+                ):
+                    return None
+                raise WorkspaceServiceError(
+                    "action_replay_conflict",
+                    "execution_id was already completed with different semantics",
+                )
+            self._require_active_execution(instance, node_id, execution_id)
+            transition_time = self._clock()
+            updated_record = record.validated_copy(
+                update={
+                    "status": "failed",
+                    "finished_at": transition_time,
+                    "error": error,
+                }
+            )
+            state = instance.execution_state
+            updated_state = state.validated_copy(
+                update={
+                    "records": [
+                        updated_record
+                        if item.execution_id == execution_id
+                        else item
+                        for item in state.records
+                    ],
+                    "active_node_id": None,
+                    "active_execution_id": None,
+                }
+            )
+            updated_instance = instance.validated_copy(
+                update={
+                    "status": "failed",
+                    "finished_at": transition_time,
+                    "execution_state": updated_state,
+                }
+            )
+            pause_reason = WorkspacePauseReason(
+                code="action_failed",
+                message="Action execution failed; workspace paused",
+                instance_id=instance_id,
+                node_id=node_id,
+                execution_id=execution_id,
+                timestamp=transition_time,
+                detail={"error": error},
+            )
+            others_still_running = any(
+                item.status == "running" and item.id != instance_id
+                for item in workspace.task_instances
+            )
+            workspace_updates: dict[str, Any] = {
+                "task_instances": self._replace_instance(
+                    workspace, updated_instance
+                ),
+                "dynamic_resource_leases": [],
+            }
+            if not others_still_running:
+                workspace_updates["scheduler_paused"] = True
+                workspace_updates["pause_reason"] = pause_reason
+            return workspace.validated_copy(update=workspace_updates)
+
+        return self._mutate_idempotent(
+            workflow_path,
+            expected_version=expected_version,
+            operation=operation,
+        )
 
     def advance(
         self,
@@ -361,48 +896,55 @@ class WorkspaceService:
                 raise WorkspaceServiceError(
                     "instance_not_running", f"instances are not running: {sorted(invalid)}"
                 )
+            unfinished = []
+            for instance_id in completed_ids:
+                instance = self._instance(workspace, instance_id)
+                template = self._template(workspace, instance.template_id)
+                if (
+                    instance.execution_state.cursor != len(template.node_ids)
+                    or instance.execution_state.active_execution_id is not None
+                    or instance.execution_state.active_node_id is not None
+                ):
+                    unfinished.append(instance_id)
+            if unfinished:
+                raise WorkspaceServiceError(
+                    "execution_not_finished",
+                    f"instances still have unfinished actions: {sorted(unfinished)}",
+                )
+            exhausted_ids = {
+                item.id
+                for item in workspace.task_instances
+                if item.status == "running"
+                and item.execution_state.active_execution_id is None
+                and item.execution_state.cursor
+                == len(self._template(workspace, item.template_id).node_ids)
+            }
+            completion_ids = completed_ids | exhausted_ids
             events = list(workspace.events)
             instances = []
             for item in workspace.task_instances:
-                if item.id in completed_ids:
+                if item.id in completion_ids:
+                    template = self._template(workspace, item.template_id)
                     instances.append(
-                        item.model_copy(
+                        item.validated_copy(
                             update={"status": "completed", "finished_at": transition_time}
                         )
                     )
-                    events.append(
-                        WorkspaceEvent(
-                            kind="completed",
-                            instance_id=item.id,
-                            timestamp=transition_time,
-                            idempotency_key=f"instance/{item.id}/completed",
-                        )
-                    )
-                    template = self._template(workspace, item.template_id)
-                    output_triggers = template.output_triggers or [
-                        Trigger(kind="internal", config={})
-                    ]
                     events.extend(
-                        WorkspaceEvent(
-                            kind="output",
-                            instance_id=item.id,
-                            template_id=item.template_id,
+                        self._completion_events(
+                            instance=item,
+                            template=template,
                             timestamp=transition_time,
-                            idempotency_key=(
-                                f"instance/{item.id}/output/"
-                                f"{json.dumps(output_trigger.model_dump(mode='json'), sort_keys=True)}"
-                            ),
-                            payload={
-                                "trigger": output_trigger.model_dump(mode="json"),
-                                "delivery": "recorded_without_opc_write",
-                            },
                         )
-                        for output_trigger in output_triggers
                     )
                 else:
                     instances.append(item)
-            provisional = workspace.model_copy(
-                update={"task_instances": instances, "events": events}
+            provisional = workspace.validated_copy(
+                update={
+                    "task_instances": instances,
+                    "events": events,
+                    "dynamic_resource_leases": [],
+                }
             )
             evaluated, reasons = self._evaluate(provisional)
             states = [
@@ -443,27 +985,10 @@ class WorkspaceService:
                                     payload={
                                         "satisfied_triggers": [
                                             trigger.model_dump(mode="json")
-                                            for trigger in (
-                                                [
-                                                    *self._template(
-                                                        provisional,
-                                                        self._instance(provisional, item_id).template_id,
-                                                    ).input_triggers,
-                                                    *(
-                                                        [
-                                                            self._template(
-                                                                provisional,
-                                                                self._instance(provisional, item_id).template_id,
-                                                            ).trigger
-                                                        ]
-                                                        if self._template(
-                                                            provisional,
-                                                            self._instance(provisional, item_id).template_id,
-                                                        ).trigger is not None
-                                                        else []
-                                                    ),
-                                                ]
-                                            )
+                                            for trigger in self._template(
+                                                provisional,
+                                                self._instance(provisional, item_id).template_id,
+                                            ).input_triggers
                                         ],
                                     },
                                 )
@@ -481,7 +1006,7 @@ class WorkspaceService:
                 }
             )
 
-        response = self.store.mutate(
+        response = self._mutate(
             workflow_path, expected_version=expected_version, operation=operation
         )
         assert schedule is not None
@@ -490,115 +1015,157 @@ class WorkspaceService:
     def _evaluate(self, workspace: Workspace) -> tuple[set[str], dict[str, WaitingReason]]:
         satisfied: set[str] = set()
         reasons: dict[str, WaitingReason] = {}
+        now = self._clock()
         for instance in workspace.task_instances:
             if instance.status in {"completed", "failed", "cancelled", "running"}:
                 continue
+            if instance.not_before is not None and now < instance.not_before:
+                reasons[instance.id] = WaitingReason(
+                    code="not_before_pending",
+                    context={
+                        "not_before": instance.not_before,
+                        "remaining_ms": instance.not_before - now,
+                    },
+                    message=(
+                        f"等待样品错峰启动时间：{instance.not_before}"
+                    ),
+                )
+                continue
             template = self._template(workspace, instance.template_id)
-            triggers = [*template.input_triggers]
-            if template.trigger is not None:
-                triggers.append(template.trigger)
-            for trigger in triggers:
-                result = self._evaluate_trigger(workspace, trigger)
-                if not result.satisfied:
-                    reasons[instance.id] = result.reason or WaitingReason(
-                        code="condition_unsatisfied"
-                    )
-                    break
-            else:
+            reason = self._evaluate_triggers(workspace, template.input_triggers)
+            if reason is None:
                 satisfied.add(instance.id)
+            else:
+                reasons[instance.id] = reason
         return satisfied, reasons
+
+    def _evaluate_triggers(
+        self, workspace: Workspace, triggers: Iterable[Trigger]
+    ) -> WaitingReason | None:
+        for trigger in triggers:
+            result = self.conditions.evaluate(workspace.workflow_path, trigger)
+            if not result.satisfied:
+                return result.reason or WaitingReason(code="condition_unsatisfied")
+        return None
 
     def _hydrate_conditions(self, workspace: Workspace) -> None:
         for state in workspace.opc_snapshots:
             self.conditions.restore_state(workspace.workflow_path, state.model_dump())
 
-    def _evaluate_trigger(self, workspace: Workspace, trigger):
-        if trigger.kind.lower() == "opc":
-            return self.conditions.evaluate(workspace.workflow_path, trigger)
-        system_constraint = self._system_constraint(trigger)
-        if system_constraint is not None:
-            kind, identifier = system_constraint
-            occupied = any(
-                (
-                    f"{POLICY_RESOURCE_PREFIX}{identifier}"
-                    if kind == "resource"
-                    else f"{POLICY_WORKSTATION_PREFIX}{identifier}"
-                )
-                in constraint_resources(
-                    self._template(workspace, instance.template_id)
-                )
-                for instance in workspace.task_instances
-                if instance.status == "running"
-            )
-            from .models import ConditionResult
-
-            return ConditionResult(
-                satisfied=not occupied,
-                reason=None
-                if not occupied
-                else WaitingReason(
-                    code=f"{kind}_unavailable",
-                    context={kind: identifier},
-                    message=f"{kind} 不可用：{identifier}",
-                ),
-            )
-        if trigger.kind.lower() in {"resource", "workstation", "internal", "manual"}:
-            from .models import ConditionResult
-
-            if "key" in trigger.config:
-                expected = trigger.config.get("value")
-                satisfied = any(
-                    event.kind == "output"
-                    and event.payload.get("trigger", {}).get("config", {}).get("key")
-                    == trigger.config["key"]
-                    and event.payload.get("trigger", {}).get("config", {}).get("value")
-                    == expected
-                    for event in workspace.events
-                )
-                return ConditionResult(
-                    satisfied=satisfied,
-                    reason=None
-                    if satisfied
-                    else WaitingReason(
-                        code=f"{trigger.kind}_condition_unsatisfied",
-                        context=dict(trigger.config),
-                    ),
-                )
-            available = trigger.config.get("available", True)
-            return ConditionResult(
-                satisfied=available is True,
-                reason=None
-                if available is True
-                else WaitingReason(
-                    code=f"{trigger.kind}_condition_unsatisfied",
-                    context=dict(trigger.config),
-                ),
-            )
-        from .models import ConditionResult
-
-        return ConditionResult(
-            satisfied=False,
-            reason=WaitingReason(
-                code="trigger_kind_unsupported", context={"kind": trigger.kind}
+    @staticmethod
+    def _registration(
+        workspace: Workspace, plc_device_id: str
+    ) -> PlcRegistration | None:
+        return next(
+            (
+                item
+                for item in workspace.plc_registrations
+                if item.plc_device_id == plc_device_id
             ),
+            None,
         )
 
-    @staticmethod
-    def _system_constraint(trigger: Trigger) -> tuple[str, str] | None:
-        """将系统资源/工位约束与旧版自动派生 internal key 统一为实时约束。"""
-        kind = trigger.kind.lower()
-        if kind == "resource" and trigger.config.get("resource"):
-            return "resource", str(trigger.config["resource"])
-        if kind == "workstation" and trigger.config.get("workstation"):
-            return "workstation", str(trigger.config["workstation"])
-        if kind != "internal":
-            return None
-        key = str(trigger.config.get("key", ""))
-        if key.startswith("资源锁可获取："):
-            return "resource", key.removeprefix("资源锁可获取：")
-        if key.startswith("工位条件满足："):
-            return "workstation", key.removeprefix("工位条件满足：")
-        return None
+    def _validate_template_conditions(
+        self, workspace: Workspace, template: Template
+    ) -> None:
+        self._validate_triggers(workspace, template.input_triggers, "input")
+        self._validate_triggers(workspace, template.output_triggers, "output")
+
+    def _canonicalize_template_triggers(
+        self, workspace: Workspace, template: Template
+    ) -> Template:
+        """将模板中的别名条件转换为可持久化的 CSV 真实节点名。"""
+        return template.model_copy(
+            update={
+                "input_triggers": self._canonicalize_triggers(
+                    workspace, template.input_triggers, "input"
+                ),
+                "output_triggers": self._canonicalize_triggers(
+                    workspace, template.output_triggers, "output"
+                ),
+            }
+        )
+
+    def _canonicalize_triggers(
+        self, workspace: Workspace, triggers: Iterable[Trigger], phase: str
+    ) -> list[Trigger]:
+        trigger_list = list(triggers)
+        self._validate_triggers(workspace, trigger_list, phase)
+        canonical_triggers: list[Trigger] = []
+        for trigger in trigger_list:
+            config = dict(trigger.config)
+            registration = self._registration(
+                workspace, str(config["plc_device_id"])
+            )
+            assert registration is not None
+            config["variable"] = registration.canonical_variable_name(
+                str(config["variable"])
+            )
+            canonical_triggers.append(trigger.model_copy(update={"config": config}))
+        return canonical_triggers
+
+    def _validate_triggers(
+        self, workspace: Workspace, triggers: Iterable[Trigger], phase: str
+    ) -> None:
+        trigger_list = list(triggers)
+        for trigger in trigger_list:
+            config = trigger.config
+            plc_device_id = str(config["plc_device_id"])
+            variable = str(config["variable"])
+            registration = self._registration(workspace, plc_device_id)
+            canonical_variable = (
+                registration.canonical_variable_name(variable)
+                if registration is not None
+                else variable
+            )
+            if registration is None or canonical_variable not in registration.variables:
+                raise WorkspaceServiceError(
+                    "unregistered_plc_variable",
+                    f"PLC variable is not registered: {plc_device_id}.{variable}",
+                )
+
+    def _validate_snapshot_variables(
+        self, workspace: Workspace, plc_device_id: str, variables: Iterable[str]
+    ) -> None:
+        registration = self._registration(workspace, plc_device_id)
+        if registration is None:
+            raise WorkspaceServiceError(
+                "plc_not_registered",
+                f"PLC runtime has not registered variables: {plc_device_id}",
+            )
+        unregistered = sorted(
+            {
+                registration.canonical_variable_name(variable)
+                for variable in variables
+            }
+            - set(registration.variables)
+        )
+        if unregistered:
+            raise WorkspaceServiceError(
+                "unregistered_plc_variable",
+                f"PLC snapshot contains unregistered variables: {', '.join(unregistered)}",
+            )
+
+    def _canonicalize_snapshot_values(
+        self, workspace: Workspace, plc_device_id: str, values: dict
+    ) -> dict:
+        """在入库前将 runtime 别名键规整为 CSV 真实节点名。"""
+        self._validate_snapshot_variables(workspace, plc_device_id, values.keys())
+        registration = self._registration(workspace, plc_device_id)
+        assert registration is not None
+        canonical_values: dict = {}
+        for variable, value in values.items():
+            canonical_variable = registration.canonical_variable_name(str(variable))
+            if (
+                canonical_variable in canonical_values
+                and canonical_values[canonical_variable] != value
+            ):
+                raise WorkspaceServiceError(
+                    "ambiguous_plc_variable",
+                    f"PLC snapshot contains conflicting values for: {canonical_variable}",
+                )
+            canonical_values[canonical_variable] = value
+        return canonical_values
 
     def _schedule(
         self,
@@ -606,23 +1173,10 @@ class WorkspaceService:
         satisfied: set[str],
         condition_reasons: dict[str, WaitingReason],
     ) -> SchedulingResult:
-        all_resources = {
-            resource
-            for template in workspace.templates
-            for resource in constraint_resources(template)
-        }
-        running_resources = {
-            resource
-            for instance in workspace.task_instances
-            if instance.status == "running"
-            for resource in constraint_resources(
-                self._template(workspace, instance.template_id)
-            )
-        }
         selected = self.policy.select(
             workspace.templates,
             workspace.task_instances,
-            available_resources=all_resources - running_resources,
+            available_resources=set(),
             condition_satisfied_instance_ids=satisfied,
         )
         return SchedulingResult(
@@ -632,7 +1186,6 @@ class WorkspaceService:
 
     def _build_schedule_entries(self, workspace: Workspace) -> list[TaskScheduleEntry]:
         """按稳定 FIFO 顺序估算每个 Task 的甘特区间。"""
-        resource_available_at: dict[str, int] = {}
         sample_available_at: dict[str, int] = {}
         anchor = self._clock()
         instances = sorted(
@@ -642,7 +1195,6 @@ class WorkspaceService:
         fixed_entries: dict[str, TaskScheduleEntry] = {}
         for instance in instances:
             template = self._template(workspace, instance.template_id)
-            display_resources = self._display_schedule_resources(template)
             duration = max(15_000, len(template.node_ids) * 15_000)
             if instance.status == "completed":
                 start_at = instance.started_at if instance.started_at is not None else 0
@@ -650,7 +1202,7 @@ class WorkspaceService:
                 state = "done"
             elif instance.status == "running":
                 start_at = instance.started_at if instance.started_at is not None else 0
-                end_at = start_at + duration
+                end_at = max(start_at + duration, anchor)
                 state = "running"
             else:
                 continue
@@ -660,17 +1212,13 @@ class WorkspaceService:
                 sample_id=instance.sample_id,
                 start_at=start_at,
                 end_at=end_at,
-                resources=display_resources,
+                resources=[],
                 state=state,
             )
             fixed_entries[instance.id] = entry
             sample_available_at[instance.sample_id] = max(
                 sample_available_at.get(instance.sample_id, anchor), end_at
             )
-            for resource in display_resources:
-                resource_available_at[resource] = max(
-                    resource_available_at.get(resource, anchor), end_at
-                )
         entries: list[TaskScheduleEntry] = []
         for instance in instances:
             fixed = fixed_entries.get(instance.id)
@@ -678,14 +1226,15 @@ class WorkspaceService:
                 entries.append(fixed)
                 continue
             template = self._template(workspace, instance.template_id)
-            display_resources = self._display_schedule_resources(template)
             duration = max(15_000, len(template.node_ids) * 15_000)
-            resource_ready_at = max(
-                (resource_available_at.get(resource, anchor) for resource in display_resources),
-                default=anchor,
+            earliest_start = (
+                instance.not_before
+                if instance.not_before is not None
+                else anchor
             )
             start_at = max(
-                sample_available_at.get(instance.sample_id, anchor), resource_ready_at
+                sample_available_at.get(instance.sample_id, anchor),
+                earliest_start,
             )
             end_at = start_at + duration
             entry = TaskScheduleEntry(
@@ -694,38 +1243,91 @@ class WorkspaceService:
                 sample_id=instance.sample_id,
                 start_at=start_at,
                 end_at=end_at,
-                resources=display_resources,
+                resources=[],
                 state="planned",
             )
             entries.append(entry)
             sample_available_at[instance.sample_id] = max(
                 sample_available_at.get(instance.sample_id, anchor), end_at
             )
-            for resource in display_resources:
-                resource_available_at[resource] = max(
-                    resource_available_at.get(resource, anchor), end_at
-                )
         return entries
 
     @staticmethod
-    def _display_schedule_resources(template: Template) -> list[str]:
-        """将有效系统约束投影为公开甘特泳道 ID，绝不泄露策略命名空间。"""
-        resources = list(dict.fromkeys(template.resources))
-        triggers = [*template.input_triggers]
-        if template.trigger is not None:
-            triggers.append(template.trigger)
-        for trigger in triggers:
-            kind = trigger.kind.lower()
-            identifier = (
-                trigger.config.get("workstation")
-                if kind == "workstation"
-                else trigger.config.get("resource")
-                if kind == "resource"
-                else None
+    def _normalize_runtime_resources(workspace: Workspace) -> Workspace:
+        """写事务统一丢弃旧 Task 动态资源租约。"""
+        if not workspace.dynamic_resource_leases:
+            return workspace
+        return workspace.model_copy(update={"dynamic_resource_leases": []})
+
+    @staticmethod
+    def _execution_record(
+        instance: TaskInstance, execution_id: str
+    ) -> NodeExecutionRecord | None:
+        return next(
+            (
+                record
+                for record in instance.execution_state.records
+                if record.execution_id == execution_id
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _require_active_execution(
+        instance: TaskInstance, node_id: str, execution_id: str
+    ) -> None:
+        state = instance.execution_state
+        if (
+            instance.status != "running"
+            or state.active_node_id != node_id
+            or state.active_execution_id != execution_id
+        ):
+            raise WorkspaceServiceError(
+                "action_not_active",
+                "action must match the active execution",
             )
-            if identifier and str(identifier) not in resources:
-                resources.append(str(identifier))
-        return resources
+
+    @staticmethod
+    def _replace_instance(
+        workspace: Workspace, replacement: TaskInstance
+    ) -> list[TaskInstance]:
+        return [
+            replacement if item.id == replacement.id else item
+            for item in workspace.task_instances
+        ]
+
+    @staticmethod
+    def _completion_events(
+        *,
+        instance: TaskInstance,
+        template: Template,
+        timestamp: int,
+    ) -> list[WorkspaceEvent]:
+        return [
+            WorkspaceEvent(
+                kind="completed",
+                instance_id=instance.id,
+                timestamp=timestamp,
+                idempotency_key=f"instance/{instance.id}/completed",
+            ),
+            *[
+                WorkspaceEvent(
+                    kind="output",
+                    instance_id=instance.id,
+                    template_id=instance.template_id,
+                    timestamp=timestamp,
+                    idempotency_key=(
+                        f"instance/{instance.id}/output/"
+                        f"{json.dumps(trigger.model_dump(mode='json'), sort_keys=True)}"
+                    ),
+                    payload={
+                        "trigger": trigger.model_dump(mode="json"),
+                        "delivery": "recorded_without_opc_write",
+                    },
+                )
+                for trigger in template.output_triggers
+            ],
+        ]
 
     @staticmethod
     def _template(workspace: Workspace, template_id: str) -> Template:

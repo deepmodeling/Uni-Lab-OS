@@ -62,6 +62,22 @@ const DEFAULT_START_Y = 120;
 const LAYOUT_X_GAP = 240;
 const LAYOUT_Y_GAP = 140;
 const MAX_NODES_PER_ROW = 6;
+const MAX_OPC_VARIABLES_PER_NODE = 500;
+
+function normalizeOpcVariables(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > MAX_OPC_VARIABLES_PER_NODE) {
+    throw new Error('workflow 节点 opc_variables 必须是最多 500 项的数组');
+  }
+  const variables: string[] = [];
+  value.forEach((item) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      throw new Error('workflow 节点 opc_variables 必须是非空字符串数组');
+    }
+    const variable = item.trim();
+    if (!variables.includes(variable)) variables.push(variable);
+  });
+  return variables;
+}
 
 export function createWorkflowRequest(
   name: string,
@@ -76,6 +92,7 @@ export function createWorkflowRequest(
         label: node.data.label,
         description: node.data.description,
         params: node.data.params,
+        opc_variables: normalizeOpcVariables(node.data.opcVariables || []),
       };
       if (node.data.deviceId) {
         data.device_id = node.data.deviceId;
@@ -246,6 +263,33 @@ export function layoutFlowGraph<T extends { id: string; position: unknown }>(
       },
     };
   });
+}
+
+const ESTIMATED_NODE_WIDTH = 220;
+
+export function expandLayoutToWidth<T extends { position: { x: number; y: number } }>(
+  nodes: T[],
+  targetWidth: number,
+  sidePadding = 72,
+): T[] {
+  if (!nodes.length || targetWidth <= sidePadding * 2) return nodes;
+
+  const xs = nodes.map((node) => Number(node.position.x) || DEFAULT_START_X);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const contentWidth = maxX - minX + ESTIMATED_NODE_WIDTH;
+  const availableWidth = targetWidth - sidePadding * 2;
+
+  if (contentWidth >= availableWidth) return nodes;
+
+  const scale = availableWidth / contentWidth;
+  return nodes.map((node) => ({
+    ...node,
+    position: {
+      x: sidePadding + (((Number(node.position.x) || DEFAULT_START_X) - minX) * scale),
+      y: Number(node.position.y) || DEFAULT_START_Y,
+    },
+  }));
 }
 
 function applyBranchedLayout<T extends { id: string; position: unknown }>(

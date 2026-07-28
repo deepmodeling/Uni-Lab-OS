@@ -51,6 +51,8 @@ class WorkflowNode:
     device_name: str
     param: dict[str, Any]
     disabled: bool = False
+    method: str = ""
+    legacy_route_compatible: bool = True
 
 
 def load_runtime_config(config_path: Path | str | None = None) -> RuntimeConfig:
@@ -186,8 +188,19 @@ def method_name_from_template(template_name: str) -> str:
     return template_name.removeprefix("auto-")
 
 
+def node_method(node: WorkflowNode) -> str:
+    """返回节点的真实动作方法；仅存量节点允许从模板名推导。"""
+    if node.method:
+        return node.method
+    if node.legacy_route_compatible:
+        return method_name_from_template(node.name)
+    raise ValueError(f"workflow node 缺少显式 method: {node.uuid}")
+
+
 def route_node_device(node: WorkflowNode, runtime_config: RuntimeConfig | None = None) -> str:
     """本地调试时可通过配置将旧设备名路由到目标设备。"""
+    if not node.legacy_route_compatible:
+        return node.device_name
     runtime_config = runtime_config or load_runtime_config()
     device_factory = runtime_config.device_factory
     if node.device_name in device_factory.route_aliases:
@@ -295,19 +308,103 @@ def build_snapshot_diff_detail(before: dict[str, Any], after: dict[str, Any], pl
     }
 
 
+def workflow_node_from_mapping(item: Any) -> WorkflowNode:
+    """严格解析显式节点格式，并兼容存量网页 workflow 节点。"""
+    if not isinstance(item, dict):
+        raise ValueError("workflow node 必须是对象")
+    explicit_fields = {"workflow_node_id", "device_id", "method", "params"}
+    legacy_fields = {"uuid", "name", "device_name", "param"}
+    common_fields = {"disabled"}
+    item_fields = set(item)
+    explicit_present = explicit_fields.intersection(item_fields)
+    legacy_present = legacy_fields.intersection(item_fields)
+    if explicit_present and legacy_present:
+        raise ValueError(
+            "workflow node 字段格式冲突: explicit 不允许 legacy 字段 "
+            f"{', '.join(sorted(legacy_present))}"
+        )
+    if explicit_present:
+        unknown_fields = item_fields - explicit_fields - common_fields - {
+            "opc_variables"
+        }
+        if unknown_fields:
+            raise ValueError(
+                f"workflow node 不支持字段: {', '.join(sorted(unknown_fields))}"
+            )
+        missing = explicit_fields - item_fields
+        if missing:
+            raise ValueError(
+                f"workflow node explicit 缺少字段: {', '.join(sorted(missing))}"
+            )
+        node_id = _required_node_string(item, "workflow_node_id")
+        device_name = _required_node_string(item, "device_id")
+        method = _required_node_string(item, "method")
+        if not isinstance(item["params"], dict):
+            raise ValueError(f"workflow node params 必须是对象: {node_id}")
+        opc_variables = item.get("opc_variables", [])
+        if (
+            not isinstance(opc_variables, list)
+            or any(
+                not isinstance(variable, str) or not variable.strip()
+                for variable in opc_variables
+            )
+        ):
+            raise ValueError(
+                f"workflow node opc_variables 必须是非空字符串数组: {node_id}"
+            )
+        disabled = item.get("disabled", False)
+        if not isinstance(disabled, bool):
+            raise ValueError(f"workflow node disabled 必须为 bool: {node_id}")
+        return WorkflowNode(
+            uuid=node_id,
+            name=method,
+            device_name=device_name,
+            param=dict(item["params"]),
+            disabled=disabled,
+            method=method,
+            legacy_route_compatible=False,
+        )
+
+    unknown_fields = item_fields - legacy_fields - common_fields
+    if unknown_fields:
+        raise ValueError(
+            f"workflow node 不支持字段: {', '.join(sorted(unknown_fields))}"
+        )
+    missing = legacy_fields - item_fields
+    if missing:
+        raise ValueError(
+            f"workflow node legacy 缺少字段: {', '.join(sorted(missing))}"
+        )
+    node_id = _required_node_string(item, "uuid")
+    name = _required_node_string(item, "name")
+    device_name = _required_node_string(item, "device_name")
+    param = item["param"]
+    if not isinstance(param, dict):
+        raise ValueError(f"workflow node param 必须是对象: {node_id}")
+    disabled = item.get("disabled", False)
+    if not isinstance(disabled, bool):
+        raise ValueError(f"workflow node disabled 必须为 bool: {node_id}")
+    return WorkflowNode(
+        uuid=node_id,
+        name=name,
+        device_name=device_name,
+        param=dict(param),
+        disabled=disabled,
+        legacy_route_compatible=True,
+    )
+
+
+def _required_node_string(item: dict[str, Any], field_name: str) -> str:
+    value = item.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"workflow node {field_name} 必须是非空字符串")
+    return value.strip()
+
+
 def load_workflow_nodes(workflow_file: Path) -> tuple[list[WorkflowNode], list[dict[str, Any]]]:
     data = json.loads(workflow_file.read_text(encoding="utf-8"))
     workflow_data = data.get("data", data)
-    nodes = [
-        WorkflowNode(
-            uuid=item["uuid"],
-            name=item["name"],
-            device_name=item.get("device_name") or item.get("resource_name", ""),
-            param=item.get("param") or {},
-            disabled=bool(item.get("disabled", False)),
-        )
-        for item in workflow_data.get("nodes", [])
-    ]
+    nodes = [workflow_node_from_mapping(item) for item in workflow_data.get("nodes", [])]
     return nodes, workflow_data.get("edges", [])
 
 
@@ -554,7 +651,7 @@ def run_nodes(
         if device is None:
             raise KeyError(f"未创建本地设备实例: {device_name}")
 
-        method_name = method_name_from_template(node.name)
+        method_name = node_method(node)
         if not hasattr(device, method_name):
             raise AttributeError(f"{device_name} 不存在动作方法: {method_name}")
 

@@ -267,3 +267,7 @@ unilabos_local_ui/vite.config.js
 
 # Local workflow scheduling timing reports
 workflow_timings/
+
+# Local workflow artifacts and S07 batch debugging tools
+/workflow_artifacts/
+/unilabos/devices/workstation/szlab_poly_studio/s07_solid_addition/batch/

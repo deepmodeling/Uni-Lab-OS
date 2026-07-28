@@ -14,5 +14,37 @@
       "stop_amount": [500, 300, 120, 60, 20],
       "shake_max_speed": 900
     }
+  },
+  "salt": {
+    "coarse_params": {
+      "opening": [1000, 950, 900, 900, 900],
+      "feed_speed": [0.1, 0.01, 0.001, 0.0001, 0.00001],
+      "rotation_speed": [200, 150, 100, 50, 10],
+      "stop_amount": [6000, 5500, 5000, 4000, 3000],
+      "shake_max_speed": 900
+    },
+    "fine_params": {
+      "opening": [920, 820, 770, 720, 670],
+      "feed_speed": [0.01, 0.008, 0.002, 0.0008, 0.00008],
+      "rotation_speed": [200, 100, 80, 50, 10],
+      "stop_amount": [500, 300, 120, 60, 20],
+      "shake_max_speed": 900
+    }
+  },
+  "salt2": {
+    "coarse_params": {
+      "opening": [1000, 950, 900, 900, 900],
+      "feed_speed": [0.1, 0.01, 0.001, 0.0001, 0.00001],
+      "rotation_speed": [200, 150, 100, 50, 10],
+      "stop_amount": [6000, 5500, 5000, 4000, 3000],
+      "shake_max_speed": 900
+    },
+    "fine_params": {
+      "opening": [900, 850, 820, 790, 760],
+      "feed_speed": [0.01, 0.008, 0.002, 0.0008, 0.00008],
+      "rotation_speed": [200, 100, 80, 50, 10],
+      "stop_amount": [500, 300, 120, 60, 20],
+      "shake_max_speed": 900
+    }
   }
 }

@@ -25,7 +25,6 @@ def make_pump_device(
     }
     return SzlabMixerPumpDevice(
         url="opc.tcp://127.0.0.1:0/unused",
-        timeout=0.05,
         pipeline_routes=routes,
         opcua_client=client or PseudoSzlabMixerOpcUaClient(),
     )
@@ -60,7 +59,6 @@ def test_szlab_mixer_pump_can_use_shared_plc_gateway():
     gateway = PseudoSzlabMixerOpcUaClient()
     device = SzlabMixerPumpDevice(
         url="opc.tcp://127.0.0.1:0/unused",
-        timeout=0.05,
         pipeline_routes={
             (1, "aspirate"): S06PipelineRoute(control_valve=11, absolute_position=21),
             (1, "dispense"): S06PipelineRoute(control_valve=12, absolute_position=22),
@@ -99,7 +97,7 @@ def test_szlab_mixer_pump_rejects_when_not_allowed():
     device = make_pump_device(client)
     result = device.run_solvent_addition(process=1, volume_pump_1=5)
     assert result["success"] is False
-    assert "允许加工超时" in result["message"]
+    assert "允许加工失败" in result["message"]
 
 
 def test_szlab_mixer_pump_run_solvent_addition_writes_expected_variables():
@@ -168,7 +166,7 @@ def test_szlab_mixer_pump_run_solvent_addition_fails_when_not_ready():
     result = device.run_solvent_addition(process=1)
 
     assert result["success"] is False
-    assert "准备信号超时" in result["message"]
+    assert "准备信号失败" in result["message"]
     assert client.wait_equal_calls == [("S06允许加工", True), ("S06准备信号", True)]
 
 
@@ -184,15 +182,15 @@ def test_szlab_mixer_pump_resets_params_only_after_process_complete():
     assert reset_written > done_wait
 
 
-def test_szlab_mixer_pump_resets_params_after_process_complete_timeout():
+def test_szlab_mixer_pump_resets_params_after_process_complete_wait_failure():
     client = PseudoSzlabMixerOpcUaClient()
-    client.force_done_timeout = True
+    client.force_done_wait_failure = True
     device = make_pump_device(client)
 
     result = device.transfer_liquid(process=1, volume=5, direction="aspirate", pipeline="aspirate")
 
     assert result["success"] is False
-    assert "加工完成等待超时" in result["message"]
+    assert "加工完成等待失败" in result["message"]
     assert ("wait_new_cycle_done", "S06加工完成") in client.events
     assert ("write", "S06参数写入完成", False) in client.events
     assert ("write", "S06工艺选择", 0) in client.events
@@ -228,8 +226,8 @@ def test_szlab_mixer_pump_transfer_liquid_requires_beaker_sensor():
 
 def test_szlab_mixer_pump_reports_material_missing_after_completion():
     class MaterialRemovedClient(PseudoSzlabMixerOpcUaClient):
-        def wait_new_cycle_done(self, name, timeout=300.0, interval=0.2):
-            success = super().wait_new_cycle_done(name, timeout=timeout, interval=interval)
+        def wait_new_cycle_done(self, name, interval=0.2):
+            success = super().wait_new_cycle_done(name, interval=interval)
             self.values["传感器状态_上位机[3].NO[1]"] = False
             return success
 

@@ -54,7 +54,6 @@ class TestSzlabMixerPumpOpcUaDevice:
 
         device = SzlabMixerPumpDevice(
             url=url,
-            timeout=8.0,
         )
         try:
             result = device.run_solvent_addition(process=1, volume_pump_1=10)

@@ -37,7 +37,6 @@ class SzlabMixerPhotoShottingDevice:
         username: str | None = None,
         password: str | None = None,
         csv_path: str | None = "szlab_plc_0721.csv",
-        timeout: float = 300.0,
         save_dir: str = "unilabos_data/szlab_poly_studio/s05_photoshotting/photos",
         auto_connect: bool = True,
         plc_device_id: str = "szlab_poly_plc",
@@ -46,7 +45,6 @@ class SzlabMixerPhotoShottingDevice:
         **kwargs,
     ):
         self.url = url
-        self.timeout = timeout
         self.save_dir = save_dir
         self.plc_device_id = plc_device_id
         self._plc_gateway = None
@@ -54,7 +52,6 @@ class SzlabMixerPhotoShottingDevice:
             "url": url,
             "username": username,
             "password": password,
-            "timeout": timeout,
             "auto_connect": auto_connect,
         }
         if csv_path is not None:
@@ -231,21 +228,20 @@ class SzlabMixerPhotoShottingDevice:
     def _wait_photo_done(self) -> bool:
         waiter = getattr(self._plc_gateway, "wait_variable_true", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return waiter(S05_DONE, timeout=self.timeout, interval=1.0)
+            return waiter(S05_DONE, interval=1.0)
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
-        return wait_variable_true(reader, S05_DONE, timeout=self.timeout, interval=1.0)
+        return wait_variable_true(reader, S05_DONE, interval=1.0)
 
     @not_action
     def _wait_material_present(self) -> bool:
         waiter = getattr(self._plc_gateway, "wait_variable_true", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return waiter(S05_MATERIAL_SENSOR, timeout=self.timeout, interval=1.0)
+            return waiter(S05_MATERIAL_SENSOR, interval=1.0)
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
-        return wait_variable_true(reader, S05_MATERIAL_SENSOR, timeout=self.timeout, interval=1.0)
+        return wait_variable_true(reader, S05_MATERIAL_SENSOR, interval=1.0)
 
     @not_action
     def _wait_photo_result_code(self) -> tuple[Any, str]:
-        deadline = time.time() + self.timeout
         last_code: Any = 0
         last_label = "UNKNOWN"
         while True:
@@ -253,10 +249,7 @@ class SzlabMixerPhotoShottingDevice:
             last_label = self._result_label(last_code)
             if last_label != "UNKNOWN":
                 return last_code, last_label
-            remaining = deadline - time.time()
-            if remaining <= 0:
-                return last_code, last_label
-            time.sleep(min(1.0, remaining))
+            time.sleep(1.0)
 
     @action(auto_prefix=True, description="执行烧杯姿势拍照检测")
     def take_photo(
@@ -279,12 +272,12 @@ class SzlabMixerPhotoShottingDevice:
             self._status = "Error"
             return {
                 "success": False,
-                "message": "S05 等待拍照位置有料超时",
+                "message": "S05 等待拍照位置有料失败",
                 "data": {"sensor_variable": S05_MATERIAL_SENSOR},
             }
         if not self._wait_photo_done():
             self._status = "Error"
-            return {"success": False, "message": "S05 拍照完成等待超时"}
+            return {"success": False, "message": "S05 拍照完成等待失败"}
 
         if not self._wait_material_present():
             self._status = "Error"
@@ -311,7 +304,7 @@ class SzlabMixerPhotoShottingDevice:
             self._status = "Error"
             return {
                 "success": False,
-                "message": f"S05 拍照结果等待超时（last_value={result_code}）",
+                "message": f"S05 拍照结果等待失败（last_value={result_code}）",
                 "data": data,
             }
         if result_label != "OK":
@@ -340,7 +333,7 @@ class SzlabMixerPhotoShottingDevice:
         self._status = "Running"
         if not self._wait_photo_done():
             self._status = "Error"
-            return {"success": False, "message": "S05 拍照完成等待超时"}
+            return {"success": False, "message": "S05 拍照完成等待失败"}
 
         top_photo_path = top_photo_path or self._build_photo_path(sample_id, view="top")
         side_photo_path = side_photo_path or self._build_photo_path(sample_id, view="side")

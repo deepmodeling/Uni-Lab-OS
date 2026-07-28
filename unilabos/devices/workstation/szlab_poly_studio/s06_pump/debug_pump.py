@@ -105,7 +105,6 @@ def optional_int(value: Any) -> int:
 def run_pump_debug(
     *,
     opcua_url: str,
-    timeout: float,
     pipeline_route_specs: list[dict[str, Any]],
     opcua_node_id_map: dict[str, str],
     opcua_allow_recursive_browse: bool,
@@ -132,7 +131,6 @@ def run_pump_debug(
 
     device = SzlabMixerPumpDevice(
         url=opcua_url,
-        timeout=timeout,
         pipeline_route_specs=pipeline_route_specs,
         opcua_browse_depth=8,
         opcua_browse_limit=10000,
@@ -179,7 +177,6 @@ def _run_from_config(config_path: Path, *, use_production: bool) -> dict[str, An
 
     return run_pump_debug(
         opcua_url=config["resolved_opcua_url"],
-        timeout=float(device_cfg["timeout"]),
         pipeline_route_specs=list(device_cfg.get("pipeline_route_specs", [])),
         opcua_node_id_map=dict(device_cfg.get("opcua_node_id_map", {})) if use_production else {},
         opcua_allow_recursive_browse=(

@@ -86,7 +86,6 @@ def test_common_sensor_wait_method_reads_reader() -> None:
     success, values = wait_sensor_conditions(
         Reader(),
         {S05Sensors.MATERIAL: True},
-        timeout=0.01,
         interval=0.0,
     )
 

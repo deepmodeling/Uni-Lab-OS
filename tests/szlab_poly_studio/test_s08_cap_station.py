@@ -51,7 +51,6 @@ def test_s08_registry_actions_only_expose_process_cap():
         "工艺选择",
         "样品ID",
         "瓶盖暂存位",
-        "超时时间",
     ]
     assert action.description == "S08 开/关盖"
     assert runtime_config.device_factory.plc_device_id == "szlab_poly_plc"
@@ -101,8 +100,8 @@ def test_s08_process_cap_uses_plc_gateway_for_waits_and_resets():
             self.values[name] = value
             self.writes.append((name, value))
 
-        def wait_variable_equal(self, name, expected, timeout=300.0, interval=0.2):
-            self.waits.append((name, expected, timeout, interval))
+        def wait_variable_equal(self, name, expected, interval=0.2):
+            self.waits.append((name, expected, interval))
             if name == NODE_PROCESS_COMPLETE:
                 self.values[name] = expected
                 slot = int(self.values.get("S082瓶盖暂存位", 0))
@@ -111,8 +110,8 @@ def test_s08_process_cap_uses_plc_gateway_for_waits_and_resets():
                     self.values[sensor] = expected in s08_module.OPEN_PROCESS_IDS
             return True
 
-        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
-            del timeout, interval, context
+        def wait_sensor_conditions(self, conditions, interval=0.2, context=None):
+            del interval, context
             values = {name: self.read_variable(name, use_cache=False) for name in conditions}
             return all(values[name] == expected for name, expected in conditions.items()), values
 
@@ -122,7 +121,6 @@ def test_s08_process_cap_uses_plc_gateway_for_waits_and_resets():
     gateway = FakeS08PlcGateway()
     device = SZLabS08CapStationDevice(
         use_plc_gateway=True,
-        timeout=1.0,
         poll_interval=0.05,
     )
     device.set_plc_gateway(gateway)
@@ -130,7 +128,6 @@ def test_s08_process_cap_uses_plc_gateway_for_waits_and_resets():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
-        超时时间=1.0,
     )
 
     assert result["success"] is True
@@ -138,10 +135,10 @@ def test_s08_process_cap_uses_plc_gateway_for_waits_and_resets():
     assert (NODE_PARAMS_WRITTEN, True) in gateway.writes
     assert (NODE_PROCESS_COMPLETE, 0) not in gateway.writes
     assert gateway.waits == [
-        ("S08原点信号", True, 1.0, 0.05),
-        ("S08允许加工", True, 1.0, 0.05),
-        (NODE_PROCESS_COMPLETE, int(S08ProcessType.OPEN_LIQUID_VIAL_100ML), 1.0, 0.05),
-        (NODE_PROCESS_COMPLETE, 0, 1.0, 0.05),
+        ("S08原点信号", True, 0.05),
+        ("S08允许加工", True, 0.05),
+        (NODE_PROCESS_COMPLETE, int(S08ProcessType.OPEN_LIQUID_VIAL_100ML), 0.05),
+        (NODE_PROCESS_COMPLETE, 0, 0.05),
     ]
 
 
@@ -174,17 +171,14 @@ def test_wait_process_complete_waits_until_process_complete_equals_expected():
     pseudo = PseudoSzlabS08OpcUaClient()
     device = SZLabS08CapStationDevice(
         url="opc.tcp://127.0.0.1:50102/",
-        timeout=1.0,
         poll_interval=0.05,
         opcua_client=pseudo,
     )
     process_id = int(S08ProcessType.OPEN_LIQUID_VIAL_100ML)
 
-    assert device._wait_process_complete(process_id, timeout=0.2) is False
-
     pseudo.values[NODE_PROCESS_SELECT] = process_id
     pseudo.values[NODE_PARAMS_WRITTEN] = True
-    assert device._wait_process_complete(process_id, timeout=1.0) is True
+    assert device._wait_process_complete(process_id) is True
 
 
 def test_is_virtual_test_opcua_url():
@@ -213,7 +207,6 @@ def test_process_cap_open_liquid_vial_writes_sample_id_to_slot_cache():
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=0,
-        超时时间=1.0,
     )
 
     assert result["success"] is True
@@ -234,7 +227,6 @@ def test_process_cap_open_sample_500ml_uses_process_one():
         工艺选择=int(S08ProcessType.OPEN_SAMPLE_VIAL_500ML),
         样品ID=SAMPLE_B,
         瓶盖暂存位=0,
-        超时时间=1.0,
     )
 
     assert result["success"] is True
@@ -250,14 +242,12 @@ def test_process_cap_sample_250ml_dispatches_open_and_close():
         工艺选择=int(S08ProcessType.OPEN_SAMPLE_VIAL_250ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=0,
-        超时时间=1.0,
     )
     client.set_cap_storage_slot_present(open_result["cap_storage_slot"], True)
     close_result = device.process_cap(
         工艺选择=int(S08ProcessType.CLOSE_SAMPLE_VIAL_250ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=0,
-        超时时间=1.0,
     )
 
     assert open_result["success"] is True
@@ -286,7 +276,6 @@ def test_process_cap_open_auto_allocates_first_empty_cache_slot():
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=0,
-        超时时间=1.0,
     )
 
     assert result["success"] is True
@@ -303,7 +292,6 @@ def test_process_cap_open_defaults_to_cap_storage_slot_one():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
-        超时时间=1.0,
     )
 
     assert result["success"] is True
@@ -318,7 +306,6 @@ def test_process_cap_open_uses_explicit_cap_storage_slot():
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=4,
-        超时时间=1.0,
     )
 
     assert result["success"] is True
@@ -351,7 +338,6 @@ def test_process_cap_close_finds_slot_by_sample_id_and_clears_cache():
         工艺选择=int(S08ProcessType.CLOSE_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=0,
-        超时时间=1.0,
     )
 
     assert result["success"] is True
@@ -377,7 +363,6 @@ def test_process_cap_open_fails_when_sample_already_opened_on_storage_slot():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
-        超时时间=1.0,
     )
 
     assert result["success"] is False
@@ -392,7 +377,6 @@ def test_process_cap_open_fails_when_cap_station_has_no_bottle():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_SAMPLE_VIAL_500ML),
         样品ID=SAMPLE_A,
-        超时时间=1.0,
     )
 
     assert result["success"] is False
@@ -406,7 +390,6 @@ def test_process_cap_open_liquid_vial_requires_station_two_sensor():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
-        超时时间=1.0,
     )
 
     assert result["success"] is False
@@ -422,7 +405,6 @@ def test_process_cap_open_requires_empty_cap_storage_sensor_without_optional_val
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=1,
-        超时时间=1.0,
     )
 
     assert result["success"] is False
@@ -448,7 +430,6 @@ def test_process_cap_reports_verification_failed_when_cap_sensor_does_not_change
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=1,
-        超时时间=1.0,
     )
 
     assert result["success"] is False
@@ -465,7 +446,6 @@ def test_process_cap_fails_when_station_status_not_ready():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
-        超时时间=1.0,
     )
 
     assert result["success"] is False
@@ -482,7 +462,6 @@ def test_process_cap_skips_station_status_check_when_disabled():
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
         瓶盖暂存位=0,
-        超时时间=1.0,
     )
 
     assert result["success"] is True
@@ -497,10 +476,9 @@ def test_process_cap_keeps_physical_sensor_checks_when_business_constraints_disa
     open_result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_B,
-        超时时间=1.0,
     )
     assert open_result["success"] is False
-    assert "等待瓶体与瓶盖暂存位状态超时" in open_result["message"]
+    assert "等待瓶体与瓶盖暂存位状态失败" in open_result["message"]
     assert open_result["sensor_precheck"]["mismatches"]["传感器状态_上位机[3].NO[15]"]["actual"] is False
     assert (NODE_PARAMS_WRITTEN, True) not in client.writes
 
@@ -511,7 +489,6 @@ def test_process_cap_close_fails_when_cap_storage_slot_empty():
     result = device.process_cap(
         工艺选择=int(S08ProcessType.CLOSE_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
-        超时时间=1.0,
     )
 
     assert result["success"] is False

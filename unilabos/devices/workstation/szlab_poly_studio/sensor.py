@@ -106,25 +106,23 @@ class SensorBase:
         variable_name: str,
         expected: Any,
         *,
-        timeout: float = 300.0,
         interval: float = 1.0,
     ) -> bool:
         started_at = time.time()
         start_recorder = getattr(reader, "_record_opc_wait_start", None)
         if callable(start_recorder):
-            start_recorder(variable_name, expected, timeout=timeout, interval=interval)
+            start_recorder(variable_name, expected, interval=interval)
 
         success = False
         last_value = None
         error = None
         try:
-            while time.time() - started_at <= timeout:
+            while True:
                 last_value = reader.read_variable(variable_name, use_cache=False)
                 if last_value == expected:
                     success = True
                     return True
                 time.sleep(interval)
-            return False
         except Exception as exc:
             error = str(exc)
             raise
@@ -134,7 +132,6 @@ class SensorBase:
                 finish_recorder(
                     variable_name,
                     expected,
-                    timeout=timeout,
                     interval=interval,
                     success=success,
                     last_value=last_value,
@@ -148,14 +145,12 @@ class SensorBase:
         reader: Any,
         variable_name: str,
         *,
-        timeout: float = 300.0,
         interval: float = 1.0,
     ) -> bool:
         return cls.wait_variable_equal(
             reader,
             variable_name,
             True,
-            timeout=timeout,
             interval=interval,
         )
 
@@ -164,7 +159,6 @@ class SensorBase:
         reader: Any,
         conditions: Dict[str, bool],
         *,
-        timeout: float = 300.0,
         interval: float = 0.2,
         context: str | None = None,
     ) -> tuple[bool, Dict[str, Any]]:
@@ -178,7 +172,7 @@ class SensorBase:
         success = False
         error = None
         try:
-            while time.monotonic() - started_at <= timeout:
+            while True:
                 last_values = {
                     variable_name: reader.read_variable(variable_name, use_cache=False)
                     for variable_name in conditions
@@ -189,7 +183,6 @@ class SensorBase:
                         start_recorder(
                             conditions,
                             last_values,
-                            timeout=timeout,
                             interval=interval,
                             context=context,
                         )
@@ -201,7 +194,6 @@ class SensorBase:
                             conditions,
                             previous_values,
                             last_values,
-                            timeout=timeout,
                             context=context,
                         )
                 previous_values = dict(last_values)
@@ -209,7 +201,6 @@ class SensorBase:
                     success = True
                     return True, last_values
                 time.sleep(interval)
-            return False, last_values
         except Exception as exc:
             error = str(exc)
             raise
@@ -219,7 +210,6 @@ class SensorBase:
                 finish_recorder(
                     conditions,
                     last_values,
-                    timeout=timeout,
                     interval=interval,
                     success=success,
                     elapsed=time.monotonic() - started_at,
@@ -307,14 +297,12 @@ def wait_variable_equal(
     variable_name: str,
     expected: Any,
     *,
-    timeout: float = 300.0,
     interval: float = 1.0,
 ) -> bool:
     return SensorBase.wait_variable_equal(
         reader,
         variable_name,
         expected,
-        timeout=timeout,
         interval=interval,
     )
 
@@ -323,13 +311,11 @@ def wait_variable_true(
     reader: Any,
     variable_name: str,
     *,
-    timeout: float = 300.0,
     interval: float = 1.0,
 ) -> bool:
     return SensorBase.wait_variable_true(
         reader,
         variable_name,
-        timeout=timeout,
         interval=interval,
     )
 
@@ -338,14 +324,12 @@ def wait_sensor_conditions(
     reader: Any,
     conditions: Dict[str, bool],
     *,
-    timeout: float = 300.0,
     interval: float = 0.2,
     context: str | None = None,
 ) -> tuple[bool, Dict[str, Any]]:
     return SensorBase.wait_conditions(
         reader,
         conditions,
-        timeout=timeout,
         interval=interval,
         context=context,
     )

@@ -229,7 +229,6 @@ class SZLabS08CapStationDevice:
         url: str = DEFAULT_OPCUA_URL,
         username: str | None = None,
         password: str | None = None,
-        timeout: float = 300.0,
         poll_interval: float = 0.2,
         require_station_ready: bool = True,
         require_station_status: bool = False,
@@ -247,7 +246,6 @@ class SZLabS08CapStationDevice:
     ):
         del kwargs
         self.url = url
-        self.timeout = timeout
         self.poll_interval = poll_interval
         self.require_station_ready = require_station_ready
         self.plc_device_id = plc_device_id
@@ -341,35 +339,31 @@ class SZLabS08CapStationDevice:
         self,
         node_name: str,
         expected: bool,
-        timeout: Optional[float] = None,
         description: Optional[str] = None,
     ) -> bool:
-        return self._wait_plc_equal(node_name, expected, timeout=timeout, description=description or node_name)
+        return self._wait_plc_equal(node_name, expected, description=description or node_name)
 
     @not_action
     def _wait_plc_equal(
         self,
         node_name: str,
         expected: Any,
-        timeout: Optional[float] = None,
         description: Optional[str] = None,
     ) -> bool:
-        timeout = self.timeout if timeout is None else timeout
         desc = description or f"{node_name} == {expected}"
         interval = self.poll_interval
         logger.info(f"等待 {desc}")
         plc = self._plc()
         waiter = getattr(plc, "wait_variable_equal", None)
         if callable(waiter):
-            ok = bool(waiter(node_name, expected, timeout=timeout, interval=interval))
+            ok = bool(waiter(node_name, expected, interval=interval))
         else:
             waiter = getattr(plc, "wait_equal", None)
             if callable(waiter):
-                ok = bool(waiter(node_name, expected, timeout=timeout, interval=interval))
+                ok = bool(waiter(node_name, expected, interval=interval))
             else:
-                start = time.time()
                 ok = False
-                while time.time() - start < timeout:
+                while True:
                     if self._read_variable(node_name) == expected:
                         ok = True
                         break
@@ -377,7 +371,7 @@ class SZLabS08CapStationDevice:
         if ok:
             logger.info(f"✓ {desc}")
         else:
-            logger.error(f"✗ 等待 {desc} 超时 ({timeout}s)")
+            logger.error(f"✗ 等待 {desc} 失败")
         return ok
 
     @not_action
@@ -403,11 +397,9 @@ class SZLabS08CapStationDevice:
     def _wait_process_complete(
         self,
         expected: int,
-        timeout: Optional[float] = None,
         description: Optional[str] = None,
     ) -> bool:
         """轮询读取对端「S08工艺完成」，直到等于期望值。"""
-        timeout = self.timeout if timeout is None else timeout
         desc = description or f"{NODE_PROCESS_COMPLETE} == {expected}"
         var_ref = self._format_opc_variable_ref(NODE_PROCESS_COMPLETE)
         logger.info(f"等待 {desc}")
@@ -418,7 +410,7 @@ class SZLabS08CapStationDevice:
         if not callable(waiter):
             waiter = getattr(plc, "wait_equal", None)
         if callable(waiter):
-            ok = bool(waiter(NODE_PROCESS_COMPLETE, expected, timeout=timeout, interval=interval))
+            ok = bool(waiter(NODE_PROCESS_COMPLETE, expected, interval=interval))
             if ok:
                 logger.info(f"✓ {desc}")
             else:
@@ -427,14 +419,13 @@ class SZLabS08CapStationDevice:
                 except Exception:
                     self._last_process_complete_seen = None
                 logger.error(
-                    f"✗ 等待 {desc} 超时 ({timeout}s)，"
+                    f"✗ 等待 {desc} 失败，"
                     f"最后读取 {var_ref}={self._last_process_complete_seen!r}"
                 )
             return ok
 
-        start = time.time()
         last_seen: int | None = None
-        while time.time() - start < timeout:
+        while True:
             try:
                 last_seen = self._read_process_complete_int()
             except Exception as exc:
@@ -446,25 +437,18 @@ class SZLabS08CapStationDevice:
                 return True
             time.sleep(interval)
 
-        logger.error(
-            f"✗ 等待 {desc} 超时 ({timeout}s)，最后读取 {var_ref}={last_seen!r}"
-        )
-        self._last_process_complete_seen = last_seen
-        return False
-
     @not_action
-    def _process_complete_timeout_message(self, expected: int, task_label: str) -> str:
+    def _process_complete_wait_message(self, expected: int, task_label: str) -> str:
         var_ref = self._format_opc_variable_ref(NODE_PROCESS_COMPLETE)
         last_seen = getattr(self, "_last_process_complete_seen", None)
         suffix = f"，当前 {var_ref}={last_seen!r}" if last_seen is not None else ""
         return (
-            f"S08 {task_label} 等待工艺完成超时（期望 {var_ref}={expected}{suffix}）"
+            f"S08 {task_label} 等待工艺完成失败（期望 {var_ref}={expected}{suffix}）"
         )
 
     @not_action
-    def _complete_handshake_teardown(self, timeout: Optional[float] = None) -> bool:
+    def _complete_handshake_teardown(self) -> bool:
         """步骤 3–4：复位本侧握手，再读取对端是否已将 S08工艺完成 置 0。"""
-        timeout = self.timeout if timeout is None else timeout
         try:
             self._reset_unilab_written_params()
         except Exception as exc:
@@ -476,7 +460,6 @@ class SZLabS08CapStationDevice:
         var_ref = self._format_opc_variable_ref(NODE_PROCESS_COMPLETE)
         return self._wait_process_complete(
             0,
-            timeout=timeout,
             description=f"{var_ref} == 0",
         )
 
@@ -564,7 +547,6 @@ class SZLabS08CapStationDevice:
         conditions: dict[str, bool],
         *,
         phase: str,
-        timeout: float,
     ) -> dict[str, Any]:
         plc = self._plc()
         context = f"S08 开关盖{'前置' if phase == 'pre' else '后置'}传感器检查"
@@ -572,7 +554,6 @@ class SZLabS08CapStationDevice:
         if callable(waiter):
             success, values = waiter(
                 conditions,
-                timeout=timeout,
                 interval=self.poll_interval,
                 context=context,
             )
@@ -580,7 +561,6 @@ class SZLabS08CapStationDevice:
             success, values = wait_sensor_conditions(
                 plc,
                 conditions,
-                timeout=timeout,
                 interval=self.poll_interval,
                 context=context,
             )
@@ -755,11 +735,9 @@ class SZLabS08CapStationDevice:
         process_type: S08ProcessType,
         cap_storage_slot: int,
         sample_id: Sequence[int],
-        timeout: Optional[float] = None,
         clear_cache_on_complete: bool = False,
     ) -> dict[str, Any]:
         _validate_cap_storage_slot(cap_storage_slot)
-        timeout = self.timeout if timeout is None else timeout
         process_id = int(process_type)
         is_open = process_type in OPEN_PROCESS_IDS
         task_label = "开瓶盖" if is_open else "关瓶盖"
@@ -778,19 +756,18 @@ class SZLabS08CapStationDevice:
             sensor_precheck = self._wait_cap_sensor_conditions(
                 pre_sensor_conditions,
                 phase="pre",
-                timeout=timeout,
             )
         except Exception as exc:
             return {"success": False, "message": f"S08 {task_label}前传感器读取失败: {_format_driver_error(exc)}"}
         if not sensor_precheck["success"]:
             return {
                 "success": False,
-                "message": f"S08 {task_label}前等待瓶体与瓶盖暂存位状态超时",
+                "message": f"S08 {task_label}前等待瓶体与瓶盖暂存位状态失败",
                 "sensor_precheck": sensor_precheck,
             }
 
         if self.require_station_ready:
-            if not self._wait_plc_bool(NODE_HOME, True, timeout=timeout, description="S08 原点信号（机械臂安全位）"):
+            if not self._wait_plc_bool(NODE_HOME, True, description="S08 原点信号（机械臂安全位）"):
                 return {
                     "success": False,
                     "message": (
@@ -801,12 +778,11 @@ class SZLabS08CapStationDevice:
         if not self._wait_plc_bool(
             NODE_ALLOW_PROCESS,
             True,
-            timeout=timeout,
             description="S08 允许加工",
         ):
             return {
                 "success": False,
-                "message": f"等待 {self._format_opc_variable_ref(NODE_ALLOW_PROCESS)} 置 True 超时",
+                "message": f"等待 {self._format_opc_variable_ref(NODE_ALLOW_PROCESS)} 置 True 失败",
             }
 
         self._reset_unilab_written_params_if_dirty()
@@ -821,13 +797,13 @@ class SZLabS08CapStationDevice:
             self._write_variable(NODE_PARAMS_WRITTEN, True)
             params_written = True
 
-            if not self._wait_process_complete(process_id, timeout=timeout):
+            if not self._wait_process_complete(process_id):
                 return {
                     "success": False,
-                    "message": self._process_complete_timeout_message(process_id, task_label),
+                    "message": self._process_complete_wait_message(process_id, task_label),
                 }
 
-            if not self._complete_handshake_teardown(timeout=timeout):
+            if not self._complete_handshake_teardown():
                 return {
                     "success": False,
                     "message": (
@@ -841,7 +817,6 @@ class SZLabS08CapStationDevice:
                 sensor_postcheck = self._wait_cap_sensor_conditions(
                     post_sensor_conditions,
                     phase="post",
-                    timeout=timeout,
                 )
             except Exception as exc:
                 return {
@@ -878,7 +853,7 @@ class SZLabS08CapStationDevice:
         finally:
             if params_written and not handshake_teardown_done:
                 try:
-                    self._complete_handshake_teardown(timeout=min(10.0, timeout))
+                    self._complete_handshake_teardown()
                 except Exception as exc:
                     logger.warning(f"S08 异常退出时握手收尾失败: {_format_driver_error(exc)}")
 
@@ -888,7 +863,6 @@ class SZLabS08CapStationDevice:
         process_type: S08ProcessType,
         sample_id: Sequence[int],
         cap_storage_slot: int | None = None,
-        timeout: float = 300.0,
     ) -> dict[str, Any]:
         try:
             normalized = self._require_sample_id(sample_id)
@@ -899,7 +873,6 @@ class SZLabS08CapStationDevice:
             process_type=process_type,
             cap_storage_slot=slot,
             sample_id=normalized,
-            timeout=timeout,
         )
 
     @not_action
@@ -908,7 +881,6 @@ class SZLabS08CapStationDevice:
         process_type: S08ProcessType,
         sample_id: Sequence[int],
         cap_storage_slot: int | None = None,
-        timeout: float = 300.0,
     ) -> dict[str, Any]:
         try:
             normalized = _normalize_sample_id(sample_id)
@@ -919,7 +891,6 @@ class SZLabS08CapStationDevice:
             process_type=process_type,
             cap_storage_slot=slot,
             sample_id=normalized,
-            timeout=timeout,
             clear_cache_on_complete=True,
         )
 
@@ -932,7 +903,6 @@ class SZLabS08CapStationDevice:
         工艺选择: int = int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID: list[int] | None = None,
         瓶盖暂存位: int = 1,
-        超时时间: float = 300.0,
     ) -> dict[str, Any]:
         try:
             process_type = _resolve_process_type_by_id(工艺选择)
@@ -949,13 +919,11 @@ class SZLabS08CapStationDevice:
                 process_type=process_type,
                 sample_id=normalized_sample_id,
                 cap_storage_slot=瓶盖暂存位,
-                timeout=超时时间,
             )
         return self._close_cap(
             process_type=process_type,
             sample_id=normalized_sample_id,
             cap_storage_slot=瓶盖暂存位,
-            timeout=超时时间,
         )
 
     @topic_config(period=2.0)

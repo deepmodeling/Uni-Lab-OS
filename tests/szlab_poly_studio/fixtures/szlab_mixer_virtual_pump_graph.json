@@ -6,8 +6,7 @@
       "type": "device",
       "class": "szlab_mixer_pump",
       "config": {
-        "url": "opc.tcp://127.0.0.1:48506/",
-        "timeout": 30
+        "url": "opc.tcp://127.0.0.1:48506/"
       }
     }
   ],

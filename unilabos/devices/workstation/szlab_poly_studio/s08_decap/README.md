@@ -31,7 +31,7 @@ sequenceDiagram
     participant UL as UniLab 驱动
     participant PLC as PLC / 虚拟 OPC
 
-    WF->>UL: process_cap(工艺选择, 样品ID, 超时时间)
+    WF->>UL: process_cap(工艺选择, 样品ID)
 
     opt require_station_ready（默认 True）
         UL->>PLC: 读 S08原点信号

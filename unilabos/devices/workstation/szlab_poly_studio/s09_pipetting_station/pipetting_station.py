@@ -57,7 +57,6 @@ class SzlabMixerPipettingStationDevice:
         username: str | None = None,
         password: str | None = None,
         csv_path: str | None = "szlab_plc_0628_addnodeid.csv",
-        timeout: float = 300.0,
         auto_connect: bool = True,
         plc_device_id: str = "szlab_poly_plc",
         use_plc_gateway: bool = False,
@@ -66,7 +65,6 @@ class SzlabMixerPipettingStationDevice:
         **kwargs,
     ):
         self.url = url
-        self.timeout = timeout
         self.plc_device_id = plc_device_id
         self._plc_gateway = None
         self._status = "Idle"
@@ -158,19 +156,16 @@ class SzlabMixerPipettingStationDevice:
         self._write_variable(name, reset_value)
 
     @not_action
-    def _wait_equal(self, name: str, expected: Any, timeout: float | None = None, interval: float = 0.2) -> bool:
-        timeout = self.timeout if timeout is None else timeout
+    def _wait_equal(self, name: str, expected: Any, interval: float = 0.2) -> bool:
         target = self._target()
         if hasattr(target, "wait_equal"):
-            return target.wait_equal(name, expected, timeout=timeout, interval=interval)
+            return target.wait_equal(name, expected, interval=interval)
         if hasattr(target, "wait_variable_equal"):
-            return target.wait_variable_equal(name, expected, timeout=timeout, interval=interval)
-        deadline = time.time() + timeout
-        while time.time() <= deadline:
+            return target.wait_variable_equal(name, expected, interval=interval)
+        while True:
             if self._read_variable(name, use_cache=False) == expected:
                 return True
             time.sleep(interval)
-        return False
 
     @not_action
     def _wait_process_done(self, process: int) -> bool:
@@ -222,7 +217,6 @@ class SzlabMixerPipettingStationDevice:
         if callable(waiter):
             success, values = waiter(
                 conditions,
-                timeout=self.timeout,
                 interval=0.2,
                 context=context,
             )
@@ -230,7 +224,6 @@ class SzlabMixerPipettingStationDevice:
             success, values = wait_sensor_conditions(
                 target,
                 conditions,
-                timeout=self.timeout,
                 interval=0.2,
                 context=context,
             )
@@ -593,7 +586,7 @@ class SzlabMixerPipettingStationDevice:
         if not sensor_precheck["success"]:
             return {
                 "success": False,
-                "message": f"S09 工艺 {process} 等待所需物料在位超时",
+                "message": f"S09 工艺 {process} 等待所需物料在位失败",
                 "status": "rejected",
                 "sensor_precheck": sensor_precheck,
                 "logs": logs,
@@ -607,7 +600,7 @@ class SzlabMixerPipettingStationDevice:
                     {"variable": S09_ALLOW_PROCESS_VAR, "expected": True},
                 )
                 if not self._wait_allow_process():
-                    return {"success": False, "message": "等待 S09 允许加工超时", "logs": logs}
+                    return {"success": False, "message": "等待 S09 允许加工失败", "logs": logs}
             except Exception as exc:
                 return {"success": False, "message": str(exc), "logs": logs}
 
@@ -679,7 +672,7 @@ class SzlabMixerPipettingStationDevice:
             )
             if not self._wait_process_done(process):
                 self._status = "Error"
-                return {"success": False, "message": f"S09 工艺 {process} 完成等待超时", "data": data, "logs": logs}
+                return {"success": False, "message": f"S09 工艺 {process} 完成等待失败", "data": data, "logs": logs}
             self._append_log(
                 logs,
                 f"S09 工艺 {process} 完成信号已确认",
@@ -816,7 +809,7 @@ class SzlabMixerPipettingStationDevice:
             return {
                 "success": False,
                 "status": "rejected",
-                "message": "S09 加液流程等待 TIP盒、液体瓶和加液工位物料在位超时",
+                "message": "S09 加液流程等待 TIP盒、液体瓶和加液工位物料在位失败",
                 "sensor_precheck": workflow_sensor_precheck,
             }
 
@@ -1036,7 +1029,7 @@ class SzlabMixerPipettingStationDevice:
             if not stable:
                 return {
                     "success": False,
-                    "message": "等待 S09 天平读数稳定超时",
+                    "message": "等待 S09 天平读数稳定失败",
                     "data": {"stable": stable},
                 }
             reading = self._read_variable(S09_BALANCE_READING_VAR, use_cache=False)

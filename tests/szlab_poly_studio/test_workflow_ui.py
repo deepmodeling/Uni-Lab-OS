@@ -319,7 +319,6 @@ def test_s06_debug_runtime_creates_only_plc_and_pump(monkeypatch, tmp_path):
             "szlab_poly_plc": {"url": "opc.tcp://127.0.0.1:48506/", "csv_path": "pump_nodes.csv"},
             "szlab_mixer_pump": {
                 "url": "opc.tcp://127.0.0.1:48506/",
-                "timeout": 300,
                 "pipeline_route_specs": [
                     {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21}
                 ],
@@ -412,7 +411,6 @@ def test_s07_robot_preset_includes_robot_and_solid_addition_station():
     assert set(graph_nodes) == {"szlab_poly_plc", "szlab_mixer_robot", "szlab_s07_solid_addition"}
     assert graph_nodes["szlab_s07_solid_addition"]["config"] == {
         "plc_device_id": "szlab_poly_plc",
-        "process_timeout": "${timeout}",
         "poll_interval": 0.2,
     }
     assert runtime_config.device_factory.devices == {
@@ -463,7 +461,6 @@ def test_s06_debug_preset_uses_debug_file_name_and_only_pump_device():
     assert set(graph_nodes) == {"szlab_poly_plc", "szlab_mixer_pump"}
     assert graph_nodes["szlab_mixer_pump"]["config"] == {
         "url": "${opcua_url}",
-        "timeout": "${timeout}",
         "pipeline_route_specs": [
             {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
             {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},
@@ -578,7 +575,6 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"] == "${csv_path}"
     assert graph_nodes["szlab_mixer_pipetting_station"]["config"] == {
         "url": "${opcua_url}",
-        "timeout": 300.0,
         "csv_path": "s09_pipetting_station/pipetting_station_nodes.csv",
     }
     assert preset.debug_config["skip_robot_precheck_variables"] == robot_action_preset.debug_config[
@@ -1060,8 +1056,7 @@ def test_runtime_config_collects_common_action_and_param_variables(tmp_path):
             "plc_class": "example.PLC",
             "target_class": "example.Robot",
             "target_config": {"plc_device_id": "plc"},
-            "direct_plc_command_method": "_call_plc_command",
-            "timeout_config_key": "plc_action_timeout"
+            "direct_plc_command_method": "_call_plc_command"
           },
           "opc_snapshot": {
             "common_variables": ["Common_A"],
@@ -1232,7 +1227,6 @@ def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):
         "graph": "__generated__",
         "url": "opc.tcp://example:4840",
         "no_subscription": True,
-        "timeout": 60,
     }
 
     manager._records["run-1"] = RunRecord(run_id="run-1")
@@ -1303,7 +1297,6 @@ def test_workflow_run_manager_exposes_and_clears_s07_live_balance(monkeypatch):
         "graph": "__generated__",
         "url": "opc.tcp://example:4840",
         "no_subscription": True,
-        "timeout": 60,
     }
     manager._records["run-live"] = RunRecord(run_id="run-live")
 
@@ -1431,13 +1424,12 @@ def test_run_node_with_live_opc_sampling_emits_opc_wait_events(tmp_path):
         def drain_opc_wait_events(self):
             return [
                 {
-                    "message": "等待 OPC 变量 S06加工完成 == True (timeout=300.0s, interval=0.2s)",
+                    "message": "等待 OPC 变量 S06加工完成 == True (interval=0.2s)",
                     "detail": {
                         "type": "opc_wait",
                         "phase": "start",
                         "variable": "S06加工完成",
                         "expected": True,
-                        "timeout": 300.0,
                         "interval": 0.2,
                     },
                     "phase": "start",
@@ -1449,7 +1441,6 @@ def test_run_node_with_live_opc_sampling_emits_opc_wait_events(tmp_path):
                         "phase": "finish",
                         "variable": "S06加工完成",
                         "expected": True,
-                        "timeout": 300.0,
                         "interval": 0.2,
                         "success": True,
                         "last_value": True,
@@ -1477,7 +1468,7 @@ def test_run_node_with_live_opc_sampling_emits_opc_wait_events(tmp_path):
 
     wait_events = [event for event in events if event["detail"] and event["detail"].get("type") == "opc_wait"]
     assert [event["message"] for event in wait_events] == [
-        "等待 OPC 变量 S06加工完成 == True (timeout=300.0s, interval=0.2s)",
+        "等待 OPC 变量 S06加工完成 == True (interval=0.2s)",
         "OPC 变量等待完成 S06加工完成 == True: success=True, last_value=True",
     ]
     assert wait_events[0]["detail"]["phase"] == "start"
@@ -1513,7 +1504,7 @@ def test_run_node_with_live_opc_sampling_emits_nested_client_wait_events(tmp_pat
             assert self.writer is not None
             self.writer(
                 {
-                    "message": "等待 OPC 变量 S041加工完成 == True (timeout=300.0s, interval=1.0s)",
+                    "message": "等待 OPC 变量 S041加工完成 == True (interval=1.0s)",
                     "detail": {
                         "type": "opc_wait",
                         "phase": "start",

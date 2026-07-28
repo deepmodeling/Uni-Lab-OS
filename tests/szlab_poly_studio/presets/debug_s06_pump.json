@@ -10,7 +10,6 @@
     "graph": "__generated__",
     "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
     "csv": "pump_nodes.csv",
-    "timeout": 300,
     "no_subscription": true,
     "show_csv": false,
     "stack_status_groups": []
@@ -31,7 +30,6 @@
         "config": {
           "url": "${opcua_url}",
           "csv_path": "${csv_path}",
-          "timeout": "${timeout}",
           "no_subscription": true,
           "opcua_node_id_prefix": "ns=4;s=上位机通讯|"
         },
@@ -47,7 +45,6 @@
         "position": {"x": 160, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}",
           "pipeline_route_specs": [
             {"pump": 1, "pipeline": "aspirate", "control_valve": 11, "absolute_position": 21},
             {"pump": 1, "pipeline": "dispense", "control_valve": 12, "absolute_position": 22},

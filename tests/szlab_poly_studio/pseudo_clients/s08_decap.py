@@ -60,24 +60,21 @@ class PseudoSzlabS08OpcUaClient:
         del use_cache
         return self.read(name)
 
-    def wait_equal(self, name: str, expected: Any, timeout: float = 300.0, interval: float = 0.2) -> bool:
+    def wait_equal(self, name: str, expected: Any, interval: float = 0.2) -> bool:
         import time
 
-        start = time.time()
-        while time.time() - start < timeout:
+        while True:
             if self.read(name) == expected:
                 return True
             time.sleep(interval)
-        return False
 
     def wait_sensor_conditions(
         self,
         conditions: dict[str, bool],
-        timeout: float = 300.0,
         interval: float = 0.2,
         context: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
-        del timeout, interval, context
+        del interval, context
         values = {name: self.read(name) for name in conditions}
         return all(values[name] == expected for name, expected in conditions.items()), values
 

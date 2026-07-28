@@ -226,8 +226,6 @@ _S08_PRODUCT_TYPE_OPTIONS = [
 _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     "sample_id": {"label": "样品 ID", "description": "用于追踪物料、照片和实验结果的样品标识。"},
     "position": {"label": "位置", "description": "目标工位或仓位编号；可用范围取决于当前动作。"},
-    "timeout": {"label": "超时时间", "description": "等待 PLC 工艺完成的最长时间。", "unit": "s"},
-    "超时时间": {"description": "等待 S08 开关盖工艺完成的最长时间。", "unit": "s"},
     "duration": {"label": "持续时间", "description": "工艺持续运行时间。", "unit": "s"},
     "speed": {"label": "搅拌速度", "description": "S04 磁力搅拌转速设定。", "unit": "rpm"},
     "temperature": {"label": "目标温度", "description": "S04 磁搅目标温度。", "unit": "°C"},
@@ -872,7 +870,6 @@ class WorkflowRunManager:
         default_config = self._preset.default_config
         csv_value = str(default_config.get("csv") or "").strip()
         csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
-        timeout = float(default_config.get("timeout") or 300.0)
         no_subscription = bool(default_config.get("no_subscription", True))
         graph_value = str(default_config.get("graph") or GENERATED_GRAPH_SENTINEL).strip()
         opcua_url = str(default_config.get("url") or "").strip()
@@ -896,7 +893,6 @@ class WorkflowRunManager:
             opcua_url,
             str(csv_path or ""),
             no_subscription,
-            timeout,
         )
         return self._get_or_create_devices(
             device_key,
@@ -905,7 +901,6 @@ class WorkflowRunManager:
                 "opcua_url": opcua_url or None,
                 "csv_path": csv_path,
                 "use_subscription": False if no_subscription else None,
-                "plc_action_timeout": timeout,
                 "runtime_config": self._runtime_config,
             },
             lambda message: None,
@@ -1070,12 +1065,6 @@ class WorkflowRunManager:
             default_config = self._preset.default_config
             csv_value = str(payload.get("csv") or default_config.get("csv") or "").strip()
             csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
-            timeout = float(payload.get("timeout") or default_config.get("timeout") or 300.0)
-            write_allowed_timeout = float(
-                payload.get("write_allowed_timeout")
-                or default_config.get("write_allowed_timeout")
-                or 5.0
-            )
             no_subscription = bool(payload.get("no_subscription", default_config.get("no_subscription", True)))
             graph_value = str(payload.get("graph") or default_config.get("graph") or GENERATED_GRAPH_SENTINEL).strip()
             opcua_url = str(payload.get("url") or default_config.get("url") or "").strip()
@@ -1086,8 +1075,6 @@ class WorkflowRunManager:
                 generated_graph = build_local_device_graph(
                     opcua_url=opcua_url,
                     csv_path=str(csv_path or csv_value or default_config.get("csv") or ""),
-                    timeout=timeout,
-                    write_allowed_timeout=write_allowed_timeout,
                     use_subscription=not no_subscription,
                     preset=self._preset,
                 )
@@ -1107,7 +1094,6 @@ class WorkflowRunManager:
                 opcua_url,
                 str(csv_path or ""),
                 no_subscription,
-                timeout,
             )
             devices = self._get_or_create_devices(
                 device_key,
@@ -1116,7 +1102,6 @@ class WorkflowRunManager:
                     "opcua_url": opcua_url or None,
                     "csv_path": csv_path,
                     "use_subscription": False if no_subscription else None,
-                    "plc_action_timeout": timeout,
                     "runtime_config": self._runtime_config,
                 },
                 record.append_log,
@@ -1357,8 +1342,6 @@ def build_graph_workflow(
 def build_local_device_graph(
     opcua_url: str,
     csv_path: str = "",
-    timeout: float | int | None = None,
-    write_allowed_timeout: float | int | None = None,
     use_subscription: bool = True,
     preset: WorkflowPreset = DEFAULT_PRESET,
 ) -> dict[str, Any]:
@@ -1371,12 +1354,6 @@ def build_local_device_graph(
         {
             "opcua_url": opcua_url,
             "csv_path": csv_path,
-            "timeout": timeout if timeout is not None else preset.default_config.get("timeout", 300),
-            "write_allowed_timeout": (
-                write_allowed_timeout
-                if write_allowed_timeout is not None
-                else preset.default_config.get("write_allowed_timeout", 5.0)
-            ),
             "use_subscription": use_subscription,
         },
     )

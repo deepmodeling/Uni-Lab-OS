@@ -42,7 +42,6 @@ class SzlabMixerMagneticStirrerDevice:
         username: str | None = None,
         password: str | None = None,
         csv_path: str | None = "s04_magnetic_stirring/magnetic_stirring_nodes.csv",
-        timeout: float = 300.0,
         auto_connect: bool = True,
         plc_device_id: str = "szlab_poly_plc",
         use_plc_gateway: bool = False,
@@ -50,7 +49,6 @@ class SzlabMixerMagneticStirrerDevice:
         **kwargs,
     ):
         self.url = url
-        self.timeout = timeout
         self.plc_device_id = plc_device_id
         self._plc_gateway = None
         self._status = "Idle"
@@ -60,7 +58,6 @@ class SzlabMixerMagneticStirrerDevice:
             "url": url,
             "username": username,
             "password": password,
-            "timeout": timeout,
             "auto_connect": auto_connect,
         }
         if csv_path is not None:
@@ -142,7 +139,7 @@ class SzlabMixerMagneticStirrerDevice:
         variable = s04_done_var(position)
         waiter = getattr(self._plc_gateway, "wait_new_cycle_done", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return waiter(variable, timeout=self.timeout, interval=1.0)
+            return waiter(variable, interval=1.0)
         wait_equal = getattr(self._plc_gateway, "wait_equal", None) if self._plc_gateway is not None else None
         wait_variable_equal = (
             getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
@@ -168,19 +165,19 @@ class SzlabMixerMagneticStirrerDevice:
     def _wait_variable_true(self, variable: str) -> bool:
         waiter = getattr(self._plc_gateway, "wait_variable_true", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return waiter(variable, timeout=self.timeout, interval=1.0)
+            return waiter(variable, interval=1.0)
         return self._wait_variable_equal(variable, True)
 
     @not_action
     def _wait_variable_equal(self, variable: str, expected: Any) -> bool:
         waiter = getattr(self._plc_gateway, "wait_equal", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return waiter(variable, expected, timeout=self.timeout, interval=1.0)
+            return waiter(variable, expected, interval=1.0)
         waiter = getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return waiter(variable, expected, timeout=self.timeout, interval=1.0)
+            return waiter(variable, expected, interval=1.0)
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
-        return wait_variable_equal(reader, variable, expected, timeout=self.timeout, interval=1.0)
+        return wait_variable_equal(reader, variable, expected, interval=1.0)
 
     @action(auto_prefix=True, description="执行 S04 磁搅加工")
     def run_stirring(
@@ -219,7 +216,7 @@ class SzlabMixerMagneticStirrerDevice:
             self._status = "Error"
             return {
                 "success": False,
-                "message": f"{station} 等待搅拌位置有料超时",
+                "message": f"{station} 等待搅拌位置有料失败",
                 "data": {"station": station, "sensor_variable": material_sensor},
             }
 
@@ -227,13 +224,13 @@ class SzlabMixerMagneticStirrerDevice:
             self._status = "Error"
             return {
                 "success": False,
-                "message": f"{station} 磁搅状态等待空闲超时（期望 1）",
+                "message": f"{station} 磁搅状态等待空闲失败（期望 1）",
                 "data": {"station": station, "expected_status": 1},
             }
 
         if not self._wait_allow_processing(position):
             self._status = "Error"
-            return {"success": False, "message": f"{station} 允许加工等待超时", "data": {"station": station}}
+            return {"success": False, "message": f"{station} 允许加工等待失败", "data": {"station": station}}
 
         duration_ms = int(float(duration) * 1000)
         try:
@@ -262,7 +259,7 @@ class SzlabMixerMagneticStirrerDevice:
             raise wait_error
         if not done:
             self._status = "Error"
-            return {"success": False, "message": f"{station} 加工完成等待超时", "data": {"station": station}}
+            return {"success": False, "message": f"{station} 加工完成等待失败", "data": {"station": station}}
         if not reset_result.get("success", False):
             return reset_result
 

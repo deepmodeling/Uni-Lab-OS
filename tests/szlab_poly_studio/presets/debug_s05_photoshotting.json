@@ -10,7 +10,6 @@
     "graph": "__generated__",
     "url": "opc.tcp://192.168.1.10:4840/",
     "csv": "photoshotting_nodes.csv",
-    "timeout": 300,
     "no_subscription": true,
     "show_csv": false
   },
@@ -29,7 +28,6 @@
         "position": {"x": 120, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "timeout": 300.0,
           "csv_path": "${csv_path}",
           "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
         },

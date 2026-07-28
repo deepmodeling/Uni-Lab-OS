@@ -79,8 +79,6 @@ type PresetPayload = {
     graph?: string;
     url?: string;
     csv?: string;
-    timeout?: number;
-    write_allowed_timeout?: number;
     no_subscription?: boolean;
     show_csv?: boolean;
   };
@@ -388,8 +386,6 @@ const DEFAULT_CONFIG = {
   graph: '__generated__',
   url: 'opc.tcp://jdht1471820.bohrium.tech:50001',
   csv: '',
-  timeout: 300,
-  write_allowed_timeout: 5,
   no_subscription: true,
   show_csv: false,
 };
@@ -832,8 +828,6 @@ function App() {
     graph: DEFAULT_CONFIG.graph,
     url: DEFAULT_CONFIG.url,
     csv: DEFAULT_CONFIG.csv,
-    timeout: DEFAULT_CONFIG.timeout,
-    write_allowed_timeout: DEFAULT_CONFIG.write_allowed_timeout,
     no_subscription: DEFAULT_CONFIG.no_subscription,
     show_csv: DEFAULT_CONFIG.show_csv,
   });
@@ -1045,8 +1039,6 @@ function App() {
           graph: payload.default_config?.graph ?? DEFAULT_CONFIG.graph,
           url: payload.default_config?.url ?? DEFAULT_CONFIG.url,
           csv: payload.default_config?.csv ?? DEFAULT_CONFIG.csv,
-          timeout: payload.default_config?.timeout ?? DEFAULT_CONFIG.timeout,
-          write_allowed_timeout: payload.default_config?.write_allowed_timeout ?? DEFAULT_CONFIG.write_allowed_timeout,
           no_subscription: payload.default_config?.no_subscription ?? DEFAULT_CONFIG.no_subscription,
           show_csv: payload.default_config?.show_csv ?? DEFAULT_CONFIG.show_csv,
         }));
@@ -2739,14 +2731,6 @@ function App() {
                 <input value={config.csv} onChange={(event) => setConfig({ ...config, csv: event.target.value })} />
               </label>
             )}
-            <label>
-              超时秒数
-              <input type="number" min={1} value={config.timeout} onChange={(event) => setConfig({ ...config, timeout: Number(event.target.value) })} />
-            </label>
-            <label>
-              Robot允许写入等待秒数
-              <input type="number" min={1} value={config.write_allowed_timeout} onChange={(event) => setConfig({ ...config, write_allowed_timeout: Number(event.target.value) })} />
-            </label>
             <label className="check">
               <input
                 type="checkbox"

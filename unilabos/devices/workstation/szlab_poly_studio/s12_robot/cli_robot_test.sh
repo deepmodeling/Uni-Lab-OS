@@ -20,7 +20,6 @@ OPCUA_URL="${OPCUA_URL:-opc.tcp://192.168.1.10:4840}"
 if [[ "$OPCUA_URL" != *"://"* ]]; then
   OPCUA_URL="opc.tcp://$OPCUA_URL"
 fi
-TIMEOUT="${TIMEOUT:-300}"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/unilabos_data/szlab_poly_studio/robot_cli_logs}"
 
 # 调试控制:
@@ -385,12 +384,12 @@ EOF
 
 write_graph() {
   local graph_file="$1"
-  "$PYTHON" - "$graph_file" "$OPCUA_URL" "$CSV_PATH" "$TIMEOUT" <<'PY'
+  "$PYTHON" - "$graph_file" "$OPCUA_URL" "$CSV_PATH" <<'PY'
 import csv
 import json
 import sys
 
-graph_file, opcua_url, csv_path, timeout = sys.argv[1:5]
+graph_file, opcua_url, csv_path = sys.argv[1:4]
 
 
 def load_opcua_node_id_map(csv_path):
@@ -427,7 +426,6 @@ graph = {
             "config": {
                 "url": opcua_url,
                 "csv_path": csv_path,
-                "timeout": float(timeout),
                 "opcua_node_id_map": opcua_node_id_map,
             },
             "data": {},
@@ -442,7 +440,6 @@ graph = {
             "position": {"x": 420, "y": 0, "z": 0},
             "config": {
                 "plc_device_id": "szlab_poly_plc",
-                "timeout": float(timeout),
             },
             "data": {},
         },
@@ -518,7 +515,6 @@ run_case() {
     --workflow "$workflow_file" \
     --url "$OPCUA_URL" \
     --csv "$CSV_PATH" \
-    --timeout "$TIMEOUT" \
     --no-subscription \
     "${ignore_token_time_drift_args[@]}" \
     "${clear_pc_to_plc_args[@]}" \

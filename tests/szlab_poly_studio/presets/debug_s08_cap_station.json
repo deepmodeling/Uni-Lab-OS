@@ -10,7 +10,6 @@
     "graph": "__generated__",
     "url": "opc.tcp://127.0.0.1:50102/",
     "csv": "s08_decap/decap_s08_nodes.csv",
-    "timeout": 300,
     "no_subscription": true,
     "show_csv": true
   },
@@ -31,7 +30,6 @@
         "config": {
           "url": "${opcua_url}",
           "csv_path": "${csv_path}",
-          "timeout": "${timeout}",
           "no_subscription": true,
           "opcua_node_id_prefix": "ns=4;s=上位机通讯|"
         },
@@ -46,7 +44,6 @@
         "class": "szlab_s08_cap_station",
         "position": {"x": 160, "y": 0, "z": 0},
         "config": {
-          "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true
         },

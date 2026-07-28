@@ -48,20 +48,14 @@ class SzlabMixerRobotDevice(
     def __init__(
         self,
         plc_device_id: str = "szlab_poly_plc",
-        timeout: float = 300.0,
-        write_allowed_timeout: float = 5.0,
         poll_interval: float = 1.0,
         write_done_hold_seconds: float = 0.0,
-        write_readback_timeout: float = 3.0,
         *args,
         **kwargs,
     ):
         self.plc_device_id = plc_device_id
-        self.timeout = float(timeout)
-        self.write_allowed_timeout = float(write_allowed_timeout)
         self.poll_interval = float(poll_interval)
         self.write_done_hold_seconds = float(write_done_hold_seconds)
-        self.write_readback_timeout = float(write_readback_timeout)
         self._plc_gateway = None
         self._last_task: dict[str, Any] = {}
 
@@ -86,37 +80,36 @@ class SzlabMixerRobotDevice(
         self,
         name: str,
         expected: Any,
-        timeout: float,
         interval: float | None = None,
     ) -> bool:
         waiter = getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return bool(waiter(name, expected, timeout=timeout, interval=interval or self.poll_interval))
+            return bool(waiter(name, expected, interval=interval or self.poll_interval))
 
-        started_at = time.time()
         poll_interval = self.poll_interval if interval is None else interval
-        while time.time() - started_at <= timeout:
+        while True:
             if self._read_variable(name, use_cache=False) == expected:
                 return True
             time.sleep(poll_interval)
-        return False
 
     @not_action
-    def _wait_variable_truthy(self, name: str, timeout: float, interval: float | None = None) -> tuple[bool, Any]:
+    def _wait_variable_truthy(
+        self,
+        name: str,
+        interval: float | None = None,
+    ) -> tuple[bool, Any]:
         poll_interval = self.poll_interval if interval is None else interval
         waiter = getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            success = bool(waiter(name, True, timeout=timeout, interval=poll_interval))
+            success = bool(waiter(name, True, interval=poll_interval))
             return success, True if success else None
 
-        started_at = time.time()
         last_value = None
-        while time.time() - started_at <= timeout:
+        while True:
             last_value = self._read_variable(name, use_cache=False)
             if bool(last_value):
                 return True, last_value
             time.sleep(poll_interval)
-        return False, last_value
 
     @not_action
     def _ensure_sensor_gate(self, sensor_variable: str, expected: bool, message: str) -> dict[str, Any] | None:
@@ -176,7 +169,6 @@ class SzlabMixerRobotDevice(
         if callable(waiter):
             success, values = waiter(
                 active_conditions,
-                timeout=self.timeout,
                 interval=self.poll_interval,
                 context=context,
             )
@@ -184,7 +176,6 @@ class SzlabMixerRobotDevice(
             success, values = wait_sensor_conditions(
                 self._plc_gateway,
                 active_conditions,
-                timeout=self.timeout,
                 interval=self.poll_interval,
                 context=context,
             )
@@ -275,12 +266,11 @@ class SzlabMixerRobotDevice(
 
         allowed, allowed_value = self._wait_variable_truthy(
             ROBOT_WRITE_ALLOWED_VARIABLE,
-            timeout=self.write_allowed_timeout,
             interval=self.poll_interval,
         )
         status[ROBOT_WRITE_ALLOWED_VARIABLE] = allowed_value
         if not allowed:
-            raise RuntimeError(f"等待 {ROBOT_WRITE_ALLOWED_VARIABLE} 为 True 超时")
+            raise RuntimeError(f"等待 {ROBOT_WRITE_ALLOWED_VARIABLE} 为 True 失败")
         return status
 
     @not_action
@@ -291,7 +281,6 @@ class SzlabMixerRobotDevice(
         success = self._wait_variable_equal(
             ROBOT_TASK_COMPLETE_VARIABLE,
             expected,
-            timeout=self.timeout,
             interval=self.poll_interval,
         )
         if success:
@@ -301,7 +290,7 @@ class SzlabMixerRobotDevice(
             actual = self._read_variable(ROBOT_TASK_COMPLETE_VARIABLE, use_cache=False)
         except Exception:
             actual = None
-        return False, f"等待 {ROBOT_TASK_COMPLETE_VARIABLE} == {expected} 超时", actual
+        return False, f"等待 {ROBOT_TASK_COMPLETE_VARIABLE} == {expected} 失败", actual
 
     @not_action
     def _reset_pc_to_plc_variables(
@@ -349,9 +338,7 @@ class SzlabMixerRobotDevice(
     @not_action
     def _ensure_written_variables_nonzero(self, written_variables: dict[str, Any]) -> dict[str, Any]:
         names = [name for name in written_variables if name != ROBOT_WRITE_DONE_VARIABLE]
-        started_at = time.time()
         readback: dict[str, Any] = {name: None for name in names}
-        zero_variables: dict[str, Any] = dict(readback)
         while True:
             zero_variables = {}
             for name in names:
@@ -361,12 +348,7 @@ class SzlabMixerRobotDevice(
                     zero_variables[name] = value
             if not zero_variables:
                 return readback
-            if time.time() - started_at >= self.write_readback_timeout:
-                break
             time.sleep(min(self.poll_interval, 0.2))
-        if zero_variables:
-            raise RuntimeError(f"机器人任务参数未写入成功，仍为 0: {zero_variables}")
-        return readback
 
     @not_action
     def _submit_robot_task(
@@ -415,7 +397,7 @@ class SzlabMixerRobotDevice(
             if not sensor_precheck["success"]:
                 result = {
                     "success": False,
-                    "message": f"{station} {task} 前置传感器状态等待超时",
+                    "message": f"{station} {task} 前置传感器状态等待失败",
                     "task": task,
                     "station": station,
                     "task_number": int(task_number),
@@ -671,10 +653,9 @@ class SzlabMixerRobotDevice(
         self,
         position: str = "1-1",
         load_position: int = 1,
-        timeout: float = 300.0,
     ) -> dict[str, Any]:
         try:
-            return self._run_s071_pick_and_rotate_to_feed(position, load_position, timeout)
+            return self._run_s071_pick_and_rotate_to_feed(position, load_position)
         except Exception as exc:
             return {
                 "success": False,

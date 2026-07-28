@@ -69,7 +69,6 @@ class SzlabMixerPumpDevice:
         url: str = DEFAULT_OPCUA_URL,
         username: str | None = None,
         password: str | None = None,
-        timeout: float = 300.0,
         pipeline_routes: dict[tuple[int, S06PipelineKind], S06PipelineRoute] | None = None,
         pipeline_route_specs: list[dict[str, Any]] | None = None,
         opcua_client: SZLabPolyPLCDevice | None = None,
@@ -82,7 +81,6 @@ class SzlabMixerPumpDevice:
         **kwargs,
     ):
         self.url = url
-        self.timeout = timeout
         self.plc_device_id = plc_device_id
         self._plc_gateway = None
         self._client = None
@@ -136,15 +134,15 @@ class SzlabMixerPumpDevice:
     @not_action
     def _wait_allow_process(self) -> dict[str, Any] | None:
         """等待 PLC 确认可加工（含储液瓶液量充足等前置条件）。"""
-        if self._opc_client().wait_equal(S06_ALLOW_PROCESS_VAR, True, timeout=self.timeout, interval=0.2):
+        if self._opc_client().wait_equal(S06_ALLOW_PROCESS_VAR, True, interval=0.2):
             return None
-        return {"success": False, "message": "等待 S06 允许加工超时"}
+        return {"success": False, "message": "等待 S06 允许加工失败"}
 
     @not_action
     def _wait_ready(self) -> dict[str, Any] | None:
-        if self._opc_client().wait_equal(S06_READY_VAR, True, timeout=self.timeout, interval=0.2):
+        if self._opc_client().wait_equal(S06_READY_VAR, True, interval=0.2):
             return None
-        return {"success": False, "message": "等待 S06 准备信号超时"}
+        return {"success": False, "message": "等待 S06 准备信号失败"}
 
     @not_action
     def _material_sensor_conditions(self, process: int) -> dict[str, bool]:
@@ -158,12 +156,11 @@ class SzlabMixerPumpDevice:
         context = f"S06 加液{'前置' if phase == 'pre' else '后置'}传感器检查"
         waiter = getattr(client, "wait_sensor_conditions", None)
         if callable(waiter):
-            success, values = waiter(conditions, timeout=self.timeout, interval=0.2, context=context)
+            success, values = waiter(conditions, interval=0.2, context=context)
         else:
             success, values = wait_sensor_conditions(
                 client,
                 conditions,
-                timeout=self.timeout,
                 interval=0.2,
                 context=context,
             )
@@ -252,7 +249,7 @@ class SzlabMixerPumpDevice:
             self._status = "Error"
             return {
                 "success": False,
-                "message": "S06 等待加液烧杯在位超时",
+                "message": "S06 等待加液烧杯在位失败",
                 "sensor_precheck": sensor_precheck,
             }
 
@@ -281,9 +278,9 @@ class SzlabMixerPumpDevice:
                 self._status = "Error"
                 return {"success": False, "message": str(exc)}
             try:
-                if not self._opc_client().wait_new_cycle_done(S06_DONE_VAR, timeout=self.timeout):
+                if not self._opc_client().wait_new_cycle_done(S06_DONE_VAR):
                     self._status = "Error"
-                    return {"success": False, "message": "S06 加工完成等待超时"}
+                    return {"success": False, "message": "S06 加工完成等待失败"}
             except Exception:
                 self._status = "Error"
                 raise

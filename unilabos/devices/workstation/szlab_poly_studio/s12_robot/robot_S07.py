@@ -70,11 +70,9 @@ class SzlabRobotS07Mixin:
         self,
         position: str = "1-1",
         load_position: int = 1,
-        timeout: float = 300.0,
     ) -> dict[str, Any]:
         position = str(position)
         load_position = int(load_position)
-        timeout = float(timeout)
         sensor = powder_container_sensor(position)
         self._slot_number(position)
         if load_position not in POSITION_RANGE:
@@ -94,22 +92,21 @@ class SzlabRobotS07Mixin:
 
         s07 = SZLabS07SolidAdditionDevice(
             plc_device_id=self.plc_device_id,
-            process_timeout=timeout,
             poll_interval=0.2,
         )
         s07.set_plc_gateway(self._plc_gateway)
-        if not s07._wait_plc_bool(NODE_HOME, True, timeout, "S07 原点信号"):
+        if not s07._wait_plc_bool(NODE_HOME, True, "S07 原点信号"):
             return {
                 "success": False,
-                "message": "等待 S07 原点信号超时",
+                "message": "等待 S07 原点信号失败",
                 "status": "rejected",
                 "position": position,
                 "load_position": load_position,
             }
-        if not s07._wait_plc_bool(NODE_ALLOW_PROCESS, True, timeout, "S07 允许加工"):
+        if not s07._wait_plc_bool(NODE_ALLOW_PROCESS, True, "S07 允许加工"):
             return {
                 "success": False,
-                "message": "等待 S07 允许加工超时",
+                "message": "等待 S07 允许加工失败",
                 "status": "rejected",
                 "position": position,
                 "load_position": load_position,
@@ -120,7 +117,6 @@ class SzlabRobotS07Mixin:
             rotate_future = executor.submit(
                 s07.rotate_powder_cartridge_to_feed,
                 load_position,
-                timeout,
             )
             try:
                 robot_result = robot_future.result()

@@ -732,39 +732,40 @@ class SZLabPolyPLCDevice(BaseClient):
         self,
         node_name: str,
         expected: Any,
-        timeout: float = 300.0,
         interval: float = 0.2,
     ) -> bool:
-        return self.wait_variable_equal(node_name, expected, timeout=timeout, interval=interval)
+        return self.wait_variable_equal(node_name, expected, interval=interval)
 
     @not_action
     def wait_variable_equal(
         self,
         node_name: str,
         expected: Any,
-        timeout: float = 300.0,
         interval: float = 1.0,
     ) -> bool:
-        return wait_variable_equal(self, node_name, expected, timeout=timeout, interval=interval)
+        return wait_variable_equal(self, node_name, expected, interval=interval)
 
     @not_action
     def wait_variable_true(
         self,
         node_name: str,
-        timeout: float = 300.0,
         interval: float = 1.0,
     ) -> bool:
-        return wait_variable_true(self, node_name, timeout=timeout, interval=interval)
+        return wait_variable_true(self, node_name, interval=interval)
 
     @not_action
     def wait_sensor_conditions(
         self,
         conditions: Dict[str, bool],
-        timeout: float = 300.0,
         interval: float = 0.2,
         context: str | None = None,
     ) -> tuple[bool, Dict[str, Any]]:
-        return wait_sensor_conditions(self, conditions, timeout=timeout, interval=interval, context=context)
+        return wait_sensor_conditions(
+            self,
+            conditions,
+            interval=interval,
+            context=context,
+        )
 
     @not_action
     def drain_opc_wait_events(self) -> List[Dict[str, Any]]:
@@ -835,7 +836,6 @@ class SZLabPolyPLCDevice(BaseClient):
         conditions: Dict[str, bool],
         values: Dict[str, Any],
         *,
-        timeout: float,
         interval: float,
         context: str | None,
     ) -> None:
@@ -846,7 +846,7 @@ class SZLabPolyPLCDevice(BaseClient):
         if unmet:
             message = (
                 f"{label}：已满足 {satisfied_count}/{len(items)}；"
-                f"仍等待 {self._opc_sensor_wait_target_text(unmet)}；超时 {timeout}s"
+                f"仍等待 {self._opc_sensor_wait_target_text(unmet)}"
             )
         else:
             message = f"{label}：{len(items)}/{len(items)} 已满足，无需继续等待"
@@ -858,7 +858,6 @@ class SZLabPolyPLCDevice(BaseClient):
             "conditions": items,
             "satisfied_count": satisfied_count,
             "total_count": len(items),
-            "timeout": timeout,
             "interval": interval,
         }
         self._emit_or_store_opc_wait_event({"phase": "start", "message": message, "detail": detail})
@@ -870,7 +869,6 @@ class SZLabPolyPLCDevice(BaseClient):
         previous_values: Dict[str, Any],
         values: Dict[str, Any],
         *,
-        timeout: float,
         context: str | None,
     ) -> None:
         items = self._opc_sensor_condition_details(conditions, values)
@@ -894,7 +892,6 @@ class SZLabPolyPLCDevice(BaseClient):
             "changes": changed,
             "satisfied_count": len(items) - len(unmet),
             "total_count": len(items),
-            "timeout": timeout,
         }
         self._emit_or_store_opc_wait_event({"phase": "change", "message": message, "detail": detail})
 
@@ -904,7 +901,6 @@ class SZLabPolyPLCDevice(BaseClient):
         conditions: Dict[str, bool],
         values: Dict[str, Any],
         *,
-        timeout: float,
         interval: float,
         success: bool,
         elapsed: float,
@@ -919,7 +915,7 @@ class SZLabPolyPLCDevice(BaseClient):
         elif error:
             message = f"{label}读取失败：{error}；最终仍等待 {self._opc_sensor_wait_target_text(unmet)}"
         else:
-            message = f"{label}超时：最终仍等待 {self._opc_sensor_wait_target_text(unmet)}"
+            message = f"{label}等待结束：最终仍等待 {self._opc_sensor_wait_target_text(unmet)}"
         detail = {
             "type": "opc_wait",
             "wait_kind": "sensor_conditions",
@@ -929,7 +925,6 @@ class SZLabPolyPLCDevice(BaseClient):
             "success": success,
             "satisfied_count": len(items) - len(unmet),
             "total_count": len(items),
-            "timeout": timeout,
             "interval": interval,
             "elapsed": elapsed,
         }
@@ -943,7 +938,6 @@ class SZLabPolyPLCDevice(BaseClient):
         node_name: str,
         expected: Any,
         *,
-        timeout: float,
         interval: float,
     ) -> None:
         detail = {
@@ -951,14 +945,13 @@ class SZLabPolyPLCDevice(BaseClient):
             "phase": "start",
             "variable": node_name,
             "expected": expected,
-            "timeout": timeout,
             "interval": interval,
         }
         detail.update(self._opc_wait_variable_detail(node_name))
         self._emit_or_store_opc_wait_event(
             {
                 "phase": "start",
-                "message": f"等待 OPC 变量 {node_name} == {expected} (timeout={timeout}s, interval={interval}s)",
+                "message": f"等待 OPC 变量 {node_name} == {expected} (interval={interval}s)",
                 "detail": detail,
             }
         )
@@ -969,7 +962,6 @@ class SZLabPolyPLCDevice(BaseClient):
         node_name: str,
         expected: Any,
         *,
-        timeout: float,
         interval: float,
         success: bool,
         last_value: Any,
@@ -981,7 +973,6 @@ class SZLabPolyPLCDevice(BaseClient):
             "phase": "finish",
             "variable": node_name,
             "expected": expected,
-            "timeout": timeout,
             "interval": interval,
             "success": success,
             "last_value": last_value,
@@ -999,15 +990,12 @@ class SZLabPolyPLCDevice(BaseClient):
     def wait_new_cycle_done(
         self,
         node_name: str,
-        timeout: float = 300.0,
         interval: float = 0.2,
     ) -> bool:
-        start = time.time()
         if bool(self.read(node_name)):
-            if not self.wait_equal(node_name, False, timeout=timeout, interval=interval):
+            if not self.wait_equal(node_name, False, interval=interval):
                 return False
-        elapsed = time.time() - start
-        return self.wait_equal(node_name, True, timeout=max(timeout - elapsed, 0.0), interval=interval)
+        return self.wait_equal(node_name, True, interval=interval)
 
     @not_action
     def get_opc_variable_metadata(self, node_name: str) -> tuple[str, str | None]:

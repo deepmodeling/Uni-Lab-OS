@@ -10,7 +10,6 @@
     "object_name": "VirtualS08"
   },
   "device": {
-    "timeout": 8.0,
     "poll_interval": 0.05,
     "require_station_ready": true,
     "require_station_status": false,
@@ -20,7 +19,6 @@
   "action": {
     "name": "process_cap",
     "工艺选择": 5,
-    "样品ID": [101, 102, 103],
-    "超时时间": 8.0
+    "样品ID": [101, 102, 103]
   }
 }

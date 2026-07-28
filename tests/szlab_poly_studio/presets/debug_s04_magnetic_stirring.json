@@ -10,7 +10,6 @@
     "graph": "__generated__",
     "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
     "csv": "magnetic_stirring_nodes.csv",
-    "timeout": 300,
     "no_subscription": true,
     "show_csv": false
   },
@@ -29,7 +28,6 @@
         "position": {"x": 120, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "timeout": 300.0,
           "csv_path": "${csv_path}"
         },
         "data": {}

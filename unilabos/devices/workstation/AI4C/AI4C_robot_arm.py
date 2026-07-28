@@ -202,20 +202,15 @@ class AI4CRobotArmDevice:
         self,
         node_name: str,
         expected: bool,
-        timeout: float = 300.0,
         interval: float = 0.2,
         description: str = None,
     ) -> bool:
         desc = description or node_name
         logger.info(f"等待 {desc} 变为 {expected}...")
-        start = time.time()
         while True:
             if bool(self._read_plc_variable(node_name, use_cache=False)) is expected:
                 logger.info(f"✓ {desc} 已变为 {expected}")
                 return True
-            if time.time() - start >= timeout:
-                logger.error(f"✗ 等待 {desc} 超时 ({timeout}s)")
-                return False
             time.sleep(interval)
 
     @not_action

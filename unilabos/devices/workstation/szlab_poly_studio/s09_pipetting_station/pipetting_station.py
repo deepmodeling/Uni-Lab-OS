@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 from unilabos.devices.workstation.szlab_poly_studio.sensor import wait_sensor_conditions
@@ -35,10 +36,21 @@ from .sensors import (
     validate_tip,
     validate_tip_box,
 )
+from .tip_reuse_state import ReusableTipStateStore
 
 DEFAULT_OPCUA_URL = os.environ.get(
     "UNILABOS_SZLAB_MIXER_OPCUA_URL",
     "opc.tcp://192.168.1.10:4840/",
+)
+DEFAULT_TIP_REUSE_STATE_PATH = Path(
+    os.environ.get(
+        "UNILABOS_S09_TIP_REUSE_STATE_PATH",
+        str(
+            Path(__file__).resolve().parents[5]
+            / "workflow_artifacts"
+            / "s09_tip_reuse_state.json"
+        ),
+    )
 )
 S09_VOLUME_RAW_MAX = 50000
 S09_VOLUME_UL_MAX = 5000.0
@@ -62,6 +74,8 @@ class SzlabMixerPipettingStationDevice:
         use_plc_gateway: bool = False,
         opcua_client: Any | None = None,
         opcua_node_id_map: dict[str, str] | None = None,
+        tip_reuse_state_path: str = str(DEFAULT_TIP_REUSE_STATE_PATH),
+        tip_max_use_count: int = 20,
         **kwargs,
     ):
         self.url = url
@@ -70,6 +84,10 @@ class SzlabMixerPipettingStationDevice:
         self._status = "Idle"
         self._bindings: dict[int, str] = {}
         self._last_process: dict[str, Any] = {}
+        self._tip_reuse_state = ReusableTipStateStore(
+            tip_reuse_state_path,
+            max_use_count=tip_max_use_count,
+        )
 
         if use_plc_gateway:
             self._client = opcua_client
@@ -1041,6 +1059,35 @@ class SzlabMixerPipettingStationDevice:
             "data": {"balance_reading": reading, "stable": stable},
         }
 
+    @action(auto_prefix=True, description="初始化 S09 可复用 TIP 库存（确认盒1满、盒2空后调用）")
+    def initialize_reusable_tip_inventory(self, reset: bool = False) -> dict[str, Any]:
+        try:
+            state = self._tip_reuse_state.initialize(reset=reset)
+        except Exception as exc:
+            return {"success": False, "message": str(exc)}
+        return {
+            "success": True,
+            "message": f"S09 可复用 TIP 库存已初始化，共 {state['tip_count']} 个 TIP",
+            "data": {
+                "initialized": state["initialized"],
+                "tip_count": state["tip_count"],
+                "max_use_count": state["max_use_count"],
+                "state_path": str(self._tip_reuse_state.state_path),
+            },
+        }
+
+    @action(auto_prefix=True, description="读取 S09 可复用 TIP 库存与溶剂绑定")
+    def get_reusable_tip_status(self) -> dict[str, Any]:
+        state = self._tip_reuse_state.snapshot()
+        return {
+            "success": True,
+            "message": "S09 可复用 TIP 状态读取完成",
+            "data": {
+                **state,
+                "state_path": str(self._tip_reuse_state.state_path),
+            },
+        }
+
     @action(auto_prefix=True, description="读取 S09 移液站状态")
     def get_pipetting_status(self) -> dict[str, Any]:
         variable_names = [
@@ -1058,5 +1105,6 @@ class SzlabMixerPipettingStationDevice:
                 "variables": values,
                 "bindings": dict(self._bindings),
                 "last_process": dict(self._last_process),
+                "reusable_tip_state": self._tip_reuse_state.snapshot(),
             },
         }

@@ -24,10 +24,14 @@ from scripts.run_workflow_local import (
 from tests.szlab_poly_studio.pseudo_clients.s09_pipetting import PseudoSzlabS09OpcUaClient
 
 
-def make_pipetting_device(client: PseudoSzlabS09OpcUaClient | None = None) -> SzlabMixerPipettingStationDevice:
+def make_pipetting_device(
+    client: PseudoSzlabS09OpcUaClient | None = None,
+    **kwargs,
+) -> SzlabMixerPipettingStationDevice:
     return SzlabMixerPipettingStationDevice(
         url="opc.tcp://127.0.0.1:0/unused",
         opcua_client=client or PseudoSzlabS09OpcUaClient(),
+        **kwargs,
     )
 
 
@@ -49,6 +53,8 @@ def test_s09_pipetting_station_is_ast_scannable_from_own_package():
         "set_liquid_bottle_remaining_volume",
         "initialize_liquid_bottle_remaining_volumes",
         "read_balance",
+        "initialize_reusable_tip_inventory",
+        "get_reusable_tip_status",
         "get_pipetting_status",
     }.issubset(actions)
     assert "go_to_safe_position" not in actions
@@ -703,6 +709,37 @@ def test_s09_remaining_volume_actions_use_remaining_volume_names():
     assert "remaining_volume" in result["data"]
     assert all((s09_remaining_volume_var(index), 100.0) in client.writes for index in range(1, 6))
     assert not any("容量" in name for name, _value in client.writes)
+
+
+def test_s09_reusable_tip_inventory_actions_persist_state(tmp_path):
+    state_path = tmp_path / "s09_tip_state.json"
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(state_path),
+        tip_max_use_count=3,
+    )
+
+    before = device.get_reusable_tip_status()
+    initialized = device.initialize_reusable_tip_inventory()
+    repeated = device.initialize_reusable_tip_inventory()
+    restored = make_pipetting_device(
+        tip_reuse_state_path=str(state_path),
+        tip_max_use_count=3,
+    )
+    status = restored.get_pipetting_status()
+
+    assert before["data"]["initialized"] is False
+    assert before["data"]["state_path"] == str(state_path)
+    assert initialized["success"] is True
+    assert initialized["data"] == {
+        "initialized": True,
+        "tip_count": 96,
+        "max_use_count": 3,
+        "state_path": str(state_path),
+    }
+    assert repeated["success"] is False
+    assert "已经初始化" in repeated["message"]
+    assert status["data"]["reusable_tip_state"]["initialized"] is True
+    assert len(status["data"]["reusable_tip_state"]["tips"]) == 96
 
 
 def test_s09_debug_csv_is_small_plc_input_with_remaining_volume_names():

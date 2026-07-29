@@ -14,7 +14,6 @@
     "graph": "__generated__",
     "url": "opc.tcp://jdht1471820.bohrium.tech:50001",
     "csv": "szlab_plc_0721.csv",
-    "timeout": 300,
     "no_subscription": true,
     "show_csv": false
   },
@@ -34,7 +33,6 @@
         "config": {
           "url": "${opcua_url}",
           "csv_path": "szlab_plc_0721.csv",
-          "timeout": "${timeout}",
           "no_subscription": true
         },
         "data": {}
@@ -49,7 +47,6 @@
         "position": {"x": 140, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true
         },
@@ -65,7 +62,6 @@
         "position": {"x": 280, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true,
           "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
@@ -82,8 +78,7 @@
         "position": {"x": 420, "y": 0, "z": 0},
         "config": {
           "plc_device_id": "szlab_poly_plc",
-          "busy_variable_name": "机器人Busy信号",
-          "timeout": "${timeout}"
+          "busy_variable_name": "机器人Busy信号"
         },
         "data": {}
       }

@@ -33,8 +33,6 @@
     "graph": "__generated__",
     "url": "opc.tcp://192.168.1.10:4840",
     "csv": "szlab_plc_0721.csv",
-    "timeout": 300,
-    "write_allowed_timeout": 60,
     "task_sample_start_interval_seconds": 1,
     "no_subscription": true,
     "show_csv": false,
@@ -195,7 +193,6 @@
         "config": {
           "url": "${opcua_url}",
           "csv_path": "${csv_path}",
-          "timeout": "${timeout}",
           "no_subscription": true,
           "opcua_node_id_prefix": "ns=4;s=上位机通讯|"
         },
@@ -215,9 +212,7 @@
         },
         "config": {
           "plc_device_id": "szlab_poly_plc",
-          "busy_variable_name": "机器人Busy信号",
-          "timeout": "${timeout}",
-          "write_allowed_timeout": "${write_allowed_timeout}"
+          "busy_variable_name": "机器人Busy信号"
         },
         "data": {}
       },
@@ -234,7 +229,6 @@
           "z": 0
         },
         "config": {
-          "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true
         },
@@ -254,7 +248,6 @@
         },
         "config": {
           "plc_device_id": "szlab_poly_plc",
-          "process_timeout": "${timeout}",
           "poll_interval": 0.2
         },
         "data": {}
@@ -273,7 +266,6 @@
         },
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true,
           "pipeline_route_specs": [
@@ -331,7 +323,6 @@
         },
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true
         },
@@ -351,7 +342,6 @@
         },
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true,
           "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
@@ -372,7 +362,6 @@
         },
         "config": {
           "url": "${opcua_url}",
-          "timeout": 300.0,
           "csv_path": "s09_pipetting_station/pipetting_station_nodes.csv"
         },
         "data": {}

@@ -13,7 +13,6 @@
     "graph": "__generated__",
     "url": "opc.tcp://remote.example:4840",
     "csv": "stack_s05_s06_nodes.csv",
-    "timeout": 300,
     "no_subscription": true,
     "show_csv": false,
     "stack_status_groups": [
@@ -38,7 +37,6 @@
         "config": {
           "url": "${opcua_url}",
           "csv_path": "${csv_path}",
-          "timeout": "${timeout}",
           "no_subscription": true,
           "opcua_node_id_prefix": "ns=4;s=上位机通讯|"
         },
@@ -54,7 +52,6 @@
         "position": {"x": 160, "y": 0, "z": 0},
         "config": {
           "url": "${opcua_url}",
-          "timeout": "${timeout}",
           "plc_device_id": "szlab_poly_plc",
           "use_plc_gateway": true,
           "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos"
@@ -70,8 +67,7 @@
         "class": "szlab_mixer_pump",
         "position": {"x": 320, "y": 0, "z": 0},
         "config": {
-          "url": "${opcua_url}",
-          "timeout": "${timeout}"
+          "url": "${opcua_url}"
         },
         "data": {}
       }

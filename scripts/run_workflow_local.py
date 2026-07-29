@@ -26,7 +26,6 @@ class RuntimeDeviceFactoryConfig:
     target_class: str = ""
     target_config: dict[str, Any] = field(default_factory=dict)
     direct_plc_command_method: str | None = None
-    timeout_config_key: str | None = None
     devices: dict[str, str] = field(default_factory=dict)
 
 
@@ -69,7 +68,6 @@ def load_runtime_config(config_path: Path | str | None = None) -> RuntimeConfig:
         target_class=device_data.get("target_class", ""),
         target_config=dict(device_data.get("target_config") or {}),
         direct_plc_command_method=device_data.get("direct_plc_command_method"),
-        timeout_config_key=device_data.get("timeout_config_key"),
         devices=dict(device_data.get("devices") or {}),
     )
     opc_snapshot = RuntimeOpcSnapshotConfig(
@@ -558,7 +556,6 @@ def create_local_devices(
     opcua_url: str | None = None,
     csv_path: Path | None = None,
     use_subscription: bool | None = None,
-    plc_action_timeout: float = 300.0,
     runtime_config: RuntimeConfig | None = None,
 ) -> dict[str, Any]:
     runtime_config = runtime_config or load_runtime_config()
@@ -578,8 +575,6 @@ def create_local_devices(
                 device_config["csv_path"] = str(csv_path.resolve())
             if has_plc_gateway and device_id != device_factory.plc_device_id:
                 device_config.setdefault("use_plc_gateway", True)
-            if plc_action_timeout and "timeout" in device_config:
-                device_config["timeout"] = plc_action_timeout
             device_class = _load_class(class_path)
             devices[device_id] = device_class(**device_config)
         for device in devices.values():
@@ -616,8 +611,6 @@ def create_local_devices(
     )
     target_config = dict(device_factory.target_config)
     target_config.update(target_graph_config)
-    if device_factory.timeout_config_key:
-        target_config[device_factory.timeout_config_key] = plc_action_timeout
     target_device = target_class(**target_config)
 
     def call_plc_directly(function_name: str, function_args: dict[str, Any]) -> Any:
@@ -687,6 +680,8 @@ def run_nodes(
             )
         for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
             logger.log(wait_log["message"], detail=wait_log.get("detail"))
+        if isinstance(result, dict) and result.get("display_message"):
+            logger.log(str(result["display_message"]))
         logger.log(f"动作结果: {result}", detail={"result": result})
         results.append(
             {
@@ -739,7 +734,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="执行 workflow 前将机器人 PC->PLC 写入变量统一清零",
     )
-    parser.add_argument("--timeout", type=float, default=300.0, help="机械臂动作等待超时时间")
     parser.add_argument("--log-file", type=Path, default=None, help="将本地执行日志同步写入指定文件")
     return parser
 
@@ -766,7 +760,6 @@ def main() -> int:
         opcua_url=args.url,
         csv_path=args.csv,
         use_subscription=False if args.no_subscription else None,
-        plc_action_timeout=args.timeout,
         runtime_config=runtime_config,
     )
     log_handle = args.log_file.open("w", encoding="utf-8") if args.log_file else None

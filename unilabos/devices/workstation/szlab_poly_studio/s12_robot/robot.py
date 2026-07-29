@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import threading
 import time
 from typing import Any
 
@@ -49,21 +48,14 @@ class SzlabMixerRobotDevice(
     def __init__(
         self,
         plc_device_id: str = "szlab_poly_plc",
-        timeout: float = 300.0,
-        write_allowed_timeout: float = 5.0,
         poll_interval: float = 1.0,
         write_done_hold_seconds: float = 0.0,
-        write_readback_timeout: float = 3.0,
         *args,
         **kwargs,
     ):
-        self._robot_task_lock = threading.RLock()
         self.plc_device_id = plc_device_id
-        self.timeout = float(timeout)
-        self.write_allowed_timeout = float(write_allowed_timeout)
         self.poll_interval = float(poll_interval)
         self.write_done_hold_seconds = float(write_done_hold_seconds)
-        self.write_readback_timeout = float(write_readback_timeout)
         self._plc_gateway = None
         self._last_task: dict[str, Any] = {}
 
@@ -88,37 +80,36 @@ class SzlabMixerRobotDevice(
         self,
         name: str,
         expected: Any,
-        timeout: float,
         interval: float | None = None,
     ) -> bool:
         waiter = getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return bool(waiter(name, expected, timeout=timeout, interval=interval or self.poll_interval))
+            return bool(waiter(name, expected, interval=interval or self.poll_interval))
 
-        started_at = time.time()
         poll_interval = self.poll_interval if interval is None else interval
-        while time.time() - started_at <= timeout:
+        while True:
             if self._read_variable(name, use_cache=False) == expected:
                 return True
             time.sleep(poll_interval)
-        return False
 
     @not_action
-    def _wait_variable_truthy(self, name: str, timeout: float, interval: float | None = None) -> tuple[bool, Any]:
+    def _wait_variable_truthy(
+        self,
+        name: str,
+        interval: float | None = None,
+    ) -> tuple[bool, Any]:
         poll_interval = self.poll_interval if interval is None else interval
         waiter = getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            success = bool(waiter(name, True, timeout=timeout, interval=poll_interval))
+            success = bool(waiter(name, True, interval=poll_interval))
             return success, True if success else None
 
-        started_at = time.time()
         last_value = None
-        while time.time() - started_at <= timeout:
+        while True:
             last_value = self._read_variable(name, use_cache=False)
             if bool(last_value):
                 return True, last_value
             time.sleep(poll_interval)
-        return False, last_value
 
     @not_action
     def _ensure_sensor_gate(self, sensor_variable: str, expected: bool, message: str) -> dict[str, Any] | None:
@@ -145,7 +136,6 @@ class SzlabMixerRobotDevice(
         conditions: dict[str, bool],
         *,
         phase: str,
-        timeout: float | None = None,
     ) -> dict[str, Any]:
         if os.environ.get("SKIP_SENSOR_PRECHECK") == "1":
             return {
@@ -176,11 +166,9 @@ class SzlabMixerRobotDevice(
 
         waiter = getattr(self._plc_gateway, "wait_sensor_conditions", None)
         context = f"机器人{'前置' if phase == 'pre' else '后置'}传感器检查"
-        wait_timeout = self.timeout if timeout is None else max(0.0, float(timeout))
         if callable(waiter):
             success, values = waiter(
                 active_conditions,
-                timeout=wait_timeout,
                 interval=self.poll_interval,
                 context=context,
             )
@@ -188,7 +176,6 @@ class SzlabMixerRobotDevice(
             success, values = wait_sensor_conditions(
                 self._plc_gateway,
                 active_conditions,
-                timeout=wait_timeout,
                 interval=self.poll_interval,
                 context=context,
             )
@@ -199,58 +186,6 @@ class SzlabMixerRobotDevice(
         }
         return {
             "success": bool(success),
-            "phase": phase,
-            "conditions": active_conditions,
-            "values": values,
-            "mismatches": mismatches,
-        }
-
-    @not_action
-    def _read_sensor_conditions_once(
-        self,
-        conditions: dict[str, bool],
-        *,
-        phase: str,
-    ) -> dict[str, Any]:
-        """持锁后只复核一次传感器，状态不满足时立即释放机械臂。"""
-        if os.environ.get("SKIP_SENSOR_PRECHECK") == "1":
-            return {
-                "success": True,
-                "phase": phase,
-                "skipped": True,
-                "message": "已跳过机器人传感器检查",
-                "conditions": conditions,
-                "values": {},
-                "mismatches": {},
-            }
-        active_conditions = {
-            name: expected
-            for name, expected in conditions.items()
-            if not self._should_skip_robot_precheck_variable(name)
-        }
-        if not active_conditions:
-            return {
-                "success": True,
-                "phase": phase,
-                "skipped": True,
-                "message": "配置中的传感器均已跳过",
-                "conditions": conditions,
-                "values": {},
-                "mismatches": {},
-            }
-        if self._plc_gateway is None:
-            raise RuntimeError("机器人任务需要注入 szlab_poly_plc 网关")
-        values = {
-            name: bool(self._read_variable(name, use_cache=False))
-            for name in active_conditions
-        }
-        mismatches = {
-            name: {"expected": expected, "actual": values.get(name)}
-            for name, expected in active_conditions.items()
-            if values.get(name) != expected
-        }
-        return {
-            "success": not mismatches,
             "phase": phase,
             "conditions": active_conditions,
             "values": values,
@@ -324,23 +259,18 @@ class SzlabMixerRobotDevice(
         if self._should_skip_robot_precheck_variable(ROBOT_HOME_VARIABLE):
             status[ROBOT_HOME_VARIABLE] = "skipped"
         else:
-            home_ready, home_value = self._wait_variable_truthy(
-                ROBOT_HOME_VARIABLE,
-                timeout=self.timeout,
-                interval=self.poll_interval,
-            )
+            home_value = bool(self._read_variable(ROBOT_HOME_VARIABLE, use_cache=False))
             status[ROBOT_HOME_VARIABLE] = home_value
-            if not home_ready:
-                raise RuntimeError(f"等待 {ROBOT_HOME_VARIABLE} 为 True 超时")
+            if not home_value:
+                raise RuntimeError("Robot_Home 未确认，不能提交机器人任务")
 
         allowed, allowed_value = self._wait_variable_truthy(
             ROBOT_WRITE_ALLOWED_VARIABLE,
-            timeout=self.write_allowed_timeout,
             interval=self.poll_interval,
         )
         status[ROBOT_WRITE_ALLOWED_VARIABLE] = allowed_value
         if not allowed:
-            raise RuntimeError(f"等待 {ROBOT_WRITE_ALLOWED_VARIABLE} 为 True 超时")
+            raise RuntimeError(f"等待 {ROBOT_WRITE_ALLOWED_VARIABLE} 为 True 失败")
         return status
 
     @not_action
@@ -351,7 +281,6 @@ class SzlabMixerRobotDevice(
         success = self._wait_variable_equal(
             ROBOT_TASK_COMPLETE_VARIABLE,
             expected,
-            timeout=self.timeout,
             interval=self.poll_interval,
         )
         if success:
@@ -361,7 +290,7 @@ class SzlabMixerRobotDevice(
             actual = self._read_variable(ROBOT_TASK_COMPLETE_VARIABLE, use_cache=False)
         except Exception:
             actual = None
-        return False, f"等待 {ROBOT_TASK_COMPLETE_VARIABLE} == {expected} 超时", actual
+        return False, f"等待 {ROBOT_TASK_COMPLETE_VARIABLE} == {expected} 失败", actual
 
     @not_action
     def _reset_pc_to_plc_variables(
@@ -409,9 +338,7 @@ class SzlabMixerRobotDevice(
     @not_action
     def _ensure_written_variables_nonzero(self, written_variables: dict[str, Any]) -> dict[str, Any]:
         names = [name for name in written_variables if name != ROBOT_WRITE_DONE_VARIABLE]
-        started_at = time.time()
         readback: dict[str, Any] = {name: None for name in names}
-        zero_variables: dict[str, Any] = dict(readback)
         while True:
             zero_variables = {}
             for name in names:
@@ -421,12 +348,7 @@ class SzlabMixerRobotDevice(
                     zero_variables[name] = value
             if not zero_variables:
                 return readback
-            if time.time() - started_at >= self.write_readback_timeout:
-                break
             time.sleep(min(self.poll_interval, 0.2))
-        if zero_variables:
-            raise RuntimeError(f"机器人任务参数未写入成功，仍为 0: {zero_variables}")
-        return readback
 
     @not_action
     def _submit_robot_task(
@@ -440,10 +362,9 @@ class SzlabMixerRobotDevice(
         verify_reset: bool = False,
         **data: Any,
     ) -> dict[str, Any]:
+        reset_variables = reset_variables or {ROBOT_TASK_NUMBER_VARIABLE: 0}
         try:
-            pre_sensor_conditions, post_sensor_conditions = (
-                self._robot_sensor_requirements(task, station, data)
-            )
+            pre_sensor_conditions, post_sensor_conditions = self._robot_sensor_requirements(task, station, data)
         except Exception as exc:
             result = {
                 "success": False,
@@ -457,47 +378,26 @@ class SzlabMixerRobotDevice(
             self._last_task = result
             return result
 
-        deadline = time.monotonic() + self.timeout
         sensor_precheck = None
-        while True:
-            if pre_sensor_conditions:
-                try:
-                    sensor_precheck = self._wait_sensor_conditions(
-                        pre_sensor_conditions,
-                        phase="pre",
-                        timeout=deadline - time.monotonic(),
-                    )
-                except Exception as exc:
-                    result = {
-                        "success": False,
-                        "message": f"机器人动作前传感器读取失败: {exc}",
-                        "task": task,
-                        "station": station,
-                        "task_number": int(task_number),
-                        "status": "rejected",
-                        **data,
-                    }
-                    self._last_task = result
-                    return result
-                if not sensor_precheck["success"]:
-                    result = {
-                        "success": False,
-                        "message": f"{station} {task} 前置传感器状态等待超时",
-                        "task": task,
-                        "station": station,
-                        "task_number": int(task_number),
-                        "status": "rejected",
-                        "sensor_precheck": sensor_precheck,
-                        **data,
-                    }
-                    self._last_task = result
-                    return result
-
-            remaining = max(0.0, deadline - time.monotonic())
-            if not self._robot_task_lock.acquire(timeout=remaining):
+        if pre_sensor_conditions:
+            try:
+                sensor_precheck = self._wait_sensor_conditions(pre_sensor_conditions, phase="pre")
+            except Exception as exc:
                 result = {
                     "success": False,
-                    "message": f"{station} {task} 等待机械臂空闲超时",
+                    "message": f"机器人动作前传感器读取失败: {exc}",
+                    "task": task,
+                    "station": station,
+                    "task_number": int(task_number),
+                    "status": "rejected",
+                    **data,
+                }
+                self._last_task = result
+                return result
+            if not sensor_precheck["success"]:
+                result = {
+                    "success": False,
+                    "message": f"{station} {task} 前置传感器状态等待失败",
                     "task": task,
                     "station": station,
                     "task_number": int(task_number),
@@ -507,55 +407,7 @@ class SzlabMixerRobotDevice(
                 }
                 self._last_task = result
                 return result
-            try:
-                if pre_sensor_conditions:
-                    current_sensor_state = self._read_sensor_conditions_once(
-                        pre_sensor_conditions,
-                        phase="pre",
-                    )
-                    if not current_sensor_state["success"]:
-                        continue
-                    sensor_precheck = {
-                        **(sensor_precheck or {}),
-                        "recheck_values": current_sensor_state["values"],
-                    }
-                return self._submit_robot_task_locked(
-                    task=task,
-                    station=station,
-                    task_number=task_number,
-                    variables=variables,
-                    reset_variables=reset_variables,
-                    precheck=precheck,
-                    verify_reset=verify_reset,
-                    sensor_requirements=(
-                        pre_sensor_conditions,
-                        post_sensor_conditions,
-                    ),
-                    sensor_precheck=sensor_precheck,
-                    **data,
-                )
-            finally:
-                self._robot_task_lock.release()
-
-    @not_action
-    def _submit_robot_task_locked(
-        self,
-        task: str,
-        station: str,
-        task_number: int,
-        variables: dict[str, Any] | None = None,
-        reset_variables: dict[str, Any] | None = None,
-        precheck=None,
-        verify_reset: bool = False,
-        sensor_requirements: tuple[dict[str, bool], dict[str, bool]] | None = None,
-        sensor_precheck: dict[str, Any] | None = None,
-        **data: Any,
-    ) -> dict[str, Any]:
-        reset_variables = reset_variables or {ROBOT_TASK_NUMBER_VARIABLE: 0}
-        if sensor_requirements is None:
-            sensor_requirements = self._robot_sensor_requirements(task, station, data)
-        pre_sensor_conditions, post_sensor_conditions = sensor_requirements
-        if not pre_sensor_conditions and precheck is not None:
+        elif precheck is not None:
             precheck_result = precheck()
             if precheck_result is not None:
                 self._last_task = {**precheck_result, "status": "rejected"}
@@ -613,72 +465,27 @@ class SzlabMixerRobotDevice(
                 "reset": reset_result,
                 **data,
             }
-            message = str(exc)
-            if not reset_result["success"]:
-                message = f"{message}；且 PC->PLC 变量复位失败"
-            return {"success": False, "message": message, **self._last_task}
+            return {"success": False, "message": str(exc), **self._last_task}
 
-        complete_success = False
-        complete_message = ""
-        complete_value = None
-        sensor_postcheck = None
-        try:
+        complete_success, complete_message, complete_value = self._wait_robot_task_complete(task_number)
+        if os.environ.get("SKIP_RESET_AFTER_RUN") == "1":
             try:
-                complete_success, complete_message, complete_value = (
-                    self._wait_robot_task_complete(task_number)
-                )
-            except Exception as exc:
-                complete_message = f"机器人任务完成等待失败: {exc}"
-
-            if complete_success and post_sensor_conditions:
-                try:
-                    sensor_postcheck = self._wait_sensor_conditions(
-                        post_sensor_conditions,
-                        phase="post",
-                    )
-                except Exception as exc:
-                    sensor_postcheck = {
-                        "success": False,
-                        "phase": "post",
-                        "message": str(exc),
-                        "conditions": post_sensor_conditions,
-                        "values": {},
-                    }
-        finally:
-            try:
-                if os.environ.get("SKIP_RESET_AFTER_RUN") == "1":
-                    reset_result = self._reset_pc_to_plc_variables(
-                        {ROBOT_WRITE_DONE_VARIABLE: False},
-                        verify=verify_reset,
-                    )
-                    reset_result.update(
-                        {
-                            "skipped": True,
-                            "message": "已跳过任务完成后的参数复位，仅复位 Robot_任务写入完成",
-                        }
-                    )
-                else:
-                    reset_result = self._reset_pc_to_plc_variables(
-                        {ROBOT_WRITE_DONE_VARIABLE: False, **reset_variables},
-                        verify=verify_reset,
-                    )
-            except Exception as exc:
-                reset_result = {
-                    "success": False,
-                    "written_variables": {},
-                    "readback": {},
-                    "errors": {"reset": str(exc)},
-                }
-
-        postcheck_success = (
-            sensor_postcheck is None or bool(sensor_postcheck.get("success"))
-        )
-        if not complete_success or not reset_result["success"]:
-            status = "failed"
-        elif not postcheck_success:
-            status = "verification_failed"
+                self._write_variable(ROBOT_WRITE_DONE_VARIABLE, False)
+            except Exception:
+                pass
+            reset_result = {
+                "success": True,
+                "written_variables": {ROBOT_WRITE_DONE_VARIABLE: False},
+                "errors": {},
+                "skipped": True,
+                "message": "已跳过任务完成后的参数复位，仅复位 Robot_任务写入完成",
+            }
         else:
-            status = "completed"
+            reset_result = self._reset_pc_to_plc_variables(
+                {ROBOT_WRITE_DONE_VARIABLE: False, **reset_variables},
+                verify=verify_reset,
+            )
+        status = "completed" if complete_success and reset_result["success"] else "failed"
 
         self._last_task = {
             "task": task,
@@ -695,15 +502,10 @@ class SzlabMixerRobotDevice(
             "reset": reset_result,
             **data,
         }
-        if sensor_postcheck is not None:
-            self._last_task["sensor_postcheck"] = sensor_postcheck
         if not complete_success:
-            message = complete_message
-            if not reset_result["success"]:
-                message = f"{message}；且 PC->PLC 变量复位失败"
             return {
                 "success": False,
-                "message": message,
+                "message": complete_message,
                 **self._last_task,
             }
         if not reset_result["success"]:
@@ -712,12 +514,26 @@ class SzlabMixerRobotDevice(
                 "message": "机器人任务已完成，但 PC->PLC 变量复位失败",
                 **self._last_task,
             }
-        if not postcheck_success:
-            return {
-                "success": False,
-                "message": "机器人任务已完成，但现场传感器状态验证失败；禁止自动重试",
-                **self._last_task,
-            }
+        sensor_postcheck = None
+        if post_sensor_conditions:
+            try:
+                sensor_postcheck = self._wait_sensor_conditions(post_sensor_conditions, phase="post")
+            except Exception as exc:
+                sensor_postcheck = {
+                    "success": False,
+                    "phase": "post",
+                    "message": str(exc),
+                    "conditions": post_sensor_conditions,
+                    "values": {},
+                }
+            self._last_task["sensor_postcheck"] = sensor_postcheck
+            if not sensor_postcheck["success"]:
+                self._last_task["status"] = "verification_failed"
+                return {
+                    "success": False,
+                    "message": "机器人任务已完成，但现场传感器状态验证失败；禁止自动重试",
+                    **self._last_task,
+                }
         return {
             "success": True,
             "message": f"机器人任务已完成: {station} {task}",
@@ -837,10 +653,9 @@ class SzlabMixerRobotDevice(
         self,
         position: str = "1-1",
         load_position: int = 1,
-        timeout: float = 300.0,
     ) -> dict[str, Any]:
         try:
-            return self._run_s071_pick_and_rotate_to_feed(position, load_position, timeout)
+            return self._run_s071_pick_and_rotate_to_feed(position, load_position)
         except Exception as exc:
             return {
                 "success": False,

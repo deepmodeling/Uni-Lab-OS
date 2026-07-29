@@ -147,7 +147,6 @@ def run_s08_debug(
     *,
     opcua_url: str,
     object_name: str,
-    timeout: float,
     poll_interval: float,
     require_station_ready: bool,
     opcua_uplink_comm_prefix: str | None,
@@ -164,7 +163,6 @@ def run_s08_debug(
     try:
         device = SZLabS08CapStationDevice(
             url=opcua_url,
-            timeout=timeout,
             poll_interval=poll_interval,
             require_station_ready=require_station_ready,
             opcua_client=client,
@@ -201,7 +199,6 @@ def _run_from_config(config_path: Path, *, use_production: bool) -> dict[str, An
     return run_s08_debug(
         opcua_url=config["resolved_opcua_url"],
         object_name=config["virtual_object_name"],
-        timeout=float(device_cfg.get("timeout", 300.0)),
         poll_interval=float(device_cfg.get("poll_interval", 0.2)),
         require_station_ready=bool(device_cfg.get("require_station_ready", True)),
         opcua_uplink_comm_prefix=(

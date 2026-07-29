@@ -25,7 +25,7 @@ class PseudoSzlabMixerOpcUaClient:
         self.events: list[tuple[Any, ...]] = []
         self.pulses: list[str] = []
         self.wait_equal_calls: list[tuple[str, Any]] = []
-        self.force_done_timeout = False
+        self.force_done_wait_failure = False
 
     def read(self, name: str) -> Any:
         self.events.append(("read", name))
@@ -49,8 +49,8 @@ class PseudoSzlabMixerOpcUaClient:
         self.write(name, reset_value)
         self.pulses.append(name)
 
-    def wait_equal(self, name: str, expected: Any, timeout: float = 300.0, interval: float = 0.2) -> bool:
-        del timeout, interval
+    def wait_equal(self, name: str, expected: Any, interval: float = 0.2) -> bool:
+        del interval
         self.events.append(("wait", name, expected))
         self.wait_equal_calls.append((name, expected))
         return self.values.get(name) == expected
@@ -58,19 +58,18 @@ class PseudoSzlabMixerOpcUaClient:
     def wait_sensor_conditions(
         self,
         conditions: dict[str, bool],
-        timeout: float = 300.0,
         interval: float = 0.2,
         context: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
-        del timeout, interval, context
+        del interval, context
         self.events.append(("wait_sensor_conditions", dict(conditions)))
         values = {name: self.read(name) for name in conditions}
         return all(values[name] == expected for name, expected in conditions.items()), values
 
-    def wait_new_cycle_done(self, name: str, timeout: float = 300.0, interval: float = 0.2) -> bool:
-        del timeout, interval
+    def wait_new_cycle_done(self, name: str, interval: float = 0.2) -> bool:
+        del interval
         self.events.append(("wait_new_cycle_done", name))
-        if self.force_done_timeout:
+        if self.force_done_wait_failure:
             return False
         if bool(self.read(name)):
             self.wait_equal_calls.append((name, False))

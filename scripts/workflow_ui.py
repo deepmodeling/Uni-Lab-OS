@@ -294,8 +294,6 @@ _S08_PRODUCT_TYPE_OPTIONS = [
 _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     "sample_id": {"label": "样品 ID", "description": "用于追踪物料、照片和实验结果的样品标识。"},
     "position": {"label": "位置", "description": "目标工位或仓位编号；可用范围取决于当前动作。"},
-    "timeout": {"label": "超时时间", "description": "等待 PLC 工艺完成的最长时间。", "unit": "s"},
-    "超时时间": {"description": "等待 S08 开关盖工艺完成的最长时间。", "unit": "s"},
     "duration": {"label": "持续时间", "description": "工艺持续运行时间。", "unit": "s"},
     "speed": {"label": "搅拌速度", "description": "S04 磁力搅拌转速设定。", "unit": "rpm"},
     "temperature": {"label": "目标温度", "description": "S04 磁搅目标温度。", "unit": "°C"},
@@ -668,6 +666,8 @@ class RunRecord:
     result: list[dict[str, Any]] | None = None
     error: str | None = None
     node_statuses: dict[str, str] = field(default_factory=dict)
+    live_statuses: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    live_log_indexes: dict[tuple[str, str], int] = field(default_factory=dict)
     cancel_requested: bool = False
     devices: dict[str, Any] = field(default_factory=dict)
     timing_report_path: str | None = None
@@ -696,6 +696,48 @@ class RunRecord:
                 detail=detail,
             )
         )
+
+    def update_live_status(
+        self,
+        node_id: str,
+        key: str,
+        payload: dict[str, Any],
+    ) -> None:
+        self.live_statuses.setdefault(node_id, {})[key] = dict(payload)
+
+    def clear_live_status(self, node_id: str, key: str | None = None) -> None:
+        if key is None:
+            self.live_statuses.pop(node_id, None)
+            return
+        statuses = self.live_statuses.get(node_id)
+        if statuses is None:
+            return
+        statuses.pop(key, None)
+        if not statuses:
+            self.live_statuses.pop(node_id, None)
+
+    def update_live_log(
+        self,
+        node_id: str,
+        key: str,
+        message: str,
+        *,
+        level: str = "info",
+    ) -> None:
+        live_key = (node_id, key)
+        index = self.live_log_indexes.get(live_key)
+        if index is None:
+            self.append_log(
+                message,
+                node_id=node_id,
+                level=level,
+            )
+            self.live_log_indexes[live_key] = len(self.log_events) - 1
+            return
+        self.logs[index] = message
+        event = self.log_events[index]
+        event.message = message
+        event.level = level
 
 
 def _infer_log_category(
@@ -859,6 +901,8 @@ def _run_node_with_live_opc_sampling(
         )
     for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
         logger.log(wait_log["message"], detail=wait_log.get("detail"))
+    if isinstance(result, dict) and result.get("display_message"):
+        logger.log(str(result["display_message"]))
     logger.log(f"动作结果: {result}", detail={"result": result})
 
     output = {
@@ -1055,7 +1099,6 @@ class WorkflowRunManager:
         default_config = self._preset.default_config
         csv_value = str(default_config.get("csv") or "").strip()
         csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
-        timeout = float(default_config.get("timeout") or 300.0)
         no_subscription = bool(default_config.get("no_subscription", True))
         graph_value = str(
             default_config.get("graph") or GENERATED_GRAPH_SENTINEL
@@ -1081,7 +1124,6 @@ class WorkflowRunManager:
             opcua_url,
             str(csv_path or ""),
             no_subscription,
-            timeout,
         )
         return self._get_or_create_devices(
             device_key,
@@ -1090,7 +1132,6 @@ class WorkflowRunManager:
                 "opcua_url": opcua_url or None,
                 "csv_path": csv_path,
                 "use_subscription": False if no_subscription else None,
-                "plc_action_timeout": timeout,
                 "runtime_config": self._runtime_config,
             },
             lambda message: None,
@@ -1145,7 +1186,6 @@ class WorkflowRunManager:
         default_config = self._preset.default_config
         csv_value = str(default_config.get("csv") or "").strip()
         csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
-        timeout = float(default_config.get("timeout") or 300.0)
         no_subscription = bool(default_config.get("no_subscription", True))
         graph_value = str(
             default_config.get("graph") or GENERATED_GRAPH_SENTINEL
@@ -1167,7 +1207,6 @@ class WorkflowRunManager:
             normalized_url,
             str(csv_path or ""),
             no_subscription,
-            timeout,
         )
         return self._get_or_create_devices(
             device_key,
@@ -1176,7 +1215,6 @@ class WorkflowRunManager:
                 "opcua_url": normalized_url,
                 "csv_path": csv_path,
                 "use_subscription": False if no_subscription else None,
-                "plc_action_timeout": timeout,
                 "runtime_config": self._runtime_config,
             },
             lambda message: None,
@@ -1582,27 +1620,9 @@ class WorkflowRunManager:
                 payload.get("csv") or default_config.get("csv") or ""
             ).strip()
             csv_path = _resolve_ui_path(csv_value, self._preset) if csv_value else None
-            timeout = float(
-                payload.get("timeout") or default_config.get("timeout") or 300.0
-            )
-            write_allowed_timeout = float(
-                payload.get("write_allowed_timeout")
-                or default_config.get("write_allowed_timeout")
-                or 5.0
-            )
-            no_subscription = bool(
-                payload.get(
-                    "no_subscription", default_config.get("no_subscription", True)
-                )
-            )
-            graph_value = str(
-                payload.get("graph")
-                or default_config.get("graph")
-                or GENERATED_GRAPH_SENTINEL
-            ).strip()
-            opcua_url = str(
-                payload.get("url") or default_config.get("url") or ""
-            ).strip()
+            no_subscription = bool(payload.get("no_subscription", default_config.get("no_subscription", True)))
+            graph_value = str(payload.get("graph") or default_config.get("graph") or GENERATED_GRAPH_SENTINEL).strip()
+            opcua_url = str(payload.get("url") or default_config.get("url") or "").strip()
 
             if graph_value == GENERATED_GRAPH_SENTINEL:
                 if not opcua_url:
@@ -1611,11 +1631,7 @@ class WorkflowRunManager:
                     )
                 generated_graph = build_local_device_graph(
                     opcua_url=opcua_url,
-                    csv_path=str(
-                        csv_path or csv_value or default_config.get("csv") or ""
-                    ),
-                    timeout=timeout,
-                    write_allowed_timeout=write_allowed_timeout,
+                    csv_path=str(csv_path or csv_value or default_config.get("csv") or ""),
                     use_subscription=not no_subscription,
                     preset=self._preset,
                 )
@@ -1637,7 +1653,6 @@ class WorkflowRunManager:
                 opcua_url,
                 str(csv_path or ""),
                 no_subscription,
-                timeout,
             )
             devices = self._get_or_create_devices(
                 device_key,
@@ -1646,7 +1661,6 @@ class WorkflowRunManager:
                     "opcua_url": opcua_url or None,
                     "csv_path": csv_path,
                     "use_subscription": False if no_subscription else None,
-                    "plc_action_timeout": timeout,
                     "runtime_config": self._runtime_config,
                 },
                 record.append_log,
@@ -1710,6 +1724,40 @@ class WorkflowRunManager:
                         timing_recorder.observe_log(message, detail)
 
                 logger = WorkflowLogger(writer=append_node_log)
+                device = devices.get(device_name)
+                balance_status_setter = (
+                    getattr(device, "set_balance_status_callback", None)
+                    if node_method == "dose_powder"
+                    else None
+                )
+                if callable(balance_status_setter):
+
+                    def update_balance_status(
+                        payload: dict[str, Any],
+                        node_id: str = node.uuid,
+                    ) -> None:
+                        value = payload.get("value")
+                        value_text = f"{float(value):.3f} g" if isinstance(value, (int, float)) else "-- g"
+                        state = str(payload.get("state") or "ok")
+                        if state == "error":
+                            suffix = f"（{payload.get('message') or '读取暂时失败'}）"
+                            level = "warning"
+                        elif state == "final":
+                            suffix = "（最终读数）"
+                            level = "info"
+                        else:
+                            suffix = "（每 2 秒刷新）"
+                            level = "info"
+                        with self._lock:
+                            record.update_live_status(node_id, "s07_balance", payload)
+                            record.update_live_log(
+                                node_id,
+                                "s07_balance",
+                                f"S07 实时天平：{value_text}{suffix}",
+                                level=level,
+                            )
+
+                    balance_status_setter(update_balance_status)
                 try:
                     node_results = _run_node_with_live_opc_sampling(
                         node,
@@ -1726,6 +1774,11 @@ class WorkflowRunManager:
                         f"节点执行失败: {exc}", node_id=node.uuid, level="error"
                     )
                     raise
+                finally:
+                    if callable(balance_status_setter):
+                        balance_status_setter(None)
+                        with self._lock:
+                            record.clear_live_status(node.uuid, "s07_balance")
                 if timing_recorder is not None:
                     timing_recorder.finish_step(result=node_results)
                 record.node_statuses[node.uuid] = "success"
@@ -2074,8 +2127,6 @@ def build_graph_workflow(
 def build_local_device_graph(
     opcua_url: str,
     csv_path: str = "",
-    timeout: float | int | None = None,
-    write_allowed_timeout: float | int | None = None,
     use_subscription: bool = True,
     preset: WorkflowPreset = DEFAULT_PRESET,
 ) -> dict[str, Any]:
@@ -2088,14 +2139,6 @@ def build_local_device_graph(
         {
             "opcua_url": opcua_url,
             "csv_path": csv_path,
-            "timeout": timeout
-            if timeout is not None
-            else preset.default_config.get("timeout", 300),
-            "write_allowed_timeout": (
-                write_allowed_timeout
-                if write_allowed_timeout is not None
-                else preset.default_config.get("write_allowed_timeout", 5.0)
-            ),
             "use_subscription": use_subscription,
         },
     )
@@ -3125,6 +3168,10 @@ def _record_to_dict(record: RunRecord) -> dict[str, Any]:
         "result": record.result,
         "error": record.error,
         "node_statuses": record.node_statuses,
+        "live_statuses": {
+            node_id: {key: dict(payload) for key, payload in statuses.items()}
+            for node_id, statuses in record.live_statuses.items()
+        },
         "timing_report_path": record.timing_report_path,
         "timing_summary_path": record.timing_summary_path,
     }

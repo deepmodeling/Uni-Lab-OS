@@ -143,8 +143,6 @@ type PresetPayload = {
     graph?: string;
     url?: string;
     csv?: string;
-    timeout?: number;
-    write_allowed_timeout?: number;
     task_sample_start_interval_seconds?: number;
     no_subscription?: boolean;
     show_csv?: boolean;
@@ -165,6 +163,16 @@ type RunStatus = {
   log_events?: LogEvent[];
   error?: string | null;
   node_statuses?: Record<string, NodeRunStatus>;
+  live_statuses?: Record<string, Record<string, LiveStatus>>;
+};
+
+type LiveStatus = {
+  label: string;
+  value?: number | null;
+  unit?: string;
+  state?: 'ok' | 'error' | 'final' | string;
+  message?: string;
+  updated_at?: number;
 };
 
 type NodeRunStatus = 'idle' | 'preparing' | 'running' | 'success' | 'failed' | 'cancelled';
@@ -488,8 +496,6 @@ const DEFAULT_CONFIG = {
   graph: '__generated__',
   url: DEFAULT_OPC_SIMULATOR_URL,
   csv: '',
-  timeout: 300,
-  write_allowed_timeout: 5,
   no_subscription: true,
   show_csv: false,
 };
@@ -988,8 +994,6 @@ function App() {
     graph: DEFAULT_CONFIG.graph,
     url: DEFAULT_CONFIG.url,
     csv: DEFAULT_CONFIG.csv,
-    timeout: DEFAULT_CONFIG.timeout,
-    write_allowed_timeout: DEFAULT_CONFIG.write_allowed_timeout,
     no_subscription: DEFAULT_CONFIG.no_subscription,
     show_csv: DEFAULT_CONFIG.show_csv,
   });
@@ -1475,8 +1479,6 @@ function App() {
           graph: payload.default_config?.graph ?? DEFAULT_CONFIG.graph,
           url: payload.default_config?.url ?? DEFAULT_CONFIG.url,
           csv: payload.default_config?.csv ?? DEFAULT_CONFIG.csv,
-          timeout: payload.default_config?.timeout ?? DEFAULT_CONFIG.timeout,
-          write_allowed_timeout: payload.default_config?.write_allowed_timeout ?? DEFAULT_CONFIG.write_allowed_timeout,
           no_subscription: payload.default_config?.no_subscription ?? DEFAULT_CONFIG.no_subscription,
           show_csv: payload.default_config?.show_csv ?? DEFAULT_CONFIG.show_csv,
         }));
@@ -3211,6 +3213,9 @@ function App() {
                 <h2>运行日志</h2>
                 <span>Timeline</span>
               </div>
+              <div className="live-status-slot">
+                <LiveStatusPanel statuses={runStatus?.live_statuses} nodes={nodes} />
+              </div>
               <LogPanel
                 events={logEvents}
                 nodes={nodes}
@@ -4254,14 +4259,6 @@ function App() {
                 <input value={config.csv} onChange={(event) => setConfig({ ...config, csv: event.target.value })} />
               </label>
             )}
-            <label>
-              超时秒数
-              <input type="number" min={1} value={config.timeout} onChange={(event) => setConfig({ ...config, timeout: Number(event.target.value) })} />
-            </label>
-            <label>
-              Robot允许写入等待秒数
-              <input type="number" min={1} value={config.write_allowed_timeout} onChange={(event) => setConfig({ ...config, write_allowed_timeout: Number(event.target.value) })} />
-            </label>
             <label className="check">
               <input
                 type="checkbox"
@@ -4421,6 +4418,42 @@ function nodeStatusText(status: NodeRunStatus) {
   if (status === 'failed') return '失败';
   if (status === 'cancelled') return '已终止';
   return '待运行';
+}
+
+function LiveStatusPanel({
+  statuses,
+  nodes,
+}: {
+  statuses?: Record<string, Record<string, LiveStatus>>;
+  nodes: Node<ActionNodeData>[];
+}) {
+  if (!statuses) return null;
+  const nodeLabels = new Map(nodes.map((node) => [node.id, node.data.label]));
+  const entries = Object.entries(statuses).flatMap(([nodeId, nodeStatuses]) =>
+    Object.entries(nodeStatuses).map(([key, status]) => ({ nodeId, key, status })),
+  );
+  if (!entries.length) return null;
+
+  return (
+    <div className="live-status-panel" aria-live="polite">
+      {entries.map(({ nodeId, key, status }) => {
+        const hasValue = typeof status.value === 'number' && Number.isFinite(status.value);
+        const displayValue = hasValue ? Number(status.value).toFixed(3) : '--';
+        return (
+          <div className={`live-status-row ${status.state === 'error' ? 'error' : ''}`} key={`${nodeId}:${key}`}>
+            <span className="live-status-pulse" aria-hidden="true" />
+            <span className="live-status-label">
+              {nodeLabels.get(nodeId) || nodeId} · {status.label}
+            </span>
+            <strong>{displayValue} {status.unit || ''}</strong>
+            <span className="live-status-note">
+              {status.state === 'error' ? status.message || '读取暂时失败' : '每 2 秒刷新'}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function LogPanel({

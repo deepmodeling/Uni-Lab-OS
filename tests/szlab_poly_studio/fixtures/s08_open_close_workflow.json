@@ -8,8 +8,7 @@
       "param": {
         "operation": "open",
         "vial_type": "liquid_100ml",
-        "sample_id": [101, 102, 103],
-        "timeout": 300
+        "sample_id": [101, 102, 103]
       }
     },
     {
@@ -19,8 +18,7 @@
       "param": {
         "operation": "close",
         "vial_type": "liquid_100ml",
-        "sample_id": [101, 102, 103],
-        "timeout": 300
+        "sample_id": [101, 102, 103]
       }
     }
   ],

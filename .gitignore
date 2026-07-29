@@ -270,3 +270,7 @@ workflow_timings/
 # OPC simulator profile lock files (user profiles live under task-orchestration/configs)
 task-orchestration/configs/.opc-profile-locks/
 .superpowers
+
+# Local workflow artifacts and S07 batch debugging tools
+/workflow_artifacts/
+/unilabos/devices/workstation/szlab_poly_studio/s07_solid_addition/batch/

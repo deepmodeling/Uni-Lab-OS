@@ -19,7 +19,6 @@ OPCUA_URL="${OPCUA_URL:-opc.tcp://192.168.1.10:4840}"
 if [[ "$OPCUA_URL" != *"://"* ]]; then
   OPCUA_URL="opc.tcp://$OPCUA_URL"
 fi
-TIMEOUT="${TIMEOUT:-300}"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/unilabos_data/szlab_poly_studio/s09_pipetting_cli_logs}"
 
 # 调试控制:
@@ -97,7 +96,6 @@ usage() {
   OPCUA_URL=opc.tcp://192.168.1.10:4840
   CSV_PATH=/path/to/pipetting_station_nodes.csv
   PYTHON=/opt/mamba/envs/unilab/bin/python
-  TIMEOUT=300
   VOLUME_UNIT=raw|uL|mL
 EOF
 }
@@ -242,12 +240,12 @@ PY
 
 write_graph() {
   local graph_file="$1"
-  "$PYTHON" - "$graph_file" "$OPCUA_URL" "$CSV_PATH" "$TIMEOUT" <<'PY'
+  "$PYTHON" - "$graph_file" "$OPCUA_URL" "$CSV_PATH" <<'PY'
 import csv
 import json
 import sys
 
-graph_file, opcua_url, csv_path, timeout = sys.argv[1:5]
+graph_file, opcua_url, csv_path = sys.argv[1:4]
 
 
 def load_opcua_node_id_map(path):
@@ -284,7 +282,6 @@ graph = {
             "config": {
                 "url": opcua_url,
                 "csv_path": csv_path,
-                "timeout": float(timeout),
                 "opcua_node_id_map": opcua_node_id_map,
             },
             "data": {},
@@ -299,7 +296,6 @@ graph = {
             "position": {"x": 420, "y": 0, "z": 0},
             "config": {
                 "plc_device_id": "szlab_poly_plc",
-                "timeout": float(timeout),
             },
             "data": {},
         },
@@ -500,7 +496,6 @@ run_case() {
     --workflow "$workflow_file" \
     --url "$OPCUA_URL" \
     --csv "$CSV_PATH" \
-    --timeout "$TIMEOUT" \
     --no-subscription \
     "${ignore_token_time_drift_args[@]}" \
     "${clear_pc_to_plc_args[@]}" \
@@ -517,7 +512,6 @@ confirm_real_run() {
 将真实执行 S09 移液站 $action_group 的 $count 个测试用例。
 OPC UA: $OPCUA_URL
 CSV: $CSV_PATH
-TIMEOUT: $TIMEOUT
 IGNORE_OPCUA_TOKEN_TIME_DRIFT: $IGNORE_OPCUA_TOKEN_TIME_DRIFT
 CLEAR_PC_TO_PLC_BEFORE_RUN: $CLEAR_PC_TO_PLC_BEFORE_RUN
 

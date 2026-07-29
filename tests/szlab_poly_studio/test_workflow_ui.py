@@ -469,7 +469,6 @@ def test_s06_debug_runtime_creates_only_plc_and_pump(monkeypatch, tmp_path):
             },
             "szlab_mixer_pump": {
                 "url": "opc.tcp://127.0.0.1:48506/",
-                "timeout": 300,
                 "pipeline_route_specs": [
                     {
                         "pump": 1,
@@ -591,7 +590,6 @@ def test_s07_robot_preset_includes_robot_and_solid_addition_station():
     }
     assert graph_nodes["szlab_s07_solid_addition"]["config"] == {
         "plc_device_id": "szlab_poly_plc",
-        "process_timeout": "${timeout}",
         "poll_interval": 0.2,
     }
     assert runtime_config.device_factory.devices == {
@@ -622,7 +620,6 @@ def test_s07_robot_preset_includes_robot_and_solid_addition_station():
         "S07粗注粉位置号",
         "S07精注粉位置号",
         "S07注粉重量",
-        "S07天平读数",
     ]
 
 
@@ -648,7 +645,6 @@ def test_s06_debug_preset_uses_debug_file_name_and_only_pump_device():
     assert set(graph_nodes) == {"szlab_poly_plc", "szlab_mixer_pump"}
     assert graph_nodes["szlab_mixer_pump"]["config"] == {
         "url": "${opcua_url}",
-        "timeout": "${timeout}",
         "pipeline_route_specs": [
             {
                 "pump": 1,
@@ -805,7 +801,6 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
     assert graph_nodes["szlab_poly_plc"]["config"]["csv_path"] == "${csv_path}"
     assert graph_nodes["szlab_mixer_pipetting_station"]["config"] == {
         "url": "${opcua_url}",
-        "timeout": 300.0,
         "csv_path": "s09_pipetting_station/pipetting_station_nodes.csv",
     }
     assert (
@@ -862,7 +857,6 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "S07粗注粉位置号",
         "S07精注粉位置号",
         "S07注粉重量",
-        "S07天平读数",
     ]
     assert collect_snapshot_variables(
         "run_solvent_addition", {"process": 3}, runtime_config
@@ -1428,8 +1422,7 @@ def test_runtime_config_collects_common_action_and_param_variables(tmp_path):
             "plc_class": "example.PLC",
             "target_class": "example.Robot",
             "target_config": {"plc_device_id": "plc"},
-            "direct_plc_command_method": "_call_plc_command",
-            "timeout_config_key": "plc_action_timeout"
+            "direct_plc_command_method": "_call_plc_command"
           },
           "opc_snapshot": {
             "common_variables": ["Common_A"],
@@ -1494,6 +1487,51 @@ def test_run_record_returns_structured_log_events_with_node_id():
             "detail": {"method": "pick_well_plate_from_loading_rack"},
         },
     ]
+
+
+def test_run_record_live_status_updates_in_place_and_can_be_cleared():
+    record = RunRecord(run_id="run-1")
+
+    record.update_live_status(
+        "node_1",
+        "s07_balance",
+        {"label": "S07 实时天平", "value": 12.1, "unit": "g", "state": "ok"},
+    )
+    record.update_live_status(
+        "node_1",
+        "s07_balance",
+        {"label": "S07 实时天平", "value": 12.34, "unit": "g", "state": "ok"},
+    )
+
+    payload = _record_to_dict(record)
+    assert payload["live_statuses"] == {
+        "node_1": {
+            "s07_balance": {
+                "label": "S07 实时天平",
+                "value": 12.34,
+                "unit": "g",
+                "state": "ok",
+            }
+        }
+    }
+    assert record.logs == []
+    assert record.log_events == []
+
+    record.clear_live_status("node_1", "s07_balance")
+    assert _record_to_dict(record)["live_statuses"] == {}
+
+
+def test_run_record_live_log_replaces_message_without_appending():
+    record = RunRecord(run_id="run-1")
+
+    record.update_live_log("node_1", "s07_balance", "S07 实时天平：12.100 g（每 2 秒刷新）")
+    record.update_live_log("node_1", "s07_balance", "S07 实时天平：12.340 g（每 2 秒刷新）")
+
+    assert record.logs == ["S07 实时天平：12.340 g（每 2 秒刷新）"]
+    assert len(record.log_events) == 1
+    assert record.log_events[0].sequence == 1
+    assert record.log_events[0].category == "node"
+    assert record.log_events[0].message == "S07 实时天平：12.340 g（每 2 秒刷新）"
 
 
 def test_register_shutdown_handler_supports_fastapi_on_event_only():
@@ -1626,7 +1664,6 @@ def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):
         "graph": "__generated__",
         "url": "opc.tcp://example:4840",
         "no_subscription": True,
-        "timeout": 60,
     }
 
     manager._records["run-1"] = RunRecord(run_id="run-1")
@@ -1664,6 +1701,88 @@ def test_workflow_manager_shutdown_waits_for_coordinator_before_devices(
 
     assert result == {"success": True, "in_flight": 0}
     assert order == ["coordinator", "devices"]
+
+
+def test_workflow_run_manager_exposes_and_clears_s07_live_balance(monkeypatch):
+    preset = load_preset("szlab_robot_action_workflow")
+    runtime_config = _load_preset_runtime_config(preset)
+    manager = WorkflowRunManager(preset, runtime_config)
+    observed_statuses = []
+
+    class FakeS07:
+        def __init__(self):
+            self.callback = None
+
+        def set_balance_status_callback(self, callback):
+            self.callback = callback
+
+    fake_s07 = FakeS07()
+
+    def fake_create_local_devices(**_kwargs):
+        return {
+            "szlab_poly_plc": object(),
+            "szlab_s07_solid_addition": fake_s07,
+        }
+
+    def fake_run_node(node, devices, logger=None, runtime_config=None):
+        del logger, runtime_config
+        assert devices["szlab_s07_solid_addition"] is fake_s07
+        assert callable(fake_s07.callback)
+        fake_s07.callback(
+            {
+                "label": "S07 实时天平",
+                "value": 12.34,
+                "unit": "g",
+                "state": "ok",
+            }
+        )
+        observed_statuses.append(_record_to_dict(manager._records["run-live"])["live_statuses"])
+        return [{"uuid": node.uuid, "result": {"success": True}}]
+
+    monkeypatch.setattr("scripts.workflow_ui.create_local_devices", fake_create_local_devices)
+    monkeypatch.setattr("scripts.workflow_ui._run_node_with_live_opc_sampling", fake_run_node)
+
+    payload = {
+        "workflow": build_linear_workflow(
+            [
+                {
+                    "method": "dose_powder",
+                    "params": {
+                        "coarse_position": 1,
+                        "fine_position": 2,
+                        "target_weight": 12.5,
+                    },
+                }
+            ],
+            preset=preset,
+        ),
+        "graph": "__generated__",
+        "url": "opc.tcp://example:4840",
+        "no_subscription": True,
+    }
+    manager._records["run-live"] = RunRecord(run_id="run-live")
+
+    manager._run_payload("run-live", payload)
+
+    assert observed_statuses == [
+        {
+            next(iter(manager._records["run-live"].node_statuses)): {
+                "s07_balance": {
+                    "label": "S07 实时天平",
+                    "value": 12.34,
+                    "unit": "g",
+                    "state": "ok",
+                }
+            }
+        }
+    ]
+    assert manager._records["run-live"].live_statuses == {}
+    assert fake_s07.callback is None
+    assert any(
+        message == "S07 实时天平：12.340 g（每 2 秒刷新）"
+        for message in manager._records["run-live"].logs
+    )
+    assert not any("粗注粉结束观测值" in message for message in manager._records["run-live"].logs)
 
 
 def test_run_node_with_live_opc_sampling_logs_changes_during_action(tmp_path):
@@ -1907,13 +2026,12 @@ def test_run_node_with_live_opc_sampling_emits_opc_wait_events(tmp_path):
         def drain_opc_wait_events(self):
             return [
                 {
-                    "message": "等待 OPC 变量 S06加工完成 == True (timeout=300.0s, interval=0.2s)",
+                    "message": "等待 OPC 变量 S06加工完成 == True (interval=0.2s)",
                     "detail": {
                         "type": "opc_wait",
                         "phase": "start",
                         "variable": "S06加工完成",
                         "expected": True,
-                        "timeout": 300.0,
                         "interval": 0.2,
                     },
                     "phase": "start",
@@ -1925,7 +2043,6 @@ def test_run_node_with_live_opc_sampling_emits_opc_wait_events(tmp_path):
                         "phase": "finish",
                         "variable": "S06加工完成",
                         "expected": True,
-                        "timeout": 300.0,
                         "interval": 0.2,
                         "success": True,
                         "last_value": True,
@@ -1962,7 +2079,7 @@ def test_run_node_with_live_opc_sampling_emits_opc_wait_events(tmp_path):
         if event["detail"] and event["detail"].get("type") == "opc_wait"
     ]
     assert [event["message"] for event in wait_events] == [
-        "等待 OPC 变量 S06加工完成 == True (timeout=300.0s, interval=0.2s)",
+        "等待 OPC 变量 S06加工完成 == True (interval=0.2s)",
         "OPC 变量等待完成 S06加工完成 == True: success=True, last_value=True",
     ]
     assert wait_events[0]["detail"]["phase"] == "start"
@@ -1998,7 +2115,7 @@ def test_run_node_with_live_opc_sampling_emits_nested_client_wait_events(tmp_pat
             assert self.writer is not None
             self.writer(
                 {
-                    "message": "等待 OPC 变量 S041加工完成 == True (timeout=300.0s, interval=1.0s)",
+                    "message": "等待 OPC 变量 S041加工完成 == True (interval=1.0s)",
                     "detail": {
                         "type": "opc_wait",
                         "phase": "start",
@@ -2122,7 +2239,7 @@ def test_run_nodes_logs_opc_summary_with_detail_instead_of_full_snapshots():
 
     class FakeRobotArm:
         def place_well_plate_to_pipetting_station(self):
-            return {"success": True}
+            return {"success": True, "display_message": "S07 最终天平读数: 12.34"}
 
     events = []
 
@@ -2148,9 +2265,9 @@ def test_run_nodes_logs_opc_summary_with_detail_instead_of_full_snapshots():
         for message in messages
     )
     assert any("OPC状态采样" in message for message in messages)
-    diff_event = next(
-        event for event in events if event["message"].startswith("OPC状态变化:")
-    )
+    display_event = next(event for event in events if event["message"] == "S07 最终天平读数: 12.34")
+    assert display_event["detail"] is None
+    diff_event = next(event for event in events if event["message"].startswith("OPC状态变化:"))
     assert diff_event["message"] == "OPC状态变化: 7/7 个变量变化"
     assert diff_event["detail"]["changes"][0] == {
         "name": "Robotic_Arm_Idle",

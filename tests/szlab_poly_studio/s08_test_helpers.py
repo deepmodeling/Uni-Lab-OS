@@ -25,14 +25,12 @@ SAMPLE_B = [201, 202, 203]
 def make_s08_device(
     client: PseudoSzlabS08OpcUaClient | None = None,
     *,
-    timeout: float = 1.0,
     require_station_status: bool = False,
     validate_cap_constraints: bool = False,
 ) -> tuple[SZLabS08CapStationDevice, PseudoSzlabS08OpcUaClient]:
     pseudo = client or PseudoSzlabS08OpcUaClient()
     device = SZLabS08CapStationDevice(
         url="opc.tcp://127.0.0.1:0/unused",
-        timeout=timeout,
         opcua_client=pseudo,
     )
     if require_station_status:

@@ -155,7 +155,6 @@ class TestAI4CRobotArmOpcUaDevice:
                 opcua_url=url,
                 csv_path=AI4C_CSV_PATH,
                 use_subscription=False,
-                plc_action_timeout=30.0,
                 runtime_config=runtime_config,
             )
             plc = devices["AI4C_plc"]

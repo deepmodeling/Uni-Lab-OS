@@ -144,8 +144,7 @@
               "样品ID": [
                 101
               ],
-              "瓶盖暂存位": 1,
-              "超时时间": 300.0
+              "瓶盖暂存位": 1
             },
             "_comment": "打开100 mL液体试剂瓶，瓶盖放入暂存位1。"
           }
@@ -184,9 +183,7 @@
             "workflow_node_id": "p02_powder_scan",
             "device_id": "szlab_s07_solid_addition",
             "method": "scan_powder_cartridges",
-            "params": {
-              "timeout": 300.0
-            },
+            "params": {},
             "_comment": "扫描S07粉罐；后续条件排程器根据位置1、2扫码结果决定是否先执行对应的S072取粉罐节点。"
           }
         },
@@ -226,8 +223,7 @@
             "method": "submit_pick_from_s071_and_rotate_to_feed",
             "params": {
               "position": "1-1",
-              "load_position": 1,
-              "timeout": 300.0
+              "load_position": 1
             },
             "_comment": "第一次上料：机器人从S071位置1-1取粉罐，同时S07执行工艺2将位置1旋转到上料位。"
           }
@@ -282,8 +278,7 @@
             "method": "submit_pick_from_s071_and_rotate_to_feed",
             "params": {
               "position": "1-1",
-              "load_position": 2,
-              "timeout": 300.0
+              "load_position": 2
             },
             "_comment": "第二次上料：机器人从S071位置1-1取粉罐，同时S07执行工艺2将位置2旋转到上料位。"
           }
@@ -339,7 +334,6 @@
               "coarse_position": 1,
               "fine_position": 1,
               "target_weight": 1.0,
-              "timeout": 300.0,
               "recipe_name": "default"
             }
           }
@@ -508,8 +502,7 @@
               "样品ID": [
                 101
               ],
-              "瓶盖暂存位": 3,
-              "超时时间": 300.0
+              "瓶盖暂存位": 3
             }
           }
         },
@@ -601,8 +594,7 @@
               "样品ID": [
                 101
               ],
-              "瓶盖暂存位": 3,
-              "超时时间": 300.0
+              "瓶盖暂存位": 3
             }
           }
         },

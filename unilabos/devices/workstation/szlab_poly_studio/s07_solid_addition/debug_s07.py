@@ -86,7 +86,6 @@ def run_s07_debug(config_path: Path, *, use_production: bool) -> dict[str, Any]:
     plc_module = importlib.import_module("unilabos.devices.workstation.szlab_poly_studio.plc")
     device = module.SZLabS07SolidAdditionDevice(
         plc_device_id="debug_s07_plc",
-        process_timeout=float(device_cfg.get("process_timeout", 300.0)),
         poll_interval=float(device_cfg.get("poll_interval", 0.2)),
         require_station_ready=bool(device_cfg.get("require_station_ready", True)),
     )
@@ -102,8 +101,7 @@ def run_s07_debug(config_path: Path, *, use_production: bool) -> dict[str, Any]:
         ignore_opcua_token_time_drift=bool(device_cfg.get("opcua_ignore_token_time_check", False)),
     )
     try:
-        device._read_plc_variable = client.read
-        device._write_plc_variable = client.write
+        device.set_plc_gateway(client)
         print(f"OPC UA: {config['resolved_opcua_url']}")
         print(f"Action: {action_name}")
         print(f"Raw action config: {action_cfg}")

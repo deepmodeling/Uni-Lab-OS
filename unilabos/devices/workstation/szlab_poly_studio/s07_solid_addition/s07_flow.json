@@ -10,15 +10,29 @@
       },
       "log_nodes": [
         "S07工艺选择",
-        "S07上下料位置",
-        "S07粗注粉位置号",
-        "S07精注粉位置号",
-        "S07注粉重量"
+        "S07上下料位置"
       ],
       "actions": [
-        {"write": ["S07工艺完成", 0]},
-        {"sleep": 0.1},
-        {"write": ["S07工艺完成", 1]}
+        {"write": ["S07工艺完成", 0], "when": {"node": "S07工艺选择", "value": 1}},
+        {"sleep": 0.1, "when": {"node": "S07工艺选择", "value": 1}},
+        {"write": ["S07工艺完成", 1], "when": {"node": "S07工艺选择", "value": 1}}
+      ]
+    },
+    {
+      "name": "S07 参数写入后旋转到进料位",
+      "trigger": {
+        "node": "S07参数写入完成",
+        "value": true,
+        "edge": "rising"
+      },
+      "log_nodes": [
+        "S07工艺选择",
+        "S07上下料位置"
+      ],
+      "actions": [
+        {"write": ["S07工艺完成", 0], "when": {"node": "S07工艺选择", "value": 2}},
+        {"sleep": 0.1, "when": {"node": "S07工艺选择", "value": 2}},
+        {"write": ["S07工艺完成", 2], "when": {"node": "S07工艺选择", "value": 2}}
       ]
     }
   ]

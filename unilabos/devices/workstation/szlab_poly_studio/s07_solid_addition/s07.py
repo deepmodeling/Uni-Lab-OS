@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from unilabos.registry.decorators import action, device, not_action
 
+from .balance_history import DEFAULT_BALANCE_HISTORY_DIR, S07BalanceHistoryRecorder
 from .sensors import (
     NODE_ALLOW_PROCESS,
     NODE_BALANCE_READING,
@@ -46,19 +48,58 @@ class SZLabS07SolidAdditionDevice:
     def __init__(
         self,
         plc_device_id: str = "szlab_poly_plc",
-        process_timeout: float = 300.0,
         poll_interval: float = 0.2,
+        balance_poll_interval: float = 2.0,
+        balance_record_interval: float = 0.2,
+        balance_history_dir: str | None = None,
+        enable_balance_history: bool = True,
         *args,
         **kwargs,
     ):
         self.plc_device_id = plc_device_id
-        self.process_timeout = process_timeout
         self.poll_interval = poll_interval
+        self.balance_poll_interval = max(float(balance_poll_interval), float(poll_interval))
+        self.balance_record_interval = max(float(balance_record_interval), float(poll_interval))
+        self.balance_history_dir = Path(balance_history_dir or DEFAULT_BALANCE_HISTORY_DIR)
+        self.enable_balance_history = bool(enable_balance_history)
         self._plc_gateway: Any = None
+        self._balance_status_callback: Callable[[dict[str, Any]], None] | None = None
 
     @not_action
     def set_plc_gateway(self, plc_gateway) -> None:
         self._plc_gateway = plc_gateway
+
+    @not_action
+    def set_balance_status_callback(
+        self,
+        callback: Callable[[dict[str, Any]], None] | None,
+    ) -> None:
+        self._balance_status_callback = callback
+
+    @not_action
+    def _publish_balance_status(
+        self,
+        *,
+        value: float | None,
+        state: str,
+        message: str | None = None,
+    ) -> None:
+        if self._balance_status_callback is None:
+            return
+        payload: dict[str, Any] = {
+            "label": "S07 实时天平",
+            "value": value,
+            "unit": "g",
+            "state": state,
+            "updated_at": time.time(),
+        }
+        if message:
+            payload["message"] = message
+        try:
+            self._balance_status_callback(payload)
+        except Exception:
+            # 实时展示异常不能影响正在执行的注粉工艺。
+            pass
 
     @not_action
     def _plc(self):
@@ -75,19 +116,19 @@ class SZLabS07SolidAdditionDevice:
         self._plc().write_variable(node_name, value)
 
     @not_action
-    def _wait_plc_bool(self, node_name: str, expected: bool, timeout: float, description: str) -> bool:
-        return self._wait_plc_equal(node_name, expected, timeout, description)
+    def _wait_plc_bool(self, node_name: str, expected: bool, description: str) -> bool:
+        return self._wait_plc_equal(node_name, expected, description)
 
     @not_action
-    def _wait_plc_equal(self, node_name: str, expected: Any, timeout: float, description: str) -> bool:
+    def _wait_plc_equal(self, node_name: str, expected: Any, description: str) -> bool:
         plc = self._plc()
         if not hasattr(plc, "wait_variable_equal"):
             raise RuntimeError(f"{self.plc_device_id} 不支持 wait_variable_equal，S07 需要直接复用 plc.py 等待逻辑")
-        return bool(plc.wait_variable_equal(node_name, expected, timeout=timeout, interval=self.poll_interval))
+        return bool(plc.wait_variable_equal(node_name, expected, interval=self.poll_interval))
 
     @not_action
-    def _wait_process_complete(self, expected: int, timeout: float) -> bool:
-        return self._wait_plc_equal(NODE_PROCESS_COMPLETE, expected, timeout, "S07 工艺完成")
+    def _wait_process_complete(self, expected: int) -> bool:
+        return self._wait_plc_equal(NODE_PROCESS_COMPLETE, expected, "S07 工艺完成")
 
     @not_action
     def _reset_unilab_written_params(self) -> None:
@@ -108,71 +149,102 @@ class SZLabS07SolidAdditionDevice:
                 continue
 
     @not_action
-    def _run_s07_process(self, process_id: int, timeout: float) -> dict[str, Any]:
-        timeout = self.process_timeout if timeout is None else timeout
+    def _run_s07_process(self, process_id: int) -> dict[str, Any]:
         try:
-            if not self._wait_plc_bool(NODE_HOME, True, timeout, "S07 原点信号"):
-                return {"success": False, "message": "等待 S07 原点信号超时"}
-            if not self._wait_plc_bool(NODE_ALLOW_PROCESS, True, timeout, "S07 允许加工"):
-                return {"success": False, "message": "等待 S07 允许加工超时"}
+            if not self._wait_plc_bool(NODE_HOME, True, "S07 原点信号"):
+                return {"success": False, "message": "等待 S07 原点信号失败"}
+            if not self._wait_plc_bool(NODE_ALLOW_PROCESS, True, "S07 允许加工"):
+                return {"success": False, "message": "等待 S07 允许加工失败"}
             self._write_plc_variable(NODE_PROCESS_SELECT, process_id)
             self._write_plc_variable(NODE_PARAMS_WRITTEN, True)
-            if not self._wait_process_complete(process_id, timeout):
-                return {"success": False, "message": f"等待 S07 工艺完成超时（期望 {process_id}）"}
+            if not self._wait_process_complete(process_id):
+                return {"success": False, "message": f"等待 S07 工艺完成失败（期望 {process_id}）"}
             return {"success": True, "process_type": process_id, "status": {"process_complete": process_id}}
         finally:
             self._reset_unilab_written_params()
+            # 等待 PLC 确认上一轮已复位，避免下一轮误用残留的允许加工信号。
+            self._wait_process_complete(0)
 
     @not_action
-    def _run_dose_process_with_balance(self, timeout: float) -> dict[str, Any]:
-        timeout = self.process_timeout if timeout is None else timeout
-        balance_samples: list[dict[str, float]] = []
-        balance_read_errors: list[dict[str, Any]] = []
-        started = time.monotonic()
+    def _run_dose_process_with_balance(
+        self,
+        recorder: S07BalanceHistoryRecorder | None,
+    ) -> dict[str, Any]:
+        balance_reading: float | None = None
+        balance_sample_count = 0
         try:
-            if not self._wait_plc_bool(NODE_HOME, True, timeout, "S07 原点信号"):
-                return {"success": False, "message": "等待 S07 原点信号超时"}
-            if not self._wait_plc_bool(NODE_ALLOW_PROCESS, True, timeout, "S07 允许加工"):
-                return {"success": False, "message": "等待 S07 允许加工超时"}
+            if not self._wait_plc_bool(NODE_HOME, True, "S07 原点信号"):
+                return {"success": False, "message": "等待 S07 原点信号失败"}
+            if not self._wait_plc_bool(NODE_ALLOW_PROCESS, True, "S07 允许加工"):
+                return {"success": False, "message": "等待 S07 允许加工失败"}
             self._write_plc_variable(NODE_PROCESS_SELECT, PROCESS_DOSE_POWDER)
             self._write_plc_variable(NODE_PARAMS_WRITTEN, True)
             started = time.monotonic()
-            deadline = started + timeout
+            next_balance_record = started
+            next_balance_publish = started
             process_complete = 0
-            while time.monotonic() <= deadline:
-                elapsed = time.monotonic() - started
-                try:
-                    balance_samples.append(
-                        {
-                            "elapsed_s": round(elapsed, 3),
-                            "value": float(self._read_plc_variable(NODE_BALANCE_READING)),
-                        }
-                    )
-                except Exception as exc:
-                    balance_read_errors.append({"elapsed_s": round(elapsed, 3), "message": str(exc)})
+            while True:
                 process_complete = int(self._read_plc_variable(NODE_PROCESS_COMPLETE) or 0)
                 if process_complete == PROCESS_DOSE_POWDER:
                     break
+                now = time.monotonic()
+                if now >= next_balance_record:
+                    try:
+                        balance_reading = float(self._read_plc_variable(NODE_BALANCE_READING))
+                        balance_sample_count += 1
+                        if recorder is not None:
+                            try:
+                                recorder.record(balance_reading)
+                            except Exception:
+                                # 调试文件写入失败不能伪装成 PLC 天平读取失败。
+                                pass
+                        if now >= next_balance_publish:
+                            self._publish_balance_status(value=balance_reading, state="ok")
+                            next_balance_publish = now + self.balance_poll_interval
+                    except Exception as exc:
+                        if now >= next_balance_publish:
+                            self._publish_balance_status(
+                                value=balance_reading,
+                                state="error",
+                                message=f"读取暂时失败: {exc}",
+                            )
+                            next_balance_publish = now + self.balance_poll_interval
+                    next_balance_record = now + self.balance_record_interval
                 time.sleep(self.poll_interval)
-            else:
+            try:
+                balance_reading = float(self._read_plc_variable(NODE_BALANCE_READING))
+                balance_sample_count += 1
+                if recorder is not None:
+                    try:
+                        recorder.record(balance_reading)
+                    except Exception:
+                        pass
+                self._publish_balance_status(value=balance_reading, state="final")
+            except Exception as exc:
+                self._publish_balance_status(
+                    value=balance_reading,
+                    state="error",
+                    message=f"最终读数读取失败: {exc}",
+                )
                 return {
                     "success": False,
-                    "message": f"等待 S07 工艺完成超时（期望 {PROCESS_DOSE_POWDER}）",
+                    "status": "verification_failed",
+                    "message": f"S07 注粉已完成，但最终天平读数读取失败: {exc}",
                     "process_type": PROCESS_DOSE_POWDER,
-                    "balance_samples": balance_samples,
-                    "balance_read_errors": balance_read_errors,
+                    "balance_reading": balance_reading,
+                    "balance_sample_count": balance_sample_count,
                 }
             return {
                 "success": True,
                 "process_type": PROCESS_DOSE_POWDER,
                 "status": {"process_complete": process_complete},
-                "balance_samples": balance_samples,
-                "balance_read_errors": balance_read_errors,
-                "balance_sample_count": len(balance_samples),
-                "final_balance": balance_samples[-1]["value"] if balance_samples else None,
+                "balance_reading": balance_reading,
+                "balance_sample_count": balance_sample_count,
             }
         finally:
             self._reset_unilab_written_params()
+            # 等待 PLC 确认上一轮已复位，避免下一轮误用残留的允许加工信号。
+            self._wait_process_complete(0)
 
     @not_action
     def _read_qr_codes(self) -> dict[int, list[int]]:
@@ -208,8 +280,8 @@ class SZLabS07SolidAdditionDevice:
         return dict(recipe.get("coarse_params", {})), dict(recipe.get("fine_params", {}))
 
     @action(auto_prefix=True, description="S07 粉罐扫码盘点")
-    def scan_powder_cartridges(self, timeout: float = 300.0) -> dict[str, Any]:
-        result = self._run_s07_process(PROCESS_SCAN_CARTRIDGES, timeout)
+    def scan_powder_cartridges(self) -> dict[str, Any]:
+        result = self._run_s07_process(PROCESS_SCAN_CARTRIDGES)
         if result.get("success"):
             result["qr_codes"] = self._read_qr_codes()
         return result
@@ -227,7 +299,7 @@ class SZLabS07SolidAdditionDevice:
         }
 
     @action(auto_prefix=True, description="S07 替换粉罐旋转到进料位")
-    def rotate_powder_cartridge_to_feed(self, position: int, timeout: float = 300.0) -> dict[str, Any]:
+    def rotate_powder_cartridge_to_feed(self, position: int) -> dict[str, Any]:
         if position not in POSITION_RANGE:
             return {"success": False, "message": "position 必须在 1-10 范围内"}
         try:
@@ -235,7 +307,7 @@ class SZLabS07SolidAdditionDevice:
         except Exception:
             self._reset_unilab_written_params()
             raise
-        result = self._run_s07_process(PROCESS_ROTATE_TO_FEED, timeout)
+        result = self._run_s07_process(PROCESS_ROTATE_TO_FEED)
         result["position"] = position
         return result
 
@@ -245,7 +317,6 @@ class SZLabS07SolidAdditionDevice:
         coarse_position: int,
         fine_position: int,
         target_weight: float,
-        timeout: float = 300.0,
         params_json: str | None = None,
         recipe_name: str = "default",
     ) -> dict[str, Any]:
@@ -261,7 +332,48 @@ class SZLabS07SolidAdditionDevice:
         except Exception:
             self._reset_unilab_written_params()
             raise
-        result = self._run_dose_process_with_balance(timeout)
+        recorder: S07BalanceHistoryRecorder | None = None
+        history_error: str | None = None
+        if self.enable_balance_history:
+            try:
+                recorder = S07BalanceHistoryRecorder(
+                    output_dir=self.balance_history_dir,
+                    target_weight=float(target_weight),
+                    recipe_name=recipe_name,
+                    coarse_position=coarse_position,
+                    fine_position=fine_position,
+                )
+            except Exception as exc:
+                # 调试记录失败不能阻断真实设备动作。
+                history_error = str(exc)
+        try:
+            result = self._run_dose_process_with_balance(recorder=recorder)
+        except Exception:
+            if recorder is not None:
+                try:
+                    recorder.finish(status="error")
+                except Exception:
+                    pass
+            raise
+        if recorder is not None:
+            try:
+                result.update(
+                    recorder.finish(
+                        status="success" if result.get("success") else "failed",
+                        final_weight=result.get("balance_reading"),
+                    )
+                )
+            except Exception as exc:
+                history_error = str(exc)
+        if history_error:
+            result["balance_history_error"] = history_error
         result["target_weight"] = target_weight
         result["recipe_name"] = recipe_name
+        if result.get("success"):
+            deviation = float(result["balance_reading"]) - float(target_weight)
+            result["display_message"] = (
+                f"S07 注粉完成：目标 {float(target_weight):.3f} g，"
+                f"最终 {float(result['balance_reading']):.3f} g，"
+                f"偏差 {deviation:+.3f} g"
+            )
         return result

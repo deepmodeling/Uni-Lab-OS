@@ -98,7 +98,6 @@ def start_virtual_opcua_stack(config: dict[str, Any]) -> tuple[Any, Any]:
 def run_photoshotting_debug(
     *,
     opcua_url: str,
-    timeout: float,
     csv_path: str | None,
     save_dir: str,
     action: Literal["take_photo", "take_dual_view_photos"],
@@ -122,7 +121,6 @@ def run_photoshotting_debug(
     gateway = DirectOpcUaGateway(opcua_url, opcua_node_id_map) if opcua_node_id_map else None
     device = SzlabMixerPhotoShottingDevice(
         url=opcua_url,
-        timeout=timeout,
         csv_path=csv_path,
         save_dir=save_dir,
         use_plc_gateway=gateway is not None,
@@ -166,7 +164,6 @@ def _run_from_config(config_path: Path, *, use_production: bool) -> dict[str, An
     print(f"Raw action config: {action_cfg}")
     return run_photoshotting_debug(
         opcua_url=config["resolved_opcua_url"],
-        timeout=float(device_cfg["timeout"]),
         csv_path=(
             str(device_cfg.get("csv_path", "szlab_plc_0623.csv"))
             if use_production

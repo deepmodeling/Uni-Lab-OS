@@ -19,9 +19,7 @@ OPCUA_URL="${OPCUA_URL:-opc.tcp://192.168.1.10:4840}"
 if [[ "$OPCUA_URL" != *"://"* ]]; then
   OPCUA_URL="opc.tcp://$OPCUA_URL"
 fi
-TIMEOUT="${TIMEOUT:-300}"
 WRITE_DONE_HOLD_SECONDS="${WRITE_DONE_HOLD_SECONDS:-2.0}"
-WRITE_READBACK_TIMEOUT="${WRITE_READBACK_TIMEOUT:-5.0}"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/unilabos_data/szlab_poly_studio/robot_step_logs}"
 
 # 默认跑 S03 的第一个位置；行列工位中 position=1 会映射为 1-1。
@@ -59,7 +57,6 @@ usage() {
   SKIP_SENSOR_PRECHECK=1      跳过 sensor 检查，默认关闭
   SKIP_RESET_AFTER_RUN=1      完成后保留任务号/Sxx参数；默认完成后全部清零
   WRITE_DONE_HOLD_SECONDS=2   Robot_任务写入完成=True 的保持秒数，默认 2
-  WRITE_READBACK_TIMEOUT=5    等待任务号/Sxx参数读回非 0 的秒数，默认 5
 
 示例:
   DRY_RUN=1 ./robot_arm_step_test.sh
@@ -197,12 +194,12 @@ PY
 
 write_graph() {
   local graph_file="$1"
-  "$PYTHON" - "$graph_file" "$OPCUA_URL" "$CSV_PATH" "$TIMEOUT" "$WRITE_DONE_HOLD_SECONDS" "$WRITE_READBACK_TIMEOUT" <<'PY'
+  "$PYTHON" - "$graph_file" "$OPCUA_URL" "$CSV_PATH" "$WRITE_DONE_HOLD_SECONDS" <<'PY'
 import csv
 import json
 import sys
 
-graph_file, opcua_url, csv_path, timeout, write_done_hold_seconds, write_readback_timeout = sys.argv[1:7]
+graph_file, opcua_url, csv_path, write_done_hold_seconds = sys.argv[1:5]
 
 def load_opcua_node_id_map(csv_path):
     node_id_map = {}
@@ -236,7 +233,6 @@ graph = {
             "config": {
                 "url": opcua_url,
                 "csv_path": csv_path,
-                "timeout": float(timeout),
                 "opcua_node_id_map": load_opcua_node_id_map(csv_path),
             },
             "data": {},
@@ -251,9 +247,7 @@ graph = {
             "position": {"x": 420, "y": 0, "z": 0},
             "config": {
                 "plc_device_id": "szlab_poly_plc",
-                "timeout": float(timeout),
                 "write_done_hold_seconds": float(write_done_hold_seconds),
-                "write_readback_timeout": float(write_readback_timeout),
             },
             "data": {},
         },
@@ -339,7 +333,6 @@ run_step() {
   echo "params: $params_json"
   echo "跳过 Robot前置变量: $SKIP_ROBOT_PRECHECK_VARIABLES"
   echo "Robot_任务写入完成保持秒数: $WRITE_DONE_HOLD_SECONDS"
-  echo "任务参数读回等待秒数: $WRITE_READBACK_TIMEOUT"
   echo "完成后清除任务参数: $([[ "$SKIP_RESET_AFTER_RUN" == "1" ]] && echo no || echo yes)"
   echo "sensor 检查: $([[ "$SKIP_SENSOR_PRECHECK" == "1" ]] && echo skipped || echo enabled)"
   echo "log: $log_file"
@@ -365,7 +358,6 @@ run_step() {
     --workflow "$workflow_file" \
     --url "$OPCUA_URL" \
     --csv "$CSV_PATH" \
-    --timeout "$TIMEOUT" \
     --no-subscription \
     "${ignore_token_time_drift_args[@]}" \
     "${clear_pc_to_plc_args[@]}" \

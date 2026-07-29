@@ -62,8 +62,7 @@
               "coarse_position": 1,
               "fine_position": 1,
               "target_weight": 1.0,
-              "recipe_name": "default",
-              "timeout": 300.0
+              "recipe_name": "default"
             }
           }
         },

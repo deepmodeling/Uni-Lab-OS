@@ -27,7 +27,6 @@ from tests.szlab_poly_studio.pseudo_clients.s09_pipetting import PseudoSzlabS09O
 def make_pipetting_device(client: PseudoSzlabS09OpcUaClient | None = None) -> SzlabMixerPipettingStationDevice:
     return SzlabMixerPipettingStationDevice(
         url="opc.tcp://127.0.0.1:0/unused",
-        timeout=0.05,
         opcua_client=client or PseudoSzlabS09OpcUaClient(),
     )
 
@@ -160,13 +159,12 @@ def test_s09_run_process_reports_verification_failed_when_material_disappears():
             super().__init__({"S09液体瓶1剩余液量": 100.0})
             self.sensor_wait_count = 0
 
-        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
+        def wait_sensor_conditions(self, conditions, interval=0.2, context=None):
             self.sensor_wait_count += 1
             if self.sensor_wait_count == 2:
                 self.values["传感器状态_上位机[4].NO[7]"] = False
             return super().wait_sensor_conditions(
                 conditions,
-                timeout=timeout,
                 interval=interval,
                 context=context,
             )
@@ -500,7 +498,7 @@ def test_s09_read_allow_process_returns_allow_signal():
     assert client.reads == ["S09允许加工"]
 
 
-def test_s09_run_process_require_allow_waits_and_blocks_before_writing_params_on_timeout():
+def test_s09_run_process_require_allow_blocks_after_wait_failure():
     client = PseudoSzlabS09OpcUaClient(
         {"S09允许加工": False},
         wait_results={("S09允许加工", True): False},
@@ -517,7 +515,7 @@ def test_s09_run_process_require_allow_waits_and_blocks_before_writing_params_on
     )
 
     assert result["success"] is False
-    assert result["message"] == "等待 S09 允许加工超时"
+    assert result["message"] == "等待 S09 允许加工失败"
     assert result["logs"] == [
         {
             "message": "等待 S09 允许加工信号",
@@ -534,13 +532,13 @@ def test_s09_add_liquid_release_tip_waits_allow_before_writing_process():
             super().__init__({"S09允许加工": True, "S09液体瓶1剩余液量": 10.0})
             self.allow_wait_count = 0
 
-        def wait_equal(self, name: str, expected, timeout: float = 300.0, interval: float = 0.2) -> bool:
+        def wait_equal(self, name: str, expected, interval: float = 0.2) -> bool:
             if (name, expected) == ("S09允许加工", True):
                 self.allow_wait_count += 1
                 self.wait_equal_calls.append((name, expected))
                 self.events.append(("wait_equal", name, expected))
                 return self.allow_wait_count < 4
-            return super().wait_equal(name, expected, timeout=timeout, interval=interval)
+            return super().wait_equal(name, expected, interval=interval)
 
     client = ReleaseTipBlockedClient()
     device = make_pipetting_device(client)
@@ -557,7 +555,7 @@ def test_s09_add_liquid_release_tip_waits_allow_before_writing_process():
     )
 
     assert result["success"] is False
-    assert result["message"] == "等待 S09 允许加工超时"
+    assert result["message"] == "等待 S09 允许加工失败"
     assert [step.get("data", {}).get("process") for step in result["steps"] if step.get("success")] == [5, 7, 8]
     assert client.wait_equal_calls[-1] == ("S09允许加工", True)
     assert client.allow_wait_count == 4
@@ -752,8 +750,8 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
             if name == "任务号" and value == 19:
                 self.task_submitted = True
 
-        def wait_sensor_conditions(self, conditions, timeout=300.0, interval=0.2, context=None):
-            del timeout, interval, context
+        def wait_sensor_conditions(self, conditions, interval=0.2, context=None):
+            del interval, context
             if self.task_submitted:
                 self.values.update(conditions)
             values = {
@@ -763,7 +761,7 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
             return all(values[name] == expected for name, expected in conditions.items()), values
 
     gateway = FakePlcGateway()
-    robot = SzlabMixerRobotDevice(timeout=3.0, busy_start_timeout=3.0)
+    robot = SzlabMixerRobotDevice()
     robot.set_plc_gateway(gateway)
 
     result = robot.submit_place_to_s09(product_type=1, position=2)

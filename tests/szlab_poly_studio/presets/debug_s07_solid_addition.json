@@ -10,7 +10,6 @@
     "graph": "__generated__",
     "url": "opc.tcp://remote.example:4840",
     "csv": "s07_nodes.csv",
-    "timeout": 300,
     "no_subscription": true,
     "show_csv": false
   },
@@ -30,7 +29,6 @@
         "config": {
           "url": "${opcua_url}",
           "csv_path": "${csv_path}",
-          "timeout": 300.0,
           "no_subscription": true
         },
         "data": {}
@@ -45,7 +43,6 @@
         "position": {"x": 120, "y": 0, "z": 0},
         "config": {
           "plc_device_id": "szlab_poly_plc",
-          "process_timeout": 300.0,
           "poll_interval": 0.2
         },
         "data": {}

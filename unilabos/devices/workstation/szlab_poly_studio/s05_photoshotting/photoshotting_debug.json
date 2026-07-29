@@ -9,7 +9,6 @@
     "endpoint": "opc.tcp://127.0.0.1:48505/"
   },
   "device": {
-    "timeout": 300.0,
     "csv_path": "s05_photoshotting/photoshotting_nodes.csv",
     "save_dir": "unilabos_data/szlab_poly_studio/s05_photoshotting/photos",
     "opcua_node_id_map": {

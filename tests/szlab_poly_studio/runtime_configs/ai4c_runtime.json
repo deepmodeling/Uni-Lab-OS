@@ -8,8 +8,7 @@
     "target_config": {
       "plc_device_id": "AI4C_plc"
     },
-    "direct_plc_command_method": "_call_plc_command",
-    "timeout_config_key": "plc_action_timeout"
+    "direct_plc_command_method": "_call_plc_command"
   },
   "opc_snapshot": {
     "common_variables": [

@@ -71,8 +71,8 @@ class PseudoSzlabS09OpcUaClient:
         self.write(name, reset_value)
         self.pulses.append(name)
 
-    def wait_equal(self, name: str, expected: Any, timeout: float = 300.0, interval: float = 0.2) -> bool:
-        del timeout, interval
+    def wait_equal(self, name: str, expected: Any, interval: float = 0.2) -> bool:
+        del interval
         self.wait_equal_calls.append((name, expected))
         self.events.append(("wait_equal", name, expected))
         if (name, expected) in self.wait_results:
@@ -83,11 +83,10 @@ class PseudoSzlabS09OpcUaClient:
     def wait_sensor_conditions(
         self,
         conditions: dict[str, bool],
-        timeout: float = 300.0,
         interval: float = 0.2,
         context: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
-        del timeout, interval, context
+        del interval, context
         values = {name: self.read(name) for name in conditions}
         return all(values[name] == expected for name, expected in conditions.items()), values
 

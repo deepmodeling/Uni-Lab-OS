@@ -91,6 +91,7 @@ import {
   isTaskWaitingStatus,
   renameTaskTemplate,
   resolveTaskTemplateNameDraft,
+  resolveTemplateNodes,
   taskLocalWaitingReason,
   updateScheduledTemplateDraft,
 } from './taskOrchestration';
@@ -1036,6 +1037,14 @@ function App() {
   );
   const nodesById = useMemo(
     () => new Map(nodes.map((node) => [node.id, node])),
+    [nodes],
+  );
+  const taskNodeDescriptors = useMemo(
+    () => nodes.map((node) => ({
+      id: node.id,
+      deviceId: node.data.deviceId,
+      method: node.data.method,
+    })),
     [nodes],
   );
   const selectedTaskTemplate = useMemo(
@@ -3609,8 +3618,8 @@ function App() {
               </div>
               <div className={`task-template-list${taskTemplateDrawerTab === 'templates' ? ' active' : ''}`}>
                 {taskTemplates.map((template, index) => {
-                  const templateNodes = template.nodeIds
-                    .map((nodeId) => nodesById.get(nodeId))
+                  const templateNodes = resolveTemplateNodes(template.nodeIds, taskNodeDescriptors)
+                    .map((resolved) => (resolved.node ? nodesById.get(resolved.node.id) : null))
                     .filter(Boolean) as Node<ActionNodeData>[];
                   const deleteDisabled = !canDeleteTaskTemplate(template.id, taskInstances, {
                     schedulerBusy: isSchedulerRunning
@@ -3741,7 +3750,8 @@ function App() {
                   <div className="task-detail-section">
                     <strong>子节点</strong>
                     {selectedTaskTemplate.nodeIds.map((nodeId, index) => {
-                      const node = nodesById.get(nodeId);
+                      const resolved = resolveTemplateNodes([nodeId], taskNodeDescriptors)[0];
+                      const node = resolved?.node ? nodesById.get(resolved.node.id) : null;
                       return (
                         <div className="task-detail-node" key={nodeId}>
                           <b>{String(index + 1).padStart(2, '0')}</b>

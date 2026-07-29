@@ -31,6 +31,49 @@ export type TaskNodeDescriptor = {
   opcVariables?: string[];
 };
 
+export type ResolvedTemplateNode<T extends TaskNodeDescriptor = TaskNodeDescriptor> = {
+  templateNodeId: string;
+  node: T | null;
+};
+
+export function inferMethodFromTemplateNodeId(nodeId: string) {
+  const match = /^node_\d+_(.+)$/.exec(nodeId.trim());
+  return match?.[1] || null;
+}
+
+export function resolveTemplateNodes<T extends TaskNodeDescriptor>(
+  nodeIds: string[],
+  nodes: T[],
+): ResolvedTemplateNode<T>[] {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesByMethod = new Map<string, T[]>();
+  for (const node of nodes) {
+    const method = node.method?.trim();
+    if (!method) continue;
+    const bucket = nodesByMethod.get(method) || [];
+    bucket.push(node);
+    nodesByMethod.set(method, bucket);
+  }
+
+  const usedNodeIds = new Set<string>();
+  return nodeIds.map((templateNodeId) => {
+    const exact = nodesById.get(templateNodeId);
+    if (exact && !usedNodeIds.has(exact.id)) {
+      usedNodeIds.add(exact.id);
+      return { templateNodeId, node: exact };
+    }
+
+    const method = inferMethodFromTemplateNodeId(templateNodeId) || templateNodeId;
+    const candidates = (nodesByMethod.get(method) || []).filter((node) => !usedNodeIds.has(node.id));
+    if (candidates.length) {
+      usedNodeIds.add(candidates[0].id);
+      return { templateNodeId, node: candidates[0] };
+    }
+
+    return { templateNodeId, node: null };
+  });
+}
+
 export type TaskGanttEntry = {
   id: string;
   instanceId: string;
@@ -161,10 +204,11 @@ export function annotateTaskGanttEntries<T extends Omit<TaskGanttEntry, 'templat
   nodes: TaskNodeDescriptor[],
 ) {
   const templatesById = new Map(templates.map((template) => [template.id, template]));
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
   return entries.map((entry) => {
     const template = templatesById.get(entry.templateId);
-    const templateNodes = template?.nodeIds.map((nodeId) => nodesById.get(nodeId)) || [];
+    const templateNodes = template
+      ? resolveTemplateNodes(template.nodeIds, nodes).map((resolved) => resolved.node)
+      : [];
     return {
       ...entry,
       involvedDeviceIds: Array.from(new Set(
@@ -313,10 +357,9 @@ export function taskTemplateDeviceIds(
   template: Pick<TaskTemplateModel, 'nodeIds'>,
   nodes: TaskNodeDescriptor[],
 ) {
-  const deviceIdByNodeId = new Map(nodes.map((node) => [node.id, node.deviceId]));
   return Array.from(new Set(
-    template.nodeIds
-      .map((nodeId) => deviceIdByNodeId.get(nodeId))
+    resolveTemplateNodes(template.nodeIds, nodes)
+      .map((resolved) => resolved.node?.deviceId)
       .filter((deviceId): deviceId is string => Boolean(deviceId)),
   ));
 }

@@ -1700,7 +1700,7 @@ def test_missing_action_method_is_unsupported_without_entering_future():
     assert coordinator._in_flight == {}
 
 
-def test_same_device_instances_are_submitted_in_one_cycle():
+def test_same_device_instances_claim_only_one_action_per_cycle():
     class SharedDevice:
         def custom_action_a(self):
             return {"success": True}
@@ -1762,14 +1762,87 @@ def test_same_device_instances_are_submitted_in_one_cycle():
         workflow_nodes=nodes,
     )
     deadline = time.monotonic() + 1
-    while len(started) < 2 and time.monotonic() < deadline:
+    while len(started) < 1 and time.monotonic() < deadline:
         time.sleep(0.005)
 
-    assert result["claimed"] == 2
-    assert len(client.claims) == 2
+    assert result["claimed"] == 1
+    assert len(client.claims) == 1
     assert all(claim["resources"] == [] for claim in client.claims)
-    assert set(started) == {"custom-node-a", "custom-node-b"}
+    assert len(started) == 1
+    assert started[0] in {"custom-node-a", "custom-node-b"}
     release.set()
+    coordinator.shutdown()
+
+
+def test_same_device_action_can_be_claimed_after_prior_action_finishes():
+    class SharedDevice:
+        def custom_action_a(self):
+            return {"success": True}
+
+        def custom_action_b(self):
+            return {"success": True}
+
+    instances = [
+        deepcopy(_workspace_response()["workspace"]["task_instances"][0]),
+        {
+            **deepcopy(_workspace_response()["workspace"]["task_instances"][0]),
+            "id": "instance-2",
+            "template_id": "template-2",
+        },
+    ]
+    response = _workspace_response(
+        instances=instances,
+        node_ids=["custom-node-a"],
+    )
+    response["workspace"]["templates"].append(
+        {"id": "template-2", "node_ids": ["custom-node-b"]}
+    )
+    client = FakeTaskClient(response)
+    release = threading.Event()
+
+    def runner(_node, _devices, _action_callable):
+        release.wait(timeout=2)
+        return [{"success": True}]
+
+    coordinator = TaskExecutionCoordinator(
+        task_client=client,
+        node_runner=runner,
+        device_provider=lambda: {"shared-device": SharedDevice()},
+        max_workers=2,
+    )
+    nodes = [
+        WorkflowNode(
+            uuid="custom-node-a",
+            name="ignored-a",
+            device_name="shared-device",
+            param={},
+            method="custom_action_a",
+            legacy_route_compatible=False,
+        ),
+        WorkflowNode(
+            uuid="custom-node-b",
+            name="ignored-b",
+            device_name="shared-device",
+            param={},
+            method="custom_action_b",
+            legacy_route_compatible=False,
+        ),
+    ]
+
+    first = coordinator.cycle(
+        workflow_path=WORKFLOW_PATH,
+        workflow_nodes=nodes,
+    )
+
+    assert first["claimed"] == 1
+    release.set()
+    second = _harvest(coordinator, nodes)
+
+    assert second["claimed"] == 1
+    assert [claim["instance_id"] for claim in client.claims] == [
+        "instance-1",
+        "instance-2",
+    ]
     coordinator.shutdown()
 
 

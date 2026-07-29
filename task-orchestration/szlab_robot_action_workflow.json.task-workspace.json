@@ -1,5 +1,5 @@
 {
-  "version": 92603,
+  "version": 93193,
   "workspace": {
     "workflow_path": "szlab_robot_action_workflow.json",
     "templates": [
@@ -28,17 +28,52 @@
         "resources": [],
         "input_triggers": [],
         "output_triggers": []
+      },
+      {
+        "id": "task_2_e0f91c4854964d1993a139d8dd4754c0",
+        "name": "S03 取容器",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "w01_pick_beaker_s03"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_3_97fe3d38cfcb4d269674092da459d305",
+        "name": "S072 放料 等 2 步",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "w01_place_beaker_s072",
+          "w01_dose_powder_s07"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_1_51aabcdd8a474673bcf46d24a9b517f9",
+        "name": "S03 取容器 等 2 步",
+        "workflow_path": "szlab_robot_action_workflow.json",
+        "node_ids": [
+          "w01_pick_beaker_s03",
+          "w01_place_beaker_s072"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
       }
     ],
     "task_instances": [
       {
-        "id": "40410f2af2a64e2a9dca9e5f4310b6d9",
-        "template_id": "szlab-e2e-s07",
-        "status": "waiting",
+        "id": "9c7a24bd599049ab8cf6aeec930446a6",
+        "template_id": "task_1_51aabcdd8a474673bcf46d24a9b517f9",
+        "status": "pending",
         "sample_id": "Sample A",
         "order": 0,
         "payload": {},
-        "not_before": 1785308464111,
+        "not_before": 1785312897804,
         "started_at": null,
         "finished_at": null,
         "execution_state": {
@@ -49,47 +84,13 @@
         }
       },
       {
-        "id": "59a15f5b96004b3089b910d5fe3fed08",
-        "template_id": "szlab-e2e-s06",
-        "status": "waiting",
-        "sample_id": "Sample A",
-        "order": 1,
-        "payload": {},
-        "not_before": 1785308464111,
-        "started_at": null,
-        "finished_at": null,
-        "execution_state": {
-          "cursor": 0,
-          "records": [],
-          "active_execution_id": null,
-          "active_node_id": null
-        }
-      },
-      {
-        "id": "bf9fdf0a6de84cab98ee6dd2ea0e95d8",
-        "template_id": "szlab-e2e-s07",
-        "status": "waiting",
+        "id": "f6d25fcd75b84b83914506a1fe4b8a4b",
+        "template_id": "task_1_51aabcdd8a474673bcf46d24a9b517f9",
+        "status": "pending",
         "sample_id": "Sample B",
         "order": 0,
         "payload": {},
-        "not_before": 1785308465111,
-        "started_at": null,
-        "finished_at": null,
-        "execution_state": {
-          "cursor": 0,
-          "records": [],
-          "active_execution_id": null,
-          "active_node_id": null
-        }
-      },
-      {
-        "id": "e85308ce95274cefb0b211fb4cb5ec1f",
-        "template_id": "szlab-e2e-s06",
-        "status": "waiting",
-        "sample_id": "Sample B",
-        "order": 1,
-        "payload": {},
-        "not_before": 1785308465111,
+        "not_before": 1785312898804,
         "started_at": null,
         "finished_at": null,
         "execution_state": {
@@ -1408,49 +1409,317 @@
             "27364a960ab54c29a3a98d85094cbf87"
           ]
         }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "df5e580e9a1c449cabe81edd49197bc1",
+        "timestamp": 1785309339716,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92603",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "szlab-e2e-s06"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "ca6e1dff374c4dbaa058f3637232fbb5",
+        "timestamp": 1785309340223,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92604",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "szlab-e2e-s06",
+            "szlab-e2e-s07"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "956f69e9a86c451cbbee9041fe7d2147",
+        "timestamp": 1785309343260,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/92605",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "40410f2af2a64e2a9dca9e5f4310b6d9",
+            "59a15f5b96004b3089b910d5fe3fed08",
+            "bf9fdf0a6de84cab98ee6dd2ea0e95d8",
+            "e85308ce95274cefb0b211fb4cb5ec1f"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "e2dfb2c9b84444b78970b6f4949b87b9",
+        "timestamp": 1785309386646,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92608",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "szlab-e2e-s07"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "b81fc8409eee40cb86443c6fc030987b",
+        "timestamp": 1785309387379,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92609",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": []
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "2f9adec5d59e4d2897ec117334ea01b8",
+        "timestamp": 1785309388256,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92610",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_2_e0f91c4854964d1993a139d8dd4754c0"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "941a8c15521c4adf9ff870a166e88e65",
+        "timestamp": 1785309391548,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/92612",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "e238bbd5bde44baba70bbc2f129ea16b",
+            "8e743baf64eb416e9f1eda3bf9d3469a",
+            "59fe1dc96f314b549143e6c393a32cb0",
+            "85c0d133fb824faaac00e715b9936778",
+            "b994f16d5c1c41dfb2cc0f02b7534739",
+            "164129d8f9c84b4cb0242ce46d393fef",
+            "3bb1dc72c26d40ef9dd6ff166cdc651e",
+            "d23af07e3fe747cd86b82cb77b4cbb55",
+            "f5cfa45aa857453c9f68efeefc7ad79a"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "eff4afae8e754265af575a0732b91e56",
+        "timestamp": 1785309396901,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92614",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_2_e0f91c4854964d1993a139d8dd4754c0",
+            "szlab-e2e-s06"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "1da873f9634d407bb27a60ec4cbe86ea",
+        "timestamp": 1785309397613,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92615",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_2_e0f91c4854964d1993a139d8dd4754c0",
+            "szlab-e2e-s06",
+            "szlab-e2e-s07"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "c73fd39e5aec429ca91e353abe94c2a7",
+        "timestamp": 1785309402623,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92616",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_2_e0f91c4854964d1993a139d8dd4754c0",
+            "szlab-e2e-s06"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "90b148377060420cae49440f711263eb",
+        "timestamp": 1785309402988,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92617",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_2_e0f91c4854964d1993a139d8dd4754c0"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "f38bf047c4de436ca26a454da7c94736",
+        "timestamp": 1785309403856,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92618",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": []
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "0ec56ac1a44045469b822a8de89cf540",
+        "timestamp": 1785309435212,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92620",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_3_97fe3d38cfcb4d269674092da459d305"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "07430189599140efbcbb660e58b8eff9",
+        "timestamp": 1785309441718,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/92621",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "7dce98d690454bbcb317a5b6c02ec950",
+            "7aec52f8282349909a0098f3b4e531c7",
+            "3746da85847b4c278654634469f1005f"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "cf74a0e4c8ae4c90b23987a73fb30f68",
+        "timestamp": 1785312672564,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92623",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": []
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "ea1624399d0a4d9c9b23a8fbac64232c",
+        "timestamp": 1785312673071,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92624",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_3_97fe3d38cfcb4d269674092da459d305"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "f4b95a597be646a98b6769b141b5e0b0",
+        "timestamp": 1785312702210,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92626",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": []
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "d10f002812ba4de58163e1bea586b58e",
+        "timestamp": 1785312702924,
+        "idempotency_key": "szlab_robot_action_workflow.json/scheduled-templates/92627",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_1_51aabcdd8a474673bcf46d24a9b517f9"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "6f0c23028c81463d86b130ea5799c827",
+        "timestamp": 1785312705131,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/92628",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "dbe3639919984dc69103b58afdb03e44",
+            "c46d0153b39d48c08e09adc87531f42f",
+            "18a05587fb424fa9b0baf3d0b0f3159c"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "1dc220dfa7f84d8f907c5a9b92077386",
+        "timestamp": 1785312878879,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/93174",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "1d8f8e1878c3488d92a493df816ef29a",
+            "fcb9ff6d30dd47a38ab2cb6f4c139435"
+          ]
+        }
+      },
+      {
+        "kind": "instances_cleared",
+        "id": "9c6d79a75e7f43e2a61fbeebbad74e89",
+        "timestamp": 1785312896597,
+        "idempotency_key": "szlab_robot_action_workflow.json/instances/clear/93187",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_instance_ids": [
+            "b5ae4be1f95d46b394592051076b466b",
+            "76402e70356c43b590c8b016d8e29ae9"
+          ]
+        }
       }
     ],
     "scheduled_template_ids": [
-      "szlab-e2e-s07",
-      "szlab-e2e-s06"
+      "task_1_51aabcdd8a474673bcf46d24a9b517f9"
     ],
     "scheduler_paused": true,
     "dynamic_resource_leases": [],
     "pause_reason": null,
     "schedule_entries": [
       {
-        "instance_id": "40410f2af2a64e2a9dca9e5f4310b6d9",
-        "template_id": "szlab-e2e-s07",
+        "instance_id": "9c7a24bd599049ab8cf6aeec930446a6",
+        "template_id": "task_1_51aabcdd8a474673bcf46d24a9b517f9",
         "sample_id": "Sample A",
-        "start_at": 1785308464111,
-        "end_at": 1785308509111,
+        "start_at": 1785312903790,
+        "end_at": 1785312933790,
         "resources": [],
         "state": "planned"
       },
       {
-        "instance_id": "bf9fdf0a6de84cab98ee6dd2ea0e95d8",
-        "template_id": "szlab-e2e-s07",
+        "instance_id": "f6d25fcd75b84b83914506a1fe4b8a4b",
+        "template_id": "task_1_51aabcdd8a474673bcf46d24a9b517f9",
         "sample_id": "Sample B",
-        "start_at": 1785308465111,
-        "end_at": 1785308510111,
-        "resources": [],
-        "state": "planned"
-      },
-      {
-        "instance_id": "59a15f5b96004b3089b910d5fe3fed08",
-        "template_id": "szlab-e2e-s06",
-        "sample_id": "Sample A",
-        "start_at": 1785308509111,
-        "end_at": 1785308554111,
-        "resources": [],
-        "state": "planned"
-      },
-      {
-        "instance_id": "e85308ce95274cefb0b211fb4cb5ec1f",
-        "template_id": "szlab-e2e-s06",
-        "sample_id": "Sample B",
-        "start_at": 1785308510111,
-        "end_at": 1785308555111,
+        "start_at": 1785312903790,
+        "end_at": 1785312933790,
         "resources": [],
         "state": "planned"
       }

@@ -3,6 +3,7 @@ import './taskSchedulerBench.css';
 import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import type { TaskLogCategory, TaskLogLine } from './taskLogSession';
+import { resolveTemplateNodes } from './taskOrchestration';
 
 type Template = { id: string; name: string; nodeIds: string[] };
 type Task = {
@@ -27,6 +28,7 @@ type ActionNode = {
     max?: number;
   }>;
 };
+type ResolvedActionNode = ActionNode & { templateNodeId: string };
 
 type Props = {
   templates: Template[];
@@ -152,10 +154,10 @@ export function TaskSchedulerBench(props: Props) {
   const sampleNames = [...new Set(props.tasks.map((task) => task.sample))];
   const visibleLogLines = props.logLines.filter((line) => logFilter === 'all' || line.category === logFilter);
   const editingTemplate = props.templates.find((template) => template.id === editingTask?.templateId);
-  const editingNodes = editingTemplate
-    ? editingTemplate.nodeIds
-      .map((nodeId) => props.actionNodes.find((node) => node.id === nodeId))
-      .filter(Boolean) as ActionNode[]
+  const editingNodes: ResolvedActionNode[] = editingTemplate
+    ? resolveTemplateNodes(editingTemplate.nodeIds, props.actionNodes)
+      .filter((entry): entry is { templateNodeId: string; node: ActionNode } => Boolean(entry.node))
+      .map((entry) => ({ ...entry.node, templateNodeId: entry.templateNodeId }))
     : [];
   const parametersEditable = editingTask?.status === 'waiting' || editingTask?.status === 'pending';
 
@@ -309,12 +311,12 @@ export function TaskSchedulerBench(props: Props) {
             </header>
             <div className="scheduler-bench__parameter-body">
               {editingNodes.map((node, index) => {
-                const values = { ...node.params, ...parameterDraft[node.id] };
+                const values = { ...node.params, ...parameterDraft[node.templateNodeId] };
                 const specs: NonNullable<ActionNode['paramSpecs']> = node.paramSpecs?.filter((spec) => spec.name)
                   || Object.keys(values).map((name) => ({ name }));
-                return <section className="scheduler-bench__parameter-group" key={node.id}>
+                return <section className="scheduler-bench__parameter-group" key={node.templateNodeId}>
                   <h3>{String(index + 1).padStart(2, '0')} · {node.label}</h3>
-                  <small>{node.method} · {node.id}</small>
+                  <small>{node.method} · {node.templateNodeId}</small>
                   {specs.map((spec) => {
                     const name = spec.name as string;
                     const value = values[name];
@@ -322,14 +324,14 @@ export function TaskSchedulerBench(props: Props) {
                     return <label key={name}>
                       <span>{spec.label || name}{spec.description ? ` · ${spec.description}` : ''}</span>
                       {inputType === 'checkbox' ? (
-                        <input checked={Boolean(value)} disabled={!parametersEditable} onChange={(event) => updateParameter(node.id, name, event.target.checked)} type="checkbox" />
+                        <input checked={Boolean(value)} disabled={!parametersEditable} onChange={(event) => updateParameter(node.templateNodeId, name, event.target.checked)} type="checkbox" />
                       ) : (
                         <input
                           disabled={!parametersEditable}
                           max={spec.max}
                           min={spec.min}
                           onChange={(event) => updateParameter(
-                            node.id,
+                            node.templateNodeId,
                             name,
                             inputType === 'number' && event.target.value !== '' ? Number(event.target.value) : event.target.value,
                           )}
@@ -342,7 +344,14 @@ export function TaskSchedulerBench(props: Props) {
                   })}
                 </section>;
               })}
-              {!editingNodes.length && <p className="scheduler-bench__empty">该 Task 未找到可编辑的 Action 节点。</p>}
+              {!editingNodes.length && editingTemplate && (
+                <p className="scheduler-bench__empty">
+                  该 Task 未找到可编辑的 Action 节点。
+                  {props.actionNodes.length === 0
+                    ? '请先在流程设计画布导入 Flow JSON（如 szlab_robot_action_workflow_flow.json）。'
+                    : `模板节点（${editingTemplate.nodeIds.join('、')}）与当前画布节点 ID 不一致；请重新导入对应 Flow JSON 或检查画布是否为空。`}
+                </p>
+              )}
             </div>
             <div className="scheduler-bench__modal-actions">
               {parametersEditable && <button className="scheduler-btn scheduler-btn--primary" onClick={() => {

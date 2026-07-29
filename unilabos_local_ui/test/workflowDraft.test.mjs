@@ -53,6 +53,8 @@ const {
   normalizeTriggerConditions,
   renameTaskTemplate,
   resolveTaskTemplateNameDraft,
+  resolveTemplateNodes,
+  inferMethodFromTemplateNodeId,
   taskLocalWaitingReason,
   taskTemplateDeviceIds,
   updateScheduledTemplateDraft,
@@ -2142,6 +2144,33 @@ assert.notEqual(
 );
 assert.equal(resolveTaskTemplateNameDraft('  新名称  ', '旧名称'), '新名称');
 assert.equal(resolveTaskTemplateNameDraft('   ', '旧名称'), '旧名称', '空名称必须回退现有名称');
+assert.equal(
+  inferMethodFromTemplateNodeId('node_003_dose_powder'),
+  'dose_powder',
+  '模板 node_id 应能解析出 method 后缀',
+);
+assert.deepEqual(
+  resolveTemplateNodes(
+    ['node_001_pick_from_s03', 'node_003_dose_powder'],
+    [
+      { id: 'canvas-a', method: 'submit_pick_from_s03', deviceId: 'robot' },
+      { id: 'canvas-b', method: 'dose_powder', deviceId: 's07' },
+    ],
+  ).map(({ templateNodeId, node }) => ({ templateNodeId, nodeId: node?.id || null })),
+  [
+    { templateNodeId: 'node_001_pick_from_s03', nodeId: 'canvas-a' },
+    { templateNodeId: 'node_003_dose_powder', nodeId: 'canvas-b' },
+  ],
+  '画布节点 ID 与模板 node_id 不一致时，应回退按 method 匹配',
+);
+assert.deepEqual(
+  taskTemplateDeviceIds(
+    { nodeIds: ['node_003_dose_powder'] },
+    [{ id: 'canvas-b', method: 'dose_powder', deviceId: 's07' }],
+  ),
+  ['s07'],
+  '设备投影在 method 回退匹配后也应正确',
+);
 assert.deepEqual(
   updateTaskTemplateTriggers(
     updateTaskTemplateTriggers(

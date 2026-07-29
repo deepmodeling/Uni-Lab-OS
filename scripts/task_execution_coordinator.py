@@ -49,6 +49,7 @@ class _InFlightAction:
     instance_id: str
     node_id: str
     execution_id: str
+    device_name: str
     result_summary: Any = None
     outcome_prepared: bool = False
     error: dict[str, str] | None = None
@@ -218,6 +219,7 @@ class TaskExecutionCoordinator:
                 return stats
 
             devices = self._device_provider()
+            busy_device_names = self._busy_device_names()
 
             for instance in workspace.get("task_instances", []):
                 if not isinstance(instance, dict) or instance.get("status") != "running":
@@ -304,6 +306,9 @@ class TaskExecutionCoordinator:
                     )
                     break
 
+                if node.device_name in busy_device_names:
+                    continue
+
                 claimed_response = self._claim(
                     current_response,
                     workflow_path=workflow_path,
@@ -316,6 +321,7 @@ class TaskExecutionCoordinator:
                     continue
                 current_response = claimed_response
                 stats["claimed"] = int(stats["claimed"]) + 1
+                busy_device_names.add(node.device_name)
                 try:
                     future = self._executor.submit(
                         self._invoke_node_runner,
@@ -353,6 +359,7 @@ class TaskExecutionCoordinator:
                     instance_id=str(instance.get("id")),
                     node_id=node_id,
                     execution_id=execution_id,
+                    device_name=node.device_name,
                 )
 
             self._update_activity_stats(stats, workflow_path=workflow_path)
@@ -561,6 +568,13 @@ class TaskExecutionCoordinator:
             action.instance_id == instance_id
             for action in self._in_flight.values()
         )
+
+    def _busy_device_names(self) -> set[str]:
+        return {
+            action.device_name
+            for action in self._in_flight.values()
+            if action.device_name
+        }
 
 
 def _workspace_from_response(response: dict[str, Any]) -> dict[str, Any]:

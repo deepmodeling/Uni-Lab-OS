@@ -942,8 +942,9 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
 
     assert result["success"] is True
     assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[6]"
-    assert result["sensor_check_skipped"] is True
-    assert "传感器状态_上位机[4].NO[6]" not in gateway.reads
+    assert result["sensor_precheck"]["success"] is True
+    assert result["sensor_postcheck"]["success"] is True
+    assert "传感器状态_上位机[4].NO[6]" in gateway.reads
     assert gateway.writes == [
         ("S09取放料产品", 1),
         ("S09取放料编号", 2),

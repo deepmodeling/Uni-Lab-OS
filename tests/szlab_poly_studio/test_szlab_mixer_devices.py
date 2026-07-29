@@ -1808,6 +1808,10 @@ def test_szlab_robot_s08_pour_writes_product_selection_and_task_number():
     assert result["sensor_precheck"]["values"] == {
         "传感器状态_上位机[3].NO[14]": True,
     }
+    assert result["sensor_postcheck"]["success"] is True
+    assert result["sensor_postcheck"]["values"] == {
+        "传感器状态_上位机[3].NO[14]": True,
+    }
     assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
     assert gateway.writes == [
         ("S08倒料产品选择", 2),
@@ -1832,7 +1836,7 @@ def test_szlab_robot_s08_pour_rejects_unknown_product_type():
     assert gateway.writes == []
 
 
-def test_szlab_robot_s09_tip_place_skips_sensor_checks():
+def test_szlab_robot_s09_tip_place_uses_sensor_checks():
     gateway = FakeRobotPlcGateway(
         sensor_values={"传感器状态_上位机[4].NO[6]": False},
     )
@@ -1844,8 +1848,9 @@ def test_szlab_robot_s09_tip_place_skips_sensor_checks():
     assert result["success"] is True
     assert result["s09_safe_position"] == 1
     assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[6]"
-    assert result["sensor_check_skipped"] is True
-    assert not any(name == "传感器状态_上位机[4].NO[6]" for name, _ in gateway.reads)
+    assert result["sensor_precheck"]["success"] is True
+    assert result["sensor_postcheck"]["success"] is True
+    assert gateway.sensor_wait_calls
     assert gateway.writes == [
         ("S09取放料产品", 1),
         ("S09取放料编号", 2),
@@ -1865,7 +1870,7 @@ def test_szlab_robot_s09_tip_place_skips_sensor_checks():
     assert write_done_true_index < complete_wait_index
 
 
-def test_szlab_robot_s09_liquid_bottle_place_skips_sensor_checks():
+def test_szlab_robot_s09_liquid_bottle_place_uses_sensor_checks():
     gateway = FakeRobotPlcGateway(
         sensor_values={"传感器状态_上位机[4].NO[11]": False},
     )
@@ -1877,8 +1882,9 @@ def test_szlab_robot_s09_liquid_bottle_place_skips_sensor_checks():
     assert result["success"] is True
     assert result["s09_safe_position"] == 3
     assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[11]"
-    assert result["sensor_check_skipped"] is True
-    assert not any(name == "传感器状态_上位机[4].NO[11]" for name, _ in gateway.reads)
+    assert result["sensor_precheck"]["success"] is True
+    assert result["sensor_postcheck"]["success"] is True
+    assert gateway.sensor_wait_calls
     assert ("S09工艺选择", 3) not in gateway.writes
     assert not any(event[1] == "S09原点信号_3" for event in gateway.events)
     assert gateway.writes == [
@@ -1904,9 +1910,10 @@ def test_szlab_robot_s09_pick_directly_submits_beaker_robot_task():
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
     assert result["source_sensor_variable"] == "传感器状态_上位机[4].NO[7]"
-    assert result["sensor_check_skipped"] is True
+    assert result["sensor_precheck"]["success"] is True
+    assert result["sensor_postcheck"]["success"] is True
+    assert gateway.sensor_wait_calls
     assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
-    assert not any(name == "传感器状态_上位机[4].NO[7]" for name, _ in gateway.reads)
     assert ("S09工艺选择", 4) not in gateway.writes
     assert not any(event[1] == "S09原点信号_4" for event in gateway.events)
     assert ("任务号", 20) in gateway.writes
@@ -1922,9 +1929,10 @@ def test_szlab_robot_s09_beaker_place_directly_submits_robot_task():
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
     assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[7]"
-    assert result["sensor_check_skipped"] is True
+    assert result["sensor_precheck"]["success"] is True
+    assert result["sensor_postcheck"]["success"] is True
+    assert gateway.sensor_wait_calls
     assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
-    assert not any(name == "传感器状态_上位机[4].NO[7]" for name, _ in gateway.reads)
     assert ("S09工艺选择", 4) not in gateway.writes
     assert ("S09原点信号_4", True, 1.0) not in gateway.wait_equal_calls
     assert ("任务号", 19) in gateway.writes

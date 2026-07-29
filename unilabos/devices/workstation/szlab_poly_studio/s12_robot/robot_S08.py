@@ -69,4 +69,7 @@ class SzlabRobotS08Mixin:
             pre_sensor_conditions={
                 S08_POUR_SAMPLE_VIAL_SENSOR: True,
             },
+            post_sensor_conditions={
+                S08_POUR_SAMPLE_VIAL_SENSOR: True,
+            },
         )

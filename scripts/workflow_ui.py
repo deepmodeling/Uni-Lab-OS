@@ -1727,7 +1727,7 @@ class WorkflowRunManager:
                 device = devices.get(device_name)
                 balance_status_setter = (
                     getattr(device, "set_balance_status_callback", None)
-                    if node_method == "dose_powder"
+                    if method_name == "dose_powder"
                     else None
                 )
                 if callable(balance_status_setter):
@@ -1839,6 +1839,21 @@ def extract_registered_opc_values(snapshot: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, (str, int, float, bool)) or value is None:
             values[name] = value
     return values
+
+
+def _task_opc_connect_error_message(exc: BaseException, *, opcua_url: str = "") -> str:
+    """将 OPC 连接异常转成可读错误，避免 TimeoutError 等空消息误导前端。"""
+    message = str(exc).strip()
+    if message:
+        return message
+    if isinstance(exc, TimeoutError):
+        target = opcua_url or "目标 PLC"
+        return f"PLC 连接超时：无法在限定时间内连接 {target}，请检查 IP/端口、VPN 与 OPC UA 服务是否已启动"
+    if isinstance(exc, ConnectionRefusedError):
+        return f"PLC 拒绝连接：{opcua_url or '目标地址'} 无 OPC UA 服务监听"
+    if isinstance(exc, ModuleNotFoundError):
+        return "缺少 pylabrobot 依赖，请在 unilab/mamba 环境中启动 workflow_ui"
+    return f"PLC 连接失败：{exc.__class__.__name__}"
 
 
 class TaskOrchestrationSnapshotPublisher:
@@ -2495,7 +2510,7 @@ def create_app(
         except Exception as exc:
             return {
                 "success": False,
-                "message": str(exc),
+                "message": _task_opc_connect_error_message(exc, opcua_url=opcua_url),
                 "plc": {
                     "device_id": plc_device_id,
                     "connected": False,

@@ -1706,9 +1706,9 @@ def test_szlab_robot_s03_pick_writes_product_position_and_task_number():
     assert gateway.reads[:1] == [
         ("传感器状态_上位机[0].NO[6]", False),
     ]
-    assert gateway.reads.count(
-        ("传感器状态_上位机[0].NO[6]", False)
-    ) == 3
+    assert gateway.reads[-1:] == [
+        ("传感器状态_上位机[0].NO[6]", False),
+    ]
     assert gateway.writes == [
         ("S03取放料产品", 1),
         ("S03取放料编号", 1),

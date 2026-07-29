@@ -1321,7 +1321,10 @@ function App() {
         task_orchestration?: { distributed?: boolean; message?: string };
       };
       if (!response.ok || !payload.success) {
-        throw new Error(payload.message || `PLC 连接失败（HTTP ${response.status}）`);
+        const detail = payload.message?.trim()
+          || payload.task_orchestration?.message?.trim()
+          || (response.ok ? 'PLC 连接失败，请查看 workflow_ui 后端日志' : `PLC 连接失败（HTTP ${response.status}）`);
+        throw new Error(detail);
       }
       if (payload.plc) setTaskOpcStatus(payload.plc);
       setTaskOpcMessage(

@@ -734,16 +734,39 @@
 }
 
 .scheduler-bench__action-segment {
-  display: grid;
+  display: flex;
   flex: 1;
-  min-width: 8px;
-  place-items: center;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0 5px;
+  overflow: hidden;
   border-radius: 3px;
   background: #cbd5e1;
   color: #475569;
   font-size: 8px;
   font-weight: 800;
   font-style: normal;
+}
+
+.scheduler-bench__action-segment > span {
+  display: grid;
+  flex: 0 0 12px;
+  height: 9px;
+  place-items: center;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .42);
+  font-size: 7px;
+}
+
+.scheduler-bench__action-segment > b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 8px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scheduler-bench__action-segment.running {

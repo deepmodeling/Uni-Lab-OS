@@ -204,6 +204,10 @@ export function formatElapsedDurationMs(durationMs: number | null | undefined) {
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 }
 
+export function taskActionProgressMinWidth(actionTotal: number) {
+  return Math.max(220, Math.max(0, Math.floor(actionTotal)) * 140);
+}
+
 function actionAttemptStateLabel(status: TaskActionExecutionRecord['status']) {
   if (status === 'running') return '执行中';
   if (status === 'succeeded') return '已完成';

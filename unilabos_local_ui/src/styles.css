@@ -3156,16 +3156,39 @@ code {
 }
 
 .task-action-progress-segment {
-  display: grid;
+  display: flex;
   flex: 1;
-  min-width: 7px;
-  place-items: center;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 0 4px;
+  overflow: hidden;
   border-radius: 2px;
   background: rgba(255, 255, 255, .34);
   color: rgba(255, 255, 255, .86);
   font-size: 7px;
   font-style: normal;
   line-height: 1;
+}
+
+.task-action-progress-segment > span {
+  display: grid;
+  flex: 0 0 11px;
+  height: 8px;
+  place-items: center;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .4);
+  font-size: 6px;
+}
+
+.task-action-progress-segment > b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 7px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-action-progress-segment.running {

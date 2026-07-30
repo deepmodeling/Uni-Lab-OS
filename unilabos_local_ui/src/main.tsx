@@ -94,6 +94,7 @@ import {
   renameTaskTemplate,
   resolveTaskTemplateNameDraft,
   resolveTemplateNodes,
+  taskActionProgressMinWidth,
   taskLocalWaitingReason,
   updateScheduledTemplateDraft,
 } from './taskOrchestration';
@@ -4088,6 +4089,7 @@ function App() {
                               block.state,
                             ].filter(Boolean).join(' ')}
                             key={block.id}
+                            style={{ minWidth: taskActionProgressMinWidth(block.actionTotal) }}
                             title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
                           >
                             <div className="task-sample-block-head">
@@ -4116,7 +4118,8 @@ function App() {
                                     key={`${action.nodeId}:${action.index}`}
                                     title={formatTaskActionTimingTitle(action, label)}
                                   >
-                                    {action.index + 1}
+                                    <span>{action.index + 1}</span>
+                                    <b>{label}</b>
                                   </i>
                                 );
                               })}

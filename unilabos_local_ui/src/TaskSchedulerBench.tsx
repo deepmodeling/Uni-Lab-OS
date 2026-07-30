@@ -9,6 +9,7 @@ import {
   formatTaskActionTimingTitle,
   resolveTemplateNodes,
   sampleProcessRowStatus,
+  taskActionProgressMinWidth,
 } from './taskOrchestration';
 import type { SampleProcessRowStatus, TaskActionExecutionRecord } from './taskOrchestration';
 
@@ -311,7 +312,11 @@ export function TaskSchedulerBench(props: Props) {
                     const activeAction = block.actions.find((action) => action.state === 'running');
                     const activeNode = activeAction ? resolvedNodes[activeAction.index]?.node : null;
                     return (
-                      <div className={`scheduler-bench__progress-task ${block.state}`} key={block.id}>
+                      <div
+                        className={`scheduler-bench__progress-task ${block.state}`}
+                        key={block.id}
+                        style={{ minWidth: taskActionProgressMinWidth(block.actionTotal) }}
+                      >
                         <div className="scheduler-bench__progress-task-head">
                           <span>{block.templateName}</span>
                           <small>
@@ -337,7 +342,8 @@ export function TaskSchedulerBench(props: Props) {
                                 key={`${action.nodeId}:${action.index}`}
                                 title={formatTaskActionTimingTitle(action, label)}
                               >
-                                {action.index + 1}
+                                <span>{action.index + 1}</span>
+                                <b>{label}</b>
                               </i>
                             );
                           })}

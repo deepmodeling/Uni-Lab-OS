@@ -26,6 +26,7 @@ const {
   formatElapsedDurationMs,
   formatTaskActionTimingTitle,
   sampleProcessRowStatus,
+  taskActionProgressMinWidth,
   taskWallDurationMs,
 } = await importTypeScriptModule(
   new URL('../src/taskOrchestration.ts', import.meta.url),
@@ -49,6 +50,9 @@ assert.equal(taskWallDurationMs({ status: 'cancelled', startedAt: 1_000 }, 6_500
 assert.equal(formatElapsedDurationMs(59_999), '59s');
 assert.equal(formatElapsedDurationMs(61_000), '1m 01s');
 assert.equal(formatElapsedDurationMs(null), '—');
+assert.equal(taskActionProgressMinWidth(1), 220);
+assert.equal(taskActionProgressMinWidth(2), 280);
+assert.equal(taskActionProgressMinWidth(4), 560);
 
 const actionProgress = buildTaskActionProgress(
   ['node-a', 'node-b', 'node-c'],

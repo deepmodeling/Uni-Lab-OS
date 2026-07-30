@@ -57,6 +57,8 @@ type Props = {
   onToggleTemplate: (templateId: string) => void;
   onGenerate: () => void;
   onClear: () => void;
+  onClearTemplates: () => void;
+  clearTemplatesDisabled: boolean;
   onToggleRun: () => void;
   onAdvance: () => void;
   onSelectTask: (task: Task) => void;
@@ -240,7 +242,16 @@ export function TaskSchedulerBench(props: Props) {
             <div className="scheduler-bench__sample-input"><input min="1" max="5" type="number" value={props.sampleCount} onChange={(event) => props.onSampleCountChange(Number(event.target.value))} /><button className="scheduler-btn scheduler-btn--primary" onClick={props.onGenerate} type="button">生成队列</button></div>
           </div>
           <div className="scheduler-bench__section">
-            <label>选择 Task 模板（按顺序执行）</label>
+            <div className="scheduler-bench__template-head">
+              <label>选择 Task 模板（按顺序执行）</label>
+              <button
+                className="scheduler-bench__clear-templates"
+                disabled={props.clearTemplatesDisabled}
+                onClick={props.onClearTemplates}
+                title={props.clearTemplatesDisabled ? '暂无可清空模板或当前正在执行调度操作' : '清空全部历史 Task 模板'}
+                type="button"
+              >清空</button>
+            </div>
             {props.templates.map((template, index) => {
               const checked = props.scheduledTemplateIds.includes(template.id);
               return <label className="scheduler-bench__template" key={template.id}><input checked={checked} onChange={() => props.onToggleTemplate(template.id)} type="checkbox" /><span><strong>{index + 1}. {template.name}</strong><small>{template.nodeIds.length} 个工艺节点</small></span></label>;

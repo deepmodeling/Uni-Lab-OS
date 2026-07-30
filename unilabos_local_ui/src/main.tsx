@@ -35,7 +35,8 @@ import {
 import { createPseudoFlowJson } from './workflowExport';
 import { WorkstationDemo } from './WorkstationDemo';
 import './taskSchedulerBench.css';
-import { TaskSchedulerBench, TaskSchedulerHeaderActions } from './TaskSchedulerBench';
+import { TaskSchedulerBench } from './TaskSchedulerBench';
+import { TaskSchedulerHeaderActions } from './TaskSchedulerBench';
 import { OpcSimulatorDialog } from './OpcSimulatorDialog';
 import { OpcProfileSpecDialog } from './OpcProfileSpecDialog';
 import {
@@ -1967,6 +1968,57 @@ function App() {
     taskWorkspacePath,
   ]);
 
+  const clearTaskTemplates = useCallback(() => {
+    const templates = [...taskTemplatesRef.current];
+    if (!templates.length) return;
+    const schedulerBusy = isSchedulerRunning
+      || isSchedulerTransitioning
+      || isTaskExecutionDraining
+      || taskExecutionStatus.tick.active > 0
+      || taskExecutionStatus.tick.in_flight > 0
+      || taskExecutionStatus.tick.claimed > 0;
+    if (schedulerBusy || taskMutationInFlightCount > 0) {
+      showCanvasToast('请等待当前调度操作结束后再清空 Task 模板');
+      return;
+    }
+    const relatedInstanceCount = taskInstancesRef.current.length;
+    const instanceHint = relatedInstanceCount
+      ? `，以及关联的 ${relatedInstanceCount} 个 Task 实例`
+      : '';
+    if (!window.confirm(`确定清空全部 ${templates.length} 个历史 Task 模板${instanceHint}吗？此操作不可撤销。`)) {
+      return;
+    }
+    taskExecutionControllerRef.current?.pause();
+    setTaskExecutionWorkflow(null);
+    setTaskExecutionStatus(createTaskExecutionStatus());
+    void mutateTaskWorkspace(async (version) => {
+      let currentVersion = version;
+      let response: ApiWorkspaceResponse | null = null;
+      for (const template of templates) {
+        response = await taskApiRef.current.deleteTemplate(
+          taskWorkspacePath,
+          currentVersion,
+          template.id,
+        );
+        currentVersion = response.version;
+      }
+      if (!response) throw new Error('没有可清空的 Task 模板');
+      showCanvasToast(`已清空 ${templates.length} 个 Task 模板`);
+      return response;
+    });
+  }, [
+    isSchedulerRunning,
+    isSchedulerTransitioning,
+    isTaskExecutionDraining,
+    mutateTaskWorkspace,
+    showCanvasToast,
+    taskExecutionStatus.tick.active,
+    taskExecutionStatus.tick.claimed,
+    taskExecutionStatus.tick.in_flight,
+    taskMutationInFlightCount,
+    taskWorkspacePath,
+  ]);
+
   const buildWorkflow = useCallback(async () => {
     if (!executionPlan.executableNodes.length) {
       throw new Error('当前没有可执行节点，请调整起始节点或禁用状态');
@@ -3262,6 +3314,15 @@ function App() {
           isTransitioning={isSchedulerTransitioning}
           onAdvance={advanceTaskSchedule}
           onClear={clearTaskQueue}
+          onClearTemplates={clearTaskTemplates}
+          clearTemplatesDisabled={
+            !taskTemplates.length
+            || isTaskWorkspaceLoading
+            || isSchedulerRunning
+            || isSchedulerTransitioning
+            || isTaskExecutionDraining
+            || taskMutationInFlightCount > 0
+          }
           onEnvironmentChange={(environment) => {
             setTaskExecutionEnvironment(environment);
             if (environment === 'real') setIsOpcSimulatorDrawerOpen(false);

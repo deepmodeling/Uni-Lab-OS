@@ -25,6 +25,7 @@ const {
   elapsedDurationMs,
   formatElapsedDurationMs,
   formatTaskActionTimingTitle,
+  sampleProcessRowStatus,
   taskWallDurationMs,
 } = await importTypeScriptModule(
   new URL('../src/taskOrchestration.ts', import.meta.url),
@@ -124,5 +125,26 @@ assert.deepEqual(
   ],
 );
 assert.equal(processBlock.totalDurationMs, 4_000);
+
+assert.equal(
+  sampleProcessRowStatus([{ state: 'running' }, { state: 'pending' }]),
+  'current',
+);
+assert.equal(
+  sampleProcessRowStatus([{ state: 'completed' }, { state: 'running' }]),
+  'current',
+);
+assert.equal(
+  sampleProcessRowStatus([{ state: 'completed' }, { state: 'completed' }]),
+  'completed',
+);
+assert.equal(
+  sampleProcessRowStatus([{ state: 'completed' }, { state: 'pending' }]),
+  'queued',
+);
+assert.equal(
+  sampleProcessRowStatus([{ state: 'failed' }, { state: 'pending' }]),
+  'failed',
+);
 
 console.log('task timing tests passed');

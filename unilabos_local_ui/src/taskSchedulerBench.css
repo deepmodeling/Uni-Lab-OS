@@ -666,6 +666,18 @@
   font-size: 11px;
 }
 
+.scheduler-bench__progress-summary {
+  min-width: 36px;
+  color: #64748b;
+  font-weight: 800;
+  text-align: right;
+}
+
+.scheduler-bench__progress-summary.current { color: #b45309; }
+.scheduler-bench__progress-summary.completed { color: #15803d; }
+.scheduler-bench__progress-summary.failed { color: #b91c1c; }
+.scheduler-bench__progress-summary.cancelled { color: #64748b; }
+
 .scheduler-bench__progress-track {
   display: flex;
   gap: 6px;

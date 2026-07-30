@@ -8,8 +8,9 @@ import {
   formatElapsedDurationMs,
   formatTaskActionTimingTitle,
   resolveTemplateNodes,
+  sampleProcessRowStatus,
 } from './taskOrchestration';
-import type { TaskActionExecutionRecord } from './taskOrchestration';
+import type { SampleProcessRowStatus, TaskActionExecutionRecord } from './taskOrchestration';
 
 type Template = { id: string; name: string; nodeIds: string[] };
 type Task = {
@@ -87,6 +88,14 @@ function stateLabel(status: string) {
   if (status === 'cancelled') return '已取消';
   if (status === 'waiting') return '等待条件';
   return '待派发';
+}
+
+function sampleRowStatusLabel(status: SampleProcessRowStatus) {
+  if (status === 'current') return '当前';
+  if (status === 'completed') return '已完成';
+  if (status === 'failed') return '失败';
+  if (status === 'cancelled') return '已取消';
+  return '排队';
 }
 
 type HeaderActionsProps = Pick<
@@ -288,8 +297,10 @@ export function TaskSchedulerBench(props: Props) {
           </section>
           <section className="scheduler-bench__panel scheduler-bench__progress">
             <PanelHead title="样品进度缩略图" badge="仅显示" />
-            {sampleProcessRows.map((row) => (
-              <div className="scheduler-bench__progress-row" key={row.sample}>
+            {sampleProcessRows.map((row) => {
+              const rowStatus = sampleProcessRowStatus(row.blocks);
+              return (
+                <div className="scheduler-bench__progress-row" key={row.sample}>
                 <strong>{row.sample}</strong>
                 <div className="scheduler-bench__progress-track">
                   {row.blocks.map((block) => {
@@ -335,9 +346,12 @@ export function TaskSchedulerBench(props: Props) {
                     );
                   })}
                 </div>
-                <small>{row.sample === selected?.sample ? '当前' : '排队'}</small>
-              </div>
-            ))}
+                  <small className={`scheduler-bench__progress-summary ${rowStatus}`}>
+                    {sampleRowStatusLabel(rowStatus)}
+                  </small>
+                </div>
+              );
+            })}
           </section>
         </section>
 

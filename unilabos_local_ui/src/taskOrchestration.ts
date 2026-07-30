@@ -125,6 +125,13 @@ export type SampleProcessRow = {
   blocks: SampleProcessBlock[];
 };
 
+export type SampleProcessRowStatus =
+  | 'current'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'queued';
+
 export type TaskInstanceProcessInput = {
   id: string;
   sample: string;
@@ -279,6 +286,16 @@ function blockVisualState(status: string): SampleProcessBlockState {
     return status;
   }
   return 'waiting';
+}
+
+export function sampleProcessRowStatus(
+  blocks: Array<Pick<SampleProcessBlock, 'state'>>,
+): SampleProcessRowStatus {
+  if (blocks.some((block) => block.state === 'running')) return 'current';
+  if (blocks.length > 0 && blocks.every((block) => block.state === 'completed')) return 'completed';
+  if (blocks.some((block) => block.state === 'failed')) return 'failed';
+  if (blocks.some((block) => block.state === 'cancelled')) return 'cancelled';
+  return 'queued';
 }
 
 export function buildSampleProcessRows(

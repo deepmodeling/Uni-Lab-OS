@@ -3143,6 +3143,9 @@ code {
 
 .task-sample-block-head small {
   flex: 0 0 auto;
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -3168,6 +3171,7 @@ code {
 .task-action-progress-segment.running {
   background: #fde68a;
   color: #78350f;
+  animation: task-action-pulse 1.4s ease-in-out infinite;
 }
 
 .task-action-progress-segment.completed {
@@ -3178,6 +3182,10 @@ code {
 .task-action-progress-segment.failed {
   background: #fecaca;
   color: #7f1d1d;
+}
+
+@keyframes task-action-pulse {
+  50% { filter: brightness(1.12); }
 }
 
 .task-sample-block.running { background: #e9a23b; }

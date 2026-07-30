@@ -707,8 +707,12 @@
 
 .scheduler-bench__progress-task-head small {
   flex: 0 0 auto;
+  max-width: 62%;
+  overflow: hidden;
   color: #64748b;
   font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scheduler-bench__action-progress {
@@ -730,9 +734,17 @@
   font-style: normal;
 }
 
-.scheduler-bench__action-segment.running { background: var(--amber); color: #fff; }
+.scheduler-bench__action-segment.running {
+  background: var(--amber);
+  color: #fff;
+  animation: scheduler-action-pulse 1.4s ease-in-out infinite;
+}
 .scheduler-bench__action-segment.completed { background: var(--green); color: #fff; }
 .scheduler-bench__action-segment.failed { background: var(--red); color: #fff; }
+
+@keyframes scheduler-action-pulse {
+  50% { filter: brightness(1.18); }
+}
 
 /* ── Logs ── */
 .scheduler-bench__log-head {

@@ -117,6 +117,7 @@ export type SampleProcessBlock = {
   actionDone: number;
   actionTotal: number;
   actions: TaskActionProgress[];
+  totalDurationMs: number | null;
 };
 
 export type SampleProcessRow = {
@@ -132,6 +133,8 @@ export type TaskInstanceProcessInput = {
   status: string;
   executionCursor?: number;
   actionRecords?: TaskActionExecutionRecord[];
+  startedAt?: number;
+  finishedAt?: number;
 };
 
 export type TaskActionExecutionRecord = {
@@ -194,6 +197,36 @@ export function formatElapsedDurationMs(durationMs: number | null | undefined) {
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 }
 
+function actionAttemptStateLabel(status: TaskActionExecutionRecord['status']) {
+  if (status === 'running') return '执行中';
+  if (status === 'succeeded') return '已完成';
+  if (status === 'failed') return '失败';
+  return '待执行';
+}
+
+function formatActionClockTime(timestamp: number | undefined) {
+  if (timestamp == null) return '—';
+  return new Date(timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+export function formatTaskActionTimingTitle(action: TaskActionProgress, label: string) {
+  const state = action.state === 'running'
+    ? '执行中'
+    : action.state === 'completed'
+      ? '已完成'
+      : action.state === 'failed'
+        ? '失败'
+        : '待执行';
+  const header = `${action.index + 1}. ${label} · ${state}`;
+  if (!action.attempts.length) return header;
+  const attempts = action.attempts.map((attempt) => (
+    `尝试 ${attempt.attempt} · ${actionAttemptStateLabel(attempt.status)} · `
+    + `${formatActionClockTime(attempt.startedAt)} → ${attempt.finishedAt == null ? '现在' : formatActionClockTime(attempt.finishedAt)}`
+    + ` · ${formatElapsedDurationMs(attempt.durationMs)}`
+  ));
+  return [header, ...attempts].join('\n');
+}
+
 export function buildTaskActionProgress(
   nodeIds: string[],
   records: TaskActionExecutionRecord[],
@@ -251,6 +284,7 @@ function blockVisualState(status: string): SampleProcessBlockState {
 export function buildSampleProcessRows(
   instances: TaskInstanceProcessInput[],
   templates: Array<Pick<TaskTemplateModel, 'id' | 'name' | 'nodeIds'>>,
+  nowMs = Date.now(),
 ): SampleProcessRow[] {
   const templatesById = new Map(templates.map((template) => [template.id, template]));
   const bySample = new Map<string, SampleProcessBlock[]>();
@@ -264,6 +298,7 @@ export function buildSampleProcessRows(
     const actions = buildTaskActionProgress(
       template?.nodeIds || [],
       instance.actionRecords || [],
+      nowMs,
     );
     const block: SampleProcessBlock = {
       id: instance.id,
@@ -276,6 +311,7 @@ export function buildSampleProcessRows(
       actionDone,
       actionTotal,
       actions,
+      totalDurationMs: taskWallDurationMs(instance, nowMs),
     };
     const bucket = bySample.get(instance.sample) || [];
     bucket.push(block);

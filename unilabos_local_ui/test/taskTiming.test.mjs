@@ -24,6 +24,7 @@ const {
   buildTaskActionProgress,
   elapsedDurationMs,
   formatElapsedDurationMs,
+  formatTaskActionTimingTitle,
   taskWallDurationMs,
 } = await importTypeScriptModule(
   new URL('../src/taskOrchestration.ts', import.meta.url),
@@ -48,36 +49,37 @@ assert.equal(formatElapsedDurationMs(59_999), '59s');
 assert.equal(formatElapsedDurationMs(61_000), '1m 01s');
 assert.equal(formatElapsedDurationMs(null), '—');
 
+const actionProgress = buildTaskActionProgress(
+  ['node-a', 'node-b', 'node-c'],
+  [
+    {
+      nodeId: 'node-a',
+      attempt: 1,
+      executionId: 'exec-a-1',
+      status: 'failed',
+      startedAt: 1_000,
+      finishedAt: 2_000,
+    },
+    {
+      nodeId: 'node-a',
+      attempt: 2,
+      executionId: 'exec-a-2',
+      status: 'succeeded',
+      startedAt: 3_000,
+      finishedAt: 5_500,
+    },
+    {
+      nodeId: 'node-b',
+      attempt: 1,
+      executionId: 'exec-b-1',
+      status: 'running',
+      startedAt: 6_000,
+    },
+  ],
+  9_000,
+);
 assert.deepEqual(
-  buildTaskActionProgress(
-    ['node-a', 'node-b', 'node-c'],
-    [
-      {
-        nodeId: 'node-a',
-        attempt: 1,
-        executionId: 'exec-a-1',
-        status: 'failed',
-        startedAt: 1_000,
-        finishedAt: 2_000,
-      },
-      {
-        nodeId: 'node-a',
-        attempt: 2,
-        executionId: 'exec-a-2',
-        status: 'succeeded',
-        startedAt: 3_000,
-        finishedAt: 5_500,
-      },
-      {
-        nodeId: 'node-b',
-        attempt: 1,
-        executionId: 'exec-b-1',
-        status: 'running',
-        startedAt: 6_000,
-      },
-    ],
-    9_000,
-  ).map((action) => ({
+  actionProgress.map((action) => ({
     nodeId: action.nodeId,
     state: action.state,
     durationMs: action.durationMs,
@@ -89,9 +91,11 @@ assert.deepEqual(
     { nodeId: 'node-c', state: 'waiting', durationMs: null, attempts: [] },
   ],
 );
+assert.match(formatTaskActionTimingTitle(actionProgress[0], '动作 A'), /^1\. 动作 A · 已完成/m);
+assert.match(formatTaskActionTimingTitle(actionProgress[0], '动作 A'), /尝试 1 · 失败[\s\S]*1s/);
+assert.match(formatTaskActionTimingTitle(actionProgress[0], '动作 A'), /尝试 2 · 已完成[\s\S]*2s/);
 
-assert.deepEqual(
-  buildSampleProcessRows(
+const processBlock = buildSampleProcessRows(
     [{
       id: 'task-1',
       sample: 'sample-1',
@@ -99,6 +103,7 @@ assert.deepEqual(
       order: 0,
       status: 'running',
       executionCursor: 1,
+      startedAt: 500,
       actionRecords: [{
         nodeId: 'node-a',
         attempt: 1,
@@ -109,11 +114,15 @@ assert.deepEqual(
       }],
     }],
     [{ id: 'template-1', name: '工艺一', nodeIds: ['node-a', 'node-b'] }],
-  )[0].blocks[0].actions.map(({ nodeId, state }) => ({ nodeId, state })),
+    4_500,
+  )[0].blocks[0];
+assert.deepEqual(
+  processBlock.actions.map(({ nodeId, state }) => ({ nodeId, state })),
   [
     { nodeId: 'node-a', state: 'completed' },
     { nodeId: 'node-b', state: 'waiting' },
   ],
 );
+assert.equal(processBlock.totalDurationMs, 4_000);
 
 console.log('task timing tests passed');

@@ -88,6 +88,8 @@ import {
   createTaskTemplateDraft,
   createTaskTemplateId,
   createWorkspaceEpochController,
+  formatElapsedDurationMs,
+  formatTaskActionTimingTitle,
   isTaskWaitingStatus,
   renameTaskTemplate,
   resolveTaskTemplateNameDraft,
@@ -4090,7 +4092,11 @@ function App() {
                           >
                             <div className="task-sample-block-head">
                               <span>{block.templateName}</span>
-                              <small>{activeNode ? `当前：${activeNode.data.label}` : `${block.actionDone}/${block.actionTotal}`}</small>
+                              <small>
+                                {activeNode ? `当前：${activeNode.data.label}` : `${block.actionDone}/${block.actionTotal}`}
+                                {' · '}
+                                {formatElapsedDurationMs(block.totalDurationMs)}
+                              </small>
                             </div>
                             <div
                               aria-label={`${block.templateName} 动作进度`}
@@ -4104,18 +4110,11 @@ function App() {
                                 const resolvedNode = resolvedNodes[action.index]?.node;
                                 const node = resolvedNode ? nodesById.get(resolvedNode.id) : null;
                                 const label = node?.data.label || resolvedNode?.method || action.nodeId;
-                                const state = action.state === 'running'
-                                  ? '执行中'
-                                  : action.state === 'completed'
-                                    ? '已完成'
-                                    : action.state === 'failed'
-                                      ? '失败'
-                                      : '待执行';
                                 return (
                                   <i
                                     className={`task-action-progress-segment ${action.state}`}
                                     key={`${action.nodeId}:${action.index}`}
-                                    title={`${action.index + 1}. ${label} · ${state}`}
+                                    title={formatTaskActionTimingTitle(action, label)}
                                   >
                                     {action.index + 1}
                                   </i>

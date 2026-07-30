@@ -3,7 +3,12 @@ import './taskSchedulerBench.css';
 import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import type { TaskLogCategory, TaskLogLine } from './taskLogSession';
-import { buildSampleProcessRows, resolveTemplateNodes } from './taskOrchestration';
+import {
+  buildSampleProcessRows,
+  formatElapsedDurationMs,
+  formatTaskActionTimingTitle,
+  resolveTemplateNodes,
+} from './taskOrchestration';
 import type { TaskActionExecutionRecord } from './taskOrchestration';
 
 type Template = { id: string; name: string; nodeIds: string[] };
@@ -15,6 +20,8 @@ type Task = {
   status: string;
   executionCursor?: number;
   actionRecords?: TaskActionExecutionRecord[];
+  startedAt?: number;
+  finishedAt?: number;
   nodeParameters: Record<string, Record<string, unknown>>;
 };
 type ActionNode = {
@@ -80,13 +87,6 @@ function stateLabel(status: string) {
   if (status === 'cancelled') return '已取消';
   if (status === 'waiting') return '等待条件';
   return '待派发';
-}
-
-function actionStateLabel(status: string) {
-  if (status === 'running') return '执行中';
-  if (status === 'completed') return '已完成';
-  if (status === 'failed') return '失败';
-  return '待执行';
 }
 
 type HeaderActionsProps = Pick<
@@ -158,10 +158,15 @@ export function TaskSchedulerBench(props: Props) {
   const [parameterDraft, setParameterDraft] = React.useState<Record<string, Record<string, unknown>>>({});
   const [logFilter, setLogFilter] = React.useState<TaskLogCategory>('all');
   const [isFollowingLogs, setIsFollowingLogs] = React.useState(true);
+  const [timingNowMs, setTimingNowMs] = React.useState(() => Date.now());
   const logContainerRef = React.useRef<HTMLDivElement>(null);
   const selected = props.tasks.find((task) => task.id === props.selectedTaskId) || props.tasks[0];
   const selectedTemplate = props.templates.find((template) => template.id === selected?.templateId);
-  const sampleProcessRows = buildSampleProcessRows(props.tasks, props.templates);
+  const hasRunningTasks = props.tasks.some((task) => task.status === 'running');
+  const sampleProcessRows = React.useMemo(
+    () => buildSampleProcessRows(props.tasks, props.templates, timingNowMs),
+    [props.tasks, props.templates, timingNowMs],
+  );
   const visibleLogLines = props.logLines.filter((line) => logFilter === 'all' || line.category === logFilter);
   const editingTemplate = props.templates.find((template) => template.id === editingTask?.templateId);
   const editingNodes: ResolvedActionNode[] = editingTemplate
@@ -176,6 +181,13 @@ export function TaskSchedulerBench(props: Props) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [isFollowingLogs, visibleLogLines.length]);
+
+  React.useEffect(() => {
+    setTimingNowMs(Date.now());
+    if (!hasRunningTasks) return undefined;
+    const timer = window.setInterval(() => setTimingNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [hasRunningTasks]);
 
   const exportLogs = () => {
     const text = visibleLogLines.map((line) => (
@@ -291,7 +303,11 @@ export function TaskSchedulerBench(props: Props) {
                       <div className={`scheduler-bench__progress-task ${block.state}`} key={block.id}>
                         <div className="scheduler-bench__progress-task-head">
                           <span>{block.templateName}</span>
-                          <small>{activeNode ? `当前：${activeNode.label}` : stateLabel(block.state)}</small>
+                          <small>
+                            {activeNode ? `当前：${activeNode.label}` : stateLabel(block.state)}
+                            {' · '}
+                            {formatElapsedDurationMs(block.totalDurationMs)}
+                          </small>
                         </div>
                         <div
                           aria-label={`${block.templateName} 动作进度`}
@@ -308,7 +324,7 @@ export function TaskSchedulerBench(props: Props) {
                               <i
                                 className={`scheduler-bench__action-segment ${action.state}`}
                                 key={`${action.nodeId}:${action.index}`}
-                                title={`${action.index + 1}. ${label} · ${actionStateLabel(action.state)}`}
+                                title={formatTaskActionTimingTitle(action, label)}
                               >
                                 {action.index + 1}
                               </i>

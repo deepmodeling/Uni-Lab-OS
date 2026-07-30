@@ -3127,6 +3127,59 @@ code {
   opacity: .92;
 }
 
+.task-sample-block-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.task-sample-block-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-sample-block-head small {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.task-action-progress {
+  display: flex;
+  gap: 2px;
+  height: 11px;
+}
+
+.task-action-progress-segment {
+  display: grid;
+  flex: 1;
+  min-width: 7px;
+  place-items: center;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .34);
+  color: rgba(255, 255, 255, .86);
+  font-size: 7px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.task-action-progress-segment.running {
+  background: #fde68a;
+  color: #78350f;
+}
+
+.task-action-progress-segment.completed {
+  background: #4ade80;
+  color: #14532d;
+}
+
+.task-action-progress-segment.failed {
+  background: #fecaca;
+  color: #7f1d1d;
+}
+
 .task-sample-block.running { background: #e9a23b; }
 .task-sample-block.completed { background: #8096aa; opacity: .88; }
 .task-sample-block.failed { background: #c45c5c; }

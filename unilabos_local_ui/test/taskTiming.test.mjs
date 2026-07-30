@@ -20,6 +20,7 @@ async function importTypeScriptModule(path) {
 }
 
 const {
+  buildSampleProcessRows,
   buildTaskActionProgress,
   elapsedDurationMs,
   formatElapsedDurationMs,
@@ -86,6 +87,32 @@ assert.deepEqual(
     { nodeId: 'node-a', state: 'completed', durationMs: 2_500, attempts: [1_000, 2_500] },
     { nodeId: 'node-b', state: 'running', durationMs: 3_000, attempts: [3_000] },
     { nodeId: 'node-c', state: 'waiting', durationMs: null, attempts: [] },
+  ],
+);
+
+assert.deepEqual(
+  buildSampleProcessRows(
+    [{
+      id: 'task-1',
+      sample: 'sample-1',
+      templateId: 'template-1',
+      order: 0,
+      status: 'running',
+      executionCursor: 1,
+      actionRecords: [{
+        nodeId: 'node-a',
+        attempt: 1,
+        executionId: 'exec-a',
+        status: 'succeeded',
+        startedAt: 1_000,
+        finishedAt: 2_000,
+      }],
+    }],
+    [{ id: 'template-1', name: '工艺一', nodeIds: ['node-a', 'node-b'] }],
+  )[0].blocks[0].actions.map(({ nodeId, state }) => ({ nodeId, state })),
+  [
+    { nodeId: 'node-a', state: 'completed' },
+    { nodeId: 'node-b', state: 'waiting' },
   ],
 );
 

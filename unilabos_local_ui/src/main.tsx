@@ -4069,19 +4069,62 @@ function App() {
                   <div className="task-sample-row" key={row.sample}>
                     <strong>{row.sample}</strong>
                     <div className="task-sample-track">
-                      {row.blocks.map((block) => (
-                        <div
-                          className={[
-                            'task-sample-block',
-                            block.state,
-                          ].filter(Boolean).join(' ')}
-                          key={block.id}
-                          title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
-                        >
-                          <span>{block.templateName}</span>
-                          <small>{block.actionDone}/{block.actionTotal}</small>
-                        </div>
-                      ))}
+                      {row.blocks.map((block) => {
+                        const template = taskTemplates.find((item) => item.id === block.templateId);
+                        const resolvedNodes = template
+                          ? resolveTemplateNodes(template.nodeIds, taskNodeDescriptors)
+                          : [];
+                        const activeAction = block.actions.find((action) => action.state === 'running');
+                        const activeResolvedNode = activeAction
+                          ? resolvedNodes[activeAction.index]?.node
+                          : null;
+                        const activeNode = activeResolvedNode ? nodesById.get(activeResolvedNode.id) : null;
+                        return (
+                          <div
+                            className={[
+                              'task-sample-block',
+                              block.state,
+                            ].filter(Boolean).join(' ')}
+                            key={block.id}
+                            title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
+                          >
+                            <div className="task-sample-block-head">
+                              <span>{block.templateName}</span>
+                              <small>{activeNode ? `当前：${activeNode.data.label}` : `${block.actionDone}/${block.actionTotal}`}</small>
+                            </div>
+                            <div
+                              aria-label={`${block.templateName} 动作进度`}
+                              aria-valuemax={block.actionTotal}
+                              aria-valuemin={0}
+                              aria-valuenow={block.actionDone}
+                              className="task-action-progress"
+                              role="progressbar"
+                            >
+                              {block.actions.map((action) => {
+                                const resolvedNode = resolvedNodes[action.index]?.node;
+                                const node = resolvedNode ? nodesById.get(resolvedNode.id) : null;
+                                const label = node?.data.label || resolvedNode?.method || action.nodeId;
+                                const state = action.state === 'running'
+                                  ? '执行中'
+                                  : action.state === 'completed'
+                                    ? '已完成'
+                                    : action.state === 'failed'
+                                      ? '失败'
+                                      : '待执行';
+                                return (
+                                  <i
+                                    className={`task-action-progress-segment ${action.state}`}
+                                    key={`${action.nodeId}:${action.index}`}
+                                    title={`${action.index + 1}. ${label} · ${state}`}
+                                  >
+                                    {action.index + 1}
+                                  </i>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

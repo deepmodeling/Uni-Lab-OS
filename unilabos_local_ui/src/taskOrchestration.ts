@@ -116,6 +116,7 @@ export type SampleProcessBlock = {
   state: SampleProcessBlockState;
   actionDone: number;
   actionTotal: number;
+  actions: TaskActionProgress[];
 };
 
 export type SampleProcessRow = {
@@ -130,6 +131,7 @@ export type TaskInstanceProcessInput = {
   order: number;
   status: string;
   executionCursor?: number;
+  actionRecords?: TaskActionExecutionRecord[];
 };
 
 export type TaskActionExecutionRecord = {
@@ -259,6 +261,10 @@ export function buildSampleProcessRows(
     const actionDone = instance.status === 'completed'
       ? actionTotal
       : Math.min(cursor, actionTotal);
+    const actions = buildTaskActionProgress(
+      template?.nodeIds || [],
+      instance.actionRecords || [],
+    );
     const block: SampleProcessBlock = {
       id: instance.id,
       instanceId: instance.id,
@@ -269,6 +275,7 @@ export function buildSampleProcessRows(
       state: blockVisualState(instance.status),
       actionDone,
       actionTotal,
+      actions,
     };
     const bucket = bySample.get(instance.sample) || [];
     bucket.push(block);

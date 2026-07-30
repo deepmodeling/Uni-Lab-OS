@@ -478,7 +478,21 @@ class SzlabMixerPipettingStationDevice:
             f"等待机械臂到达 S09 安全位{home_position}",
             {"home_position": home_position, "home_signal": S09_HOME_SIGNALS[home_position]},
         )
-        home = self.check_home_position(home_position)
+        home_signal = S09_HOME_SIGNALS[home_position]
+        try:
+            is_home = self._wait_equal(home_signal, True)
+        except Exception as exc:
+            return {"success": False, "message": str(exc), "process": result, "logs": logs}
+        home = {
+            "success": bool(is_home),
+            "message": f"S09 安全位{home_position}已确认" if is_home else f"S09 安全位{home_position}等待失败",
+            "data": {
+                "home_position": home_position,
+                "label": S09_HOME_LABELS[home_position],
+                "variable": home_signal,
+                "value": is_home,
+            },
+        }
         self._append_log(
             logs,
             f"S09 安全位{home_position}原点信号读取完成",
@@ -489,10 +503,10 @@ class SzlabMixerPipettingStationDevice:
     @action(auto_prefix=True, description="确认 S09 唯一加液工位空闲")
     def prepare_liquid_station(self) -> dict[str, Any]:
         try:
+            is_idle = self._wait_equal(S09_STATION_STATUS_VAR, 2)
             station_status = int(self._read_variable(S09_STATION_STATUS_VAR, use_cache=False))
         except Exception as exc:
             return {"success": False, "message": str(exc)}
-        is_idle = station_status in {2}
         return {
             "success": is_idle,
             "message": "S09 唯一加液工位空闲" if is_idle else f"S09 唯一加液工位非空闲，当前状态 {station_status}",
@@ -1020,7 +1034,7 @@ class SzlabMixerPipettingStationDevice:
         }
 
     @action(auto_prefix=True, description="读取 S09 天平读数")
-    def read_balance(self, require_stable: bool = False) -> dict[str, Any]:
+    def read_balance(self, require_stable: bool = True) -> dict[str, Any]:
         try:
             if require_stable:
                 stable = self._wait_equal(S09_BALANCE_STABLE_VAR, True)

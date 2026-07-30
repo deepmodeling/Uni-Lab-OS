@@ -371,30 +371,50 @@ def test_process_cap_open_fails_when_sample_already_opened_on_storage_slot():
     assert "暂存位1" in result["message"]
 
 
-def test_process_cap_open_fails_when_cap_station_has_no_bottle():
+def test_process_cap_waits_for_cap_station_bottle_through_sensor_waiter(monkeypatch):
     device, client = make_s08_device(validate_cap_constraints=True)
-    client.set_cap_station_present(1, False)
+    sensor_waits = []
+
+    def wait_for_sensor_conditions(conditions, *, phase):
+        sensor_waits.append((conditions, phase))
+        return {
+            "success": True,
+            "phase": phase,
+            "conditions": conditions,
+            "values": conditions,
+            "mismatches": {},
+        }
+
+    monkeypatch.setattr(device, "_wait_cap_sensor_conditions", wait_for_sensor_conditions)
+    monkeypatch.setattr(
+        device,
+        "_validate_cap_station_has_bottle",
+        lambda _process_type: (_ for _ in ()).throw(
+            AssertionError("process_cap 不应在入口单次读取开盖工位传感器")
+        ),
+    )
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_SAMPLE_VIAL_500ML),
         样品ID=SAMPLE_A,
     )
 
-    assert result["success"] is False
-    assert "开盖工位1" in result["message"]
-    assert "NO[14]" in result["message"]
-
-
-def test_process_cap_open_liquid_vial_requires_station_two_sensor():
-    device, client = make_s08_device(validate_cap_constraints=True)
-    client.set_cap_station_present(2, False)
-    result = device.process_cap(
-        工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
-        样品ID=SAMPLE_A,
-    )
-
-    assert result["success"] is False
-    assert "开盖工位2" in result["message"]
-    assert "NO[15]" in result["message"]
+    assert result["success"] is True
+    assert sensor_waits == [
+        (
+            {
+                "传感器状态_上位机[3].NO[14]": True,
+                "传感器状态_上位机[4].NO[0]": False,
+            },
+            "pre",
+        ),
+        (
+            {
+                "传感器状态_上位机[3].NO[14]": True,
+                "传感器状态_上位机[4].NO[0]": True,
+            },
+            "post",
+        ),
+    ]
 
 
 def test_process_cap_open_requires_empty_cap_storage_sensor_without_optional_validation():
@@ -440,9 +460,41 @@ def test_process_cap_reports_verification_failed_when_cap_sensor_does_not_change
     }
 
 
-def test_process_cap_fails_when_station_status_not_ready():
-    device, client = make_s08_device(require_station_status=True)
-    client.set_station_status(1)
+def test_process_cap_waits_until_non_alarm_station_status_is_ready():
+    class BecomingReadyClient(PseudoSzlabS08OpcUaClient):
+        def __init__(self):
+            super().__init__()
+            self.station_status_reads = 0
+
+        def read(self, name):
+            if name == NODE_STATION_STATUS:
+                self.station_status_reads += 1
+                return 1 if self.station_status_reads == 1 else 2
+            return super().read(name)
+
+    device, client = make_s08_device(BecomingReadyClient(), require_station_status=True)
+    result = device.process_cap(
+        工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
+        样品ID=SAMPLE_A,
+    )
+
+    assert result["success"] is True
+    assert client.station_status_reads >= 2
+
+
+def test_process_cap_rejects_alarm_station_status_without_waiting():
+    class AlarmClient(PseudoSzlabS08OpcUaClient):
+        def __init__(self):
+            super().__init__()
+            self.station_status_reads = 0
+
+        def read(self, name):
+            if name == NODE_STATION_STATUS:
+                self.station_status_reads += 1
+                return 0
+            return super().read(name)
+
+    device, client = make_s08_device(AlarmClient(), require_station_status=True)
     result = device.process_cap(
         工艺选择=int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID=SAMPLE_A,
@@ -452,6 +504,7 @@ def test_process_cap_fails_when_station_status_not_ready():
     assert "工站未就绪" in result["message"]
     assert NODE_STATION_STATUS in result["message"]
     assert "OPC UA" in result["message"]
+    assert client.station_status_reads == 1
 
 
 def test_process_cap_skips_station_status_check_when_disabled():

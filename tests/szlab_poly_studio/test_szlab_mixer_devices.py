@@ -87,12 +87,38 @@ def test_s071_auto_place_position_selects_first_empty_slot():
     assert robot._resolve_s071_place_position("auto") == "1-2"
 
 
+def test_s071_auto_place_position_waits_until_a_slot_is_empty(monkeypatch):
+    class FakePlc:
+        def __init__(self):
+            self.round = 0
+
+        def read_variable(self, name, use_cache=False):
+            del use_cache
+            if name == list(S07Sensors.POWDER_CONTAINER_BY_POSITION.values())[-1]:
+                self.round += 1
+            return self.round < 2
+
+    robot = SzlabMixerRobotDevice()
+    robot.set_plc_gateway(FakePlc())
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S07.time.sleep",
+        lambda _seconds: None,
+    )
+
+    assert robot._resolve_s071_place_position("auto") == list(S07Sensors.POWDER_CONTAINER_BY_POSITION)[-1]
+
+
 def test_s071_pick_and_rotate_run_in_parallel(monkeypatch):
     barrier = threading.Barrier(2)
     calls = []
     robot = SzlabMixerRobotDevice()
     robot.set_plc_gateway(object())
-    monkeypatch.setattr(robot, "_ensure_sensor_gate", lambda *_args, **_kwargs: None)
+    sensor_waits = []
+    monkeypatch.setattr(
+        robot,
+        "_wait_sensor_conditions",
+        lambda conditions, *, phase: sensor_waits.append((conditions, phase)) or {"success": True},
+    )
     monkeypatch.setattr(robot, "_run_robot_handshake_precheck", lambda station: {"target_station": station})
 
     def pick(position):
@@ -120,6 +146,7 @@ def test_s071_pick_and_rotate_run_in_parallel(monkeypatch):
     assert result["success"] is True
     assert result["status"] == "completed"
     assert sorted(call[0] for call in calls) == ["pick", "rotate"]
+    assert sensor_waits == [({S07Sensors.POWDER_CONTAINER_BY_POSITION["1-1"]: True}, "pre")]
     assert result["robot_pick"]["success"] is True
     assert result["s07_rotate"]["success"] is True
 
@@ -128,7 +155,11 @@ def test_s071_pick_and_rotate_partial_failure_is_not_retried(monkeypatch):
     calls = {"pick": 0, "rotate": 0}
     robot = SzlabMixerRobotDevice()
     robot.set_plc_gateway(object())
-    monkeypatch.setattr(robot, "_ensure_sensor_gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        robot,
+        "_wait_sensor_conditions",
+        lambda _conditions, *, phase: {"success": True, "phase": phase},
+    )
     monkeypatch.setattr(robot, "_run_robot_handshake_precheck", lambda station: {"target_station": station})
 
     def pick(_position):
@@ -1363,6 +1394,7 @@ def test_szlab_robot_s04_pick_requires_material_and_resets_pc_to_plc_variables()
     assert result["status"] == "completed"
     assert result["reset"]["success"] is True
     assert gateway.wait_equal_calls == [
+        ("Robot_Home", True, 1.0),
         ("Robot_任务允许写入", True, 1.0),
         ("Robot_任务完成", 8, 1.0),
     ]
@@ -1415,12 +1447,14 @@ def test_szlab_robot_waits_emit_plc_opc_wait_events():
     events = plc.drain_opc_wait_events()
     variable_events = [event for event in events if "variable" in event["detail"]]
     assert [(event["phase"], event["detail"]["variable"]) for event in variable_events] == [
+        ("start", "Robot_Home"),
+        ("finish", "Robot_Home"),
         ("start", "Robot_任务允许写入"),
         ("finish", "Robot_任务允许写入"),
         ("start", "Robot_任务完成"),
         ("finish", "Robot_任务完成"),
     ]
-    assert [event["detail"]["expected"] for event in variable_events] == [True, True, 6, 6]
+    assert [event["detail"]["expected"] for event in variable_events] == [True, True, True, True, 6, 6]
     sensor_events = [event for event in events if event["detail"].get("wait_kind") == "sensor_conditions"]
     assert [event["detail"]["context"] for event in sensor_events] == [
         "机器人前置传感器检查",
@@ -1982,19 +2016,28 @@ def test_szlab_robot_s09_beaker_place_directly_submits_robot_task():
     assert ("任务号", 19) in gateway.writes
 
 
-def test_szlab_robot_home_signal_blocks_task_before_pc_to_plc_write():
+def test_szlab_robot_waits_for_home_signal_before_pc_to_plc_write():
     gateway = FakeRobotPlcGateway(
         sensor_values={"传感器状态_上位机[2].NO[10]": True},
         home_value=False,
     )
+    original_wait = gateway.wait_variable_equal
+
+    def wait_until_home(name, expected, interval=1.0):
+        if name == "Robot_Home":
+            gateway.wait_equal_calls.append((name, expected, interval))
+            return True
+        return original_wait(name, expected, interval)
+
+    gateway.wait_variable_equal = wait_until_home
     device = SzlabMixerRobotDevice()
     device.set_plc_gateway(gateway)
 
     result = device.submit_pick_from_s04(position=1)
 
-    assert result["success"] is False
-    assert "Robot_Home 未确认" in result["message"]
-    assert gateway.writes == []
+    assert result["success"] is True
+    assert ("Robot_Home", True, device.poll_interval) in gateway.wait_equal_calls
+    assert ("任务号", 8) in gateway.writes
 
 
 def test_szlab_robot_can_skip_only_home_signal(monkeypatch):

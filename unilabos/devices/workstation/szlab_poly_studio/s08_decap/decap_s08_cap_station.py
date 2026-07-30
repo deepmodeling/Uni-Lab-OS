@@ -10,9 +10,8 @@ S08 开盖/关盖工位子设备。
 配合「S082瓶盖暂存位」下发工艺。开盖须传入机械臂扫描的样品ID，可指定暂存位或自动分配第一个空闲暂存位并
 写入 ID–Slot 绑定；关盖须传入相同样品 ID，按缓存反查暂存位，关盖成功后清除该 Slot 的 ID 记录。
 
-开/关盖前读取开盖工位传感器（工位1=NO[14]：500/250ml 样品瓶；工位2=NO[15]：100ml 液体瓶），
-若对应工位无瓶（传感器为 False）则直接返回错误。开盖分配暂存位时同时要求瓶盖暂存位传感器
-（NO[0-4]）为 False；关盖前要求目标暂存位传感器为 True（有盖可取）。
+开/关盖前通过轮询等待开盖工位传感器（工位1=NO[14]：500/250ml 样品瓶；工位2=NO[15]：100ml 液体瓶）
+及瓶盖暂存位传感器达到目标状态；开盖要求暂存位（NO[0-4]）为空，关盖要求目标暂存位有盖可取。
 
 ``S08取放料产品`` / ``S08取放料编号`` 由 workflow 写入，本驱动不读写。
 
@@ -711,14 +710,19 @@ class SZLabS08CapStationDevice:
     @not_action
     def _validate_s08_station_status_ready(self) -> None:
         status_code = self._read_s08_station_status_code()
-        if status_code not in S08_STATION_STATUS_READY_VALUES:
+        while status_code not in S08_STATION_STATUS_READY_VALUES:
             label = S08_STATION_STATUS_LABELS.get(status_code, f"未知状态{status_code}")
             var_ref = self._format_opc_variable_ref(NODE_STATION_STATUS)
-            raise ValueError(
-                f"S08 工站未就绪：PLC 状态字 {var_ref}={status_code}（{label}）。"
-                f"允许值为 2–6（准备好/运行中/单循环/寸动/初始化），0=报警、1=未准备好；"
-                "请在 PLC/HMI 消除报警并使工站进入就绪后再执行 process_cap。"
+            if status_code == 0:
+                raise ValueError(
+                    f"S08 工站未就绪：PLC 状态字 {var_ref}=0（报警中）。"
+                    "为保证设备安全，报警状态不等待；请在 PLC/HMI 消除报警后再执行 process_cap。"
+                )
+            logger.info(
+                f"S08 工站尚未就绪：PLC 状态字 {var_ref}={status_code}（{label}），继续等待"
             )
+            time.sleep(self.poll_interval)
+            status_code = self._read_s08_station_status_code()
 
     @not_action
     def _require_sample_id(self, sample_id: Sequence[int] | None) -> list[int]:
@@ -909,8 +913,6 @@ class SZLabS08CapStationDevice:
             normalized_sample_id = self._require_sample_id(样品ID)
             if self.require_station_status:
                 self._validate_s08_station_status_ready()
-            if self.validate_cap_constraints:
-                self._validate_cap_station_has_bottle(process_type)
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
 

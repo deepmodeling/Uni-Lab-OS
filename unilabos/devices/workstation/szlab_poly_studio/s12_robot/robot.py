@@ -259,10 +259,13 @@ class SzlabMixerRobotDevice(
         if self._should_skip_robot_precheck_variable(ROBOT_HOME_VARIABLE):
             status[ROBOT_HOME_VARIABLE] = "skipped"
         else:
-            home_value = bool(self._read_variable(ROBOT_HOME_VARIABLE, use_cache=False))
+            home_ready, home_value = self._wait_variable_truthy(
+                ROBOT_HOME_VARIABLE,
+                interval=self.poll_interval,
+            )
             status[ROBOT_HOME_VARIABLE] = home_value
-            if not home_value:
-                raise RuntimeError("Robot_Home 未确认，不能提交机器人任务")
+            if not home_ready:
+                raise RuntimeError(f"等待 {ROBOT_HOME_VARIABLE} 为 True 失败")
 
         allowed, allowed_value = self._wait_variable_truthy(
             ROBOT_WRITE_ALLOWED_VARIABLE,

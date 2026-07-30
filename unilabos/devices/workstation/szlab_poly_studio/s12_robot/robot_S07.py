@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -26,18 +27,19 @@ class SzlabRobotS07Mixin:
     def _resolve_s071_place_position(self, position: str) -> str:
         if str(position).strip().lower() != "auto":
             return str(position)
-        read_errors: list[str] = []
-        for candidate, sensor in S07Sensors.POWDER_CONTAINER_BY_POSITION.items():
-            try:
-                occupied = bool(self._read_variable(sensor, use_cache=False))
-            except Exception as exc:
-                read_errors.append(f"{candidate}: {exc}")
-                continue
-            if not occupied:
-                return candidate
-        if read_errors:
-            raise RuntimeError(f"无法确定 S071 空位: {'; '.join(read_errors)}")
-        raise RuntimeError("S071 没有可用于旧粉罐回库的空位")
+        while True:
+            read_errors: list[str] = []
+            for candidate, sensor in S07Sensors.POWDER_CONTAINER_BY_POSITION.items():
+                try:
+                    occupied = bool(self._read_variable(sensor, use_cache=False))
+                except Exception as exc:
+                    read_errors.append(f"{candidate}: {exc}")
+                    continue
+                if not occupied:
+                    return candidate
+            if read_errors:
+                raise RuntimeError(f"无法确定 S071 空位: {'; '.join(read_errors)}")
+            time.sleep(self.poll_interval)
 
     def _run_s071_place(self, position: str = "1-1") -> dict[str, Any]:
         position = self._resolve_s071_place_position(position)
@@ -80,13 +82,15 @@ class SzlabRobotS07Mixin:
         if self._plc_gateway is None:
             raise RuntimeError("S071 并行上料需要注入 szlab_poly_plc 网关")
 
-        sensor_rejection = self._ensure_sensor_gate(sensor, True, "S071 取粉罐源位必须有粉罐")
-        if sensor_rejection is not None:
+        sensor_precheck = self._wait_sensor_conditions({sensor: True}, phase="pre")
+        if not sensor_precheck["success"]:
             return {
-                **sensor_rejection,
+                "success": False,
+                "message": "S071 取粉罐源位等待失败",
                 "status": "rejected",
                 "position": position,
                 "load_position": load_position,
+                "sensor_precheck": sensor_precheck,
             }
         handshake_precheck = self._run_robot_handshake_precheck("S071")
 

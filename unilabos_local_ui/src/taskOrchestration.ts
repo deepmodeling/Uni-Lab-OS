@@ -132,6 +132,108 @@ export type TaskInstanceProcessInput = {
   executionCursor?: number;
 };
 
+export type TaskActionExecutionRecord = {
+  nodeId: string;
+  attempt: number;
+  executionId: string;
+  status: 'pending' | 'running' | 'succeeded' | 'failed';
+  startedAt?: number;
+  finishedAt?: number;
+};
+
+export type TaskActionAttemptTiming = TaskActionExecutionRecord & {
+  durationMs: number | null;
+};
+
+export type TaskActionProgress = {
+  nodeId: string;
+  index: number;
+  state: 'waiting' | 'running' | 'completed' | 'failed';
+  durationMs: number | null;
+  attempts: TaskActionAttemptTiming[];
+};
+
+export function elapsedDurationMs(
+  startedAt: number | null | undefined,
+  finishedAt: number | null | undefined,
+  nowMs = Date.now(),
+) {
+  if (startedAt == null || !Number.isFinite(startedAt)) return null;
+  const endAt = finishedAt == null ? nowMs : finishedAt;
+  if (!Number.isFinite(endAt)) return null;
+  return Math.max(0, endAt - startedAt);
+}
+
+export function taskWallDurationMs(
+  task: Pick<TaskInstanceProcessInput, 'status'> & {
+    startedAt?: number;
+    finishedAt?: number;
+  },
+  nowMs = Date.now(),
+) {
+  if (task.startedAt == null) return null;
+  const terminal = task.status === 'completed'
+    || task.status === 'failed'
+    || task.status === 'cancelled';
+  if (terminal && task.finishedAt == null) return null;
+  return elapsedDurationMs(
+    task.startedAt,
+    terminal ? task.finishedAt : undefined,
+    nowMs,
+  );
+}
+
+export function formatElapsedDurationMs(durationMs: number | null | undefined) {
+  if (durationMs == null || !Number.isFinite(durationMs)) return '—';
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1_000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
+export function buildTaskActionProgress(
+  nodeIds: string[],
+  records: TaskActionExecutionRecord[],
+  nowMs = Date.now(),
+): TaskActionProgress[] {
+  const recordsByNodeId = new Map<string, TaskActionExecutionRecord[]>();
+  for (const record of records) {
+    const bucket = recordsByNodeId.get(record.nodeId) || [];
+    bucket.push(record);
+    recordsByNodeId.set(record.nodeId, bucket);
+  }
+
+  return nodeIds.map((nodeId, index) => {
+    const attempts = [...(recordsByNodeId.get(nodeId) || [])]
+      .sort((left, right) => (
+        left.attempt - right.attempt
+        || (left.startedAt ?? Number.MAX_SAFE_INTEGER) - (right.startedAt ?? Number.MAX_SAFE_INTEGER)
+      ))
+      .map((attempt) => ({
+        ...attempt,
+        durationMs: elapsedDurationMs(attempt.startedAt, attempt.finishedAt, nowMs),
+      }));
+    const latest = attempts[attempts.length - 1];
+    const succeeded = [...attempts].reverse().find((attempt) => attempt.status === 'succeeded');
+    const state = succeeded
+      ? 'completed'
+      : latest?.status === 'running'
+        ? 'running'
+        : latest?.status === 'failed'
+          ? 'failed'
+          : 'waiting';
+    const visibleAttempt = succeeded || latest;
+    return {
+      nodeId,
+      index,
+      state,
+      durationMs: visibleAttempt?.durationMs ?? null,
+      attempts,
+    };
+  });
+}
+
 function blockVisualState(status: string): SampleProcessBlockState {
   if (status === 'waiting'
     || status === 'pending'

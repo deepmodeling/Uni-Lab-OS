@@ -95,7 +95,7 @@ import {
   taskLocalWaitingReason,
   updateScheduledTemplateDraft,
 } from './taskOrchestration';
-import type { TriggerCondition } from './taskOrchestration';
+import type { TaskActionExecutionRecord, TriggerCondition } from './taskOrchestration';
 import {
   createTaskExecutionController,
   createTaskExecutionStatus,
@@ -207,6 +207,7 @@ type TaskInstance = {
   startedAt?: number;
   finishedAt?: number;
   executionCursor?: number;
+  actionRecords: TaskActionExecutionRecord[];
   nodeParameters: Record<string, Record<string, unknown>>;
 };
 type TaskWorkspaceState = {
@@ -305,6 +306,14 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
       startedAt: instance.started_at ?? undefined,
       finishedAt: instance.finished_at ?? undefined,
       executionCursor: instance.execution_state?.cursor,
+      actionRecords: (instance.execution_state?.records || []).map((record) => ({
+        nodeId: record.node_id,
+        attempt: record.attempt,
+        executionId: record.execution_id,
+        status: record.status,
+        startedAt: record.started_at ?? undefined,
+        finishedAt: record.finished_at ?? undefined,
+      })),
       nodeParameters: instance.payload?.node_parameters || {},
     })),
     taskEvents: taskEventRecords.map((event) => event.text).slice(-20).reverse(),

@@ -116,12 +116,21 @@ export type SampleProcessBlock = {
   state: SampleProcessBlockState;
   actionDone: number;
   actionTotal: number;
+  actions: TaskActionProgress[];
+  totalDurationMs: number | null;
 };
 
 export type SampleProcessRow = {
   sample: string;
   blocks: SampleProcessBlock[];
 };
+
+export type SampleProcessRowStatus =
+  | 'current'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'queued';
 
 export type TaskInstanceProcessInput = {
   id: string;
@@ -130,7 +139,146 @@ export type TaskInstanceProcessInput = {
   order: number;
   status: string;
   executionCursor?: number;
+  actionRecords?: TaskActionExecutionRecord[];
+  startedAt?: number;
+  finishedAt?: number;
 };
+
+export type TaskActionExecutionRecord = {
+  nodeId: string;
+  attempt: number;
+  executionId: string;
+  status: 'pending' | 'running' | 'succeeded' | 'failed';
+  startedAt?: number;
+  finishedAt?: number;
+};
+
+export type TaskActionAttemptTiming = TaskActionExecutionRecord & {
+  durationMs: number | null;
+};
+
+export type TaskActionProgress = {
+  nodeId: string;
+  index: number;
+  state: 'waiting' | 'running' | 'completed' | 'failed';
+  durationMs: number | null;
+  attempts: TaskActionAttemptTiming[];
+};
+
+export function elapsedDurationMs(
+  startedAt: number | null | undefined,
+  finishedAt: number | null | undefined,
+  nowMs = Date.now(),
+) {
+  if (startedAt == null || !Number.isFinite(startedAt)) return null;
+  const endAt = finishedAt == null ? nowMs : finishedAt;
+  if (!Number.isFinite(endAt)) return null;
+  return Math.max(0, endAt - startedAt);
+}
+
+export function taskWallDurationMs(
+  task: Pick<TaskInstanceProcessInput, 'status'> & {
+    startedAt?: number;
+    finishedAt?: number;
+  },
+  nowMs = Date.now(),
+) {
+  if (task.startedAt == null) return null;
+  const terminal = task.status === 'completed'
+    || task.status === 'failed'
+    || task.status === 'cancelled';
+  if (terminal && task.finishedAt == null) return null;
+  return elapsedDurationMs(
+    task.startedAt,
+    terminal ? task.finishedAt : undefined,
+    nowMs,
+  );
+}
+
+export function formatElapsedDurationMs(durationMs: number | null | undefined) {
+  if (durationMs == null || !Number.isFinite(durationMs)) return '—';
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1_000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
+export function taskActionProgressMinWidth(actionTotal: number) {
+  return Math.max(220, Math.max(0, Math.floor(actionTotal)) * 140);
+}
+
+function actionAttemptStateLabel(status: TaskActionExecutionRecord['status']) {
+  if (status === 'running') return '执行中';
+  if (status === 'succeeded') return '已完成';
+  if (status === 'failed') return '失败';
+  return '待执行';
+}
+
+function formatActionClockTime(timestamp: number | undefined) {
+  if (timestamp == null) return '—';
+  return new Date(timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+export function formatTaskActionTimingTitle(action: TaskActionProgress, label: string) {
+  const state = action.state === 'running'
+    ? '执行中'
+    : action.state === 'completed'
+      ? '已完成'
+      : action.state === 'failed'
+        ? '失败'
+        : '待执行';
+  const header = `${action.index + 1}. ${label} · ${state}`;
+  if (!action.attempts.length) return header;
+  const attempts = action.attempts.map((attempt) => (
+    `尝试 ${attempt.attempt} · ${actionAttemptStateLabel(attempt.status)} · `
+    + `${formatActionClockTime(attempt.startedAt)} → ${attempt.finishedAt == null ? '现在' : formatActionClockTime(attempt.finishedAt)}`
+    + ` · ${formatElapsedDurationMs(attempt.durationMs)}`
+  ));
+  return [header, ...attempts].join('\n');
+}
+
+export function buildTaskActionProgress(
+  nodeIds: string[],
+  records: TaskActionExecutionRecord[],
+  nowMs = Date.now(),
+): TaskActionProgress[] {
+  const recordsByNodeId = new Map<string, TaskActionExecutionRecord[]>();
+  for (const record of records) {
+    const bucket = recordsByNodeId.get(record.nodeId) || [];
+    bucket.push(record);
+    recordsByNodeId.set(record.nodeId, bucket);
+  }
+
+  return nodeIds.map((nodeId, index) => {
+    const attempts = [...(recordsByNodeId.get(nodeId) || [])]
+      .sort((left, right) => (
+        left.attempt - right.attempt
+        || (left.startedAt ?? Number.MAX_SAFE_INTEGER) - (right.startedAt ?? Number.MAX_SAFE_INTEGER)
+      ))
+      .map((attempt) => ({
+        ...attempt,
+        durationMs: elapsedDurationMs(attempt.startedAt, attempt.finishedAt, nowMs),
+      }));
+    const latest = attempts[attempts.length - 1];
+    const succeeded = [...attempts].reverse().find((attempt) => attempt.status === 'succeeded');
+    const state = succeeded
+      ? 'completed'
+      : latest?.status === 'running'
+        ? 'running'
+        : latest?.status === 'failed'
+          ? 'failed'
+          : 'waiting';
+    const visibleAttempt = succeeded || latest;
+    return {
+      nodeId,
+      index,
+      state,
+      durationMs: visibleAttempt?.durationMs ?? null,
+      attempts,
+    };
+  });
+}
 
 function blockVisualState(status: string): SampleProcessBlockState {
   if (status === 'waiting'
@@ -144,9 +292,20 @@ function blockVisualState(status: string): SampleProcessBlockState {
   return 'waiting';
 }
 
+export function sampleProcessRowStatus(
+  blocks: Array<Pick<SampleProcessBlock, 'state'>>,
+): SampleProcessRowStatus {
+  if (blocks.some((block) => block.state === 'running')) return 'current';
+  if (blocks.length > 0 && blocks.every((block) => block.state === 'completed')) return 'completed';
+  if (blocks.some((block) => block.state === 'failed')) return 'failed';
+  if (blocks.some((block) => block.state === 'cancelled')) return 'cancelled';
+  return 'queued';
+}
+
 export function buildSampleProcessRows(
   instances: TaskInstanceProcessInput[],
   templates: Array<Pick<TaskTemplateModel, 'id' | 'name' | 'nodeIds'>>,
+  nowMs = Date.now(),
 ): SampleProcessRow[] {
   const templatesById = new Map(templates.map((template) => [template.id, template]));
   const bySample = new Map<string, SampleProcessBlock[]>();
@@ -157,6 +316,11 @@ export function buildSampleProcessRows(
     const actionDone = instance.status === 'completed'
       ? actionTotal
       : Math.min(cursor, actionTotal);
+    const actions = buildTaskActionProgress(
+      template?.nodeIds || [],
+      instance.actionRecords || [],
+      nowMs,
+    );
     const block: SampleProcessBlock = {
       id: instance.id,
       instanceId: instance.id,
@@ -167,6 +331,8 @@ export function buildSampleProcessRows(
       state: blockVisualState(instance.status),
       actionDone,
       actionTotal,
+      actions,
+      totalDurationMs: taskWallDurationMs(instance, nowMs),
     };
     const bucket = bySample.get(instance.sample) || [];
     bucket.push(block);

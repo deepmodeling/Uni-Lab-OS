@@ -3127,6 +3127,90 @@ code {
   opacity: .92;
 }
 
+.task-sample-block-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.task-sample-block-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-sample-block-head small {
+  flex: 0 0 auto;
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-action-progress {
+  display: flex;
+  gap: 2px;
+  height: 11px;
+}
+
+.task-action-progress-segment {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .34);
+  color: rgba(255, 255, 255, .86);
+  font-size: 7px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.task-action-progress-segment > span {
+  display: grid;
+  flex: 0 0 11px;
+  height: 8px;
+  place-items: center;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .4);
+  font-size: 6px;
+}
+
+.task-action-progress-segment > b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 7px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-action-progress-segment.running {
+  background: #fde68a;
+  color: #78350f;
+  animation: task-action-pulse 1.4s ease-in-out infinite;
+}
+
+.task-action-progress-segment.completed {
+  background: #4ade80;
+  color: #14532d;
+}
+
+.task-action-progress-segment.failed {
+  background: #fecaca;
+  color: #7f1d1d;
+}
+
+@keyframes task-action-pulse {
+  50% { filter: brightness(1.12); }
+}
+
 .task-sample-block.running { background: #e9a23b; }
 .task-sample-block.completed { background: #8096aa; opacity: .88; }
 .task-sample-block.failed { background: #c45c5c; }

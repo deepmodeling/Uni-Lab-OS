@@ -3,7 +3,15 @@ import './taskSchedulerBench.css';
 import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import type { TaskLogCategory, TaskLogLine } from './taskLogSession';
-import { resolveTemplateNodes } from './taskOrchestration';
+import {
+  buildSampleProcessRows,
+  formatElapsedDurationMs,
+  formatTaskActionTimingTitle,
+  resolveTemplateNodes,
+  sampleProcessRowStatus,
+  taskActionProgressMinWidth,
+} from './taskOrchestration';
+import type { SampleProcessRowStatus, TaskActionExecutionRecord } from './taskOrchestration';
 
 type Template = { id: string; name: string; nodeIds: string[] };
 type Task = {
@@ -12,6 +20,10 @@ type Task = {
   templateId: string;
   order: number;
   status: string;
+  executionCursor?: number;
+  actionRecords?: TaskActionExecutionRecord[];
+  startedAt?: number;
+  finishedAt?: number;
   nodeParameters: Record<string, Record<string, unknown>>;
 };
 type ActionNode = {
@@ -77,6 +89,14 @@ function stateLabel(status: string) {
   if (status === 'cancelled') return '已取消';
   if (status === 'waiting') return '等待条件';
   return '待派发';
+}
+
+function sampleRowStatusLabel(status: SampleProcessRowStatus) {
+  if (status === 'current') return '当前';
+  if (status === 'completed') return '已完成';
+  if (status === 'failed') return '失败';
+  if (status === 'cancelled') return '已取消';
+  return '排队';
 }
 
 type HeaderActionsProps = Pick<
@@ -148,10 +168,15 @@ export function TaskSchedulerBench(props: Props) {
   const [parameterDraft, setParameterDraft] = React.useState<Record<string, Record<string, unknown>>>({});
   const [logFilter, setLogFilter] = React.useState<TaskLogCategory>('all');
   const [isFollowingLogs, setIsFollowingLogs] = React.useState(true);
+  const [timingNowMs, setTimingNowMs] = React.useState(() => Date.now());
   const logContainerRef = React.useRef<HTMLDivElement>(null);
   const selected = props.tasks.find((task) => task.id === props.selectedTaskId) || props.tasks[0];
   const selectedTemplate = props.templates.find((template) => template.id === selected?.templateId);
-  const sampleNames = [...new Set(props.tasks.map((task) => task.sample))];
+  const hasRunningTasks = props.tasks.some((task) => task.status === 'running');
+  const sampleProcessRows = React.useMemo(
+    () => buildSampleProcessRows(props.tasks, props.templates, timingNowMs),
+    [props.tasks, props.templates, timingNowMs],
+  );
   const visibleLogLines = props.logLines.filter((line) => logFilter === 'all' || line.category === logFilter);
   const editingTemplate = props.templates.find((template) => template.id === editingTask?.templateId);
   const editingNodes: ResolvedActionNode[] = editingTemplate
@@ -166,6 +191,13 @@ export function TaskSchedulerBench(props: Props) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [isFollowingLogs, visibleLogLines.length]);
+
+  React.useEffect(() => {
+    setTimingNowMs(Date.now());
+    if (!hasRunningTasks) return undefined;
+    const timer = window.setInterval(() => setTimingNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [hasRunningTasks]);
 
   const exportLogs = () => {
     const text = visibleLogLines.map((line) => (
@@ -266,7 +298,66 @@ export function TaskSchedulerBench(props: Props) {
           </section>
           <section className="scheduler-bench__panel scheduler-bench__progress">
             <PanelHead title="样品进度缩略图" badge="仅显示" />
-            {sampleNames.map((sample) => <div className="scheduler-bench__progress-row" key={sample}><strong>{sample}</strong><div>{props.tasks.filter((task) => task.sample === sample).map((task) => <span className={task.status} key={task.id}>{props.templates.find((template) => template.id === task.templateId)?.name || task.templateId}</span>)}</div><small>{sample === selected?.sample ? '当前' : '排队'}</small></div>)}
+            {sampleProcessRows.map((row) => {
+              const rowStatus = sampleProcessRowStatus(row.blocks);
+              return (
+                <div className="scheduler-bench__progress-row" key={row.sample}>
+                <strong>{row.sample}</strong>
+                <div className="scheduler-bench__progress-track">
+                  {row.blocks.map((block) => {
+                    const template = props.templates.find((item) => item.id === block.templateId);
+                    const resolvedNodes = template
+                      ? resolveTemplateNodes(template.nodeIds, props.actionNodes)
+                      : [];
+                    const activeAction = block.actions.find((action) => action.state === 'running');
+                    const activeNode = activeAction ? resolvedNodes[activeAction.index]?.node : null;
+                    return (
+                      <div
+                        className={`scheduler-bench__progress-task ${block.state}`}
+                        key={block.id}
+                        style={{ minWidth: taskActionProgressMinWidth(block.actionTotal) }}
+                      >
+                        <div className="scheduler-bench__progress-task-head">
+                          <span>{block.templateName}</span>
+                          <small>
+                            {activeNode ? `当前：${activeNode.label}` : stateLabel(block.state)}
+                            {' · '}
+                            {formatElapsedDurationMs(block.totalDurationMs)}
+                          </small>
+                        </div>
+                        <div
+                          aria-label={`${block.templateName} 动作进度`}
+                          className="scheduler-bench__action-progress"
+                          role="progressbar"
+                          aria-valuemax={block.actionTotal}
+                          aria-valuemin={0}
+                          aria-valuenow={block.actionDone}
+                        >
+                          {block.actions.map((action) => {
+                            const node = resolvedNodes[action.index]?.node;
+                            const label = node?.label || node?.method || action.nodeId;
+                            return (
+                              <i
+                                className={`scheduler-bench__action-segment ${action.state}`}
+                                key={`${action.nodeId}:${action.index}`}
+                                title={formatTaskActionTimingTitle(action, label)}
+                              >
+                                <span>{action.index + 1}</span>
+                                <b>{label}</b>
+                              </i>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                  <small className={`scheduler-bench__progress-summary ${rowStatus}`}>
+                    {sampleRowStatusLabel(rowStatus)}
+                  </small>
+                </div>
+              );
+            })}
           </section>
         </section>
 

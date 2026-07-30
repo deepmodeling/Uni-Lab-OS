@@ -666,34 +666,119 @@
   font-size: 11px;
 }
 
-.scheduler-bench__progress-row > div {
-  display: flex;
-  height: 14px;
-  overflow: hidden;
-  border-radius: 6px;
-  background: #e2e8f0;
+.scheduler-bench__progress-summary {
+  min-width: 36px;
+  color: #64748b;
+  font-weight: 800;
+  text-align: right;
 }
 
-.scheduler-bench__progress-row span {
+.scheduler-bench__progress-summary.current { color: #b45309; }
+.scheduler-bench__progress-summary.completed { color: #15803d; }
+.scheduler-bench__progress-summary.failed { color: #b91c1c; }
+.scheduler-bench__progress-summary.cancelled { color: #64748b; }
+
+.scheduler-bench__progress-track {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.scheduler-bench__progress-task {
   display: grid;
+  flex: 1 1 150px;
+  gap: 4px;
+  min-width: 110px;
+  padding: 5px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.scheduler-bench__progress-task.running { border-color: #f2b84b; }
+.scheduler-bench__progress-task.completed { border-color: #86b99a; }
+.scheduler-bench__progress-task.failed { border-color: #dc8585; }
+
+.scheduler-bench__progress-task-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.scheduler-bench__progress-task-head span {
+  overflow: hidden;
+  color: #334155;
+  font-size: 9px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduler-bench__progress-task-head small {
+  flex: 0 0 auto;
+  max-width: 62%;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduler-bench__action-progress {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+
+.scheduler-bench__action-segment {
+  display: flex;
   flex: 1;
-  min-width: 48px;
-  place-items: center;
-  background: #94a3b8;
-  color: #fff;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #cbd5e1;
+  color: #475569;
   font-size: 8px;
   font-weight: 800;
+  font-style: normal;
 }
 
-.scheduler-bench__progress-row span.running { background: var(--amber); }
+.scheduler-bench__action-segment > span {
+  display: grid;
+  flex: 0 0 12px;
+  height: 9px;
+  place-items: center;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .42);
+  font-size: 7px;
+}
 
-.scheduler-bench__progress-row span.completed { background: var(--green); }
+.scheduler-bench__action-segment > b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 8px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-.scheduler-bench__progress-row span.failed { background: var(--red); }
+.scheduler-bench__action-segment.running {
+  background: var(--amber);
+  color: #fff;
+  animation: scheduler-action-pulse 1.4s ease-in-out infinite;
+}
+.scheduler-bench__action-segment.completed { background: var(--green); color: #fff; }
+.scheduler-bench__action-segment.failed { background: var(--red); color: #fff; }
 
-.scheduler-bench__progress-row span.cancelled {
-  background: repeating-linear-gradient(-45deg, #f1f5f9 0 4px, #cbd5e1 4px 8px);
-  color: #475569;
+@keyframes scheduler-action-pulse {
+  50% { filter: brightness(1.18); }
 }
 
 /* ── Logs ── */

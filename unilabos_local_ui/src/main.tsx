@@ -88,14 +88,17 @@ import {
   createTaskTemplateDraft,
   createTaskTemplateId,
   createWorkspaceEpochController,
+  formatElapsedDurationMs,
+  formatTaskActionTimingTitle,
   isTaskWaitingStatus,
   renameTaskTemplate,
   resolveTaskTemplateNameDraft,
   resolveTemplateNodes,
+  taskActionProgressMinWidth,
   taskLocalWaitingReason,
   updateScheduledTemplateDraft,
 } from './taskOrchestration';
-import type { TriggerCondition } from './taskOrchestration';
+import type { TaskActionExecutionRecord, TriggerCondition } from './taskOrchestration';
 import {
   createTaskExecutionController,
   createTaskExecutionStatus,
@@ -207,6 +210,7 @@ type TaskInstance = {
   startedAt?: number;
   finishedAt?: number;
   executionCursor?: number;
+  actionRecords: TaskActionExecutionRecord[];
   nodeParameters: Record<string, Record<string, unknown>>;
 };
 type TaskWorkspaceState = {
@@ -305,6 +309,14 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
       startedAt: instance.started_at ?? undefined,
       finishedAt: instance.finished_at ?? undefined,
       executionCursor: instance.execution_state?.cursor,
+      actionRecords: (instance.execution_state?.records || []).map((record) => ({
+        nodeId: record.node_id,
+        attempt: record.attempt,
+        executionId: record.execution_id,
+        status: record.status,
+        startedAt: record.started_at ?? undefined,
+        finishedAt: record.finished_at ?? undefined,
+      })),
       nodeParameters: instance.payload?.node_parameters || {},
     })),
     taskEvents: taskEventRecords.map((event) => event.text).slice(-20).reverse(),
@@ -4060,19 +4072,61 @@ function App() {
                   <div className="task-sample-row" key={row.sample}>
                     <strong>{row.sample}</strong>
                     <div className="task-sample-track">
-                      {row.blocks.map((block) => (
-                        <div
-                          className={[
-                            'task-sample-block',
-                            block.state,
-                          ].filter(Boolean).join(' ')}
-                          key={block.id}
-                          title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
-                        >
-                          <span>{block.templateName}</span>
-                          <small>{block.actionDone}/{block.actionTotal}</small>
-                        </div>
-                      ))}
+                      {row.blocks.map((block) => {
+                        const template = taskTemplates.find((item) => item.id === block.templateId);
+                        const resolvedNodes = template
+                          ? resolveTemplateNodes(template.nodeIds, taskNodeDescriptors)
+                          : [];
+                        const activeAction = block.actions.find((action) => action.state === 'running');
+                        const activeResolvedNode = activeAction
+                          ? resolvedNodes[activeAction.index]?.node
+                          : null;
+                        const activeNode = activeResolvedNode ? nodesById.get(activeResolvedNode.id) : null;
+                        return (
+                          <div
+                            className={[
+                              'task-sample-block',
+                              block.state,
+                            ].filter(Boolean).join(' ')}
+                            key={block.id}
+                            style={{ minWidth: taskActionProgressMinWidth(block.actionTotal) }}
+                            title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
+                          >
+                            <div className="task-sample-block-head">
+                              <span>{block.templateName}</span>
+                              <small>
+                                {activeNode ? `当前：${activeNode.data.label}` : `${block.actionDone}/${block.actionTotal}`}
+                                {' · '}
+                                {formatElapsedDurationMs(block.totalDurationMs)}
+                              </small>
+                            </div>
+                            <div
+                              aria-label={`${block.templateName} 动作进度`}
+                              aria-valuemax={block.actionTotal}
+                              aria-valuemin={0}
+                              aria-valuenow={block.actionDone}
+                              className="task-action-progress"
+                              role="progressbar"
+                            >
+                              {block.actions.map((action) => {
+                                const resolvedNode = resolvedNodes[action.index]?.node;
+                                const node = resolvedNode ? nodesById.get(resolvedNode.id) : null;
+                                const label = node?.data.label || resolvedNode?.method || action.nodeId;
+                                return (
+                                  <i
+                                    className={`task-action-progress-segment ${action.state}`}
+                                    key={`${action.nodeId}:${action.index}`}
+                                    title={formatTaskActionTimingTitle(action, label)}
+                                  >
+                                    <span>{action.index + 1}</span>
+                                    <b>{label}</b>
+                                  </i>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

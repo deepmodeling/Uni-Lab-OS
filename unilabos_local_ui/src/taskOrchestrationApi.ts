@@ -19,6 +19,15 @@ export type ApiTemplate = {
   output_triggers: ApiTrigger[];
 };
 
+export type ApiNodeExecutionRecord = {
+  node_id: string;
+  attempt: number;
+  execution_id: string;
+  status: 'pending' | 'running' | 'succeeded' | 'failed';
+  started_at: number | null;
+  finished_at: number | null;
+};
+
 export type ApiTaskInstance = {
   id: string;
   template_id: string;
@@ -33,6 +42,7 @@ export type ApiTaskInstance = {
   };
   execution_state?: {
     cursor?: number;
+    records?: ApiNodeExecutionRecord[];
     active_node_id?: string | null;
     active_execution_id?: string | null;
   };

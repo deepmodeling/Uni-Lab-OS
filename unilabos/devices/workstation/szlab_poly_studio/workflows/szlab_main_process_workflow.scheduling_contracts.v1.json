@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "kind": "szlab_scheduling_contracts",
-  "enforcement": "documentation_only",
+  "enforcement": "task_start_and_device_action",
   "workflow_file": "szlab_main_process_workflow.json",
   "derived_from": {
     "workflow_file": "szlab_single_sample_atomic_workflow.json",
@@ -60,7 +60,7 @@
         {
           "condition": "传感器状态_上位机[0].NO[6] == true（S03 1-1 有烧杯）",
           "status": "enforced",
-          "enforced_by": "submit_pick_from_s03"
+          "enforced_by": "TaskExecutionCoordinator + submit_pick_from_s03"
         },
         {
           "condition": "S072 位置 1 临时软件状态为无料",
@@ -98,12 +98,12 @@
         {
           "condition": "S07原点信号 == true",
           "status": "enforced",
-          "enforced_by": "dose_powder"
+          "enforced_by": "TaskExecutionCoordinator + dose_powder"
         },
         {
           "condition": "S07允许加工 == true",
           "status": "enforced",
-          "enforced_by": "dose_powder"
+          "enforced_by": "TaskExecutionCoordinator + dose_powder"
         },
         {
           "condition": "粗加料位和精加料位在 1..10，目标重量有效，配方可加载",
@@ -150,12 +150,12 @@
         {
           "condition": "传感器状态_上位机[3].NO[1] == false（S06 为空）",
           "status": "enforced",
-          "enforced_by": "submit_place_to_s06"
+          "enforced_by": "TaskExecutionCoordinator + submit_place_to_s06"
         },
         {
-          "condition": "S06 工艺空闲且处于可放料安全位",
-          "status": "missing",
-          "reason": "机器人放料只检查目标物料传感器"
+          "condition": "S06 当前没有正在执行的加液工艺",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator"
         }
       ],
       "completion": [
@@ -183,17 +183,22 @@
         {
           "condition": "传感器状态_上位机[3].NO[1] == true（S06 有烧杯）",
           "status": "enforced",
-          "enforced_by": "run_solvent_addition"
+          "enforced_by": "TaskExecutionCoordinator + run_solvent_addition"
         },
         {
           "condition": "S06允许加工 == true",
           "status": "enforced",
-          "enforced_by": "run_solvent_addition"
+          "enforced_by": "TaskExecutionCoordinator + run_solvent_addition"
         },
         {
           "condition": "S06准备信号 == true",
           "status": "enforced",
-          "enforced_by": "run_solvent_addition"
+          "enforced_by": "TaskExecutionCoordinator + run_solvent_addition"
+        },
+        {
+          "condition": "S06加工完成 == false（新工艺尚未开始）",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator"
         },
         {
           "condition": "工艺 3 的泵 1、泵 2 加液量均大于 0",
@@ -235,7 +240,7 @@
         {
           "condition": "传感器状态_上位机[3].NO[1] == true（S06 有烧杯）",
           "status": "enforced",
-          "enforced_by": "submit_pick_from_s06"
+          "enforced_by": "TaskExecutionCoordinator + submit_pick_from_s06"
         },
         {
           "condition": "S09 烧杯工位临时软件状态为无料",
@@ -243,9 +248,9 @@
           "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
         },
         {
-          "condition": "S09 处于机器人可进入的安全原点",
-          "status": "missing",
-          "reason": "S09原点信号_1..4 已定义，但机器人放料未检查"
+          "condition": "S09原点信号_4 == true（烧杯取放安全位）",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator"
         }
       ],
       "completion": [
@@ -278,22 +283,22 @@
         {
           "condition": "TIP 盒 1、TIP 盒 2、液体瓶 1、工位 1 的物料传感器均为 true",
           "status": "enforced",
-          "enforced_by": "add_liquid_to_beaker"
+          "enforced_by": "TaskExecutionCoordinator + add_liquid_to_beaker"
         },
         {
           "condition": "S09允许加工 == true（工艺 5、7、8、6 每一步）",
           "status": "enforced",
-          "enforced_by": "add_liquid_to_beaker"
+          "enforced_by": "TaskExecutionCoordinator + add_liquid_to_beaker"
         },
         {
           "condition": "S09液体瓶1剩余液量 >= 0.5 mL",
           "status": "enforced",
-          "enforced_by": "add_liquid_to_beaker"
+          "enforced_by": "TaskExecutionCoordinator + add_liquid_to_beaker"
         },
         {
-          "condition": "S09原点信号_1..4 满足当前工艺安全位",
-          "status": "missing",
-          "reason": "原点信号已定义，但该 Action 未检查"
+          "condition": "S09原点信号_1 == true（首步取 TIP 安全位）",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator"
         }
       ],
       "completion": [
@@ -330,17 +335,17 @@
         {
           "condition": "传感器状态_上位机[2].NO[10] == false（S04 位置 1 为空）",
           "status": "enforced",
-          "enforced_by": "submit_place_to_s04"
+          "enforced_by": "TaskExecutionCoordinator + submit_place_to_s04"
         },
         {
-          "condition": "S09 处于机器人可进入的安全原点",
-          "status": "missing",
-          "reason": "机器人取料未检查 S09 原点信号"
+          "condition": "S09原点信号_4 == true（烧杯取放安全位）",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator"
         },
         {
           "condition": "S041准备信号 == true（S04 位置 1 可放料；位置 2..6 对应 S042..S046准备信号）",
           "status": "enforced",
-          "enforced_by": "submit_place_to_s04"
+          "enforced_by": "TaskExecutionCoordinator + submit_place_to_s04"
         }
       ],
       "completion": [
@@ -368,17 +373,17 @@
         {
           "condition": "传感器状态_上位机[2].NO[10] == true（S04 位置 1 有烧杯）",
           "status": "enforced",
-          "enforced_by": "run_stirring"
+          "enforced_by": "TaskExecutionCoordinator + run_stirring"
         },
         {
           "condition": "S041磁搅状态 == 1",
           "status": "enforced",
-          "enforced_by": "run_stirring"
+          "enforced_by": "TaskExecutionCoordinator + run_stirring"
         },
         {
           "condition": "S041允许加工 == true",
           "status": "enforced",
-          "enforced_by": "run_stirring"
+          "enforced_by": "TaskExecutionCoordinator + run_stirring"
         }
       ],
       "completion": [

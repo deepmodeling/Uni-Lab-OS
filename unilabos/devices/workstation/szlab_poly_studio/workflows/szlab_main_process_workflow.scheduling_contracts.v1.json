@@ -1,0 +1,734 @@
+{
+  "schema_version": 1,
+  "kind": "szlab_scheduling_contracts",
+  "enforcement": "documentation_only",
+  "workflow_file": "szlab_main_process_workflow.json",
+  "derived_from": {
+    "workflow_file": "szlab_single_sample_atomic_workflow.json",
+    "source_action_range": [
+      19,
+      42
+    ]
+  },
+  "status_values": {
+    "enforced": "当前设备驱动会执行该检查",
+    "missing": "合理的触发条件，但当前实现没有执行",
+    "skipped": "当前实现明确跳过，暂时允许继续"
+  },
+  "shared_contracts": {
+    "robot_action": {
+      "start": [
+        {
+          "condition": "Robot_Home == true",
+          "status": "enforced",
+          "enforced_by": "szlab_mixer_robot"
+        },
+        {
+          "condition": "Robot_任务允许写入 == true",
+          "status": "enforced",
+          "enforced_by": "szlab_mixer_robot"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "Robot_任务完成 == 当前任务号",
+          "status": "enforced",
+          "enforced_by": "szlab_mixer_robot"
+        },
+        {
+          "condition": "PC 到 PLC 的机器人参数与写入完成信号复位",
+          "status": "enforced",
+          "enforced_by": "szlab_mixer_robot"
+        }
+      ]
+    }
+  },
+  "units": [
+    {
+      "order": 1,
+      "unit_id": "transport_beaker_s03_to_s072",
+      "type": "transport",
+      "label": "S03 取烧杯 → S072 放烧杯",
+      "workflow_node_ids": [
+        "w01_pick_beaker_s03",
+        "w01_place_beaker_s072"
+      ],
+      "shared_contract_refs": [
+        "robot_action"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[0].NO[6] == true（S03 1-1 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s03"
+        },
+        {
+          "condition": "S072 位置 1 临时软件状态为无料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "传感器状态_上位机[0].NO[6] == false（S03 烧杯已取走）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s03"
+        },
+        {
+          "condition": "S072 放料成功记录将临时软件状态更新为有料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "unit_id": "process_dose_powder_s07",
+      "type": "process",
+      "label": "S07 在 S072 位置 1 注粉",
+      "workflow_node_ids": [
+        "w01_dose_powder_s07"
+      ],
+      "start": [
+        {
+          "condition": "S072 位置 1 临时软件状态为有料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        },
+        {
+          "condition": "S07原点信号 == true",
+          "status": "enforced",
+          "enforced_by": "dose_powder"
+        },
+        {
+          "condition": "S07允许加工 == true",
+          "status": "enforced",
+          "enforced_by": "dose_powder"
+        },
+        {
+          "condition": "粗加料位和精加料位在 1..10，目标重量有效，配方可加载",
+          "status": "enforced",
+          "enforced_by": "dose_powder"
+        },
+        {
+          "condition": "对应粉料容器有料",
+          "status": "missing",
+          "reason": "粉料容器传感器已定义，但 dose_powder 当前未读取"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "S07工艺完成 == 3，随后复位为 0",
+          "status": "enforced",
+          "enforced_by": "dose_powder"
+        },
+        {
+          "condition": "实际重量处于目标容差范围",
+          "status": "missing",
+          "reason": "当前只记录偏差，不据此判定动作失败"
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "unit_id": "transport_beaker_s072_to_s06",
+      "type": "transport",
+      "label": "S072 取烧杯 → S06 放烧杯",
+      "workflow_node_ids": [
+        "w02_pick_beaker_s072",
+        "w02_place_beaker_s06"
+      ],
+      "shared_contract_refs": [
+        "robot_action"
+      ],
+      "start": [
+        {
+          "condition": "S072 位置 1 临时软件状态为有料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        },
+        {
+          "condition": "传感器状态_上位机[3].NO[1] == false（S06 为空）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s06"
+        },
+        {
+          "condition": "S06 工艺空闲且处于可放料安全位",
+          "status": "missing",
+          "reason": "机器人放料只检查目标物料传感器"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "传感器状态_上位机[3].NO[1] == true（S06 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s06"
+        },
+        {
+          "condition": "S072 取料成功记录将临时软件状态更新为无料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "unit_id": "process_add_solvent_s06",
+      "type": "process",
+      "label": "S06 泵加液",
+      "workflow_node_ids": [
+        "w02_add_solvent_s06"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[3].NO[1] == true（S06 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "run_solvent_addition"
+        },
+        {
+          "condition": "S06允许加工 == true",
+          "status": "enforced",
+          "enforced_by": "run_solvent_addition"
+        },
+        {
+          "condition": "S06准备信号 == true",
+          "status": "enforced",
+          "enforced_by": "run_solvent_addition"
+        },
+        {
+          "condition": "工艺 3 的泵 1、泵 2 加液量均大于 0",
+          "status": "enforced",
+          "enforced_by": "run_solvent_addition"
+        },
+        {
+          "condition": "溶剂液位足够",
+          "status": "missing",
+          "reason": "skip_level_check 参数当前被删除且未参与驱动逻辑"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "S06加工完成 == true",
+          "status": "enforced",
+          "enforced_by": "run_solvent_addition"
+        },
+        {
+          "condition": "传感器状态_上位机[3].NO[1] == true（烧杯仍在位）",
+          "status": "enforced",
+          "enforced_by": "run_solvent_addition"
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "unit_id": "transport_beaker_s06_to_s09",
+      "type": "transport",
+      "label": "S06 取烧杯 → S09 放烧杯",
+      "workflow_node_ids": [
+        "w03_pick_beaker_s06",
+        "w03_place_beaker_s09"
+      ],
+      "shared_contract_refs": [
+        "robot_action"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[3].NO[1] == true（S06 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s06"
+        },
+        {
+          "condition": "S09 烧杯工位临时软件状态为无料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        },
+        {
+          "condition": "S09 处于机器人可进入的安全原点",
+          "status": "missing",
+          "reason": "S09原点信号_1..4 已定义，但机器人放料未检查"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "传感器状态_上位机[3].NO[1] == false（S06 烧杯已取走）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s06"
+        },
+        {
+          "condition": "S09 放料成功记录将临时软件状态更新为有料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "unit_id": "process_add_liquid_s09",
+      "type": "process",
+      "label": "S09 烧杯加液",
+      "workflow_node_ids": [
+        "w03_add_liquid_s09"
+      ],
+      "start": [
+        {
+          "condition": "S09 烧杯工位临时软件状态为有料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        },
+        {
+          "condition": "TIP 盒 1、TIP 盒 2、液体瓶 1、工位 1 的物料传感器均为 true",
+          "status": "enforced",
+          "enforced_by": "add_liquid_to_beaker"
+        },
+        {
+          "condition": "S09允许加工 == true（工艺 5、7、8、6 每一步）",
+          "status": "enforced",
+          "enforced_by": "add_liquid_to_beaker"
+        },
+        {
+          "condition": "S09液体瓶1剩余液量 >= 0.5 mL",
+          "status": "enforced",
+          "enforced_by": "add_liquid_to_beaker"
+        },
+        {
+          "condition": "S09原点信号_1..4 满足当前工艺安全位",
+          "status": "missing",
+          "reason": "原点信号已定义，但该 Action 未检查"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "工艺 5、7、8、6 分别返回对应的 S09工艺完成值",
+          "status": "enforced",
+          "enforced_by": "add_liquid_to_beaker"
+        },
+        {
+          "condition": "各步骤后物料传感器满足预期，液体瓶账面余量已扣减",
+          "status": "enforced",
+          "enforced_by": "add_liquid_to_beaker"
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "unit_id": "transport_beaker_s09_to_s04",
+      "type": "transport",
+      "label": "S09 取烧杯 → S04 放烧杯",
+      "workflow_node_ids": [
+        "w04_pick_beaker_s09",
+        "w04_place_beaker_s04"
+      ],
+      "shared_contract_refs": [
+        "robot_action"
+      ],
+      "start": [
+        {
+          "condition": "S09 烧杯工位临时软件状态为有料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        },
+        {
+          "condition": "传感器状态_上位机[2].NO[10] == false（S04 位置 1 为空）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s04"
+        },
+        {
+          "condition": "S09 处于机器人可进入的安全原点",
+          "status": "missing",
+          "reason": "机器人取料未检查 S09 原点信号"
+        },
+        {
+          "condition": "S041准备信号 == true（S04 位置 1 可放料；位置 2..6 对应 S042..S046准备信号）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s04"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "传感器状态_上位机[2].NO[10] == true（S04 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s04"
+        },
+        {
+          "condition": "S09 取料成功记录将临时软件状态更新为无料",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
+        }
+      ]
+    },
+    {
+      "order": 8,
+      "unit_id": "process_stirring_s04",
+      "type": "process",
+      "label": "S04 磁搅",
+      "workflow_node_ids": [
+        "w04_run_stirring_s04"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[2].NO[10] == true（S04 位置 1 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "run_stirring"
+        },
+        {
+          "condition": "S041磁搅状态 == 1",
+          "status": "enforced",
+          "enforced_by": "run_stirring"
+        },
+        {
+          "condition": "S041允许加工 == true",
+          "status": "enforced",
+          "enforced_by": "run_stirring"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "S041加工完成 == true",
+          "status": "enforced",
+          "enforced_by": "run_stirring"
+        },
+        {
+          "condition": "传感器状态_上位机[2].NO[10] == true（烧杯仍在位）",
+          "status": "enforced",
+          "enforced_by": "run_stirring"
+        },
+        {
+          "condition": "实际温度和转速达到设定值且安全温度条件满足",
+          "status": "missing",
+          "reason": "当前驱动只向 PLC 写入参数，不独立验证实际值"
+        }
+      ]
+    },
+    {
+      "order": 9,
+      "unit_id": "transport_sample_vial_s03_to_s08",
+      "type": "transport",
+      "label": "S03 取样品瓶 → S08 放样品瓶",
+      "workflow_node_ids": [
+        "w05_pick_sample_vial_s03",
+        "w05_place_sample_vial_s08"
+      ],
+      "shared_contract_refs": [
+        "robot_action"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[1].NO[8] == true（S03 1-1 有样品瓶）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s03"
+        },
+        {
+          "condition": "传感器状态_上位机[3].NO[14] == false（S08 工位 1 为空）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s08"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "传感器状态_上位机[1].NO[8] == false（S03 样品瓶已取走）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s03"
+        },
+        {
+          "condition": "传感器状态_上位机[3].NO[14] == true（S08 工位 1 有样品瓶）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s08"
+        }
+      ],
+      "notes": [
+        "传感器状态_上位机[3].NO[14] 同时被文档映射为 S072 位置 1，需现场确认映射唯一性"
+      ]
+    },
+    {
+      "order": 10,
+      "unit_id": "process_open_cap_s08",
+      "type": "process",
+      "label": "S08 开盖",
+      "workflow_node_ids": [
+        "w05_open_sample_vial_s08"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[3].NO[14] == true（S08 工位 1 有样品瓶）",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "传感器状态_上位机[4].NO[2] == false（瓶盖暂存位 3 为空）",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "S08原点信号 == true",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "S08允许加工 == true",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "样品 ID 与瓶盖暂存位业务缓存一致",
+          "status": "missing",
+          "reason": "require_station_status 和 validate_cap_constraints 当前被硬编码关闭"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "S08工艺完成 == 3，随后握手复位为 0",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "S08 工位 1 仍有样品瓶，瓶盖暂存位 3 变为有盖",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        }
+      ]
+    },
+    {
+      "order": 11,
+      "unit_id": "transport_beaker_s04_to_s05",
+      "type": "transport",
+      "label": "S04 取烧杯 → S05 放烧杯",
+      "workflow_node_ids": [
+        "w06_pick_beaker_s04",
+        "w06_place_beaker_s05"
+      ],
+      "shared_contract_refs": [
+        "robot_action"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[2].NO[10] == true（S04 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s04"
+        },
+        {
+          "condition": "S041磁搅状态 == 1（磁搅结束且可取料）",
+          "status": "missing",
+          "reason": "机器人取料只检查来源物料传感器"
+        },
+        {
+          "condition": "传感器状态_上位机[3].NO[0] == false（S05 为空）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s05"
+        },
+        {
+          "condition": "S05准备信号 == true",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s05"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "传感器状态_上位机[2].NO[10] == false（S04 烧杯已取走）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s04"
+        },
+        {
+          "condition": "传感器状态_上位机[3].NO[0] == true（S05 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s05"
+        }
+      ]
+    },
+    {
+      "order": 12,
+      "unit_id": "process_photo_s05",
+      "type": "process",
+      "label": "S05 拍照",
+      "workflow_node_ids": [
+        "w06_take_photo_s05"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[3].NO[0] == true（S05 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "take_photo"
+        },
+        {
+          "condition": "S05 Home/空闲且允许拍照",
+          "status": "missing",
+          "reason": "当前驱动没有独立 Home、允许加工或拍照启动写入"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "S05加工完成 == true",
+          "status": "enforced",
+          "enforced_by": "take_photo"
+        },
+        {
+          "condition": "S05拍照结果 == 1",
+          "status": "enforced",
+          "enforced_by": "take_photo"
+        },
+        {
+          "condition": "传感器状态_上位机[3].NO[0] == true（烧杯仍在位）",
+          "status": "enforced",
+          "enforced_by": "take_photo"
+        }
+      ],
+      "notes": [
+        "require_material=false 当前不会关闭物料检查"
+      ]
+    },
+    {
+      "order": 13,
+      "unit_id": "transport_beaker_s05_via_s08_to_s11",
+      "type": "transport",
+      "label": "S05 取烧杯 → S08 倒料 → S11 放烧杯",
+      "workflow_node_ids": [
+        "w07_pick_beaker_s05",
+        "w07_pour_beaker_s08",
+        "w07_place_beaker_s11"
+      ],
+      "shared_contract_refs": [
+        "robot_action"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[3].NO[0] == true（S05 有烧杯）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s05"
+        },
+        {
+          "condition": "传感器状态_上位机[3].NO[14] == true（S08 工位 1 有已开盖样品瓶）",
+          "status": "enforced",
+          "enforced_by": "submit_pour_from_s08"
+        },
+        {
+          "condition": "传感器状态_上位机[6].NO[0] == false（S11 烧杯位 1-1 为空）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s11"
+        },
+        {
+          "condition": "S05 拍照结果已通过",
+          "status": "missing",
+          "reason": "当前依赖顺序执行保证，但搬运驱动不重新校验拍照结果"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "传感器状态_上位机[3].NO[0] == false（S05 烧杯已取走）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s05"
+        },
+        {
+          "condition": "机器人倒料任务号 25 完成",
+          "status": "enforced",
+          "enforced_by": "submit_pour_from_s08"
+        },
+        {
+          "condition": "传感器状态_上位机[6].NO[0] == true（S11 烧杯位有烧杯）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s11"
+        },
+        {
+          "condition": "倒料后的实际液体转移结果正确",
+          "status": "missing",
+          "reason": "倒料动作没有独立后置传感器或称量验证"
+        }
+      ]
+    },
+    {
+      "order": 14,
+      "unit_id": "process_close_cap_s08",
+      "type": "process",
+      "label": "S08 关盖",
+      "workflow_node_ids": [
+        "w07_close_sample_vial_s08"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[3].NO[14] == true（S08 工位 1 有样品瓶）",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "传感器状态_上位机[4].NO[2] == true（瓶盖暂存位 3 有盖）",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "S08原点信号 == true",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "S08允许加工 == true",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "样品 ID 与开盖时缓存的瓶盖匹配",
+          "status": "missing",
+          "reason": "瓶盖业务约束校验当前被硬编码关闭"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "S08工艺完成 == 4，随后握手复位为 0",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        },
+        {
+          "condition": "S08 工位 1 仍有样品瓶，瓶盖暂存位 3 变为空",
+          "status": "enforced",
+          "enforced_by": "process_cap"
+        }
+      ]
+    },
+    {
+      "order": 15,
+      "unit_id": "transport_sample_vial_s08_to_s11",
+      "type": "transport",
+      "label": "S08 取样品瓶 → S11 放样品瓶",
+      "workflow_node_ids": [
+        "w07_pick_sample_vial_s08",
+        "w07_place_sample_vial_s11"
+      ],
+      "shared_contract_refs": [
+        "robot_action"
+      ],
+      "start": [
+        {
+          "condition": "传感器状态_上位机[3].NO[14] == true（S08 工位 1 有样品瓶）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s08"
+        },
+        {
+          "condition": "S08 关盖工艺已成功完成",
+          "status": "missing",
+          "reason": "当前依赖顺序执行保证，机器人取料不重新校验工艺完成状态"
+        },
+        {
+          "condition": "传感器状态_上位机[7].NO[2] == false（S11 样品瓶位 1-1 为空）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s11"
+        }
+      ],
+      "completion": [
+        {
+          "condition": "传感器状态_上位机[3].NO[14] == false（S08 样品瓶已取走）",
+          "status": "enforced",
+          "enforced_by": "submit_pick_from_s08"
+        },
+        {
+          "condition": "传感器状态_上位机[7].NO[2] == true（S11 样品瓶位有样品瓶）",
+          "status": "enforced",
+          "enforced_by": "submit_place_to_s11"
+        }
+      ]
+    }
+  ],
+  "known_global_gaps": [
+    "该契约文件当前不被 Task 调度器或 Workflow 执行器读取",
+    "调度器尚不能在 Action 级等待这些条件，也不能据此释放和重获资源",
+    "多个设备驱动采用无限轮询，尚未统一配置超时与失败策略",
+    "环境变量可跳过机器人传感器或握手检查，生产环境应限制使用",
+    "传感器状态_上位机[3].NO[14] 的 S072/S08 映射存在歧义，需要现场核对"
+  ]
+}

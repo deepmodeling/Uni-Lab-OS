@@ -49,7 +49,14 @@ from scripts.workflow_ui import (
     extract_registered_opc_values,
     load_preset,
 )
-from scripts.task_execution_coordinator import TaskApiConflict, _false_result
+from scripts.task_execution_coordinator import (
+    TaskApiConflict,
+    _false_result,
+    _temporary_s09_state,
+    _temporary_s09_trigger_satisfied,
+    _temporary_s072_state,
+    _temporary_s072_trigger_satisfied,
+)
 
 
 def test_load_ai4c_preset():
@@ -2567,6 +2574,235 @@ def test_task_execution_tick_delegates_and_returns_cycle_statistics(monkeypatch)
         "completed": 0,
         "failed": 0,
     }
+
+
+def test_temporary_s072_triggers_follow_successful_place_and_pick_records():
+    workspace = {
+        "templates": [
+            {
+                "id": "inbound",
+                "node_ids": [
+                    "w01_pick_beaker_s03",
+                    "w01_place_beaker_s072",
+                ],
+            },
+            {"id": "dose", "node_ids": ["w01_dose_powder_s07"]},
+            {
+                "id": "outbound",
+                "node_ids": [
+                    "w02_pick_beaker_s072",
+                    "w02_place_beaker_s06",
+                ],
+            },
+        ],
+        "task_instances": [],
+    }
+
+    assert _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-inbound",
+        node_id="w01_pick_beaker_s03",
+    )
+    assert not _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-dose",
+        node_id="w01_dose_powder_s07",
+    )
+    assert not _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-outbound",
+        node_id="w02_pick_beaker_s072",
+    )
+
+    workspace["task_instances"] = [
+        {
+            "id": "sample-a-inbound",
+            "template_id": "inbound",
+            "execution_state": {
+                "records": [
+                    {
+                        "node_id": "w01_place_beaker_s072",
+                        "status": "succeeded",
+                        "finished_at": 20,
+                    }
+                ]
+            },
+        }
+    ]
+    assert _temporary_s072_state(workspace).has_material is True
+    assert not _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-b-inbound",
+        node_id="w01_pick_beaker_s03",
+    )
+    assert _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-dose",
+        node_id="w01_dose_powder_s07",
+    )
+    assert _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-outbound",
+        node_id="w02_pick_beaker_s072",
+    )
+
+    workspace["task_instances"].append(
+        {
+            "id": "sample-a-outbound",
+            "template_id": "outbound",
+            "execution_state": {
+                "records": [
+                    {
+                        "node_id": "w02_pick_beaker_s072",
+                        "status": "succeeded",
+                        "finished_at": 30,
+                    }
+                ]
+            },
+        }
+    )
+    assert _temporary_s072_state(workspace).has_material is False
+    assert _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-b-inbound",
+        node_id="w01_pick_beaker_s03",
+    )
+
+
+def test_temporary_s072_blocks_second_inbound_during_first_transport_group():
+    workspace = {
+        "templates": [
+            {
+                "id": "inbound",
+                "node_ids": [
+                    "w01_pick_beaker_s03",
+                    "w01_place_beaker_s072",
+                ],
+            }
+        ],
+        "task_instances": [
+            {
+                "id": "sample-a-inbound",
+                "template_id": "inbound",
+                "execution_state": {
+                    "records": [
+                        {
+                            "node_id": "w01_pick_beaker_s03",
+                            "status": "succeeded",
+                            "finished_at": 10,
+                        }
+                    ]
+                },
+            }
+        ],
+    }
+
+    state = _temporary_s072_state(workspace)
+    assert state.has_material is False
+    assert state.inbound_instance_id == "sample-a-inbound"
+    assert _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-inbound",
+        node_id="w01_place_beaker_s072",
+    )
+    assert not _temporary_s072_trigger_satisfied(
+        workspace,
+        instance_id="sample-b-inbound",
+        node_id="w01_pick_beaker_s03",
+    )
+
+
+def test_temporary_s09_triggers_follow_successful_place_and_pick_records():
+    workspace = {
+        "templates": [
+            {
+                "id": "inbound",
+                "node_ids": [
+                    "w03_pick_beaker_s06",
+                    "w03_place_beaker_s09",
+                ],
+            },
+            {"id": "liquid", "node_ids": ["w03_add_liquid_s09"]},
+            {
+                "id": "outbound",
+                "node_ids": [
+                    "w04_pick_beaker_s09",
+                    "w04_place_beaker_s04",
+                ],
+            },
+        ],
+        "task_instances": [],
+    }
+
+    assert _temporary_s09_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-inbound",
+        node_id="w03_pick_beaker_s06",
+    )
+    assert not _temporary_s09_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-liquid",
+        node_id="w03_add_liquid_s09",
+    )
+    assert not _temporary_s09_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-outbound",
+        node_id="w04_pick_beaker_s09",
+    )
+
+    workspace["task_instances"] = [
+        {
+            "id": "sample-a-inbound",
+            "template_id": "inbound",
+            "execution_state": {
+                "records": [
+                    {
+                        "node_id": "w03_place_beaker_s09",
+                        "status": "succeeded",
+                        "finished_at": 20,
+                    }
+                ]
+            },
+        }
+    ]
+    assert _temporary_s09_state(workspace).has_material is True
+    assert not _temporary_s09_trigger_satisfied(
+        workspace,
+        instance_id="sample-b-inbound",
+        node_id="w03_pick_beaker_s06",
+    )
+    assert _temporary_s09_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-liquid",
+        node_id="w03_add_liquid_s09",
+    )
+    assert _temporary_s09_trigger_satisfied(
+        workspace,
+        instance_id="sample-a-outbound",
+        node_id="w04_pick_beaker_s09",
+    )
+
+    workspace["task_instances"].append(
+        {
+            "id": "sample-a-outbound",
+            "template_id": "outbound",
+            "execution_state": {
+                "records": [
+                    {
+                        "node_id": "w04_pick_beaker_s09",
+                        "status": "succeeded",
+                        "finished_at": 30,
+                    }
+                ]
+            },
+        }
+    )
+    assert _temporary_s09_state(workspace).has_material is False
+    assert _temporary_s09_trigger_satisfied(
+        workspace,
+        instance_id="sample-b-inbound",
+        node_id="w03_pick_beaker_s06",
+    )
 
 
 def test_task_execution_tick_passes_strict_harvest_only_to_manager(monkeypatch):

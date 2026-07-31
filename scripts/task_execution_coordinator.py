@@ -42,6 +42,194 @@ def workflow_nodes_from_payload(payload: dict[str, Any]) -> list[WorkflowNode]:
     return [workflow_node_from_mapping(item) for item in nodes]
 
 
+_S072_INBOUND_START_NODE_IDS = frozenset(
+    {"w01_pick_beaker_s03", "node_001_pick_from_s03"}
+)
+_S072_PLACE_NODE_IDS = frozenset(
+    {"w01_place_beaker_s072", "node_002_place_to_s072"}
+)
+_S072_OCCUPIED_REQUIRED_NODE_IDS = frozenset(
+    {
+        "w01_dose_powder_s07",
+        "node_003_dose_powder",
+        "w02_pick_beaker_s072",
+        "node_004_pick_from_s072",
+    }
+)
+_S072_PICK_NODE_IDS = frozenset(
+    {"w02_pick_beaker_s072", "node_004_pick_from_s072"}
+)
+_S09_INBOUND_START_NODE_IDS = frozenset({"w03_pick_beaker_s06"})
+_S09_PLACE_NODE_IDS = frozenset({"w03_place_beaker_s09"})
+_S09_OCCUPIED_REQUIRED_NODE_IDS = frozenset(
+    {"w03_add_liquid_s09", "w04_pick_beaker_s09"}
+)
+_S09_PICK_NODE_IDS = frozenset({"w04_pick_beaker_s09"})
+
+
+@dataclass(frozen=True)
+class _TemporaryStationState:
+    """实体传感器接入前，由成功动作记录推导的临时有料状态。"""
+
+    has_material: bool
+    inbound_instance_id: str | None = None
+
+
+def _temporary_station_state(
+    workspace: dict[str, Any],
+    *,
+    inbound_start_node_ids: frozenset[str],
+    place_node_ids: frozenset[str],
+    pick_node_ids: frozenset[str],
+) -> _TemporaryStationState:
+    """用放/取成功记录恢复临时状态，避免进程重启后丢失。"""
+    transitions: list[tuple[int, int, bool]] = []
+    templates = {
+        str(template.get("id")): template
+        for template in workspace.get("templates", [])
+        if isinstance(template, dict)
+    }
+    inbound_instance_id: str | None = None
+    sequence = 0
+
+    for instance in workspace.get("task_instances", []):
+        if not isinstance(instance, dict):
+            continue
+        state = instance.get("execution_state")
+        if not isinstance(state, dict):
+            continue
+        succeeded_node_ids: set[str] = set()
+        for record in state.get("records", []):
+            if not isinstance(record, dict) or record.get("status") != "succeeded":
+                continue
+            node_id = str(record.get("node_id") or "")
+            succeeded_node_ids.add(node_id)
+            if node_id in place_node_ids:
+                transitions.append(
+                    (int(record.get("finished_at") or 0), sequence, True)
+                )
+                sequence += 1
+            elif node_id in pick_node_ids:
+                transitions.append(
+                    (int(record.get("finished_at") or 0), sequence, False)
+                )
+                sequence += 1
+
+        template = templates.get(str(instance.get("template_id") or ""))
+        node_ids = template.get("node_ids", []) if template else []
+        has_inbound_start = any(
+            str(node_id) in inbound_start_node_ids for node_id in node_ids
+        )
+        has_inbound_place = any(
+            str(node_id) in place_node_ids for node_id in node_ids
+        )
+        inbound_started = any(
+            node_id in succeeded_node_ids
+            for node_id in inbound_start_node_ids
+        )
+        inbound_finished = any(
+            node_id in succeeded_node_ids for node_id in place_node_ids
+        )
+        if (
+            has_inbound_start
+            and has_inbound_place
+            and inbound_started
+            and not inbound_finished
+        ):
+            inbound_instance_id = str(instance.get("id") or "") or None
+
+    transitions.sort()
+    has_material = transitions[-1][2] if transitions else False
+    return _TemporaryStationState(
+        has_material=has_material,
+        inbound_instance_id=inbound_instance_id,
+    )
+
+
+def _temporary_station_trigger_satisfied(
+    workspace: dict[str, Any],
+    *,
+    instance_id: str,
+    node_id: str,
+    inbound_start_node_ids: frozenset[str],
+    place_node_ids: frozenset[str],
+    occupied_required_node_ids: frozenset[str],
+    pick_node_ids: frozenset[str],
+) -> bool:
+    state = _temporary_station_state(
+        workspace,
+        inbound_start_node_ids=inbound_start_node_ids,
+        place_node_ids=place_node_ids,
+        pick_node_ids=pick_node_ids,
+    )
+    if node_id in inbound_start_node_ids:
+        return not state.has_material and state.inbound_instance_id is None
+    if node_id in place_node_ids:
+        return not state.has_material and state.inbound_instance_id in {
+            None,
+            instance_id,
+        }
+    if node_id in occupied_required_node_ids:
+        return state.has_material
+    return True
+
+
+def _temporary_s072_state(workspace: dict[str, Any]) -> _TemporaryStationState:
+    """恢复 S072 临时有料状态。"""
+    return _temporary_station_state(
+        workspace,
+        inbound_start_node_ids=_S072_INBOUND_START_NODE_IDS,
+        place_node_ids=_S072_PLACE_NODE_IDS,
+        pick_node_ids=_S072_PICK_NODE_IDS,
+    )
+
+
+def _temporary_s072_trigger_satisfied(
+    workspace: dict[str, Any],
+    *,
+    instance_id: str,
+    node_id: str,
+) -> bool:
+    """附加 S072 临时触发条件；后续由实体传感器条件替换。"""
+    return _temporary_station_trigger_satisfied(
+        workspace,
+        instance_id=instance_id,
+        node_id=node_id,
+        inbound_start_node_ids=_S072_INBOUND_START_NODE_IDS,
+        place_node_ids=_S072_PLACE_NODE_IDS,
+        occupied_required_node_ids=_S072_OCCUPIED_REQUIRED_NODE_IDS,
+        pick_node_ids=_S072_PICK_NODE_IDS,
+    )
+
+
+def _temporary_s09_state(workspace: dict[str, Any]) -> _TemporaryStationState:
+    """恢复 S09 烧杯工位的临时有料状态。"""
+    return _temporary_station_state(
+        workspace,
+        inbound_start_node_ids=_S09_INBOUND_START_NODE_IDS,
+        place_node_ids=_S09_PLACE_NODE_IDS,
+        pick_node_ids=_S09_PICK_NODE_IDS,
+    )
+
+
+def _temporary_s09_trigger_satisfied(
+    workspace: dict[str, Any],
+    *,
+    instance_id: str,
+    node_id: str,
+) -> bool:
+    """附加 S09 烧杯工位临时触发条件；后续由实体传感器条件替换。"""
+    return _temporary_station_trigger_satisfied(
+        workspace,
+        instance_id=instance_id,
+        node_id=node_id,
+        inbound_start_node_ids=_S09_INBOUND_START_NODE_IDS,
+        place_node_ids=_S09_PLACE_NODE_IDS,
+        occupied_required_node_ids=_S09_OCCUPIED_REQUIRED_NODE_IDS,
+        pick_node_ids=_S09_PICK_NODE_IDS,
+    )
+
+
 @dataclass
 class _InFlightAction:
     future: Future[Any]
@@ -258,6 +446,18 @@ class TaskExecutionCoordinator:
                     continue
                 if self._closing.is_set():
                     break
+                if not _temporary_s072_trigger_satisfied(
+                    workspace,
+                    instance_id=str(instance.get("id")),
+                    node_id=node_id,
+                ):
+                    continue
+                if not _temporary_s09_trigger_satisfied(
+                    workspace,
+                    instance_id=str(instance.get("id")),
+                    node_id=node_id,
+                ):
+                    continue
                 method_name = ""
                 action_callable: Callable[..., Any] | None = None
                 if node is not None:

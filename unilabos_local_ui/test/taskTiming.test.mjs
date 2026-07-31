@@ -37,13 +37,23 @@ assert.equal(elapsedDurationMs(1_000, undefined, 6_500), 5_500);
 assert.equal(elapsedDurationMs(undefined, undefined, 6_500), null);
 
 assert.equal(
-  taskWallDurationMs({ status: 'running', startedAt: 1_000 }, 6_500),
+  taskWallDurationMs({
+    status: 'running',
+    startedAt: 500,
+    actionRecords: [{ startedAt: 1_000 }],
+  }, 6_500),
   5_500,
 );
 assert.equal(
-  taskWallDurationMs({ status: 'completed', startedAt: 1_000, finishedAt: 8_000 }, 20_000),
+  taskWallDurationMs({
+    status: 'completed',
+    startedAt: 500,
+    finishedAt: 9_000,
+    actionRecords: [{ startedAt: 1_000, finishedAt: 8_000 }],
+  }, 20_000),
   7_000,
 );
+assert.equal(taskWallDurationMs({ status: 'running', startedAt: 1_000 }, 6_500), null);
 assert.equal(taskWallDurationMs({ status: 'pending' }, 6_500), null);
 assert.equal(taskWallDurationMs({ status: 'cancelled', startedAt: 1_000 }, 6_500), null);
 
@@ -128,7 +138,23 @@ assert.deepEqual(
     { nodeId: 'node-b', state: 'waiting' },
   ],
 );
-assert.equal(processBlock.totalDurationMs, 4_000);
+assert.equal(processBlock.totalDurationMs, 3_500);
+
+const blockedProcessBlock = buildSampleProcessRows(
+  [{
+    id: 'task-2',
+    sample: 'sample-2',
+    templateId: 'template-1',
+    order: 0,
+    status: 'running',
+    startedAt: 500,
+    actionRecords: [],
+  }],
+  [{ id: 'template-1', name: '工艺一', nodeIds: ['node-a', 'node-b'] }],
+  4_500,
+)[0].blocks[0];
+assert.equal(blockedProcessBlock.state, 'pending');
+assert.equal(blockedProcessBlock.totalDurationMs, null);
 
 assert.equal(
   sampleProcessRowStatus([{ state: 'running' }, { state: 'pending' }]),

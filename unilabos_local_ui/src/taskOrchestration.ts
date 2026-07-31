@@ -177,20 +177,31 @@ export function elapsedDurationMs(
 }
 
 export function taskWallDurationMs(
-  task: Pick<TaskInstanceProcessInput, 'status'> & {
+  task: Pick<TaskInstanceProcessInput, 'status' | 'actionRecords'> & {
     startedAt?: number;
     finishedAt?: number;
   },
   nowMs = Date.now(),
 ) {
-  if (task.startedAt == null) return null;
+  const records = task.actionRecords || [];
+  const actionStartedAt = records
+    .map((record) => record.startedAt)
+    .filter((value): value is number => value != null && Number.isFinite(value));
+  if (!actionStartedAt.length) return null;
+  const startedAt = Math.min(...actionStartedAt);
   const terminal = task.status === 'completed'
     || task.status === 'failed'
     || task.status === 'cancelled';
-  if (terminal && task.finishedAt == null) return null;
+  const actionFinishedAt = records
+    .map((record) => record.finishedAt)
+    .filter((value): value is number => value != null && Number.isFinite(value));
+  const finishedAt = actionFinishedAt.length
+    ? Math.max(...actionFinishedAt)
+    : task.finishedAt;
+  if (terminal && finishedAt == null) return null;
   return elapsedDurationMs(
-    task.startedAt,
-    terminal ? task.finishedAt : undefined,
+    startedAt,
+    terminal ? finishedAt : undefined,
     nowMs,
   );
 }
@@ -280,7 +291,16 @@ export function buildTaskActionProgress(
   });
 }
 
-function blockVisualState(status: string): SampleProcessBlockState {
+function blockVisualState(
+  status: string,
+  actions: TaskActionProgress[],
+): SampleProcessBlockState {
+  if (
+    status === 'running'
+    && !actions.some((action) => action.state !== 'waiting')
+  ) {
+    return 'pending';
+  }
   if (status === 'waiting'
     || status === 'pending'
     || status === 'running'
@@ -328,7 +348,7 @@ export function buildSampleProcessRows(
       templateId: instance.templateId,
       templateName: template?.name || instance.templateId,
       order: instance.order,
-      state: blockVisualState(instance.status),
+      state: blockVisualState(instance.status, actions),
       actionDone,
       actionTotal,
       actions,

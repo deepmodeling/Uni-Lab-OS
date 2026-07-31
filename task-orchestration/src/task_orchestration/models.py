@@ -315,6 +315,7 @@ class WorkspaceEvent(StrictModel):
 
     kind: Literal[
         "opc_snapshot", "output", "scheduled", "completed", "template_deleted",
+        "templates_deleted",
         "scheduled_templates_updated", "instances_cleared",
         "instance_parameters_updated",
     ]
@@ -547,6 +548,12 @@ class TemplateUpdateRequest(StrictModel):
     name: str | None = None
     input_triggers: list[Trigger] | None = None
     output_triggers: list[Trigger] | None = None
+
+
+class TemplatesDeleteRequest(StrictModel):
+    workflow_path: str
+    expected_version: int = Field(ge=0)
+    template_ids: list[str] = Field(min_length=1)
 
 
 class GenerateInstancesRequest(StrictModel):

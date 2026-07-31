@@ -119,6 +119,7 @@ const taskOrchestrationApiSource = await readFile(new URL('../src/taskOrchestrat
 const styleSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 const opcSimulatorDialogSource = await readFile(new URL('../src/OpcSimulatorDialog.tsx', import.meta.url), 'utf8');
 const opcChangesSource = await readFile(new URL('../src/opcChanges.ts', import.meta.url), 'utf8');
+const taskSchedulerBenchSource = await readFile(new URL('../src/TaskSchedulerBench.tsx', import.meta.url), 'utf8');
 assert.match(
   mainSource,
   /const \[taskUtilityDrawer, setTaskUtilityDrawer\] = useState<'opc-connection' \| null>\(null\);/,
@@ -219,6 +220,21 @@ assert.match(
   mainSource,
   /import \{ TaskSchedulerBench \} from '\.\/TaskSchedulerBench';[\s\S]*?<TaskSchedulerBench/,
   'Task 工作区必须改用独立联调台组件，而不是继续拼装旧工作区 JSX',
+);
+assert.match(
+  taskSchedulerBenchSource,
+  /下载已选[\s\S]*?删除已选[\s\S]*?清空全部[\s\S]*?onDownloadTemplate[\s\S]*?onDeleteTemplate/,
+  '模板库必须同时提供批量下载/删除和单模板下载/删除',
+);
+assert.match(
+  mainSource,
+  /schema: 'unilabos\.task-templates'[\s\S]*?source_workflow_path[\s\S]*?input_triggers[\s\S]*?output_triggers/,
+  '模板下载 JSON 必须携带版本、来源、节点和触发条件',
+);
+assert.match(
+  mainSource,
+  /taskApiRef\.current\.deleteTemplates\([\s\S]*?templates\.map\(\(template\) => template\.id\)/,
+  '批量模板删除必须通过原子 API 完成',
 );
 assert.match(
   mainSource,
@@ -966,14 +982,25 @@ assert.deepEqual(
   { workflow_path: '/tmp/demo.json', expected_version: 3, template_ids: ['second', 'first'] },
   '待排模板请求只能包含工作区、版本和模板 ID',
 );
-await taskApi.resetWorkspace('/tmp/demo.json');
+await taskApi.deleteTemplates('/tmp/demo.json', 4, ['second', 'first']);
 assert.equal(
   taskApiRequests[2].url,
+  'http://scheduler.test/api/v1/templates:delete',
+  '批量删除模板必须使用原子批量 API',
+);
+assert.deepEqual(
+  JSON.parse(taskApiRequests[2].init.body),
+  { workflow_path: '/tmp/demo.json', expected_version: 4, template_ids: ['second', 'first'] },
+  '批量删除请求只能包含工作区、版本和模板 ID',
+);
+await taskApi.resetWorkspace('/tmp/demo.json');
+assert.equal(
+  taskApiRequests[3].url,
   'http://scheduler.test/api/v1/workspaces/reset',
   '重置当前 Task 工作区必须调用专用安全 API',
 );
 assert.deepEqual(
-  JSON.parse(taskApiRequests[2].init.body),
+  JSON.parse(taskApiRequests[3].init.body),
   { workflow_path: '/tmp/demo.json' },
   '重置请求只能携带当前 workflow 工作区路径',
 );

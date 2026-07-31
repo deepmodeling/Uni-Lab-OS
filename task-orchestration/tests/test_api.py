@@ -740,6 +740,77 @@ def test_template_lifecycle_cascades_instances_and_pending_generation(tmp_path):
     assert event["id"] and event["timestamp"] >= 0
 
 
+def test_delete_templates_is_atomic_and_cascades_related_state(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    for version, template_id in enumerate(("prepare", "measure")):
+        assert client.post(
+            "/templates",
+            json={
+                "workflow_path": "demo.json",
+                "expected_version": version,
+                "template": _template(template_id),
+            },
+        ).status_code == 200
+    assert client.put(
+        "/workspaces/scheduled-templates",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 2,
+            "template_ids": ["prepare", "measure"],
+        },
+    ).status_code == 200
+    generated = client.post(
+        "/instances:generate",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 3,
+            "template_ids": ["prepare", "measure"],
+            "sample_ids": ["sample-a"],
+        },
+    )
+    assert generated.status_code == 200
+    instance_ids = [
+        item["id"] for item in generated.json()["workspace"]["task_instances"]
+    ]
+
+    rejected = client.post(
+        "/templates:delete",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 4,
+            "template_ids": ["prepare", "missing"],
+        },
+    )
+    assert rejected.status_code == 404
+    unchanged = client.get(
+        "/workspaces", params={"workflow_path": "demo.json"}
+    ).json()
+    assert [item["id"] for item in unchanged["workspace"]["templates"]] == [
+        "prepare",
+        "measure",
+    ]
+
+    deleted = client.post(
+        "/templates:delete",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 4,
+            "template_ids": ["prepare", "measure", "prepare"],
+        },
+    )
+    assert deleted.status_code == 200
+    workspace = deleted.json()["workspace"]
+    assert workspace["templates"] == []
+    assert workspace["task_instances"] == []
+    assert workspace["scheduled_template_ids"] == []
+    event = workspace["events"][-1]
+    assert event["kind"] == "templates_deleted"
+    assert event["payload"] == {
+        "deleted_template_ids": ["prepare", "measure"],
+        "deleted_instance_ids": instance_ids,
+    }
+
+
 def test_clear_instances_removes_queue_but_keeps_templates(tmp_path):
     client = _client_with_workflow(tmp_path)
     assert client.post(

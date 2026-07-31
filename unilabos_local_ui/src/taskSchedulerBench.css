@@ -378,24 +378,52 @@
   text-transform: uppercase;
 }
 
-.scheduler-bench__clear-templates {
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--red);
+.scheduler-bench__template-head > span {
+  color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  padding: 4px 7px;
 }
 
-.scheduler-bench__clear-templates:hover:not(:disabled) {
+.scheduler-bench__template-batch-actions {
+  display: flex;
+  gap: 5px;
+  margin: 7px 0 3px;
+}
+
+.scheduler-bench__template-batch-actions button,
+.scheduler-bench__template-actions button {
+  min-height: 26px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 7px;
+}
+
+.scheduler-bench__template-batch-actions button:hover:not(:disabled),
+.scheduler-bench__template-actions button:hover:not(:disabled) {
+  border-color: #bfdbfe;
+  background: var(--blue-bg);
+  color: var(--blue-text);
+}
+
+.scheduler-bench__template-batch-actions button.danger,
+.scheduler-bench__template-actions button.danger {
+  color: var(--red);
+}
+
+.scheduler-bench__template-batch-actions button.danger:hover:not(:disabled),
+.scheduler-bench__template-actions button.danger:hover:not(:disabled) {
+  border-color: #fecaca;
   background: var(--red-bg);
 }
 
-.scheduler-bench__clear-templates:disabled {
+.scheduler-bench__template-batch-actions button:disabled,
+.scheduler-bench__template-actions button:disabled {
   cursor: not-allowed;
-  color: #94a3b8;
+  opacity: 0.45;
 }
 
 .scheduler-bench__sample-input {
@@ -420,15 +448,24 @@
 
 .scheduler-bench__template {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 0;
   padding: 8px 0;
   border-bottom: 1px solid #f1f5f9;
-  cursor: pointer;
 }
 
 .scheduler-bench__template:last-of-type { border-bottom: 0; }
+
+.scheduler-bench__template-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+}
 
 .scheduler-bench__template input {
   width: 16px;
@@ -438,12 +475,23 @@
   accent-color: var(--blue);
 }
 
-.scheduler-bench__template > span {
+.scheduler-bench__template-choice > span {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
   flex: 1;
+}
+
+.scheduler-bench__template-actions {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.scheduler-bench__template-actions button {
+  min-height: 24px;
+  padding: 0 5px;
 }
 
 .scheduler-bench__template strong {

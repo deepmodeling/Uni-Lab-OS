@@ -19,6 +19,7 @@ from ..models import (
     ScheduledTemplatesUpdateRequest,
     TemplateCreateRequest,
     TemplateUpdateRequest,
+    TemplatesDeleteRequest,
     VersionedWorkspaceResponse,
     WorkspaceResetRequest,
     WorkspaceUpdateRequest,
@@ -113,6 +114,17 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
         try:
             return public_workspace_response(workspace_service.create_template(
                 request.workflow_path, request.expected_version, request.template
+            ))
+        except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
+            raise mutation_error(exc) from exc
+
+    @router.post("/templates:delete")
+    def delete_templates(request: TemplatesDeleteRequest) -> dict:
+        try:
+            return public_workspace_response(workspace_service.delete_templates(
+                request.workflow_path,
+                request.expected_version,
+                request.template_ids,
             ))
         except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
             raise mutation_error(exc) from exc

@@ -337,6 +337,13 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
     deleteTemplate: (workflowPath: string, expectedVersion: number, templateId: string) => (
       request(`/templates/${encodeURIComponent(templateId)}?workflow_path=${encodeURIComponent(workflowPath)}&expected_version=${expectedVersion}`, { method: 'DELETE' })
     ),
+    deleteTemplates: (workflowPath: string, expectedVersion: number, templateIds: string[]) => (
+      request('/templates:delete', body({
+        workflow_path: workflowPath,
+        expected_version: expectedVersion,
+        template_ids: templateIds,
+      }))
+    ),
     updateScheduledTemplates: (workflowPath: string, expectedVersion: number, templateIds: string[]) => (
       request('/workspaces/scheduled-templates', {
         method: 'PUT',

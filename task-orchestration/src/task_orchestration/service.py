@@ -287,6 +287,78 @@ class WorkspaceService:
             workflow_path, expected_version=expected_version, operation=operation
         )
 
+    def delete_templates(
+        self, workflow_path: str, expected_version: int, template_ids: list[str]
+    ):
+        """原子删除多个模板及其关联实例、排程和待排选择。"""
+        ordered_template_ids = list(dict.fromkeys(template_ids))
+
+        def operation(workspace: Workspace) -> Workspace:
+            for template_id in ordered_template_ids:
+                self._template(workspace, template_id)
+            deleted_template_ids = set(ordered_template_ids)
+            deleted_instance_ids = [
+                item.id
+                for item in workspace.task_instances
+                if item.template_id in deleted_template_ids
+            ]
+            deleted_instance_id_set = set(deleted_instance_ids)
+            return workspace.model_copy(
+                update={
+                    "templates": [
+                        item
+                        for item in workspace.templates
+                        if item.id not in deleted_template_ids
+                    ],
+                    "task_instances": [
+                        item
+                        for item in workspace.task_instances
+                        if item.template_id not in deleted_template_ids
+                    ],
+                    "scheduled_template_ids": [
+                        item
+                        for item in workspace.scheduled_template_ids
+                        if item not in deleted_template_ids
+                    ],
+                    "schedule_entries": [
+                        item
+                        for item in workspace.schedule_entries
+                        if item.template_id not in deleted_template_ids
+                    ],
+                    "pause_reason": (
+                        None
+                        if workspace.pause_reason is not None
+                        and workspace.pause_reason.instance_id
+                        in deleted_instance_id_set
+                        else workspace.pause_reason
+                    ),
+                    "events": [
+                        *[
+                            event
+                            for event in workspace.events
+                            if event.instance_id not in deleted_instance_id_set
+                            and event.template_id not in deleted_template_ids
+                        ],
+                        WorkspaceEvent(
+                            kind="templates_deleted",
+                            timestamp=self._clock(),
+                            idempotency_key=(
+                                f"templates/delete/{expected_version}/"
+                                f"{','.join(ordered_template_ids)}"
+                            ),
+                            payload={
+                                "deleted_template_ids": ordered_template_ids,
+                                "deleted_instance_ids": deleted_instance_ids,
+                            },
+                        ),
+                    ],
+                }
+            )
+
+        return self._mutate(
+            workflow_path, expected_version=expected_version, operation=operation
+        )
+
     def update_scheduled_templates(
         self,
         workflow_path: str,

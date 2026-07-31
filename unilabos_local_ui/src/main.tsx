@@ -228,6 +228,18 @@ type TaskPlcStatus = {
   variable_aliases?: Record<string, string>;
 };
 
+function taskTriggerForExport(condition: TriggerCondition) {
+  const plcDeviceId = condition.plcDeviceId?.trim();
+  return {
+    kind: 'opc' as const,
+    config: {
+      ...(plcDeviceId ? { plc_device_id: plcDeviceId } : {}),
+      variable: condition.variableName,
+      value: condition.value,
+    },
+  };
+}
+
 function taskTriggerLogLabel(trigger: unknown) {
   if (!trigger || typeof trigger !== 'object') return '条件已满足';
   const item = trigger as { kind?: string; config?: Record<string, unknown> };
@@ -1968,8 +1980,42 @@ function App() {
     taskWorkspacePath,
   ]);
 
-  const clearTaskTemplates = useCallback(() => {
-    const templates = [...taskTemplatesRef.current];
+  const downloadTaskTemplates = useCallback((templateIds: string[]) => {
+    const selectedIds = new Set(templateIds);
+    const templates = taskTemplatesRef.current.filter((template) => selectedIds.has(template.id));
+    if (!templates.length) {
+      showCanvasToast('请先选择要下载的 Task 模板');
+      return;
+    }
+    const exportedAt = new Date().toISOString();
+    const isSingle = templates.length === 1;
+    const safeName = isSingle
+      ? templates[0].name.trim().replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '') || templates[0].id
+      : `selected-${templates.length}`;
+    downloadJson(`task-template-${safeName}.json`, {
+      schema: 'unilabos.task-templates',
+      schema_version: 1,
+      exported_at: exportedAt,
+      source_workflow_path: taskWorkspacePath,
+      templates: templates.map((template) => ({
+        id: template.id,
+        name: template.name,
+        workflow_path: taskWorkspacePath,
+        node_ids: template.nodeIds,
+        resources: template.resources,
+        input_triggers: template.inputTriggers.map(taskTriggerForExport),
+        output_triggers: template.outputTriggers.map(taskTriggerForExport),
+      })),
+    });
+    showCanvasToast(isSingle ? '已下载 Task 模板' : `已下载 ${templates.length} 个 Task 模板`);
+  }, [showCanvasToast, taskWorkspacePath]);
+
+  const deleteTaskTemplates = useCallback((
+    templateIds: string[],
+    mode: 'single' | 'selected' | 'all',
+  ) => {
+    const requestedIds = new Set(templateIds);
+    const templates = taskTemplatesRef.current.filter((template) => requestedIds.has(template.id));
     if (!templates.length) return;
     const schedulerBusy = isSchedulerRunning
       || isSchedulerTransitioning
@@ -1978,32 +2024,36 @@ function App() {
       || taskExecutionStatus.tick.in_flight > 0
       || taskExecutionStatus.tick.claimed > 0;
     if (schedulerBusy || taskMutationInFlightCount > 0) {
-      showCanvasToast('请等待当前调度操作结束后再清空 Task 模板');
+      showCanvasToast('请等待当前调度操作结束后再删除 Task 模板');
       return;
     }
-    const relatedInstanceCount = taskInstancesRef.current.length;
+    const deletedIds = new Set(templates.map((template) => template.id));
+    const relatedInstanceCount = taskInstancesRef.current.filter(
+      (instance) => deletedIds.has(instance.templateId),
+    ).length;
     const instanceHint = relatedInstanceCount
       ? `，以及关联的 ${relatedInstanceCount} 个 Task 实例`
       : '';
-    if (!window.confirm(`确定清空全部 ${templates.length} 个历史 Task 模板${instanceHint}吗？此操作不可撤销。`)) {
+    const target = mode === 'single'
+      ? `Task 模板「${templates[0].name}」`
+      : mode === 'all'
+        ? `全部 ${templates.length} 个历史 Task 模板`
+        : `选中的 ${templates.length} 个 Task 模板`;
+    if (!window.confirm(`确定删除${target}${instanceHint}吗？此操作不可撤销。`)) {
       return;
     }
     taskExecutionControllerRef.current?.pause();
     setTaskExecutionWorkflow(null);
     setTaskExecutionStatus(createTaskExecutionStatus());
     void mutateTaskWorkspace(async (version) => {
-      let currentVersion = version;
-      let response: ApiWorkspaceResponse | null = null;
-      for (const template of templates) {
-        response = await taskApiRef.current.deleteTemplate(
-          taskWorkspacePath,
-          currentVersion,
-          template.id,
-        );
-        currentVersion = response.version;
-      }
-      if (!response) throw new Error('没有可清空的 Task 模板');
-      showCanvasToast(`已清空 ${templates.length} 个 Task 模板`);
+      const response = await taskApiRef.current.deleteTemplates(
+        taskWorkspacePath,
+        version,
+        templates.map((template) => template.id),
+      );
+      showCanvasToast(mode === 'all'
+        ? `已清空 ${templates.length} 个 Task 模板`
+        : `已删除 ${templates.length} 个 Task 模板`);
       return response;
     });
   }, [
@@ -2018,6 +2068,13 @@ function App() {
     taskMutationInFlightCount,
     taskWorkspacePath,
   ]);
+
+  const clearTaskTemplates = useCallback(() => {
+    deleteTaskTemplates(
+      taskTemplatesRef.current.map((template) => template.id),
+      'all',
+    );
+  }, [deleteTaskTemplates]);
 
   const buildWorkflow = useCallback(async () => {
     if (!executionPlan.executableNodes.length) {
@@ -3315,9 +3372,20 @@ function App() {
           onAdvance={advanceTaskSchedule}
           onClear={clearTaskQueue}
           onClearTemplates={clearTaskTemplates}
+          onDeleteSelectedTemplates={() => deleteTaskTemplates(scheduledTemplateIds, 'selected')}
+          onDeleteTemplate={(templateId) => deleteTaskTemplates([templateId], 'single')}
+          onDownloadSelectedTemplates={() => downloadTaskTemplates(scheduledTemplateIds)}
+          onDownloadTemplate={(templateId) => downloadTaskTemplates([templateId])}
           clearTemplatesDisabled={
             !taskTemplates.length
             || isTaskWorkspaceLoading
+            || isSchedulerRunning
+            || isSchedulerTransitioning
+            || isTaskExecutionDraining
+            || taskMutationInFlightCount > 0
+          }
+          templateActionsDisabled={
+            isTaskWorkspaceLoading
             || isSchedulerRunning
             || isSchedulerTransitioning
             || isTaskExecutionDraining

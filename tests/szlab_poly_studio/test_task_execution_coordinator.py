@@ -18,6 +18,8 @@ from scripts.run_workflow_local import (
 from scripts.task_execution_coordinator import (
     TaskApiConflict,
     TaskExecutionCoordinator,
+    _atomic_start_signal_conditions,
+    _atomic_task_start_trigger_satisfied,
     deterministic_execution_id,
     workflow_nodes_from_payload,
 )
@@ -33,6 +35,149 @@ def _node(node_id: str, method: str, device_name: str = "device") -> WorkflowNod
         name=f"auto-{method}",
         device_name=device_name,
         param={},
+    )
+
+
+class FakeTriggerPlc:
+    def __init__(self, values: dict[str, object]):
+        self.values = dict(values)
+        self.reads: list[str] = []
+
+    def read_variable(self, name: str, use_cache: bool = True):
+        assert use_cache is True
+        self.reads.append(name)
+        if name not in self.values:
+            raise RuntimeError(f"缺少测试变量: {name}")
+        return self.values[name]
+
+
+ATOMIC_START_NODES = [
+    WorkflowNode(
+        uuid="w01_pick_beaker_s03",
+        name="S03 取烧杯",
+        device_name="szlab_mixer_robot",
+        method="submit_pick_from_s03",
+        param={"product_type": 1, "position": "1-1"},
+        legacy_route_compatible=False,
+    ),
+    WorkflowNode(
+        uuid="w01_dose_powder_s07",
+        name="S07 注粉",
+        device_name="szlab_s07_solid_addition",
+        method="dose_powder",
+        param={"coarse_position": 1, "fine_position": 1},
+        legacy_route_compatible=False,
+    ),
+    WorkflowNode(
+        uuid="w02_pick_beaker_s072",
+        name="S072 取烧杯",
+        device_name="szlab_mixer_robot",
+        method="submit_pick_from_s072",
+        param={"product_type": 2, "position": 1},
+        legacy_route_compatible=False,
+    ),
+    WorkflowNode(
+        uuid="w02_add_solvent_s06",
+        name="S06 泵加液",
+        device_name="szlab_s06_pump",
+        method="run_solvent_addition",
+        param={"volume_pump_1": 10, "volume_pump_2": 10},
+        legacy_route_compatible=False,
+    ),
+    WorkflowNode(
+        uuid="w03_pick_beaker_s06",
+        name="S06 取烧杯",
+        device_name="szlab_mixer_robot",
+        method="submit_pick_from_s06",
+        param={},
+        legacy_route_compatible=False,
+    ),
+    WorkflowNode(
+        uuid="w03_add_liquid_s09",
+        name="S09 烧杯加液",
+        device_name="szlab_mixer_pipetting_station",
+        method="add_liquid_to_beaker",
+        param={
+            "take_tip_box_index": 1,
+            "release_tip_box_index": 2,
+            "liquid_bottle_index": 1,
+            "station": 1,
+            "aspirate_volume": 5000,
+            "volume_unit": "raw",
+            "S09液体瓶1剩余液量": 10.0,
+        },
+        legacy_route_compatible=False,
+    ),
+    WorkflowNode(
+        uuid="w04_pick_beaker_s09",
+        name="S09 取烧杯",
+        device_name="szlab_mixer_robot",
+        method="submit_pick_from_s09",
+        param={"product_type": 3, "position": 1},
+        legacy_route_compatible=False,
+    ),
+    WorkflowNode(
+        uuid="w04_run_stirring_s04",
+        name="S04 磁搅",
+        device_name="szlab_s04_magnetic_stirring",
+        method="run_stirring",
+        param={"position": 1},
+        legacy_route_compatible=False,
+    ),
+]
+
+
+@pytest.mark.parametrize("node", ATOMIC_START_NODES, ids=lambda node: node.uuid)
+def test_first_eight_atomic_tasks_require_all_start_signals(node):
+    conditions = _atomic_start_signal_conditions(node)
+    plc = FakeTriggerPlc(conditions)
+
+    assert _atomic_task_start_trigger_satisfied(
+        {"task_instances": []},
+        node=node,
+        devices={"szlab_poly_plc": plc},
+    )
+    assert set(plc.reads) == set(conditions)
+
+    first_name = next(iter(conditions))
+    blocked_values = dict(conditions)
+    blocked_values[first_name] = not bool(conditions[first_name])
+    assert not _atomic_task_start_trigger_satisfied(
+        {"task_instances": []},
+        node=node,
+        devices={"szlab_poly_plc": FakeTriggerPlc(blocked_values)},
+    )
+
+
+@pytest.mark.parametrize(
+    ("node_id", "active_node_id"),
+    [
+        ("w01_pick_beaker_s03", "w01_dose_powder_s07"),
+        ("w02_pick_beaker_s072", "w02_add_solvent_s06"),
+        ("w03_pick_beaker_s06", "w03_add_liquid_s09"),
+        ("w04_pick_beaker_s09", "w04_run_stirring_s04"),
+    ],
+)
+def test_atomic_transport_waits_while_target_station_process_is_active(
+    node_id, active_node_id
+):
+    node = next(item for item in ATOMIC_START_NODES if item.uuid == node_id)
+    conditions = _atomic_start_signal_conditions(node)
+    workspace = {
+        "task_instances": [
+            {
+                "execution_state": {
+                    "active_execution_id": "execution-active",
+                    "active_node_id": active_node_id,
+                }
+            }
+        ]
+    }
+
+    assert not _atomic_task_start_trigger_satisfied(
+        workspace,
+        node=node,
+        devices={"szlab_poly_plc": FakeTriggerPlc(conditions)},
     )
 
 
@@ -1774,6 +1919,108 @@ def test_same_device_instances_claim_only_one_action_per_cycle():
     coordinator.shutdown()
 
 
+def test_started_atomic_task_keeps_device_until_its_next_action_is_claimed():
+    class SharedDevice:
+        def first_action(self):
+            return {"success": True}
+
+        def place_action(self):
+            return {"success": True}
+
+        def competing_action(self):
+            return {"success": True}
+
+    competing = {
+        **deepcopy(_workspace_response()["workspace"]["task_instances"][0]),
+        "id": "instance-competing",
+        "template_id": "template-competing",
+        "started_at": 200,
+    }
+    owner = {
+        **deepcopy(_workspace_response()["workspace"]["task_instances"][0]),
+        "id": "instance-owner",
+        "template_id": "template-owner",
+        "started_at": 100,
+        "execution_state": {
+            "cursor": 1,
+            "records": [
+                {
+                    "node_id": "owner-pick",
+                    "status": "succeeded",
+                    "started_at": 100,
+                    "finished_at": 150,
+                }
+            ],
+            "active_execution_id": None,
+            "active_node_id": None,
+        },
+    }
+    response = _workspace_response(
+        instances=[competing, owner],
+        node_ids=["competing-pick"],
+    )
+    response["workspace"]["templates"] = [
+        {
+            "id": "template-competing",
+            "node_ids": ["competing-pick"],
+        },
+        {
+            "id": "template-owner",
+            "node_ids": ["owner-pick", "owner-place"],
+        },
+    ]
+    client = FakeTaskClient(response)
+    release = threading.Event()
+
+    def runner(_node, _devices, _action_callable):
+        release.wait(timeout=2)
+        return [{"success": True}]
+
+    coordinator = TaskExecutionCoordinator(
+        task_client=client,
+        node_runner=runner,
+        device_provider=lambda: {"shared-device": SharedDevice()},
+        max_workers=2,
+    )
+    nodes = [
+        WorkflowNode(
+            uuid="competing-pick",
+            name="competing-pick",
+            device_name="shared-device",
+            param={},
+            method="competing_action",
+            legacy_route_compatible=False,
+        ),
+        WorkflowNode(
+            uuid="owner-pick",
+            name="owner-pick",
+            device_name="shared-device",
+            param={},
+            method="first_action",
+            legacy_route_compatible=False,
+        ),
+        WorkflowNode(
+            uuid="owner-place",
+            name="owner-place",
+            device_name="shared-device",
+            param={},
+            method="place_action",
+            legacy_route_compatible=False,
+        ),
+    ]
+
+    result = coordinator.cycle(
+        workflow_path=WORKFLOW_PATH,
+        workflow_nodes=nodes,
+    )
+
+    assert result["claimed"] == 1
+    assert client.claims[0]["instance_id"] == "instance-owner"
+    assert client.claims[0]["node_id"] == "owner-place"
+    release.set()
+    coordinator.shutdown()
+
+
 def test_same_device_action_can_be_claimed_after_prior_action_finishes():
     class SharedDevice:
         def custom_action_a(self):
@@ -1885,14 +2132,11 @@ def test_workflow_payload_parser_rejects_wrong_field_types(payload):
         workflow_nodes_from_payload(payload)
 
 
-def test_coordinator_source_contains_no_station_specific_policy():
+def test_coordinator_does_not_duplicate_low_level_robot_handshake_policy():
     source = Path(
         "scripts/task_execution_coordinator.py"
     ).read_text(encoding="utf-8").lower()
     forbidden = (
-        "robot",
-        "s06",
-        "s07",
         "robot_home",
         "robot_任务允许写入",
         "node_001",

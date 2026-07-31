@@ -13,6 +13,33 @@ from scripts.run_workflow_local import (
     node_method,
     workflow_node_from_mapping,
 )
+from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.sensors import (
+    s04_allow_var,
+    s04_material_sensor_var,
+    s04_ready_var,
+    s04_status_var,
+)
+from unilabos.devices.workstation.szlab_poly_studio.s06_pump.sensors import (
+    ADDITION_BEAKER_SENSOR,
+    S06_ALLOW_PROCESS_VAR,
+    S06_DONE_VAR,
+    S06_READY_VAR,
+)
+from unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.sensors import (
+    NODE_ALLOW_PROCESS as S07_ALLOW_PROCESS_VAR,
+    NODE_HOME as S07_HOME_VAR,
+)
+from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensors import (
+    S09_ALLOW_PROCESS_VAR,
+    S09_HOME_SIGNALS,
+    S09_PROCESS_DONE_VAR,
+    S09_STATION_SENSORS,
+    S09_TIP_BOX_SENSORS,
+    s09_remaining_volume_var,
+)
+from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
+    product_slot_sensor,
+)
 
 
 class TaskApiConflict(RuntimeError):
@@ -42,22 +69,59 @@ def workflow_nodes_from_payload(payload: dict[str, Any]) -> list[WorkflowNode]:
     return [workflow_node_from_mapping(item) for item in nodes]
 
 
+def _continuation_device_owners(
+    workspace: dict[str, Any],
+    *,
+    templates: dict[str, dict[str, Any]],
+    nodes_by_id: dict[str, WorkflowNode],
+) -> dict[str, str]:
+    """让已开始的原子 Task 保持其下一动作设备，直到该 Task 完成。"""
+    candidates: list[tuple[int, int, str, str, str]] = []
+    for instance in workspace.get("task_instances", []):
+        if not isinstance(instance, dict) or instance.get("status") != "running":
+            continue
+        state = instance.get("execution_state")
+        if not isinstance(state, dict):
+            continue
+        template = templates.get(str(instance.get("template_id") or ""))
+        node_ids = template.get("node_ids", []) if template else []
+        cursor = int(state.get("cursor", 0))
+        if cursor <= 0 or cursor >= len(node_ids):
+            continue
+        node = nodes_by_id.get(str(node_ids[cursor]))
+        if node is None:
+            continue
+        started_at = instance.get("started_at")
+        candidates.append(
+            (
+                int(started_at) if started_at is not None else 2**63 - 1,
+                int(instance.get("order") or 0),
+                str(instance.get("sample_id") or ""),
+                str(instance.get("id") or ""),
+                node.device_name,
+            )
+        )
+
+    owners: dict[str, str] = {}
+    for _, _, _, instance_id, device_name in sorted(candidates):
+        owners.setdefault(device_name, instance_id)
+    return owners
+
+
 _S072_INBOUND_START_NODE_IDS = frozenset(
-    {"w01_pick_beaker_s03", "node_001_pick_from_s03"}
+    {"w01_pick_beaker_s03"}
 )
 _S072_PLACE_NODE_IDS = frozenset(
-    {"w01_place_beaker_s072", "node_002_place_to_s072"}
+    {"w01_place_beaker_s072"}
 )
 _S072_OCCUPIED_REQUIRED_NODE_IDS = frozenset(
     {
         "w01_dose_powder_s07",
-        "node_003_dose_powder",
         "w02_pick_beaker_s072",
-        "node_004_pick_from_s072",
     }
 )
 _S072_PICK_NODE_IDS = frozenset(
-    {"w02_pick_beaker_s072", "node_004_pick_from_s072"}
+    {"w02_pick_beaker_s072"}
 )
 _S09_INBOUND_START_NODE_IDS = frozenset({"w03_pick_beaker_s06"})
 _S09_PLACE_NODE_IDS = frozenset({"w03_place_beaker_s09"})
@@ -228,6 +292,163 @@ def _temporary_s09_trigger_satisfied(
         occupied_required_node_ids=_S09_OCCUPIED_REQUIRED_NODE_IDS,
         pick_node_ids=_S09_PICK_NODE_IDS,
     )
+
+
+_ATOMIC_START_ACTIVE_CONFLICTS: dict[str, frozenset[str]] = {
+    "w01_pick_beaker_s03": frozenset({"w01_dose_powder_s07"}),
+    "w02_pick_beaker_s072": frozenset({"w02_add_solvent_s06"}),
+    "w03_pick_beaker_s06": frozenset(
+        {"w02_add_solvent_s06", "w03_add_liquid_s09"}
+    ),
+    "w04_pick_beaker_s09": frozenset(
+        {"w03_add_liquid_s09", "w04_run_stirring_s04"}
+    ),
+}
+
+
+def _active_workflow_node_ids(workspace: dict[str, Any]) -> set[str]:
+    """返回服务端当前仍在执行的 workflow 节点。"""
+    active: set[str] = set()
+    for instance in workspace.get("task_instances", []):
+        if not isinstance(instance, dict):
+            continue
+        state = instance.get("execution_state")
+        if not isinstance(state, dict):
+            continue
+        active_node_id = str(state.get("active_node_id") or "")
+        if active_node_id:
+            active.add(active_node_id)
+    return active
+
+
+def _read_trigger_variable(reader: Any, variable_name: str) -> Any:
+    read_variable = getattr(reader, "read_variable", None)
+    if not callable(read_variable):
+        raise RuntimeError("缺少 PLC 变量读取接口")
+    return read_variable(variable_name, use_cache=True)
+
+
+def _s09_volume_to_raw(volume: Any, volume_unit: Any) -> int:
+    unit = str(volume_unit or "raw").strip().lower()
+    value = float(volume)
+    if unit in {"raw", "int", "int16", "plc", "0.1ul", "0.1µl"}:
+        return int(round(value))
+    if unit in {"ul", "µl", "μl", "microliter", "microliters"}:
+        return int(round(value * 10))
+    if unit in {"ml", "milliliter", "milliliters"}:
+        return int(round(value * 10000))
+    raise ValueError("S09 体积单位必须是 raw、uL 或 mL")
+
+
+def _atomic_start_signal_conditions(node: WorkflowNode) -> dict[str, Any]:
+    """生成主工艺前八个原子 Task 的首动作 PLC 触发条件。"""
+    params = node.param
+    if node.uuid == "w01_pick_beaker_s03":
+        return {
+            product_slot_sensor(
+                int(params.get("product_type", 1)),
+                params.get("position", "1-1"),
+                used=False,
+            ): True,
+        }
+    if node.uuid == "w01_dose_powder_s07":
+        return {
+            S07_HOME_VAR: True,
+            S07_ALLOW_PROCESS_VAR: True,
+        }
+    if node.uuid == "w02_pick_beaker_s072":
+        return {ADDITION_BEAKER_SENSOR: False}
+    if node.uuid == "w02_add_solvent_s06":
+        return {
+            ADDITION_BEAKER_SENSOR: True,
+            S06_READY_VAR: True,
+            S06_ALLOW_PROCESS_VAR: True,
+            S06_DONE_VAR: False,
+        }
+    if node.uuid == "w03_pick_beaker_s06":
+        return {
+            ADDITION_BEAKER_SENSOR: True,
+            S09_HOME_SIGNALS[4]: True,
+        }
+    if node.uuid == "w03_add_liquid_s09":
+        take_tip_box = int(params.get("take_tip_box_index", 1))
+        release_tip_box = int(params.get("release_tip_box_index", 2))
+        liquid_bottle = int(params.get("liquid_bottle_index", 1))
+        station = int(params.get("station", 1))
+        return {
+            S09_TIP_BOX_SENSORS[take_tip_box]: True,
+            S09_TIP_BOX_SENSORS[release_tip_box]: True,
+            S09_STATION_SENSORS[liquid_bottle]: True,
+            S09_STATION_SENSORS[station]: True,
+            S09_HOME_SIGNALS[1]: True,
+            S09_ALLOW_PROCESS_VAR: True,
+            S09_PROCESS_DONE_VAR: False,
+        }
+    if node.uuid == "w04_pick_beaker_s09":
+        position = int(params.get("position", 1))
+        return {
+            S09_HOME_SIGNALS[4]: True,
+            s04_material_sensor_var(position): False,
+            s04_ready_var(position): True,
+        }
+    if node.uuid == "w04_run_stirring_s04":
+        position = int(params.get("position", 1))
+        return {
+            s04_material_sensor_var(position): True,
+            s04_status_var(position): 1,
+            s04_allow_var(position): True,
+        }
+    return {}
+
+
+def _s09_remaining_volume_satisfied(node: WorkflowNode, plc: Any) -> bool:
+    if node.uuid != "w03_add_liquid_s09":
+        return True
+    params = node.param
+    if bool(params.get("skip_level_check", False)):
+        return True
+    bottle = int(params.get("liquid_bottle_index", 1))
+    configured = params.get(f"S09液体瓶{bottle}剩余液量")
+    remaining_ml = (
+        float(configured)
+        if configured is not None
+        else float(
+            _read_trigger_variable(plc, s09_remaining_volume_var(bottle))
+        )
+    )
+    raw_volume = _s09_volume_to_raw(
+        params.get("aspirate_volume", 1),
+        params.get("volume_unit", "raw"),
+    )
+    return raw_volume > 0 and remaining_ml + 1e-9 >= raw_volume / 10000.0
+
+
+def _atomic_task_start_trigger_satisfied(
+    workspace: dict[str, Any],
+    *,
+    node: WorkflowNode,
+    devices: dict[str, Any],
+) -> bool:
+    """首动作认领前统一检查前八个原子 Task；读取异常时安全等待。"""
+    conditions = _atomic_start_signal_conditions(node)
+    conflicts = _ATOMIC_START_ACTIVE_CONFLICTS.get(node.uuid, frozenset())
+    if conflicts & _active_workflow_node_ids(workspace):
+        return False
+    if not conditions:
+        return True
+
+    plc = devices.get("szlab_poly_plc")
+    if plc is None:
+        return False
+    try:
+        if any(
+            _read_trigger_variable(plc, name) != expected
+            for name, expected in conditions.items()
+        ):
+            return False
+        return _s09_remaining_volume_satisfied(node, plc)
+    except Exception:
+        return False
 
 
 @dataclass
@@ -408,6 +629,11 @@ class TaskExecutionCoordinator:
 
             devices = self._device_provider()
             busy_device_names = self._busy_device_names()
+            continuation_device_owners = _continuation_device_owners(
+                workspace,
+                templates=templates,
+                nodes_by_id=nodes_by_id,
+            )
 
             for instance in workspace.get("task_instances", []):
                 if not isinstance(instance, dict) or instance.get("status") != "running":
@@ -426,6 +652,16 @@ class TaskExecutionCoordinator:
 
                 node_id = str(node_ids[cursor])
                 node = nodes_by_id.get(node_id)
+                instance_id = str(instance.get("id"))
+                if node is not None:
+                    continuation_owner = continuation_device_owners.get(
+                        node.device_name
+                    )
+                    if (
+                        continuation_owner is not None
+                        and continuation_owner != instance_id
+                    ):
+                        continue
                 payload = instance.get("payload")
                 node_parameters = (
                     payload.get("node_parameters")
@@ -446,16 +682,27 @@ class TaskExecutionCoordinator:
                     continue
                 if self._closing.is_set():
                     break
+                trigger_workspace = _workspace_from_response(current_response)
                 if not _temporary_s072_trigger_satisfied(
-                    workspace,
-                    instance_id=str(instance.get("id")),
+                    trigger_workspace,
+                    instance_id=instance_id,
                     node_id=node_id,
                 ):
                     continue
                 if not _temporary_s09_trigger_satisfied(
-                    workspace,
-                    instance_id=str(instance.get("id")),
+                    trigger_workspace,
+                    instance_id=instance_id,
                     node_id=node_id,
+                ):
+                    continue
+                if (
+                    cursor == 0
+                    and node is not None
+                    and not _atomic_task_start_trigger_satisfied(
+                        trigger_workspace,
+                        node=node,
+                        devices=devices,
+                    )
                 ):
                     continue
                 method_name = ""
@@ -479,7 +726,7 @@ class TaskExecutionCoordinator:
                     claimed_response = self._claim(
                         current_response,
                         workflow_path=workflow_path,
-                        instance_id=str(instance.get("id")),
+                        instance_id=instance_id,
                         node_id=node_id,
                         execution_id=execution_id,
                         resources=[],
@@ -512,7 +759,7 @@ class TaskExecutionCoordinator:
                 claimed_response = self._claim(
                     current_response,
                     workflow_path=workflow_path,
-                    instance_id=str(instance.get("id")),
+                    instance_id=instance_id,
                     node_id=node_id,
                     execution_id=execution_id,
                     resources=[],
@@ -530,7 +777,7 @@ class TaskExecutionCoordinator:
                         action_callable,
                         {
                             "workflow_path": workflow_path,
-                            "instance_id": str(instance.get("id")),
+                            "instance_id": instance_id,
                             "node_id": node_id,
                             "execution_id": execution_id,
                             "sample_id": str(instance.get("sample_id") or ""),
@@ -556,7 +803,7 @@ class TaskExecutionCoordinator:
                 self._in_flight[execution_id] = _InFlightAction(
                     future=future,
                     workflow_path=workflow_path,
-                    instance_id=str(instance.get("id")),
+                    instance_id=instance_id,
                     node_id=node_id,
                     execution_id=execution_id,
                     device_name=node.device_name,

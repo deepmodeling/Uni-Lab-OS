@@ -15,6 +15,10 @@ def s04_station_prefix(position: int) -> str:
     return f"S04{int(position)}"
 
 
+def s04_ready_var(position: int) -> str:
+    return f"{s04_station_prefix(position)}准备信号"
+
+
 def s04_allow_var(position: int) -> str:
     return f"{s04_station_prefix(position)}允许加工"
 
@@ -64,6 +68,7 @@ def s04_public_variables() -> list[str]:
     for position in S04_POSITION_RANGE:
         variables.extend(
             [
+                s04_ready_var(position),
                 s04_allow_var(position),
                 s04_status_var(position),
                 s04_process_var(position),

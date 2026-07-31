@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.sensors import s04_ready_var
 from unilabos.devices.workstation.szlab_poly_studio.sensor import S04Sensors
 
 
@@ -45,25 +46,6 @@ class SzlabRobotS04Mixin:
             "occupied": occupied,
         }
 
-    def _ensure_s04_place_allowed(self, position: int) -> dict[str, Any] | None:
-        sensor_variable = self._s04_sensor_variable(position)
-        if os.environ.get("SKIP_SENSOR_PRECHECK") == "1":
-            return None
-        if self._should_skip_robot_precheck_variable(sensor_variable):
-            return None
-        occupied = self._read_s04_position_occupied(position)
-        if not occupied:
-            return None
-        return {
-            "success": False,
-            "message": f"S04 位置 {position} 已有物料，机械臂不能放料",
-            "task": "place",
-            "station": "S04",
-            "position": position,
-            "sensor_variable": self._s04_sensor_variable(position),
-            "occupied": occupied,
-        }
-
     def _run_s04_pick(self, position: int) -> dict[str, Any]:
         position = self._validate_s04_position(position)
         return self._submit_robot_task(
@@ -79,14 +61,19 @@ class SzlabRobotS04Mixin:
 
     def _run_s04_place(self, position: int, sample_id: str = "") -> dict[str, Any]:
         position = self._validate_s04_position(position)
+        target_sensor_variable = self._s04_sensor_variable(position)
         return self._submit_robot_task(
             task="place",
             station="S04",
             task_number=S04_PLACE_TASK_NUMBER,
             variables={S04_POSITION_VARIABLE: position},
             reset_variables={S04_POSITION_VARIABLE: 0, "任务号": 0},
-            precheck=lambda: self._ensure_s04_place_allowed(position),
             position=position,
             sample_id=sample_id,
-            target_sensor_variable=self._s04_sensor_variable(position),
+            target_sensor_variable=target_sensor_variable,
+            pre_sensor_conditions={
+                target_sensor_variable: False,
+                s04_ready_var(position): True,
+            },
+            post_sensor_conditions={target_sensor_variable: True},
         )

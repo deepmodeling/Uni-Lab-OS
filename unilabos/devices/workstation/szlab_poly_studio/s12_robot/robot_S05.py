@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.sensors import S05_READY
+
 from .robot_tasks import S05_MATERIAL_SENSOR
 
 S05_PLACE_TASK_NUMBER = 9
@@ -28,7 +30,11 @@ class SzlabRobotS05Mixin:
             task_number=S05_PLACE_TASK_NUMBER,
             variables=None,
             reset_variables={"任务号": 0},
-            precheck=lambda: self._ensure_sensor_gate(S05_MATERIAL_SENSOR, False, "S05 放料目标位必须为空"),
             sample_id=sample_id,
             target_sensor_variable=S05_MATERIAL_SENSOR,
+            pre_sensor_conditions={
+                S05_MATERIAL_SENSOR: False,
+                S05_READY: True,
+            },
+            post_sensor_conditions={S05_MATERIAL_SENSOR: True},
         )

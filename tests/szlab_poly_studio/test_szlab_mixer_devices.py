@@ -1649,7 +1649,12 @@ def test_szlab_robot_waits_until_task_params_read_back_nonzero():
 
 
 def test_szlab_robot_s04_place_requires_empty_position_without_writing_task():
-    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[2].NO[10]": True})
+    gateway = FakeRobotPlcGateway(
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "S041准备信号": True,
+        }
+    )
     device = SzlabMixerRobotDevice()
     device.set_plc_gateway(gateway)
 
@@ -1661,9 +1666,30 @@ def test_szlab_robot_s04_place_requires_empty_position_without_writing_task():
     assert gateway.writes == []
 
 
+def test_szlab_robot_s04_place_requires_position_ready_without_writing_task():
+    gateway = FakeRobotPlcGateway(
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": False,
+            "S041准备信号": False,
+        }
+    )
+    device = SzlabMixerRobotDevice()
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_place_to_s04(position=1)
+
+    assert result["success"] is False
+    assert result["message"] == "S04 place 前置传感器状态等待失败"
+    assert result["sensor_precheck"]["mismatches"]["S041准备信号"]["actual"] is False
+    assert gateway.writes == []
+
+
 def test_szlab_robot_s04_place_writes_position_before_task_number():
     gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[2].NO[11]": False},
+        sensor_values={
+            "传感器状态_上位机[2].NO[11]": False,
+            "S042准备信号": True,
+        },
     )
     device = SzlabMixerRobotDevice()
     device.set_plc_gateway(gateway)
@@ -1685,7 +1711,10 @@ def test_szlab_robot_s04_place_writes_position_before_task_number():
 
 def test_szlab_robot_s05_only_writes_task_number_and_resets_it():
     gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[3].NO[0]": False},
+        sensor_values={
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        },
     )
     device = SzlabMixerRobotDevice()
     device.set_plc_gateway(gateway)
@@ -1701,6 +1730,24 @@ def test_szlab_robot_s05_only_writes_task_number_and_resets_it():
         ("Robot_任务写入完成", False),
         ("任务号", 0),
     ]
+
+
+def test_szlab_robot_s05_place_requires_ready_without_writing_task():
+    gateway = FakeRobotPlcGateway(
+        sensor_values={
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": False,
+        },
+    )
+    device = SzlabMixerRobotDevice()
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_place_to_s05(sample_id="sample-1")
+
+    assert result["success"] is False
+    assert result["message"] == "S05 place 前置传感器状态等待失败"
+    assert result["sensor_precheck"]["mismatches"]["S05准备信号"]["actual"] is False
+    assert gateway.writes == []
 
 
 def test_szlab_robot_s01_does_not_read_retired_gripper_sensor():

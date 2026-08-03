@@ -5,6 +5,7 @@ import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import type { TaskLogCategory, TaskLogLine } from './taskLogSession';
 import {
   buildSampleProcessRows,
+  compactTaskProgressLabel,
   formatElapsedDurationMs,
   formatTaskActionTimingTitle,
   resolveTemplateNodes,
@@ -355,16 +356,20 @@ export function TaskSchedulerBench(props: Props) {
                       : [];
                     const activeAction = block.actions.find((action) => action.state === 'running');
                     const activeNode = activeAction ? resolvedNodes[activeAction.index]?.node : null;
+                    const compactTemplateName = compactTaskProgressLabel(block.templateName);
                     return (
                       <div
                         className={`scheduler-bench__progress-task ${block.state}`}
                         key={block.id}
                         style={{ minWidth: taskActionProgressMinWidth(block.actionTotal) }}
+                        title={block.templateName}
                       >
                         <div className="scheduler-bench__progress-task-head">
-                          <span>{block.templateName}</span>
+                          <span>{compactTemplateName}</span>
                           <small>
-                            {activeNode ? `当前：${activeNode.label}` : stateLabel(block.state)}
+                            {activeNode
+                              ? `当前：${compactTaskProgressLabel(activeNode.label)}`
+                              : stateLabel(block.state)}
                             {' · '}
                             {formatElapsedDurationMs(block.totalDurationMs)}
                           </small>
@@ -380,6 +385,7 @@ export function TaskSchedulerBench(props: Props) {
                           {block.actions.map((action) => {
                             const node = resolvedNodes[action.index]?.node;
                             const label = node?.label || node?.method || action.nodeId;
+                            const compactLabel = compactTaskProgressLabel(label);
                             return (
                               <i
                                 className={`scheduler-bench__action-segment ${action.state}`}
@@ -387,7 +393,7 @@ export function TaskSchedulerBench(props: Props) {
                                 title={formatTaskActionTimingTitle(action, label)}
                               >
                                 <span>{action.index + 1}</span>
-                                <b>{label}</b>
+                                <b>{compactLabel}</b>
                               </i>
                             );
                           })}

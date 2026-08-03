@@ -22,6 +22,7 @@ async function importTypeScriptModule(path) {
 const {
   buildSampleProcessRows,
   buildTaskActionProgress,
+  compactTaskProgressLabel,
   elapsedDurationMs,
   formatElapsedDurationMs,
   formatTaskActionTimingTitle,
@@ -63,6 +64,15 @@ assert.equal(formatElapsedDurationMs(null), '—');
 assert.equal(taskActionProgressMinWidth(1), 220);
 assert.equal(taskActionProgressMinWidth(2), 280);
 assert.equal(taskActionProgressMinWidth(4), 560);
+assert.equal(
+  compactTaskProgressLabel('S06 泵加液完整流程：烧杯检测 → 液位确认 → 写入工艺参数 → 等待加工完成'),
+  'S06 泵加液',
+);
+assert.equal(
+  compactTaskProgressLabel('执行 S09 烧杯加液：取 TIP、液体瓶取液、烧杯放液、放 TIP'),
+  'S09 烧杯加液',
+);
+assert.equal(compactTaskProgressLabel('S072 取料 等 2 步'), 'S072 取料 等 2 步');
 
 const actionProgress = buildTaskActionProgress(
   ['node-a', 'node-b', 'node-c'],

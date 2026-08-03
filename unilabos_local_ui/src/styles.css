@@ -3136,6 +3136,8 @@ code {
 }
 
 .task-sample-block-head span {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3151,8 +3153,10 @@ code {
 
 .task-action-progress {
   display: flex;
+  min-width: 0;
   gap: 2px;
   height: 11px;
+  overflow: hidden;
 }
 
 .task-action-progress-segment {
@@ -3183,6 +3187,7 @@ code {
 }
 
 .task-action-progress-segment > b {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: 7px;

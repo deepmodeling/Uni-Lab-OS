@@ -219,6 +219,14 @@ export function taskActionProgressMinWidth(actionTotal: number) {
   return Math.max(220, Math.max(0, Math.floor(actionTotal)) * 140);
 }
 
+export function compactTaskProgressLabel(label: string) {
+  const summary = label.trim().split(/[：:]/, 1)[0].trim();
+  return summary
+    .replace(/^执行\s+/, '')
+    .replace(/完整流程$/, '')
+    .trim() || label.trim();
+}
+
 function actionAttemptStateLabel(status: TaskActionExecutionRecord['status']) {
   if (status === 'running') return '执行中';
   if (status === 'succeeded') return '已完成';

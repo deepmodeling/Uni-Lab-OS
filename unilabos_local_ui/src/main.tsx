@@ -84,6 +84,7 @@ import {
   buildSampleProcessRows,
   buildTaskGanttEntries,
   canDeleteTaskTemplate,
+  compactTaskProgressLabel,
   createOperationGenerationController,
   createSynchronousActionGate,
   createTaskTemplateDraft,
@@ -4211,6 +4212,7 @@ function App() {
                           ? resolvedNodes[activeAction.index]?.node
                           : null;
                         const activeNode = activeResolvedNode ? nodesById.get(activeResolvedNode.id) : null;
+                        const compactTemplateName = compactTaskProgressLabel(block.templateName);
                         return (
                           <div
                             className={[
@@ -4222,9 +4224,11 @@ function App() {
                             title={`${block.templateName} · ${block.actionDone}/${block.actionTotal}`}
                           >
                             <div className="task-sample-block-head">
-                              <span>{block.templateName}</span>
+                              <span>{compactTemplateName}</span>
                               <small>
-                                {activeNode ? `当前：${activeNode.data.label}` : `${block.actionDone}/${block.actionTotal}`}
+                                {activeNode
+                                  ? `当前：${compactTaskProgressLabel(activeNode.data.label)}`
+                                  : `${block.actionDone}/${block.actionTotal}`}
                                 {' · '}
                                 {formatElapsedDurationMs(block.totalDurationMs)}
                               </small>
@@ -4241,6 +4245,7 @@ function App() {
                                 const resolvedNode = resolvedNodes[action.index]?.node;
                                 const node = resolvedNode ? nodesById.get(resolvedNode.id) : null;
                                 const label = node?.data.label || resolvedNode?.method || action.nodeId;
+                                const compactLabel = compactTaskProgressLabel(label);
                                 return (
                                   <i
                                     className={`task-action-progress-segment ${action.state}`}
@@ -4248,7 +4253,7 @@ function App() {
                                     title={formatTaskActionTimingTitle(action, label)}
                                   >
                                     <span>{action.index + 1}</span>
-                                    <b>{label}</b>
+                                    <b>{compactLabel}</b>
                                   </i>
                                 );
                               })}

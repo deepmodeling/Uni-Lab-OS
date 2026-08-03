@@ -793,6 +793,8 @@
 }
 
 .scheduler-bench__progress-task-head span {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: #334155;
   font-size: 9px;
@@ -802,7 +804,8 @@
 }
 
 .scheduler-bench__progress-task-head small {
-  flex: 0 0 auto;
+  flex: 0 1 55%;
+  min-width: 0;
   max-width: 62%;
   overflow: hidden;
   color: #64748b;
@@ -813,8 +816,10 @@
 
 .scheduler-bench__action-progress {
   display: flex;
+  min-width: 0;
   gap: 2px;
   height: 12px;
+  overflow: hidden;
 }
 
 .scheduler-bench__action-segment {
@@ -845,6 +850,7 @@
 }
 
 .scheduler-bench__action-segment > b {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: 8px;

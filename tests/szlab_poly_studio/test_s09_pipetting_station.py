@@ -291,24 +291,20 @@ def test_s09_reusable_tip_action_uses_box_one_then_reuses_from_box_two(tmp_path)
     assert device.initialize_reusable_tip_inventory()["success"] is True
 
     first = device.add_liquid_with_reusable_tip(
-        source_position=7,
-        liquid_bottle_index=4,
-        station=3,
+        liquid_station_index=4,
         volume=20,
     )
     second = device.add_liquid_with_reusable_tip(
-        source_position=7,
-        liquid_bottle_index=4,
-        station=3,
+        liquid_station_index=4,
         volume=20,
     )
 
     assert first["success"] is True
-    assert [step["data"]["tip_box_index"] for step in first["steps"]] == [1, 1, 1, 2]
+    assert [step["data"]["tip_box_index"] for step in first["steps"]] == [1, 1, 1, 1, 1, 2]
     assert first["data"]["tip_reuse"]["tip_index"] == 1
     assert first["data"]["tip_reuse"]["use_count"] == 1
     assert second["success"] is True
-    assert [step["data"]["tip_box_index"] for step in second["steps"]] == [2, 2, 2, 2]
+    assert [step["data"]["tip_box_index"] for step in second["steps"]] == [2, 2, 2, 2, 2, 2]
     assert second["data"]["tip_reuse"]["tip_index"] == 1
     assert second["data"]["tip_reuse"]["use_count"] == 2
 
@@ -324,8 +320,7 @@ def test_s09_reusable_tip_action_replaces_tip_at_limit(tmp_path):
 
     results = [
         device.add_liquid_with_reusable_tip(
-            source_position=1,
-            liquid_bottle_index=1,
+            liquid_station_index=1,
             volume=10,
         )
         for _index in range(3)
@@ -348,25 +343,15 @@ def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
     )
     device.initialize_reusable_tip_inventory()
 
-    monkeypatch.setattr(
-        device,
-        "add_liquid",
-        lambda **_kwargs: {
-            "success": False,
-            "message": "吸液失败",
-            "steps": [
-                {
-                    "step": "从 TIP盒1 取 TIP",
-                    "success": True,
-                    "data": {"process": 5},
-                }
-            ],
-        },
-    )
+    def fake_run_process(*, process, **_kwargs):
+        if process == 5:
+            return {"success": True, "data": {"process": 5}}
+        return {"success": False, "message": "吸液失败", "data": {"process": process}}
+
+    monkeypatch.setattr(device, "run_process", fake_run_process)
 
     result = device.add_liquid_with_reusable_tip(
-        source_position=1,
-        liquid_bottle_index=1,
+        liquid_station_index=1,
         volume=10,
     )
     status = device.get_reusable_tip_status()["data"]
@@ -374,7 +359,7 @@ def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
     assert result["success"] is False
     assert result["tip_reuse"]["status"] == "unknown"
     assert status["tips"]["1"]["status"] == "unknown"
-    assert status["solvents"]["S10-1"]["status"] == "unknown"
+    assert status["solvents"]["S09-LIQUID-1"]["status"] == "unknown"
 
 
 def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
@@ -389,7 +374,7 @@ def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
     active_count = 0
     max_active_count = 0
 
-    def fake_add_liquid(**_kwargs):
+    def fake_run_process(*, process, **_kwargs):
         nonlocal active_count, max_active_count
         with counter_lock:
             active_count += 1
@@ -397,15 +382,17 @@ def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
         time.sleep(0.02)
         with counter_lock:
             active_count -= 1
-        return {"success": True, "data": {}, "steps": []}
+        data = {"process": process}
+        if process == 9:
+            data["balance_reading"] = -1.0
+        return {"success": True, "data": data}
 
-    monkeypatch.setattr(device, "add_liquid", fake_add_liquid)
+    monkeypatch.setattr(device, "run_process", fake_run_process)
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(
             executor.map(
                 lambda position: device.add_liquid_with_reusable_tip(
-                    source_position=position,
-                    liquid_bottle_index=position,
+                    liquid_station_index=position,
                     volume=10,
                 ),
                 (1, 2),
@@ -414,6 +401,50 @@ def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
 
     assert all(result["success"] for result in results)
     assert max_active_count == 1
+
+
+def test_s09_reusable_tip_action_runs_addition_then_calculates_density(tmp_path):
+    client = PseudoSzlabS09OpcUaClient(
+        {"S09天平读数": -1.58, "S09液体瓶3剩余液量": 100.0}
+    )
+    device = make_pipetting_device(
+        client,
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory()
+
+    result = device.add_liquid_with_reusable_tip(
+        liquid_station_index=3,
+        volume=1,
+        density_volume=2,
+        volume_unit="mL",
+    )
+
+    assert result["success"] is True
+    assert [step["data"]["process"] for step in result["steps"]] == [5, 7, 8, 9, 10, 6]
+    assert result["data"]["net_mass"] == -1.58
+    assert result["data"]["absolute_mass"] == 1.58
+    assert result["data"]["density_volume_ml"] == 2.0
+    assert result["data"]["density"] == 0.79
+    assert result["data"]["density_unit"] == "g/mL"
+    assert result["data"]["tip_reuse"]["solvent_key"] == "S09-LIQUID-3"
+    assert client.values["S09液体瓶3剩余液量"] == 99.0
+
+
+def test_s09_reusable_tip_action_rejects_density_volume_over_single_transfer_limit(tmp_path):
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+
+    result = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        volume=1,
+        density_volume=5001,
+        volume_unit="uL",
+    )
+
+    assert result["success"] is False
+    assert "不能超过 5000 uL" in result["message"]
 
 
 def test_s09_add_liquid_writes_frontend_remaining_volume_params_before_process():
@@ -596,8 +627,15 @@ def test_s09_run_process_rejects_take_liquid_when_remaining_volume_insufficient(
     assert client.writes == []
 
 
-def test_s09_density_process_returns_balance_reading():
-    client = PseudoSzlabS09OpcUaClient({"S09天平读数": 12.34, "S09液体瓶1剩余液量": 10.0})
+def test_s09_density_process_uses_beaker_without_deducting_liquid_station():
+    liquid_station_sensor = "传感器状态_上位机[4].NO[7]"
+    client = PseudoSzlabS09OpcUaClient(
+        {
+            "S09天平读数": -12.34,
+            "S09液体瓶1剩余液量": 10.0,
+            liquid_station_sensor: False,
+        }
+    )
     device = make_pipetting_device(client)
 
     result = device.run_process(
@@ -609,8 +647,10 @@ def test_s09_density_process_returns_balance_reading():
     )
 
     assert result["success"] is True
-    assert result["data"]["balance_reading"] == 12.34
-    assert result["data"]["balance"] == {"balance_reading": 12.34, "stable": True}
+    assert result["data"]["balance_reading"] == -12.34
+    assert result["data"]["balance"] == {"balance_reading": -12.34, "stable": True}
+    assert client.values["S09液体瓶1剩余液量"] == 10.0
+    assert liquid_station_sensor not in client.reads
 
 
 def test_s09_prepare_liquid_station_checks_single_station_status_only():

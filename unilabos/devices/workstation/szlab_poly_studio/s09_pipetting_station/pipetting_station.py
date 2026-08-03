@@ -6,10 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from unilabos.devices.workstation.szlab_poly_studio.sensor import (
-    S10Sensors,
-    wait_sensor_conditions,
-)
+from unilabos.devices.workstation.szlab_poly_studio.sensor import wait_sensor_conditions
 from unilabos.registry.decorators import action, device, not_action, topic_config
 
 from .sensors import (
@@ -216,7 +213,7 @@ class SzlabMixerPipettingStationDevice:
     ) -> dict[str, bool]:
         if process in {5, 6}:
             return {S09_TIP_BOX_SENSORS[validate_tip_box(tip_box_index)]: True}
-        if process in {7, 9}:
+        if process == 7:
             return {S09_STATION_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True}
         return {}
 
@@ -399,11 +396,11 @@ class SzlabMixerPipettingStationDevice:
         dispense_volume = self._volume_to_raw(dispense_volume, volume_unit)
         if process in {7, 9} and aspirate_volume <= 0:
             raise ValueError("S09 抽液量必须大于 0")
-        if process in {8, 10} and dispense_volume <= 0:
+        if process == 8 and dispense_volume <= 0:
             raise ValueError("S09 放液量必须大于 0")
         if process in {7, 9} and aspirate_volume > S09_VOLUME_RAW_MAX:
             raise ValueError("S09 单次抽液量不能超过 5000 uL；业务加液请使用 add_liquid 自动拆分")
-        if process in {8, 10} and dispense_volume > S09_VOLUME_RAW_MAX:
+        if process == 8 and dispense_volume > S09_VOLUME_RAW_MAX:
             raise ValueError("S09 单次放液量不能超过 5000 uL；业务加液请使用 add_liquid 自动拆分")
         return aspirate_volume, dispense_volume
 
@@ -426,11 +423,11 @@ class SzlabMixerPipettingStationDevice:
         else:
             tip_box_index = int(tip_box_index)
             tip_index = int(tip_index)
-        if process in {7, 9}:
+        if process == 7:
             liquid_bottle_index = validate_liquid_bottle(liquid_bottle_index)
         else:
             liquid_bottle_index = int(liquid_bottle_index)
-        if process in {8, 10}:
+        if process == 8:
             station = validate_station(station)
         else:
             station = int(station)
@@ -639,7 +636,7 @@ class SzlabMixerPipettingStationDevice:
             except Exception as exc:
                 return {"success": False, "message": str(exc), "logs": logs}
 
-        if process in {7, 9} and aspirate_volume > 0 and not skip_level_check:
+        if process == 7 and aspirate_volume > 0 and not skip_level_check:
             try:
                 level_check = self._ensure_sufficient_remaining_volume(liquid_bottle_index, aspirate_volume)
                 self._append_log(
@@ -736,7 +733,7 @@ class SzlabMixerPipettingStationDevice:
                     "logs": logs,
                 }
 
-            if process in {7, 9} and aspirate_volume > 0:
+            if process == 7 and aspirate_volume > 0:
                 try:
                     remaining_update = self._deduct_remaining_volume(liquid_bottle_index, aspirate_volume)
                     data["remaining_volume_update"] = remaining_update
@@ -941,30 +938,31 @@ class SzlabMixerPipettingStationDevice:
             "logs": logs,
         }
 
-    @action(auto_prefix=True, description="按 S10 溶剂位置自动选择并复用 TIP 执行 S09 加液")
+    @action(auto_prefix=True, description="按 S09 液体工位复用 TIP 执行加液并测量密度")
     def add_liquid_with_reusable_tip(
         self,
-        source_position: int = 1,
-        liquid_bottle_index: int = 1,
-        station: int = 1,
+        liquid_station_index: int = 1,
         volume: int | float = 1,
+        density_volume: int | float = 1,
         volume_unit: str = "raw",
         skip_level_check: bool = False,
     ) -> dict[str, Any]:
         try:
-            source_position = int(source_position)
-            if source_position < 1 or source_position > len(S10Sensors.LIQUID_REAGENT):
-                raise ValueError(
-                    f"S10 溶剂位置必须在 1-{len(S10Sensors.LIQUID_REAGENT)} 范围内"
-                )
+            liquid_station_index = validate_liquid_bottle(liquid_station_index)
             raw_volume = self._volume_to_raw(volume, volume_unit)
+            density_raw_volume = self._volume_to_raw(density_volume, volume_unit)
             if raw_volume <= 0:
                 raise ValueError("S09 加液量必须大于 0")
-            required_cycles = len(self._split_raw_volume(raw_volume))
+            if density_raw_volume <= 0:
+                raise ValueError("S09 测密度体积必须大于 0")
+            if density_raw_volume > S09_VOLUME_RAW_MAX:
+                raise ValueError("S09 单次测密度体积不能超过 5000 uL")
+            transfer_chunks = self._split_raw_volume(raw_volume)
+            required_cycles = len(transfer_chunks)
         except (TypeError, ValueError) as exc:
             return {"success": False, "message": str(exc)}
 
-        solvent_key = f"S10-{source_position}"
+        solvent_key = f"S09-LIQUID-{liquid_station_index}"
         with self._tip_reuse_execution_lock:
             try:
                 tip = self._tip_reuse_state.prepare_tip(
@@ -976,70 +974,179 @@ class SzlabMixerPipettingStationDevice:
 
             tip_tracking = {
                 "solvent_key": solvent_key,
-                "source_position": source_position,
+                "liquid_station_index": liquid_station_index,
                 "tip_index": int(tip["tip_index"]),
                 "take_tip_box_index": int(tip["current_box"]),
                 "release_tip_box_index": 2,
                 "required_cycles": required_cycles,
             }
-            result = self.add_liquid(
-                take_tip_box_index=tip_tracking["take_tip_box_index"],
-                release_tip_box_index=tip_tracking["release_tip_box_index"],
-                tip_index=tip_tracking["tip_index"],
-                liquid_bottle_index=liquid_bottle_index,
-                station=station,
-                aspirate_volume=raw_volume,
-                dispense_volume=raw_volume,
-                volume_unit="raw",
-                skip_level_check=skip_level_check,
+            conditions = {
+                S09_TIP_BOX_SENSORS[tip_tracking["take_tip_box_index"]]: True,
+                S09_TIP_BOX_SENSORS[tip_tracking["release_tip_box_index"]]: True,
+                S09_STATION_SENSORS[liquid_station_index]: True,
+            }
+            try:
+                precheck = self._wait_material_conditions(conditions, phase="workflow_pre")
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "message": f"S09 加液测密度物料传感器读取失败: {exc}",
+                    "tip_reuse": tip_tracking,
+                }
+            if not precheck["success"]:
+                return {
+                    "success": False,
+                    "status": "rejected",
+                    "message": "S09 加液测密度等待 TIP盒和液体瓶物料在位失败",
+                    "sensor_precheck": precheck,
+                    "tip_reuse": tip_tracking,
+                }
+
+            steps: list[dict[str, Any]] = []
+            logs: list[dict[str, Any]] = []
+            plan: list[tuple[int, int, int, int, str, bool]] = [
+                (5, tip_tracking["take_tip_box_index"], 0, 0, "取 TIP", False),
+            ]
+            for chunk in transfer_chunks:
+                plan.extend(
+                    [
+                        (7, tip_tracking["take_tip_box_index"], chunk, 0, "液体工位取液", False),
+                        (8, tip_tracking["take_tip_box_index"], 0, chunk, "烧杯加液", False),
+                    ]
+                )
+            plan.extend(
+                [
+                    (9, tip_tracking["take_tip_box_index"], density_raw_volume, 0, "烧杯测密度", True),
+                    (10, tip_tracking["take_tip_box_index"], 0, 0, "烧杯测密度复位", False),
+                    (6, tip_tracking["release_tip_box_index"], 0, 0, "放 TIP", False),
+                ]
             )
-            if result.get("success", False):
-                try:
-                    updated_tip = self._tip_reuse_state.record_tip_use(
-                        solvent_key,
-                        cycles=required_cycles,
+            for process, tip_box, aspirate, dispense, step_name, read_balance in plan:
+                result = self.run_process(
+                    process=process,
+                    tip_box_index=tip_box,
+                    tip_index=tip_tracking["tip_index"],
+                    liquid_bottle_index=(liquid_station_index if process == 7 else 0),
+                    station=1,
+                    aspirate_volume=aspirate,
+                    dispense_volume=dispense,
+                    volume_unit="raw",
+                    require_allow=True,
+                    skip_level_check=skip_level_check,
+                    read_balance_after_done=read_balance,
+                )
+                steps.append({"step": step_name, **result})
+                logs.extend(result.get("logs") or [])
+                if not result.get("success", False):
+                    take_tip_succeeded = any(
+                        step.get("success", False) and (step.get("data") or {}).get("process") == 5
+                        for step in steps
                     )
-                except Exception as exc:
-                    try:
-                        self._tip_reuse_state.mark_active_tip_unknown(solvent_key)
-                    except Exception:
-                        pass
+                    release_tip_succeeded = any(
+                        step.get("success", False) and (step.get("data") or {}).get("process") == 6
+                        for step in steps
+                    )
+                    if take_tip_succeeded and not release_tip_succeeded:
+                        try:
+                            unknown_tip = self._tip_reuse_state.mark_active_tip_unknown(solvent_key)
+                            tip_tracking["status"] = unknown_tip["status"]
+                        except Exception as exc:
+                            tip_tracking["tracking_error"] = str(exc)
                     return {
                         "success": False,
-                        "message": f"S09 加液已完成，但 TIP 状态更新失败: {exc}",
-                        "transfer_result": result,
+                        "message": result.get("message", step_name),
+                        "steps": steps,
+                        "logs": logs,
                         "tip_reuse": tip_tracking,
                     }
-                data = dict(result.get("data") or {})
-                data["tip_reuse"] = {
-                    **tip_tracking,
-                    "current_box": updated_tip["current_box"],
-                    "use_count": updated_tip["use_count"],
-                    "max_use_count": self._tip_reuse_state.max_use_count,
-                }
-                return {**result, "data": data}
 
-            take_tip_succeeded = any(
-                step.get("success", False)
-                and isinstance(step.get("data"), dict)
-                and step["data"].get("process") == 5
-                for step in result.get("steps", [])
-            )
-            release_tip_succeeded = any(
-                step.get("success", False)
-                and isinstance(step.get("data"), dict)
-                and step["data"].get("process") == 6
-                for step in result.get("steps", [])
-            )
-            if take_tip_succeeded and not release_tip_succeeded:
+            try:
+                density_step = next(
+                    step for step in steps if (step.get("data") or {}).get("process") == 9
+                )
+                net_mass = float(density_step["data"]["balance_reading"])
+                density_volume_ml = self._raw_volume_to_ml(density_raw_volume)
+                updated_tip = self._tip_reuse_state.record_tip_use(
+                    solvent_key,
+                    cycles=required_cycles,
+                )
+            except (KeyError, StopIteration, TypeError, ValueError) as exc:
+                return {
+                    "success": False,
+                    "message": f"S09 密度结果无效: {exc}",
+                    "steps": steps,
+                    "logs": logs,
+                    "tip_reuse": tip_tracking,
+                }
+            except Exception as exc:
                 try:
-                    unknown_tip = self._tip_reuse_state.mark_active_tip_unknown(
-                        solvent_key
-                    )
-                    tip_tracking["status"] = unknown_tip["status"]
-                except Exception as exc:
-                    tip_tracking["tracking_error"] = str(exc)
-            return {**result, "tip_reuse": tip_tracking}
+                    self._tip_reuse_state.mark_active_tip_unknown(solvent_key)
+                except Exception:
+                    pass
+                return {
+                    "success": False,
+                    "message": f"S09 加液测密度已完成，但 TIP 状态更新失败: {exc}",
+                    "steps": steps,
+                    "logs": logs,
+                    "tip_reuse": tip_tracking,
+                }
+
+            tip_reuse = {
+                **tip_tracking,
+                "current_box": updated_tip["current_box"],
+                "use_count": updated_tip["use_count"],
+                "max_use_count": self._tip_reuse_state.max_use_count,
+            }
+            try:
+                postcheck = self._wait_material_conditions(
+                    {S09_STATION_SENSORS[liquid_station_index]: True},
+                    phase="post",
+                )
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "status": "verification_failed",
+                    "message": f"S09 加液测密度完成，但液体瓶传感器读取失败: {exc}",
+                    "steps": steps,
+                    "logs": logs,
+                    "tip_reuse": tip_reuse,
+                }
+            if not postcheck["success"]:
+                return {
+                    "success": False,
+                    "status": "verification_failed",
+                    "message": "S09 加液测密度完成，但液体瓶在位验证失败",
+                    "steps": steps,
+                    "logs": logs,
+                    "sensor_postcheck": postcheck,
+                    "tip_reuse": tip_reuse,
+                }
+
+            absolute_mass = abs(net_mass)
+            density = absolute_mass / density_volume_ml
+            return {
+                "success": True,
+                "message": "S09 加液和密度测量完成",
+                "data": {
+                    "liquid_station_index": liquid_station_index,
+                    "volume": raw_volume,
+                    "volume_ul": self._raw_volume_to_ul(raw_volume),
+                    "net_mass": net_mass,
+                    "absolute_mass": absolute_mass,
+                    "mass_unit": "g",
+                    "density_volume": density_raw_volume,
+                    "density_volume_ml": density_volume_ml,
+                    "volume_unit": "raw",
+                    "density": density,
+                    "density_unit": "g/mL",
+                    "balance_stable": True,
+                    "sensor_precheck": precheck,
+                    "sensor_postcheck": postcheck,
+                    "tip_reuse": tip_reuse,
+                },
+                "steps": steps,
+                "logs": logs,
+            }
 
     @action(auto_prefix=True, description="执行 S09 烧杯加液：取 TIP、液体瓶取液、烧杯放液、放 TIP")
     def add_liquid_to_beaker(

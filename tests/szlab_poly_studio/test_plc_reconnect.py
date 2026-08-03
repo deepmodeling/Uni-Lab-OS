@@ -58,6 +58,24 @@ def test_plc_treats_missing_socket_write_as_recoverable():
     )
 
 
+@pytest.mark.parametrize(
+    "detail",
+    [
+        "[Errno 9] Bad file descriptor",
+        "CancelledError(CancelledError())",
+    ],
+)
+def test_plc_treats_cancelled_or_closed_read_as_recoverable(detail):
+    device = object.__new__(SZLabPolyPLCDevice)
+
+    assert device._is_recoverable_connection_error(
+        RuntimeError(
+            "读取 PLC 变量失败: Robot_任务完成: "
+            f"NodeId=ns=4;s=上位机通讯|Robot_任务完成: {detail}"
+        )
+    )
+
+
 def test_plc_reconnect_restores_sensor_subscription(monkeypatch):
     class FakeClient:
         def __init__(self):

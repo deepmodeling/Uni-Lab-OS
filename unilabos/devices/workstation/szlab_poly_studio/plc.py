@@ -340,6 +340,8 @@ class SZLabPolyPLCDevice(BaseClient):
             "Connection is closed",
             "Not connected",
             "Socket is closed",
+            "Bad file descriptor",
+            "CancelledError",
             "Broken pipe",
             "Connection reset",
             "Connection aborted",

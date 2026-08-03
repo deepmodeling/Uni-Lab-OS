@@ -144,15 +144,11 @@
             "node": "S09 烧杯加液",
             "workflow_node_id": "w03_add_liquid_s09",
             "device_id": "szlab_mixer_pipetting_station",
-            "method": "add_liquid_to_beaker",
+            "method": "add_liquid_with_reusable_tip",
             "params": {
-              "take_tip_box_index": 1,
-              "release_tip_box_index": 2,
-              "tip_index": 1,
-              "liquid_bottle_index": 1,
-              "station": 1,
-              "aspirate_volume": 5000,
-              "dispense_volume": 5000,
+              "liquid_station_index": 1,
+              "volume": 5000,
+              "density_volume": 5000,
               "volume_unit": "raw",
               "skip_level_check": false
             }

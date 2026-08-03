@@ -35,9 +35,6 @@ class SzlabRobotS09Mixin:
             s09_safe_position=safe_position,
             s09_home_signal=S09_HOME_SIGNALS[safe_position],
             target_sensor_variable=sensor,
-            pre_sensor_conditions={},
-            post_sensor_conditions={},
-            sensor_check_skipped=True,
         )
 
     def _run_s09_pick(self, product_type: int, position: int) -> dict[str, Any]:
@@ -55,7 +52,4 @@ class SzlabRobotS09Mixin:
             s09_safe_position=safe_position,
             s09_home_signal=S09_HOME_SIGNALS[safe_position],
             source_sensor_variable=sensor,
-            pre_sensor_conditions={},
-            post_sensor_conditions={},
-            sensor_check_skipped=True,
         )

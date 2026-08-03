@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -24,10 +26,14 @@ from scripts.run_workflow_local import (
 from tests.szlab_poly_studio.pseudo_clients.s09_pipetting import PseudoSzlabS09OpcUaClient
 
 
-def make_pipetting_device(client: PseudoSzlabS09OpcUaClient | None = None) -> SzlabMixerPipettingStationDevice:
+def make_pipetting_device(
+    client: PseudoSzlabS09OpcUaClient | None = None,
+    **kwargs,
+) -> SzlabMixerPipettingStationDevice:
     return SzlabMixerPipettingStationDevice(
         url="opc.tcp://127.0.0.1:0/unused",
         opcua_client=client or PseudoSzlabS09OpcUaClient(),
+        **kwargs,
     )
 
 
@@ -44,11 +50,14 @@ def test_s09_pipetting_station_is_ast_scannable_from_own_package():
         "read_allow_process",
         "run_process",
         "add_liquid",
+        "add_liquid_with_reusable_tip",
         "add_liquid_to_beaker",
         "run_liquid_workflow",
         "set_liquid_bottle_remaining_volume",
         "initialize_liquid_bottle_remaining_volumes",
         "read_balance",
+        "initialize_reusable_tip_inventory",
+        "get_reusable_tip_status",
         "get_pipetting_status",
     }.issubset(actions)
     assert "go_to_safe_position" not in actions
@@ -271,6 +280,140 @@ def test_s09_add_liquid_runs_plc_process_sequence_5_7_8_6():
         ("S09允许加工", True),
         ("S09工艺完成", 6),
     ]
+
+
+def test_s09_reusable_tip_action_uses_box_one_then_reuses_from_box_two(tmp_path):
+    client = PseudoSzlabS09OpcUaClient({"S09液体瓶4剩余液量": 100.0})
+    device = make_pipetting_device(
+        client,
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    assert device.initialize_reusable_tip_inventory()["success"] is True
+
+    first = device.add_liquid_with_reusable_tip(
+        source_position=7,
+        liquid_bottle_index=4,
+        station=3,
+        volume=20,
+    )
+    second = device.add_liquid_with_reusable_tip(
+        source_position=7,
+        liquid_bottle_index=4,
+        station=3,
+        volume=20,
+    )
+
+    assert first["success"] is True
+    assert [step["data"]["tip_box_index"] for step in first["steps"]] == [1, 1, 1, 2]
+    assert first["data"]["tip_reuse"]["tip_index"] == 1
+    assert first["data"]["tip_reuse"]["use_count"] == 1
+    assert second["success"] is True
+    assert [step["data"]["tip_box_index"] for step in second["steps"]] == [2, 2, 2, 2]
+    assert second["data"]["tip_reuse"]["tip_index"] == 1
+    assert second["data"]["tip_reuse"]["use_count"] == 2
+
+
+def test_s09_reusable_tip_action_replaces_tip_at_limit(tmp_path):
+    client = PseudoSzlabS09OpcUaClient({"S09液体瓶1剩余液量": 100.0})
+    device = make_pipetting_device(
+        client,
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+        tip_max_use_count=2,
+    )
+    device.initialize_reusable_tip_inventory()
+
+    results = [
+        device.add_liquid_with_reusable_tip(
+            source_position=1,
+            liquid_bottle_index=1,
+            volume=10,
+        )
+        for _index in range(3)
+    ]
+    status = device.get_reusable_tip_status()["data"]
+
+    assert all(result["success"] for result in results)
+    assert [result["data"]["tip_reuse"]["tip_index"] for result in results] == [1, 1, 2]
+    assert results[2]["data"]["tip_reuse"]["take_tip_box_index"] == 1
+    assert status["tips"]["1"]["status"] == "exhausted"
+    assert status["tips"]["2"]["status"] == "bound"
+
+
+def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
+    tmp_path,
+    monkeypatch,
+):
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory()
+
+    monkeypatch.setattr(
+        device,
+        "add_liquid",
+        lambda **_kwargs: {
+            "success": False,
+            "message": "吸液失败",
+            "steps": [
+                {
+                    "step": "从 TIP盒1 取 TIP",
+                    "success": True,
+                    "data": {"process": 5},
+                }
+            ],
+        },
+    )
+
+    result = device.add_liquid_with_reusable_tip(
+        source_position=1,
+        liquid_bottle_index=1,
+        volume=10,
+    )
+    status = device.get_reusable_tip_status()["data"]
+
+    assert result["success"] is False
+    assert result["tip_reuse"]["status"] == "unknown"
+    assert status["tips"]["1"]["status"] == "unknown"
+    assert status["solvents"]["S10-1"]["status"] == "unknown"
+
+
+def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
+    tmp_path,
+    monkeypatch,
+):
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory()
+    counter_lock = threading.Lock()
+    active_count = 0
+    max_active_count = 0
+
+    def fake_add_liquid(**_kwargs):
+        nonlocal active_count, max_active_count
+        with counter_lock:
+            active_count += 1
+            max_active_count = max(max_active_count, active_count)
+        time.sleep(0.02)
+        with counter_lock:
+            active_count -= 1
+        return {"success": True, "data": {}, "steps": []}
+
+    monkeypatch.setattr(device, "add_liquid", fake_add_liquid)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda position: device.add_liquid_with_reusable_tip(
+                    source_position=position,
+                    liquid_bottle_index=position,
+                    volume=10,
+                ),
+                (1, 2),
+            )
+        )
+
+    assert all(result["success"] for result in results)
+    assert max_active_count == 1
 
 
 def test_s09_add_liquid_writes_frontend_remaining_volume_params_before_process():
@@ -702,6 +845,37 @@ def test_s09_remaining_volume_actions_use_remaining_volume_names():
     assert not any("容量" in name for name, _value in client.writes)
 
 
+def test_s09_reusable_tip_inventory_actions_persist_state(tmp_path):
+    state_path = tmp_path / "s09_tip_state.json"
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(state_path),
+        tip_max_use_count=3,
+    )
+
+    before = device.get_reusable_tip_status()
+    initialized = device.initialize_reusable_tip_inventory()
+    repeated = device.initialize_reusable_tip_inventory()
+    restored = make_pipetting_device(
+        tip_reuse_state_path=str(state_path),
+        tip_max_use_count=3,
+    )
+    status = restored.get_pipetting_status()
+
+    assert before["data"]["initialized"] is False
+    assert before["data"]["state_path"] == str(state_path)
+    assert initialized["success"] is True
+    assert initialized["data"] == {
+        "initialized": True,
+        "tip_count": 96,
+        "max_use_count": 3,
+        "state_path": str(state_path),
+    }
+    assert repeated["success"] is False
+    assert "已经初始化" in repeated["message"]
+    assert status["data"]["reusable_tip_state"]["initialized"] is True
+    assert len(status["data"]["reusable_tip_state"]["tips"]) == 96
+
+
 def test_s09_debug_csv_is_small_plc_input_with_remaining_volume_names():
     csv_path = Path(
         "unilabos/devices/workstation/szlab_poly_studio/s09_pipetting_station/pipetting_station_nodes.csv"
@@ -765,8 +939,9 @@ def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):
 
     assert result["success"] is True
     assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[6]"
-    assert result["sensor_check_skipped"] is True
-    assert "传感器状态_上位机[4].NO[6]" not in gateway.reads
+    assert result["sensor_precheck"]["success"] is True
+    assert result["sensor_postcheck"]["success"] is True
+    assert "传感器状态_上位机[4].NO[6]" in gateway.reads
     assert gateway.writes == [
         ("S09取放料产品", 1),
         ("S09取放料编号", 2),

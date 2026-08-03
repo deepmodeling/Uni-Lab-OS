@@ -246,11 +246,6 @@
           "condition": "S09 烧杯工位临时软件状态为无料",
           "status": "enforced",
           "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
-        },
-        {
-          "condition": "S09原点信号_4 == true（烧杯取放安全位）",
-          "status": "enforced",
-          "enforced_by": "TaskExecutionCoordinator"
         }
       ],
       "completion": [
@@ -281,7 +276,7 @@
           "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
         },
         {
-          "condition": "TIP 盒 1、TIP 盒 2、液体瓶 1、工位 1 的物料传感器均为 true",
+          "condition": "TIP 盒 1、TIP 盒 2、液体瓶 1 的物料传感器均为 true；烧杯工位由临时软件状态判断",
           "status": "enforced",
           "enforced_by": "TaskExecutionCoordinator + add_liquid_to_beaker"
         },
@@ -294,11 +289,6 @@
           "condition": "S09液体瓶1剩余液量 >= 0.5 mL",
           "status": "enforced",
           "enforced_by": "TaskExecutionCoordinator + add_liquid_to_beaker"
-        },
-        {
-          "condition": "S09原点信号_1 == true（首步取 TIP 安全位）",
-          "status": "enforced",
-          "enforced_by": "TaskExecutionCoordinator"
         }
       ],
       "completion": [
@@ -308,7 +298,7 @@
           "enforced_by": "add_liquid_to_beaker"
         },
         {
-          "condition": "各步骤后物料传感器满足预期，液体瓶账面余量已扣减",
+          "condition": "TIP 盒和液体瓶传感器满足预期，液体瓶账面余量已扣减",
           "status": "enforced",
           "enforced_by": "add_liquid_to_beaker"
         }
@@ -336,11 +326,6 @@
           "condition": "传感器状态_上位机[2].NO[10] == false（S04 位置 1 为空）",
           "status": "enforced",
           "enforced_by": "TaskExecutionCoordinator + submit_place_to_s04"
-        },
-        {
-          "condition": "S09原点信号_4 == true（烧杯取放安全位）",
-          "status": "enforced",
-          "enforced_by": "TaskExecutionCoordinator"
         },
         {
           "condition": "S041准备信号 == true（S04 位置 1 可放料；位置 2..6 对应 S042..S046准备信号）",

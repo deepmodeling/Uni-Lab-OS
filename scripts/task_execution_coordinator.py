@@ -31,7 +31,6 @@ from unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.sensors i
 )
 from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensors import (
     S09_ALLOW_PROCESS_VAR,
-    S09_HOME_SIGNALS,
     S09_PROCESS_DONE_VAR,
     S09_STATION_SENSORS,
     S09_TIP_BOX_SENSORS,
@@ -340,7 +339,11 @@ def _s09_volume_to_raw(volume: Any, volume_unit: Any) -> int:
     raise ValueError("S09 体积单位必须是 raw、uL 或 mL")
 
 
-def _atomic_start_signal_conditions(node: WorkflowNode) -> dict[str, Any]:
+def _atomic_start_signal_conditions(
+    node: WorkflowNode,
+    *,
+    next_node: WorkflowNode | None = None,
+) -> dict[str, Any]:
     """生成主工艺前八个原子 Task 的首动作 PLC 触发条件。"""
     params = node.param
     if node.uuid == "w01_pick_beaker_s03":
@@ -366,28 +369,27 @@ def _atomic_start_signal_conditions(node: WorkflowNode) -> dict[str, Any]:
             S06_DONE_VAR: False,
         }
     if node.uuid == "w03_pick_beaker_s06":
-        return {
-            ADDITION_BEAKER_SENSOR: True,
-            S09_HOME_SIGNALS[4]: True,
-        }
+        return {ADDITION_BEAKER_SENSOR: True}
     if node.uuid == "w03_add_liquid_s09":
         take_tip_box = int(params.get("take_tip_box_index", 1))
         release_tip_box = int(params.get("release_tip_box_index", 2))
         liquid_bottle = int(params.get("liquid_bottle_index", 1))
-        station = int(params.get("station", 1))
         return {
             S09_TIP_BOX_SENSORS[take_tip_box]: True,
             S09_TIP_BOX_SENSORS[release_tip_box]: True,
             S09_STATION_SENSORS[liquid_bottle]: True,
-            S09_STATION_SENSORS[station]: True,
-            S09_HOME_SIGNALS[1]: True,
             S09_ALLOW_PROCESS_VAR: True,
             S09_PROCESS_DONE_VAR: False,
         }
     if node.uuid == "w04_pick_beaker_s09":
-        position = int(params.get("position", 1))
+        target_params = (
+            next_node.param
+            if next_node is not None
+            and next_node.uuid == "w04_place_beaker_s04"
+            else params
+        )
+        position = int(target_params.get("position", 1))
         return {
-            S09_HOME_SIGNALS[4]: True,
             s04_material_sensor_var(position): False,
             s04_ready_var(position): True,
         }
@@ -427,10 +429,11 @@ def _atomic_task_start_trigger_satisfied(
     workspace: dict[str, Any],
     *,
     node: WorkflowNode,
+    next_node: WorkflowNode | None = None,
     devices: dict[str, Any],
 ) -> bool:
     """首动作认领前统一检查前八个原子 Task；读取异常时安全等待。"""
-    conditions = _atomic_start_signal_conditions(node)
+    conditions = _atomic_start_signal_conditions(node, next_node=next_node)
     conflicts = _ATOMIC_START_ACTIVE_CONFLICTS.get(node.uuid, frozenset())
     if conflicts & _active_workflow_node_ids(workspace):
         return False
@@ -675,6 +678,20 @@ class TaskExecutionCoordinator:
                 )
                 if node is not None and isinstance(override, dict):
                     node = replace(node, param={**node.param, **override})
+                next_node: WorkflowNode | None = None
+                if cursor + 1 < len(node_ids):
+                    next_node_id = str(node_ids[cursor + 1])
+                    next_node = nodes_by_id.get(next_node_id)
+                    next_override = (
+                        node_parameters.get(next_node_id)
+                        if isinstance(node_parameters, dict)
+                        else None
+                    )
+                    if next_node is not None and isinstance(next_override, dict):
+                        next_node = replace(
+                            next_node,
+                            param={**next_node.param, **next_override},
+                        )
                 execution_id = deterministic_execution_id(
                     str(instance.get("id")), cursor, node_id
                 )
@@ -701,6 +718,7 @@ class TaskExecutionCoordinator:
                     and not _atomic_task_start_trigger_satisfied(
                         trigger_workspace,
                         node=node,
+                        next_node=next_node,
                         devices=devices,
                     )
                 ):

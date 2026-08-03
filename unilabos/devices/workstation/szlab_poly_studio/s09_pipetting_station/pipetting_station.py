@@ -195,8 +195,6 @@ class SzlabMixerPipettingStationDevice:
             return {S09_TIP_BOX_SENSORS[validate_tip_box(tip_box_index)]: True}
         if process in {7, 9}:
             return {S09_STATION_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True}
-        if process in {8, 10}:
-            return {S09_STATION_SENSORS[validate_station(station)]: True}
         return {}
 
     @not_action
@@ -809,7 +807,6 @@ class SzlabMixerPipettingStationDevice:
                 S09_TIP_BOX_SENSORS[take_tip_box_index]: True,
                 S09_TIP_BOX_SENSORS[release_tip_box_index]: True,
                 S09_STATION_SENSORS[validate_liquid_bottle(liquid_bottle_index)]: True,
-                S09_STATION_SENSORS[validate_station(station)]: True,
             }
             workflow_sensor_precheck = self._wait_material_conditions(
                 workflow_sensor_conditions,
@@ -823,7 +820,7 @@ class SzlabMixerPipettingStationDevice:
             return {
                 "success": False,
                 "status": "rejected",
-                "message": "S09 加液流程等待 TIP盒、液体瓶和加液工位物料在位失败",
+                "message": "S09 加液流程等待 TIP盒和液体瓶物料在位失败",
                 "sensor_precheck": workflow_sensor_precheck,
             }
 

@@ -150,6 +150,62 @@ def test_first_eight_atomic_tasks_require_all_start_signals(node):
 
 
 @pytest.mark.parametrize(
+    "node_id",
+    [
+        "w03_pick_beaker_s06",
+        "w03_add_liquid_s09",
+        "w04_pick_beaker_s09",
+    ],
+)
+def test_s09_atomic_start_does_not_require_robot_home_signal(node_id):
+    node = next(item for item in ATOMIC_START_NODES if item.uuid == node_id)
+
+    conditions = _atomic_start_signal_conditions(node)
+
+    assert not any(name.startswith("S09原点信号_") for name in conditions)
+
+
+def test_s09_process_uses_virtual_state_instead_of_beaker_station_sensor():
+    node = next(
+        item
+        for item in ATOMIC_START_NODES
+        if item.uuid == "w03_add_liquid_s09"
+    )
+    station_sensor = "传感器状态_上位机[4].NO[9]"
+    node = replace(node, param={**node.param, "station": 3})
+
+    conditions = _atomic_start_signal_conditions(node)
+
+    assert station_sensor not in conditions
+
+
+def test_s09_to_s04_start_uses_next_place_node_target_position():
+    node = next(
+        item
+        for item in ATOMIC_START_NODES
+        if item.uuid == "w04_pick_beaker_s09"
+    )
+    next_node = WorkflowNode(
+        uuid="w04_place_beaker_s04",
+        name="S04 放烧杯",
+        device_name="szlab_mixer_robot",
+        method="submit_place_to_s04",
+        param={"position": 2, "sample_id": "sample-002"},
+        legacy_route_compatible=False,
+    )
+
+    conditions = _atomic_start_signal_conditions(
+        node,
+        next_node=next_node,
+    )
+
+    assert conditions == {
+        "传感器状态_上位机[2].NO[11]": False,
+        "S042准备信号": True,
+    }
+
+
+@pytest.mark.parametrize(
     ("node_id", "active_node_id"),
     [
         ("w01_pick_beaker_s03", "w01_dose_powder_s07"),

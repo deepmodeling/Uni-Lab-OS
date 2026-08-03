@@ -186,11 +186,11 @@ def test_s09_run_process_reports_verification_failed_when_material_disappears():
     assert ("S09工艺选择", 0) in client.writes
 
 
-def test_s09_add_liquid_requires_tip_and_target_station_before_first_process():
+def test_s09_add_liquid_uses_virtual_state_instead_of_target_station_sensor():
     client = PseudoSzlabS09OpcUaClient(
         {
             "S09液体瓶1剩余液量": 100.0,
-            "传感器状态_上位机[4].NO[7]": False,
+            "传感器状态_上位机[4].NO[9]": False,
         }
     )
     device = make_pipetting_device(client)
@@ -200,16 +200,13 @@ def test_s09_add_liquid_requires_tip_and_target_station_before_first_process():
         release_tip_box_index=2,
         tip_index=1,
         liquid_bottle_index=1,
-        station=1,
+        station=3,
         aspirate_volume=50,
         dispense_volume=50,
     )
 
-    assert result["success"] is False
-    assert result["status"] == "rejected"
-    assert result["sensor_precheck"]["mismatches"]["传感器状态_上位机[4].NO[7]"]["actual"] is False
-    assert "传感器状态_上位机[3].NO[1]" not in client.reads
-    assert client.writes == []
+    assert result["success"] is True
+    assert "传感器状态_上位机[4].NO[9]" not in client.reads
 
 
 def test_s09_add_liquid_requires_release_tip_box_before_first_process():

@@ -24,6 +24,9 @@ from scripts.task_execution_coordinator import (
     workflow_nodes_from_payload,
 )
 from scripts.workflow_ui import ActionSpec, DEFAULT_PRESET, build_graph_workflow
+from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensors import (
+    S09_TIP_BOX_SENSORS,
+)
 
 
 WORKFLOW_PATH = "task-flow.json"
@@ -96,13 +99,11 @@ ATOMIC_START_NODES = [
         uuid="w03_add_liquid_s09",
         name="S09 烧杯加液",
         device_name="szlab_mixer_pipetting_station",
-        method="add_liquid_to_beaker",
+        method="add_liquid_with_reusable_tip",
         param={
-            "take_tip_box_index": 1,
-            "release_tip_box_index": 2,
-            "liquid_bottle_index": 1,
-            "station": 1,
-            "aspirate_volume": 5000,
+            "liquid_station_index": 1,
+            "volume": 5000,
+            "density_volume": 5000,
             "volume_unit": "raw",
             "S09液体瓶1剩余液量": 10.0,
         },
@@ -165,18 +166,44 @@ def test_s09_atomic_start_does_not_require_robot_home_signal(node_id):
     assert not any(name.startswith("S09原点信号_") for name in conditions)
 
 
-def test_s09_process_uses_virtual_state_instead_of_beaker_station_sensor():
+def test_s09_process_requires_selected_liquid_station_sensor():
     node = next(
         item
         for item in ATOMIC_START_NODES
         if item.uuid == "w03_add_liquid_s09"
     )
     station_sensor = "传感器状态_上位机[4].NO[9]"
-    node = replace(node, param={**node.param, "station": 3})
+    node = replace(node, param={**node.param, "liquid_station_index": 3})
 
     conditions = _atomic_start_signal_conditions(node)
 
-    assert station_sensor not in conditions
+    assert conditions[station_sensor] is True
+    assert not any(name in S09_TIP_BOX_SENSORS.values() for name in conditions)
+
+
+def test_s09_start_gate_uses_new_volume_parameter_for_remaining_liquid():
+    node = next(
+        item
+        for item in ATOMIC_START_NODES
+        if item.uuid == "w03_add_liquid_s09"
+    )
+    conditions = _atomic_start_signal_conditions(node)
+    insufficient = replace(
+        node,
+        param={**node.param, "volume": 5000, "S09液体瓶1剩余液量": 0.4},
+    )
+    sufficient = replace(insufficient, param={**insufficient.param, "volume": 4000})
+
+    assert not _atomic_task_start_trigger_satisfied(
+        {"task_instances": []},
+        node=insufficient,
+        devices={"szlab_poly_plc": FakeTriggerPlc(conditions)},
+    )
+    assert _atomic_task_start_trigger_satisfied(
+        {"task_instances": []},
+        node=sufficient,
+        devices={"szlab_poly_plc": FakeTriggerPlc(conditions)},
+    )
 
 
 def test_s09_to_s04_start_uses_next_place_node_target_position():

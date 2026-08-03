@@ -10,6 +10,9 @@ from scripts.szlab_action_sensor_variables import (
 from unilabos.devices.workstation.szlab_poly_studio.s06_pump.sensors import (
     ADDITION_BEAKER_SENSOR,
 )
+from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensors import (
+    S09_STATION_SENSORS,
+)
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
     S05_MATERIAL_SENSOR,
     product_slot_sensor,
@@ -63,6 +66,16 @@ def test_photoshotting_resolves_material_sensor():
         {},
     )
     assert variables == [S05_MATERIAL_SENSOR]
+
+
+def test_reusable_pipetting_resolves_selected_liquid_station_sensor():
+    variables = resolve_action_sensor_variables(
+        "szlab_mixer_pipetting_station",
+        "add_liquid_with_reusable_tip",
+        {"liquid_station_index": 4},
+    )
+
+    assert variables == [S09_STATION_SENSORS[4]]
 
 
 def test_unknown_device_returns_empty_list():

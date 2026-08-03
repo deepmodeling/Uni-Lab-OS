@@ -33,7 +33,6 @@ from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensor
     S09_ALLOW_PROCESS_VAR,
     S09_PROCESS_DONE_VAR,
     S09_STATION_SENSORS,
-    S09_TIP_BOX_SENSORS,
     s09_remaining_volume_var,
 )
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
@@ -371,13 +370,9 @@ def _atomic_start_signal_conditions(
     if node.uuid == "w03_pick_beaker_s06":
         return {ADDITION_BEAKER_SENSOR: True}
     if node.uuid == "w03_add_liquid_s09":
-        take_tip_box = int(params.get("take_tip_box_index", 1))
-        release_tip_box = int(params.get("release_tip_box_index", 2))
-        liquid_bottle = int(params.get("liquid_bottle_index", 1))
+        liquid_station = int(params.get("liquid_station_index", 1))
         return {
-            S09_TIP_BOX_SENSORS[take_tip_box]: True,
-            S09_TIP_BOX_SENSORS[release_tip_box]: True,
-            S09_STATION_SENSORS[liquid_bottle]: True,
+            S09_STATION_SENSORS[liquid_station]: True,
             S09_ALLOW_PROCESS_VAR: True,
             S09_PROCESS_DONE_VAR: False,
         }
@@ -409,7 +404,7 @@ def _s09_remaining_volume_satisfied(node: WorkflowNode, plc: Any) -> bool:
     params = node.param
     if bool(params.get("skip_level_check", False)):
         return True
-    bottle = int(params.get("liquid_bottle_index", 1))
+    bottle = int(params.get("liquid_station_index", 1))
     configured = params.get(f"S09液体瓶{bottle}剩余液量")
     remaining_ml = (
         float(configured)
@@ -419,7 +414,7 @@ def _s09_remaining_volume_satisfied(node: WorkflowNode, plc: Any) -> bool:
         )
     )
     raw_volume = _s09_volume_to_raw(
-        params.get("aspirate_volume", 1),
+        params.get("volume", 1),
         params.get("volume_unit", "raw"),
     )
     return raw_volume > 0 and remaining_ml + 1e-9 >= raw_volume / 10000.0

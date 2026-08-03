@@ -209,6 +209,16 @@ def _resolve_pipetting_sensors(params: dict[str, Any]) -> list[str]:
     return _safe(resolve)
 
 
+def _resolve_reusable_pipetting_sensors(params: dict[str, Any]) -> list[str]:
+    def resolve() -> list[str]:
+        liquid_station = validate_liquid_bottle(
+            int(_param(params, "liquid_station_index", default=1))
+        )
+        return [S09_STATION_SENSORS[liquid_station]]
+
+    return _safe(resolve)
+
+
 _STATION_METHOD_RESOLVERS: dict[tuple[str, str], Callable[[dict[str, Any]], list[str]]] = {
     ("szlab_mixer_stirrer", "run_stirring"): _resolve_stirrer_sensors,
     ("szlab_mixer_photoshotting", "take_photo"): _resolve_photoshotting_sensors,
@@ -217,6 +227,10 @@ _STATION_METHOD_RESOLVERS: dict[tuple[str, str], Callable[[dict[str, Any]], list
     ("szlab_s08_cap_station", "process_cap"): _resolve_s08_cap_sensors,
     ("szlab_mixer_pipetting_station", "add_liquid_to_beaker"): _resolve_pipetting_sensors,
     ("szlab_mixer_pipetting_station", "add_liquid"): _resolve_pipetting_sensors,
+    (
+        "szlab_mixer_pipetting_station",
+        "add_liquid_with_reusable_tip",
+    ): _resolve_reusable_pipetting_sensors,
 }
 
 

@@ -344,7 +344,15 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     "release_tip_box_index": {"label": "废 TIP 盒", "description": "S09 释放已用 TIP 的盒位编号，通常为 2。"},
     "tip_index": {"label": "TIP 编号", "description": "当前 TIP 盒内使用的 TIP 位置编号。"},
     "liquid_bottle_index": {"label": "液体瓶编号", "description": "S09 液体试剂瓶工位编号，范围 1–5。"},
+    "liquid_station_index": {
+        "label": "加液体工位编号",
+        "description": "本次使用的 S09 液体工位编号，范围 1–5；同一工位自动复用绑定的 TIP。",
+    },
     "station": {"label": "烧杯工位", "description": "S09 承接加液的烧杯工位编号。"},
+    "density_volume": {
+        "label": "测密度体积",
+        "description": "工艺 9 使用的烧杯取样体积，用于结合 PLC 返回的负数净质量计算密度。",
+    },
     "aspirate_volume": {"label": "吸液体积", "description": "吸取体积；实际单位由“体积单位”决定。"},
     "dispense_volume": {"label": "放液体积", "description": "排出体积；实际单位由“体积单位”决定。"},
     "volume_unit": {

@@ -848,12 +848,26 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "bind_sample_to_station",
         "release_station",
         "add_liquid",
+        "add_liquid_with_reusable_tip",
         "add_liquid_to_beaker",
         "run_liquid_workflow",
         "set_liquid_bottle_remaining_volume",
         "initialize_liquid_bottle_remaining_volumes",
         "read_balance",
+        "initialize_reusable_tip_inventory",
+        "get_reusable_tip_status",
         "get_pipetting_status",
+    ]
+
+    assert [
+        param["name"]
+        for param in preset.actions["add_liquid_with_reusable_tip"].params
+    ] == [
+        "liquid_station_index",
+        "volume",
+        "density_volume",
+        "volume_unit",
+        "skip_level_check",
     ]
     assert collect_snapshot_variables("dose_powder", {}, runtime_config) == [
         "S07原点信号",

@@ -413,6 +413,11 @@
           "enforced_by": "submit_pick_from_s03"
         },
         {
+          "condition": "传感器状态_上位机[0].NO[6] == false（同编号 S03 烧杯位为空）",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator + submit_pick_from_s03"
+        },
+        {
           "condition": "传感器状态_上位机[3].NO[14] == false（S08 工位 1 为空）",
           "status": "enforced",
           "enforced_by": "submit_place_to_s08"

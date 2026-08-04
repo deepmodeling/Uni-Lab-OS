@@ -395,6 +395,13 @@ def _atomic_start_signal_conditions(
             s04_status_var(position): 1,
             s04_allow_var(position): True,
         }
+    if node.uuid == "w05_pick_sample_vial_s03":
+        position = params.get("position", "1-1")
+        product_type = int(params.get("product_type", 2))
+        return {
+            product_slot_sensor(product_type, position, used=False): True,
+            product_slot_sensor(1, position, used=False): False,
+        }
     return {}
 
 

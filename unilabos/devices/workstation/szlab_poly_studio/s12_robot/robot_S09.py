@@ -21,8 +21,8 @@ class SzlabRobotS09Mixin:
         raise ValueError("S09取放料产品必须是 1(TIP盒)、2(液体试剂瓶) 或 3(烧杯)")
 
     def _run_s09_place(self, product_type: int, position: int) -> dict[str, Any]:
-        sensor = s09_sensor(product_type, position)
         safe_position = self._s09_safe_position(product_type, position)
+        sensor = None if int(product_type) == 3 else s09_sensor(product_type, position)
 
         return self._submit_robot_task(
             task="place",
@@ -34,12 +34,20 @@ class SzlabRobotS09Mixin:
             position=int(position),
             s09_safe_position=safe_position,
             s09_home_signal=S09_HOME_SIGNALS[safe_position],
-            target_sensor_variable=sensor,
+            **(
+                {
+                    "pre_sensor_conditions": {},
+                    "post_sensor_conditions": {},
+                    "sensor_check_skipped_reason": "S09 烧杯位暂无独立物料传感器",
+                }
+                if sensor is None
+                else {"target_sensor_variable": sensor}
+            ),
         )
 
     def _run_s09_pick(self, product_type: int, position: int) -> dict[str, Any]:
-        sensor = s09_sensor(product_type, position)
         safe_position = self._s09_safe_position(product_type, position)
+        sensor = None if int(product_type) == 3 else s09_sensor(product_type, position)
 
         return self._submit_robot_task(
             task="pick",
@@ -51,5 +59,13 @@ class SzlabRobotS09Mixin:
             position=int(position),
             s09_safe_position=safe_position,
             s09_home_signal=S09_HOME_SIGNALS[safe_position],
-            source_sensor_variable=sensor,
+            **(
+                {
+                    "pre_sensor_conditions": {},
+                    "post_sensor_conditions": {},
+                    "sensor_check_skipped_reason": "S09 烧杯位暂无独立物料传感器",
+                }
+                if sensor is None
+                else {"source_sensor_variable": sensor}
+            ),
         )

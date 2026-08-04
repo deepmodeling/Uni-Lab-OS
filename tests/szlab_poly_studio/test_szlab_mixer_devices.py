@@ -1809,6 +1809,33 @@ def test_szlab_robot_s03_pick_writes_product_position_and_task_number():
     }
 
 
+def test_szlab_robot_s03_sample_vial_pick_requires_matching_beaker_slot_empty():
+    sample_vial_sensor = "传感器状态_上位机[1].NO[8]"
+    beaker_sensor = "传感器状态_上位机[0].NO[6]"
+    gateway = FakeRobotPlcGateway(
+        sensor_values={sample_vial_sensor: True, beaker_sensor: True},
+    )
+    device = SzlabMixerRobotDevice()
+    device.set_plc_gateway(gateway)
+
+    blocked = device.submit_pick_from_s03(product_type=2, position="1-1")
+
+    assert blocked["success"] is False
+    assert blocked["sensor_precheck"]["mismatches"] == {
+        beaker_sensor: {"expected": False, "actual": True},
+    }
+    assert not gateway.writes
+
+    gateway.sensor_values[beaker_sensor] = False
+    allowed = device.submit_pick_from_s03(product_type=2, position="1-1")
+
+    assert allowed["success"] is True
+    assert gateway.sensor_wait_calls[1][0] == {
+        sample_vial_sensor: True,
+        beaker_sensor: False,
+    }
+
+
 def test_szlab_robot_s03_reset_retries_until_pc_to_plc_variables_are_clear():
     class DelayedResetGateway(FakeRobotPlcGateway):
         def __init__(self):
@@ -2042,10 +2069,8 @@ def test_szlab_robot_s09_pick_directly_submits_beaker_robot_task():
 
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
-    assert result["source_sensor_variable"] == "传感器状态_上位机[4].NO[7]"
-    assert result["sensor_precheck"]["success"] is True
-    assert result["sensor_postcheck"]["success"] is True
-    assert gateway.sensor_wait_calls
+    assert result["sensor_check_skipped_reason"] == "S09 烧杯位暂无独立物料传感器"
+    assert not gateway.sensor_wait_calls
     assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
     assert ("S09工艺选择", 4) not in gateway.writes
     assert not any(event[1] == "S09原点信号_4" for event in gateway.events)
@@ -2061,10 +2086,8 @@ def test_szlab_robot_s09_beaker_place_directly_submits_robot_task():
 
     assert result["success"] is True
     assert result["s09_safe_position"] == 4
-    assert result["target_sensor_variable"] == "传感器状态_上位机[4].NO[7]"
-    assert result["sensor_precheck"]["success"] is True
-    assert result["sensor_postcheck"]["success"] is True
-    assert gateway.sensor_wait_calls
+    assert result["sensor_check_skipped_reason"] == "S09 烧杯位暂无独立物料传感器"
+    assert not gateway.sensor_wait_calls
     assert not any(name == "传感器状态_上位机[3].NO[1]" for name, _ in gateway.reads)
     assert ("S09工艺选择", 4) not in gateway.writes
     assert ("S09原点信号_4", True, 1.0) not in gateway.wait_equal_calls

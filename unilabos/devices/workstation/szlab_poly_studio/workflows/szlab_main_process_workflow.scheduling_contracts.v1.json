@@ -281,6 +281,11 @@
           "enforced_by": "TaskExecutionCoordinator + add_liquid_with_reusable_tip"
         },
         {
+          "condition": "solvent_batch_id 明确标识实际溶剂批次；同批次复用原 TIP，新批次分配下一个未使用 TIP",
+          "status": "enforced",
+          "enforced_by": "ReusableTipStateStore + add_liquid_with_reusable_tip"
+        },
+        {
           "condition": "S09允许加工 == true（工艺 5、7、8、9、10、6 每一步）",
           "status": "enforced",
           "enforced_by": "TaskExecutionCoordinator + add_liquid_with_reusable_tip"

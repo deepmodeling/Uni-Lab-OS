@@ -54,7 +54,15 @@ class ReusableTipStateStore:
             "tips": {},
         }
 
-    def _initialized_state(self) -> dict[str, Any]:
+    def _initialized_state(
+        self,
+        *,
+        used_tip_count: int = 0,
+        known_bindings: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        used_tip_count = int(used_tip_count)
+        if not 0 <= used_tip_count <= self.tip_count:
+            raise ValueError(f"S09 已使用 TIP 数量必须在 0-{self.tip_count} 范围内")
         state = self._empty_state()
         state["initialized"] = True
         state["tips"] = {
@@ -66,6 +74,33 @@ class ReusableTipStateStore:
             }
             for index in range(1, self.tip_count + 1)
         }
+        for index in range(1, used_tip_count + 1):
+            state["tips"][str(index)].update(
+                {"status": TIP_STATUS_EXHAUSTED, "current_box": 2}
+            )
+        for raw_key, raw_index in (known_bindings or {}).items():
+            key = self._normalize_solvent_key(raw_key)
+            index = int(raw_index)
+            if not 1 <= index <= self.tip_count:
+                raise ValueError(f"S09 已知绑定 TIP 编号必须在 1-{self.tip_count} 范围内")
+            tip = state["tips"][str(index)]
+            if tip["solvent_key"] is not None:
+                raise ValueError(f"S09 TIP {index} 被重复绑定")
+            tip.update(
+                {
+                    "status": TIP_STATUS_BOUND,
+                    "solvent_key": key,
+                    "current_box": 2,
+                    "use_count": max(1, int(tip["use_count"])),
+                }
+            )
+            state["solvents"][key] = {
+                "active_tip_index": index,
+                "tip_history": [index],
+                "remaining_volume_ml": None,
+                "active_s09_slot": None,
+                "status": "ready",
+            }
         return state
 
     def _load_or_empty(self) -> dict[str, Any]:
@@ -122,12 +157,21 @@ class ReusableTipStateStore:
             raise ValueError("S09 溶剂标识不能为空")
         return key
 
-    def initialize(self, *, reset: bool = False) -> dict[str, Any]:
+    def initialize(
+        self,
+        *,
+        reset: bool = False,
+        used_tip_count: int = 0,
+        known_bindings: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
         """确认盒1满、盒2空后初始化软件库存。"""
         with self._lock:
             if self._state["initialized"] and not reset:
                 raise RuntimeError("S09 TIP 库存已经初始化；如需重置必须显式传入 reset=True")
-            self._state = self._initialized_state()
+            self._state = self._initialized_state(
+                used_tip_count=used_tip_count,
+                known_bindings=known_bindings,
+            )
             self._save_locked()
             return copy.deepcopy(self._state)
 
@@ -146,6 +190,7 @@ class ReusableTipStateStore:
         solvent_key: str | int,
         *,
         required_cycles: int = 1,
+        liquid_station_index: int | None = None,
     ) -> dict[str, Any]:
         """返回容量足够的当前 TIP；不足时废弃旧 TIP 并分配新 TIP。"""
         key = self._normalize_solvent_key(solvent_key)
@@ -168,6 +213,8 @@ class ReusableTipStateStore:
                     "status": "ready",
                 },
             )
+            if liquid_station_index is not None:
+                solvent["active_s09_slot"] = int(liquid_station_index)
             if solvent["status"] == TIP_STATUS_UNKNOWN:
                 raise RuntimeError(f"S09 溶剂 {key} 的 TIP 状态不确定，必须人工确认")
 

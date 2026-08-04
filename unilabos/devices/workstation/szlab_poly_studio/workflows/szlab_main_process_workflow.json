@@ -147,6 +147,7 @@
             "method": "add_liquid_with_reusable_tip",
             "params": {
               "liquid_station_index": 1,
+              "solvent_batch_id": "solvent-batch-001",
               "volume": 5000,
               "density_volume": 5000,
               "volume_unit": "raw",

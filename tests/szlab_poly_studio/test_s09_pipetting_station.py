@@ -292,10 +292,12 @@ def test_s09_reusable_tip_action_uses_box_one_then_reuses_from_box_two(tmp_path)
 
     first = device.add_liquid_with_reusable_tip(
         liquid_station_index=4,
+        solvent_batch_id="batch-a",
         volume=20,
     )
     second = device.add_liquid_with_reusable_tip(
         liquid_station_index=4,
+        solvent_batch_id="batch-a",
         volume=20,
     )
 
@@ -321,6 +323,7 @@ def test_s09_reusable_tip_action_replaces_tip_at_limit(tmp_path):
     results = [
         device.add_liquid_with_reusable_tip(
             liquid_station_index=1,
+            solvent_batch_id="batch-a",
             volume=10,
         )
         for _index in range(3)
@@ -352,6 +355,7 @@ def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
 
     result = device.add_liquid_with_reusable_tip(
         liquid_station_index=1,
+        solvent_batch_id="batch-a",
         volume=10,
     )
     status = device.get_reusable_tip_status()["data"]
@@ -359,7 +363,7 @@ def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
     assert result["success"] is False
     assert result["tip_reuse"]["status"] == "unknown"
     assert status["tips"]["1"]["status"] == "unknown"
-    assert status["solvents"]["S09-LIQUID-1"]["status"] == "unknown"
+    assert status["solvents"]["batch-a"]["status"] == "unknown"
 
 
 def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
@@ -393,6 +397,7 @@ def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
             executor.map(
                 lambda position: device.add_liquid_with_reusable_tip(
                     liquid_station_index=position,
+                    solvent_batch_id=f"batch-{position}",
                     volume=10,
                 ),
                 (1, 2),
@@ -415,6 +420,7 @@ def test_s09_reusable_tip_action_runs_addition_then_calculates_density(tmp_path)
 
     result = device.add_liquid_with_reusable_tip(
         liquid_station_index=3,
+        solvent_batch_id="batch-density",
         volume=1,
         density_volume=2,
         volume_unit="mL",
@@ -427,7 +433,7 @@ def test_s09_reusable_tip_action_runs_addition_then_calculates_density(tmp_path)
     assert result["data"]["density_volume_ml"] == 2.0
     assert result["data"]["density"] == 0.79
     assert result["data"]["density_unit"] == "g/mL"
-    assert result["data"]["tip_reuse"]["solvent_key"] == "S09-LIQUID-3"
+    assert result["data"]["tip_reuse"]["solvent_key"] == "batch-density"
     assert client.values["S09液体瓶3剩余液量"] == 99.0
 
 
@@ -438,6 +444,7 @@ def test_s09_reusable_tip_action_rejects_density_volume_over_single_transfer_lim
 
     result = device.add_liquid_with_reusable_tip(
         liquid_station_index=1,
+        solvent_batch_id="batch-a",
         volume=1,
         density_volume=5001,
         volume_unit="uL",
@@ -445,6 +452,17 @@ def test_s09_reusable_tip_action_rejects_density_volume_over_single_transfer_lim
 
     assert result["success"] is False
     assert "不能超过 5000 uL" in result["message"]
+
+
+def test_s09_reusable_tip_action_requires_explicit_solvent_batch(tmp_path):
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+
+    result = device.add_liquid_with_reusable_tip(liquid_station_index=1, volume=1)
+
+    assert result["success"] is False
+    assert "solvent_batch_id" in result["message"]
 
 
 def test_s09_add_liquid_writes_frontend_remaining_volume_params_before_process():
@@ -908,6 +926,8 @@ def test_s09_reusable_tip_inventory_actions_persist_state(tmp_path):
         "initialized": True,
         "tip_count": 96,
         "max_use_count": 3,
+        "used_tip_count": 0,
+        "known_bindings": {},
         "state_path": str(state_path),
     }
     assert repeated["success"] is False

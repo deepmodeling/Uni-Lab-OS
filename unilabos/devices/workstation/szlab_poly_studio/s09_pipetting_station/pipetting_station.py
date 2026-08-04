@@ -942,6 +942,7 @@ class SzlabMixerPipettingStationDevice:
     def add_liquid_with_reusable_tip(
         self,
         liquid_station_index: int = 1,
+        solvent_batch_id: str = "",
         volume: int | float = 1,
         density_volume: int | float = 1,
         volume_unit: str = "raw",
@@ -949,6 +950,9 @@ class SzlabMixerPipettingStationDevice:
     ) -> dict[str, Any]:
         try:
             liquid_station_index = validate_liquid_bottle(liquid_station_index)
+            solvent_batch_id = str(solvent_batch_id).strip()
+            if not solvent_batch_id:
+                raise ValueError("S09 加液必须提供明确的 solvent_batch_id")
             raw_volume = self._volume_to_raw(volume, volume_unit)
             density_raw_volume = self._volume_to_raw(density_volume, volume_unit)
             if raw_volume <= 0:
@@ -962,12 +966,13 @@ class SzlabMixerPipettingStationDevice:
         except (TypeError, ValueError) as exc:
             return {"success": False, "message": str(exc)}
 
-        solvent_key = f"S09-LIQUID-{liquid_station_index}"
+        solvent_key = solvent_batch_id
         with self._tip_reuse_execution_lock:
             try:
                 tip = self._tip_reuse_state.prepare_tip(
                     solvent_key,
                     required_cycles=required_cycles,
+                    liquid_station_index=liquid_station_index,
                 )
             except Exception as exc:
                 return {"success": False, "message": str(exc)}
@@ -1283,9 +1288,18 @@ class SzlabMixerPipettingStationDevice:
         }
 
     @action(auto_prefix=True, description="初始化 S09 可复用 TIP 库存（确认盒1满、盒2空后调用）")
-    def initialize_reusable_tip_inventory(self, reset: bool = False) -> dict[str, Any]:
+    def initialize_reusable_tip_inventory(
+        self,
+        reset: bool = False,
+        used_tip_count: int = 0,
+        known_bindings: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
         try:
-            state = self._tip_reuse_state.initialize(reset=reset)
+            state = self._tip_reuse_state.initialize(
+                reset=reset,
+                used_tip_count=used_tip_count,
+                known_bindings=known_bindings,
+            )
         except Exception as exc:
             return {"success": False, "message": str(exc)}
         return {
@@ -1295,6 +1309,10 @@ class SzlabMixerPipettingStationDevice:
                 "initialized": state["initialized"],
                 "tip_count": state["tip_count"],
                 "max_use_count": state["max_use_count"],
+                "used_tip_count": sum(
+                    tip["status"] != "unused" for tip in state["tips"].values()
+                ),
+                "known_bindings": dict(known_bindings or {}),
                 "state_path": str(self._tip_reuse_state.state_path),
             },
         }

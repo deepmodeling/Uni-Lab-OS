@@ -47,6 +47,39 @@ def test_same_solvent_reuses_bound_tip_and_moves_it_to_box_two(tmp_path):
     assert store.get_solvent_binding("S10-7")["active_tip_index"] == 1
 
 
+def test_initialization_can_isolate_used_tips_and_restore_known_bindings(tmp_path):
+    store = ReusableTipStateStore(tmp_path / "tip_state.json")
+
+    state = store.initialize(
+        used_tip_count=3,
+        known_bindings={"batch-a": 2},
+    )
+    allocated = store.prepare_tip(
+        "batch-new",
+        liquid_station_index=1,
+    )
+
+    assert state["tips"]["1"]["status"] == TIP_STATUS_EXHAUSTED
+    assert state["tips"]["2"]["status"] == TIP_STATUS_BOUND
+    assert state["solvents"]["batch-a"]["active_tip_index"] == 2
+    assert allocated["tip_index"] == 4
+    assert store.get_solvent_binding("batch-new")["active_s09_slot"] == 1
+
+
+def test_new_solvent_batch_on_same_liquid_station_gets_next_tip(tmp_path):
+    store = ReusableTipStateStore(tmp_path / "tip_state.json")
+    store.initialize()
+
+    first_batch = store.prepare_tip("batch-a", liquid_station_index=1)
+    store.record_tip_use("batch-a")
+    second_batch = store.prepare_tip("batch-b", liquid_station_index=1)
+
+    assert first_batch["tip_index"] == 1
+    assert second_batch["tip_index"] == 2
+    assert store.get_solvent_binding("batch-a")["active_s09_slot"] == 1
+    assert store.get_solvent_binding("batch-b")["active_s09_slot"] == 1
+
+
 def test_tip_at_use_limit_is_retired_and_replaced(tmp_path):
     store = ReusableTipStateStore(
         tmp_path / "tip_state.json",

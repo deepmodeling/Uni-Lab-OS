@@ -864,6 +864,7 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         for param in preset.actions["add_liquid_with_reusable_tip"].params
     ] == [
         "liquid_station_index",
+        "solvent_batch_id",
         "volume",
         "density_volume",
         "volume_unit",

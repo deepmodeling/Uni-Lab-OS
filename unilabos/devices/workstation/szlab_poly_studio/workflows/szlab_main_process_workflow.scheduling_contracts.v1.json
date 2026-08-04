@@ -281,7 +281,7 @@
           "enforced_by": "TaskExecutionCoordinator + add_liquid_with_reusable_tip"
         },
         {
-          "condition": "solvent_batch_id 明确标识实际溶剂批次；同批次复用原 TIP，新批次分配下一个未使用 TIP",
+          "condition": "solvent_batch_id 与 liquid_station_index 共同标识 TIP 绑定；批次和工位均相同时复用原 TIP，任一变化时分配下一个未使用 TIP",
           "status": "enforced",
           "enforced_by": "ReusableTipStateStore + add_liquid_with_reusable_tip"
         },

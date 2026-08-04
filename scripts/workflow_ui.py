@@ -346,11 +346,11 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     "liquid_bottle_index": {"label": "液体瓶编号", "description": "S09 液体试剂瓶工位编号，范围 1–5。"},
     "liquid_station_index": {
         "label": "加液体工位编号",
-        "description": "本次使用的 S09 液体工位编号，范围 1–5；同一工位自动复用绑定的 TIP。",
+        "description": "本次使用的 S09 液体工位编号，范围 1–5；TIP 按溶剂批次与工位组合绑定。",
     },
     "solvent_batch_id": {
         "label": "溶剂批次标识",
-        "description": "实际溶剂批次的唯一标识；同批次复用原 TIP，换溶剂时必须填写新标识。",
+        "description": "溶剂批次标识；相同批次和相同工位复用原 TIP，批次或工位任一变化都会分配新 TIP。",
     },
     "used_tip_count": {
         "label": "已使用 TIP 数量",
@@ -358,7 +358,7 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     },
     "known_bindings": {
         "label": "已知溶剂与 TIP 绑定",
-        "description": "仅库存恢复时使用，格式为溶剂批次标识到 TIP 编号的 JSON 对象。",
+        "description": "仅库存恢复时使用，格式为“批次与工位组合键”到 TIP 编号的 JSON 对象。",
     },
     "station": {"label": "烧杯工位", "description": "S09 承接加液的烧杯工位编号。"},
     "density_volume": {

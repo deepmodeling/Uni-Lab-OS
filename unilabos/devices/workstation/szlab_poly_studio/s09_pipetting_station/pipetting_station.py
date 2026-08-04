@@ -938,7 +938,7 @@ class SzlabMixerPipettingStationDevice:
             "logs": logs,
         }
 
-    @action(auto_prefix=True, description="按 S09 液体工位复用 TIP 执行加液并测量密度")
+    @action(auto_prefix=True, description="按 S09 溶剂批次和液体工位复用 TIP 执行加液并测量密度")
     def add_liquid_with_reusable_tip(
         self,
         liquid_station_index: int = 1,
@@ -966,7 +966,8 @@ class SzlabMixerPipettingStationDevice:
         except (TypeError, ValueError) as exc:
             return {"success": False, "message": str(exc)}
 
-        solvent_key = solvent_batch_id
+        # 同一批次在不同液体工位可能对应不同溶剂瓶，必须分别绑定 TIP。
+        solvent_key = f"S09-STATION-{liquid_station_index}:BATCH:{solvent_batch_id}"
         with self._tip_reuse_execution_lock:
             try:
                 tip = self._tip_reuse_state.prepare_tip(
@@ -979,6 +980,7 @@ class SzlabMixerPipettingStationDevice:
 
             tip_tracking = {
                 "solvent_key": solvent_key,
+                "solvent_batch_id": solvent_batch_id,
                 "liquid_station_index": liquid_station_index,
                 "tip_index": int(tip["tip_index"]),
                 "take_tip_box_index": int(tip["current_box"]),

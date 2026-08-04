@@ -311,6 +311,41 @@ def test_s09_reusable_tip_action_uses_box_one_then_reuses_from_box_two(tmp_path)
     assert second["data"]["tip_reuse"]["use_count"] == 2
 
 
+def test_s09_reusable_tip_action_allocates_by_batch_and_station(tmp_path):
+    client = PseudoSzlabS09OpcUaClient(
+        {
+            "S09液体瓶1剩余液量": 100.0,
+            "S09液体瓶2剩余液量": 100.0,
+        }
+    )
+    device = make_pipetting_device(
+        client,
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    assert device.initialize_reusable_tip_inventory()["success"] is True
+
+    results = [
+        device.add_liquid_with_reusable_tip(
+            liquid_station_index=station,
+            solvent_batch_id=batch,
+            volume=20,
+        )
+        for batch, station in [
+            ("batch-1", 1),
+            ("batch-1", 2),
+            ("batch-2", 1),
+            ("batch-2", 2),
+            ("batch-1", 1),
+        ]
+    ]
+
+    assert all(result["success"] for result in results)
+    assert [
+        result["data"]["tip_reuse"]["tip_index"] for result in results
+    ] == [1, 2, 3, 4, 1]
+    assert results[-1]["data"]["tip_reuse"]["take_tip_box_index"] == 2
+
+
 def test_s09_reusable_tip_action_replaces_tip_at_limit(tmp_path):
     client = PseudoSzlabS09OpcUaClient({"S09液体瓶1剩余液量": 100.0})
     device = make_pipetting_device(
@@ -363,7 +398,7 @@ def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
     assert result["success"] is False
     assert result["tip_reuse"]["status"] == "unknown"
     assert status["tips"]["1"]["status"] == "unknown"
-    assert status["solvents"]["batch-a"]["status"] == "unknown"
+    assert status["solvents"]["S09-STATION-1:BATCH:batch-a"]["status"] == "unknown"
 
 
 def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
@@ -433,7 +468,11 @@ def test_s09_reusable_tip_action_runs_addition_then_calculates_density(tmp_path)
     assert result["data"]["density_volume_ml"] == 2.0
     assert result["data"]["density"] == 0.79
     assert result["data"]["density_unit"] == "g/mL"
-    assert result["data"]["tip_reuse"]["solvent_key"] == "batch-density"
+    assert result["data"]["tip_reuse"]["solvent_batch_id"] == "batch-density"
+    assert (
+        result["data"]["tip_reuse"]["solvent_key"]
+        == "S09-STATION-3:BATCH:batch-density"
+    )
     assert client.values["S09液体瓶3剩余液量"] == 99.0
 
 

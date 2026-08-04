@@ -323,6 +323,11 @@
       ],
       "start": [
         {
+          "condition": "磁搅与后续取料位置自动继承同一样品 w04_place_beaker_s04.position",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator"
+        },
+        {
           "condition": "S09 烧杯工位临时软件状态为有料",
           "status": "enforced",
           "enforced_by": "TaskExecutionCoordinator（实体传感器接入前临时使用）"
@@ -360,6 +365,11 @@
         "w04_run_stirring_s04"
       ],
       "start": [
+        {
+          "condition": "磁搅位置自动继承同一样品 w04_place_beaker_s04.position",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator"
+        },
         {
           "condition": "传感器状态_上位机[2].NO[10] == true（S04 位置 1 有烧杯）",
           "status": "enforced",
@@ -500,6 +510,11 @@
         "robot_action"
       ],
       "start": [
+        {
+          "condition": "S04 取料位置自动继承同一样品 w04_place_beaker_s04.position",
+          "status": "enforced",
+          "enforced_by": "TaskExecutionCoordinator"
+        },
         {
           "condition": "传感器状态_上位机[2].NO[10] == true（S04 有烧杯）",
           "status": "enforced",

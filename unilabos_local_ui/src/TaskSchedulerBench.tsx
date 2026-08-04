@@ -108,6 +108,11 @@ function sampleRowStatusLabel(status: SampleProcessRowStatus) {
   return '排队';
 }
 
+function inheritsSampleS04Position(nodeId: string, parameter: string) {
+  return parameter === 'position'
+    && (nodeId === 'w04_run_stirring_s04' || nodeId === 'w06_pick_beaker_s04');
+}
+
 type HeaderActionsProps = Pick<
   Props,
   | 'environment'
@@ -469,6 +474,11 @@ export function TaskSchedulerBench(props: Props) {
                   {specs.map((spec) => {
                     const name = spec.name as string;
                     const value = values[name];
+                    if (inheritsSampleS04Position(node.templateNodeId, name)) {
+                      return <p className="scheduler-bench__inherited-parameter" key={name}>
+                        磁搅位置 · 自动沿用同一样品在「S04 放烧杯」中选择的位置
+                      </p>;
+                    }
                     const inputType = spec.type === 'boolean' ? 'checkbox' : spec.type === 'integer' || spec.type === 'number' ? 'number' : 'text';
                     return <label key={name}>
                       <span>{spec.label || name}{spec.description ? ` · ${spec.description}` : ''}</span>

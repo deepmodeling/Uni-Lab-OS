@@ -127,6 +127,11 @@ _S09_OCCUPIED_REQUIRED_NODE_IDS = frozenset(
     {"w03_add_liquid_s09", "w04_pick_beaker_s09"}
 )
 _S09_PICK_NODE_IDS = frozenset({"w04_pick_beaker_s09"})
+_S04_POSITION_SOURCE_NODE_ID = "w04_place_beaker_s04"
+_S04_POSITION_DEPENDENT_NODE_IDS = frozenset({
+    "w04_run_stirring_s04",
+    "w06_pick_beaker_s04",
+})
 
 
 @dataclass(frozen=True)
@@ -135,6 +140,44 @@ class _TemporaryStationState:
 
     has_material: bool
     inbound_instance_id: str | None = None
+
+
+def _resolve_sample_s04_position(
+    workspace: dict[str, Any],
+    *,
+    instance: dict[str, Any],
+    templates: dict[str, dict[str, Any]],
+    nodes_by_id: dict[str, WorkflowNode],
+) -> int | None:
+    """读取同一样品最近一次 S04 放料位置，供后续磁搅与取料继承。"""
+    source_node = nodes_by_id.get(_S04_POSITION_SOURCE_NODE_ID)
+    if source_node is None:
+        return None
+    sample_id = str(instance.get("sample_id") or "")
+    current_order = int(instance.get("order") or 0)
+    candidates: list[tuple[int, str, int]] = []
+    for peer in workspace.get("task_instances", []):
+        if not isinstance(peer, dict) or str(peer.get("sample_id") or "") != sample_id:
+            continue
+        peer_order = int(peer.get("order") or 0)
+        if peer_order > current_order:
+            continue
+        template = templates.get(str(peer.get("template_id") or ""))
+        if not template or _S04_POSITION_SOURCE_NODE_ID not in template.get("node_ids", []):
+            continue
+        payload = peer.get("payload")
+        node_parameters = payload.get("node_parameters") if isinstance(payload, dict) else None
+        override = (
+            node_parameters.get(_S04_POSITION_SOURCE_NODE_ID)
+            if isinstance(node_parameters, dict)
+            else None
+        )
+        params = {**source_node.param, **(override if isinstance(override, dict) else {})}
+        position = int(params.get("position", 1))
+        if position not in range(1, 7):
+            raise ValueError("磁搅位置必须在 1-6 范围内")
+        candidates.append((peer_order, str(peer.get("id") or ""), position))
+    return max(candidates)[2] if candidates else None
 
 
 def _temporary_station_state(
@@ -680,6 +723,18 @@ class TaskExecutionCoordinator:
                 )
                 if node is not None and isinstance(override, dict):
                     node = replace(node, param={**node.param, **override})
+                if node is not None and node_id in _S04_POSITION_DEPENDENT_NODE_IDS:
+                    inherited_position = _resolve_sample_s04_position(
+                        workspace,
+                        instance=instance,
+                        templates=templates,
+                        nodes_by_id=nodes_by_id,
+                    )
+                    if inherited_position is not None:
+                        node = replace(
+                            node,
+                            param={**node.param, "position": inherited_position},
+                        )
                 next_node: WorkflowNode | None = None
                 if cursor + 1 < len(node_ids):
                     next_node_id = str(node_ids[cursor + 1])

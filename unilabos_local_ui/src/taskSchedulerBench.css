@@ -1177,6 +1177,16 @@
   accent-color: var(--blue);
 }
 
+.scheduler-bench__inherited-parameter {
+  margin: 8px 0 0;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: var(--blue-bg);
+  color: #1e40af;
+  font-size: 11px;
+  padding: 8px 10px;
+}
+
 .scheduler-bench__parameter-group input:disabled {
   cursor: not-allowed;
   background: #f8fafc;

@@ -20,6 +20,7 @@ from scripts.task_execution_coordinator import (
     TaskExecutionCoordinator,
     _atomic_start_signal_conditions,
     _atomic_task_start_trigger_satisfied,
+    _resolve_sample_s04_position,
     deterministic_execution_id,
     workflow_nodes_from_payload,
 )
@@ -125,7 +126,76 @@ ATOMIC_START_NODES = [
         param={"position": 1},
         legacy_route_compatible=False,
     ),
+    WorkflowNode(
+        uuid="w05_pick_sample_vial_s03",
+        name="S03 取样品瓶",
+        device_name="szlab_mixer_robot",
+        method="submit_pick_from_s03",
+        param={"product_type": 2, "position": "1-1"},
+        legacy_route_compatible=False,
+    ),
 ]
+
+
+def test_sample_vial_start_requires_vial_present_and_matching_beaker_slot_empty():
+    node = next(
+        item for item in ATOMIC_START_NODES
+        if item.uuid == "w05_pick_sample_vial_s03"
+    )
+
+    conditions = _atomic_start_signal_conditions(node)
+
+    assert conditions == {
+        "传感器状态_上位机[1].NO[8]": True,
+        "传感器状态_上位机[0].NO[6]": False,
+    }
+
+
+def test_same_sample_s04_process_and_pick_inherit_latest_place_position():
+    nodes = {
+        "w04_place_beaker_s04": WorkflowNode(
+            uuid="w04_place_beaker_s04",
+            name="S04 放烧杯",
+            device_name="szlab_mixer_robot",
+            method="submit_place_to_s04",
+            param={"position": 1},
+        ),
+    }
+    templates = {
+        "place": {"id": "place", "node_ids": ["w04_place_beaker_s04"]},
+        "stir": {"id": "stir", "node_ids": ["w04_run_stirring_s04"]},
+    }
+    workspace = {
+        "task_instances": [
+            {
+                "id": "sample-a-place",
+                "sample_id": "sample-a",
+                "template_id": "place",
+                "order": 6,
+                "payload": {"node_parameters": {"w04_place_beaker_s04": {"position": 4}}},
+            },
+            {
+                "id": "sample-b-place",
+                "sample_id": "sample-b",
+                "template_id": "place",
+                "order": 6,
+                "payload": {"node_parameters": {"w04_place_beaker_s04": {"position": 2}}},
+            },
+        ],
+    }
+    current = {
+        "id": "sample-a-stir",
+        "sample_id": "sample-a",
+        "template_id": "stir",
+        "order": 7,
+    }
+
+    assert _resolve_sample_s04_position(
+        workspace,
+        instance=current,
+        templates=templates,
+        nodes_by_id=nodes,
+    ) == 4
 
 
 @pytest.mark.parametrize("node", ATOMIC_START_NODES, ids=lambda node: node.uuid)

@@ -337,12 +337,14 @@
 
 /* ── Config panel ── */
 .scheduler-bench__config {
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .scheduler-bench__config .scheduler-bench__section:last-child {
-  flex: 1;
-  overflow: auto;
+  flex: 0 0 auto;
 }
 
 .scheduler-bench__section {

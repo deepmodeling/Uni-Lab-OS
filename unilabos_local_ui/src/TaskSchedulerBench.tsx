@@ -56,6 +56,7 @@ type Props = {
   selectedTaskId: string | null;
   onSampleCountChange: (value: number) => void;
   onToggleTemplate: (templateId: string) => void;
+  onSelectAllTemplates: (selected: boolean) => void;
   onGenerate: () => void;
   onClear: () => void;
   onClearTemplates: () => void;
@@ -193,6 +194,8 @@ export function TaskSchedulerBench(props: Props) {
       .map((entry) => ({ ...entry.node, templateNodeId: entry.templateNodeId }))
     : [];
   const parametersEditable = editingTask?.status === 'waiting' || editingTask?.status === 'pending';
+  const allTemplatesSelected = props.templates.length > 0
+    && props.templates.every((template) => props.scheduledTemplateIds.includes(template.id));
 
   React.useEffect(() => {
     if (isFollowingLogs && logContainerRef.current) {
@@ -253,6 +256,11 @@ export function TaskSchedulerBench(props: Props) {
               <span>已选 {props.scheduledTemplateIds.length}</span>
             </div>
             <div className="scheduler-bench__template-batch-actions">
+              <button
+                disabled={!props.templates.length}
+                onClick={() => props.onSelectAllTemplates(!allTemplatesSelected)}
+                type="button"
+              >{allTemplatesSelected ? '取消全选' : '全选'}</button>
               <button disabled={!props.scheduledTemplateIds.length} onClick={props.onDownloadSelectedTemplates} type="button">下载已选</button>
               <button
                 className="danger"

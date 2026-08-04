@@ -3427,6 +3427,14 @@ function App() {
             if (scheduledTemplateIds.includes(templateId)) removeTemplateFromSchedule(templateId);
             else addTemplateToSchedule(templateId);
           }}
+          onSelectAllTemplates={(selected) => {
+            const next = selected ? taskTemplates.map((template) => template.id) : [];
+            scheduledTemplateIdsRef.current = next;
+            setScheduledTemplateIds(next);
+            void mutateTaskWorkspace((version) => taskApiRef.current.updateScheduledTemplates(
+              taskWorkspacePath, version, next,
+            ));
+          }}
           sampleCount={taskSampleCount}
           scheduledTemplateIds={scheduledTemplateIds}
           selectedTaskId={selectedTaskInstanceId}

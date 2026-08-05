@@ -5,6 +5,7 @@ import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import type { TaskLogCategory, TaskLogLine } from './taskLogSession';
 import {
   buildSampleProcessRows,
+  buildExecutionTimingSummaries,
   compactTaskProgressLabel,
   formatElapsedDurationMs,
   formatTaskActionTimingTitle,
@@ -29,6 +30,7 @@ type Task = {
 };
 type ActionNode = {
   id: string;
+  deviceId?: string;
   label: string;
   method: string;
   params: Record<string, unknown>;
@@ -190,6 +192,15 @@ export function TaskSchedulerBench(props: Props) {
   const sampleProcessRows = React.useMemo(
     () => buildSampleProcessRows(props.tasks, props.templates, timingNowMs),
     [props.tasks, props.templates, timingNowMs],
+  );
+  const timingSummaries = React.useMemo(
+    () => buildExecutionTimingSummaries(
+      props.tasks,
+      props.templates,
+      props.actionNodes,
+      timingNowMs,
+    ),
+    [props.tasks, props.templates, props.actionNodes, timingNowMs],
   );
   const visibleLogLines = props.logLines.filter((line) => logFilter === 'all' || line.category === logFilter);
   const editingTemplate = props.templates.find((template) => template.id === editingTask?.templateId);
@@ -358,9 +369,15 @@ export function TaskSchedulerBench(props: Props) {
             <PanelHead title="样品进度缩略图" badge="仅显示" />
             {sampleProcessRows.map((row) => {
               const rowStatus = sampleProcessRowStatus(row.blocks);
+              const timing = timingSummaries.samples.get(row.sample);
               return (
                 <div className="scheduler-bench__progress-row" key={row.sample}>
-                <strong>{row.sample}</strong>
+                <div className="scheduler-bench__progress-sample">
+                  <strong>{row.sample}</strong>
+                  <small>总 {formatElapsedDurationMs(timing?.totalDurationMs)}</small>
+                  <small>机械臂 {formatElapsedDurationMs(timing?.robotDurationMs)}</small>
+                  <small>动作 {formatElapsedDurationMs(timing?.actionDurationMs)}</small>
+                </div>
                 <div className="scheduler-bench__progress-track">
                   {row.blocks.map((block) => {
                     const template = props.templates.find((item) => item.id === block.templateId);
@@ -449,6 +466,12 @@ export function TaskSchedulerBench(props: Props) {
             {selected ? <div className="scheduler-bench__detail-body"><div><strong>{selected.sample} / {selectedTemplate?.name || selected.templateId}</strong><small>执行 ID：{selected.id}</small></div><span className={`scheduler-bench__state ${selected.status}`}>{stateLabel(selected.status)}</span>
               {props.variableRows.length ? <table className="scheduler-bench__variable-table"><thead><tr><th>阶段</th><th>变量</th><th>期望</th><th>当前</th><th>结果</th></tr></thead><tbody>{props.variableRows.map((row) => <tr key={row.key}><td>{row.phase}</td><td>{row.variable}</td><td>{row.expected}</td><td>{row.current}</td><td>{row.result}</td></tr>)}</tbody></table> : <p><b>当前等待原因</b><span>{props.waitingReasons[selected.id]?.message || '暂无变量检查记录；Action 执行后将在此显示。'}</span></p>}
             </div> : <div className="scheduler-bench__empty">从队列选择一个 Task 查看条件。</div>}
+            <div className="scheduler-bench__timing-summary">
+              <strong>所有样品耗时</strong>
+              <span>总耗时 <b>{formatElapsedDurationMs(timingSummaries.overall.totalDurationMs)}</b></span>
+              <span>机械臂 <b>{formatElapsedDurationMs(timingSummaries.overall.robotDurationMs)}</b></span>
+              <span>动作 <b>{formatElapsedDurationMs(timingSummaries.overall.actionDurationMs)}</b></span>
+            </div>
           </section>
         </aside>
       </section>

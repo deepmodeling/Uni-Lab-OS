@@ -21,6 +21,7 @@ async function importTypeScriptModule(path) {
 
 const {
   buildSampleProcessRows,
+  buildExecutionTimingSummaries,
   buildTaskActionProgress,
   compactTaskProgressLabel,
   elapsedDurationMs,
@@ -149,6 +150,47 @@ assert.deepEqual(
   ],
 );
 assert.equal(processBlock.totalDurationMs, 3_500);
+
+const timingSummaries = buildExecutionTimingSummaries(
+  [
+    {
+      id: 'task-robot', sample: 'sample-1', templateId: 'robot-template', order: 0, status: 'completed',
+      actionRecords: [{ nodeId: 'robot-node', attempt: 1, executionId: 'robot-exec', status: 'succeeded', startedAt: 1_000, finishedAt: 4_000 }],
+    },
+    {
+      id: 'task-action', sample: 'sample-1', templateId: 'action-template', order: 1, status: 'completed',
+      actionRecords: [{ nodeId: 'action-node', attempt: 1, executionId: 'action-exec', status: 'succeeded', startedAt: 5_000, finishedAt: 9_000 }],
+    },
+    {
+      id: 'task-sample-2', sample: 'sample-2', templateId: 'action-template', order: 0, status: 'running',
+      actionRecords: [{ nodeId: 'action-node', attempt: 1, executionId: 'action-running', status: 'running', startedAt: 8_000 }],
+    },
+  ],
+  [
+    { id: 'robot-template', nodeIds: ['robot-node'] },
+    { id: 'action-template', nodeIds: ['action-node'] },
+  ],
+  [
+    { id: 'robot-node', deviceId: 'szlab_mixer_robot', method: 'move' },
+    { id: 'action-node', deviceId: 'szlab_mixer_pump', method: 'run' },
+  ],
+  10_000,
+);
+assert.deepEqual(timingSummaries.samples.get('sample-1'), {
+  totalDurationMs: 8_000,
+  robotDurationMs: 3_000,
+  actionDurationMs: 4_000,
+});
+assert.deepEqual(timingSummaries.samples.get('sample-2'), {
+  totalDurationMs: 2_000,
+  robotDurationMs: 0,
+  actionDurationMs: 2_000,
+});
+assert.deepEqual(timingSummaries.overall, {
+  totalDurationMs: 9_000,
+  robotDurationMs: 3_000,
+  actionDurationMs: 6_000,
+});
 
 const blockedProcessBlock = buildSampleProcessRows(
   [{

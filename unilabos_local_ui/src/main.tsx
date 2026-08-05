@@ -3440,6 +3440,7 @@ function App() {
           selectedTaskId={selectedTaskInstanceId}
           actionNodes={nodes.map((node) => ({
             id: node.id,
+            deviceId: node.data.deviceId,
             label: node.data.label,
             method: node.data.method,
             params: node.data.params,

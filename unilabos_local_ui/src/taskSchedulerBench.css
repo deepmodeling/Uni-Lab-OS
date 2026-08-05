@@ -745,12 +745,37 @@
 
 .scheduler-bench__progress-row {
   display: grid;
-  grid-template-columns: 80px 1fr auto;
+  grid-template-columns: 110px 1fr auto;
   gap: 10px;
   align-items: center;
   padding: 8px 16px;
   font-size: 11px;
 }
+
+.scheduler-bench__progress-sample {
+  display: grid;
+  gap: 1px;
+  color: #64748b;
+  font-size: 9px;
+}
+
+.scheduler-bench__progress-sample strong { color: #334155; font-size: 11px; }
+
+.scheduler-bench__timing-summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  padding: 10px 16px;
+}
+
+.scheduler-bench__timing-summary strong { grid-column: 1 / -1; color: #334155; }
+.scheduler-bench__timing-summary span { display: contents; }
+.scheduler-bench__timing-summary b { color: #0f172a; text-align: right; }
 
 .scheduler-bench__progress-summary {
   min-width: 36px;

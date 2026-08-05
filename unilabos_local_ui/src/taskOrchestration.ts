@@ -125,6 +125,12 @@ export type SampleProcessRow = {
   blocks: SampleProcessBlock[];
 };
 
+export type ExecutionTimingSummary = {
+  totalDurationMs: number | null;
+  robotDurationMs: number;
+  actionDurationMs: number;
+};
+
 export type SampleProcessRowStatus =
   | 'current'
   | 'completed'
@@ -213,6 +219,58 @@ export function formatElapsedDurationMs(durationMs: number | null | undefined) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
+export function buildExecutionTimingSummaries(
+  instances: TaskInstanceProcessInput[],
+  templates: Array<Pick<TaskTemplateModel, 'id' | 'nodeIds'>>,
+  nodes: TaskNodeDescriptor[],
+  nowMs = Date.now(),
+) {
+  const templatesById = new Map(templates.map((template) => [template.id, template]));
+  const sampleRecords = new Map<string, Array<TaskActionExecutionRecord & { robot: boolean }>>();
+  for (const instance of instances) {
+    const template = templatesById.get(instance.templateId);
+    const resolvedNodes = resolveTemplateNodes(template?.nodeIds || [], nodes);
+    const robotByNodeId = new Map(resolvedNodes.map(({ templateNodeId, node }) => [
+      templateNodeId,
+      Boolean(node?.deviceId && /robot/i.test(node.deviceId)),
+    ]));
+    const bucket = sampleRecords.get(instance.sample) || [];
+    for (const record of instance.actionRecords || []) {
+      bucket.push({ ...record, robot: robotByNodeId.get(record.nodeId) || false });
+    }
+    sampleRecords.set(instance.sample, bucket);
+  }
+
+  const summarize = (
+    records: Array<TaskActionExecutionRecord & { robot: boolean }>,
+  ): ExecutionTimingSummary => {
+    const startedRecords = records.filter(
+      (record) => record.startedAt != null && Number.isFinite(record.startedAt),
+    );
+    const totalDurationMs = startedRecords.length
+      ? Math.max(0, Math.max(...startedRecords.map((record) => (
+        record.finishedAt != null && Number.isFinite(record.finishedAt) ? record.finishedAt : nowMs
+      ))) - Math.min(...startedRecords.map((record) => record.startedAt as number)))
+      : null;
+    let robotDurationMs = 0;
+    let actionDurationMs = 0;
+    for (const record of records) {
+      const duration = elapsedDurationMs(record.startedAt, record.finishedAt, nowMs) || 0;
+      if (record.robot) robotDurationMs += duration;
+      else actionDurationMs += duration;
+    }
+    return { totalDurationMs, robotDurationMs, actionDurationMs };
+  };
+
+  const samples = new Map<string, ExecutionTimingSummary>(
+    Array.from(sampleRecords, ([sample, records]) => [sample, summarize(records)] as const),
+  );
+  return {
+    samples,
+    overall: summarize(Array.from(sampleRecords.values()).flat()),
+  };
 }
 
 export function taskActionProgressMinWidth(actionTotal: number) {

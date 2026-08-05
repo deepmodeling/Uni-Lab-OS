@@ -216,6 +216,18 @@ def collect_snapshot_variables(
     variables = list(snapshot_config.common_variables)
     variables.extend(snapshot_config.action_variables.get(method_name, []))
 
+    if method_name == "add_liquid_with_reusable_tip":
+        try:
+            density_count = int(params.get("density_measurement_count", 1))
+        except (TypeError, ValueError):
+            density_count = 1
+        density_count = max(1, min(density_count, 10))
+        variables.extend(
+            f"{base_name}[{index}]"
+            for base_name in ("S09抽液天平读数", "S09放液天平读数")
+            for index in range(density_count)
+        )
+
     template_context = _build_template_context(params)
     for item in snapshot_config.param_variables.get(method_name, []):
         template = item.get("template")

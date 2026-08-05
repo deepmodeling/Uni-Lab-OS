@@ -286,6 +286,81 @@ class ReusableTipStateStore:
             self._save_locked()
             return copy.deepcopy(tip | {"tip_index": tip_index})
 
+    def prepare_single_use_tip(self) -> dict[str, Any]:
+        """为测密度分配一支新 TIP；该 TIP 不与任何溶剂绑定。"""
+        with self._lock:
+            self._require_initialized_locked()
+            tip_index = next(
+                (
+                    index
+                    for index in range(1, self.tip_count + 1)
+                    if self._state["tips"][str(index)]["status"] == TIP_STATUS_UNUSED
+                ),
+                None,
+            )
+            if tip_index is None:
+                raise RuntimeError("S09 盒1中没有可用于测密度的新 TIP")
+            tip = self._state["tips"][str(tip_index)]
+            tip.update(
+                {
+                    "status": TIP_STATUS_BOUND,
+                    "solvent_key": None,
+                    "current_box": 1,
+                    "use_count": 0,
+                }
+            )
+            self._save_locked()
+            return copy.deepcopy(tip | {"tip_index": tip_index})
+
+    def consume_single_use_tip(self, tip_index: int) -> dict[str, Any]:
+        """测密度完成后将一次性 TIP 标记为已耗尽并记录在盒2。"""
+        tip_index = int(tip_index)
+        with self._lock:
+            self._require_initialized_locked()
+            tip = self._state["tips"].get(str(tip_index))
+            if tip is None or tip["status"] != TIP_STATUS_BOUND or tip["solvent_key"] is not None:
+                raise RuntimeError(f"S09 测密度 TIP {tip_index} 状态不一致")
+            tip.update(
+                {
+                    "status": TIP_STATUS_EXHAUSTED,
+                    "current_box": 2,
+                    "use_count": 1,
+                }
+            )
+            self._save_locked()
+            return copy.deepcopy(tip | {"tip_index": tip_index})
+
+    def release_single_use_tip_reservation(self, tip_index: int) -> dict[str, Any]:
+        """一次性 TIP 尚未实际取出时，释放软件预留并恢复为未使用。"""
+        tip_index = int(tip_index)
+        with self._lock:
+            self._require_initialized_locked()
+            tip = self._state["tips"].get(str(tip_index))
+            if tip is None or tip["status"] != TIP_STATUS_BOUND or tip["solvent_key"] is not None:
+                raise RuntimeError(f"S09 测密度 TIP {tip_index} 预留状态不一致")
+            tip.update(
+                {
+                    "status": TIP_STATUS_UNUSED,
+                    "solvent_key": None,
+                    "current_box": 1,
+                    "use_count": 0,
+                }
+            )
+            self._save_locked()
+            return copy.deepcopy(tip | {"tip_index": tip_index})
+
+    def mark_single_use_tip_unknown(self, tip_index: int) -> dict[str, Any]:
+        """一次性 TIP 取放结果不确定时将其隔离。"""
+        tip_index = int(tip_index)
+        with self._lock:
+            self._require_initialized_locked()
+            tip = self._state["tips"].get(str(tip_index))
+            if tip is None:
+                raise RuntimeError(f"S09 TIP {tip_index} 不存在")
+            tip["status"] = TIP_STATUS_UNKNOWN
+            self._save_locked()
+            return copy.deepcopy(tip | {"tip_index": tip_index})
+
     def mark_active_tip_unknown(self, solvent_key: str | int) -> dict[str, Any]:
         """取放结果不确定时隔离当前 TIP，禁止后续自动复用。"""
         key = self._normalize_solvent_key(solvent_key)

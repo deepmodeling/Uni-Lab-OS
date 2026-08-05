@@ -867,8 +867,18 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "solvent_batch_id",
         "volume",
         "density_volume",
+        "density_measurement_count",
         "volume_unit",
         "skip_level_check",
+    ]
+    reusable_snapshot = collect_snapshot_variables(
+        "add_liquid_with_reusable_tip",
+        {"density_measurement_count": 5},
+        runtime_config,
+    )
+    assert reusable_snapshot[-10:] == [
+        *[f"S09抽液天平读数[{index}]" for index in range(5)],
+        *[f"S09放液天平读数[{index}]" for index in range(5)],
     ]
     assert collect_snapshot_variables("dose_powder", {}, runtime_config) == [
         "S07原点信号",
@@ -984,6 +994,22 @@ def test_szlab_action_parameters_have_frontend_help_options_and_units():
         if param["name"] == "aspirate_volume"
     )
     assert "体积单位" in aspirate["description"]
+    reusable_volume = next(
+        param
+        for param in preset.actions["add_liquid_with_reusable_tip"].params
+        if param["name"] == "volume"
+    )
+    assert reusable_volume["label"] == "加液体积"
+    assert "S09" in reusable_volume["description"]
+    assert "S06" not in reusable_volume["description"]
+    density_count = next(
+        param
+        for param in preset.actions["add_liquid_with_reusable_tip"].params
+        if param["name"] == "density_measurement_count"
+    )
+    assert density_count["label"] == "测密度次数"
+    assert density_count["min"] == 1
+    assert density_count["max"] == 10
 
 
 def test_single_sample_workflow_uses_internal_s09_balance_read_and_correct_robot_codes():

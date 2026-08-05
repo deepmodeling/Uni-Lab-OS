@@ -360,10 +360,14 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
         "label": "已知溶剂与 TIP 绑定",
         "description": "仅库存恢复时使用，格式为“批次与工位组合键”到 TIP 编号的 JSON 对象。",
     },
-    "station": {"label": "烧杯工位", "description": "S09 承接加液的烧杯工位编号。"},
+    "station": {"label": "加液体工位", "description": "S09 加液体工位编号，范围 1–5。"},
     "density_volume": {
         "label": "测密度体积",
-        "description": "工艺 9 使用的烧杯取样体积，用于结合 PLC 返回的负数净质量计算密度。",
+        "description": "工艺 9 使用的烧杯取样体积；该工艺一次完成抽排液，PLC 返回的两组天平数据均为该体积液体的净重。",
+    },
+    "density_measurement_count": {
+        "label": "测密度次数",
+        "description": "PLC 连续测密度次数，范围 1-10；每次结果写入对应的抽液/放液天平读数数组。",
     },
     "aspirate_volume": {"label": "吸液体积", "description": "吸取体积；实际单位由“体积单位”决定。"},
     "dispense_volume": {"label": "放液体积", "description": "排出体积；实际单位由“体积单位”决定。"},
@@ -383,6 +387,14 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     "require_stable": {"label": "要求稳定", "description": "开启后仅在 S09 天平稳定信号有效时返回读数。"},
 }
 _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
+    ("add_liquid_with_reusable_tip", "volume"): {
+        "label": "加液体积",
+        "description": "S09 从所选加液体工位吸取并排入烧杯的体积；实际单位由“体积单位”决定。",
+    },
+    ("add_liquid_with_reusable_tip", "density_measurement_count"): {
+        "label": "测密度次数",
+        "description": "PLC 连续测密度次数，范围 1-10；每次结果写入对应的抽液/放液天平读数数组。",
+    },
     **{
         (method, "product_type"): {
             "label": "产品类型",

@@ -63,17 +63,17 @@ def test_s09_pipetting_station_is_ast_scannable_from_own_package():
     assert "go_to_safe_position" not in actions
 
 
-def test_s09_process_labels_cover_liquid_processes_5_to_10():
-    assert set(S09_PROCESS_LABELS) == set(range(5, 11))
+def test_s09_process_labels_cover_liquid_processes_5_to_9():
+    assert set(S09_PROCESS_LABELS) == set(range(5, 10))
     assert S09_PROCESS_LABELS[5] == "取 TIP"
     assert S09_PROCESS_LABELS[7].startswith("液体瓶取液")
-    assert validate_process(10) == 10
+    assert validate_process(9) == 9
 
     device = make_pipetting_device()
     result = device.run_process(process=1)
 
     assert result["success"] is False
-    assert "5-10" in result["message"]
+    assert "5-9" in result["message"]
 
 
 def test_s09_run_process_writes_expected_variables_and_waits_done():
@@ -302,12 +302,15 @@ def test_s09_reusable_tip_action_uses_box_one_then_reuses_from_box_two(tmp_path)
     )
 
     assert first["success"] is True
-    assert [step["data"]["tip_box_index"] for step in first["steps"]] == [1, 1, 1, 1, 1, 2]
+    assert [step["data"]["tip_box_index"] for step in first["steps"]] == [1, 1, 1, 2, 1, 1, 2]
     assert first["data"]["tip_reuse"]["tip_index"] == 1
+    assert first["data"]["density_tip"]["tip_index"] == 2
+    assert first["data"]["density_tip"]["status"] == "exhausted"
     assert first["data"]["tip_reuse"]["use_count"] == 1
     assert second["success"] is True
-    assert [step["data"]["tip_box_index"] for step in second["steps"]] == [2, 2, 2, 2, 2, 2]
+    assert [step["data"]["tip_box_index"] for step in second["steps"]] == [2, 2, 2, 2, 1, 1, 2]
     assert second["data"]["tip_reuse"]["tip_index"] == 1
+    assert second["data"]["density_tip"]["tip_index"] == 3
     assert second["data"]["tip_reuse"]["use_count"] == 2
 
 
@@ -342,7 +345,7 @@ def test_s09_reusable_tip_action_allocates_by_batch_and_station(tmp_path):
     assert all(result["success"] for result in results)
     assert [
         result["data"]["tip_reuse"]["tip_index"] for result in results
-    ] == [1, 2, 3, 4, 1]
+    ] == [1, 3, 5, 7, 1]
     assert results[-1]["data"]["tip_reuse"]["take_tip_box_index"] == 2
 
 
@@ -366,10 +369,10 @@ def test_s09_reusable_tip_action_replaces_tip_at_limit(tmp_path):
     status = device.get_reusable_tip_status()["data"]
 
     assert all(result["success"] for result in results)
-    assert [result["data"]["tip_reuse"]["tip_index"] for result in results] == [1, 1, 2]
+    assert [result["data"]["tip_reuse"]["tip_index"] for result in results] == [1, 1, 4]
     assert results[2]["data"]["tip_reuse"]["take_tip_box_index"] == 1
     assert status["tips"]["1"]["status"] == "exhausted"
-    assert status["tips"]["2"]["status"] == "bound"
+    assert status["tips"]["4"]["status"] == "bound"
 
 
 def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
@@ -398,7 +401,27 @@ def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
     assert result["success"] is False
     assert result["tip_reuse"]["status"] == "unknown"
     assert status["tips"]["1"]["status"] == "unknown"
+    assert status["tips"]["2"]["status"] == "unused"
     assert status["solvents"]["S09-STATION-1:BATCH:batch-a"]["status"] == "unknown"
+
+
+def test_s09_reusable_tip_action_reserves_both_tips_before_plc_execution(tmp_path):
+    client = PseudoSzlabS09OpcUaClient({"S09液体瓶1剩余液量": 100.0})
+    device = make_pipetting_device(
+        client,
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory(used_tip_count=95)
+
+    result = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=1,
+    )
+
+    assert result["success"] is False
+    assert "没有可用于测密度的新 TIP" in result["message"]
+    assert client.writes == []
 
 
 def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
@@ -444,9 +467,11 @@ def test_s09_reusable_tip_action_serializes_concurrent_plc_transfers(
 
 
 def test_s09_reusable_tip_action_runs_addition_then_calculates_density(tmp_path):
-    client = PseudoSzlabS09OpcUaClient(
-        {"S09天平读数": -1.58, "S09液体瓶3剩余液量": 100.0}
-    )
+    client = PseudoSzlabS09OpcUaClient({
+        "S09液体瓶3剩余液量": 100.0,
+        "S09抽液天平读数[0]": -1.58,
+        "S09放液天平读数[0]": 1.58,
+    })
     device = make_pipetting_device(
         client,
         tip_reuse_state_path=str(tmp_path / "tip_state.json"),
@@ -462,18 +487,66 @@ def test_s09_reusable_tip_action_runs_addition_then_calculates_density(tmp_path)
     )
 
     assert result["success"] is True
-    assert [step["data"]["process"] for step in result["steps"]] == [5, 7, 8, 9, 10, 6]
+    assert [step["data"]["process"] for step in result["steps"]] == [5, 7, 8, 6, 5, 9, 6]
     assert result["data"]["net_mass"] == -1.58
     assert result["data"]["absolute_mass"] == 1.58
     assert result["data"]["density_volume_ml"] == 2.0
     assert result["data"]["density"] == 0.79
+    assert result["data"]["densities"] == [0.79, 0.79]
     assert result["data"]["density_unit"] == "g/mL"
+    assert result["display_message"] == "S09 密度结果：0.79 g/mL（抽液、放液各测 1 次，共 2 个结果）"
+    assert client.pulses == []
     assert result["data"]["tip_reuse"]["solvent_batch_id"] == "batch-density"
     assert (
         result["data"]["tip_reuse"]["solvent_key"]
         == "S09-STATION-3:BATCH:batch-density"
     )
     assert client.values["S09液体瓶3剩余液量"] == 99.0
+
+
+def test_s09_reusable_tip_action_passes_density_count_and_averages_both_reading_arrays(tmp_path):
+    client = PseudoSzlabS09OpcUaClient({
+        "S09液体瓶1剩余液量": 100.0,
+        "S09抽液天平读数[0]": -1.0,
+        "S09抽液天平读数[1]": -1.2,
+        "S09放液天平读数[0]": 0.8,
+        "S09放液天平读数[1]": 1.0,
+    })
+    device = make_pipetting_device(
+        client,
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory()
+
+    result = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-density-count",
+        volume=1,
+        density_volume=1,
+        density_measurement_count=2,
+        volume_unit="mL",
+    )
+
+    assert result["success"] is True
+    assert result["data"]["net_masses"] == [-1.0, -1.2, 0.8, 1.0]
+    assert result["data"]["densities"] == [1.0, 1.2, 0.8, 1.0]
+    assert result["data"]["density"] == 1.0
+    assert client.writes.count(("S09测密度次数", 2)) == 1
+
+
+def test_s09_reusable_tip_action_rejects_invalid_density_count(tmp_path):
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+
+    result = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        density_measurement_count=11,
+    )
+
+    assert result["success"] is False
+    assert "1-10" in result["message"]
 
 
 def test_s09_reusable_tip_action_rejects_density_volume_over_single_transfer_limit(tmp_path):
@@ -704,6 +777,8 @@ def test_s09_density_process_uses_beaker_without_deducting_liquid_station():
     )
 
     assert result["success"] is True
+    assert ("S09测密度次数", 1) in client.writes
+    assert client.writes[-1] == ("S09测密度次数", 0)
     assert result["data"]["balance_reading"] == -12.34
     assert result["data"]["balance"] == {"balance_reading": -12.34, "stable": True}
     assert client.values["S09液体瓶1剩余液量"] == 10.0
@@ -985,6 +1060,9 @@ def test_s09_debug_csv_is_small_plc_input_with_remaining_volume_names():
     assert "S09液体瓶1容量" not in text
     assert "S09TIP盒工位编号" in text
     assert "S09参数写入完成" in text
+    assert "S09测密度次数" in text
+    assert "S09抽液天平读数[9]" in text
+    assert "S09放液天平读数[9]" in text
 
 
 def test_s09_robot_actions_use_dev_robot_s09_task_contract(monkeypatch):

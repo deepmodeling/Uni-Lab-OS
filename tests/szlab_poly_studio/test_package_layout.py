@@ -45,6 +45,10 @@ def test_szlab_poly_studio_latest_csv_supports_utf16_encoding():
 
     assert "S05加工完成" in names
     assert "S05拍照结果" in names
+    assert "S09测密度次数" in names
+    assert "S09抽液天平读数[9]" in names
+    assert "S09放液天平读数[9]" in names
+    assert "S09数据清空" in names
 
 
 def test_temporary_top_level_workstation_package_path_is_removed():

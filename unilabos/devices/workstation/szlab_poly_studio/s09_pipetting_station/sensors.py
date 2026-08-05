@@ -28,8 +28,7 @@ S09_PROCESS_LABELS: dict[int, str] = {
     6: "放 TIP",
     7: "液体瓶取液（润洗一次后取液）",
     8: "烧杯放液",
-    9: "测密度抽液并读取天平",
-    10: "测密度排液并读取天平",
+    9: "测密度抽排液并记录天平数据",
 }
 
 S09_PROCESS_SELECT_VAR = "S09工艺选择"
@@ -46,6 +45,10 @@ S09_DISPENSE_VOLUME_VAR = "S09放液量"
 
 S09_BALANCE_STABLE_VAR = "S09天平读数稳定"
 S09_BALANCE_READING_VAR = "S09天平读数"
+S09_DENSITY_COUNT_VAR = "S09测密度次数"
+S09_ASPIRATE_BALANCE_READINGS_VAR = "S09抽液天平读数"
+S09_DISPENSE_BALANCE_READINGS_VAR = "S09放液天平读数"
+S09_DENSITY_COUNT_RANGE = range(1, 11)
 
 S09_TRANSFER_PRODUCT_VAR = "S09取放料产品"
 S09_TRANSFER_POSITION_VAR = "S09取放料编号"
@@ -67,10 +70,21 @@ def s09_remaining_volume_vars() -> list[str]:
     return [s09_remaining_volume_var(index) for index in S09_LIQUID_BOTTLE_RANGE]
 
 
+def s09_density_balance_vars(base_name: str) -> list[str]:
+    return [f"{base_name}[{index}]" for index in range(10)]
+
+
+def validate_density_count(count: int) -> int:
+    count = int(count)
+    if count not in S09_DENSITY_COUNT_RANGE:
+        raise ValueError("S09 测密度次数必须在 1-10 范围内")
+    return count
+
+
 def validate_process(process: int) -> int:
     process = int(process)
     if process not in S09_PROCESS_LABELS:
-        raise ValueError("S09 工艺选择必须在 5-10 范围内")
+        raise ValueError("S09 工艺选择必须在 5-9 范围内")
     return process
 
 
@@ -122,6 +136,9 @@ def s09_opcua_node_id_map() -> dict[str, str]:
         S09_ASPIRATE_VOLUME_VAR,
         S09_DISPENSE_VOLUME_VAR,
         S09_BALANCE_READING_VAR,
+        S09_DENSITY_COUNT_VAR,
+        *s09_density_balance_vars(S09_ASPIRATE_BALANCE_READINGS_VAR),
+        *s09_density_balance_vars(S09_DISPENSE_BALANCE_READINGS_VAR),
         *s09_remaining_volume_vars(),
         S09_STATION_STATUS_VAR,
         PLC_ROBOT_TASK_VAR,

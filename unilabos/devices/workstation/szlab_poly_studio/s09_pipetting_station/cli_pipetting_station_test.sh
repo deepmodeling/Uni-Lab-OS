@@ -35,7 +35,7 @@ CLEAR_PC_TO_PLC_BEFORE_RUN="${CLEAR_PC_TO_PLC_BEFORE_RUN:-0}"
 
 # S09 动作参数覆盖:
 HOME_POSITIONS="${HOME_POSITIONS:-1}"
-PROCESSES="${PROCESSES:-5 7 8 6 9 10}"
+PROCESSES="${PROCESSES:-5 7 8 6 9}"
 TIP_BOX_INDEX="${TIP_BOX_INDEX:-1}"
 RELEASE_TIP_BOX_INDEX="${RELEASE_TIP_BOX_INDEX:-2}"
 TIP_INDEX="${TIP_INDEX:-1}"
@@ -123,7 +123,7 @@ S09 移液站调试动作:
   init-volume   initialize_liquid_bottle_remaining_volumes
   set-volume    set_liquid_bottle_remaining_volume
   balance       read_balance
-  process       run_process(process=5/7/8/6/9/10 by default)
+  process       run_process(process=5/7/8/6/9 by default)
   take-tip      run_process(process=5)
   take-liquid   run_process(process=7)
   dispense      run_process(process=8)
@@ -141,8 +141,7 @@ S09 工艺号:
   6 放 TIP
   7 液体瓶取液（润洗一次后取液）
   8 烧杯放液
-  9 测密度抽液并读取天平
-  10 测密度排液并读取天平
+  9 测密度抽排液并记录两组天平数据
 EOF
 }
 
@@ -374,7 +373,7 @@ def emit_run_process(process, label, process_tip_box_index=None):
         "tip_box_index": int(process_tip_box_index or tip_box_index),
         "process": process,
         "aspirate_volume": float(aspirate_volume) if process in {7, 9} else 0,
-        "dispense_volume": float(dispense_volume) if process in {8, 10} else 0,
+        "dispense_volume": float(dispense_volume) if process == 8 else 0,
         "volume_unit": volume_unit,
         "require_allow": bool_value(require_allow),
         "reset_delay": float(reset_delay),

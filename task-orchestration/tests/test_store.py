@@ -32,6 +32,29 @@ def test_get_returns_default_workspace_for_workflow(tmp_path):
     assert result.workspace.task_instances == []
 
 
+def test_get_accepts_legacy_plural_templates_deleted_event(tmp_path):
+    workflow = tmp_path / "demo.json"
+    workflow.write_text("{}", encoding="utf-8")
+    sidecar = tmp_path / "demo.json.task-workspace.json"
+    sidecar.write_text(
+        json.dumps({
+            "version": 1,
+            "workspace": {
+                "workflow_path": "demo.json",
+                "events": [{
+                    "kind": "templates_deleted",
+                    "payload": {"deleted_template_ids": ["template-a"]},
+                }],
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    result = WorkspaceStore(tmp_path).get("demo.json")
+
+    assert result.workspace.events[0].kind == "templates_deleted"
+
+
 def test_put_writes_sidecar_atomically_and_increments_version(tmp_path):
     workflow = tmp_path / "demo.json"
     workflow.write_text("{}", encoding="utf-8")

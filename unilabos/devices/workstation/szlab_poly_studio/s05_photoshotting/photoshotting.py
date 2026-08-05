@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +24,12 @@ DEFAULT_OPCUA_URL = os.environ.get(
     "UNILABOS_SZLAB_MIXER_OPCUA_URL",
     "opc.tcp://jdht1471820.bohrium.tech:50001",
 )
+DEFAULT_DISSOLUTION_SERVICE_URL = os.environ.get(
+    "DISSOLUTION_SERVICE_URL",
+    "http://192.168.1.100:8003",
+)
+
+logger = logging.getLogger(__name__)
 
 
 @device(
@@ -42,11 +50,15 @@ class SzlabMixerPhotoShottingDevice:
         plc_device_id: str = "szlab_poly_plc",
         use_plc_gateway: bool = False,
         opcua_node_id_map: dict[str, str] | None = None,
+        dissolution_service_url: str = DEFAULT_DISSOLUTION_SERVICE_URL,
+        dissolution_timeout: float = 60.0,
         **kwargs,
     ):
         self.url = url
         self.save_dir = save_dir
         self.plc_device_id = plc_device_id
+        self.dissolution_service_url = dissolution_service_url.rstrip("/")
+        self.dissolution_timeout = dissolution_timeout
         self._plc_gateway = None
         client_kwargs: dict[str, Any] = {
             "url": url,
@@ -68,6 +80,10 @@ class SzlabMixerPhotoShottingDevice:
         self._last_photo_path = ""
         self._last_result = "UNKNOWN"
         self._last_dual_view_result: dict[str, Any] = {}
+        self._last_dissolution_result: dict[str, Any] = {
+            "status": "not_started",
+            "dissolved": "unknown",
+        }
 
     @not_action
     def set_plc_gateway(self, plc_gateway) -> None:
@@ -87,6 +103,11 @@ class SzlabMixerPhotoShottingDevice:
     @topic_config()
     def last_result(self) -> str:
         return self._last_result
+
+    @property
+    @topic_config()
+    def last_dissolution_result(self) -> str:
+        return json.dumps(self._last_dissolution_result, ensure_ascii=False)
 
     @not_action
     def disconnect(self) -> None:
@@ -149,6 +170,61 @@ class SzlabMixerPhotoShottingDevice:
         )
         with request.urlopen(req, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    @not_action
+    def _trigger_dissolution_detect(self, sample_id: str = "") -> None:
+        """后台触发溶解检测；检测结果不改变 S05 动作执行结果。"""
+        service_url = self.dissolution_service_url
+        self._last_dissolution_result = {
+            "status": "running",
+            "sample_id": sample_id,
+            "dissolved": "unknown",
+        }
+        try:
+            req = request.Request(f"{service_url}/trigger_detect", method="POST")
+            with request.urlopen(req, timeout=self.dissolution_timeout) as response:
+                raw_result = json.loads(response.read().decode("utf-8"))
+            result_code = int(raw_result["result"])
+            if result_code not in (0, 1):
+                raise ValueError(f"result 必须为 0 或 1，实际为 {result_code}")
+            self._last_dissolution_result = {
+                "status": "completed",
+                "sample_id": sample_id,
+                "result": result_code,
+                "dissolved": result_code == 1,
+                "raw_result": raw_result,
+            }
+            logger.info("S05 溶解检测完成：sample_id=%s, result=%s", sample_id, result_code)
+        except Exception as exc:
+            self._last_dissolution_result = {
+                "status": "error",
+                "sample_id": sample_id,
+                "dissolved": "unknown",
+                "message": str(exc),
+            }
+            logger.error("S05 溶解检测请求失败：sample_id=%s, error=%s", sample_id, exc)
+
+    @not_action
+    def _start_dissolution_detect(self, sample_id: str = "") -> bool:
+        if not self.dissolution_service_url:
+            self._last_dissolution_result = {
+                "status": "disabled",
+                "sample_id": sample_id,
+                "dissolved": "unknown",
+            }
+            return False
+        self._last_dissolution_result = {
+            "status": "scheduled",
+            "sample_id": sample_id,
+            "dissolved": "unknown",
+        }
+        threading.Thread(
+            target=self._trigger_dissolution_detect,
+            args=(sample_id,),
+            name=f"s05-dissolution-{sample_id or 'latest'}",
+            daemon=True,
+        ).start()
+        return True
 
     @not_action
     def _normalize_algorithm_result(self, result: Any) -> dict[str, Any]:
@@ -314,6 +390,7 @@ class SzlabMixerPhotoShottingDevice:
                 "message": f"S05 拍照检测 {result_label}",
                 "data": data,
             }
+        data["dissolution_detection_triggered"] = self._start_dissolution_detect(sample_id)
         return {
             "success": True,
             "message": f"S05 拍照检测完成，结果 {result_label}",

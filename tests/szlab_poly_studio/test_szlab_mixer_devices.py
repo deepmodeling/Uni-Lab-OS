@@ -1114,6 +1114,88 @@ def test_szlab_photoshotting_take_photo_fails_when_result_is_ng():
     ]
 
 
+def test_szlab_photoshotting_triggers_dissolution_detection_without_waiting(monkeypatch):
+    class FakePlcGateway:
+        def wait_variable_true(self, name, interval=1.0):
+            return True
+
+        def read_variable(self, name, use_cache=False):
+            return 1
+
+    started_threads = []
+
+    class DeferredThread:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def start(self):
+            started_threads.append(self)
+
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.threading.Thread",
+        DeferredThread,
+    )
+    device = SzlabMixerPhotoShottingDevice(
+        use_plc_gateway=True,
+        dissolution_service_url="http://inference:8003/",
+    )
+    device.set_plc_gateway(FakePlcGateway())
+
+    result = device.take_photo(sample_id="sample-1")
+
+    assert result["success"] is True
+    assert result["data"]["dissolution_detection_triggered"] is True
+    assert len(started_threads) == 1
+    assert started_threads[0].kwargs["daemon"] is True
+    assert started_threads[0].kwargs["args"] == ("sample-1",)
+    assert json.loads(device.last_dissolution_result)["status"] == "scheduled"
+
+
+def test_szlab_photoshotting_parses_background_dissolution_result(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return b'{"result": 1}'
+
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["method"] = req.method
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting.request.urlopen",
+        fake_urlopen,
+    )
+    device = SzlabMixerPhotoShottingDevice(
+        use_plc_gateway=True,
+        dissolution_service_url="http://inference:8003/",
+        dissolution_timeout=12.0,
+    )
+
+    device._trigger_dissolution_detect("sample-1")
+
+    assert captured == {
+        "url": "http://inference:8003/trigger_detect",
+        "method": "POST",
+        "timeout": 12.0,
+    }
+    assert json.loads(device.last_dissolution_result) == {
+        "status": "completed",
+        "sample_id": "sample-1",
+        "result": 1,
+        "dissolved": True,
+        "raw_result": {"result": 1},
+    }
+
+
 def test_szlab_poly_plc_uses_node_id_map_without_browsing(monkeypatch, tmp_path):
     pytest.importorskip("pylabrobot")
     from unilabos.devices.workstation.szlab_poly_studio.plc import SZLabPolyPLCDevice

@@ -1183,6 +1183,17 @@
   font: 10px ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
+.scheduler-bench__s09-binding {
+  margin: 0 0 10px;
+  border: 1px solid #f0c36d;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #7a4b00;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 8px 10px;
+}
+
 .scheduler-bench__parameter-group label {
   display: grid;
   grid-template-columns: minmax(150px, 0.9fr) minmax(170px, 1.1fr);

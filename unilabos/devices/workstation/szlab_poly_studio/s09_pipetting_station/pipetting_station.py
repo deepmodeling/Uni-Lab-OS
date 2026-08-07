@@ -1047,6 +1047,12 @@ class SzlabMixerPipettingStationDevice:
                 "single_use": True,
                 "density_measurement_count": density_measurement_count,
             }
+            self._tip_reuse_state.record_last_operation(
+                solvent_batch_id=solvent_batch_id,
+                liquid_station_index=liquid_station_index,
+                liquid_tip_index=liquid_tip_tracking["tip_index"],
+                density_tip_index=density_tip_tracking["tip_index"],
+            )
 
             steps: list[dict[str, Any]] = []
             logs: list[dict[str, Any]] = []

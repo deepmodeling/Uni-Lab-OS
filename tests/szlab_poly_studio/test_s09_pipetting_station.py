@@ -314,6 +314,44 @@ def test_s09_reusable_tip_action_uses_box_one_then_reuses_from_box_two(tmp_path)
     assert second["data"]["tip_reuse"]["use_count"] == 2
 
 
+def test_s09_reuses_bound_tip_and_uses_next_fresh_tip_for_density(tmp_path):
+    client = PseudoSzlabS09OpcUaClient({"S09液体瓶1剩余液量": 100.0})
+    device = make_pipetting_device(
+        client,
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory()
+
+    first = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=1,
+    )
+    second = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-b",
+        volume=1,
+    )
+    reused = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=1,
+    )
+
+    assert first["data"]["tip_reuse"]["tip_index"] == 1
+    assert first["data"]["density_tip"]["tip_index"] == 2
+    assert second["data"]["tip_reuse"]["tip_index"] == 3
+    assert second["data"]["density_tip"]["tip_index"] == 4
+    assert reused["data"]["tip_reuse"]["tip_index"] == 1
+    assert reused["data"]["density_tip"]["tip_index"] == 5
+    assert device.get_reusable_tip_status()["data"]["last_operation"] == {
+        "solvent_batch_id": "batch-a",
+        "liquid_station_index": 1,
+        "liquid_tip_index": 1,
+        "density_tip_index": 5,
+    }
+
+
 def test_s09_reusable_tip_action_allocates_by_batch_and_station(tmp_path):
     client = PseudoSzlabS09OpcUaClient(
         {

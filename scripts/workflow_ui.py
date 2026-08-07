@@ -34,6 +34,9 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 
 from unilabos.registry.ast_registry_scanner import scan_directory
+from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.pipetting_station import (
+    DEFAULT_TIP_REUSE_STATE_PATH,
+)
 from scripts.opc_simulator_process_manager import (
     InvalidSimulatorConfig,
     InvalidSimulatorRevision,
@@ -2376,6 +2379,19 @@ def create_app(
                 _action_to_dict(action, runtime_config)
                 for action in active_preset.actions.values()
             ],
+        }
+
+    @app.get("/api/s09-tip-status", response_class=JSONResponse)
+    async def get_s09_tip_status() -> dict[str, Any]:
+        if not DEFAULT_TIP_REUSE_STATE_PATH.exists():
+            return {"initialized": False, "last_operation": None}
+        try:
+            state = json.loads(DEFAULT_TIP_REUSE_STATE_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=500, detail="读取 S09 TIP 状态失败") from exc
+        return {
+            "initialized": bool(state.get("initialized")),
+            "last_operation": state.get("last_operation"),
         }
 
     @app.get("/api/csv-variables", response_class=JSONResponse)

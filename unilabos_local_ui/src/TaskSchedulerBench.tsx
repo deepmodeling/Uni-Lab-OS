@@ -44,6 +44,15 @@ type ActionNode = {
   }>;
 };
 type ResolvedActionNode = ActionNode & { templateNodeId: string };
+type S09TipStatus = {
+  initialized: boolean;
+  last_operation: null | {
+    solvent_batch_id: string;
+    liquid_station_index: number;
+    liquid_tip_index: number;
+    density_tip_index: number;
+  };
+};
 
 type Props = {
   templates: Template[];
@@ -182,6 +191,7 @@ export function TaskSchedulerHeaderActions(props: HeaderActionsProps) {
 export function TaskSchedulerBench(props: Props) {
   const [editingTask, setEditingTask] = React.useState<Task | null>(null);
   const [parameterDraft, setParameterDraft] = React.useState<Record<string, Record<string, unknown>>>({});
+  const [s09TipStatus, setS09TipStatus] = React.useState<S09TipStatus | null>(null);
   const [logFilter, setLogFilter] = React.useState<TaskLogCategory>('all');
   const [isFollowingLogs, setIsFollowingLogs] = React.useState(true);
   const [timingNowMs, setTimingNowMs] = React.useState(() => Date.now());
@@ -210,6 +220,7 @@ export function TaskSchedulerBench(props: Props) {
       .map((entry) => ({ ...entry.node, templateNodeId: entry.templateNodeId }))
     : [];
   const parametersEditable = editingTask?.status === 'waiting' || editingTask?.status === 'pending';
+  const editingS09Parameters = editingNodes.some((node) => node.method === 'add_liquid_with_reusable_tip');
   const allTemplatesSelected = props.templates.length > 0
     && props.templates.every((template) => props.scheduledTemplateIds.includes(template.id));
 
@@ -225,6 +236,14 @@ export function TaskSchedulerBench(props: Props) {
     const timer = window.setInterval(() => setTimingNowMs(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, [hasRunningTasks]);
+
+  React.useEffect(() => {
+    if (!editingTask || !editingS09Parameters) return;
+    fetch('/api/s09-tip-status')
+      .then((response) => response.json())
+      .then((payload: S09TipStatus) => setS09TipStatus(payload))
+      .catch(() => setS09TipStatus(null));
+  }, [editingTask?.id, editingS09Parameters]);
 
   const exportLogs = () => {
     const text = visibleLogLines.map((line) => (
@@ -494,6 +513,14 @@ export function TaskSchedulerBench(props: Props) {
                 return <section className="scheduler-bench__parameter-group" key={node.templateNodeId}>
                   <h3>{String(index + 1).padStart(2, '0')} · {node.label}</h3>
                   <small>{node.method} · {node.templateNodeId}</small>
+                  {node.method === 'add_liquid_with_reusable_tip' ? (
+                    <div className="scheduler-bench__s09-binding" role="status">
+                      {s09TipStatus?.last_operation ? (
+                        <>上一次 S09 绑定：批次 {s09TipStatus.last_operation.solvent_batch_id} · 工位 {s09TipStatus.last_operation.liquid_station_index}
+                          {' · '}加液 TIP {s09TipStatus.last_operation.liquid_tip_index} · 测密度 TIP {s09TipStatus.last_operation.density_tip_index}</>
+                      ) : '上一次 S09 绑定：暂无记录'}
+                    </div>
+                  ) : null}
                   {specs.map((spec) => {
                     const name = spec.name as string;
                     const value = values[name];

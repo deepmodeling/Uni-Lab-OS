@@ -50,6 +50,7 @@ class ReusableTipStateStore:
             "initialized": False,
             "tip_count": self.tip_count,
             "max_use_count": self.max_use_count,
+            "last_operation": None,
             "solvents": {},
             "tips": {},
         }
@@ -178,6 +179,27 @@ class ReusableTipStateStore:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return copy.deepcopy(self._state)
+
+    def record_last_operation(
+        self,
+        *,
+        solvent_batch_id: str,
+        liquid_station_index: int,
+        liquid_tip_index: int,
+        density_tip_index: int,
+    ) -> dict[str, Any]:
+        """记录最近一次实际启动的 S09 加液绑定，供下一位操作人员确认。"""
+        with self._lock:
+            self._require_initialized_locked()
+            operation = {
+                "solvent_batch_id": str(solvent_batch_id),
+                "liquid_station_index": int(liquid_station_index),
+                "liquid_tip_index": int(liquid_tip_index),
+                "density_tip_index": int(density_tip_index),
+            }
+            self._state["last_operation"] = operation
+            self._save_locked()
+            return copy.deepcopy(operation)
 
     def get_solvent_binding(self, solvent_key: str | int) -> dict[str, Any] | None:
         key = self._normalize_solvent_key(solvent_key)

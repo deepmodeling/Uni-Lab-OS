@@ -1963,6 +1963,45 @@ def test_task_node_sampling_uses_bound_action_without_resolving_descriptor_again
     assert descriptor.calls == 1
 
 
+@pytest.mark.parametrize(
+    "display_message",
+    [
+        "S07 注粉完成：目标 10.000 g，最终 10.012 g，偏差 +0.012 g",
+        "S09 密度结果：0.9982 g/mL（抽液、放液各测 1 次，共 2 个结果）",
+    ],
+)
+def test_task_node_sampling_forwards_measurement_display_message(display_message):
+    class MeasurementDevice:
+        def measure(self):
+            return {"success": True, "display_message": display_message}
+
+    device = MeasurementDevice()
+    node = WorkflowNode(
+        uuid="measurement-node",
+        name="measure",
+        device_name="measurement-device",
+        param={},
+        method="measure",
+        legacy_route_compatible=False,
+    )
+    runtime_config = run_workflow_local.RuntimeConfig(
+        path=Path("runtime.json"),
+        device_factory=run_workflow_local.RuntimeDeviceFactoryConfig(),
+        opc_snapshot=run_workflow_local.RuntimeOpcSnapshotConfig(),
+    )
+    messages = []
+
+    _run_node_with_live_opc_sampling(
+        node,
+        {"measurement-device": device},
+        action_callable=device.measure,
+        logger=WorkflowLogger(writer=lambda message, **_kwargs: messages.append(message)),
+        runtime_config=runtime_config,
+    )
+
+    assert display_message in messages
+
+
 def test_real_node_runner_wrappers_preserve_recursive_false_results():
     class ActionDevice:
         def bare_false(self):

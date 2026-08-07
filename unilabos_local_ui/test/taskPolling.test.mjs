@@ -24,8 +24,8 @@ const { TASK_EXECUTION_POLL_INTERVAL_MS } = await importTypeScriptModule(
 
 assert.equal(
   TASK_EXECUTION_POLL_INTERVAL_MS,
-  5000,
-  'Task 执行循环最多每 5 秒请求一次 tick',
+  2000,
+  'Task 执行循环最多每 2 秒请求一次 tick',
 );
 
 const mainSource = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');

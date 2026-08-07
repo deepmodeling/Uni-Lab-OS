@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +52,7 @@ class SzlabMixerPhotoShottingDevice:
         opcua_node_id_map: dict[str, str] | None = None,
         dissolution_service_url: str = DEFAULT_DISSOLUTION_SERVICE_URL,
         dissolution_timeout: float = 60.0,
+        dissolution_trigger_delay: float = 2.0,
         **kwargs,
     ):
         self.url = url
@@ -58,6 +60,7 @@ class SzlabMixerPhotoShottingDevice:
         self.plc_device_id = plc_device_id
         self.dissolution_service_url = dissolution_service_url.rstrip("/")
         self.dissolution_timeout = dissolution_timeout
+        self.dissolution_trigger_delay = max(0.0, float(dissolution_trigger_delay))
         self._plc_gateway = None
         client_kwargs: dict[str, Any] = {
             "url": url,
@@ -206,6 +209,39 @@ class SzlabMixerPhotoShottingDevice:
             }
             logger.error("S05 溶解检测请求失败：sample_id=%s, error=%s", sample_id, exc)
         return dict(self._last_dissolution_result)
+
+    @not_action
+    def _wait_for_dissolution_trigger(self) -> None:
+        if self.dissolution_trigger_delay:
+            threading.Event().wait(self.dissolution_trigger_delay)
+
+    @not_action
+    def _run_delayed_dissolution_detection(self, sample_id: str = "") -> None:
+        self._wait_for_dissolution_trigger()
+        self._run_dissolution_detection(sample_id)
+
+    @not_action
+    def _start_dissolution_detection(self, sample_id: str = "") -> bool:
+        if not self.dissolution_service_url:
+            self._last_dissolution_result = {
+                "status": "disabled",
+                "sample_id": sample_id,
+                "solubility": "unknown",
+            }
+            return False
+        self._last_dissolution_result = {
+            "status": "scheduled",
+            "sample_id": sample_id,
+            "solubility": "unknown",
+            "delay_seconds": self.dissolution_trigger_delay,
+        }
+        threading.Thread(
+            target=self._run_delayed_dissolution_detection,
+            args=(sample_id,),
+            name=f"s05-dissolution-{sample_id or 'latest'}",
+            daemon=True,
+        ).start()
+        return True
 
     @not_action
     def _normalize_algorithm_result(self, result: Any) -> dict[str, Any]:
@@ -371,15 +407,7 @@ class SzlabMixerPhotoShottingDevice:
                 "message": f"S05 拍照检测 {result_label}",
                 "data": data,
             }
-        data["dissolution_detection_triggered"] = bool(self.dissolution_service_url)
-        if self.dissolution_service_url:
-            data["dissolution_result"] = self._run_dissolution_detection(sample_id)
-        else:
-            data["dissolution_result"] = {
-                "status": "disabled",
-                "sample_id": sample_id,
-                "solubility": "unknown",
-            }
+        data["dissolution_detection_triggered"] = self._start_dissolution_detection(sample_id)
         return {
             "success": True,
             "message": f"S05 拍照检测完成，结果 {result_label}",

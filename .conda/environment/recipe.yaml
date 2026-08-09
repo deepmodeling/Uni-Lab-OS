@@ -2,7 +2,7 @@
 
 package:
   name: unilabos-env
-  version: 0.12.0
+  version: 0.12.1
 
 build:
   noarch: generic
@@ -14,6 +14,7 @@ requirements:
   - zstandard
   - conda-forge::python ==3.12.13
   - conda-forge::numpy >=2,<3
+  - uni-lab::opentrons-shared-data ==9.1.0+unilabos.np2.1 py312_np2_1
   - conda-forge::opencv
   # ROS2 dependencies (from ci-check.yml)
   - robostack-jazzy::ros2-distro-mutex 0.15.* jazzy_*

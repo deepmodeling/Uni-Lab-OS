@@ -3,7 +3,7 @@
 
 package:
   name: unilabos-full
-  version: 0.12.0
+  version: 0.12.1
 
 build:
   noarch: generic
@@ -11,7 +11,7 @@ build:
 requirements:
   run:
   # Base unilabos package (includes unilabos-env)
-  - uni-lab::unilabos ==0.12.0
+  - uni-lab::unilabos ==0.12.1
   # Documentation tools
   - sphinx
   - sphinx_rtd_theme

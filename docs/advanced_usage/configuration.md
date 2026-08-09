@@ -188,7 +188,19 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `BasicConfig` | `vis_2d_enable`   | `--2d_vis`          | 启用 2D 可视化                   |
 | `HTTPConfig`  | `remote_addr`     | `--addr`            | 远程服务地址                     |
 | `HostLinkConfig` | `host`         | `--host-node-ip`    | Slave 连接的 HostNode IP/端口    |
+| `HostLinkConfig` | `port`         | `--hostlink-port`   | HostLink TCP 端口，默认 7302      |
+| `HostLinkConfig` | `bind`         | `--hostlink-bind`   | Host 监听地址                     |
+| `HostLinkConfig` | `advertise_ip` | `--hostlink-advertise-ip` | Host 多网卡发布地址          |
+| `HostLinkConfig` | `enable`       | `--disable-hostlink` | 禁用 HostLink                    |
+| `HostLinkConfig` | `heartbeat_interval` | `--hostlink-heartbeat-interval` | Slave 心跳周期        |
+| `HostLinkConfig` | `heartbeat_timeout` | `--hostlink-heartbeat-timeout` | Host 离线判定时间       |
+| `HostLinkConfig` | `connect_timeout` | `--hostlink-connect-timeout` | TCP 连接/握手超时          |
+| `HostLinkConfig` | `request_timeout` | `--hostlink-request-timeout` | 控制请求超时               |
 | `HostLinkConfig` | `ros_domain_id`| `--ros-domain-id`   | Host 发布或 Slave 本地兜底 domain |
+| `HostLinkConfig` | `ros_discovery_range` | `--ros-discovery-range` | ROS 自动发现范围       |
+| `HostLinkConfig` | `ros_static_peers` | `--ros-static-peers` | 分号分隔的静态对端          |
+| `HostLinkConfig` | `ros_discovery_server` | `--ros-discovery-server` | 外部 Fast DDS Server |
+| `HostLinkConfig` | `ros_assist_apply` | `--no-ros-assist` | 不应用 Host 下发的 ROS 环境   |
 
 ### 特殊命令行参数
 
@@ -198,6 +210,7 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | ------------------- | ------------------------------------ |
 | `--config`          | 指定配置文件路径                     |
 | `--port`            | Web 服务端口（不影响配置文件）       |
+| `--hostlink-port`   | HostLink TCP 端口，与 Web `--port` 独立 |
 | `--disable_browser` | 禁用自动打开浏览器（不影响配置文件） |
 | `--visual`          | 可视化工具选择（不影响配置文件）     |
 | `--skip_env_check`  | 跳过环境检查（不影响配置文件）       |

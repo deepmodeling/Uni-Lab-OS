@@ -155,6 +155,30 @@ unilab --config path/to/your/config.py
 
 局域网内分别启动的 Uni-Lab 主站/从站将自动组网，互相能访问所有设备状态、传感器信息并发送指令。
 
+推荐由 Host 统一发布 ROS2 domain，Slave 只指定 Host IP：
+
+```bash
+# Host：8002 是 Web/API，7302 是 HostLink TCP
+unilab -g host.json --port 8002 \
+  --hostlink-port 7302 --ros-domain-id 42
+
+# Slave：--port 只影响本机 Web/API；HostLink 目标端口单独配置
+unilab -g slave.json --is-slave \
+  --host-node-ip 192.168.1.10 --hostlink-port 7302 --port 8003
+```
+
+主要组网参数：
+
+- `--host-node-ip`：Slave 指定 Host IP/主机名。
+- `--hostlink-port`：HostLink TCP 端口，默认 `7302`，与 Web `--port` 独立。
+- `--hostlink-bind` / `--hostlink-advertise-ip`：Host 监听地址与多网卡发布地址。
+- `--ros-domain-id`：Host 下发给 Slave 的 ROS2 domain。
+- `--ros-discovery-range` / `--ros-static-peers` / `--ros-discovery-server`：ROS2 发现策略。
+- `--no-ros-assist`：仅保留 HostLink 设备发现，不覆盖 Slave 的 ROS2 环境。
+- `--disable-hostlink`：完全关闭 HostLink，使用原 ROS2 发现流程。
+
+浏览器和微前端访问 `--port`（默认 `8002`），不会访问 HostLink 的 `7302`。
+
 ## 可视化选项
 
 ### 2D 可视化

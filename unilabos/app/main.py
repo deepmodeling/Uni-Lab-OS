@@ -139,7 +139,7 @@ def load_config_from_file(config_path):
 
 
 def _apply_hostlink_cli(args_dict: Dict[str, Any], *, is_slave: bool) -> None:
-    """Apply ROS HostLink CLI overrides after config/env loading."""
+    """在配置文件和环境变量之后应用 HostLink 命令行覆盖。"""
 
     from unilabos.config.config import HostLinkConfig
     from unilabos.hostlink.ros_assist import parse_host_target, validate_domain_id
@@ -150,12 +150,49 @@ def _apply_hostlink_cli(args_dict: Dict[str, Any], *, is_slave: bool) -> None:
         HostLinkConfig.port = hostlink_port
         if is_slave:
             HostLinkConfig.host = host
-            print_status(
-                f"Slave HostNode: {HostLinkConfig.host}:{HostLinkConfig.port}",
-                "info",
-            )
         else:
             HostLinkConfig.advertise_ip = host
+
+    explicit_port = args_dict.get("hostlink_port")
+    if explicit_port is not None:
+        if not 1 <= int(explicit_port) <= 65535:
+            raise ValueError("--hostlink-port must be between 1 and 65535")
+        HostLinkConfig.port = int(explicit_port)
+
+    hostlink_bind = args_dict.get("hostlink_bind")
+    if hostlink_bind is not None:
+        HostLinkConfig.bind = str(hostlink_bind).strip()
+        if not HostLinkConfig.bind:
+            raise ValueError("--hostlink-bind cannot be empty")
+
+    advertise_ip = args_dict.get("hostlink_advertise_ip")
+    if advertise_ip is not None:
+        HostLinkConfig.advertise_ip = str(advertise_ip).strip()
+        if not HostLinkConfig.advertise_ip:
+            raise ValueError("--hostlink-advertise-ip cannot be empty")
+
+    if args_dict.get("disable_hostlink", False):
+        HostLinkConfig.enable = False
+
+    if is_slave and HostLinkConfig.host:
+        print_status(
+            f"Slave HostNode: {HostLinkConfig.host}:{HostLinkConfig.port}",
+            "info",
+        )
+
+    timeout_fields = {
+        "hostlink_heartbeat_interval": "heartbeat_interval",
+        "hostlink_heartbeat_timeout": "heartbeat_timeout",
+        "hostlink_connect_timeout": "connect_timeout",
+        "hostlink_request_timeout": "request_timeout",
+    }
+    for argument, field in timeout_fields.items():
+        value = args_dict.get(argument)
+        if value is None:
+            continue
+        if float(value) <= 0:
+            raise ValueError(f"--{argument.replace('_', '-')} must be greater than 0")
+        setattr(HostLinkConfig, field, float(value))
 
     ros_domain_id = validate_domain_id(args_dict.get("ros_domain_id"))
     if ros_domain_id is not None:
@@ -164,10 +201,14 @@ def _apply_hostlink_cli(args_dict: Dict[str, Any], *, is_slave: bool) -> None:
         print_status(f"ROS_DOMAIN_ID = {ros_domain_id}", "info")
     if args_dict.get("ros_discovery_range") is not None:
         HostLinkConfig.ros_discovery_range = args_dict["ros_discovery_range"]
+    if args_dict.get("ros_static_peers") is not None:
+        HostLinkConfig.ros_static_peers = str(args_dict["ros_static_peers"]).strip()
     if args_dict.get("ros_discovery_server") is not None:
         HostLinkConfig.ros_discovery_server = str(
             args_dict["ros_discovery_server"]
         ).strip()
+    if args_dict.get("no_ros_assist", False):
+        HostLinkConfig.ros_assist_apply = False
 
 
 def convert_argv_dashes_to_underscores(args: argparse.ArgumentParser):
@@ -231,9 +272,70 @@ def parse_args():
         dest="host_node_ip",
         default="",
         help=(
-            "HostNode address for a Slave, as ip/hostname or ip:port. "
-            "The HostLink control channel synchronizes ROS2 networking and device IDs."
+            "Slave 连接的 HostNode IP/主机名，可兼容写成 ip:port；"
+            "建议端口单独使用 --hostlink-port。"
         ),
+    )
+    parser.add_argument(
+        "--hostlink_port",
+        "--hostlink-port",
+        dest="hostlink_port",
+        type=int,
+        default=None,
+        help="HostLink TCP 端口；Host 监听、Slave 连接，默认 7302。",
+    )
+    parser.add_argument(
+        "--hostlink_bind",
+        "--hostlink-bind",
+        dest="hostlink_bind",
+        default=None,
+        help="HostLink 在 Host 上的监听地址，默认 0.0.0.0；Slave 忽略。",
+    )
+    parser.add_argument(
+        "--hostlink_advertise_ip",
+        "--hostlink-advertise-ip",
+        dest="hostlink_advertise_ip",
+        default=None,
+        help="Host 向 Slave 发布的可达 IP；多网卡环境建议显式指定。",
+    )
+    parser.add_argument(
+        "--disable_hostlink",
+        "--disable-hostlink",
+        dest="disable_hostlink",
+        action="store_true",
+        help="关闭 HostLink；ROS2 使用原有发现和注册流程。",
+    )
+    parser.add_argument(
+        "--hostlink_heartbeat_interval",
+        "--hostlink-heartbeat-interval",
+        dest="hostlink_heartbeat_interval",
+        type=float,
+        default=None,
+        help="Slave 心跳发送间隔（秒），默认 5。",
+    )
+    parser.add_argument(
+        "--hostlink_heartbeat_timeout",
+        "--hostlink-heartbeat-timeout",
+        dest="hostlink_heartbeat_timeout",
+        type=float,
+        default=None,
+        help="Host 判定 Slave 离线的心跳超时（秒），默认 15。",
+    )
+    parser.add_argument(
+        "--hostlink_connect_timeout",
+        "--hostlink-connect-timeout",
+        dest="hostlink_connect_timeout",
+        type=float,
+        default=None,
+        help="单次 HostLink TCP 连接/握手超时（秒），默认 5。",
+    )
+    parser.add_argument(
+        "--hostlink_request_timeout",
+        "--hostlink-request-timeout",
+        dest="hostlink_request_timeout",
+        type=float,
+        default=None,
+        help="HostLink 控制请求超时（秒），默认 10。",
     )
     parser.add_argument(
         "--ros_domain_id",
@@ -242,8 +344,7 @@ def parse_args():
         type=int,
         default=None,
         help=(
-            "ROS2 domain id (0-232). A Host advertises it to Slaves; "
-            "a Slave uses it as fallback until HostLink connects."
+            "ROS2 domain id（0-232）；Host 下发给 Slave，Slave 本地值仅作连接前兜底。"
         ),
     )
     parser.add_argument(
@@ -252,7 +353,14 @@ def parse_args():
         dest="ros_discovery_range",
         choices=["SYSTEM_DEFAULT", "SUBNET", "LOCALHOST", "OFF"],
         default=None,
-        help="ROS_AUTOMATIC_DISCOVERY_RANGE advertised by the Host.",
+        help="Host 下发的 ROS_AUTOMATIC_DISCOVERY_RANGE。",
+    )
+    parser.add_argument(
+        "--ros_static_peers",
+        "--ros-static-peers",
+        dest="ros_static_peers",
+        default=None,
+        help="Host 发布的 ROS_STATIC_PEERS，多个地址用分号分隔。",
     )
     parser.add_argument(
         "--ros_discovery_server",
@@ -260,16 +368,23 @@ def parse_args():
         dest="ros_discovery_server",
         default=None,
         help=(
-            "External Fast DDS discovery server host:port; use 'off' to clear it. "
-            "This slice does not start a discovery-server process."
+            "外部 Fast DDS Discovery Server 的 host:port；off 表示清除。"
+            "本切片不会自动启动 Discovery Server 进程。"
         ),
+    )
+    parser.add_argument(
+        "--no_ros_assist",
+        "--no-ros-assist",
+        dest="no_ros_assist",
+        action="store_true",
+        help="保留 HostLink 设备发现和心跳，但不应用 Host 下发的 ROS2 环境。",
     )
     parser.add_argument(
         "--slave_no_host",
         action="store_true",
         help=(
-            "Allow a Slave to start while HostLink/Host ROS services are offline; "
-            "the control channel keeps reconnecting in the background."
+            "允许 Slave 在 HostLink/Host ROS 服务离线时启动；"
+            "控制通道仍会在后台重连。"
         ),
     )
     parser.add_argument(
@@ -292,7 +407,10 @@ def parse_args():
         "--port",
         type=int,
         default=None,
-        help="Port for web service information page",
+        help=(
+            "主 HTTP/Web API 端口，状态页和同源微前端使用，默认 8002；"
+            "不影响 HostLink TCP 端口。"
+        ),
     )
     parser.add_argument(
         "--disable_browser",

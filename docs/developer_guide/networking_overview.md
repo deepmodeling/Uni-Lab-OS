@@ -118,6 +118,41 @@ Host 运行 ROS backend 时会在 TCP `7302` 监听 HostLink。Slave 通过
 HostLink 只辅助 ROS2 组网。设备 Action、节点注册和资源同步仍走现有 ROS2
 接口；本阶段没有通过 HostLink 提供物料查询或无 ROS backend。
 
+#### 端口与前端归属
+
+| 服务 | 默认地址 | 协议 | 使用者 |
+|---|---|---|---|
+| 主 Web/API | `0.0.0.0:8002` | HTTP/WebSocket over TCP | 状态页、主微前端、API 客户端 |
+| HostLink | `0.0.0.0:7302` | NDJSON over raw TCP | Host/Slave 进程，不供浏览器访问 |
+| F003 Local Bridge API | `127.0.0.1:8014` | HTTP | 仅完整集成分支中的本地工作流微前端 |
+
+因此微前端不访问 `7302`。接入主 OS API 的微前端跟随 `--port`，默认访问
+`8002`；F003 本地桥接微前端仍使用其独立的 `8014`。两个独立 TCP 服务不能绑定
+同一个 IP/端口。
+
+#### HostLink 与 ROS2 参数
+
+| 参数 | 作用域 | 默认值 | 说明 |
+|---|---|---:|---|
+| `--host-node-ip` | Slave | 空 | Host IP/主机名；兼容 `ip:port` |
+| `--hostlink-port` | Host + Slave | `7302` | HostLink TCP 监听/连接端口；优先于 `--host-node-ip` 中的端口 |
+| `--hostlink-bind` | Host | `0.0.0.0` | HostLink 监听网卡 |
+| `--hostlink-advertise-ip` | Host | 自动探测 | 多网卡时发布给 Slave 的可达 IP |
+| `--disable-hostlink` | Host + Slave | 否 | 禁用 HostLink，回退原 ROS2 发现 |
+| `--hostlink-heartbeat-interval` | Slave | `5` 秒 | 心跳发送间隔 |
+| `--hostlink-heartbeat-timeout` | Host | `15` 秒 | Slave 离线判定时间 |
+| `--hostlink-connect-timeout` | Slave | `5` 秒 | 单次 TCP 连接和握手超时 |
+| `--hostlink-request-timeout` | Slave | `10` 秒 | 控制请求超时 |
+| `--ros-domain-id` | Host + Slave | 环境值 | Host 下发给 Slave；Slave 本地值仅作连接前兜底 |
+| `--ros-discovery-range` | Host | 环境值 | `SYSTEM_DEFAULT/SUBNET/LOCALHOST/OFF` |
+| `--ros-static-peers` | Host | 自动加入 Host IP | 分号分隔的静态发现对端 |
+| `--ros-discovery-server` | Host | 环境值 | 外部 Fast DDS `host:port`；`off` 清除继承值 |
+| `--no-ros-assist` | Slave | 否 | 保留 HostLink 心跳/设备发现，但不应用 Host ROS 参数 |
+
+本切片没有启动 Fast DDS Discovery Server 进程，因此没有
+`--ros-discovery-port`；该参数应与托管 Discovery Server 功能一并引入，不能成为
+无效果的占位参数。
+
 ### WebSocket 通信
 
 **用途**: 主节点与云端通信
@@ -208,9 +243,9 @@ unilab --ak your_ak --sk your_sk -g host.json --ros-domain-id 42
 
 ```bash
 unilab --ak your_ak --sk your_sk -g slave1.json \
-  --is-slave --host-node-ip 192.168.1.10
+  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302
 unilab --ak your_ak --sk your_sk -g slave2.json \
-  --is-slave --host-node-ip 192.168.1.10 --port 8003
+  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302 --port 8003
 ```
 
 ### 云端集成模式

@@ -19,4 +19,12 @@ class HostLinkConfig:
     port = 7302
     bind = "0.0.0.0"
     advertise_ip = ""  # Host 多网卡时填写 Slave 可达 IP
+    heartbeat_interval = 5.0
+    heartbeat_timeout = 15.0
+    connect_timeout = 5.0
+    request_timeout = 10.0
+    ros_assist_apply = True
     ros_domain_id = ""  # Host 可在此统一配置，也可用 --ros-domain-id
+    ros_discovery_range = ""
+    ros_static_peers = ""
+    ros_discovery_server = ""  # 外部 Fast DDS host:port；off 表示禁用

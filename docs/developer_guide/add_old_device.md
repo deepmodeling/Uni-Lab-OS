@@ -18,13 +18,15 @@ Uni-Lab 开发团队在仓库中提供了 3 个样例：
 
 - 单一机械设备**电夹爪**，通讯协议可见 [增广夹爪通讯协议](https://doc.rmaxis.com/docs/communication/fieldbus/)，驱动代码位于 `unilabos/devices/gripper/rmaxis_v4.py`
 - 单一通信设备**IO 板卡**，驱动代码位于 `unilabos/device_comms/gripper/SRND_16_IO.py`
-- 执行多设备复杂任务逻辑的**PLC**，Uni-Lab 提供了基于地址表的接入方式和点动工作流编写，测试代码位于 `unilabos/device_comms/modbus_plc/test/test_workflow.py`
+- 执行多设备复杂任务逻辑的**PLC**，Uni-Lab 提供了基于地址表的接入方式和点动工作流编写，测试代码位于 `unilabos/device_comms/modbus_plc/test/test_workflow.py`。详细框架说明请参考 {doc}`plc_framework`
 
 ---
 
 ## 其他工业通信协议：CANopen, Ethernet, OPCUA...
 
-【敬请期待】
+Uni-Lab 已实现基于 OPC UA 协议的 PLC 接管框架，用于后处理工站等项目。与 Modbus 框架相比，OPC UA 框架额外提供了自动节点发现、订阅推送、断线重连等特性。详细说明请参考 {doc}`plc_framework`。
+
+其他协议（CANopen、EtherCAT 等）【敬请期待】
 
 ## 没有接口的老设备老软件：使用 PyWinAuto
 

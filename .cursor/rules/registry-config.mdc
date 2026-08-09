@@ -1,0 +1,319 @@
+---
+description: 注册表配置规范 (YAML)
+globs: ["unilabos/registry/**/*.yaml"]
+---
+
+# 注册表配置规范
+
+## 概述
+
+注册表使用 YAML 格式定义设备和资源类型，是 Uni-Lab-OS 的核心配置系统。
+
+## 目录结构
+
+```
+unilabos/registry/
+├── devices/              # 设备类型注册
+│   ├── virtual_device.yaml
+│   ├── liquid_handler.yaml
+│   └── ...
+├── device_comms/         # 通信设备配置
+│   ├── communication_devices.yaml
+│   └── modbus_ioboard.yaml
+└── resources/            # 资源类型注册
+    ├── bioyond/
+    ├── organic/
+    ├── opentrons/
+    └── ...
+```
+
+## 设备注册表格式
+
+### 基本结构
+
+```yaml
+device_type_id:
+  # 基本信息
+  description: "设备描述"
+  version: "1.0.0"
+  category:
+    - category_name
+  icon: "icon_device.webp"
+
+  # 类配置
+  class:
+    module: "unilabos.devices.my_module:MyClass"
+    type: python
+
+    # 状态类型（属性 -> ROS消息类型）
+    status_types:
+      status: String
+      temperature: Float64
+      is_running: Bool
+
+    # 动作映射
+    action_value_mappings:
+      action_name:
+        type: UniLabJsonCommand  # 或 UniLabJsonCommandAsync
+        goal: {}
+        feedback: {}
+        result: {}
+        schema: {...}
+        handles: {}
+```
+
+### action_value_mappings 详细格式
+
+```yaml
+action_value_mappings:
+  # 同步动作
+  my_sync_action:
+    type: UniLabJsonCommand
+    goal:
+      param1: param1
+      param2: param2
+    feedback: {}
+    result:
+      success: success
+      message: message
+    goal_default:
+      param1: 0.0
+      param2: ""
+    handles: {}
+    placeholder_keys:
+      device_param: unilabos_devices   # 设备选择器
+      resource_param: unilabos_resources  # 资源选择器
+    schema:
+      title: "动作名称参数"
+      description: "动作描述"
+      type: object
+      properties:
+        goal:
+          type: object
+          properties:
+            param1:
+              type: number
+            param2:
+              type: string
+          required:
+            - param1
+        feedback: {}
+        result:
+          type: object
+          properties:
+            success:
+              type: boolean
+            message:
+              type: string
+      required:
+        - goal
+
+  # 异步动作
+  my_async_action:
+    type: UniLabJsonCommandAsync
+    goal: {}
+    feedback:
+      progress: progress
+      current_status: status
+    result:
+      success: success
+    schema: {...}
+```
+
+### 自动生成的动作
+
+以 `auto-` 开头的动作由系统自动生成：
+
+```yaml
+action_value_mappings:
+  auto-initialize:
+    type: UniLabJsonCommandAsync
+    goal: {}
+    feedback: {}
+    result: {}
+    schema: {...}
+
+  auto-cleanup:
+    type: UniLabJsonCommandAsync
+    goal: {}
+    feedback: {}
+    result: {}
+    schema: {...}
+```
+
+### handles 配置
+
+用于工作流编辑器中的数据流连接：
+
+```yaml
+handles:
+  input:
+    - handler_key: "input_resource"
+      data_type: "resource"
+      label: "输入资源"
+      data_source: "handle"
+      data_key: "resources"
+  output:
+    - handler_key: "output_labware"
+      data_type: "resource"
+      label: "输出器皿"
+      data_source: "executor"
+      data_key: "created_resource.@flatten"
+```
+
+## 资源注册表格式
+
+```yaml
+resource_type_id:
+  description: "资源描述"
+  version: "1.0.0"
+  category:
+    - category_name
+  icon: ""
+  handles: []
+  init_param_schema: {}
+
+  class:
+    module: "unilabos.resources.my_module:MyResource"
+    type: pylabrobot  # 或 python
+```
+
+### PyLabRobot 资源示例
+
+```yaml
+BIOYOND_Electrolyte_6VialCarrier:
+  category:
+    - bottle_carriers
+    - bioyond
+  class:
+    module: "unilabos.resources.bioyond.bottle_carriers:BIOYOND_Electrolyte_6VialCarrier"
+    type: pylabrobot
+  version: "1.0.0"
+```
+
+## 状态类型映射
+
+Python 类型到 ROS 消息类型的映射：
+
+| Python 类型 | ROS 消息类型 |
+|------------|-------------|
+| `str` | `String` |
+| `bool` | `Bool` |
+| `int` | `Int64` |
+| `float` | `Float64` |
+| `list` | `String` (序列化) |
+| `dict` | `String` (序列化) |
+
+## 自动完善注册表
+
+使用 `--complete_registry` 参数自动生成 schema：
+
+```bash
+python -m unilabos.app.main --complete_registry
+```
+
+这会：
+1. 扫描设备类的方法签名
+2. 自动生成 `auto-` 前缀的动作
+3. 生成 JSON Schema
+4. 更新 YAML 文件
+
+## 验证规则
+
+1. **device_type_id** 必须唯一
+2. **module** 路径必须正确可导入
+3. **status_types** 的类型必须是有效的 ROS 消息类型
+4. **schema** 必须是有效的 JSON Schema
+
+## 示例：完整设备配置
+
+```yaml
+virtual_stirrer:
+  category:
+    - virtual_device
+  description: "虚拟搅拌器设备"
+  version: "1.0.0"
+  icon: "icon_stirrer.webp"
+  handles: []
+  init_param_schema: {}
+
+  class:
+    module: "unilabos.devices.virtual.virtual_stirrer:VirtualStirrer"
+    type: python
+
+    status_types:
+      status: String
+      operation_mode: String
+      current_speed: Float64
+      is_stirring: Bool
+      remaining_time: Float64
+
+    action_value_mappings:
+      auto-initialize:
+        type: UniLabJsonCommandAsync
+        goal: {}
+        feedback: {}
+        result: {}
+        schema:
+          title: "initialize参数"
+          type: object
+          properties:
+            goal:
+              type: object
+              properties: {}
+            feedback: {}
+            result: {}
+          required:
+            - goal
+
+      stir:
+        type: UniLabJsonCommandAsync
+        goal:
+          stir_time: stir_time
+          stir_speed: stir_speed
+          settling_time: settling_time
+        feedback:
+          current_speed: current_speed
+          remaining_time: remaining_time
+        result:
+          success: success
+        goal_default:
+          stir_time: 60.0
+          stir_speed: 300.0
+          settling_time: 30.0
+        handles: {}
+        schema:
+          title: "stir参数"
+          description: "搅拌操作"
+          type: object
+          properties:
+            goal:
+              type: object
+              properties:
+                stir_time:
+                  type: number
+                  description: "搅拌时间（秒）"
+                stir_speed:
+                  type: number
+                  description: "搅拌速度（RPM）"
+                settling_time:
+                  type: number
+                  description: "沉降时间（秒）"
+              required:
+                - stir_time
+                - stir_speed
+            feedback:
+              type: object
+              properties:
+                current_speed:
+                  type: number
+                remaining_time:
+                  type: number
+            result:
+              type: object
+              properties:
+                success:
+                  type: boolean
+          required:
+            - goal
+```

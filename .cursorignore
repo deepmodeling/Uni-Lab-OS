@@ -1,0 +1,188 @@
+# ============================================================
+# Uni-Lab-OS Cursor Ignore 配置，控制 Cursor AI 的文件索引范围
+# ============================================================
+
+# ==================== 敏感配置文件 ====================
+# 本地配置（可能包含密钥）
+**/local_config.py
+test_config.py
+local_test*.py
+
+# 环境变量和密钥
+.env
+.env.*
+**/.certs/
+*.pem
+*.key
+credentials.json
+secrets.yaml
+
+# ==================== 二进制和 3D 模型文件 ====================
+# 3D 模型文件（无需索引）
+*.stl
+*.dae
+*.glb
+*.gltf
+*.obj
+*.fbx
+*.blend
+
+# URDF/Xacro 机器人描述文件（大型XML）
+*.xacro
+
+# 图片文件
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.bmp
+
+# 压缩包
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.bz2
+*.rar
+*.7z
+
+# ==================== Python 生成文件 ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+*.manifest
+*.spec
+
+# ==================== IDE 和编辑器 ====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.#*
+
+# ==================== 测试和覆盖率 ====================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# ==================== 虚拟环境 ====================
+.venv/
+venv/
+env/
+ENV/
+
+# ==================== ROS 2 生成文件 ====================
+# ROS 构建目录
+build/
+install/
+log/
+logs/
+devel/
+
+# ROS 消息生成
+msg_gen/
+srv_gen/
+msg/*Action.msg
+msg/*ActionFeedback.msg
+msg/*ActionGoal.msg
+msg/*ActionResult.msg
+msg/*Feedback.msg
+msg/*Goal.msg
+msg/*Result.msg
+msg/_*.py
+srv/_*.py
+build_isolated/
+devel_isolated/
+
+# ROS 动态配置
+*.cfgc
+/cfg/cpp/
+/cfg/*.py
+
+# ==================== 项目特定目录 ====================
+# 工作数据目录
+unilabos_data/
+
+# 临时和输出目录
+temp/
+output/
+cursor_docs/
+configs/
+
+# 文档构建
+docs/_build/
+/site
+
+# ==================== 大型数据文件 ====================
+# 点云数据
+*.pcd
+
+# GraphML 图形文件
+*.graphml
+
+# 日志文件
+*.log
+
+# 数据库
+*.sqlite3
+*.db
+
+# Jupyter 检查点
+.ipynb_checkpoints/
+
+# ==================== 设备网格资源 ====================
+# 3D 网格文件目录（包含大量 STL/DAE 文件）
+unilabos/device_mesh/devices/**/*.stl
+unilabos/device_mesh/devices/**/*.dae
+unilabos/device_mesh/resources/**/*.stl
+unilabos/device_mesh/resources/**/*.glb
+unilabos/device_mesh/resources/**/*.xacro
+
+# RViz 配置
+*.rviz
+
+# ==================== 系统文件 ====================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==================== 锁文件 ====================
+poetry.lock
+Pipfile.lock
+pdm.lock
+package-lock.json
+yarn.lock
+
+# ==================== 类型检查缓存 ====================
+.mypy_cache/
+.dmypy.json
+.pytype/
+.pyre/
+pyrightconfig.json
+
+# ==================== 其他 ====================
+# Catkin
+CATKIN_IGNORE
+
+# Eclipse/Qt
+.project
+.cproject
+CMakeLists.txt.user
+*.user
+qtcreator-*

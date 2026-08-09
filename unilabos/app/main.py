@@ -1040,6 +1040,7 @@ def main():
             # 社区包设备直接以 community.<ns>.<id> 注册（扫描期命名空间化），不做 alias 桥接
             args_dict["_community_namespaces"] = community_result.namespaces
 
+
     # Step 0: AST 分析优先 + YAML 注册表加载
     # check_mode 和 upload_registry 都会执行实际 import 验证
     devices_dirs = args_dict.get("devices", None)
@@ -1054,6 +1055,9 @@ def main():
         complete_registry=complete_registry,
         external_only=external_only,
     )
+    apply_community_aliases = args_dict.get("_apply_community_aliases")
+    if apply_community_aliases:
+        apply_community_aliases(lab_registry, args_dict.get("_community_aliases") or {})
 
     # Check mode: 注册表验证完成后直接退出
     if check_mode:

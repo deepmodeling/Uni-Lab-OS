@@ -1,0 +1,357 @@
+---
+description: 测试开发规范
+globs: ["tests/**/*.py", "**/test_*.py"]
+---
+
+# 测试开发规范
+
+## 目录结构
+
+```
+tests/
+├── __init__.py
+├── devices/              # 设备测试
+│   └── liquid_handling/
+│       └── test_transfer_liquid.py
+├── resources/            # 资源测试
+│   ├── test_bottle_carrier.py
+│   └── test_resourcetreeset.py
+├── ros/                  # ROS消息测试
+│   └── msgs/
+│       ├── test_basic.py
+│       ├── test_conversion.py
+│       └── test_mapping.py
+└── workflow/             # 工作流测试
+    └── merge_workflow.py
+```
+
+## 测试框架
+
+使用 pytest 作为测试框架：
+
+```bash
+# 运行所有测试
+pytest tests/
+
+# 运行特定测试文件
+pytest tests/resources/test_bottle_carrier.py
+
+# 运行特定测试函数
+pytest tests/resources/test_bottle_carrier.py::test_bottle_carrier
+
+# 显示详细输出
+pytest -v tests/
+
+# 显示打印输出
+pytest -s tests/
+```
+
+## 测试文件模板
+
+```python
+import pytest
+from typing import List, Dict, Any
+
+# 导入被测试的模块
+from unilabos.resources.bioyond.bottle_carriers import (
+    BIOYOND_Electrolyte_6VialCarrier,
+)
+from unilabos.resources.bioyond.bottles import (
+    BIOYOND_PolymerStation_Solid_Vial,
+)
+
+
+class TestBottleCarrier:
+    """BottleCarrier 测试类"""
+
+    def setup_method(self):
+        """每个测试方法前执行"""
+        self.carrier = BIOYOND_Electrolyte_6VialCarrier("test_carrier")
+
+    def teardown_method(self):
+        """每个测试方法后执行"""
+        pass
+
+    def test_carrier_creation(self):
+        """测试载架创建"""
+        assert self.carrier.name == "test_carrier"
+        assert len(self.carrier.sites) == 6
+
+    def test_bottle_placement(self):
+        """测试瓶子放置"""
+        bottle = BIOYOND_PolymerStation_Solid_Vial("test_bottle")
+        # 测试逻辑...
+        assert bottle.name == "test_bottle"
+
+
+def test_standalone_function():
+    """独立测试函数"""
+    result = some_function()
+    assert result is True
+
+
+# 参数化测试
+@pytest.mark.parametrize("input,expected", [
+    ("5 min", 300.0),
+    ("1 h", 3600.0),
+    ("120", 120.0),
+    (60, 60.0),
+])
+def test_time_parsing(input, expected):
+    """测试时间解析"""
+    from unilabos.compile.utils.unit_parser import parse_time_input
+    assert parse_time_input(input) == expected
+
+
+# 异常测试
+def test_invalid_input_raises_error():
+    """测试无效输入抛出异常"""
+    with pytest.raises(ValueError) as exc_info:
+        invalid_function("bad_input")
+    assert "invalid" in str(exc_info.value).lower()
+
+
+# 跳过条件测试
+@pytest.mark.skipif(
+    not os.environ.get("ROS_DISTRO"),
+    reason="需要ROS环境"
+)
+def test_ros_feature():
+    """需要ROS环境的测试"""
+    pass
+```
+
+## 设备测试
+
+### 虚拟设备测试
+
+```python
+import pytest
+import asyncio
+from unittest.mock import MagicMock, AsyncMock
+
+from unilabos.devices.virtual.virtual_stirrer import VirtualStirrer
+
+
+class TestVirtualStirrer:
+    """VirtualStirrer 测试"""
+
+    @pytest.fixture
+    def stirrer(self):
+        """创建测试用搅拌器"""
+        device = VirtualStirrer(
+            device_id="test_stirrer",
+            config={"max_speed": 1500.0, "min_speed": 50.0}
+        )
+
+        # Mock ROS节点
+        mock_node = MagicMock()
+        mock_node.sleep = AsyncMock(return_value=None)
+        device.post_init(mock_node)
+
+        return device
+
+    @pytest.mark.asyncio
+    async def test_initialize(self, stirrer):
+        """测试初始化"""
+        result = await stirrer.initialize()
+        assert result is True
+        assert stirrer.status == "待机中"
+
+    @pytest.mark.asyncio
+    async def test_stir_action(self, stirrer):
+        """测试搅拌动作"""
+        await stirrer.initialize()
+
+        result = await stirrer.stir(
+            stir_time=5.0,
+            stir_speed=300.0,
+            settling_time=2.0
+        )
+
+        assert result is True
+        assert stirrer.operation_mode == "Completed"
+
+    @pytest.mark.asyncio
+    async def test_stir_invalid_speed(self, stirrer):
+        """测试无效速度"""
+        await stirrer.initialize()
+
+        # 速度超出范围
+        result = await stirrer.stir(
+            stir_time=5.0,
+            stir_speed=2000.0,  # 超过max_speed
+            settling_time=0.0
+        )
+
+        assert result is False
+        assert "错误" in stirrer.status
+```
+
+### 异步测试配置
+
+```python
+# conftest.py
+import pytest
+import asyncio
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """创建事件循环"""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+```
+
+## 资源测试
+
+```python
+import pytest
+from unilabos.resources.resource_tracker import (
+    ResourceTreeSet,
+    ResourceTreeInstance,
+)
+
+
+def test_resource_tree_creation():
+    """测试资源树创建"""
+    tree_set = ResourceTreeSet()
+
+    # 添加资源
+    resource = {"id": "res_1", "name": "Resource 1"}
+    tree_set.add_resource(resource)
+
+    # 验证
+    assert len(tree_set.all_nodes) == 1
+    assert tree_set.get_resource("res_1") is not None
+
+
+def test_resource_tree_merge():
+    """测试资源树合并"""
+    local_set = ResourceTreeSet()
+    remote_set = ResourceTreeSet()
+
+    # 设置数据...
+
+    local_set.merge_remote_resources(remote_set)
+
+    # 验证合并结果...
+```
+
+## ROS 消息测试
+
+```python
+import pytest
+from unilabos.ros.msgs.message_converter import (
+    convert_to_ros_msg,
+    convert_from_ros_msg_with_mapping,
+    msg_converter_manager,
+)
+
+
+def test_message_conversion():
+    """测试消息转换"""
+    # Python -> ROS
+    python_data = {"id": "test", "value": 42}
+    ros_msg = convert_to_ros_msg(python_data, MyMsgType)
+
+    assert ros_msg.id == "test"
+    assert ros_msg.value == 42
+
+    # ROS -> Python
+    result = convert_from_ros_msg_with_mapping(ros_msg, mapping)
+    assert result["id"] == "test"
+```
+
+## 协议测试
+
+```python
+import pytest
+import networkx as nx
+from unilabos.compile.stir_protocol import (
+    generate_stir_protocol,
+    extract_vessel_id,
+)
+
+
+@pytest.fixture
+def topology_graph():
+    """创建测试拓扑图"""
+    G = nx.DiGraph()
+    G.add_node("flask_1", **{"class": "flask"})
+    G.add_node("stirrer_1", **{"class": "virtual_stirrer"})
+    G.add_edge("stirrer_1", "flask_1")
+    return G
+
+
+def test_generate_stir_protocol(topology_graph):
+    """测试搅拌协议生成"""
+    actions = generate_stir_protocol(
+        G=topology_graph,
+        vessel="flask_1",
+        time="5 min",
+        stir_speed=300.0
+    )
+
+    assert len(actions) == 1
+    assert actions[0]["device_id"] == "stirrer_1"
+    assert actions[0]["action_name"] == "stir"
+
+
+def test_extract_vessel_id():
+    """测试vessel_id提取"""
+    # 字典格式
+    assert extract_vessel_id({"id": "flask_1"}) == "flask_1"
+
+    # 字符串格式
+    assert extract_vessel_id("flask_2") == "flask_2"
+
+    # 空值
+    assert extract_vessel_id("") == ""
+```
+
+## 测试标记
+
+```python
+# 慢速测试
+@pytest.mark.slow
+def test_long_running():
+    pass
+
+# 需要网络
+@pytest.mark.network
+def test_network_call():
+    pass
+
+# 需要ROS
+@pytest.mark.ros
+def test_ros_feature():
+    pass
+```
+
+运行特定标记的测试：
+
+```bash
+pytest -m "not slow"  # 排除慢速测试
+pytest -m ros         # 仅ROS测试
+```
+
+## 覆盖率
+
+```bash
+# 生成覆盖率报告
+pytest --cov=unilabos tests/
+
+# HTML报告
+pytest --cov=unilabos --cov-report=html tests/
+```
+
+## 最佳实践
+
+1. **测试命名**: `test_{功能}_{场景}_{预期结果}`
+2. **独立性**: 每个测试独立运行，不依赖其他测试
+3. **Mock外部依赖**: 使用 unittest.mock 模拟外部服务
+4. **参数化**: 使用 `@pytest.mark.parametrize` 减少重复代码
+5. **fixtures**: 使用 fixtures 共享测试设置
+6. **断言清晰**: 每个断言只验证一件事

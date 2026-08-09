@@ -7021,7 +7021,7 @@ liquid_handler.laiyu:
       properties:
         channel_num:
           default: 1
-          type: string
+          type: integer
         deck:
           type: object
         host:
@@ -7032,9 +7032,24 @@ liquid_handler.laiyu:
           type: integer
         simulator:
           default: true
-          type: string
+          type: boolean
         timeout:
           default: 10.0
+          type: number
+        serial_port:
+          default: /dev/ttyUSB0
+          description: 硬件串口端口（非 simulator 模式下使用）
+          type: string
+        baudrate:
+          default: 115200
+          type: integer
+        pipette_address:
+          default: 4
+          description: SOPA 移液器 RS485 地址
+          type: integer
+        total_height:
+          default: 310
+          description: 龙门架总高度 (mm)，用于坐标转换
           type: number
       required:
       - deck

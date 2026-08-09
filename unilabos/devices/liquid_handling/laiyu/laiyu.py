@@ -13,7 +13,7 @@ from pylabrobot.liquid_handling import (
     SingleChannelDispense,
     PickupTipRack,
     DropTipRack,
-    MultiHeadAspirationPlate, ChatterBoxBackend, LiquidHandlerChatterboxBackend,
+    MultiHeadAspirationPlate,
 )
 from pylabrobot.liquid_handling.standard import (
     MultiHeadAspirationContainer,
@@ -41,12 +41,6 @@ class TransformXYZDeck(Deck):
         super().__init__(name, size_x, size_y, size_z)
         self.name = name
 
-class TransformXYZBackend(LiquidHandlerBackend):
-    def __init__(self, name: str, host: str, port: int, timeout: float):
-        super().__init__()
-        self.host = host
-        self.port = port
-        self.timeout = timeout
 
 class TransformXYZRvizBackend(UniLiquidHandlerRvizBackend):
     def __init__(self, name: str, channel_num: int):
@@ -86,7 +80,9 @@ class TransformXYZContainer(Plate, TipRack):
 class TransformXYZHandler(LiquidHandlerAbstract):
     support_touch_tip = False
 
-    def __init__(self, deck: Deck, host: str = "127.0.0.1", port: int = 9999, timeout: float = 10.0, channel_num=1, simulator=True, **backend_kwargs):
+    def __init__(self, deck: Deck, host: str = "127.0.0.1", port: int = 9999, timeout: float = 10.0, channel_num=1, simulator=True,
+                 serial_port: str = "/dev/ttyUSB0", baudrate: int = 115200, pipette_address: int = 4,
+                 total_height: float = 310, **backend_kwargs):
         # Handle case where deck is passed as a dict (from serialization)
         if isinstance(deck, dict):
             # Try to create a TransformXYZDeck from the dict
@@ -102,10 +98,21 @@ class TransformXYZHandler(LiquidHandlerAbstract):
                 deck = TransformXYZDeck(name='deck', size_x=100, size_y=100, size_z=100)
 
         if simulator:
-            self._unilabos_backend = TransformXYZRvizBackend(name="laiyu",channel_num=channel_num)
+            self._unilabos_backend = TransformXYZRvizBackend(name="laiyu", channel_num=channel_num)
         else:
-            self._unilabos_backend = TransformXYZBackend(name="laiyu",host=host, port=port, timeout=timeout)
+            self._unilabos_backend = UniLiquidHandlerLaiyuBackend(
+                num_channels=channel_num,
+                total_height=total_height,
+                port=serial_port,
+                baudrate=baudrate,
+                pipette_address=pipette_address,
+            )
         super().__init__(backend=self._unilabos_backend, deck=deck, simulator=simulator, channel_num=channel_num)
+
+    def post_init(self, ros_node):
+        super().post_init(ros_node)
+        if hasattr(self._unilabos_backend, 'post_init'):
+            self._unilabos_backend.post_init(ros_node)
 
     async def add_liquid(
         self,
@@ -128,7 +135,25 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         mix_liquid_height: Optional[float] = None,
         none_keys: List[str] = [],
     ):
-        pass
+        return await super().add_liquid(
+            asp_vols=asp_vols,
+            dis_vols=dis_vols,
+            reagent_sources=reagent_sources,
+            targets=targets,
+            use_channels=use_channels,
+            flow_rates=flow_rates,
+            offsets=offsets,
+            liquid_height=liquid_height,
+            blow_out_air_volume=blow_out_air_volume,
+            spread=spread,
+            is_96_well=is_96_well,
+            delays=delays,
+            mix_time=mix_time,
+            mix_vol=mix_vol,
+            mix_rate=mix_rate,
+            mix_liquid_height=mix_liquid_height,
+            none_keys=none_keys,
+        )
 
     async def aspirate(
         self,
@@ -142,7 +167,17 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         spread: Literal["wide", "tight", "custom"] = "wide",
         **backend_kwargs,
     ):
-        pass
+        return await super().aspirate(
+            resources=resources,
+            vols=vols,
+            use_channels=use_channels,
+            flow_rates=flow_rates,
+            offsets=offsets,
+            liquid_height=liquid_height,
+            blow_out_air_volume=blow_out_air_volume,
+            spread=spread,
+            **backend_kwargs,
+        )
 
     async def dispense(
         self,
@@ -156,7 +191,17 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         spread: Literal["wide", "tight", "custom"] = "wide",
         **backend_kwargs,
     ):
-        pass
+        return await super().dispense(
+            resources=resources,
+            vols=vols,
+            use_channels=use_channels,
+            flow_rates=flow_rates,
+            offsets=offsets,
+            liquid_height=liquid_height,
+            blow_out_air_volume=blow_out_air_volume,
+            spread=spread,
+            **backend_kwargs,
+        )
 
     async def drop_tips(
         self,
@@ -166,7 +211,13 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         allow_nonzero_volume: bool = False,
         **backend_kwargs,
     ):
-        pass
+        return await super().drop_tips(
+            tip_spots=tip_spots,
+            use_channels=use_channels,
+            offsets=offsets,
+            allow_nonzero_volume=allow_nonzero_volume,
+            **backend_kwargs,
+        )
 
     async def mix(
         self,
@@ -178,7 +229,15 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         mix_rate: Optional[float] = None,
         none_keys: List[str] = [],
     ):
-        pass
+        return await super().mix(
+            targets=targets,
+            mix_time=mix_time,
+            mix_vol=mix_vol,
+            height_to_bottom=height_to_bottom,
+            offsets=offsets,
+            mix_rate=mix_rate,
+            none_keys=none_keys,
+        )
 
     async def pick_up_tips(
         self,
@@ -187,7 +246,12 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         offsets: Optional[List[Coordinate]] = None,
         **backend_kwargs,
     ):
-        pass
+        return await super().pick_up_tips(
+            tip_spots=tip_spots,
+            use_channels=use_channels,
+            offsets=offsets,
+            **backend_kwargs,
+        )
 
     async def transfer_liquid(
         self,
@@ -214,5 +278,26 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         delays: Optional[List[int]] = None,
         none_keys: List[str] = [],
     ):
-        pass
-    
+        return await super().transfer_liquid(
+            sources=sources,
+            targets=targets,
+            tip_racks=tip_racks,
+            use_channels=use_channels,
+            asp_vols=asp_vols,
+            dis_vols=dis_vols,
+            asp_flow_rates=asp_flow_rates,
+            dis_flow_rates=dis_flow_rates,
+            offsets=offsets,
+            touch_tip=touch_tip,
+            liquid_height=liquid_height,
+            blow_out_air_volume=blow_out_air_volume,
+            spread=spread,
+            is_96_well=is_96_well,
+            mix_stage=mix_stage,
+            mix_times=mix_times,
+            mix_vol=mix_vol,
+            mix_rate=mix_rate,
+            mix_liquid_height=mix_liquid_height,
+            delays=delays,
+            none_keys=none_keys,
+        )

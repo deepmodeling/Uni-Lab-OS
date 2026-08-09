@@ -15,92 +15,92 @@
                 "z": 0
             },
             "config": {
-                "api_key": "YOUR_API_KEY",
-                "api_host": "http://your-api-host:port",
+                "api_key": "<BIOYOND_API_KEY>",
+                "api_host": "http://<BIOYOND_HOST>:<BIOYOND_PORT>",
                 "material_type_mappings": {
                     "BIOYOND_PolymerStation_1FlaskCarrier": [
                         "烧杯",
-                        "uuid-placeholder-flask"
+                        "<UUID_FLASK_CARRIER_TYPE>"
                     ],
                     "BIOYOND_PolymerStation_1BottleCarrier": [
                         "试剂瓶",
-                        "uuid-placeholder-bottle"
+                        "<UUID_BOTTLE_CARRIER_TYPE>"
                     ],
                     "BIOYOND_PolymerStation_6StockCarrier": [
                         "分装板",
-                        "uuid-placeholder-stock-6"
+                        "<UUID_6STOCK_CARRIER_TYPE>"
                     ],
                     "BIOYOND_PolymerStation_Liquid_Vial": [
                         "10%分装小瓶",
-                        "uuid-placeholder-liquid-vial"
+                        "<UUID_LIQUID_VIAL_TYPE>"
                     ],
                     "BIOYOND_PolymerStation_Solid_Vial": [
                         "90%分装小瓶",
-                        "uuid-placeholder-solid-vial"
+                        "<UUID_SOLID_VIAL_TYPE>"
                     ],
                     "BIOYOND_PolymerStation_8StockCarrier": [
                         "样品板",
-                        "uuid-placeholder-stock-8"
+                        "<UUID_8STOCK_CARRIER_TYPE>"
                     ],
                     "BIOYOND_PolymerStation_Solid_Stock": [
                         "样品瓶",
-                        "uuid-placeholder-solid-stock"
+                        "<UUID_SOLID_STOCK_TYPE>"
                     ]
                 },
                 "warehouse_mapping": {
                     "粉末堆栈": {
-                        "uuid": "uuid-placeholder-powder-stack",
+                        "uuid": "<UUID_POWDER_WAREHOUSE>",
                         "site_uuids": {
-                            "A01": "uuid-placeholder-powder-A01",
-                            "A02": "uuid-placeholder-powder-A02",
-                            "A03": "uuid-placeholder-powder-A03",
-                            "A04": "uuid-placeholder-powder-A04",
-                            "B01": "uuid-placeholder-powder-B01",
-                            "B02": "uuid-placeholder-powder-B02",
-                            "B03": "uuid-placeholder-powder-B03",
-                            "B04": "uuid-placeholder-powder-B04",
-                            "C01": "uuid-placeholder-powder-C01",
-                            "C02": "uuid-placeholder-powder-C02",
-                            "C03": "uuid-placeholder-powder-C03",
-                            "C04": "uuid-placeholder-powder-C04",
-                            "D01": "uuid-placeholder-powder-D01",
-                            "D02": "uuid-placeholder-powder-D02",
-                            "D03": "uuid-placeholder-powder-D03",
-                            "D04": "uuid-placeholder-powder-D04"
+                            "A01": "<UUID_POWDER_A01>",
+                            "A02": "<UUID_POWDER_A02>",
+                            "A03": "<UUID_POWDER_A03>",
+                            "A04": "<UUID_POWDER_A04>",
+                            "B01": "<UUID_POWDER_B01>",
+                            "B02": "<UUID_POWDER_B02>",
+                            "B03": "<UUID_POWDER_B03>",
+                            "B04": "<UUID_POWDER_B04>",
+                            "C01": "<UUID_POWDER_C01>",
+                            "C02": "<UUID_POWDER_C02>",
+                            "C03": "<UUID_POWDER_C03>",
+                            "C04": "<UUID_POWDER_C04>",
+                            "D01": "<UUID_POWDER_D01>",
+                            "D02": "<UUID_POWDER_D02>",
+                            "D03": "<UUID_POWDER_D03>",
+                            "D04": "<UUID_POWDER_D04>"
                         }
                     },
                     "溶液堆栈": {
-                        "uuid": "uuid-placeholder-liquid-stack",
+                        "uuid": "<UUID_SOLUTION_WAREHOUSE>",
                         "site_uuids": {
-                            "A01": "uuid-placeholder-liquid-A01",
-                            "A02": "uuid-placeholder-liquid-A02",
-                            "A03": "uuid-placeholder-liquid-A03",
-                            "A04": "uuid-placeholder-liquid-A04",
-                            "B01": "uuid-placeholder-liquid-B01",
-                            "B02": "uuid-placeholder-liquid-B02",
-                            "B03": "uuid-placeholder-liquid-B03",
-                            "B04": "uuid-placeholder-liquid-B04",
-                            "C01": "uuid-placeholder-liquid-C01",
-                            "C02": "uuid-placeholder-liquid-C02",
-                            "C03": "uuid-placeholder-liquid-C03",
-                            "C04": "uuid-placeholder-liquid-C04",
-                            "D01": "uuid-placeholder-liquid-D01",
-                            "D02": "uuid-placeholder-liquid-D02",
-                            "D03": "uuid-placeholder-liquid-D03",
-                            "D04": "uuid-placeholder-liquid-D04"
+                            "A01": "<UUID_SOLUTION_A01>",
+                            "A02": "<UUID_SOLUTION_A02>",
+                            "A03": "<UUID_SOLUTION_A03>",
+                            "A04": "<UUID_SOLUTION_A04>",
+                            "B01": "<UUID_SOLUTION_B01>",
+                            "B02": "<UUID_SOLUTION_B02>",
+                            "B03": "<UUID_SOLUTION_B03>",
+                            "B04": "<UUID_SOLUTION_B04>",
+                            "C01": "<UUID_SOLUTION_C01>",
+                            "C02": "<UUID_SOLUTION_C02>",
+                            "C03": "<UUID_SOLUTION_C03>",
+                            "C04": "<UUID_SOLUTION_C04>",
+                            "D01": "<UUID_SOLUTION_D01>",
+                            "D02": "<UUID_SOLUTION_D02>",
+                            "D03": "<UUID_SOLUTION_D03>",
+                            "D04": "<UUID_SOLUTION_D04>"
                         }
                     },
                     "试剂堆栈": {
-                        "uuid": "uuid-placeholder-reagent-stack",
+                        "uuid": "<UUID_REAGENT_WAREHOUSE>",
                         "site_uuids": {
-                            "A01": "uuid-placeholder-reagent-A01",
-                            "A02": "uuid-placeholder-reagent-A02",
-                            "A03": "uuid-placeholder-reagent-A03",
-                            "A04": "uuid-placeholder-reagent-A04",
-                            "B01": "uuid-placeholder-reagent-B01",
-                            "B02": "uuid-placeholder-reagent-B02",
-                            "B03": "uuid-placeholder-reagent-B03",
-                            "B04": "uuid-placeholder-reagent-B04"
+                            "A01": "<UUID_REAGENT_A01>",
+                            "A02": "<UUID_REAGENT_A02>",
+                            "A03": "<UUID_REAGENT_A03>",
+                            "A04": "<UUID_REAGENT_A04>",
+                            "B01": "<UUID_REAGENT_B01>",
+                            "B02": "<UUID_REAGENT_B02>",
+                            "B03": "<UUID_REAGENT_B03>",
+                            "B04": "<UUID_REAGENT_B04>"
                         }
                     }
                 },

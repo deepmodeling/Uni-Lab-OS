@@ -258,7 +258,7 @@ class BioyondResourceSynchronizer(ResourceSynchronizer):
                 logger.info(f"[同步→Bioyond] ➕ 物料不存在于 Bioyond，将创建新物料并入库")
 
             # 第1步：从配置中获取仓库配置
-            warehouse_mapping = self.bioyond_config.get("warehouse_mapping", {})
+            warehouse_mapping = self.workstation.bioyond_config.get("warehouse_mapping", {})
 
             # 确定目标仓库名称
             parent_name = None

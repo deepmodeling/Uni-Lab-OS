@@ -1,0 +1,233 @@
+---
+description: ROS 2 集成开发规范
+globs: ["unilabos/ros/**/*.py", "**/*_node.py"]
+---
+
+# ROS 2 集成开发规范
+
+## 概述
+
+Uni-Lab-OS 使用 ROS 2 作为设备通信中间件，基于 rclpy 实现。
+
+## 核心组件
+
+### BaseROS2DeviceNode
+
+设备节点基类，提供：
+- ROS Topic 自动发布（状态属性）
+- Action Server 自动创建（设备动作）
+- 资源管理服务
+- 异步任务调度
+
+```python
+from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+```
+
+### 消息转换器
+
+```python
+from unilabos.ros.msgs.message_converter import (
+    convert_to_ros_msg,
+    convert_from_ros_msg_with_mapping,
+    msg_converter_manager,
+    ros_action_to_json_schema,
+    ros_message_to_json_schema,
+)
+```
+
+## 设备与 ROS 集成
+
+### post_init 方法
+
+设备类必须实现 `post_init` 方法接收 ROS 节点：
+
+```python
+class MyDevice:
+    _ros_node: BaseROS2DeviceNode
+
+    def post_init(self, ros_node: BaseROS2DeviceNode):
+        """ROS节点注入"""
+        self._ros_node = ros_node
+```
+
+### 状态属性发布
+
+设备的 `@property` 属性会自动发布为 ROS Topic：
+
+```python
+class MyDevice:
+    @property
+    def temperature(self) -> float:
+        return self._temperature
+
+    # 自动发布到 /{namespace}/temperature Topic
+```
+
+### Topic 配置装饰器
+
+```python
+from unilabos.utils.decorator import topic_config
+
+class MyDevice:
+    @property
+    @topic_config(period=1.0, print_publish=False, qos=10)
+    def fast_data(self) -> float:
+        """高频数据 - 每秒发布一次"""
+        return self._fast_data
+
+    @property
+    @topic_config(period=5.0)
+    def slow_data(self) -> str:
+        """低频数据 - 每5秒发布一次"""
+        return self._slow_data
+```
+
+### 订阅装饰器
+
+```python
+from unilabos.utils.decorator import subscribe
+
+class MyDevice:
+    @subscribe(topic="/external/sensor_data", qos=10)
+    def on_sensor_data(self, msg):
+        """订阅外部Topic"""
+        self._sensor_value = msg.data
+```
+
+## 异步操作
+
+### 使用 ROS 节点睡眠
+
+```python
+# 推荐：使用ROS节点的睡眠方法
+await self._ros_node.sleep(1.0)
+
+# 不推荐：直接使用asyncio（可能导致回调阻塞）
+await asyncio.sleep(1.0)
+```
+
+### 获取事件循环
+
+```python
+from unilabos.ros.x.rclpyx import get_event_loop
+
+loop = get_event_loop()
+```
+
+## 消息类型
+
+### unilabos_msgs 包
+
+```python
+from unilabos_msgs.msg import Resource
+from unilabos_msgs.srv import (
+    ResourceAdd,
+    ResourceDelete,
+    ResourceUpdate,
+    ResourceList,
+    SerialCommand,
+)
+from unilabos_msgs.action import SendCmd
+```
+
+### Resource 消息结构
+
+```python
+Resource:
+    id: str
+    name: str
+    category: str
+    type: str
+    parent: str
+    children: List[str]
+    config: str  # JSON字符串
+    data: str    # JSON字符串
+    sample_id: str
+    pose: Pose
+```
+
+## 日志适配器
+
+```python
+from unilabos.utils.log import info, debug, warning, error, trace
+
+class MyDevice:
+    def __init__(self):
+        # 创建设备专属日志器
+        self.logger = logging.getLogger(f"MyDevice.{self.device_id}")
+```
+
+ROSLoggerAdapter 同时向自定义日志和 ROS 日志发送消息。
+
+## Action Server
+
+设备动作自动创建为 ROS Action Server：
+
+```yaml
+# 在注册表中配置
+action_value_mappings:
+  my_action:
+    type: UniLabJsonCommandAsync  # 异步Action
+    goal: {...}
+    feedback: {...}
+    result: {...}
+```
+
+### Action 类型
+
+- **UniLabJsonCommand**: 同步动作
+- **UniLabJsonCommandAsync**: 异步动作（支持feedback）
+
+## 服务客户端
+
+```python
+from rclpy.client import Client
+
+# 调用其他节点的服务
+response = await self._ros_node.call_service(
+    service_name="/other_node/service",
+    request=MyServiceRequest(...)
+)
+```
+
+## 命名空间
+
+设备节点使用命名空间隔离：
+
+```
+/{device_id}/                 # 设备命名空间
+/{device_id}/status          # 状态Topic
+/{device_id}/temperature     # 温度Topic
+/{device_id}/my_action       # 动作Server
+```
+
+## 调试
+
+### 查看 Topic
+
+```bash
+ros2 topic list
+ros2 topic echo /{device_id}/status
+```
+
+### 查看 Action
+
+```bash
+ros2 action list
+ros2 action info /{device_id}/my_action
+```
+
+### 查看 Service
+
+```bash
+ros2 service list
+ros2 service call /{device_id}/resource_list unilabos_msgs/srv/ResourceList
+```
+
+## 最佳实践
+
+1. **状态属性命名**: 使用蛇形命名法（snake_case）
+2. **Topic 频率**: 根据数据变化频率调整，避免过高频率
+3. **Action 反馈**: 长时间操作提供进度反馈
+4. **错误处理**: 使用 try-except 捕获并记录错误
+5. **资源清理**: 在 cleanup 方法中正确清理资源

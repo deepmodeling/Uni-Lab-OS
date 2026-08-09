@@ -446,6 +446,7 @@ class ResourceTreeSet(object):
                 "deck": "deck",
                 "tip_rack": "tip_rack",
                 "tip_spot": "tip_spot",
+                "tip": "tip",  # 添加 tip 类型支持
                 "tube": "tube",
                 "bottle_carrier": "bottle_carrier",
                 "material_hole": "material_hole",
@@ -638,11 +639,19 @@ class ResourceTreeSet(object):
                 },
                 "rotation": {"x": 0, "y": 0, "z": 0, "type": "Rotation"},
                 "category": res.config.get("category", plr_type),
-                "children": [node_to_plr_dict(child, has_model) for child in node.children],
+                # WareHouse 通过 sites 字符串追踪占位，不依赖 PLR children tree。
+                # 将 WareHouse 子节点排除在外，避免同名载架出现在多个 WareHouse 下时
+                # PLR _check_naming_conflicts 报命名冲突。
+                "children": [] if res.type == "warehouse" else [node_to_plr_dict(child, has_model) for child in node.children],
                 "parent_name": res.parent_instance_name,
             }
             if has_model:
                 d["model"] = res.config.get("model", None)
+            # 仅当 PLR dict 中含有子节点时才禁用 setup()，
+            # 防止 setup() 预分配子资源后 PLR deserialize 再次分配同名资源产生命名冲突。
+            # 若 children 为空，则保留 setup=True，依赖 setup() 来初始化仓库。
+            if "setup" in d and d.get("children"):
+                d["setup"] = False
             return d
 
         plr_resources = []
@@ -895,13 +904,34 @@ class ResourceTreeSet(object):
                                     f"已存在，跳过"
                                 )
 
+                        # 移除本地有但远端已不存在的物料（以远端为准）
+                        remote_material_names = {m.res_content.name for m in remote_child.children}
+                        removed_count = 0
+                        for child in list(local_sub_device.children):
+                            if child.res_content.name not in remote_material_names:
+                                local_sub_device.children.remove(child)
+                                removed_count += 1
+                                logger.info(
+                                    f"移除远端已不存在的物料: '{remote_root_id}/{remote_child_name}/{child.res_content.name}'"
+                                )
+
                         if added_count > 0:
                             logger.info(
                                 f"Device '{remote_root_id}/{remote_child_name}': "
                                 f"从远端同步了 {added_count} 个物料子树"
                             )
+                        if removed_count > 0:
+                            logger.info(
+                                f"Device '{remote_root_id}/{remote_child_name}': "
+                                f"移除了 {removed_count} 个远端已删除的物料"
+                            )
                     else:
                         # 二级物料已存在，比较三级子节点是否缺失
+                        if remote_child_name not in local_children_map:
+                            logger.warning(
+                                f"物料 '{remote_root_id}/{remote_child_name}' 在远端存在但本地不存在，跳过"
+                            )
+                            continue
                         local_material = local_children_map[remote_child_name]
                         local_material_children_map = {child.res_content.name: child for child in
                                                        local_material.children}
@@ -917,10 +947,27 @@ class ResourceTreeSet(object):
                                     f"物料 '{remote_root_id}/{remote_child_name}/{remote_sub_name}' "
                                     f"已存在，跳过"
                                 )
+
+                        # 移除本地有但远端已不存在的子物料（以远端为准）
+                        remote_sub_names = {s.res_content.name for s in remote_child.children}
+                        removed_count = 0
+                        for child in list(local_material.children):
+                            if child.res_content.name not in remote_sub_names:
+                                local_material.children.remove(child)
+                                removed_count += 1
+                                logger.info(
+                                    f"移除远端已不存在的子物料: '{remote_root_id}/{remote_child_name}/{child.res_content.name}'"
+                                )
+
                         if added_count > 0:
                             logger.info(
                                 f"物料 '{remote_root_id}/{remote_child_name}': "
                                 f"从远端同步了 {added_count} 个子物料"
+                            )
+                        if removed_count > 0:
+                            logger.info(
+                                f"物料 '{remote_root_id}/{remote_child_name}': "
+                                f"移除了 {removed_count} 个远端已删除的子物料"
                             )
             else:
                 # 情况1: 一级节点是物料（不是 device）
@@ -1362,6 +1409,16 @@ class DeviceNodeResourceTracker(object):
                 else:
                     res_list.extend(self.loop_find_resource(r, type(query_resource), "unilabos_uuid", res_uuid))
 
+            # 同一资源对象可能通过"直接注册"和"作为父资源子节点"被搜索到两次，按对象 id 去重
+            seen_ids: set = set()
+            deduped = []
+            for item in res_list:
+                oid = id(item[1])
+                if oid not in seen_ids:
+                    seen_ids.add(oid)
+                    deduped.append(item)
+            res_list = deduped
+
             if not try_mode:
                 assert len(res_list) > 0, f"没有找到资源 (uuid={res_uuid})，请检查资源是否存在"
                 assert len(res_list) == 1, f"通过uuid={res_uuid} 找到多个资源，请检查资源是否唯一: {res_list}"
@@ -1398,6 +1455,14 @@ class DeviceNodeResourceTracker(object):
                         r, resource_cls_type, identifier_key, getattr(query_resource, identifier_key)
                     )
                 )
+        seen_ids2: set = set()
+        deduped2 = []
+        for item in res_list:
+            oid = id(item[1])
+            if oid not in seen_ids2:
+                seen_ids2.add(oid)
+                deduped2.append(item)
+        res_list = deduped2
         if not try_mode:
             assert len(res_list) > 0, f"没有找到资源 {query_resource}，请检查资源是否存在"
             assert len(res_list) == 1, f"{query_resource} 找到多个资源，请检查资源是否唯一: {res_list}"

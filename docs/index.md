@@ -17,6 +17,9 @@ developer_guide/http_api.md
 developer_guide/networking_overview.md
 developer_guide/add_device.md
 developer_guide/add_action.md
+developer_guide/add_old_device.md
+developer_guide/plc_framework.md
+developer_guide/add_protocol.md
 developer_guide/add_registry.md
 developer_guide/add_yaml.md
 developer_guide/action_includes.md

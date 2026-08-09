@@ -116,7 +116,9 @@ def BIOYOND_PolymerStation_TipBox(
     size_z: float = 100.0,   # 枪头盒高度
     barcode: str = None,
 ):
-    """创建4×6枪头盒 (24个枪头)
+    """创建4×6枪头盒 (24个枪头) - 使用 BottleCarrier 结构
+
+    注意：此函数已弃用，请使用 bottle_carriers.py 中的版本
 
     Args:
         name: 枪头盒名称
@@ -126,55 +128,11 @@ def BIOYOND_PolymerStation_TipBox(
         barcode: 条形码
 
     Returns:
-        TipBoxCarrier: 包含24个枪头孔位的枪头盒
+        BottleCarrier: 包含24个枪头孔位的枪头盒载架
     """
-    from pylabrobot.resources import Container, Coordinate
-
-    # 创建枪头盒容器
-    tip_box = Container(
-        name=name,
-        size_x=size_x,
-        size_y=size_y,
-        size_z=size_z,
-        category="tip_rack",
-        model="BIOYOND_PolymerStation_TipBox_4x6",
-    )
-
-    # 设置自定义属性
-    tip_box.barcode = barcode
-    tip_box.tip_count = 24  # 4行×6列
-    tip_box.num_items_x = 6  # 6列
-    tip_box.num_items_y = 4  # 4行
-
-    # 创建24个枪头孔位 (4行×6列)
-    # 假设孔位间距为 9mm
-    tip_spacing_x = 9.0  # 列间距
-    tip_spacing_y = 9.0  # 行间距
-    start_x = 14.38  # 第一个孔位的x偏移
-    start_y = 11.24  # 第一个孔位的y偏移
-
-    for row in range(4):  # A, B, C, D
-        for col in range(6):  # 1-6
-            spot_name = f"{chr(65 + row)}{col + 1}"  # A1, A2, ..., D6
-            x = start_x + col * tip_spacing_x
-            y = start_y + row * tip_spacing_y
-
-            # 创建枪头孔位容器
-            tip_spot = Container(
-                name=spot_name,
-                size_x=8.0,  # 单个枪头孔位大小
-                size_y=8.0,
-                size_z=size_z - 10.0,  # 略低于盒子高度
-                category="tip_spot",
-            )
-
-            # 添加到枪头盒
-            tip_box.assign_child_resource(
-                tip_spot,
-                location=Coordinate(x=x, y=y, z=0)
-            )
-
-    return tip_box
+    # 重定向到 bottle_carriers.py 中的实现
+    from unilabos.resources.bioyond.bottle_carriers import BIOYOND_PolymerStation_TipBox as TipBox_Carrier
+    return TipBox_Carrier(name=name, size_x=size_x, size_y=size_y, size_z=size_z, barcode=barcode)
 
 
 def BIOYOND_PolymerStation_Flask(

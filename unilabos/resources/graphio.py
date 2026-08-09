@@ -797,9 +797,12 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                     bottle = plr_material[number] = initialize_resource(
                         {"name": f'{detail["name"]}_{number}', "class": reverse_type_mapping[typeName][0]}, resource_type=ResourcePLR
                     )
-                    bottle.tracker.liquids = [
-                        (detail["name"], float(detail.get("quantity", 0)) if detail.get("quantity") else 0)
-                    ]
+                    # 只有具有 tracker 属性的容器才设置液体信息（如 Bottle, Well）
+                    # ResourceHolder 等不支持液体追踪的容器跳过
+                    if hasattr(bottle, "tracker"):
+                        bottle.tracker.liquids = [
+                            (detail["name"], float(detail.get("quantity", 0)) if detail.get("quantity") else 0)
+                        ]
                     bottle.code = detail.get("code", "")
                     logger.debug(f"  └─ [子物料] {detail['name']} → {plr_material.name}[{number}] (类型:{typeName})")
                 else:
@@ -808,9 +811,11 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
             # 只对有 capacity 属性的容器（液体容器）处理液体追踪
             if hasattr(plr_material, 'capacity'):
                 bottle = plr_material[0] if plr_material.capacity > 0 else plr_material
-                bottle.tracker.liquids = [
-                    (material["name"], float(material.get("quantity", 0)) if material.get("quantity") else 0)
-                ]
+                # 确保 bottle 有 tracker 属性才设置液体信息
+                if hasattr(bottle, "tracker"):
+                    bottle.tracker.liquids = [
+                        (material["name"], float(material.get("quantity", 0)) if material.get("quantity") else 0)
+                    ]
 
         plr_materials.append(plr_material)
 
@@ -839,39 +844,35 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                 wh_name = loc.get("whName")
                 logger.debug(f"[物料位置] {unique_name} 尝试放置到 warehouse: {wh_name} (Bioyond坐标: x={loc.get('x')}, y={loc.get('y')}, z={loc.get('z')})")
 
+                # Bioyond坐标映射 (重要！): x→行(1=A,2=B...), y→列(1=01,2=02...), z→层(通常=1)
+                # 必须在warehouse映射之前先获取坐标，以便后续调整
+                x = loc.get("x", 1)  # 行号 (1-based: 1=A, 2=B, 3=C, 4=D)
+                y = loc.get("y", 1)  # 列号 (1-based: 1=01, 2=02, 3=03...)
+                z = loc.get("z", 1)  # 层号 (1-based, 通常为1)
+
                 # 特殊处理: Bioyond的"堆栈1"需要映射到"堆栈1左"或"堆栈1右"
-                # 根据列号(x)判断: 1-4映射到左侧, 5-8映射到右侧
+                # 根据列号(y)判断: 1-4映射到左侧, 5-8映射到右侧
                 if wh_name == "堆栈1":
-                    x_val = loc.get("x", 1)
-                    if 1 <= x_val <= 4:
+                    if 1 <= y <= 4:
                         wh_name = "堆栈1左"
-                    elif 5 <= x_val <= 8:
+                    elif 5 <= y <= 8:
                         wh_name = "堆栈1右"
+                        y = y - 4  # 调整列号: 5-8映射到1-4
                     else:
-                        logger.warning(f"物料 {material['name']} 的列号 x={x_val} 超出范围，无法映射到堆栈1左或堆栈1右")
+                        logger.warning(f"物料 {material['name']} 的列号 y={y} 超出范围，无法映射到堆栈1左或堆栈1右")
                         continue
 
                 # 特殊处理: Bioyond的"站内Tip盒堆栈"也需要进行拆分映射
                 if wh_name == "站内Tip盒堆栈":
-                    y_val = loc.get("y", 1)
-                    if y_val == 1:
+                    if y == 1:
                         wh_name = "站内Tip盒堆栈(右)"
-                    elif y_val in [2, 3]:
+                    elif y in [2, 3]:
                         wh_name = "站内Tip盒堆栈(左)"
                         y = y - 1  # 调整列号，因为左侧仓库对应的 Bioyond y=2 实际上是它的第1列
 
                 if hasattr(deck, "warehouses") and wh_name in deck.warehouses:
                     warehouse = deck.warehouses[wh_name]
                     logger.debug(f"[Warehouse匹配] 找到warehouse: {wh_name} (容量: {warehouse.capacity}, 行×列: {warehouse.num_items_x}×{warehouse.num_items_y})")
-
-                    # Bioyond坐标映射 (重要！): x→行(1=A,2=B...), y→列(1=01,2=02...), z→层(通常=1)
-                    x = loc.get("x", 1)  # 行号 (1-based: 1=A, 2=B, 3=C, 4=D)
-                    y = loc.get("y", 1)  # 列号 (1-based: 1=01, 2=02, 3=03...)
-                    z = loc.get("z", 1)  # 层号 (1-based, 通常为1)
-
-                    # 如果是右侧堆栈，需要调整列号 (5→1, 6→2, 7→3, 8→4)
-                    if wh_name == "堆栈1右":
-                        y = y - 4  # 将5-8映射到1-4
 
                     # 特殊处理竖向warehouse（站内试剂存放堆栈、测量小瓶仓库）
                     # 这些warehouse使用 vertical-col-major 布局

@@ -57,6 +57,18 @@ class TransferLiquidReturn(TypedDict):
     targets: List[List[ResourceDict]]
 
 
+
+class SetLiquidReturn(TypedDict):
+    wells: list
+    volumes: list
+
+
+class SetLiquidFromPlateReturn(TypedDict):
+    plate: list
+    wells: list
+    volumes: list
+
+
 class LiquidHandlerMiddleware(LiquidHandler):
     def __init__(
         self, backend: LiquidHandlerBackend, deck: Deck, simulator: bool = False, channel_num: int = 8, **kwargs

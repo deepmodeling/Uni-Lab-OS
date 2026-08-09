@@ -1,0 +1,148 @@
+sensor.xkc_rs485:
+  category:
+  - sensor
+  - separator
+  class:
+    action_value_mappings:
+      auto-change_baudrate:
+        goal:
+          baud_code: 7
+        handles: {}
+        schema:
+          description: '更改通讯波特率 (设置成功后无返回，且需手动切换波特率重连)。代码表 (16进制): 05=2400, 06=4800,
+            07=9600, 08=14400, 09=19200, 0A=28800, 0C=57600, 0D=115200, 0E=128000,
+            0F=256000'
+          properties:
+            goal:
+              properties:
+                baud_code:
+                  description: '波特率代码 (例如: 7 为 9600, 13 即 0x0D 为 115200)'
+                  type: integer
+              required:
+              - baud_code
+              type: object
+        type: UniLabJsonCommand
+      auto-change_device_id:
+        goal:
+          new_id: 1
+        handles: {}
+        schema:
+          description: 修改传感器的 Modbus 从站地址
+          properties:
+            goal:
+              properties:
+                new_id:
+                  description: 新的从站地址 (1-254)
+                  maximum: 254
+                  minimum: 1
+                  type: integer
+              required:
+              - new_id
+              type: object
+        type: UniLabJsonCommand
+      auto-factory_reset:
+        goal: {}
+        handles: {}
+        schema:
+          description: 恢复出厂设置 (地址重置为 01)
+          properties:
+            goal:
+              type: object
+        type: UniLabJsonCommand
+      auto-read_level:
+        goal: {}
+        handles: {}
+        schema:
+          description: 直接读取当前液位及信号强度
+          properties:
+            goal:
+              type: object
+          type: object
+        type: UniLabJsonCommand
+      auto-set_threshold:
+        goal:
+          threshold: 300
+        handles: {}
+        schema:
+          description: 设置液位判定阈值
+          properties:
+            goal:
+              properties:
+                threshold:
+                  type: integer
+              required:
+              - threshold
+              type: object
+        type: UniLabJsonCommand
+      auto-wait_for_liquid:
+        goal:
+          target_state: true
+          timeout: 120
+        handles: {}
+        schema:
+          description: 实时检测电导率(RSSI)并等待用户指定的状态
+          properties:
+            goal:
+              properties:
+                target_state:
+                  default: true
+                  description: 目标状态 (True=有液, False=无液)
+                  type: boolean
+                timeout:
+                  default: 120
+                  description: 超时时间 (秒)
+              required:
+              - target_state
+              type: object
+        type: UniLabJsonCommand
+      auto-wait_level:
+        goal:
+          level: true
+          timeout: 10
+        handles: {}
+        schema:
+          description: 等待液位达到目标状态
+          properties:
+            goal:
+              properties:
+                level:
+                  type: boolean
+                timeout:
+                  type: number
+              required:
+              - level
+              type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.separator.xkc_sensor:XKCSensorDriver
+    status_types:
+      level: bool
+      rssi: int
+    type: python
+  config_info: []
+  description: XKC RS485 非接触式液位传感器 (Modbus RTU)
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        baudrate:
+          default: 9600
+          type: integer
+        debug:
+          default: false
+          type: boolean
+        device_id:
+          default: 1
+          type: integer
+        port:
+          type: string
+        threshold:
+          default: 300
+          type: integer
+        timeout:
+          default: 3.0
+          type: number
+      required:
+      - port
+      type: object
+  version: 1.0.0

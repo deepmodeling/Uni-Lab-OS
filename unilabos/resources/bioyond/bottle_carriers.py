@@ -1,4 +1,4 @@
-from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d
+from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d, Container
 
 from unilabos.resources.itemized_carrier import BottleCarrier
 from unilabos.resources.bioyond.bottles import (
@@ -9,6 +9,28 @@ from unilabos.resources.bioyond.bottles import (
     BIOYOND_PolymerStation_Reagent_Bottle,
     BIOYOND_PolymerStation_Flask,
 )
+
+
+def BIOYOND_PolymerStation_Tip(name: str, size_x: float = 8.0, size_y: float = 8.0, size_z: float = 50.0) -> Container:
+    """创建单个枪头资源
+
+    Args:
+        name: 枪头名称
+        size_x: 枪头宽度 (mm)
+        size_y: 枪头长度 (mm)
+        size_z: 枪头高度 (mm)
+
+    Returns:
+        Container: 枪头容器
+    """
+    return Container(
+        name=name,
+        size_x=size_x,
+        size_y=size_y,
+        size_z=size_z,
+        category="tip",
+        model="BIOYOND_PolymerStation_Tip",
+    )
 # 命名约定：试剂瓶-Bottle，烧杯-Beaker，烧瓶-Flask,小瓶-Vial
 
 
@@ -322,3 +344,88 @@ def BIOYOND_Electrolyte_1BottleCarrier(name: str) -> BottleCarrier:
     carrier.num_items_z = 1
     carrier[0] = BIOYOND_PolymerStation_Solution_Beaker(f"{name}_beaker_1")
     return carrier
+
+
+def BIOYOND_PolymerStation_TipBox(
+    name: str,
+    size_x: float = 127.76,  # 枪头盒宽度
+    size_y: float = 85.48,   # 枪头盒长度
+    size_z: float = 100.0,   # 枪头盒高度
+    barcode: str = None,
+) -> BottleCarrier:
+    """创建4×6枪头盒 (24个枪头) - 使用 BottleCarrier 结构
+
+    Args:
+        name: 枪头盒名称
+        size_x: 枪头盒宽度 (mm)
+        size_y: 枪头盒长度 (mm)
+        size_z: 枪头盒高度 (mm)
+        barcode: 条形码
+
+    Returns:
+        BottleCarrier: 包含24个枪头孔位的枪头盒载架
+
+    布局说明:
+        - 4行×6列 (A-D, 1-6)
+        - 枪头孔位间距: 18mm (x方向) × 18mm (y方向)
+        - 起始位置居中对齐
+        - 索引顺序: 列优先 (0=A1, 1=B1, 2=C1, 3=D1, 4=A2, ...)
+    """
+    # 枪头孔位参数
+    num_cols = 6  # 1-6 (x方向)
+    num_rows = 4  # A-D (y方向)
+    tip_diameter = 8.0  # 枪头孔位直径
+    tip_spacing_x = 18.0  # 列间距 (增加到18mm，更宽松)
+    tip_spacing_y = 18.0  # 行间距 (增加到18mm，更宽松)
+
+    # 计算起始位置 (居中对齐)
+    total_width = (num_cols - 1) * tip_spacing_x + tip_diameter
+    total_height = (num_rows - 1) * tip_spacing_y + tip_diameter
+    start_x = (size_x - total_width) / 2
+    start_y = (size_y - total_height) / 2
+
+    # 使用 create_ordered_items_2d 创建孔位
+    # create_ordered_items_2d 返回的 key 是数字索引: 0, 1, 2, ...
+    # 顺序是列优先: 先y后x (即 0=A1, 1=B1, 2=C1, 3=D1, 4=A2, 5=B2, ...)
+    sites = create_ordered_items_2d(
+        klass=ResourceHolder,
+        num_items_x=num_cols,
+        num_items_y=num_rows,
+        dx=start_x,
+        dy=start_y,
+        dz=5.0,
+        item_dx=tip_spacing_x,
+        item_dy=tip_spacing_y,
+        size_x=tip_diameter,
+        size_y=tip_diameter,
+        size_z=50.0,  # 枪头深度
+    )
+
+    # 更新 sites 中每个 ResourceHolder 的名称
+    for k, v in sites.items():
+        v.name = f"{name}_{v.name}"
+
+    # 创建枪头盒载架
+    # 注意：不设置 category，使用默认的 "bottle_carrier"，这样前端会显示为完整的矩形载架
+    tip_box = BottleCarrier(
+        name=name,
+        size_x=size_x,
+        size_y=size_y,
+        size_z=size_z,
+        sites=sites,  # 直接使用数字索引的 sites
+        model="BIOYOND_PolymerStation_TipBox",
+    )
+
+    # 设置自定义属性
+    tip_box.barcode = barcode
+    tip_box.tip_count = 24  # 4行×6列
+    tip_box.num_items_x = num_cols
+    tip_box.num_items_y = num_rows
+    tip_box.num_items_z = 1
+
+    # ⭐ 枪头盒不需要放入子资源
+    # 与其他 carrier 不同，枪头盒在 Bioyond 中是一个整体
+    # 不需要追踪每个枪头的状态，保持为空的 ResourceHolder 即可
+    # 这样前端会显示24个空槽位，可以用于放置枪头
+
+    return tip_box

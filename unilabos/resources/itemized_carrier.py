@@ -144,6 +144,11 @@ class ItemizedCarrier(ResourcePLR):
           idx = i
           break
 
+    if idx is None:
+      # 反序列化时无法匹配 site（名称或坐标均不符）。
+      # WareHouse 通过 sites 追踪占用，无需将子资源加入 PLR 子树，直接跳过避免命名冲突。
+      return
+
     if not reassign and self.sites[idx] is not None:
       raise ValueError(f"a site with index {idx} already exists")
     location = list(self.child_locations.values())[idx]

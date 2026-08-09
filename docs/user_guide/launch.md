@@ -20,8 +20,10 @@ options:
                         no ROS), ros2 (default), or dora.
   --app_bridges [APP_BRIDGES ...]
                         Application bridges. Defaults depend on the selected backend.
-  --is_slave            Run the backend as slave node (without host privileges).
-  --slave_no_host       Skip waiting for host service in slave mode
+  --is_slave, --is-slave
+                        Run the backend as slave node (without host privileges).
+  --slave_no_host, --slave-no-host
+                        Skip waiting for host service in slave mode
   --upload_registry     Upload registry information when starting unilab
   --config CONFIG       Configuration file path, supports .py format Python config files
   --port_management PORT_MANAGEMENT, --port-management PORT_MANAGEMENT, --port PORT_MANAGEMENT

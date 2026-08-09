@@ -275,6 +275,8 @@ def parse_args():
     )
     parser.add_argument(
         "--is_slave",
+        "--is-slave",
+        dest="is_slave",
         action="store_true",
         help="Run the backend as slave node (without host privileges).",
     )
@@ -399,6 +401,8 @@ def parse_args():
     )
     parser.add_argument(
         "--slave_no_host",
+        "--slave-no-host",
+        dest="slave_no_host",
         action="store_true",
         help=(
             "允许 Slave 在 HostLink/Host ROS 服务离线时启动；"

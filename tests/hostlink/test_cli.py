@@ -51,6 +51,18 @@ def test_networking_cli_accepts_host_and_domain_aliases() -> None:
     assert args.ros_static_peers == "10.0.0.9;10.0.0.10"
 
 
+@pytest.mark.parametrize("option", ["--is_slave", "--is-slave"])
+def test_slave_role_accepts_dash_and_underscore(option) -> None:
+    args = parse_args().parse_args([option])
+    assert args.is_slave is True
+
+
+@pytest.mark.parametrize("option", ["--slave_no_host", "--slave-no-host"])
+def test_slave_offline_mode_accepts_dash_and_underscore(option) -> None:
+    args = parse_args().parse_args([option])
+    assert args.slave_no_host is True
+
+
 @pytest.mark.parametrize("domain_id", ["-1", "233"])
 def test_networking_cli_domain_range_is_validated_at_startup(domain_id) -> None:
     args = parse_args().parse_args(["--ros-domain-id", domain_id])

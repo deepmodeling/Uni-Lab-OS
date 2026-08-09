@@ -12,8 +12,8 @@ pip install -e .
 uv pip install -r unilabos/utils/requirements.txt
 
 # Run with a device graph
-unilab --graph <graph.json> --config <config.py> --backend ros
-unilab --graph <graph.json> --config <config.py> --backend simple  # no ROS2 needed
+unilab --graph <graph.json> --config <config.py> --backend ros2
+unilab --graph <graph.json> --config <config.py> --backend basic  # no ROS2 runtime
 
 # Common CLI flags
 unilab --app_bridges websocket fastapi    # communication bridges
@@ -36,7 +36,7 @@ pytest tests/resources/test_resourcetreeset.py::TestClassName::test_method  # si
 
 ### Startup Flow
 
-`unilab` CLI → `unilabos/app/main.py:main()` → loads config → builds registry → reads device graph (JSON/GraphML) → starts backend thread (ROS2/simple) → starts FastAPI web server + WebSocket client.
+`unilab` CLI → `unilabos/app/main.py:main()` → loads config → builds registry → reads device graph (JSON/GraphML) → starts the selected backend (`basic`/`ros2`/`dora`) → starts only the bridges supported by that backend.
 
 ### Core Layers
 

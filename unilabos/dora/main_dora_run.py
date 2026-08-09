@@ -6,7 +6,7 @@ dora dataflow（每个设备一个 dora 节点 + 一个监控 host），用 `dor
 
 from __future__ import annotations
 
-import os
+import importlib.util
 import tempfile
 import time
 from typing import Any, Dict, List, Optional
@@ -14,6 +14,22 @@ from typing import Any, Dict, List, Optional
 from unilabos.dora import dataflow as dataflow_mod
 from unilabos.dora import runtime
 from unilabos.utils import logger
+
+
+def validate_environment() -> None:
+    """Dora 依赖缺失时，在 backend 线程启动前直接失败。"""
+
+    missing = []
+    if runtime.dora_binary() is None:
+        missing.append("dora CLI（执行 `cargo install dora-cli`）")
+    if importlib.util.find_spec("dora") is None:
+        missing.append("dora Python API（安装 `dora-rs`）")
+    if importlib.util.find_spec("pyarrow") is None:
+        missing.append("pyarrow")
+    if missing:
+        raise RuntimeError(
+            "Dora backend 缺少依赖：" + "，".join(missing)
+        )
 
 
 def _resolve_devices(devices_config) -> List[Dict[str, Any]]:

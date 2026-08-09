@@ -15,10 +15,10 @@ options:
                         Path to the registry directory
   --working_dir WORKING_DIR
                         Path to the working directory
-  --backend {ros,simple,automancer}
-                        Choose the backend to run with: 'ros', 'simple', or 'automancer'.
-  --app_bridges APP_BRIDGES [APP_BRIDGES ...]
-                        Bridges to connect to. Now support 'websocket' and 'fastapi'.
+  --backend {basic,ros2,dora}
+                        Runtime backend: basic (in-process), ros2 (default), or dora.
+  --app_bridges [APP_BRIDGES ...]
+                        Application bridges. Defaults depend on the selected backend.
   --is_slave            Run the backend as slave node (without host privileges).
   --slave_no_host       Skip waiting for host service in slave mode
   --upload_registry     Upload registry information when starting unilab
@@ -136,21 +136,64 @@ unilab --config path/to/your/config.py
 
 ## 通信中间件 `--backend`
 
-目前 Uni-Lab 支持以下通信中间件：
+Uni-Lab 对外提供三个 backend 名称。名称、能力和实现入口由
+`unilabos.app.backend.BACKEND_PROFILES` 统一管理：
 
-- **ros** (默认)：基于 ROS2 的通信
-- **automancer**：Automancer 兼容模式 (实验性)
+| Backend | 定位 | 默认 App bridges | Host/Slave | 可视化 |
+|---|---|---|---|---|
+| **basic** | 单进程直接加载纯 Python 设备驱动，不使用通信中间件；跳过工作站聚合节点 | 无 | 不支持 | 不支持 |
+| **ros2**（默认） | 完整 ROS 2 分布式运行时 | `websocket fastapi` | 支持 | 支持 |
+| **dora** | 独立 dora-rs dataflow 运行时 | 无 | 暂不支持 | 暂不支持 |
+
+典型启动命令：
+
+```bash
+# 轻量本地驱动运行；不启动 WebSocket/FastAPI
+unilab -g graph.json --backend basic
+
+# 完整 ROS 2 运行时；不写 --backend 时也使用 ros2
+unilab -g graph.json --backend ros2
+
+# Dora 独立运行时；不会同时启动 ROS 2 backend
+unilab -g graph.json --backend dora
+```
+
+兼容期内，旧名称 `ros` 会映射到 `ros2`，`simple` 会映射到 `basic`，并输出弃用提示。
+原 `automancer` 只有不可运行的占位分支，现已从可选项移除。
+
+### Dora 依赖
+
+Dora 的 Python 包名是 `dora-rs`，导入名是 `dora`；命令行工具名是 `dora-cli`。
+Python 依赖与 Uni-Lab 默认环境隔离安装：
+
+```bash
+pip install -e ".[dora]"
+cargo install dora-cli
+
+dora --version
+python -c "from dora import Node; import pyarrow"
+```
+
+也可以使用 [Dora 官方安装脚本](https://dora-rs.ai/dora/getting-started/quickstart)。
+Uni-Lab 会在 backend 线程启动前检查 CLI、Python API 和 PyArrow，缺失时直接给出错误。
 
 ## 端云桥接 `--app_bridges`
 
-目前 Uni-Lab 提供 WebSocket、FastAPI (http) 两种端云通信方式：
+ROS2 backend 提供 WebSocket、FastAPI (HTTP) 两种端云通信方式：
 
 - **WebSocket**：负责实时通信和任务下发
 - **FastAPI**：负责端对云物料更新和 HTTP API
 
+`basic` 和 `dora` 当前没有兼容的 HostNode bridge，因此默认不加载这两个桥，也会拒绝
+显式传入不支持的组合。若要让 ROS2 也不启动桥，可以使用空参数：
+
+```bash
+unilab -g graph.json --backend ros2 --app_bridges
+```
+
 ## 分布式组网
 
-启动 Uni-Lab 时，加入 `--is_slave` 将作为从站，不加将作为主站：
+Host/Slave 组网目前属于 ROS2 backend。启动时加入 `--is_slave` 将作为从站，不加将作为主站：
 
 - **主站 (host)**：持有物料修改权以及对云端的通信
 - **从站 (slave)**：无主机权限，可选择跳过等待主机服务 (`--slave_no_host`)

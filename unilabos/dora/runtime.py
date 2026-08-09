@@ -34,7 +34,10 @@ def dora_binary() -> Optional[str]:
 def _require_binary() -> str:
     binary = dora_binary()
     if binary is None:
-        raise RuntimeError("未找到 dora CLI，请在 unilab 环境执行 `pip install dora-rs-cli`。")
+        raise RuntimeError(
+            "未找到 dora CLI；请执行 `cargo install dora-cli`，"
+            "或使用 Dora 官方平台安装脚本。"
+        )
     return binary
 
 

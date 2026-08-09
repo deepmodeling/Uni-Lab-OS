@@ -23,8 +23,10 @@ options:
   --slave_no_host       Skip waiting for host service in slave mode
   --upload_registry     Upload registry information when starting unilab
   --config CONFIG       Configuration file path, supports .py format Python config files
-  --port PORT           Port for web service information page
-  --disable_browser     Disable opening information page on startup
+  --port_management PORT_MANAGEMENT, --port-management PORT_MANAGEMENT, --port PORT_MANAGEMENT
+                        管理端 HTTP/Web API 与主微前端端口，默认 8002
+  --disable_browser, --disable-browser
+                        只禁止自动打开浏览器，管理端服务仍会启动
   --2d_vis              Enable 2D visualization when starting pylabrobot instance
   --visual {rviz,web,disable}
                         Choose visualization tool: rviz, web, or disable
@@ -158,26 +160,29 @@ unilab --config path/to/your/config.py
 推荐由 Host 统一发布 ROS2 domain，Slave 只指定 Host IP：
 
 ```bash
-# Host：8002 是 Web/API，7302 是 HostLink TCP
-unilab -g host.json --port 8002 \
+# Host：8002 是管理 Web/API 和主微前端端口，7302 是 HostLink TCP
+unilab -g host.json --port-management 8002 \
   --hostlink-port 7302 --ros-domain-id 42
 
-# Slave：--port 只影响本机 Web/API；HostLink 目标端口单独配置
+# Slave：管理端口只影响本机 Web/API；HostLink 目标端口单独配置
 unilab -g slave.json --is-slave \
-  --host-node-ip 192.168.1.10 --hostlink-port 7302 --port 8003
+  --host-node-ip 192.168.1.10 --hostlink-port 7302 --port-management 8003
 ```
 
 主要组网参数：
 
 - `--host-node-ip`：Slave 指定 Host IP/主机名。
-- `--hostlink-port`：HostLink TCP 端口，默认 `7302`，与 Web `--port` 独立。
+- `--port-management` / `--port_management`：管理端 HTTP/Web API 和主微前端端口，默认 `8002`；`--port` 是兼容缩写。
+- `--disable-browser` / `--disable_browser`：只禁止启动时自动打开浏览器，不会停止管理端口。
+- `--hostlink-port`：HostLink TCP 端口，默认 `7302`，与管理端口独立。
 - `--hostlink-bind` / `--hostlink-advertise-ip`：Host 监听地址与多网卡发布地址。
 - `--ros-domain-id`：Host 下发给 Slave 的 ROS2 domain。
 - `--ros-discovery-range` / `--ros-static-peers` / `--ros-discovery-server`：ROS2 发现策略。
 - `--no-ros-assist`：仅保留 HostLink 设备发现，不覆盖 Slave 的 ROS2 环境。
 - `--disable-hostlink`：完全关闭 HostLink，使用原 ROS2 发现流程。
 
-浏览器和微前端访问 `--port`（默认 `8002`），不会访问 HostLink 的 `7302`。
+浏览器和主微前端访问管理端口（默认 `8002`），不会访问 HostLink 的 `7302`。
+即使使用 `--disable-browser`，前端仍可手动访问 `http://<节点 IP>:8002`。
 
 ## 可视化选项
 
@@ -229,8 +234,8 @@ unilab --ak your_ak --sk your_sk --is_slave
 # 启用可视化
 unilab --ak your_ak --sk your_sk --visual web --2d_vis
 
-# 指定本地信息网页服务端口和禁用自动跳出浏览器
-unilab --ak your_ak --sk your_sk --port 8080 --disable_browser
+# 指定管理端口并禁止自动打开浏览器；HTTP/Web 服务仍在 8080 启动
+unilab --ak your_ak --sk your_sk --port-management 8080 --disable-browser
 ```
 
 ## 常见问题

@@ -20,8 +20,8 @@ class BasicConfig:
     enable_resource_load = True
     communication_protocol = "websocket"
     startup_json_path = None  # 填写绝对路径
-    disable_browser = False  # 禁止浏览器自动打开
-    port = 8002  # 本地HTTP服务
+    disable_browser = False  # 只禁止浏览器自动打开，不停止管理端服务
+    port = 8002  # 管理端 HTTP/Web API 与主微前端服务
     check_mode = False  # CI 检查模式，用于验证 registry 导入和文件一致性
     test_mode = False  # 测试模式，所有动作不实际执行，返回模拟结果
     extra_resource = False  # 是否加载lab_开头的额外资源

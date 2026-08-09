@@ -122,13 +122,14 @@ HostLink 只辅助 ROS2 组网。设备 Action、节点注册和资源同步仍�
 
 | 服务 | 默认地址 | 协议 | 使用者 |
 |---|---|---|---|
-| 主 Web/API | `0.0.0.0:8002` | HTTP/WebSocket over TCP | 状态页、主微前端、API 客户端 |
+| 主 Web/API | `0.0.0.0:8002` | HTTP/WebSocket over TCP | 状态页、主微前端、API 客户端；由 `--port-management` 配置 |
 | HostLink | `0.0.0.0:7302` | NDJSON over raw TCP | Host/Slave 进程，不供浏览器访问 |
 | F003 Local Bridge API | `127.0.0.1:8014` | HTTP | 仅完整集成分支中的本地工作流微前端 |
 
-因此微前端不访问 `7302`。接入主 OS API 的微前端跟随 `--port`，默认访问
-`8002`；F003 本地桥接微前端仍使用其独立的 `8014`。两个独立 TCP 服务不能绑定
-同一个 IP/端口。
+因此微前端不访问 `7302`。接入主 OS API 的微前端跟随
+`--port-management`（`--port` 为兼容缩写），默认访问 `8002`；F003 本地桥接
+微前端仍使用其独立的 `8014`。`--disable-browser` 只禁止自动打开页面，不会停止
+`8002` 的 HTTP/Web 服务。两个独立 TCP 服务不能绑定同一个 IP/端口。
 
 #### HostLink 与 ROS2 参数
 
@@ -245,7 +246,7 @@ unilab --ak your_ak --sk your_sk -g host.json --ros-domain-id 42
 unilab --ak your_ak --sk your_sk -g slave1.json \
   --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302
 unilab --ak your_ak --sk your_sk -g slave2.json \
-  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302 --port 8003
+  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302 --port-management 8003
 ```
 
 ### 云端集成模式
@@ -304,7 +305,7 @@ unilab --ak your_ak --sk your_sk -g host.json
 unilab --ak your_ak --sk your_sk -g host.json --upload_registry
 
 # 指定端口
-unilab --ak your_ak --sk your_sk -g host.json --port 8002
+unilab --ak your_ak --sk your_sk -g host.json --port-management 8002
 ```
 
 #### 3. 验证主节点
@@ -351,7 +352,7 @@ ros2 service list | grep host_node
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave
 
 # 指定不同端口（如果多个从节点在同一台机器）
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --port-management 8003
 
 # 跳过等待主节点（独立测试）
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --slave_no_host
@@ -538,21 +539,21 @@ curl https://leap-lab.bohrium.com/api/v1/health
 
 ```bash
 # host.json
-unilab --ak your_ak --sk your_sk -g host.json --port 8002
+unilab --ak your_ak --sk your_sk -g host.json --port-management 8002
 ```
 
 ### 房间 B - 从节点 1
 
 ```bash
 # liquid_handler.json
-unilab --ak your_ak --sk your_sk -g liquid_handler.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g liquid_handler.json --is_slave --port-management 8003
 ```
 
 ### 房间 C - 从节点 2
 
 ```bash
 # analytical.json
-unilab --ak your_ak --sk your_sk -g analytical.json --is_slave --port 8004
+unilab --ak your_ak --sk your_sk -g analytical.json --is_slave --port-management 8004
 ```
 
 ---

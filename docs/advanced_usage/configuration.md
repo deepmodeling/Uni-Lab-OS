@@ -28,6 +28,8 @@ Uni-Lab 使用 Python 格式的配置文件（`.py`），默认为 `unilabos_dat
 class BasicConfig:
     ak = ""  # 实验室网页给您提供的ak代码
     sk = ""  # 实验室网页给您提供的sk代码
+    port = 8002  # 管理端 HTTP/Web API 与主微前端端口
+    disable_browser = False  # 只禁止自动打开浏览器
 
 
 # WebSocket配置，一般无需调整
@@ -60,6 +62,8 @@ class BasicConfig:
     enable_resource_load = True  # 是否启用资源加载
     communication_protocol = "websocket"  # 通信协议
     log_level = "DEBUG"  # 日志级别：TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL
+    port = 8002  # 管理端 HTTP/Web API 与主微前端端口
+    disable_browser = False  # 只禁止自动打开浏览器，不停止管理端服务
 
 # WebSocket配置
 class WSConfig:
@@ -206,14 +210,18 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 
 除了直接覆盖配置项的参数外，还有一些特殊的命令行参数：
 
-| 参数                | 说明                                 |
-| ------------------- | ------------------------------------ |
-| `--config`          | 指定配置文件路径                     |
-| `--port`            | Web 服务端口（不影响配置文件）       |
-| `--hostlink-port`   | HostLink TCP 端口，与 Web `--port` 独立 |
-| `--disable_browser` | 禁用自动打开浏览器（不影响配置文件） |
-| `--visual`          | 可视化工具选择（不影响配置文件）     |
-| `--skip_env_check`  | 跳过环境检查（不影响配置文件）       |
+| 参数 | 说明 |
+| --- | --- |
+| `--config` | 指定配置文件路径 |
+| `--port-management` / `--port_management` | 管理端 HTTP/Web API 与主微前端端口，默认 `8002`；`--port` 是兼容缩写 |
+| `--hostlink-port` | HostLink TCP 端口，默认 `7302`，与管理端口独立 |
+| `--disable-browser` / `--disable_browser` | 只禁用启动时自动打开浏览器，管理端 HTTP/Web 服务仍会启动 |
+| `--visual` | 可视化工具选择（不影响配置文件） |
+| `--skip_env_check` | 跳过环境检查（不影响配置文件） |
+
+`--port-management` 最终覆盖 `BasicConfig.port`。主前端和 API 客户端都连接该
+端口；即使设置 `--disable-browser`，该端口仍会监听。浏览器参数不影响
+HostLink 的 `7302/TCP`。
 
 ### 命令行覆盖使用示例
 

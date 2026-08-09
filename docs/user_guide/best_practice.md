@@ -203,8 +203,8 @@ unilab --ak your_ak --sk your_sk -g example_empty.json
 # 禁用自动打开浏览器
 unilab --ak your_ak --sk your_sk -g graph.json --disable_browser
 
-# 使用不同端口
-unilab --ak your_ak --sk your_sk -g graph.json --port 8080
+# 使用不同的管理 Web/API 端口
+unilab --ak your_ak --sk your_sk -g graph.json --port-management 8080
 
 # 测试环境
 unilab --addr test --ak your_ak --sk your_sk -g graph.json
@@ -1631,7 +1631,7 @@ python -m unilabos.app.main \
   --devices <克隆目录下的设备包目录> \
   --external_devices_only \
   --ak your_ak --sk your_sk --addr test --upload_registry \
-  --disable_browser --port 8100 \
+  --disable_browser --port-management 8100 \
   -g <仓库内提供的图文件>
 ```
 

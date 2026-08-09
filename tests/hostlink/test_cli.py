@@ -4,6 +4,29 @@ from unilabos.app.main import _apply_hostlink_cli, parse_args
 from unilabos.config.config import HostLinkConfig
 
 
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--port-management", 8100),
+        ("--port_management", 8200),
+        ("--port", 8300),
+    ],
+)
+def test_management_port_accepts_semantic_name_and_short_alias(option, value) -> None:
+    args = parse_args().parse_args([option, str(value)])
+
+    assert args.port_management == value
+
+
+def test_disable_browser_can_be_combined_with_management_port() -> None:
+    args = parse_args().parse_args(
+        ["--port-management", "8100", "--disable-browser"]
+    )
+
+    assert args.port_management == 8100
+    assert args.disable_browser is True
+
+
 def test_networking_cli_accepts_host_and_domain_aliases() -> None:
     args = parse_args().parse_args(
         [

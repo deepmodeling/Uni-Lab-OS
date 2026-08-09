@@ -404,18 +404,26 @@ def parse_args():
         help="Configuration file path, supports .py format Python config files",
     )
     parser.add_argument(
+        "--port_management",
+        "--port-management",
         "--port",
+        dest="port_management",
         type=int,
         default=None,
         help=(
-            "主 HTTP/Web API 端口，状态页和同源微前端使用，默认 8002；"
-            "不影响 HostLink TCP 端口。"
+            "管理端 HTTP/Web API 端口，状态页和主微前端使用，默认 8002；"
+            "--port 是兼容缩写，不影响 HostLink TCP 端口。"
         ),
     )
     parser.add_argument(
         "--disable_browser",
+        "--disable-browser",
+        dest="disable_browser",
         action="store_true",
-        help="Disable opening information page on startup",
+        help=(
+            "仅禁止启动时自动打开浏览器；管理端 HTTP/Web 服务仍会在 "
+            "--port-management 指定的端口启动。"
+        ),
     )
     parser.add_argument(
         "--2d_vis",
@@ -949,7 +957,11 @@ def main():
         else:
             print_status("远程资源不存在，本地将进行首次上报！", "info")
 
-    BasicConfig.port = args_dict["port"] if args_dict["port"] else BasicConfig.port
+    BasicConfig.port = (
+        args_dict["port_management"]
+        if args_dict["port_management"] is not None
+        else BasicConfig.port
+    )
     BasicConfig.disable_browser = args_dict["disable_browser"] or BasicConfig.disable_browser
     BasicConfig.is_host_mode = not is_slave
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
@@ -1235,7 +1247,7 @@ def main():
         else:
             start_backend(**args_dict)
             restart_requested = start_server(
-                open_browser=not args_dict["disable_browser"],
+                open_browser=not BasicConfig.disable_browser,
                 port=BasicConfig.port,
             )
             if restart_requested:
@@ -1247,7 +1259,7 @@ def main():
 
         # 启动服务器（默认支持WebSocket触发重启）
         restart_requested = start_server(
-            open_browser=not args_dict["disable_browser"],
+            open_browser=not BasicConfig.disable_browser,
             port=BasicConfig.port,
         )
         if restart_requested:

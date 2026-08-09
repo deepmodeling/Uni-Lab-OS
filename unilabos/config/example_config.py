@@ -3,6 +3,8 @@
 class BasicConfig:
     ak = ""  # 实验室网页给您提供的ak代码，您可以在配置文件中指定，也可以通过运行unilabos时以 --ak 传入，优先按照传入参数解析
     sk = ""  # 实验室网页给您提供的sk代码，您可以在配置文件中指定，也可以通过运行unilabos时以 --sk 传入，优先按照传入参数解析
+    port = 8002  # 管理端 HTTP/Web API 与主微前端端口
+    disable_browser = False  # 只禁止自动打开浏览器，不停止管理端服务
 
 
 # WebSocket配置，一般无需调整

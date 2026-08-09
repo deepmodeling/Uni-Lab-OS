@@ -17,7 +17,7 @@ def get_runtime() -> Optional[BasicRuntime]:
     return _runtime
 
 
-def _build_runtime(devices_config: Any) -> BasicRuntime:
+def build_runtime(devices_config: Any) -> BasicRuntime:
     from unilabos.registry.registry import lab_registry
 
     runtime = BasicRuntime()
@@ -66,9 +66,21 @@ def _build_runtime(devices_config: Any) -> BasicRuntime:
                 device_id=device_id,
                 driver_class=driver_class,
                 config=config,
+                registry_name=registry_name,
+                display_name=str(
+                    registry_entry.get("displayname") or registry_name
+                ),
+                action_names=tuple(
+                    (class_config.get("action_value_mappings") or {}).keys()
+                ),
+                status_names=tuple((class_config.get("status_types") or {}).keys()),
             )
         )
     return runtime
+
+
+# 保留内部旧名称，避免嵌入方在过渡期失效。
+_build_runtime = build_runtime
 
 
 def main(
@@ -86,7 +98,7 @@ def main(
     """在进程内加载 Python 驱动，并保持运行直到进程退出。"""
 
     global _runtime
-    _runtime = _build_runtime(devices_config)
+    _runtime = build_runtime(devices_config)
     _runtime.start()
     logger.info(
         "[Basic] 运行时已启动，共 %d 台设备：%s",

@@ -1,8 +1,7 @@
 """HostLink wire protocol: newline-delimited JSON over TCP.
 
-The first slice deliberately contains only networking control messages.  Device
-actions and material/resource queries continue to use the existing ROS2 and
-HTTP paths.
+ROS2 mode uses the control messages for assisted discovery. The standalone
+HostLink backend additionally uses the same connection for device RPC/state.
 """
 
 from __future__ import annotations
@@ -22,6 +21,8 @@ class ActionType:
     HELLO = "hello"
     PING = "ping"
     ROS_INFO = "ros_info"
+    DEVICE_CALL = "device.call"
+    DEVICE_STATE = "device.state"
 
 
 class LinkError(Exception):

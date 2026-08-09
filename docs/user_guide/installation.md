@@ -404,7 +404,7 @@ unilab --help
 
 ```
 usage: unilab [-h] [-g GRAPH] [-c CONTROLLERS] [--registry_path REGISTRY_PATH]
-              [--working_dir WORKING_DIR] [--backend {basic,ros2,dora}]
+              [--working_dir WORKING_DIR] [--backend {basic,hostlink,ros2,dora}]
               ...
 ```
 

@@ -20,14 +20,21 @@ from unilabos.config.config import BasicConfig
 from unilabos.dora import main_dora_run
 
 
-def test_public_backend_names_are_basic_ros2_and_dora() -> None:
-    assert BACKEND_NAMES == ("basic", "ros2", "dora")
+def test_public_backend_names_include_hostlink() -> None:
+    assert BACKEND_NAMES == ("basic", "hostlink", "ros2", "dora")
     assert BasicConfig.backend == "ros2"
 
 
 @pytest.mark.parametrize(
     ("value", "canonical"),
-    [("basic", "basic"), ("simple", "basic"), ("ros", "ros2"), ("ros2", "ros2"), ("dora", "dora")],
+    [
+        ("basic", "basic"),
+        ("hostlink", "hostlink"),
+        ("simple", "basic"),
+        ("ros", "ros2"),
+        ("ros2", "ros2"),
+        ("dora", "dora"),
+    ],
 )
 def test_backend_names_and_legacy_aliases(value: str, canonical: str) -> None:
     assert normalize_backend_name(value) == canonical
@@ -44,6 +51,7 @@ def test_backend_specific_bridge_defaults() -> None:
         "fastapi",
     )
     assert resolve_backend_selection("basic").app_bridges == ()
+    assert resolve_backend_selection("hostlink").app_bridges == ()
     assert resolve_backend_selection("dora").app_bridges == ()
 
 
@@ -54,6 +62,7 @@ def test_backend_capability_validation() -> None:
         resolve_backend_selection("basic", is_slave=True)
     with pytest.raises(BackendConfigurationError, match="不支持 --visual"):
         resolve_backend_selection("dora", visual="rviz")
+    assert resolve_backend_selection("hostlink", is_slave=True).name == "hostlink"
 
 
 def test_cli_shows_canonical_names_and_accepts_aliases() -> None:
@@ -61,8 +70,9 @@ def test_cli_shows_canonical_names_and_accepts_aliases() -> None:
     assert parser.parse_args(["--backend", "ros"]).backend == "ros2"
     assert parser.parse_args(["--backend", "simple"]).backend == "basic"
     assert parser.parse_args(["--backend", "dora"]).backend == "dora"
+    assert parser.parse_args(["--backend", "hostlink"]).backend == "hostlink"
     help_text = parser.format_help()
-    assert "{basic,ros2,dora}" in help_text
+    assert "{basic,hostlink,ros2,dora}" in help_text
     assert "automancer" not in help_text
 
 

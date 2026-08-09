@@ -75,7 +75,7 @@ class WSConfig:
 class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"  # 远程服务器地址
 
-# Host/Slave ROS2 组网控制通道
+# Host/Slave 组网控制通道；hostlink backend 也用它承载设备 RPC/状态
 class HostLinkConfig:
     enable = True
     host = ""  # Slave 的 HostNode IP；推荐用 --host-node-ip 覆盖
@@ -199,12 +199,12 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `HostLinkConfig` | `heartbeat_interval` | `--hostlink-heartbeat-interval` | Slave 心跳周期        |
 | `HostLinkConfig` | `heartbeat_timeout` | `--hostlink-heartbeat-timeout` | Host 离线判定时间       |
 | `HostLinkConfig` | `connect_timeout` | `--hostlink-connect-timeout` | TCP 连接/握手超时          |
-| `HostLinkConfig` | `request_timeout` | `--hostlink-request-timeout` | 控制请求超时               |
+| `HostLinkConfig` | `request_timeout` | `--hostlink-request-timeout` | 控制请求/设备 RPC 超时      |
 | `HostLinkConfig` | `ros_domain_id`| `--ros-domain-id`   | Host 发布或 Slave 本地兜底 domain |
 | `HostLinkConfig` | `ros_discovery_range` | `--ros-discovery-range` | ROS 自动发现范围       |
 | `HostLinkConfig` | `ros_static_peers` | `--ros-static-peers` | 分号分隔的静态对端          |
 | `HostLinkConfig` | `ros_discovery_server` | `--ros-discovery-server` | 外部 Fast DDS Server |
-| `HostLinkConfig` | `ros_assist_apply` | `--no-ros-assist` | 不应用 Host 下发的 ROS 环境   |
+| `HostLinkConfig` | `ros_assist_apply` | `--no-ros-assist` | ROS2 Slave 不应用 Host 下发的 ROS 环境 |
 
 ### 特殊命令行参数
 

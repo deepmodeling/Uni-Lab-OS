@@ -27,6 +27,7 @@ class AsyncDriver:
         self.node = None
         self.initialized = False
         self.cleaned = False
+        self.ready = "idle"
 
     def post_init(self, node) -> None:
         self.node = node
@@ -78,3 +79,33 @@ def test_basic_runtime_owns_and_routes_devices() -> None:
     finally:
         runtime.stop()
     assert runtime.wait(timeout=0) is True
+
+
+def test_basic_runtime_exposes_registered_actions_and_status() -> None:
+    runtime = BasicRuntime()
+    runtime.add_driver(
+        BasicDriverSpec(
+            "dev-1",
+            AsyncDriver,
+            {},
+            registry_name="async_driver",
+            display_name="Async Driver",
+            action_names=("auto-add",),
+            status_names=("ready",),
+        )
+    )
+    runtime.start()
+    try:
+        assert runtime.descriptors() == [
+            {
+                "id": "dev-1",
+                "registry_name": "async_driver",
+                "display_name": "Async Driver",
+                "actions": ["auto-add"],
+                "status_fields": ["ready"],
+            }
+        ]
+        assert runtime.snapshot_states() == {"dev-1": {"ready": "idle"}}
+        assert runtime.call_action("dev-1", "auto-add", left=1, right=2) == 3
+    finally:
+        runtime.stop()

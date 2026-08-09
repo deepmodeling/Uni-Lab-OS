@@ -1,4 +1,4 @@
-"""Slave-side HostLink client for discovery and ROS2 configuration sync."""
+"""Slave-side HostLink client for discovery, state sync and bidirectional RPC."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import socket
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from unilabos.hostlink.protocol import (
@@ -15,6 +16,7 @@ from unilabos.hostlink.protocol import (
     PROTOCOL_VERSION,
     RemoteError,
     new_request,
+    new_response,
     read_message,
     send_message,
 )
@@ -44,6 +46,8 @@ class HostLinkClient:
         request_timeout: float = 10.0,
         reconnect_max_backoff: float = 10.0,
         on_status_change: Optional[Callable[[bool], None]] = None,
+        device_descriptors: Optional[Iterable[Dict[str, Any]]] = None,
+        heartbeat_payload_provider: Optional[Callable[[], Dict[str, Any]]] = None,
     ) -> None:
         if not str(host or "").strip():
             raise ValueError("HostLink host cannot be empty")
@@ -55,11 +59,15 @@ class HostLinkClient:
         self.request_timeout = float(request_timeout)
         self.reconnect_max_backoff = float(reconnect_max_backoff)
         self.on_status_change = on_status_change
+        self.heartbeat_payload_provider = heartbeat_payload_provider
         self.node_id = self.machine_name or f"slave-{uuid.uuid4().hex}"
         self.device_ids: List[str] = []
+        self.device_descriptors: List[Dict[str, Any]] = []
         self.configure_device_ids(device_ids or [])
-        self.capabilities = ["device-discovery", "ros-assist"]
+        self.configure_device_descriptors(device_descriptors or [])
+        self.capabilities = ["device-discovery", "ros-assist", "device-rpc"]
         self.hello_info: Dict[str, Any] = {}
+        self.handlers: Dict[str, Callable[[Dict[str, Any]], Any]] = {}
 
         self._sock: Optional[socket.socket] = None
         self._manager_thread: Optional[threading.Thread] = None
@@ -71,6 +79,10 @@ class HostLinkClient:
         self._connection_lost = threading.Event()
         self._online = threading.Event()
         self._status_condition = threading.Condition()
+        self._rpc_executor = ThreadPoolExecutor(
+            max_workers=8,
+            thread_name_prefix="hostlink-slave-rpc",
+        )
 
     def start(self) -> "HostLinkClient":
         if self._manager_thread is not None and self._manager_thread.is_alive():
@@ -105,6 +117,7 @@ class HostLinkClient:
         if self._manager_thread is not None and self._manager_thread.is_alive():
             self._manager_thread.join(timeout=3)
         self._manager_thread = None
+        self._rpc_executor.shutdown(wait=False, cancel_futures=True)
 
     @property
     def online(self) -> bool:
@@ -121,6 +134,31 @@ class HostLinkClient:
         if normalized:
             self.device_ids = normalized
             self.node_id = f"device:{normalized[0]}"
+
+    def configure_device_descriptors(
+        self,
+        descriptors: Iterable[Dict[str, Any]],
+    ) -> None:
+        normalized: List[Dict[str, Any]] = []
+        for descriptor in descriptors:
+            if not isinstance(descriptor, dict):
+                continue
+            device_id = str(descriptor.get("id") or "").strip()
+            if not device_id:
+                continue
+            item = dict(descriptor)
+            item["id"] = device_id
+            normalized.append(item)
+        self.device_descriptors = sorted(normalized, key=lambda item: item["id"])
+        if self.device_descriptors:
+            self.configure_device_ids(item["id"] for item in self.device_descriptors)
+
+    def register_handler(
+        self,
+        action_type: str,
+        handler: Callable[[Dict[str, Any]], Any],
+    ) -> None:
+        self.handlers[str(action_type)] = handler
 
     def request(
         self,
@@ -145,6 +183,7 @@ class HostLinkClient:
             "role": "slave",
             "protocol_version": PROTOCOL_VERSION,
             "capabilities": list(self.capabilities),
+            "devices": [dict(item) for item in self.device_descriptors],
         }
 
     def _request(
@@ -225,7 +264,13 @@ class HostLinkClient:
         while not self._stop.wait(self.heartbeat_interval):
             if self._connection_lost.is_set():
                 raise LinkError("connection closed")
-            self.request(ActionType.PING, timeout=self.request_timeout)
+            payload: Optional[Dict[str, Any]] = None
+            if self.heartbeat_payload_provider is not None:
+                try:
+                    payload = self.heartbeat_payload_provider()
+                except Exception:  # noqa: BLE001 - 状态采集不能中断重连
+                    logger.exception("[HostLink] heartbeat payload collection failed")
+            self.request(ActionType.PING, data=payload, timeout=self.request_timeout)
 
     def _read_loop(self, sock: socket.socket) -> None:
         reader = LineReader(sock)
@@ -234,6 +279,16 @@ class HostLinkClient:
                 message = read_message(reader)
                 if message is None:
                     break
+                if message.get("kind") == "req":
+                    try:
+                        self._rpc_executor.submit(
+                            self._handle_incoming_request,
+                            sock,
+                            message,
+                        )
+                    except RuntimeError:
+                        break
+                    continue
                 if message.get("kind") != "resp":
                     continue
                 request_id = str(message.get("id") or "")
@@ -254,6 +309,41 @@ class HostLinkClient:
                 if pending.response is None:
                     pending.response = {"ok": False, "error": "connection closed"}
                     pending.event.set()
+
+    def _handle_incoming_request(
+        self,
+        sock: socket.socket,
+        message: Dict[str, Any],
+    ) -> None:
+        request_id = str(message.get("id") or "")
+        if message.get("v") != PROTOCOL_VERSION:
+            response = new_response(
+                request_id,
+                False,
+                error=f"unsupported protocol version: {message.get('v')!r}",
+            )
+        else:
+            action = str(message.get("action_type") or "")
+            handler = self.handlers.get(action)
+            if handler is None:
+                response = new_response(
+                    request_id,
+                    False,
+                    error=f"unknown action: {action}",
+                )
+            else:
+                raw_data = message.get("data")
+                data = raw_data if isinstance(raw_data, dict) else {}
+                try:
+                    response = new_response(request_id, True, handler(data))
+                except Exception as exc:  # noqa: BLE001 - RPC 边界
+                    logger.warning(f"[HostLink] incoming {action} failed: {exc}")
+                    response = new_response(request_id, False, error=str(exc))
+        try:
+            with self._write_lock:
+                send_message(sock, response)
+        except OSError:
+            self._connection_lost.set()
 
     def _teardown_socket(self) -> None:
         sock, self._sock = self._sock, None

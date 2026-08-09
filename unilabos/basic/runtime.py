@@ -7,7 +7,7 @@ import inspect
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Coroutine, Dict, Optional, Type
+from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Type
 
 
 def instantiate_driver(
@@ -47,9 +47,32 @@ def instantiate_driver(
 class BasicDeviceNode:
     """向驱动提供异步辅助能力的轻量节点适配器。"""
 
-    def __init__(self, driver: Any, device_id: str) -> None:
+    def __init__(
+        self,
+        driver: Any,
+        device_id: str,
+        *,
+        registry_name: str = "",
+        display_name: str = "",
+        action_names: Iterable[str] = (),
+        status_names: Iterable[str] = (),
+    ) -> None:
         self.driver = driver
         self.device_id = device_id
+        self.registry_name = str(registry_name or "")
+        self.display_name = str(display_name or registry_name or device_id)
+        self.action_names = tuple(
+            sorted(
+                {
+                    str(name).strip()
+                    for name in action_names
+                    if str(name).strip() and not str(name).startswith("_")
+                }
+            )
+        )
+        self.status_names = tuple(
+            sorted({str(name).strip() for name in status_names if str(name).strip()})
+        )
         self._logger = logging.getLogger(f"unilabos.basic.{device_id}")
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(
@@ -58,6 +81,7 @@ class BasicDeviceNode:
             daemon=True,
         )
         self._started = False
+        self._action_lock = threading.Lock()
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
@@ -112,12 +136,53 @@ class BasicDeviceNode:
     def call_action(self, action_name: str, **kwargs: Any) -> Any:
         if not self._started:
             raise RuntimeError(f"Basic 设备 {self.device_id!r} 尚未启动")
-        action = getattr(self.driver, action_name, None)
-        if not callable(action) or action_name.startswith("_"):
+        action_name = str(action_name or "").strip()
+        if action_name.startswith("_") or (
+            self.action_names and action_name not in self.action_names
+        ):
             raise AttributeError(
                 f"Basic 设备 {self.device_id!r} 没有动作 {action_name!r}"
             )
-        return self._call(action, **kwargs)
+        method_name = action_name.removeprefix("auto-")
+        action = getattr(self.driver, method_name, None)
+        if not callable(action):
+            raise AttributeError(
+                f"Basic 设备 {self.device_id!r} 没有动作 {action_name!r}"
+            )
+        # 与 ROS backend 的单设备 Action 执行约束一致，避免同一驱动被并发调用。
+        with self._action_lock:
+            return self._call(action, **kwargs)
+
+    def snapshot_status(self) -> Dict[str, Any]:
+        """读取注册表声明的状态；单个状态失败不影响其他字段。"""
+
+        result: Dict[str, Any] = {}
+        errors: Dict[str, str] = {}
+        with self._action_lock:
+            for name in self.status_names:
+                try:
+                    getter = getattr(self.driver, f"get_{name}", None)
+                    if callable(getter):
+                        value = self._call(getter)
+                    else:
+                        value = getattr(self.driver, name)
+                        if callable(value):
+                            value = self._call(value)
+                    result[name] = value
+                except Exception as exc:  # noqa: BLE001 - 状态快照需部分成功
+                    errors[name] = str(exc)
+        if errors:
+            result["_errors"] = errors
+        return result
+
+    def describe(self) -> Dict[str, Any]:
+        return {
+            "id": self.device_id,
+            "registry_name": self.registry_name,
+            "display_name": self.display_name,
+            "actions": list(self.action_names),
+            "status_fields": list(self.status_names),
+        }
 
     def stop(self) -> None:
         if not self._started:
@@ -139,6 +204,10 @@ class BasicDriverSpec:
     device_id: str
     driver_class: Type[Any]
     config: Dict[str, Any]
+    registry_name: str = ""
+    action_names: tuple[str, ...] = ()
+    status_names: tuple[str, ...] = ()
+    display_name: str = ""
 
 
 class BasicRuntime:
@@ -152,7 +221,14 @@ class BasicRuntime:
         if spec.device_id in self.devices:
             raise ValueError(f"Basic 设备 ID 重复：{spec.device_id}")
         driver = instantiate_driver(spec.driver_class, spec.device_id, spec.config)
-        node = BasicDeviceNode(driver, spec.device_id)
+        node = BasicDeviceNode(
+            driver,
+            spec.device_id,
+            registry_name=spec.registry_name,
+            display_name=spec.display_name,
+            action_names=spec.action_names,
+            status_names=spec.status_names,
+        )
         self.devices[spec.device_id] = node
         return node
 
@@ -174,6 +250,15 @@ class BasicRuntime:
         except KeyError as exc:
             raise KeyError(f"未知 Basic 设备：{device_id}") from exc
         return node.call_action(action_name, **kwargs)
+
+    def descriptors(self) -> list[Dict[str, Any]]:
+        return [node.describe() for node in self.devices.values()]
+
+    def snapshot_states(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            device_id: node.snapshot_status()
+            for device_id, node in self.devices.items()
+        }
 
     def wait(self, timeout: Optional[float] = None) -> bool:
         return self._stopped.wait(timeout)

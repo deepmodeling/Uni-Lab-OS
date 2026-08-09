@@ -1,4 +1,4 @@
-"""Host-side HostLink listener for Slave discovery and ROS2 settings."""
+"""Host-side HostLink listener for discovery, policy sync and device RPC."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from unilabos.hostlink.protocol import (
     LineReader,
     LinkError,
     PROTOCOL_VERSION,
+    RemoteError,
+    new_request,
     new_response,
     read_message,
     send_message,
@@ -20,6 +22,73 @@ from unilabos.hostlink.protocol import (
 from unilabos.utils import logger
 
 Handler = Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]
+
+
+class _Pending:
+    __slots__ = ("event", "response")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.response: Optional[Dict[str, Any]] = None
+
+
+class _PeerSession:
+    """A connected Slave socket that also accepts Host-initiated requests."""
+
+    def __init__(self, sock: socket.socket, request_timeout: float) -> None:
+        self.sock = sock
+        self.request_timeout = float(request_timeout)
+        self._write_lock = threading.Lock()
+        self._pending: Dict[str, _Pending] = {}
+        self._pending_lock = threading.Lock()
+
+    def send(self, message: Dict[str, Any]) -> None:
+        with self._write_lock:
+            send_message(self.sock, message)
+
+    def request(
+        self,
+        action_type: str,
+        data: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        message = new_request(action_type, data=data)
+        request_id = str(message["id"])
+        pending = _Pending()
+        with self._pending_lock:
+            self._pending[request_id] = pending
+        try:
+            self.send(message)
+            wait_timeout = self.request_timeout if timeout is None else float(timeout)
+            if not pending.event.wait(wait_timeout):
+                raise LinkError(
+                    f"request timeout: {action_type} ({request_id[:8]})"
+                )
+        except OSError as exc:
+            raise LinkError(f"request send failed: {exc}") from exc
+        finally:
+            with self._pending_lock:
+                self._pending.pop(request_id, None)
+        response = pending.response or {}
+        if not response.get("ok"):
+            raise RemoteError(str(response.get("error") or "remote error"))
+        return response.get("data")
+
+    def resolve_response(self, message: Dict[str, Any]) -> None:
+        request_id = str(message.get("id") or "")
+        with self._pending_lock:
+            pending = self._pending.get(request_id)
+        if pending is not None:
+            pending.response = message
+            pending.event.set()
+
+    def close(self) -> None:
+        with self._pending_lock:
+            pending_items = list(self._pending.values())
+        for pending in pending_items:
+            if pending.response is None:
+                pending.response = {"ok": False, "error": "connection closed"}
+                pending.event.set()
 
 
 class _LinkTCPServer(socketserver.ThreadingTCPServer):
@@ -36,6 +105,7 @@ class _LinkRequestHandler(socketserver.BaseRequestHandler):
         sock.settimeout(link.socket_timeout)
         reader = LineReader(sock)
         peer_key = f"{self.client_address[0]}:{self.client_address[1]}"
+        session = link.register_session(peer_key, sock)
         try:
             while not link.stopping.is_set():
                 try:
@@ -47,20 +117,24 @@ class _LinkRequestHandler(socketserver.BaseRequestHandler):
                     break
                 if message is None:
                     break
+                if message.get("kind") == "resp":
+                    session.resolve_response(message)
+                    continue
                 if message.get("kind") != "req":
                     continue
                 response = link.dispatch(message, peer_key)
                 try:
-                    send_message(sock, response)
+                    session.send(response)
                 except OSError:
                     break
         finally:
             reader.close()
+            link.unregister_session(peer_key, session)
             link.mark_disconnected(peer_key)
 
 
 class HostLinkServer:
-    """Track Slave/device presence and publish the Host ROS2 network policy."""
+    """Track Slave devices and make requests over their control connections."""
 
     def __init__(
         self,
@@ -68,17 +142,21 @@ class HostLinkServer:
         port: int = 7302,
         heartbeat_timeout: float = 15.0,
         socket_timeout: float = 1.0,
+        request_timeout: float = 10.0,
     ) -> None:
         self._bind = bind
         self._port = int(port)
         self.heartbeat_timeout = float(heartbeat_timeout)
         self.socket_timeout = float(socket_timeout)
+        self.request_timeout = float(request_timeout)
         self.handlers: Dict[str, Handler] = {}
         self.hello_payload: Dict[str, Any] = {}
         self.stopping = threading.Event()
         self._peers: Dict[str, Dict[str, Any]] = {}
         self._connection_nodes: Dict[str, str] = {}
         self._peers_lock = threading.Lock()
+        self._sessions: Dict[str, _PeerSession] = {}
+        self._sessions_lock = threading.Lock()
         self._tcp: Optional[_LinkTCPServer] = None
         self._thread: Optional[threading.Thread] = None
         self.register_handler(ActionType.HELLO, self._handle_hello)
@@ -110,6 +188,11 @@ class HostLinkServer:
         if self._thread is not None and self._thread.is_alive():
             self._thread.join(timeout=3)
         self._thread = None
+        with self._sessions_lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
+        for session in sessions:
+            session.close()
 
     @property
     def port(self) -> int:
@@ -117,6 +200,73 @@ class HostLinkServer:
 
     def register_handler(self, action_type: str, handler: Handler) -> None:
         self.handlers[action_type] = handler
+
+    def register_session(
+        self,
+        peer_key: str,
+        sock: socket.socket,
+    ) -> _PeerSession:
+        session = _PeerSession(sock, self.request_timeout)
+        with self._sessions_lock:
+            old_session = self._sessions.get(peer_key)
+            self._sessions[peer_key] = session
+        if old_session is not None:
+            old_session.close()
+        return session
+
+    def unregister_session(
+        self,
+        peer_key: str,
+        session: _PeerSession,
+    ) -> None:
+        with self._sessions_lock:
+            if self._sessions.get(peer_key) is session:
+                self._sessions.pop(peer_key, None)
+        session.close()
+
+    def request_peer(
+        self,
+        peer_key: str,
+        action_type: str,
+        data: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        with self._sessions_lock:
+            session = self._sessions.get(str(peer_key))
+        if session is None:
+            raise LinkError(f"hostlink peer offline: {peer_key}")
+        return session.request(action_type, data, timeout)
+
+    def request_device(
+        self,
+        device_id: str,
+        action_type: str,
+        data: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        device_id = str(device_id)
+        peer = self.devices(online_only=True).get(device_id)
+        if peer is None:
+            raise LinkError(f"hostlink device offline: {device_id}")
+        return self.request_peer(str(peer["addr"]), action_type, data, timeout)
+
+    def call_device(
+        self,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        return self.request_device(
+            device_id,
+            ActionType.DEVICE_CALL,
+            {
+                "device_id": str(device_id),
+                "action": str(action_name),
+                "arguments": dict(arguments or {}),
+            },
+            timeout,
+        )
 
     def dispatch(self, message: Dict[str, Any], peer_key: str) -> Dict[str, Any]:
         request_id = str(message.get("id") or "")
@@ -149,12 +299,22 @@ class HostLinkServer:
         with self._peers_lock:
             known_node = self._connection_nodes.get(peer_key)
             if action == ActionType.HELLO:
+                devices: Dict[str, Dict[str, Any]] = {}
+                for item in data.get("devices") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    device_id = str(item.get("id") or "").strip()
+                    if device_id:
+                        descriptor = dict(item)
+                        descriptor["id"] = device_id
+                        devices[device_id] = descriptor
                 device_ids = sorted(
                     {
                         str(device_id).strip()
                         for device_id in data.get("device_ids") or []
                         if str(device_id).strip()
                     }
+                    | set(devices)
                 )
                 machine_name = str(data.get("machine_name") or "").strip()
                 node_id = str(data.get("node_id") or "").strip()
@@ -178,6 +338,7 @@ class HostLinkServer:
                         "machine_name": machine_name,
                         "role": str(data.get("role") or "slave"),
                         "device_ids": device_ids,
+                        "devices": devices,
                         "protocol_version": data.get("protocol_version"),
                         "capabilities": [
                             str(item)
@@ -203,6 +364,8 @@ class HostLinkServer:
                 )
                 if known_node and peer.get("addr") != peer_key:
                     return dict(peer)
+                if action == ActionType.PING and isinstance(data.get("states"), dict):
+                    peer["states"] = dict(data["states"])
             peer["last_seen"] = now
             peer["connected"] = True
             return dict(peer)
@@ -238,7 +401,14 @@ class HostLinkServer:
             if online_only and not peer.get("online"):
                 continue
             for device_id in peer.get("device_ids") or []:
-                result[str(device_id)] = dict(peer)
+                device_id = str(device_id)
+                snapshot = dict(peer)
+                snapshot["device"] = dict(
+                    (peer.get("devices") or {}).get(device_id) or {"id": device_id}
+                )
+                state = (peer.get("states") or {}).get(device_id)
+                snapshot["state"] = dict(state) if isinstance(state, dict) else {}
+                result[device_id] = snapshot
         return result
 
     def has_device(self, device_id: str) -> bool:

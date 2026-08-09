@@ -4,6 +4,8 @@
 
 ``basic``
     不使用通信中间件的进程内 Python 驱动运行时。
+``hostlink``
+    Basic 驱动 + HostLink TCP 的无 ROS 分布式运行时。
 ``ros2``
     完整 ROS 2 运行时。
 ``dora``
@@ -65,6 +67,16 @@ BACKEND_PROFILES: dict[str, BackendProfile] = {
         default_app_bridges=(),
         supported_app_bridges=(),
         supports_slave=False,
+        supports_visualization=False,
+    ),
+    "hostlink": BackendProfile(
+        name="hostlink",
+        display_name="HostLink",
+        module="unilabos.hostlink.main_hostlink_run",
+        description="HostLink TCP 分布式 Python 驱动运行时（无 ROS）",
+        default_app_bridges=(),
+        supported_app_bridges=(),
+        supports_slave=True,
         supports_visualization=False,
     ),
     "ros2": BackendProfile(
@@ -158,7 +170,8 @@ def resolve_backend_selection(
         )
     if is_slave and not profile.supports_slave:
         raise BackendConfigurationError(
-            f"backend '{name}' 不支持 --is_slave；请使用 backend 'ros2'"
+            f"backend '{name}' 不支持 --is_slave；"
+            "请使用 backend 'hostlink' 或 'ros2'"
         )
     if visual != "disable" and not profile.supports_visualization:
         raise BackendConfigurationError(
@@ -210,7 +223,8 @@ def start_backend(
     profile = BACKEND_PROFILES[name]
     if is_slave and not profile.supports_slave:
         raise BackendConfigurationError(
-            f"backend '{name}' 不支持 --is_slave；请使用 backend 'ros2'"
+            f"backend '{name}' 不支持 --is_slave；"
+            "请使用 backend 'hostlink' 或 'ros2'"
         )
     entrypoint = _load_entrypoint(profile, is_slave)
 

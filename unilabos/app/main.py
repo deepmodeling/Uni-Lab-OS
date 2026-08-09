@@ -256,9 +256,10 @@ def parse_args():
         type=backend_cli_value,
         choices=BACKEND_NAMES,
         default="ros2",
-        metavar="{basic,ros2,dora}",
+        metavar="{basic,hostlink,ros2,dora}",
         help=(
-            "Runtime backend: basic (in-process), ros2 (default), or dora. "
+            "Runtime backend: basic (in-process), hostlink (distributed, no "
+            "ROS), ros2 (default), or dora. "
             "Legacy aliases 'simple' and 'ros' remain accepted."
         ),
     )
@@ -268,7 +269,7 @@ def parse_args():
         default=None,
         help=(
             "Application bridges. Defaults are backend-specific: ros2 enables "
-            "websocket and fastapi; basic/dora enable none. Pass the flag with "
+            "websocket and fastapi; basic/hostlink/dora enable none. Pass the flag with "
             "no values to disable all bridges explicitly."
         ),
     )
@@ -314,7 +315,10 @@ def parse_args():
         "--disable-hostlink",
         dest="disable_hostlink",
         action="store_true",
-        help="关闭 HostLink；ROS2 使用原有发现和注册流程。",
+        help=(
+            "关闭 HostLink；ROS2 使用原有发现和注册流程。"
+            "不能与 --backend hostlink 同时使用。"
+        ),
     )
     parser.add_argument(
         "--hostlink_heartbeat_interval",
@@ -388,7 +392,10 @@ def parse_args():
         "--no-ros-assist",
         dest="no_ros_assist",
         action="store_true",
-        help="保留 HostLink 设备发现和心跳，但不应用 Host 下发的 ROS2 环境。",
+        help=(
+            "ROS2 backend：保留 HostLink 设备发现和心跳，"
+            "但不应用 Host 下发的 ROS2 环境。"
+        ),
     )
     parser.add_argument(
         "--slave_no_host",
@@ -966,11 +973,19 @@ def main():
 
     workflow_upload = args_dict.get("command") in ("workflow_upload", "wf")
 
-    # HostLink is a ROS-only control channel in this slice.  It exchanges the
-    # ROS domain/discovery policy and Slave device IDs; normal device actions,
-    # resources and backend APIs keep their existing transports.
+    # ROS2 backend 用 HostLink 辅助发现；hostlink backend 则在同一 TCP 长连接上
+    # 直接同步设备描述/状态和执行设备动作，不导入 ROS。
     is_slave = bool(args_dict.get("is_slave", False))
     _apply_hostlink_cli(args_dict, is_slave=is_slave)
+    if args_dict["backend"] == "hostlink":
+        from unilabos.config.config import HostLinkConfig
+
+        if not HostLinkConfig.enable:
+            parser.error("--backend hostlink 不能与 --disable-hostlink 同时使用")
+        if is_slave and not str(HostLinkConfig.host or "").strip():
+            parser.error(
+                "--backend hostlink --is-slave 必须通过 --host-node-ip 指定 Host"
+            )
 
     # 使用远程资源启动
     if not workflow_upload and args_dict["use_remote_resource"]:

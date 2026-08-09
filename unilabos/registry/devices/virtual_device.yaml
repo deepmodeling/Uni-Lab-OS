@@ -251,6 +251,7 @@ virtual_centrifuge:
     type: python
   config_info: []
   description: Virtual Centrifuge for CentrifugeProtocol Testing
+  displayname: virtual_centrifuge
   handles:
   - data_key: vessel
     data_source: handle
@@ -261,6 +262,7 @@ virtual_centrifuge:
     label: centrifuge
     side: NORTH
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -675,6 +677,7 @@ virtual_column:
     type: python
   config_info: []
   description: Virtual Column Chromatography Device for RunColumn Protocol Testing
+  displayname: virtual_column
   handles:
   - data_key: from_vessel
     data_source: handle
@@ -693,6 +696,7 @@ virtual_column:
     label: columnout
     side: EAST
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -1110,6 +1114,7 @@ virtual_filter:
     type: python
   config_info: []
   description: Virtual Filter for FilterProtocol Testing
+  displayname: virtual_filter
   handles:
   - data_key: vessel_in
     data_source: handle
@@ -1136,6 +1141,7 @@ virtual_filter:
     label: retentate_out
     side: EAST
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -1375,6 +1381,7 @@ virtual_gas_source:
     type: python
   config_info: []
   description: Virtual gas source
+  displayname: virtual_gas_source
   handles:
   - data_key: fluid_out
     data_source: executor
@@ -1385,6 +1392,7 @@ virtual_gas_source:
     label: gassource
     side: SOUTH
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -1971,6 +1979,7 @@ virtual_heatchill:
     type: python
   config_info: []
   description: Virtual HeatChill for HeatChillProtocol Testing
+  displayname: virtual_heatchill
   handles:
   - data_key: vessel
     data_source: handle
@@ -1981,6 +1990,7 @@ virtual_heatchill:
     label: heatchill
     side: NORTH
   icon: Heater.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -2337,6 +2347,7 @@ virtual_multiway_valve:
     type: python
   config_info: []
   description: Virtual 8-Way Valve for flow direction control
+  displayname: virtual_multiway_valve
   handles:
   - data_key: fluid_in
     data_source: handle
@@ -2419,6 +2430,7 @@ virtual_multiway_valve:
     label: '8'
     side: NORTH
   icon: EightPipeline.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -2735,6 +2747,7 @@ virtual_rotavap:
     type: python
   config_info: []
   description: Virtual Rotary Evaporator for EvaporateProtocol Testing
+  displayname: virtual_rotavap
   handles:
   - data_key: vessel_in
     data_source: handle
@@ -2761,6 +2774,7 @@ virtual_rotavap:
     label: solvent_out
     side: EAST
   icon: Rotaryevaporator.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -2986,8 +3000,10 @@ virtual_sample_demo:
     type: python
   config_info: []
   description: Virtual sample tracking demo device
+  displayname: virtual_sample_demo
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -3947,6 +3963,7 @@ virtual_separator:
     type: python
   config_info: []
   description: Virtual Separator for SeparateProtocol Testing
+  displayname: virtual_separator
   handles:
   - data_key: from_vessel
     data_source: handle
@@ -3981,6 +3998,7 @@ virtual_separator:
     label: bind
     side: WEST
   icon: Separator.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -4290,6 +4308,7 @@ virtual_solenoid_valve:
     type: python
   config_info: []
   description: Virtual Solenoid Valve for simple on/off flow control
+  displayname: virtual_solenoid_valve
   handles:
   - data_key: fluid_port_in
     data_source: handle
@@ -4308,6 +4327,7 @@ virtual_solenoid_valve:
     label: out
     side: SOUTH
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -4693,6 +4713,7 @@ virtual_solid_dispenser:
   config_info: []
   description: Virtual Solid Dispenser for Add Protocol Testing - supports mass and
     molar additions
+  displayname: virtual_solid_dispenser
   handles:
   - data_key: solid_out
     data_source: executor
@@ -4711,6 +4732,7 @@ virtual_solid_dispenser:
     label: SolidIn
     side: NORTH
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -5315,6 +5337,7 @@ virtual_stirrer:
     type: python
   config_info: []
   description: Virtual Stirrer for StirProtocol Testing
+  displayname: virtual_stirrer
   handles:
   - data_key: vessel
     data_source: handle
@@ -5325,6 +5348,7 @@ virtual_stirrer:
     label: stirrer
     side: NORTH
   icon: Stirrer.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -5848,6 +5872,7 @@ virtual_transfer_pump:
     type: python
   config_info: []
   description: Virtual Transfer Pump for TransferProtocol Testing (Syringe-style)
+  displayname: virtual_transfer_pump
   handles:
   - data_key: fluid_port
     data_source: handle
@@ -5858,6 +5883,7 @@ virtual_transfer_pump:
     label: transferpump
     side: SOUTH
   icon: Pump.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -6090,6 +6116,7 @@ virtual_vacuum_pump:
     type: python
   config_info: []
   description: Virtual vacuum pump
+  displayname: virtual_vacuum_pump
   handles:
   - data_key: fluid_in
     data_source: handle
@@ -6100,6 +6127,7 @@ virtual_vacuum_pump:
     label: vacuumpump
     side: SOUTH
   icon: Vacuum.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

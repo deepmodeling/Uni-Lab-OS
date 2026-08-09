@@ -5,6 +5,7 @@ hplc_plate:
     module: unilabos.devices.resource_container.container:PlateContainer
     type: python
   description: HPLC板
+  displayname: hplc_plate
   handles: []
   icon: ''
   init_param_schema: {}
@@ -27,6 +28,7 @@ plate_96:
     module: unilabos.devices.resource_container.container:PlateContainer
     type: python
   description: 96孔板
+  displayname: plate_96
   handles: []
   icon: ''
   init_param_schema: {}
@@ -49,6 +51,7 @@ plate_96_high:
     module: unilabos.devices.resource_container.container:PlateContainer
     type: python
   description: 96孔板
+  displayname: plate_96_high
   handles: []
   icon: ''
   init_param_schema: {}
@@ -71,6 +74,7 @@ tiprack_96_high:
     module: unilabos.devices.resource_container.container:TipRackContainer
     type: python
   description: 96孔板
+  displayname: tiprack_96_high
   handles: []
   icon: ''
   init_param_schema: {}
@@ -102,6 +106,7 @@ tiprack_box:
     module: unilabos.devices.resource_container.container:TipRackContainer
     type: python
   description: 96针头盒
+  displayname: tiprack_box
   handles: []
   icon: ''
   init_param_schema: {}

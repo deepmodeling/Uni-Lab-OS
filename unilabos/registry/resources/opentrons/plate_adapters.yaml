@@ -5,6 +5,7 @@ Opentrons_96_adapter_Vb:
     module: pylabrobot.resources.opentrons.plate_adapters:Opentrons_96_adapter_Vb
     type: pylabrobot
   description: Opentrons 96 adapter Vb
+  displayname: Opentrons_96_adapter_Vb
   handles: []
   icon: ''
   init_param_schema: {}

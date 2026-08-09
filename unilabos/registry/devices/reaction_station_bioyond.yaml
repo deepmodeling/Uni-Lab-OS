@@ -949,8 +949,10 @@ reaction_station.bioyond:
     type: python
   config_info: []
   description: Bioyond反应站
+  displayname: reaction_station.bioyond
   handles: []
   icon: reaction_station.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -1009,8 +1011,10 @@ reaction_station.reactor:
     type: python
   config_info: []
   description: 反应站子设备-反应器
+  displayname: reaction_station.reactor
   handles: []
   icon: reaction_station.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

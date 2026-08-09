@@ -6539,8 +6539,10 @@ workstation:
     type: python
   config_info: []
   description: Workstation
+  displayname: workstation
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

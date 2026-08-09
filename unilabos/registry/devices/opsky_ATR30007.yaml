@@ -207,8 +207,10 @@ opsky_ATR30007:
     type: python
   config_info: []
   description: OPSKY ATR30007 光纤拉曼模块，提供单一入口大函数以执行一次完整流程。
+  displayname: opsky_ATR30007
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

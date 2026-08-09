@@ -188,8 +188,10 @@ Qone_nmr:
     type: python
   config_info: []
   description: Oxford NMR设备驱动，支持CSV字符串到TXT文件的批量转换功能，并监测对应.nmr文件的大小变化以确认结果生成完成
+  displayname: Qone_nmr
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties: {}

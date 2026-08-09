@@ -5,6 +5,7 @@ container:
     module: unilabos.resources.container:get_regular_container
     type: pylabrobot
   description: regular organic container
+  displayname: container
   handles:
   - data_key: fluid_in
     data_source: handle

@@ -330,8 +330,10 @@ neware_battery_test_system:
     type: python
   config_info: []
   description: 新威电池测试系统驱动，提供720个通道的电池测试状态监控、物料管理和CSV批量提交功能。支持TCP通信实现远程控制，包含完整的物料管理系统（2盘电池状态映射），以及从CSV文件批量提交测试任务的能力。
+  displayname: neware_battery_test_system
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

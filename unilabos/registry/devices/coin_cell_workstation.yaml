@@ -756,8 +756,10 @@ coincellassemblyworkstation_device:
     type: python
   config_info: []
   description: ''
+  displayname: coincellassemblyworkstation_device
   handles: []
   icon: koudian.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

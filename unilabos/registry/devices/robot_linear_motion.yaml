@@ -471,8 +471,10 @@ linear_motion.grbl:
     type: python
   config_info: []
   description: Grbl数控机床（CNC）设备，用于实验室精密加工和三轴定位操作。该设备基于Grbl固件，通过串口通信控制步进电机实现X、Y、Z三轴的精确运动。支持绝对定位、轨迹规划、主轴控制和实时状态监控。具备安全限位保护和运动平滑控制功能。适用于精密钻孔、铣削、雕刻、样品制备等需要高精度定位和加工的实验室应用场景。
+  displayname: linear_motion.grbl
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -822,8 +824,10 @@ linear_motion.toyo_xyz.sim:
     type: python
   config_info: []
   description: 东洋XYZ三轴运动平台，基于MoveIt2运动规划框架的精密定位设备。该设备通过ROS2和MoveIt2实现三维空间的精确运动控制，支持复杂轨迹规划、多点定位、速度控制等功能。具备高精度定位、平稳运动、实时轨迹监控等特性。适用于精密加工、样品定位、检测扫描、自动化装配等需要高精度三维运动控制的实验室和工业应用场景。
+  displayname: linear_motion.toyo_xyz.sim
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -987,8 +991,10 @@ motor.iCL42:
     type: python
   config_info: []
   description: iCL42步进电机驱动器，用于实验室设备的精密线性运动控制。该设备通过串口通信控制iCL42型步进电机驱动器，支持多种运动模式和精确的位置、速度控制。具备位置反馈、运行状态监控和故障检测功能。适用于自动进样器、样品传送、精密定位平台等需要准确线性运动控制的实验室自动化设备。
+  displayname: motor.iCL42
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

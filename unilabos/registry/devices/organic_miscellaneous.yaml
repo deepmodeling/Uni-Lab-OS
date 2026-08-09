@@ -147,8 +147,10 @@ rotavap.one:
     type: python
   config_info: []
   description: 旋转蒸发仪设备，用于有机化学实验中的溶剂回收和浓缩操作。该设备通过串口通信控制，集成旋转和真空泵功能，支持定时控制和自动化操作。具备旋转速度调节、真空度控制、温度管理等功能，实现高效的溶剂蒸发和回收。适用于有机合成、天然产物提取、药物制备等需要溶剂去除和浓缩的实验室应用场景。
+  displayname: rotavap.one
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -484,8 +486,10 @@ separator.homemade:
     type: python
   config_info: []
   description: 液-液分离器设备，基于自制Grbl控制器的自动化分离系统。该设备集成搅拌、沉降、阀门控制和电导率传感器，通过串口通信实现精确的分离操作控制。支持自动搅拌、分层沉降、基于传感器反馈的智能分液等功能。适用于有机化学中的萃取分离、相分离、液-液提取等需要精确分离控制的实验应用。
+  displayname: separator.homemade
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

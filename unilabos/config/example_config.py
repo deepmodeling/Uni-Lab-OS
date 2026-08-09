@@ -11,3 +11,12 @@ class WSConfig:
     max_reconnect_attempts = 999  # 最大重连次数
     ws_ping_interval = 5  # ping间隔（秒），对齐服务端 PingPeriod
     ws_ping_timeout = 7  # pong等待超时（秒），对齐服务端 PongWait
+
+
+# Host/Slave ROS2 组网；Slave 推荐通过 --host-node-ip 指定 Host，不必写死在文件中。
+class HostLinkConfig:
+    enable = True
+    port = 7302
+    bind = "0.0.0.0"
+    advertise_ip = ""  # Host 多网卡时填写 Slave 可达 IP
+    ros_domain_id = ""  # Host 可在此统一配置，也可用 --ros-domain-id

@@ -54,6 +54,26 @@ class HTTPConfig:
     schedule_addr = ""
 
 
+# Host/Slave ROS2 组网控制通道。Host 在 ROS backend 启动时监听；Slave 只有在
+# ``host`` 非空（--host_node_ip）时连接，不接管物料、动作或微后端职责。
+class HostLinkConfig:
+    enable = True
+    host = ""  # Slave 侧指定的 HostNode IP/主机名
+    port = 7302
+    bind = "0.0.0.0"
+    advertise_ip = ""  # Host 下发给 Slave 的可达地址；空时自动探测
+    heartbeat_interval = 5.0
+    heartbeat_timeout = 15.0
+    connect_timeout = 5.0
+    request_timeout = 10.0
+    ros_assist_apply = True
+    ros_domain_id = ""  # 空时沿用 ROS_DOMAIN_ID
+    ros_discovery_range = ""  # SYSTEM_DEFAULT / SUBNET / LOCALHOST / OFF
+    ros_static_peers = ""  # 分号分隔
+    # 外部 Fast DDS Discovery Server 的 host:port；off 表示明确清除继承值。
+    ros_discovery_server = ""
+
+
 # ROS配置
 class ROSConfig:
     modules = [

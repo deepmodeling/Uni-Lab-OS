@@ -75,7 +75,8 @@ unilab --ak your_ak --sk your_sk -g host_devices.json
 **启动命令**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g slave_devices.json --is_slave
+unilab --ak your_ak --sk your_sk -g slave_devices.json \
+  --is_slave --host-node-ip 192.168.1.10
 ```
 
 ---
@@ -104,6 +105,18 @@ ros2 topic list
 # 查看action
 ros2 action list
 ```
+
+### HostLink 组网控制通道
+
+Host 运行 ROS backend 时会在 TCP `7302` 监听 HostLink。Slave 通过
+`--host-node-ip <host-ip>[:port]` 建立控制连接，在 `rclpy.init` 前完成两件事：
+
+- 上报启动图中的设备 ID，供 Host 发现 Slave 及其设备归属；
+- 接收并应用 Host 的 `ROS_DOMAIN_ID`、发现范围、静态对端和外部 Fast DDS
+  Discovery Server 地址。
+
+HostLink 只辅助 ROS2 组网。设备 Action、节点注册和资源同步仍走现有 ROS2
+接口；本阶段没有通过 HostLink 提供物料查询或无 ROS backend。
 
 ### WebSocket 通信
 
@@ -188,14 +201,16 @@ unilab --ak your_ak --sk your_sk -g all_devices.json
 **主节点**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g host.json
+unilab --ak your_ak --sk your_sk -g host.json --ros-domain-id 42
 ```
 
 **从节点**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave
-unilab --ak your_ak --sk your_sk -g slave2.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g slave1.json \
+  --is-slave --host-node-ip 192.168.1.10
+unilab --ak your_ak --sk your_sk -g slave2.json \
+  --is-slave --host-node-ip 192.168.1.10 --port 8003
 ```
 
 ### 云端集成模式
@@ -358,9 +373,33 @@ ping <slave_node_ip>
 export ROS_DOMAIN_ID=42
 ```
 
+推荐由 Host 启动参数统一 domain，Slave 不再重复维护：
+
+```bash
+# Host：发布 domain 42
+unilab -g host.json --ros-domain-id 42
+
+# Slave：通过 HostLink 获取 domain 42 和发现配置
+unilab -g slave.json --is-slave --host-node-ip 192.168.1.10
+```
+
+如实验室使用已有 Fast DDS Discovery Server，可在 Host 指定并下发：
+
+```bash
+unilab -g host.json --ros-domain-id 42 \
+  --ros-discovery-server 192.168.1.10:11811
+```
+
+此功能切片不会自动启动 Discovery Server 进程；未指定时仍沿用 ROS2/DDS
+原有发现机制，并把 Host IP 加入 `ROS_STATIC_PEERS`。
+
 ### 防火墙配置
 
 **建议做法**：
+
+HostLink 需要 Slave 能访问 Host 的 TCP `7302`（若在 `--host-node-ip` 中指定
+其他端口，则开放对应端口）。该端口只承载组网握手、心跳和设备 ID，不承载设备
+动作或物料数据。
 
 为了确保 ROS2 DDS 通信正常，建议直接关闭防火墙，而不是配置特定端口。ROS2 使用动态端口范围，配置特定端口可能导致通信问题。
 

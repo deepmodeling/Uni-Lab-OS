@@ -138,6 +138,38 @@ def load_config_from_file(config_path):
         load_config(config_path)
 
 
+def _apply_hostlink_cli(args_dict: Dict[str, Any], *, is_slave: bool) -> None:
+    """Apply ROS HostLink CLI overrides after config/env loading."""
+
+    from unilabos.config.config import HostLinkConfig
+    from unilabos.hostlink.ros_assist import parse_host_target, validate_domain_id
+
+    host_node_ip = str(args_dict.get("host_node_ip") or "").strip()
+    if host_node_ip:
+        host, hostlink_port = parse_host_target(host_node_ip, HostLinkConfig.port)
+        HostLinkConfig.port = hostlink_port
+        if is_slave:
+            HostLinkConfig.host = host
+            print_status(
+                f"Slave HostNode: {HostLinkConfig.host}:{HostLinkConfig.port}",
+                "info",
+            )
+        else:
+            HostLinkConfig.advertise_ip = host
+
+    ros_domain_id = validate_domain_id(args_dict.get("ros_domain_id"))
+    if ros_domain_id is not None:
+        HostLinkConfig.ros_domain_id = str(ros_domain_id)
+        os.environ["ROS_DOMAIN_ID"] = str(ros_domain_id)
+        print_status(f"ROS_DOMAIN_ID = {ros_domain_id}", "info")
+    if args_dict.get("ros_discovery_range") is not None:
+        HostLinkConfig.ros_discovery_range = args_dict["ros_discovery_range"]
+    if args_dict.get("ros_discovery_server") is not None:
+        HostLinkConfig.ros_discovery_server = str(
+            args_dict["ros_discovery_server"]
+        ).strip()
+
+
 def convert_argv_dashes_to_underscores(args: argparse.ArgumentParser):
     # easier for user input, easier for dev search code
     option_strings = list(args._option_string_actions.keys())
@@ -194,9 +226,51 @@ def parse_args():
         help="Run the backend as slave node (without host privileges).",
     )
     parser.add_argument(
+        "--host_node_ip",
+        "--host-node-ip",
+        dest="host_node_ip",
+        default="",
+        help=(
+            "HostNode address for a Slave, as ip/hostname or ip:port. "
+            "The HostLink control channel synchronizes ROS2 networking and device IDs."
+        ),
+    )
+    parser.add_argument(
+        "--ros_domain_id",
+        "--ros-domain-id",
+        dest="ros_domain_id",
+        type=int,
+        default=None,
+        help=(
+            "ROS2 domain id (0-232). A Host advertises it to Slaves; "
+            "a Slave uses it as fallback until HostLink connects."
+        ),
+    )
+    parser.add_argument(
+        "--ros_discovery_range",
+        "--ros-discovery-range",
+        dest="ros_discovery_range",
+        choices=["SYSTEM_DEFAULT", "SUBNET", "LOCALHOST", "OFF"],
+        default=None,
+        help="ROS_AUTOMATIC_DISCOVERY_RANGE advertised by the Host.",
+    )
+    parser.add_argument(
+        "--ros_discovery_server",
+        "--ros-discovery-server",
+        dest="ros_discovery_server",
+        default=None,
+        help=(
+            "External Fast DDS discovery server host:port; use 'off' to clear it. "
+            "This slice does not start a discovery-server process."
+        ),
+    )
+    parser.add_argument(
         "--slave_no_host",
         action="store_true",
-        help="Skip waiting for host service in slave mode",
+        help=(
+            "Allow a Slave to start while HostLink/Host ROS services are offline; "
+            "the control channel keeps reconnecting in the background."
+        ),
     )
     parser.add_argument(
         "--upload_registry",
@@ -739,6 +813,12 @@ def main():
 
     workflow_upload = args_dict.get("command") in ("workflow_upload", "wf")
 
+    # HostLink is a ROS-only control channel in this slice.  It exchanges the
+    # ROS domain/discovery policy and Slave device IDs; normal device actions,
+    # resources and backend APIs keep their existing transports.
+    is_slave = bool(args_dict.get("is_slave", False))
+    _apply_hostlink_cli(args_dict, is_slave=is_slave)
+
     # 使用远程资源启动
     if not workflow_upload and args_dict["use_remote_resource"]:
         print_status("使用远程资源启动", "info")
@@ -753,7 +833,7 @@ def main():
 
     BasicConfig.port = args_dict["port"] if args_dict["port"] else BasicConfig.port
     BasicConfig.disable_browser = args_dict["disable_browser"] or BasicConfig.disable_browser
-    BasicConfig.is_host_mode = not args_dict.get("is_slave", False)
+    BasicConfig.is_host_mode = not is_slave
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
     BasicConfig.upload_registry = args_dict.get("upload_registry", False)
     BasicConfig.no_update_feedback = args_dict.get("no_update_feedback", False)

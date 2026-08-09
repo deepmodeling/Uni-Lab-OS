@@ -71,6 +71,18 @@ class WSConfig:
 class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"  # 远程服务器地址
 
+# Host/Slave ROS2 组网控制通道
+class HostLinkConfig:
+    enable = True
+    host = ""  # Slave 的 HostNode IP；推荐用 --host-node-ip 覆盖
+    port = 7302
+    bind = "0.0.0.0"
+    advertise_ip = ""  # Host 多网卡时显式填写 Slave 可达 IP
+    ros_domain_id = ""  # Host 下发的 ROS_DOMAIN_ID
+    ros_discovery_range = ""
+    ros_static_peers = ""
+    ros_discovery_server = ""  # 外部 host:port；off 表示禁用
+
 # ROS配置
 class ROSConfig:
     modules = [
@@ -107,6 +119,8 @@ class ROSConfig:
 | `ak` / `sk`       | `--ak` / `--sk`     | **安全考虑**：避免敏感信息泄露       |
 | `working_dir`     | `--working_dir`     | **灵活性**：不同环境可能使用不同目录 |
 | `is_host_mode`    | `--is_slave`        | **运行模式**：由启动场景决定，不固定 |
+| HostNode 地址     | `--host-node-ip`    | **组网目标**：Slave 按部署指定 Host IP |
+| ROS2 domain       | `--ros-domain-id`   | **网络隔离**：由 Host 统一发布给 Slave |
 | `slave_no_host`   | `--slave_no_host`   | **运行模式**：从站特殊配置，按需使用 |
 | `upload_registry` | `--upload_registry` | **临时操作**：仅首次启动或更新时需要 |
 | `vis_2d_enable`   | `--2d_vis`          | **调试功能**：按需临时启用           |
@@ -173,6 +187,8 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `BasicConfig` | `upload_registry` | `--upload_registry` | 启动时上传注册表信息             |
 | `BasicConfig` | `vis_2d_enable`   | `--2d_vis`          | 启用 2D 可视化                   |
 | `HTTPConfig`  | `remote_addr`     | `--addr`            | 远程服务地址                     |
+| `HostLinkConfig` | `host`         | `--host-node-ip`    | Slave 连接的 HostNode IP/端口    |
+| `HostLinkConfig` | `ros_domain_id`| `--ros-domain-id`   | Host 发布或 Slave 本地兜底 domain |
 
 ### 特殊命令行参数
 

@@ -906,7 +906,7 @@ class SZLabS08CapStationDevice:
         self,
         工艺选择: int = int(S08ProcessType.OPEN_LIQUID_VIAL_100ML),
         样品ID: list[int] | None = None,
-        瓶盖暂存位: int = 1,
+        瓶盖暂存位: int | None = None,
     ) -> dict[str, Any]:
         try:
             process_type = _resolve_process_type_by_id(工艺选择)

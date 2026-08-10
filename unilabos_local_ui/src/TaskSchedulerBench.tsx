@@ -195,9 +195,28 @@ function sampleRowStatusLabel(status: SampleProcessRowStatus) {
   return '排队';
 }
 
-function inheritsSampleS04Position(nodeId: string, parameter: string) {
-  return parameter === 'position'
-    && (nodeId === 'w04_run_stirring_s04' || nodeId === 'w06_pick_beaker_s04');
+const AUTOMATIC_S04_POSITION_NODE_IDS = new Set([
+  'w04_place_beaker_s04',
+  'w04_run_stirring_s04',
+  'w06_pick_beaker_s04',
+]);
+
+function isAutomaticallyManagedParameter(nodeId: string, parameter: string) {
+  return (parameter === 'position' && AUTOMATIC_S04_POSITION_NODE_IDS.has(nodeId))
+    || parameter === '瓶盖暂存位';
+}
+
+function automaticParameterDescription(nodeId: string, parameter: string) {
+  if (parameter === 'position' && nodeId === 'w04_place_beaker_s04') {
+    return '磁搅位置 · 根据传感器自动选择首个空闲且就绪的 S04 工位';
+  }
+  if (parameter === 'position' && AUTOMATIC_S04_POSITION_NODE_IDS.has(nodeId)) {
+    return '磁搅位置 · 自动沿用同一样品实际分配的 S04 工位';
+  }
+  if (parameter === '瓶盖暂存位') {
+    return '瓶盖暂存位 · 开盖时自动选择空位，关盖时按样品 ID 找回对应瓶盖';
+  }
+  return '';
 }
 
 type HeaderActionsProps = Pick<
@@ -338,7 +357,11 @@ export function TaskSchedulerBench(props: Props) {
     setParameterDraft(Object.fromEntries(
       Object.entries(task.nodeParameters).map(([nodeId, parameters]) => [
         nodeId,
-        { ...parameters },
+        Object.fromEntries(
+          Object.entries(parameters).filter(
+            ([parameter]) => !isAutomaticallyManagedParameter(nodeId, parameter),
+          ),
+        ),
       ]),
     ));
   };
@@ -727,9 +750,9 @@ export function TaskSchedulerBench(props: Props) {
                   )).map((spec) => {
                     const name = spec.name as string;
                     const value = values[name];
-                    if (inheritsSampleS04Position(node.templateNodeId, name)) {
+                    if (isAutomaticallyManagedParameter(node.templateNodeId, name)) {
                       return <p className="scheduler-bench__inherited-parameter" key={name}>
-                        磁搅位置 · 自动沿用同一样品在「S04 放烧杯」中选择的位置
+                        {automaticParameterDescription(node.templateNodeId, name)}
                       </p>;
                     }
                     const inputType = spec.type === 'boolean' ? 'checkbox' : spec.type === 'integer' || spec.type === 'number' ? 'number' : 'text';

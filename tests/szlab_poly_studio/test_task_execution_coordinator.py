@@ -198,6 +198,44 @@ def test_same_sample_s04_process_and_pick_inherit_latest_place_position():
     ) == 4
 
 
+def test_same_sample_s04_position_prefers_runtime_selected_place_result():
+    nodes = {
+        "w04_place_beaker_s04": WorkflowNode(
+            uuid="w04_place_beaker_s04",
+            name="S04 放烧杯",
+            device_name="szlab_mixer_robot",
+            method="submit_place_to_s04",
+            param={"position": 2},
+        ),
+    }
+    templates = {
+        "place": {"id": "place", "node_ids": ["w04_place_beaker_s04"]},
+        "stir": {"id": "stir", "node_ids": ["w04_run_stirring_s04"]},
+    }
+    workspace = {
+        "task_instances": [{
+            "id": "sample-a-place",
+            "sample_id": "sample-a",
+            "template_id": "place",
+            "order": 6,
+            "execution_state": {
+                "records": [{
+                    "node_id": "w04_place_beaker_s04",
+                    "status": "succeeded",
+                    "result": {"success": True, "position": 1},
+                }],
+            },
+        }],
+    }
+
+    assert _resolve_sample_s04_position(
+        workspace,
+        instance={"sample_id": "sample-a", "order": 7},
+        templates=templates,
+        nodes_by_id=nodes,
+    ) == 1
+
+
 @pytest.mark.parametrize("node", ATOMIC_START_NODES, ids=lambda node: node.uuid)
 def test_first_eight_atomic_tasks_require_all_start_signals(node):
     conditions = _atomic_start_signal_conditions(node)

@@ -165,6 +165,20 @@ def _resolve_sample_s04_position(
         template = templates.get(str(peer.get("template_id") or ""))
         if not template or _S04_POSITION_SOURCE_NODE_ID not in template.get("node_ids", []):
             continue
+        recorded_position: int | None = None
+        state = peer.get("execution_state")
+        if isinstance(state, dict):
+            for record in reversed(state.get("records", [])):
+                if (
+                    isinstance(record, dict)
+                    and record.get("node_id") == _S04_POSITION_SOURCE_NODE_ID
+                    and record.get("status") == "succeeded"
+                ):
+                    result = record.get("result")
+                    if isinstance(result, dict) and result.get("position") is not None:
+                        recorded_position = int(result["position"])
+                        break
+
         payload = peer.get("payload")
         node_parameters = payload.get("node_parameters") if isinstance(payload, dict) else None
         override = (
@@ -173,11 +187,32 @@ def _resolve_sample_s04_position(
             else None
         )
         params = {**source_node.param, **(override if isinstance(override, dict) else {})}
-        position = int(params.get("position", 1))
+        position = (
+            recorded_position
+            if recorded_position is not None
+            else int(params.get("position", 1))
+        )
         if position not in range(1, 7):
             raise ValueError("磁搅位置必须在 1-6 范围内")
         candidates.append((peer_order, str(peer.get("id") or ""), position))
     return max(candidates)[2] if candidates else None
+
+
+def _find_free_s04_position(devices: dict[str, Any]) -> int | None:
+    """按位置顺序读取实机信号，返回首个空闲且就绪的 S04 工位。"""
+    plc = devices.get("szlab_poly_plc")
+    if plc is None:
+        return None
+    try:
+        for position in range(1, 7):
+            if bool(_read_trigger_variable(plc, s04_material_sensor_var(position))):
+                continue
+            if not bool(_read_trigger_variable(plc, s04_ready_var(position))):
+                continue
+            return position
+    except Exception:
+        return None
+    return None
 
 
 def _temporary_station_state(
@@ -735,6 +770,14 @@ class TaskExecutionCoordinator:
                             node,
                             param={**node.param, "position": inherited_position},
                         )
+                if node is not None and node_id == _S04_POSITION_SOURCE_NODE_ID:
+                    free_position = _find_free_s04_position(devices)
+                    if free_position is None:
+                        continue
+                    node = replace(
+                        node,
+                        param={**node.param, "position": free_position},
+                    )
                 next_node: WorkflowNode | None = None
                 if cursor + 1 < len(node_ids):
                     next_node_id = str(node_ids[cursor + 1])
@@ -748,6 +791,17 @@ class TaskExecutionCoordinator:
                         next_node = replace(
                             next_node,
                             param={**next_node.param, **next_override},
+                        )
+                    if (
+                        next_node is not None
+                        and next_node_id == _S04_POSITION_SOURCE_NODE_ID
+                    ):
+                        free_position = _find_free_s04_position(devices)
+                        if free_position is None:
+                            continue
+                        next_node = replace(
+                            next_node,
+                            param={**next_node.param, "position": free_position},
                         )
                 execution_id = deterministic_execution_id(
                     str(instance.get("id")), cursor, node_id

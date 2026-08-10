@@ -284,7 +284,7 @@ def test_process_cap_open_auto_allocates_first_empty_cache_slot():
     assert (_cap_cache_element_name(2, 0), SAMPLE_A[0]) in client.writes
 
 
-def test_process_cap_open_defaults_to_cap_storage_slot_one():
+def test_process_cap_open_default_auto_allocates_first_free_slot():
     device, client = make_s08_device()
     client.seed_slot_sample_id(1, SAMPLE_B)
     client.seed_slot_sample_id(2, SAMPLE_B)
@@ -295,8 +295,8 @@ def test_process_cap_open_defaults_to_cap_storage_slot_one():
     )
 
     assert result["success"] is True
-    assert result["cap_storage_slot"] == 1
-    assert ("S082瓶盖暂存位", 1) in client.writes
+    assert result["cap_storage_slot"] == 3
+    assert ("S082瓶盖暂存位", 3) in client.writes
 
 
 def test_process_cap_open_uses_explicit_cap_storage_slot():

@@ -760,4 +760,4 @@ unilab --config base_config.py \
 
 - [工作目录详解](working_directory.md)
 - [启动参数详解](../user_guide/launch.md)
-- [快速安装指南](../user_guide/quick_install_guide.md)
+- [安装指南](../user_guide/installation.md)

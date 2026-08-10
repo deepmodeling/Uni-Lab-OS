@@ -81,11 +81,11 @@ def check_python_version() -> bool:
     version = sys.version_info
     version_str = f"{version.major}.{version.minor}.{version.micro}"
 
-    if version.major == 3 and version.minor >= 11:
+    if version.major == 3 and version.minor == 12:
         print(f"  {CHECK_MARK} Python {version_str}")
         return True
     else:
-        print(f"  {CROSS_MARK} Python {version_str} (requires Python 3.11+)")
+        print(f"  {CROSS_MARK} Python {version_str} (requires the Python 3.12 / cp312 ABI)")
         return False
 
 

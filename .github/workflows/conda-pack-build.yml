@@ -51,7 +51,7 @@ jobs:
             platform: osx-arm64
             env_file: unilabos-osx-arm64.yaml
             script_ext: sh
-          - os: windows-latest
+          - os: windows-2022
             platform: win-64
             env_file: unilabos-win64.yaml
             script_ext: bat
@@ -84,14 +84,24 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0
 
+      - name: Create artifact label
+        if: steps.should_build.outputs.should_build == 'true'
+        id: artifact_label
+        shell: bash
+        env:
+          RAW_PACKAGE_REF: ${{ env.PACKAGE_REF }}
+        run: |
+          SAFE_REF="${RAW_PACKAGE_REF//\//-}"
+          echo "value=$SAFE_REF" >> "$GITHUB_OUTPUT"
+
       - name: Setup Miniforge (with mamba)
         if: steps.should_build.outputs.should_build == 'true'
         uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.14'
-          channels: conda-forge,robostack-staging,uni-lab
+          python-version: '3.12.13'
+          channels: conda-forge,robostack-jazzy,uni-lab
           channel-priority: flexible
           activate-environment: unilab
           auto-update-conda: false
@@ -105,10 +115,10 @@ jobs:
           echo Build full: ${{ env.BUILD_FULL }}
           if "${{ env.BUILD_FULL }}"=="true" (
             echo Installing unilabos-full ^(complete package^)...
-            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos-full conda-pack zstandard -y
+            mamba install -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy uni-lab::unilabos-full conda-pack zstandard -y
           ) else (
             echo Installing unilabos ^(minimal package^)...
-            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos conda-pack zstandard -y
+            mamba install -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy uni-lab::unilabos conda-pack zstandard -y
           )
 
       - name: Install conda-pack, unilabos and dependencies (Unix)
@@ -120,50 +130,50 @@ jobs:
           echo "Build full: ${{ env.BUILD_FULL }}"
           if [[ "${{ env.BUILD_FULL }}" == "true" ]]; then
             echo "Installing unilabos-full (complete package)..."
-            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos-full conda-pack zstandard -y
+            mamba install -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy uni-lab::unilabos-full conda-pack zstandard -y
           else
             echo "Installing unilabos (minimal package)..."
-            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos conda-pack zstandard -y
+            mamba install -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy uni-lab::unilabos conda-pack zstandard -y
           fi
 
-      - name: Get latest ros-humble-unilabos-msgs version (Windows)
+      - name: Get latest ros-jazzy-unilabos-msgs version (Windows)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
         id: msgs_version_win
         run: |
-          echo Checking installed ros-humble-unilabos-msgs version...
-          conda list -n unilab ros-humble-unilabos-msgs
-          for /f "tokens=2" %%i in ('conda list -n unilab ros-humble-unilabos-msgs --json ^| python -c "import sys, json; pkgs=json.load(sys.stdin); print(pkgs[0]['version'] if pkgs else 'not-found')"') do set VERSION=%%i
+          echo Checking installed ros-jazzy-unilabos-msgs version...
+          conda list -n unilab ros-jazzy-unilabos-msgs
+          for /f "tokens=2" %%i in ('conda list -n unilab ros-jazzy-unilabos-msgs --json ^| python -c "import sys, json; pkgs=json.load(sys.stdin); print(pkgs[0]['version'] if pkgs else 'not-found')"') do set VERSION=%%i
           echo installed_version=%VERSION% >> %GITHUB_OUTPUT%
-          echo Installed ros-humble-unilabos-msgs version: %VERSION%
+          echo Installed ros-jazzy-unilabos-msgs version: %VERSION%
 
-      - name: Get latest ros-humble-unilabos-msgs version (Unix)
+      - name: Get latest ros-jazzy-unilabos-msgs version (Unix)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
         id: msgs_version_unix
         shell: bash
         run: |
-          echo "Checking installed ros-humble-unilabos-msgs version..."
-          VERSION=$(conda list -n unilab ros-humble-unilabos-msgs --json | python -c "import sys, json; pkgs=json.load(sys.stdin); print(pkgs[0]['version'] if pkgs else 'not-found')")
+          echo "Checking installed ros-jazzy-unilabos-msgs version..."
+          VERSION=$(conda list -n unilab ros-jazzy-unilabos-msgs --json | python -c "import sys, json; pkgs=json.load(sys.stdin); print(pkgs[0]['version'] if pkgs else 'not-found')")
           echo "installed_version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Installed ros-humble-unilabos-msgs version: $VERSION"
+          echo "Installed ros-jazzy-unilabos-msgs version: $VERSION"
 
-      - name: Check for newer ros-humble-unilabos-msgs (Windows)
+      - name: Check for newer ros-jazzy-unilabos-msgs (Windows)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
         run: |
-          echo Checking for available ros-humble-unilabos-msgs versions...
-          mamba search --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs || echo Search completed
+          echo Checking for available ros-jazzy-unilabos-msgs versions...
+          mamba search --override-channels -c uni-lab -c conda-forge -c robostack-jazzy ros-jazzy-unilabos-msgs || echo Search completed
           echo.
-          echo Updating ros-humble-unilabos-msgs to latest version...
-          mamba update -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs -y || echo Already at latest version
+          echo Updating ros-jazzy-unilabos-msgs to latest version...
+          mamba update -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy ros-jazzy-unilabos-msgs -y || echo Already at latest version
 
-      - name: Check for newer ros-humble-unilabos-msgs (Unix)
+      - name: Check for newer ros-jazzy-unilabos-msgs (Unix)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
         shell: bash
         run: |
-          echo "Checking for available ros-humble-unilabos-msgs versions..."
-          mamba search --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs || echo "Search completed"
+          echo "Checking for available ros-jazzy-unilabos-msgs versions..."
+          mamba search --override-channels -c uni-lab -c conda-forge -c robostack-jazzy ros-jazzy-unilabos-msgs || echo "Search completed"
           echo ""
-          echo "Updating ros-humble-unilabos-msgs to latest version..."
-          mamba update -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs -y || echo "Already at latest version"
+          echo "Updating ros-jazzy-unilabos-msgs to latest version..."
+          mamba update -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy ros-jazzy-unilabos-msgs -y || echo "Already at latest version"
 
       - name: Install latest unilabos from source (Windows)
         if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
@@ -193,7 +203,7 @@ jobs:
           mamba env list
           echo.
           echo === Installed Packages ===
-          mamba list -n unilab | findstr /C:"unilabos" /C:"ros-humble-unilabos-msgs" || mamba list -n unilab
+          mamba list -n unilab | findstr /C:"unilabos" /C:"ros-jazzy-unilabos-msgs" || mamba list -n unilab
           echo.
           echo === Python Packages ===
           mamba run -n unilab pip list | findstr unilabos || mamba run -n unilab pip list
@@ -206,7 +216,7 @@ jobs:
           mamba env list
           echo ""
           echo "=== Installed Packages ==="
-          mamba list -n unilab | grep -E "(unilabos|ros-humble-unilabos-msgs)" || mamba list -n unilab
+          mamba list -n unilab | grep -E "(unilabos|ros-jazzy-unilabos-msgs)" || mamba list -n unilab
           echo ""
           echo "=== Python Packages ==="
           mamba run -n unilab pip list | grep unilabos || mamba run -n unilab pip list
@@ -333,7 +343,7 @@ jobs:
         if: steps.should_build.outputs.should_build == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}
+          name: unilab-pack-${{ matrix.platform }}-${{ steps.artifact_label.outputs.value }}
           path: dist-package/
           retention-days: 90
           if-no-files-found: error
@@ -346,7 +356,7 @@ jobs:
           echo ==========================================
           echo Platform: ${{ matrix.platform }}
           echo Branch: ${{ env.PACKAGE_REF }}
-          echo Python version: 3.11.14
+          echo Python version: 3.12.13
           if "${{ env.BUILD_FULL }}"=="true" (
             echo Package: unilabos-full ^(complete^)
           ) else (
@@ -356,7 +366,7 @@ jobs:
           echo Distribution package contents:
           dir dist-package
           echo.
-          echo Artifact name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}
+          echo Artifact name: unilab-pack-${{ matrix.platform }}-${{ steps.artifact_label.outputs.value }}
           echo.
           echo After download, extract the ZIP and run:
           echo   install_unilab.bat
@@ -371,7 +381,7 @@ jobs:
           echo "=========================================="
           echo "Platform: ${{ matrix.platform }}"
           echo "Branch: ${{ env.PACKAGE_REF }}"
-          echo "Python version: 3.11.14"
+          echo "Python version: 3.12.13"
           if [[ "${{ env.BUILD_FULL }}" == "true" ]]; then
             echo "Package: unilabos-full (complete)"
           else
@@ -381,7 +391,7 @@ jobs:
           echo "Distribution package contents:"
           ls -lh dist-package/
           echo ""
-          echo "Artifact name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}"
+          echo "Artifact name: unilab-pack-${{ matrix.platform }}-${{ steps.artifact_label.outputs.value }}"
           echo ""
           echo "After download:"
           echo "  install_unilab.sh"

@@ -1,12 +1,11 @@
 name: unilab
 channels:
-  - unilab
-  - robostack
-  - robostack-staging
   - conda-forge
+  - robostack-jazzy
+  - uni-lab
 dependencies:
   # Basics
-  - python=3.11.11
+  - python=3.12.13
   - compilers
   - cmake
   - make
@@ -14,7 +13,8 @@ dependencies:
   - sphinx
   - sphinx_rtd_theme
   # Data Visualization
-  - numpy
+  - numpy >=2,<3
+  - uni-lab::opentrons-shared-data=9.1.0+unilabos.np2.1=py312_np2_1
   - scipy
   - pandas
   - networkx
@@ -25,7 +25,7 @@ dependencies:
   - pyserial
   - pyusb
   - pylibftdi
-  - pymodbus
+  - pymodbus >=3.6.9,<4
   - python-can
   - pyvisa
   - opencv
@@ -42,32 +42,32 @@ dependencies:
   - jupyros
   # ros
   - colcon-common-extensions
-  - ros-humble-desktop-full
-  - ros-humble-control-msgs
-  - ros-humble-sensor-msgs
-  - ros-humble-trajectory-msgs
-  - ros-humble-navigation2
-  - ros-humble-ros2-control
-  - ros-humble-robot-state-publisher
-  - ros-humble-joint-state-publisher
+  - robostack-jazzy::ros2-distro-mutex=0.15.*
+  - ros-jazzy-desktop-full
+  - ros-jazzy-control-msgs
+  - ros-jazzy-sensor-msgs
+  - ros-jazzy-trajectory-msgs
+  - ros-jazzy-navigation2
+  - ros-jazzy-ros2-control
+  - ros-jazzy-robot-state-publisher
+  - ros-jazzy-joint-state-publisher
   # web and visualization
-  - ros-humble-rosbridge-server
-  - ros-humble-cv-bridge
+  - ros-jazzy-rosbridge-server
+  - ros-jazzy-cv-bridge
   # geometry & motion planning
-  - ros-humble-tf2
-  - ros-humble-moveit
-  - ros-humble-moveit-servo
+  - ros-jazzy-tf2
+  - ros-jazzy-moveit
+  - ros-jazzy-moveit-servo
   # simulation
-  - ros-humble-simulation
-  - ros-humble-tf-transformations
+  - ros-jazzy-simulation
+  - ros-jazzy-tf-transformations
   - transforms3d
-  # ros-humble-gazebo-ros // ignored because of the conflict with ign-gazebo
+  # ros-jazzy-gazebo-ros // ignored because of the conflict with ign-gazebo
   # ilab equipments
-  - uni-lab::ros-humble-unilabos-msgs
+  - uni-lab::ros-jazzy-unilabos-msgs
   - zeep
   - jinja2
-  - pprp
   - pip:
       - paho-mqtt
-      - opentrons_shared_data
+      - pprp>=0.2.7
       - git+https://github.com/Xuwznln/pylabrobot

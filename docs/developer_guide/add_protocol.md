@@ -23,7 +23,7 @@ cd ..
 调试成功后，发起 pull request，Uni-Lab 的 CI/CD 系统会自动将新的指令集编译打包，mamba执行升级即可永久生效：
 
 ```bash
-mamba update ros-humble-unilabos-msgs -c http://quetz.dp.tech:8088/get/unilab -c robostack-humble -c robostack-staging
+mamba update ros-jazzy-unilabos-msgs -c uni-lab -c conda-forge -c robostack-jazzy
 ```
 
 3. 在 `unilabos/messages/__init__.py` 中添加 Pydantic 定义的实验操作名和参数列表

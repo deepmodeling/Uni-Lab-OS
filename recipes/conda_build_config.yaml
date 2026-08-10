@@ -1,5 +1,5 @@
 channel_sources:
-  - robostack,robostack-staging,conda-forge
+  - conda-forge,robostack-jazzy
   
 gazebo:
   - '11'
@@ -12,7 +12,7 @@ cdt_name:  # [linux]
   - cos7   # [linux]
 
 python:
- - 3.11.* *_cpython
+ - 3.12.* *_cpython
 python_impl:
   - cpython
 

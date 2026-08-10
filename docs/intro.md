@@ -18,6 +18,7 @@ concepts/02-topology-and-chemputer-compile.md
 :maxdepth: 2
 
 user_guide/best_practice.md
+user_guide/runtime_baseline.md
 user_guide/installation.md
 user_guide/launch.md
 user_guide/graph_files.md

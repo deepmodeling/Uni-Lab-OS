@@ -2005,7 +2005,7 @@ class MoveIt2:
             self.__move_action_goal.request.start_state
         )
 
-        # The below attributes were introduced in Iron and do not exist in Humble.
+        # Jazzy 提供以下字段；保留 hasattr 以兼容旧消息对象。
         if hasattr(self.__cartesian_path_request, "max_velocity_scaling_factor"):
             self.__cartesian_path_request.max_velocity_scaling_factor = (
                 self.__move_action_goal.request.max_velocity_scaling_factor

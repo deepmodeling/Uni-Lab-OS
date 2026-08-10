@@ -1,6 +1,6 @@
 package:
   name: unilabos
-  version: "0.11.3"
+  version: "0.12.1"
 
 source:
   path: ../..
@@ -13,10 +13,10 @@ build:
 
 requirements:
   host:
-    - python
+    - python ==3.12.13
     - pip
   run:
-    - python
+    - python >=3.12,<3.13
 
 test:
   imports:

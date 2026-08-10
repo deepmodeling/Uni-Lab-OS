@@ -1,0 +1,88 @@
+name: Opentrons NumPy 2 Build
+
+on:
+  push:
+    branches:
+    - feat/jazzy-py312
+    tags:
+    - opentrons-numpy2-v*
+    paths:
+    - .github/workflows/opentrons-numpy2-build.yml
+    - recipes/opentrons-shared-data/**
+  workflow_dispatch:
+    inputs:
+      upload_to_anaconda:
+        description: '是否上传到 Anaconda.org uni-lab 频道'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Miniforge
+        uses: conda-incubator/setup-miniconda@v4
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          python-version: '3.12.13'
+          channels: conda-forge,uni-lab
+          channel-priority: strict
+          activate-environment: build-env
+          auto-update-conda: false
+          show-channel-urls: true
+
+      - name: Install build tools
+        run: |
+          mamba install -n build-env --override-channels -c conda-forge rattler-build anaconda-client -y
+          echo "CONDA_NO_PLUGINS=true" >> "$GITHUB_ENV"
+          echo "PYTHONUTF8=1" >> "$GITHUB_ENV"
+          echo "PYTHONIOENCODING=utf-8" >> "$GITHUB_ENV"
+          echo "ANACONDA_CLIENT_FORCE_STANDALONE=1" >> "$GITHUB_ENV"
+
+      - name: Build patched package
+        run: |
+          conda run -n build-env rattler-build build -r recipes/opentrons-shared-data/recipe.yaml -c conda-forge
+
+      - name: Verify NumPy 2 package metadata and runtime
+        run: |
+          PACKAGE_PATH=$(find ./output/noarch -name "opentrons-shared-data-9.1.0+unilabos.np2.1-*.conda" -print -quit)
+          test -n "$PACKAGE_PATH"
+          mamba create -n opentrons-test --override-channels -c conda-forge \
+            python=3.12.13 "numpy>=2.5,<3" jsonschema pydantic typing-extensions pip -y
+          mamba install -n opentrons-test --override-channels -c conda-forge "$PACKAGE_PATH" -y
+          conda run -n opentrons-test python -c "import importlib.metadata as m; import numpy as np; from opentrons_shared_data.labware import labware_definition as ld; reqs=m.requires('opentrons-shared-data') or []; assert np.lib.NumpyVersion(np.__version__) >= '2.5.0'; assert ld.trapezoid([1, 2, 3]) == 4; assert any(r.startswith('numpy') and '>=2' in r and '<3' in r for r in reqs), reqs; assert m.version('opentrons-shared-data') == '9.1.0+unilabos.np2.1'; print(np.__version__, m.version('opentrons-shared-data'))"
+          conda run -n opentrons-test pip check
+          conda run -n opentrons-test python -c "from pathlib import Path; import sys; root=Path(sys.prefix)/'share'/'licenses'/'opentrons-shared-data'; assert (root/'LICENSE').is_file(); assert (root/'NOTICE').is_file(); print(root)"
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p conda-packages-temp
+          find ./output/noarch -name "opentrons-shared-data-*.conda" -exec cp {} conda-packages-temp/ \;
+          ls -la conda-packages-temp/
+
+      - name: Upload conda package artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: opentrons-shared-data-numpy2
+          path: conda-packages-temp/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload to Anaconda.org
+        if: github.event.inputs.upload_to_anaconda == 'true' || startsWith(github.ref, 'refs/tags/opentrons-numpy2-v')
+        run: |
+          for package in $(find ./output/noarch -name "opentrons-shared-data-*.conda"); do
+            conda run -n build-env anaconda -t ${{ secrets.ANACONDA_API_TOKEN }} upload --user uni-lab --force "$package"
+          done

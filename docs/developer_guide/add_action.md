@@ -93,7 +93,7 @@ add_action_files(
    unzip conda-package-linux-64.zip  # 或其他平台
 
    # 安装测试包
-   mamba install ./ros-humble-unilabos-msgs-*.conda
+   mamba install ./ros-jazzy-unilabos-msgs-*.conda
    ```
 
 3. **验证 Action 是否正确添加**：
@@ -125,7 +125,7 @@ add_action_files(
 如果采用自己构建的action包，可以通过以下命令更新安装：
 
 ```bash
-mamba remove --force ros-humble-unilabos-msgs
+mamba remove --force ros-jazzy-unilabos-msgs
 mamba config set safety_checks disabled  # 如果没有提升版本号，会触发md5与网络上md5不一致，是正常现象，因此通过本指令关闭md5检查
 mamba install xxx.conda --offline
 ```

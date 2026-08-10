@@ -4,6 +4,9 @@
 
 本指南将引导您从零开始完成 Uni-Lab-OS 实验室系统的完整搭建，从环境安装到高级设备开发。无论您是初次接触 Uni-Lab-OS 的用户，还是希望深入定制开发的开发者，都能在本指南中找到清晰的步骤和实用建议。
 
+> 本指南统一以 Python 3.12.13（`cp312`）、ROS 2 Jazzy 和 NumPy 2 为基线。
+> 从 Python 3.11/ROS 2 Humble 环境迁移时，请先阅读[运行时与 ABI 基线](runtime_baseline.md)。
+
 ### 适用对象
 
 - **实验室管理员**：负责实验室系统部署和维护
@@ -46,7 +49,7 @@
 # 下载 Miniforge: https://github.com/conda-forge/miniforge/releases
 
 # 2. 创建 Conda 环境
-mamba create -n unilab python=3.11.14
+mamba create -n unilab python=3.12.13
 
 # 3. 激活环境
 mamba activate unilab
@@ -54,15 +57,15 @@ mamba activate unilab
 # 4. 安装 Uni-Lab-OS（选择其一）
 
 # 方案 A：标准安装（推荐大多数用户）
-mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
+mamba install uni-lab::unilabos -c uni-lab -c conda-forge -c robostack-jazzy
 
 # 方案 B：开发者环境（可编辑模式开发）
-mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+mamba install uni-lab::unilabos-env -c uni-lab -c conda-forge -c robostack-jazzy
 pip install -e /path/to/Uni-Lab-OS  # 可编辑安装
 uv pip install -r unilabos/utils/requirements.txt  # 安装 pip 依赖
 
 # 方案 C：完整版（仿真/可视化）
-mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
+mamba install uni-lab::unilabos-full -c uni-lab -c conda-forge -c robostack-jazzy
 ```
 
 **选择建议：**
@@ -800,9 +803,9 @@ Waiting for host service...
 
 ```bash
 # 1. 创建环境并安装 unilabos-env（ROS2 + conda 依赖 + uv）
-mamba create -n unilab python=3.11.14
+mamba create -n unilab python=3.12.13
 conda activate unilab
-mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+mamba install uni-lab::unilabos-env -c uni-lab -c conda-forge -c robostack-jazzy
 
 # 2. 克隆代码
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git
@@ -897,7 +900,7 @@ setup(
         # "pyserial",
         # "requests",
     ],
-    python_requires=">=3.11",
+    python_requires=">=3.12,<3.13",
     # 包含注册表文件
     package_data={
         "my_lab_devices": [
@@ -1886,7 +1889,7 @@ unilab --ak your_ak --sk your_sk -g graph.json \
 
 #### 14.4 外部资源
 
-- **ROS 2 文档**：[https://docs.ros.org/en/humble/](https://docs.ros.org/en/humble/)
+- **ROS 2 文档**：[https://docs.ros.org/en/jazzy/](https://docs.ros.org/en/jazzy/)
 - **PyLabRobot**：[https://github.com/PyLabRobot/pylabrobot](https://github.com/PyLabRobot/pylabrobot)
 - **Python 类型注解**：[https://docs.python.org/3/library/typing.html](https://docs.python.org/3/library/typing.html)
 - **YAML 语法**：[https://yaml.org/](https://yaml.org/)

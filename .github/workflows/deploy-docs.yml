@@ -55,8 +55,8 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.14'
-          channels: conda-forge,robostack-staging,uni-lab
+          python-version: '3.12.13'
+          channels: conda-forge,robostack-jazzy,uni-lab
           channel-priority: flexible
           activate-environment: unilab
           auto-update-conda: false
@@ -66,7 +66,7 @@ jobs:
         run: |
           echo "Installing unilabos and dependencies to unilab environment..."
           echo "Using mamba for faster and more reliable dependency resolution..."
-          mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos -y
+          mamba install -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy uni-lab::unilabos -y
 
       - name: Install latest unilabos from source
         run: |

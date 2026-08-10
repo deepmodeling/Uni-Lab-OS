@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from array import array
 import subprocess
 import sys
 import threading
@@ -93,6 +94,49 @@ class TopicDriver:
     def send(self, value: int) -> int:
         self.publisher.publish({"value": value})
         return value
+
+
+class RosJsonMessage:
+    def __init__(self, name: str, samples: list[float]) -> None:
+        self.name = name
+        self.samples = array("f", samples)
+
+    @staticmethod
+    def get_fields_and_field_types() -> dict[str, str]:
+        return {"name": "string", "samples": "sequence<float>"}
+
+
+class RosJsonDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+        self.config = dict(config or {})
+        self.node = None
+        self.publisher = None
+        self.received = []
+
+    def post_init(self, node) -> None:
+        self.node = node
+        if self.config.get("publish"):
+            self.publisher = node.create_publisher(
+                RosJsonMessage,
+                "ros_value",
+                10,
+            )
+        subscribe_to = str(self.config.get("subscribe_to") or "")
+        if subscribe_to:
+            node.create_subscription(
+                RosJsonMessage,
+                f"/devices/{subscribe_to}/ros_value",
+                self.received.append,
+                10,
+            )
+
+    def send(self, name: str) -> str:
+        self.publisher.publish(RosJsonMessage(name, [1.25, 2.5]))
+        return name
+
+    def echo(self, payload) -> object:
+        return payload
 
 
 class FeedbackDriver:
@@ -402,6 +446,67 @@ def test_hostlink_routes_topics_in_both_directions(monkeypatch) -> None:
             lambda: slave_sink.driver.received
             == [{"value": 11}, {"value": 33}]
         )
+    finally:
+        slave.stop()
+        host.stop()
+
+
+def test_hostlink_transports_ros_messages_as_json(monkeypatch) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 1.0)
+    monkeypatch.setattr(BasicConfig, "machine_name", "ros-json-slave")
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    host_local = BasicRuntime("hostlink")
+    source = host_local.add_driver(
+        BasicDriverSpec(
+            device_id="ros-source",
+            driver_class=RosJsonDriver,
+            config={"publish": True},
+            action_names=("send",),
+        )
+    )
+    slave_local = BasicRuntime("hostlink")
+    sink = slave_local.add_driver(
+        BasicDriverSpec(
+            device_id="ros-sink",
+            driver_class=RosJsonDriver,
+            config={"subscribe_to": "ros-source"},
+            action_names=("echo",),
+        )
+    )
+    host = HostLinkBackendRuntime(host_local, is_slave=False)
+    slave = HostLinkBackendRuntime(slave_local, is_slave=True)
+    host.start()
+    assert host.server is not None
+    HostLinkConfig.port = host.server.port
+    try:
+        slave.start()
+        assert _wait_until(
+            lambda: any(
+                "/devices/ros-source/ros_value" in topics
+                for topics in host._remote_topic_subscriptions.values()
+            )
+        )
+
+        source.call_action("send", name="中文状态")
+        assert _wait_until(
+            lambda: sink.driver.received
+            == [{"name": "中文状态", "samples": [1.25, 2.5]}]
+        )
+
+        result = host.call_action(
+            "ros-sink",
+            "echo",
+            payload=RosJsonMessage("中文动作", [3.5, 4.75]),
+        )
+        assert result == {"name": "中文动作", "samples": [3.5, 4.75]}
     finally:
         slave.stop()
         host.stop()

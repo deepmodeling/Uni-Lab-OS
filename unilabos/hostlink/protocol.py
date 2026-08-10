@@ -11,6 +11,8 @@ import socket
 import uuid
 from typing import Any, Dict, Optional
 
+from unilabos.device_runtime.topic import message_to_value
+
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 8 * 1024 * 1024
 
@@ -78,7 +80,12 @@ def new_response(
 
 def encode_frame(message: Dict[str, Any]) -> bytes:
     raw = (
-        json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        json.dumps(
+            message,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=message_to_value,
+        ).encode("utf-8")
         + b"\n"
     )
     if len(raw) > MAX_FRAME_BYTES:

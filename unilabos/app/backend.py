@@ -5,7 +5,8 @@
 ``basic``
     不使用通信中间件的进程内 Python 驱动运行时。
 ``hostlink``
-    Basic 驱动 + HostLink TCP 的无 ROS 分布式运行时。
+    Basic 驱动 + HostLink TCP 的 Python 分布式运行时；不启动 rclpy/DDS，
+    但可以加载 ROS message 包用于字段解析和 JSON 转换。
 ``ros2``
     完整 ROS 2 运行时。
 ``dora``
@@ -73,7 +74,7 @@ BACKEND_PROFILES: dict[str, BackendProfile] = {
         name="hostlink",
         display_name="HostLink",
         module="unilabos.hostlink.main_hostlink_run",
-        description="HostLink TCP 分布式 Python 驱动运行时（无 ROS）",
+        description="HostLink TCP 分布式 Python 驱动运行时（不启动 rclpy/DDS）",
         default_app_bridges=(),
         supported_app_bridges=(),
         supports_slave=True,

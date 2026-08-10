@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, is_dataclass
-from enum import Enum
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
@@ -13,7 +11,11 @@ from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
 from unilabos.device_runtime.resource import LocalResourceService, ResourceStore
-from unilabos.device_runtime.topic import TopicEvent, normalize_topic
+from unilabos.device_runtime.topic import (
+    TopicEvent,
+    message_to_value,
+    normalize_topic,
+)
 from unilabos.hostlink.client import HostLinkClient, set_hostlink_client
 from unilabos.hostlink.protocol import ActionType, LinkError
 from unilabos.hostlink.resource import HostLinkResourceService
@@ -23,25 +25,9 @@ from unilabos.utils import logger
 
 
 def to_wire_value(value: Any) -> Any:
-    """Convert common driver return values into JSON-compatible structures."""
+    """Convert driver values, including ROS messages, for HostLink JSON."""
 
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, Enum):
-        return to_wire_value(value.value)
-    if is_dataclass(value) and not isinstance(value, type):
-        return to_wire_value(asdict(value))
-    model_dump = getattr(value, "model_dump", None)
-    if callable(model_dump):
-        return to_wire_value(model_dump(mode="json"))
-    legacy_dict = getattr(value, "dict", None)
-    if callable(legacy_dict):
-        return to_wire_value(legacy_dict())
-    if isinstance(value, dict):
-        return {str(key): to_wire_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [to_wire_value(item) for item in value]
-    return repr(value)
+    return message_to_value(value)
 
 
 class HostLinkBackendRuntime:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from array import array
 import dataclasses
 import logging
 import threading
@@ -58,6 +59,8 @@ def message_to_value(value: Any) -> Any:
 
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
+    if isinstance(value, (bytes, bytearray, memoryview, array)):
+        return [message_to_value(item) for item in value]
     if isinstance(value, Enum):
         return message_to_value(value.value)
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -81,6 +84,12 @@ def message_to_value(value: Any) -> Any:
         return {str(key): message_to_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [message_to_value(item) for item in value]
+    # ROS 消息字段可能包含 numpy 数组；传输层本身不依赖 numpy，只识别其 tolist。
+    # 限定模块名可以避免在任意驱动对象上调用同名方法。
+    if type(value).__module__.split(".", 1)[0] == "numpy":
+        to_list = getattr(value, "tolist", None)
+        if callable(to_list):
+            return message_to_value(to_list())
     return repr(value)
 
 

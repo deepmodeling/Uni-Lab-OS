@@ -145,7 +145,7 @@ Uni-Lab 对外提供四个 backend 名称。名称、能力和实现入口由
 | Backend | 定位 | 默认 App bridges | Host/Slave | 可视化 |
 |---|---|---|---|---|
 | **basic** | 单进程直接加载纯 Python 设备驱动，不使用通信中间件；跳过工作站聚合节点 | 无 | 不支持 | 不支持 |
-| **hostlink** | Basic 驱动通过 HostLink TCP 组网，不导入 ROS；支持设备发现、双向动作调用、JSON Topic、状态和物料树同步 | 无 | 支持 | 不支持 |
+| **hostlink** | Basic 驱动通过 HostLink TCP 组网，不启动 rclpy/DDS；可加载 ROS message 包并以 JSON 传输；支持设备发现、双向动作调用、Topic、状态和物料树同步 | 无 | 支持 | 不支持 |
 | **ros2**（默认） | 完整 ROS 2 分布式运行时 | `websocket fastapi` | 支持 | 支持 |
 | **dora** | 独立 dora-rs dataflow 运行时 | 无 | 暂不支持 | 暂不支持 |
 
@@ -155,10 +155,10 @@ Uni-Lab 对外提供四个 backend 名称。名称、能力和实现入口由
 # 轻量本地驱动运行；不启动 WebSocket/FastAPI
 unilab -g graph.json --backend basic
 
-# 无 ROS Host：监听 7302，并运行 host.json 中的本地驱动
+# Python Link Host：监听 7302，并运行 host.json 中的本地驱动
 unilab -g host.json --backend hostlink --hostlink-port 7302
 
-# 无 ROS Slave：连接 Host，并发布 slave.json 中的设备/状态
+# Python Link Slave：连接 Host，并发布 slave.json 中的设备/状态
 unilab -g slave.json --backend hostlink --is-slave \
   --host-node-ip 192.168.1.10 --hostlink-port 7302
 
@@ -204,7 +204,7 @@ unilab -g graph.json --backend ros2 --app_bridges
 
 ## 分布式组网
 
-Host/Slave 可选择 `ros2` 或无 ROS 的 `hostlink` backend。启动时加入
+Host/Slave 可选择 `ros2` 或不启动 DDS 的 `hostlink` backend。启动时加入
 `--is_slave` 将作为从站，不加将作为主站：
 
 - **主站 (host)**：持有物料修改权以及对云端的通信
@@ -213,7 +213,11 @@ Host/Slave 可选择 `ros2` 或无 ROS 的 `hostlink` backend。启动时加入
 `ros2` 使用 DDS 上的 ROS Action/Topic；`hostlink` 直接在 TCP 长连接上同步注册表声明的设备描述、
 状态，执行动作并转发 JSON Topic。设备代码可以继续使用通用节点的
 `create_publisher(...).publish(...)` 和 `create_subscription(...)` 写法。
-HostLink 只加载纯 Python 驱动；MoveIt、相机图像和规划场景等需要外部 ROS 图的设备仍使用 `ros2`。
+
+HostLink 可以加载 `std_msgs`、`geometry_msgs`、`unilabos_msgs` 等 ROS message Python 包，
+使用其中的消息类和字段定义做类型解析。Topic、Action 参数、结果、feedback 和状态在发送时都会
+递归转换为 UTF-8 JSON，因此消息类型本身不要求使用 DDS。驱动直接依赖 ROS graph、TF、RViz
+插件或某个 rclpy Node/Service 时，仍需使用 `ros2`，或者先把该调用接入通用节点接口。
 
 推荐由 Host 统一发布 ROS2 domain，Slave 只指定 Host IP：
 

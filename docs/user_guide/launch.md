@@ -118,7 +118,7 @@ Uni-Lab 支持使用 Python 格式的配置文件进行系统设置。通过 `--
 unilab --config path/to/your/config.py
 ```
 
-配置文件包含实验室和 WebSocket 连接等设置。有关配置文件的详细信息，请参阅[配置指南](configuration.md)。
+配置文件包含实验室和 WebSocket 连接等设置。有关配置文件的详细信息，请参阅[配置指南](../advanced_usage/configuration.md)。
 
 ## 初始化信息来源
 

@@ -13,6 +13,18 @@
   - 开发者需要 Git 和基本的 Python 开发知识
   - 自定义 msgs 需要 GitHub 账号
 
+### 当前运行时基线
+
+| 组件 | 要求 |
+|------|------|
+| Python | 3.12.13（`cp312` ABI，包约束为 `>=3.12,<3.13`） |
+| ROS 2 | Jazzy（`robostack-jazzy`） |
+| NumPy | `>=2,<3` |
+| ROS 2 distro mutex | `0.15.*`，Jazzy 构建 |
+
+Python 3.11/ROS 2 Humble 旧环境请新建环境迁移，不要原地混用 Humble 与 Jazzy
+频道。完整的兼容矩阵、迁移步骤和验证命令见[运行时与 ABI 基线](runtime_baseline.md)。
+
 ## 安装包选择
 
 Uni-Lab-OS 提供三个安装包版本，根据您的需求选择：
@@ -161,17 +173,17 @@ mamba activate unilab
 # 选择安装包（三选一）：
 
 # 方案 A：标准安装（推荐大多数用户）
-mamba install uni-lab::unilabos -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos -c uni-lab -c conda-forge -c robostack-jazzy
 
 # 方案 B：开发者环境（可编辑模式开发）
-mamba install uni-lab::unilabos-env -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos-env -c uni-lab -c conda-forge -c robostack-jazzy
 # 然后安装 unilabos 和 pip 依赖：
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
 pip install -e .
 uv pip install -r unilabos/utils/requirements.txt
 
 # 方案 C：完整版（含仿真和可视化工具）
-mamba install uni-lab::unilabos-full -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos-full -c uni-lab -c conda-forge -c robostack-jazzy
 ```
 
 **参数说明**:
@@ -180,7 +192,7 @@ mamba install uni-lab::unilabos-full -c conda-forge -c robostack-jazzy
 - `uni-lab::unilabos`: 安装 unilabos 完整包，开箱即用（推荐）
 - `uni-lab::unilabos-env`: 仅安装环境依赖，适合开发者使用 `pip install -e .`
 - `uni-lab::unilabos-full`: 安装完整包（含 ROS2 Desktop、Gazebo、MoveIt 等）
-- `-c conda-forge -c robostack-jazzy`: 添加通用依赖与 ROS 2 Jazzy 软件源
+- `-c uni-lab -c conda-forge -c robostack-jazzy`: 添加 UniLabOS、通用依赖与 ROS 2 Jazzy 软件源
 
 **包选择建议**：
 - **日常使用/生产部署**：安装 `unilabos`（推荐，完整功能，开箱即用）
@@ -196,10 +208,10 @@ mamba config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/f
 mamba config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
 
 # 然后重新执行安装命令（推荐标准安装）
-mamba create -n unilab uni-lab::unilabos -c conda-forge -c robostack-jazzy
+mamba create -n unilab uni-lab::unilabos -c uni-lab -c conda-forge -c robostack-jazzy
 
 # 或完整版（仿真/可视化）
-mamba create -n unilab uni-lab::unilabos-full -c conda-forge -c robostack-jazzy
+mamba create -n unilab uni-lab::unilabos-full -c uni-lab -c conda-forge -c robostack-jazzy
 
 # pip 安装时使用清华镜像（开发者安装时使用）
 uv pip install -r unilabos/utils/requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
@@ -255,7 +267,7 @@ mamba create -n unilab python=3.12.13
 conda activate unilab
 
 # 安装开发者环境包（ROS2 + conda 依赖 + uv）
-mamba install uni-lab::unilabos-env -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos-env -c uni-lab -c conda-forge -c robostack-jazzy
 ```
 
 ### 第三步：安装 pip 依赖和可编辑模式安装
@@ -455,7 +467,7 @@ where unilab  # Windows
 # 删除旧环境重新创建
 conda deactivate
 conda env remove -n unilab
-mamba create -n unilab uni-lab::unilabos -c conda-forge -c robostack-jazzy
+mamba create -n unilab uni-lab::unilabos -c uni-lab -c conda-forge -c robostack-jazzy
 ```
 
 ### 问题 3: 下载速度慢
@@ -535,13 +547,13 @@ cd $CONDA_PREFIX/envs/unilab
 
 1. **使用 `unilabos` 标准版**（推荐大多数用户）：
    ```bash
-   mamba install uni-lab::unilabos -c conda-forge -c robostack-jazzy
+   mamba install uni-lab::unilabos -c uni-lab -c conda-forge -c robostack-jazzy
    ```
    标准版包含完整功能，环境大小约 2-3GB（相比完整版的 8-10GB）。
 
 2. **使用 `unilabos-env` 开发者版**（最小化）：
    ```bash
-   mamba install uni-lab::unilabos-env -c conda-forge -c robostack-jazzy
+   mamba install uni-lab::unilabos-env -c uni-lab -c conda-forge -c robostack-jazzy
    # 然后手动安装依赖
    pip install -e .
    uv pip install -r unilabos/utils/requirements.txt

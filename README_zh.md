@@ -29,6 +29,13 @@ Uni-Lab-OS 是一个用于实验室自动化的综合平台，旨在连接和控
 
 - [在线文档](https://deepmodeling.github.io/Uni-Lab-OS/)
 
+## 支持的运行时
+
+当前二进制包和开发环境统一使用 **Python 3.12.13（`cp312`）+ ROS 2 Jazzy +
+NumPy 2**，并锁定 `robostack-jazzy::ros2-distro-mutex 0.15.*`。Python 3.11
+与 ROS 2 Humble 环境仅作为历史组合保留，不应在原环境中直接升级或与 Jazzy
+频道混用。迁移和版本核对方法见[运行时与 ABI 基线](docs/user_guide/runtime_baseline.md)。
+
 ## 快速开始
 
 ### 1. 配置 Conda 环境
@@ -47,17 +54,17 @@ mamba create -n unilab python=3.12.13
 mamba activate unilab
 
 # 方案 A：标准安装（推荐大多数用户）
-mamba install uni-lab::unilabos -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos -c uni-lab -c conda-forge -c robostack-jazzy
 
 # 方案 B：开发者环境（可编辑模式开发）
-mamba install uni-lab::unilabos-env -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos-env -c uni-lab -c conda-forge -c robostack-jazzy
 # 然后安装 unilabos 和依赖：
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
 pip install -e .
 uv pip install -r unilabos/utils/requirements.txt
 
 # 方案 C：完整安装（仿真/可视化）
-mamba install uni-lab::unilabos-full -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos-full -c uni-lab -c conda-forge -c robostack-jazzy
 ```
 
 **如何选择？**

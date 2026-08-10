@@ -195,7 +195,7 @@ build-backend = "setuptools.build_meta"
 name = "<package_name>"
 version = "0.1.0"
 description = "<description>"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     # 用户指定的依赖
 ]
@@ -218,18 +218,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: conda-incubator/setup-miniconda@v3
+      - uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.14'
-          channels: conda-forge,robostack-staging,uni-lab
-          channel-priority: flexible
+          python-version: '3.12.13'
+          channels: conda-forge,robostack-jazzy,uni-lab
+          channel-priority: strict
           activate-environment: unilab
           auto-update-conda: false
       - name: Install unilabos
         shell: bash -el {0}
-        run: mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos -y
+        run: mamba install -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy uni-lab::unilabos -y
       - name: Validate
         shell: bash -el {0}
         run: unilab --check_mode --devices ./<package_name> --external_devices_only

@@ -658,7 +658,7 @@ ros2 topic list
 - [安装指南](../user_guide/installation.md) - 环境安装步骤
 - [启动参数详解](../user_guide/launch.md) - 启动参数说明
 - [添加设备驱动](add_device.md) - 自定义设备开发
-- [工作站架构](workstation_architecture.md) - 复杂工作站搭建
+- [工作站架构](examples/workstation_architecture.md) - 复杂工作站搭建
 
 ---
 

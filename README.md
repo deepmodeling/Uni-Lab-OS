@@ -29,6 +29,15 @@ Detailed documentation can be found at:
 
 - [Online Documentation](https://deepmodeling.github.io/Uni-Lab-OS/)
 
+## Supported Runtime
+
+The current binary and development baseline is **Python 3.12.13 (`cp312`) + ROS 2
+Jazzy + NumPy 2**, using `robostack-jazzy::ros2-distro-mutex 0.15.*`. Python 3.11
+and ROS 2 Humble environments are legacy combinations and should not be upgraded in
+place or mixed with the Jazzy channels. See the
+[runtime and ABI baseline](docs/user_guide/runtime_baseline.md) for migration and
+verification instructions.
+
 ## Quick Start
 
 ### 1. Setup Conda Environment
@@ -47,17 +56,17 @@ mamba create -n unilab python=3.12.13
 mamba activate unilab
 
 # Option A: Standard installation (recommended for most users)
-mamba install uni-lab::unilabos -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos -c uni-lab -c conda-forge -c robostack-jazzy
 
 # Option B: For developers (editable mode development)
-mamba install uni-lab::unilabos-env -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos-env -c uni-lab -c conda-forge -c robostack-jazzy
 # Then install unilabos and dependencies:
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
 pip install -e .
 uv pip install -r unilabos/utils/requirements.txt
 
 # Option C: Full installation (simulation/visualization)
-mamba install uni-lab::unilabos-full -c conda-forge -c robostack-jazzy
+mamba install uni-lab::unilabos-full -c uni-lab -c conda-forge -c robostack-jazzy
 ```
 
 **When to use which?**

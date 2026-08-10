@@ -796,7 +796,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def _load_toml(path: Path) -> Dict[str, Any]:
-    """加载 toml：优先标准库 tomllib（3.11+），回退 tomli，再回退极简解析（仅取 [project] 标量）。"""
+    """加载 toml：优先当前运行时的标准库 tomllib，再回退 tomli 和极简解析。"""
     raw = path.read_bytes()
     try:
         import tomllib  # type: ignore

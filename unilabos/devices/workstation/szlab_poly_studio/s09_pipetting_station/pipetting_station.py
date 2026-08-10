@@ -968,21 +968,73 @@ class SzlabMixerPipettingStationDevice:
         density_measurement_count: int = 1,
         volume_unit: str = "raw",
         skip_level_check: bool = False,
+        liquid_count: int = 1,
+        liquid_additions: list[dict[str, Any]] | None = None,
+        measure_density: bool = True,
+        initialize_tip_inventory: bool = False,
+        initial_used_tip_count: int = 0,
     ) -> dict[str, Any]:
+        if initialize_tip_inventory:
+            initialized = self.initialize_reusable_tip_inventory(
+                reset=True,
+                used_tip_count=initial_used_tip_count,
+            )
+            if not initialized.get("success"):
+                return initialized
+        if liquid_additions:
+            if liquid_count != len(liquid_additions):
+                return {"success": False, "message": "liquid_count 与 liquid_additions 数量不一致"}
+            addition_results: list[dict[str, Any]] = []
+            for index, addition in enumerate(liquid_additions, start=1):
+                try:
+                    result = self.add_liquid_with_reusable_tip(
+                        liquid_station_index=int(addition["liquid_station_index"]),
+                        solvent_batch_id=str(addition["solvent_batch_id"]),
+                        volume=float(addition["volume"]),
+                        density_volume=density_volume,
+                        density_measurement_count=density_measurement_count,
+                        volume_unit=volume_unit,
+                        skip_level_check=skip_level_check,
+                        measure_density=index == len(liquid_additions),
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    return {
+                        "success": False,
+                        "message": f"第 {index} 种液体参数无效：{exc}",
+                        "liquid_results": addition_results,
+                    }
+                addition_results.append(result)
+                if not result.get("success"):
+                    return {
+                        "success": False,
+                        "message": f"第 {index} 种液体加液失败：{result.get('message') or '未知错误'}",
+                        "liquid_results": addition_results,
+                    }
+            final_data = dict(addition_results[-1].get("data") or {})
+            final_data["liquid_count"] = len(addition_results)
+            final_data["liquid_results"] = addition_results
+            density = final_data.get("density")
+            density_text = f"，最终密度 {float(density):.6g} g/mL" if isinstance(density, (int, float)) else ""
+            return {
+                **addition_results[-1],
+                "message": f"S09 已完成 {len(addition_results)} 次加液并测量密度{density_text}",
+                "data": final_data,
+            }
         try:
             liquid_station_index = validate_liquid_bottle(liquid_station_index)
             solvent_batch_id = str(solvent_batch_id).strip()
             if not solvent_batch_id:
                 raise ValueError("S09 加液必须提供明确的 solvent_batch_id")
             raw_volume = self._volume_to_raw(volume, volume_unit)
-            density_raw_volume = self._volume_to_raw(density_volume, volume_unit)
+            density_raw_volume = self._volume_to_raw(density_volume, volume_unit) if measure_density else 0
             if raw_volume <= 0:
                 raise ValueError("S09 加液量必须大于 0")
-            if density_raw_volume <= 0:
+            if measure_density and density_raw_volume <= 0:
                 raise ValueError("S09 测密度体积必须大于 0")
-            if density_raw_volume > S09_VOLUME_RAW_MAX:
+            if measure_density and density_raw_volume > S09_VOLUME_RAW_MAX:
                 raise ValueError("S09 单次测密度体积不能超过 5000 uL")
-            density_measurement_count = validate_density_count(density_measurement_count)
+            if measure_density:
+                density_measurement_count = validate_density_count(density_measurement_count)
             transfer_chunks = self._split_raw_volume(raw_volume)
             required_cycles = len(transfer_chunks)
         except (TypeError, ValueError) as exc:
@@ -1032,27 +1084,29 @@ class SzlabMixerPipettingStationDevice:
                 }
 
             # 在任何实际 PLC 动作开始前预留测密度 TIP，避免加液完成后才发现库存不足。
-            try:
-                density_tip = self._tip_reuse_state.prepare_single_use_tip()
-            except Exception as exc:
-                return {
-                    "success": False,
-                    "message": str(exc),
-                    "tip_reuse": liquid_tip_tracking,
+            density_tip_tracking: dict[str, Any] | None = None
+            if measure_density:
+                try:
+                    density_tip = self._tip_reuse_state.prepare_single_use_tip()
+                except Exception as exc:
+                    return {
+                        "success": False,
+                        "message": str(exc),
+                        "tip_reuse": liquid_tip_tracking,
+                    }
+                density_tip_tracking = {
+                    "tip_index": int(density_tip["tip_index"]),
+                    "take_tip_box_index": 1,
+                    "release_tip_box_index": 2,
+                    "single_use": True,
+                    "density_measurement_count": density_measurement_count,
                 }
-            density_tip_tracking = {
-                "tip_index": int(density_tip["tip_index"]),
-                "take_tip_box_index": 1,
-                "release_tip_box_index": 2,
-                "single_use": True,
-                "density_measurement_count": density_measurement_count,
-            }
-            self._tip_reuse_state.record_last_operation(
-                solvent_batch_id=solvent_batch_id,
-                liquid_station_index=liquid_station_index,
-                liquid_tip_index=liquid_tip_tracking["tip_index"],
-                density_tip_index=density_tip_tracking["tip_index"],
-            )
+                self._tip_reuse_state.record_last_operation(
+                    solvent_batch_id=solvent_batch_id,
+                    liquid_station_index=liquid_station_index,
+                    liquid_tip_index=liquid_tip_tracking["tip_index"],
+                    density_tip_index=density_tip_tracking["tip_index"],
+                )
 
             steps: list[dict[str, Any]] = []
             logs: list[dict[str, Any]] = []
@@ -1100,12 +1154,13 @@ class SzlabMixerPipettingStationDevice:
                             liquid_tip_tracking["status"] = unknown_tip["status"]
                         except Exception as exc:
                             liquid_tip_tracking["tracking_error"] = str(exc)
-                    try:
-                        self._tip_reuse_state.release_single_use_tip_reservation(
-                            density_tip_tracking["tip_index"]
-                        )
-                    except Exception as exc:
-                        density_tip_tracking["tracking_error"] = str(exc)
+                    if density_tip_tracking is not None:
+                        try:
+                            self._tip_reuse_state.release_single_use_tip_reservation(
+                                density_tip_tracking["tip_index"]
+                            )
+                        except Exception as exc:
+                            density_tip_tracking["tracking_error"] = str(exc)
                     return {
                         "success": False,
                         "message": result.get("message", step_name),
@@ -1125,12 +1180,13 @@ class SzlabMixerPipettingStationDevice:
                     self._tip_reuse_state.mark_active_tip_unknown(solvent_key)
                 except Exception:
                     pass
-                try:
-                    self._tip_reuse_state.release_single_use_tip_reservation(
-                        density_tip_tracking["tip_index"]
-                    )
-                except Exception as release_exc:
-                    density_tip_tracking["tracking_error"] = str(release_exc)
+                if density_tip_tracking is not None:
+                    try:
+                        self._tip_reuse_state.release_single_use_tip_reservation(
+                            density_tip_tracking["tip_index"]
+                        )
+                    except Exception as release_exc:
+                        density_tip_tracking["tracking_error"] = str(release_exc)
                 return {
                     "success": False,
                     "message": f"S09 加液已完成，但可复用 TIP 状态更新失败: {exc}",
@@ -1146,6 +1202,22 @@ class SzlabMixerPipettingStationDevice:
                 "use_count": updated_tip["use_count"],
                 "max_use_count": self._tip_reuse_state.max_use_count,
             }
+
+            if not measure_density:
+                return {
+                    "success": True,
+                    "message": "S09 加液完成",
+                    "data": {
+                        "liquid_station_index": liquid_station_index,
+                        "solvent_batch_id": solvent_batch_id,
+                        "volume": raw_volume,
+                        "volume_ul": self._raw_volume_to_ul(raw_volume),
+                        "volume_unit": "raw",
+                        "tip_reuse": tip_reuse,
+                    },
+                    "steps": steps,
+                    "logs": logs,
+                }
 
             density_plan = [
                 (5, 1, 0, 0, "取一次性测密度 TIP"),

@@ -764,8 +764,22 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             callback_group = self.callback_group
         await ROS2DeviceNode.async_wait_for(self, rel_time, callback_group)
 
-    def create_task(self, func, trace_error=True, **kwargs) -> Task:
-        return ROS2DeviceNode.run_async_func(func, trace_error, **kwargs)
+    def create_task(self, coroutine, trace_error=True, **kwargs) -> Task:
+        """Schedule a coroutine while accepting the legacy async-function form."""
+
+        if callable(coroutine):
+            return ROS2DeviceNode.run_async_func(
+                coroutine,
+                trace_error,
+                **kwargs,
+            )
+        if kwargs:
+            raise TypeError("协程对象不能再接收额外关键字参数")
+
+        async def await_coroutine():
+            return await coroutine
+
+        return ROS2DeviceNode.run_async_func(await_coroutine, trace_error)
 
     async def update_resource(self, resources: List["ResourcePLR"]):
         r = SerialCommand.Request()

@@ -235,7 +235,6 @@ virtual_centrifuge:
           type: object
         type: Centrifuge
     module: unilabos.devices.virtual.virtual_centrifuge:VirtualCentrifuge
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       centrifuge_state: str
       current_speed: float
@@ -249,6 +248,10 @@ virtual_centrifuge:
       target_speed: float
       target_temp: float
       time_remaining: float
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Centrifuge for CentrifugeProtocol Testing
@@ -663,7 +666,6 @@ virtual_column:
           type: object
         type: RunColumn
     module: unilabos.devices.virtual.virtual_column:VirtualColumn
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       column_diameter: float
       column_length: float
@@ -676,6 +678,10 @@ virtual_column:
       processed_volume: float
       progress: float
       status: str
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Column Chromatography Device for RunColumn Protocol Testing
@@ -1103,7 +1109,6 @@ virtual_filter:
           type: object
         type: Filter
     module: unilabos.devices.virtual.virtual_filter:VirtualFilter
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_status: str
       current_temp: float
@@ -1114,6 +1119,10 @@ virtual_filter:
       message: str
       progress: float
       status: str
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Filter for FilterProtocol Testing
@@ -1969,7 +1978,6 @@ virtual_heatchill:
           type: object
         type: HeatChillStop
     module: unilabos.devices.virtual.virtual_heatchill:VirtualHeatChill
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       is_stirring: bool
       max_stir_speed: float
@@ -1980,6 +1988,10 @@ virtual_heatchill:
       remaining_time: float
       status: str
       stir_speed: float
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual HeatChill for HeatChillProtocol Testing
@@ -2736,7 +2748,6 @@ virtual_rotavap:
           type: object
         type: Evaporate
     module: unilabos.devices.virtual.virtual_rotavap:VirtualRotavap
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_temp: float
       evaporated_volume: float
@@ -2749,6 +2760,10 @@ virtual_rotavap:
       rotavap_state: str
       status: str
       vacuum_pressure: float
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Rotary Evaporator for EvaporateProtocol Testing
@@ -3955,7 +3970,6 @@ virtual_separator:
           type: object
         type: Separate
     module: unilabos.devices.virtual.virtual_separator:VirtualSeparator
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       has_phases: bool
       message: str
@@ -3966,6 +3980,10 @@ virtual_separator:
       status: str
       stir_speed: float
       volume: float
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Separator for SeparateProtocol Testing
@@ -4306,12 +4324,15 @@ virtual_solenoid_valve:
           type: object
         type: SendCmd
     module: unilabos.devices.virtual.virtual_solenoid_valve:VirtualSolenoidValve
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       is_open: bool
       status: str
       valve_position: str
       valve_state: str
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Solenoid Valve for simple on/off flow control
@@ -4711,12 +4732,15 @@ virtual_solid_dispenser:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.virtual.virtual_solid_dispenser:VirtualSolidDispenser
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_reagent: str
       dispensed_amount: float
       status: str
       total_operations: int
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Solid Dispenser for Add Protocol Testing - supports mass and
@@ -5332,7 +5356,6 @@ virtual_stirrer:
           type: object
         type: StopStir
     module: unilabos.devices.virtual.virtual_stirrer:VirtualStirrer
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_speed: float
       current_vessel: str
@@ -5343,6 +5366,10 @@ virtual_stirrer:
       operation_mode: str
       remaining_time: float
       status: str
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Stirrer for StirProtocol Testing
@@ -5871,7 +5898,6 @@ virtual_transfer_pump:
           type: object
         type: Transfer
     module: unilabos.devices.virtual.virtual_transferpump:VirtualTransferPump
-    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_volume: float
       max_velocity: float
@@ -5879,6 +5905,10 @@ virtual_transfer_pump:
       remaining_capacity: float
       status: str
       transfer_rate: float
+    supported_backends:
+    - basic
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Virtual Transfer Pump for TransferProtocol Testing (Syringe-style)

@@ -4848,8 +4848,9 @@ liquid_handler:
           type: object
         type: LiquidHandlerTransfer
     module: unilabos.devices.liquid_handling.liquid_handler_abstract:LiquidHandlerAbstract
-    supported_backends: [ros2]
     status_types: {}
+    supported_backends:
+    - ros2
     type: python
   config_info: []
   description: Liquid handler device controlled by pylabrobot
@@ -10242,9 +10243,10 @@ liquid_handler.prcxi:
           type: object
         type: LiquidHandlerTransfer
     module: unilabos.devices.liquid_handling.prcxi.prcxi:PRCXI9300Handler
-    supported_backends: [ros2]
     status_types:
       reset_ok: bool
+    supported_backends:
+    - ros2
     type: python
   config_info: []
   description: prcxi液体处理器设备，基于pylabrobot控制

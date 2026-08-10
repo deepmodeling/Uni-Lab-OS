@@ -823,8 +823,9 @@ linear_motion.toyo_xyz.sim:
           type: object
         type: SendCmd
     module: unilabos.devices.ros_dev.moveit_interface:MoveitInterface
-    supported_backends: [ros2]
     status_types: {}
+    supported_backends:
+    - ros2
     type: python
   config_info: []
   description: 东洋XYZ三轴运动平台，基于MoveIt2运动规划框架的精密定位设备。该设备通过ROS2和MoveIt2实现三维空间的精确运动控制，支持复杂轨迹规划、多点定位、速度控制等功能。具备高精度定位、平稳运动、实时轨迹监控等特性。适用于精密加工、样品定位、检测扫描、自动化装配等需要高精度三维运动控制的实验室和工业应用场景。

@@ -118,8 +118,8 @@ Host 运行 ROS2 或 HostLink backend 时会在 TCP `7302` 监听 HostLink。Sla
 在 `--backend ros2` 下，HostLink 只辅助组网，设备 Action、节点注册和资源同步仍
 走 ROS2。`--backend hostlink` 则完全不导入 ROS：Host 与 Slave 都使用 BasicRuntime
 加载本地纯 Python 驱动，Slave 在 HELLO 中发布设备动作/状态字段，心跳携带状态快照，
-Host 沿同一条长连接发送 `device.call` 并取得结果。物料与管理 Web/API 不在该 backend
-的当前范围内。
+Host 沿同一条长连接发送 `device.call` 并取得结果。这次没有改物料同步和管理
+Web/API，它们仍按原来的方式工作。
 
 ```bash
 # 无 ROS Host

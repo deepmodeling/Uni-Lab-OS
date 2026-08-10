@@ -336,7 +336,7 @@ class HostLinkClient:
                 data = raw_data if isinstance(raw_data, dict) else {}
                 try:
                     response = new_response(request_id, True, handler(data))
-                except Exception as exc:  # noqa: BLE001 - RPC 边界
+                except Exception as exc:  # noqa: BLE001 - RPC 请求必须返回明确错误
                     logger.warning(f"[HostLink] incoming {action} failed: {exc}")
                     response = new_response(request_id, False, error=str(exc))
         try:

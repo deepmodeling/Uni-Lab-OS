@@ -18,6 +18,7 @@ jobs:
       MPLBACKEND: Agg
       # 原生崩溃(0xC0000005 访问违例)时打印 Python 调用栈，便于定位是哪个设备模块 import 崩溃
       PYTHONFAULTHANDLER: "1"
+      UNILABOS_README_EXAMPLES_ROOT: ${{ github.workspace }}/readme-examples
 
     defaults:
       run:
@@ -27,6 +28,22 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      # README 中列出的外部设备示例也要随主仓库接口一起验证。
+      # 固定到已验证提交，避免外部仓库更新让当前 PR 的 CI 无故变化。
+      - name: Checkout README LAN device example
+        uses: actions/checkout@v6
+        with:
+          repository: Xuwznln/LabDeviceLanDemo
+          ref: 2f98f55015b47816e0a08731ca115903d6ea5161
+          path: readme-examples/LabDeviceLanDemo
+
+      - name: Checkout README workstation device example
+        uses: actions/checkout@v6
+        with:
+          repository: Xuwznln/LabDeviceWorkstationDemo
+          ref: ad5b43fc7c64ca02b0020f69aa2ed15bdb0e8089
+          path: readme-examples/LabDeviceWorkstationDemo
 
       - name: Setup Miniforge
         uses: conda-incubator/setup-miniconda@v4
@@ -67,6 +84,15 @@ jobs:
           uv pip uninstall enum34 || echo enum34 not installed, skipping
           uv pip install pytest
           uv pip install .
+
+      - name: Validate README example device packages
+        run: |
+          call conda activate check-env
+          call install\unilabos_msgs\setup.bat
+          echo Checking LabDeviceLanDemo registry...
+          python -m unilabos --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceLanDemo\lan_demo" --external_devices_only
+          echo Checking LabDeviceWorkstationDemo registry...
+          python -m unilabos --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo\workstation_demo" --external_devices_only
 
       - name: Run HostLink networking tests
         run: |

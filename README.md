@@ -104,6 +104,9 @@ with `--devices <pkg> --external_devices_only`, and read it when writing your ow
 Each repository README ships a step-by-step launch tutorial with verified output. For the underlying
 communication-sharing mechanism see [Best Practice Guide §11.5](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html);
 to write a new driver from scratch see [Add Device](https://deepmodeling.github.io/Uni-Lab-OS/developer_guide/add_device.html).
+The main repository CI validates pinned revisions of both packages. It also runs the LAN demo shape
+as separate HostLink Host/Slave processes over loopback and an available non-loopback LAN IPv4,
+covering cross-device `@subscribe` followed by a remote device action.
 
 ## Message Format
 

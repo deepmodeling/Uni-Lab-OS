@@ -90,12 +90,16 @@ class BasicDeviceNode(DeviceNode):
             name=f"basic-driver-{device_id}",
             daemon=True,
         )
+        self._loop_ready = threading.Event()
         self._started = False
-        self._action_lock = threading.Lock()
+        self._action_lock: asyncio.Lock | None = None
+        self._status_lock = threading.Lock()
         self._decorated_subscriptions: list[Any] = []
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
+        self._action_lock = asyncio.Lock()
+        self._loop_ready.set()
         self._loop.run_forever()
 
     async def sleep(self, rel_time: float, callback_group: Any = None) -> None:
@@ -128,6 +132,8 @@ class BasicDeviceNode(DeviceNode):
         if self._started:
             return
         self._loop_thread.start()
+        if not self._loop_ready.wait(timeout=5):
+            raise RuntimeError(f"Basic 设备 {self.device_id!r} 事件循环启动超时")
         self._started = True
         try:
             if hasattr(self.driver, "post_init"):
@@ -162,13 +168,13 @@ class BasicDeviceNode(DeviceNode):
                 )
             )
 
-    def call_action(
+    def _resolve_action(
         self,
         action_name: str,
         *,
         action_context: Optional[ActionContext] = None,
         **kwargs: Any,
-    ) -> Any:
+    ) -> tuple[Callable[..., Any], ActionContext, Dict[str, Any]]:
         if not self._started:
             raise RuntimeError(f"Basic 设备 {self.device_id!r} 尚未启动")
         action_name = str(action_name or "").strip()
@@ -188,19 +194,80 @@ class BasicDeviceNode(DeviceNode):
         signature = inspect.signature(action)
         if "action_context" in signature.parameters:
             kwargs.setdefault("action_context", context)
-        context.raise_if_cancelled()
-        # 与 ROS backend 的单设备 Action 执行约束一致，避免同一驱动被并发调用。
-        with self._action_lock:
-            result = self._call(action, **kwargs)
-        context.raise_if_cancelled()
-        return result
+        return action, context, kwargs
+
+    async def _execute_action(
+        self,
+        action: Callable[..., Any],
+        context: ActionContext,
+        kwargs: Dict[str, Any],
+    ) -> Any:
+        lock = self._action_lock
+        if lock is None:
+            raise RuntimeError(f"Basic 设备 {self.device_id!r} 事件循环尚未就绪")
+        async with lock:
+            context.raise_if_cancelled()
+            if inspect.iscoroutinefunction(action):
+                result = await action(**kwargs)
+            else:
+                result = await asyncio.to_thread(action, **kwargs)
+                if inspect.isawaitable(result):
+                    result = await result
+            context.raise_if_cancelled()
+            return result
+
+    def call_action(
+        self,
+        action_name: str,
+        *,
+        action_context: Optional[ActionContext] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Run an action synchronously while using the device event loop."""
+
+        action, context, call_kwargs = self._resolve_action(
+            action_name,
+            action_context=action_context,
+            **kwargs,
+        )
+        future = asyncio.run_coroutine_threadsafe(
+            self._execute_action(action, context, call_kwargs),
+            self._loop,
+        )
+        return future.result()
+
+    async def call_action_async(
+        self,
+        action_name: str,
+        *,
+        action_context: Optional[ActionContext] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Await an action on this device's own Python event loop."""
+
+        action, context, call_kwargs = self._resolve_action(
+            action_name,
+            action_context=action_context,
+            **kwargs,
+        )
+        try:
+            if asyncio.get_running_loop() is self._loop:
+                return await self._execute_action(action, context, call_kwargs)
+            future = asyncio.run_coroutine_threadsafe(
+                self._execute_action(action, context, call_kwargs),
+                self._loop,
+            )
+            return await asyncio.wrap_future(future)
+        except asyncio.CancelledError:
+            context.request_cancel()
+            raise
 
     def snapshot_status(self) -> Dict[str, Any]:
         """读取注册表声明的状态；单个状态失败不影响其他字段。"""
 
         result: Dict[str, Any] = {}
         errors: Dict[str, str] = {}
-        with self._action_lock:
+        with self._status_lock:
             for name in self.status_names:
                 try:
                     getter = getattr(self.driver, f"get_{name}", None)
@@ -338,14 +405,28 @@ class BasicRuntime:
         arguments: Optional[Dict[str, Any]] = None,
         **options: Any,
     ) -> Any:
-        return await asyncio.to_thread(
-            self.route_action,
-            caller_device_id,
-            device_id,
+        target = self._normalize_device_id(device_id)
+        if target == caller_device_id:
+            raise ValueError("跨设备动作不能回调当前设备自身")
+        context = options.get("action_context")
+        if context is None and (
+            options.get("action_id") or options.get("feedback_callback")
+        ):
+            context = ActionContext(
+                action_id=str(options.get("action_id") or "")
+                or ActionContext().action_id,
+                feedback_callback=options.get("feedback_callback"),
+            )
+        operation = self.call_action_async(
+            target,
             action_name,
-            arguments,
-            **options,
+            action_context=context,
+            **dict(arguments or {}),
         )
+        timeout = options.get("timeout")
+        if timeout is None:
+            return await operation
+        return await asyncio.wait_for(operation, float(timeout))
 
     def start(self) -> None:
         self._stopped.clear()
@@ -372,6 +453,24 @@ class BasicRuntime:
         except KeyError as exc:
             raise KeyError(f"未知 Basic 设备：{device_id}") from exc
         return node.call_action(
+            action_name,
+            action_context=action_context,
+            **kwargs,
+        )
+
+    async def call_action_async(
+        self,
+        device_id: str,
+        action_name: str,
+        *,
+        action_context: Optional[ActionContext] = None,
+        **kwargs: Any,
+    ) -> Any:
+        try:
+            node = self.devices[device_id]
+        except KeyError as exc:
+            raise KeyError(f"未知 Basic 设备：{device_id}") from exc
+        return await node.call_action_async(
             action_name,
             action_context=action_context,
             **kwargs,

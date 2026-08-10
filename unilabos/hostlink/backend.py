@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 import threading
@@ -733,6 +734,59 @@ class HostLinkBackendRuntime:
             return response["result"]
         return response
 
+    async def call_action_async(
+        self,
+        device_id: str,
+        action_name: str,
+        *,
+        action_context: Optional[ActionContext] = None,
+        request_timeout: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Await a local or remote device action without blocking a thread."""
+
+        device_id = str(device_id)
+        context = action_context or ActionContext()
+        with self._actions_lock:
+            self._actions[context.action_id] = (device_id, context)
+        try:
+            if device_id in self.local.devices:
+                return await self.local.call_action_async(
+                    device_id,
+                    action_name,
+                    action_context=context,
+                    **kwargs,
+                )
+            if self.server is None:
+                raise KeyError(f"未知 HostLink 设备：{device_id}")
+            response = await self.server.call_device_async(
+                device_id,
+                action_name,
+                kwargs,
+                timeout=request_timeout,
+                action_id=context.action_id,
+            )
+        except asyncio.CancelledError:
+            context.request_cancel()
+            try:
+                await asyncio.shield(self.cancel_action_async(context.action_id))
+            except Exception as exc:  # noqa: BLE001 - cancellation must propagate
+                logger.warning(
+                    "[HostLink backend] 异步动作取消转发失败：%s (%s)",
+                    context.action_id,
+                    exc,
+                )
+            raise
+        finally:
+            with self._actions_lock:
+                self._actions.pop(context.action_id, None)
+        if isinstance(response, dict) and response.get("status") == "cancelled":
+            context.request_cancel()
+            raise ActionCancelled(f"action cancelled: {context.action_id}")
+        if isinstance(response, dict) and "result" in response:
+            return response["result"]
+        return response
+
     def route_action(
         self,
         caller_device_id: str,
@@ -798,16 +852,66 @@ class HostLinkBackendRuntime:
         arguments: Optional[Dict[str, Any]] = None,
         **options: Any,
     ) -> Any:
-        import asyncio
-
-        return await asyncio.to_thread(
-            self.route_action,
-            caller_device_id,
-            device_id,
-            action_name,
-            arguments,
-            **options,
-        )
+        target = self.local._normalize_device_id(device_id)
+        if target == caller_device_id:
+            raise ValueError("跨设备动作不能回调当前设备自身")
+        context = options.get("action_context")
+        if context is None and (
+            options.get("action_id") or options.get("feedback_callback")
+        ):
+            context = ActionContext(
+                action_id=str(options.get("action_id") or "")
+                or ActionContext().action_id,
+                feedback_callback=options.get("feedback_callback"),
+            )
+        if target in self.local.devices or self.server is not None:
+            return await self.call_action_async(
+                target,
+                action_name,
+                action_context=context,
+                request_timeout=options.get("timeout"),
+                **dict(arguments or {}),
+            )
+        client = self.client
+        if client is None:
+            raise KeyError(f"未知 HostLink 设备：{target}")
+        context = context or ActionContext()
+        with self._actions_lock:
+            self._actions[context.action_id] = (target, context)
+            self._action_callers[context.action_id] = caller_device_id
+        try:
+            response = await client.request_async(
+                ActionType.DEVICE_CALL,
+                {
+                    "caller_device_id": caller_device_id,
+                    "device_id": target,
+                    "action": action_name,
+                    "arguments": dict(arguments or {}),
+                    "action_id": context.action_id,
+                },
+                timeout=options.get("timeout"),
+            )
+        except asyncio.CancelledError:
+            context.request_cancel()
+            try:
+                await asyncio.shield(self.cancel_action_async(context.action_id))
+            except Exception as exc:  # noqa: BLE001 - cancellation must propagate
+                logger.warning(
+                    "[HostLink backend] 异步动作取消转发失败：%s (%s)",
+                    context.action_id,
+                    exc,
+                )
+            raise
+        finally:
+            with self._actions_lock:
+                self._actions.pop(context.action_id, None)
+                self._action_callers.pop(context.action_id, None)
+        if isinstance(response, dict) and response.get("status") == "cancelled":
+            context.request_cancel()
+            raise ActionCancelled(f"action cancelled: {context.action_id}")
+        if isinstance(response, dict) and "result" in response:
+            return response["result"]
+        return response
 
     def cancel_action(self, action_id: str) -> bool:
         with self._actions_lock:
@@ -824,6 +928,39 @@ class HostLinkBackendRuntime:
             with self._actions_lock:
                 caller_device_id = self._action_callers.get(context.action_id, "")
             response = client.request(
+                ActionType.ACTION_CANCEL,
+                {
+                    "caller_device_id": caller_device_id,
+                    "device_id": device_id,
+                    "action_id": context.action_id,
+                },
+            )
+            return bool((response or {}).get("accepted"))
+        return True
+
+    async def cancel_action_async(self, action_id: str) -> bool:
+        """Cancel an active action using the same non-blocking RPC path."""
+
+        with self._actions_lock:
+            active = self._actions.get(str(action_id))
+        if active is None:
+            return False
+        device_id, context = active
+        context.request_cancel()
+        if self.server is not None and device_id not in self.local.devices:
+            response = await self.server.cancel_device_action_async(
+                device_id,
+                context.action_id,
+            )
+            return bool((response or {}).get("accepted"))
+        client = self.client
+        if client is not None and device_id not in self.local.devices:
+            with self._actions_lock:
+                caller_device_id = self._action_callers.get(
+                    context.action_id,
+                    "",
+                )
+            response = await client.request_async(
                 ActionType.ACTION_CANCEL,
                 {
                     "caller_device_id": caller_device_id,

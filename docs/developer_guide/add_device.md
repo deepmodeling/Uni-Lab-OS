@@ -318,8 +318,8 @@ async def async_operation(self, duration: float) -> Dict[str, Any]:
     Args:
         duration: 持续时间(秒)
     """
-    # 使用 self.sleep 而不是 asyncio.sleep（ROS2 异步机制）
-    await self.sleep(duration)
+    # node 由 post_init 注入；该写法兼容 ROS 与 HostLink/simple backend
+    await self._node.sleep(duration)
     return {"success": True}
 ```
 
@@ -327,7 +327,7 @@ async def async_operation(self, duration: float) -> Dict[str, Any]:
 
 - 普通方法或 async 方法
 - 返回 Dict 类型的结果
-- 自动注册为 ROS2 Action
+- 自动注册为设备 Action；ROS backend 使用 ROS2，HostLink 使用 TCP RPC
 - 支持参数和返回值
 
 ### 返回值设计指南
@@ -802,83 +802,57 @@ async def long_operation(self, duration: float) -> Dict[str, Any]:
     """长时间运行的操作"""
     self._status = "running"
 
-    # 使用 ROS2 提供的 sleep 方法（而不是 asyncio.sleep）
-    await self.sleep(duration)
+    # 使用通用 DeviceNode，驱动无需判断当前 backend
+    await self._node.sleep(duration)
 
-    # 可以在过程中发送feedback
-    # 需要配合ROS2 Action的feedback机制
+    # ActionContext 可在 ROS 和 HostLink 中发送 feedback、接收取消
 
     self._status = "idle"
     return {"success": True, "duration": duration}
 ```
 
-> **⚠️ 重要提示：ROS2 异步机制 vs Python asyncio**
+> **异步驱动的兼容写法**
 >
-> Uni-Lab 的设备驱动虽然使用 `async def` 语法，但**底层是 ROS2 的异步机制，而不是 Python 的 asyncio**。
+> 驱动通过 `post_init(node)` 保存通用 `DeviceNode`，不要继承或导入
+> `BaseROS2DeviceNode`。`node.sleep()`、`node.create_task()`、Topic 和设备 Action
+> API 会由当前 backend 实现。
 >
-> **不能使用的 asyncio 功能：**
->
-> - ❌ `asyncio.sleep()` - 会导致 ROS2 事件循环阻塞
-> - ❌ `asyncio.create_task()` - 任务不会被 ROS2 正确调度
-> - ❌ `asyncio.gather()` - 无法与 ROS2 集成
-> - ❌ 其他 asyncio 标准库函数
->
-> **应该使用的方法（继承自 BaseROS2DeviceNode）：**
->
-> - ✅ `await self.sleep(seconds)` - ROS2 兼容的睡眠
-> - ✅ `await self.create_task(func, **kwargs)` - ROS2 兼容的任务创建
-> - ✅ ROS2 的 Action/Service 回调机制
+> - HostLink/simple backend 使用标准 Python `asyncio` 事件循环，可使用
+>   `asyncio.gather()`、`asyncio.wait_for()` 等原生能力。
+> - ROS backend 由 rclpy executor 调度。需要同时支持两类 backend 的驱动，优先使用
+>   `DeviceNode` 提供的 `sleep()` 和 `create_task()`。
+> - 同步动作调用使用 `node.call_device_action(...)`；异步动作中使用
+>   `await node.call_device_action_async(...)`，不要用同步调用阻塞当前事件循环。
 >
 > **示例：**
 >
 > ```python
 > async def complex_operation(self, duration: float) -> Dict[str, Any]:
->     """正确使用 ROS2 异步方法"""
+>     """同一份驱动可在 ROS 和 HostLink/simple backend 中运行。"""
 >     self._status = "processing"
 >
->     # ✅ 正确：使用 self.sleep
->     await self.sleep(duration)
+>     await self._node.sleep(duration)
 >
->     # ✅ 正确：创建并发任务
->     task = await self.create_task(self._background_work)
->
->     # ❌ 错误：不要使用 asyncio
->     # await asyncio.sleep(duration)  # 这会导致问题！
->     # task = asyncio.create_task(...)  # 这也不行！
+>     result = await self._node.call_device_action_async(
+>         "heater-2",
+>         "set_temperature",
+>         {"temperature": 60.0},
+>     )
 >
 >     self._status = "idle"
->     return {"success": True}
+>     return {"success": True, "peer_result": result}
 >
 > async def _background_work(self):
 >     """后台任务"""
->     await self.sleep(1.0)
->     self.lab_logger().info("Background work completed")
+>     await self._node.sleep(1.0)
+>     self._node.lab_logger().info("Background work completed")
 > ```
 >
-> **为什么不能混用？**
+> **后端差异：**
 >
-> ROS2 使用 `rclpy` 的事件循环来管理所有异步操作。如果使用 `asyncio` 的函数，这些操作会在不同的事件循环中运行，导致：
->
-> - ROS2 回调无法正确执行
-> - 任务可能永远不会完成
-> - 程序可能死锁或崩溃
->
-> **参考实现：**
->
-> `BaseROS2DeviceNode` 提供的方法定义（`base_device_node.py:563-572`）：
->
-> ```python
-> async def sleep(self, rel_time: float, callback_group=None):
->     """ROS2 兼容的异步睡眠"""
->     if callback_group is None:
->         callback_group = self.callback_group
->     await ROS2DeviceNode.async_wait_for(self, rel_time, callback_group)
->
-> @classmethod
-> async def create_task(cls, func, trace_error=True, **kwargs) -> Task:
->     """ROS2 兼容的任务创建"""
->     return ROS2DeviceNode.run_async_func(func, trace_error, **kwargs)
-> ```
+> HostLink/simple 为每个设备维护标准 Python 事件循环；ROS backend 使用 rclpy
+> executor。只在 HostLink/simple 中运行的驱动可以直接使用 Python `asyncio`；需要在
+> 两类 backend 中运行时，通过 `DeviceNode` 调度即可，不需要在驱动中写 backend 判断。
 
 ## 错误处理
 

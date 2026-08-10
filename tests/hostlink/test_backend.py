@@ -41,6 +41,11 @@ class CounterDriver:
         self.count += amount
         return self.count
 
+    async def increment_async(self, amount: int = 1) -> int:
+        await self.node.sleep(0)
+        self.count += amount
+        return self.count
+
     def call_peer(self, target_device: str, amount: int) -> int:
         return self.node.call_device_action(
             target_device,
@@ -54,6 +59,13 @@ class CounterDriver:
             "increment",
             {"amount": amount},
             action_type=object,
+        )
+
+    async def call_peer_async(self, target_device: str, amount: int) -> int:
+        return await self.node.call_device_action_async(
+            target_device,
+            "increment_async",
+            {"amount": amount},
         )
 
 
@@ -117,7 +129,9 @@ def _counter_runtime(
             display_name="Counter",
             action_names=(
                 "increment",
+                "increment_async",
                 "call_peer",
+                "call_peer_async",
                 "call_peer_with_action_type",
             ),
             status_names=("count",),
@@ -241,6 +255,63 @@ def test_hostlink_backend_routes_basic_driver_actions_without_ros(
         assert host.devices()["host-local"]["location"] == "local"
         with pytest.raises(RemoteError, match="没有动作"):
             host.server.call_device("slave-counter", "missing")
+    finally:
+        slave.stop()
+        host.stop()
+
+
+def test_hostlink_awaits_device_tools_without_thread_fallback(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 1.0)
+    monkeypatch.setattr(BasicConfig, "machine_name", "async-slave")
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    host = HostLinkBackendRuntime(_counter_runtime("host-target"), is_slave=False)
+    slave = HostLinkBackendRuntime(
+        _counter_runtime("slave-target", initial=1),
+        is_slave=True,
+    )
+    host.start()
+    assert host.server is not None
+    HostLinkConfig.port = host.server.port
+    try:
+        slave.start()
+
+        async def reject_thread_fallback(*_args, **_kwargs):
+            raise AssertionError("异步设备调用不应退回 asyncio.to_thread")
+
+        monkeypatch.setattr(asyncio, "to_thread", reject_thread_fallback)
+
+        async def scenario() -> tuple[int, int]:
+            host_to_slave = await host.call_action_async(
+                "slave-target",
+                "increment_async",
+                amount=4,
+            )
+            slave_to_host = await slave.local.call_action_async(
+                "slave-target",
+                "call_peer_async",
+                target_device="host-target",
+                amount=3,
+            )
+            return host_to_slave, slave_to_host
+
+        assert asyncio.run(scenario()) == (5, 3)
+        assert _wait_until(
+            lambda: host.devices()["slave-target"]["state"].get("count") == 5
+        )
+        discovered = host.devices()["slave-target"]
+        assert "increment_async" in discovered["device"]["actions"]
+        assert discovered["device"]["status_fields"] == ["count"]
+        assert discovered["online"] is True
     finally:
         slave.stop()
         host.stop()
@@ -398,6 +469,63 @@ def test_hostlink_action_feedback_and_cancel(monkeypatch) -> None:
         assert feedback[0]["progress"] >= 1
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
+        slave.stop()
+        host.stop()
+
+
+def test_cancelling_async_call_forwards_to_remote_action(monkeypatch) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 2.0)
+    monkeypatch.setattr(BasicConfig, "machine_name", "async-cancel-slave")
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    host = HostLinkBackendRuntime(BasicRuntime("hostlink"), is_slave=False)
+    slave = HostLinkBackendRuntime(
+        _feedback_runtime("feedback-device"),
+        is_slave=True,
+    )
+    host.start()
+    assert host.server is not None
+    HostLinkConfig.port = host.server.port
+    feedback: list[dict] = []
+    context = ActionContext(
+        action_id="async-cancel",
+        feedback_callback=lambda _action_id, data: feedback.append(data),
+    )
+    try:
+        slave.start()
+
+        async def scenario() -> None:
+            task = asyncio.create_task(
+                host.call_action_async(
+                    "feedback-device",
+                    "run_steps",
+                    action_context=context,
+                    steps=100,
+                )
+            )
+            deadline = asyncio.get_running_loop().time() + 2.0
+            while not feedback and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.01)
+            assert feedback
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            deadline = asyncio.get_running_loop().time() + 2.0
+            while slave._actions and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.01)
+            assert not slave._actions
+
+        asyncio.run(scenario())
+        assert context.is_cancelled is True
+    finally:
         slave.stop()
         host.stop()
 

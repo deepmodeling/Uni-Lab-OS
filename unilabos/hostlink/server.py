@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 import socketserver
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import (
+    Future,
+    InvalidStateError,
+    ThreadPoolExecutor,
+    TimeoutError as FutureTimeoutError,
+)
 from typing import Any, Callable, Dict, List, Optional
 
 from unilabos.hostlink.protocol import (
@@ -26,11 +32,29 @@ Handler = Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]
 
 
 class _Pending:
-    __slots__ = ("event", "response")
+    """One response shared by blocking and asyncio callers."""
+
+    __slots__ = ("future",)
 
     def __init__(self) -> None:
-        self.event = threading.Event()
-        self.response: Optional[Dict[str, Any]] = None
+        self.future: Future[Dict[str, Any]] = Future()
+
+    def resolve(self, response: Dict[str, Any]) -> None:
+        if self.future.done():
+            return
+        try:
+            self.future.set_result(response)
+        except InvalidStateError:
+            pass
+
+    def wait(self, timeout: Optional[float]) -> Dict[str, Any]:
+        return self.future.result(timeout=timeout)
+
+    async def wait_async(self, timeout: Optional[float]) -> Dict[str, Any]:
+        wrapped = asyncio.wrap_future(self.future)
+        if timeout is None:
+            return await wrapped
+        return await asyncio.wait_for(wrapped, timeout)
 
 
 class _PeerSession:
@@ -53,6 +77,45 @@ class _PeerSession:
         data: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
     ) -> Any:
+        request_id, pending = self._begin_request(action_type, data)
+        wait_timeout = self.request_timeout if timeout is None else float(timeout)
+        try:
+            try:
+                response = pending.wait(wait_timeout)
+            except FutureTimeoutError as exc:
+                raise LinkError(
+                    f"request timeout: {action_type} ({request_id[:8]})"
+                ) from exc
+        finally:
+            self._remove_pending(request_id, pending)
+        return self._response_data(response)
+
+    async def request_async(
+        self,
+        action_type: str,
+        data: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        """Await one response while the connection reader stays threaded."""
+
+        request_id, pending = self._begin_request(action_type, data)
+        wait_timeout = self.request_timeout if timeout is None else float(timeout)
+        try:
+            try:
+                response = await pending.wait_async(wait_timeout)
+            except TimeoutError as exc:
+                raise LinkError(
+                    f"request timeout: {action_type} ({request_id[:8]})"
+                ) from exc
+        finally:
+            self._remove_pending(request_id, pending)
+        return self._response_data(response)
+
+    def _begin_request(
+        self,
+        action_type: str,
+        data: Optional[Dict[str, Any]],
+    ) -> tuple[str, _Pending]:
         message = new_request(action_type, data=data)
         request_id = str(message["id"])
         pending = _Pending()
@@ -60,17 +123,21 @@ class _PeerSession:
             self._pending[request_id] = pending
         try:
             self.send(message)
-            wait_timeout = self.request_timeout if timeout is None else float(timeout)
-            if not pending.event.wait(wait_timeout):
-                raise LinkError(
-                    f"request timeout: {action_type} ({request_id[:8]})"
-                )
         except OSError as exc:
+            self._remove_pending(request_id, pending)
             raise LinkError(f"request send failed: {exc}") from exc
-        finally:
-            with self._pending_lock:
+        except Exception:
+            self._remove_pending(request_id, pending)
+            raise
+        return request_id, pending
+
+    def _remove_pending(self, request_id: str, pending: _Pending) -> None:
+        with self._pending_lock:
+            if self._pending.get(request_id) is pending:
                 self._pending.pop(request_id, None)
-        response = pending.response or {}
+
+    @staticmethod
+    def _response_data(response: Dict[str, Any]) -> Any:
         if not response.get("ok"):
             raise RemoteError(str(response.get("error") or "remote error"))
         return response.get("data")
@@ -80,16 +147,13 @@ class _PeerSession:
         with self._pending_lock:
             pending = self._pending.get(request_id)
         if pending is not None:
-            pending.response = message
-            pending.event.set()
+            pending.resolve(message)
 
     def close(self) -> None:
         with self._pending_lock:
             pending_items = list(self._pending.values())
         for pending in pending_items:
-            if pending.response is None:
-                pending.response = {"ok": False, "error": "connection closed"}
-                pending.event.set()
+            pending.resolve({"ok": False, "error": "connection closed"})
 
 
 class _LinkTCPServer(socketserver.ThreadingTCPServer):
@@ -241,6 +305,19 @@ class HostLinkServer:
             raise LinkError(f"hostlink peer offline: {peer_key}")
         return session.request(action_type, data, timeout)
 
+    async def request_peer_async(
+        self,
+        peer_key: str,
+        action_type: str,
+        data: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        with self._sessions_lock:
+            session = self._sessions.get(str(peer_key))
+        if session is None:
+            raise LinkError(f"hostlink peer offline: {peer_key}")
+        return await session.request_async(action_type, data, timeout)
+
     def request_device(
         self,
         device_id: str,
@@ -253,6 +330,24 @@ class HostLinkServer:
         if peer is None:
             raise LinkError(f"hostlink device offline: {device_id}")
         return self.request_peer(str(peer["addr"]), action_type, data, timeout)
+
+    async def request_device_async(
+        self,
+        device_id: str,
+        action_type: str,
+        data: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        device_id = str(device_id)
+        peer = self.devices(online_only=True).get(device_id)
+        if peer is None:
+            raise LinkError(f"hostlink device offline: {device_id}")
+        return await self.request_peer_async(
+            str(peer["addr"]),
+            action_type,
+            data,
+            timeout,
+        )
 
     def submit_request(
         self,
@@ -295,6 +390,26 @@ class HostLinkServer:
             timeout,
         )
 
+    async def call_device_async(
+        self,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+        action_id: str = "",
+    ) -> Any:
+        return await self.request_device_async(
+            device_id,
+            ActionType.DEVICE_CALL,
+            {
+                "device_id": str(device_id),
+                "action": str(action_name),
+                "arguments": dict(arguments or {}),
+                "action_id": str(action_id),
+            },
+            timeout,
+        )
+
     def cancel_device_action(
         self,
         device_id: str,
@@ -302,6 +417,19 @@ class HostLinkServer:
         timeout: Optional[float] = None,
     ) -> Any:
         return self.request_device(
+            device_id,
+            ActionType.ACTION_CANCEL,
+            {"device_id": str(device_id), "action_id": str(action_id)},
+            timeout,
+        )
+
+    async def cancel_device_action_async(
+        self,
+        device_id: str,
+        action_id: str,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        return await self.request_device_async(
             device_id,
             ActionType.ACTION_CANCEL,
             {"device_id": str(device_id), "action_id": str(action_id)},

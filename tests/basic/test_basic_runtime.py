@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from unilabos.basic.runtime import (
     BasicDeviceNode,
     BasicDriverSpec,
@@ -47,6 +49,18 @@ class AsyncDriver:
         right: int,
     ) -> int:
         return self.node.call_device_action(
+            target_device,
+            "add",
+            {"left": left, "right": right},
+        )
+
+    async def call_peer_async(
+        self,
+        target_device: str,
+        left: int,
+        right: int,
+    ) -> int:
+        return await self.node.call_device_action_async(
             target_device,
             "add",
             {"left": left, "right": right},
@@ -109,6 +123,26 @@ def test_basic_runtime_routes_cross_device_actions() -> None:
             )
             == 10
         )
+    finally:
+        runtime.stop()
+
+
+def test_basic_runtime_awaits_cross_device_actions_natively() -> None:
+    runtime = BasicRuntime()
+    runtime.add_driver(BasicDriverSpec("caller", AsyncDriver, {}))
+    runtime.add_driver(BasicDriverSpec("target", AsyncDriver, {}))
+    runtime.start()
+    try:
+        result = asyncio.run(
+            runtime.call_action_async(
+                "caller",
+                "call_peer_async",
+                target_device="target",
+                left=7,
+                right=8,
+            )
+        )
+        assert result == 15
     finally:
         runtime.stop()
 

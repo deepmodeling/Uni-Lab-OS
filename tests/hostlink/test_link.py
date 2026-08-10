@@ -1,3 +1,4 @@
+import asyncio
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -129,5 +130,51 @@ def test_slow_request_does_not_block_ping_on_the_same_connection() -> None:
     finally:
         release.set()
         executor.shutdown(wait=False, cancel_futures=True)
+        client.close()
+        server.stop()
+
+
+def test_async_requests_work_in_both_directions() -> None:
+    server = HostLinkServer(
+        "127.0.0.1",
+        0,
+        heartbeat_timeout=1,
+        request_timeout=1,
+    ).start()
+    server.register_handler(
+        "test.host_echo",
+        lambda data, _peer: {"host": data["value"]},
+    )
+    client = HostLinkClient(
+        "127.0.0.1",
+        server.port,
+        device_ids=["async-device"],
+        heartbeat_interval=10,
+        request_timeout=1,
+    )
+    client.register_handler(
+        "test.slave_echo",
+        lambda data: {"slave": data["value"]},
+    )
+    try:
+        assert client.connect_blocking(timeout=2)
+
+        async def scenario() -> tuple[dict, dict]:
+            return await asyncio.gather(
+                client.request_async(
+                    "test.host_echo",
+                    {"value": "to-host"},
+                ),
+                server.request_device_async(
+                    "async-device",
+                    "test.slave_echo",
+                    {"value": "to-slave"},
+                ),
+            )
+
+        host_result, slave_result = asyncio.run(scenario())
+        assert host_result == {"host": "to-host"}
+        assert slave_result == {"slave": "to-slave"}
+    finally:
         client.close()
         server.stop()

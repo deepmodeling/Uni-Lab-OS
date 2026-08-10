@@ -75,7 +75,7 @@ class WSConfig:
 class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"  # 远程服务器地址
 
-# Host/Slave 组网控制通道；hostlink backend 也用它承载设备动作、状态和物料树同步
+# Host/Slave 组网控制通道；hostlink backend 也承载设备动作、JSON Topic、状态和物料树同步
 class HostLinkConfig:
     enable = True
     host = ""  # Slave 的 HostNode IP；推荐用 --host-node-ip 覆盖

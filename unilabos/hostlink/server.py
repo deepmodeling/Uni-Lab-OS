@@ -6,6 +6,7 @@ import socket
 import socketserver
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
 from unilabos.hostlink.protocol import (
@@ -122,10 +123,7 @@ class _LinkRequestHandler(socketserver.BaseRequestHandler):
                     continue
                 if message.get("kind") != "req":
                     continue
-                response = link.dispatch(message, peer_key)
-                try:
-                    session.send(response)
-                except OSError:
+                if not link.submit_request(session, message, peer_key):
                     break
         finally:
             reader.close()
@@ -159,6 +157,10 @@ class HostLinkServer:
         self._sessions_lock = threading.Lock()
         self._tcp: Optional[_LinkTCPServer] = None
         self._thread: Optional[threading.Thread] = None
+        self._rpc_executor = ThreadPoolExecutor(
+            max_workers=16,
+            thread_name_prefix="hostlink-host-rpc",
+        )
         self.register_handler(ActionType.HELLO, self._handle_hello)
         self.register_handler(ActionType.PING, self._handle_ping)
         self.register_handler(ActionType.ROS_INFO, self._handle_ros_info)
@@ -194,6 +196,7 @@ class HostLinkServer:
             self._sessions.clear()
         for session in sessions:
             session.close()
+        self._rpc_executor.shutdown(wait=False, cancel_futures=True)
 
     @property
     def port(self) -> int:
@@ -250,6 +253,27 @@ class HostLinkServer:
         if peer is None:
             raise LinkError(f"hostlink device offline: {device_id}")
         return self.request_peer(str(peer["addr"]), action_type, data, timeout)
+
+    def submit_request(
+        self,
+        session: _PeerSession,
+        message: Dict[str, Any],
+        peer_key: str,
+    ) -> bool:
+        """Dispatch one Slave request without blocking reads on that connection."""
+
+        def serve() -> None:
+            response = self.dispatch(message, peer_key)
+            try:
+                session.send(response)
+            except OSError:
+                pass
+
+        try:
+            self._rpc_executor.submit(serve)
+        except RuntimeError:
+            return False
+        return True
 
     def call_device(
         self,
@@ -335,9 +359,15 @@ class HostLinkServer:
                 machine_name = str(data.get("machine_name") or "").strip()
                 node_id = str(data.get("node_id") or "").strip()
                 if device_ids:
-                    # A reconnect keeps the logical peer keyed by its first
-                    # globally unique device id even though the TCP port changes.
-                    node_id = f"device:{device_ids[0]}"
+                    incoming_devices = set(device_ids)
+                    node_id = ""
+                    for known_node_id, known_peer in self._peers.items():
+                        known_devices = set(known_peer.get("device_ids") or [])
+                        if incoming_devices.intersection(known_devices):
+                            node_id = known_node_id
+                            break
+                    if not node_id:
+                        node_id = f"device:{device_ids[0]}"
                 node_id = node_id or machine_name or peer_key
                 if known_node and known_node != node_id:
                     temporary = self._peers.get(known_node)

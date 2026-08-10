@@ -12,7 +12,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 PROTOCOL_VERSION = 1
-MAX_FRAME_BYTES = 1024 * 1024
+MAX_FRAME_BYTES = 8 * 1024 * 1024
 
 
 class ActionType:
@@ -27,6 +27,10 @@ class ActionType:
     ACTION_CANCEL = "action.cancel"
     RESOURCE_UPDATE = "resource.update"
     RESOURCE_GET = "resource.get"
+    TOPIC_PUBLISH = "topic.publish"
+    TOPIC_SUBSCRIBE = "topic.subscribe"
+    TOPIC_UNSUBSCRIBE = "topic.unsubscribe"
+    TOPIC_DELIVER = "topic.deliver"
 
 
 class LinkError(Exception):

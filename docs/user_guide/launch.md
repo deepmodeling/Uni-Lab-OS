@@ -145,7 +145,7 @@ Uni-Lab 对外提供四个 backend 名称。名称、能力和实现入口由
 | Backend | 定位 | 默认 App bridges | Host/Slave | 可视化 |
 |---|---|---|---|---|
 | **basic** | 单进程直接加载纯 Python 设备驱动，不使用通信中间件；跳过工作站聚合节点 | 无 | 不支持 | 不支持 |
-| **hostlink** | Basic 驱动通过 HostLink TCP 组网，不导入 ROS；支持设备发现、双向动作调用、状态和物料树同步 | 无 | 支持 | 不支持 |
+| **hostlink** | Basic 驱动通过 HostLink TCP 组网，不导入 ROS；支持设备发现、双向动作调用、JSON Topic、状态和物料树同步 | 无 | 支持 | 不支持 |
 | **ros2**（默认） | 完整 ROS 2 分布式运行时 | `websocket fastapi` | 支持 | 支持 |
 | **dora** | 独立 dora-rs dataflow 运行时 | 无 | 暂不支持 | 暂不支持 |
 
@@ -210,8 +210,10 @@ Host/Slave 可选择 `ros2` 或无 ROS 的 `hostlink` backend。启动时加入
 - **主站 (host)**：持有物料修改权以及对云端的通信
 - **从站 (slave)**：无主机权限，可选择跳过等待主机服务 (`--slave_no_host`)
 
-`ros2` 使用 ROS Action/Topic；`hostlink` 直接在 TCP 长连接上同步注册表声明的设备描述、
-状态并执行动作。后者只加载纯 Python 驱动，不支持注册表中 `class.type: ros2` 的原生 ROS 设备。
+`ros2` 使用 DDS 上的 ROS Action/Topic；`hostlink` 直接在 TCP 长连接上同步注册表声明的设备描述、
+状态，执行动作并转发 JSON Topic。设备代码可以继续使用通用节点的
+`create_publisher(...).publish(...)` 和 `create_subscription(...)` 写法。
+HostLink 只加载纯 Python 驱动；MoveIt、相机图像和规划场景等需要外部 ROS 图的设备仍使用 `ros2`。
 
 推荐由 Host 统一发布 ROS2 domain，Slave 只指定 Host IP：
 

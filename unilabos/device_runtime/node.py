@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import inspect
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 
 if TYPE_CHECKING:
     from unilabos.device_runtime.action import DeviceActionRouter
     from unilabos.device_runtime.resource import ResourceService
+    from unilabos.device_runtime.topic import (
+        TopicBus,
+        TopicPublisher,
+        TopicSubscription,
+    )
 
 StatusListener = Callable[[str, str, Any], None]
 
@@ -19,9 +25,9 @@ class BackendCapabilityError(RuntimeError):
 class DeviceNode(ABC):
     """Small backend-neutral API passed to ``driver.post_init``.
 
-    Transport-specific methods such as ROS publishers and subscriptions are
-    deliberately not part of this class. A driver using those APIs remains a
-    backend-specific driver.
+    Device actions and JSON-compatible topics are available on every backend.
+    ROS2 keeps using native DDS implementations through ``rclpy.node.Node``;
+    Basic and HostLink use the topic bus configured by their runtime.
     """
 
     backend_name = "unknown"
@@ -118,6 +124,104 @@ class DeviceNode(ABC):
     def set_action_router(self, router: "DeviceActionRouter") -> None:
         self.__dict__["_device_action_router"] = router
 
+    def set_topic_bus(self, bus: "TopicBus") -> None:
+        self.__dict__["_device_topic_bus"] = bus
+
+    def resolve_topic_name(self, topic: str) -> str:
+        from unilabos.device_runtime.topic import normalize_topic
+
+        return normalize_topic(topic, self.device_id)
+
+    def create_publisher(
+        self,
+        msg_type: Any,
+        topic: str,
+        qos_profile: Any = 10,
+        **kwargs: Any,
+    ) -> "TopicPublisher":
+        """Create a Basic/HostLink publisher with the familiar ROS call shape."""
+
+        del qos_profile
+        from unilabos.device_runtime.topic import TopicPublisher
+
+        bus = self.__dict__.get("_device_topic_bus")
+        if bus is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未实现消息发布"
+            )
+        return TopicPublisher(
+            bus,
+            self.resolve_topic_name(topic),
+            self.device_id,
+            msg_type,
+            retain=bool(kwargs.get("retain", False)),
+        )
+
+    def create_subscription(
+        self,
+        msg_type: Any,
+        topic: str,
+        callback: Callable[[Any], Any],
+        qos_profile: Any = 10,
+        **kwargs: Any,
+    ) -> "TopicSubscription":
+        """Create a Basic/HostLink subscription and pass decoded Python data."""
+
+        del msg_type, qos_profile
+        bus = self.__dict__.get("_device_topic_bus")
+        if bus is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未实现消息订阅"
+            )
+
+        def invoke(value: Any) -> Any:
+            async def run_callback() -> Any:
+                result = callback(value)
+                if inspect.isawaitable(result):
+                    return await result
+                return result
+
+            return self.create_task(run_callback())
+
+        return bus.subscribe(
+            self.resolve_topic_name(topic),
+            invoke,
+            trigger_when_change=bool(kwargs.get("trigger_when_change", False)),
+            replay_retained=bool(kwargs.get("replay_retained", True)),
+        )
+
+    def publish_topic(
+        self,
+        topic: str,
+        value: Any,
+        *,
+        message_type: Any = None,
+        retain: bool = False,
+    ) -> None:
+        publisher = self.create_publisher(
+            message_type or type(value),
+            topic,
+            retain=retain,
+        )
+        publisher.publish(value)
+
+    def subscribe_topic(
+        self,
+        topic: str,
+        callback: Callable[[Any], Any],
+        *,
+        message_type: Any = None,
+        trigger_when_change: bool = False,
+        replay_retained: bool = True,
+    ) -> "TopicSubscription":
+        return self.create_subscription(
+            message_type,
+            topic,
+            callback,
+            trigger_when_change=trigger_when_change,
+            replay_retained=replay_retained,
+        )
+
     async def transfer_resource_to_another(
         self,
         plr_resources: list[Any],
@@ -147,6 +251,8 @@ class DeviceNode(ABC):
             self.__dict__.setdefault("_device_status_listeners", [])
         ):
             listener(self.device_id, str(name), value)
+        if self.__dict__.get("_device_topic_bus") is not None:
+            self.publish_topic(str(name), value, retain=True)
 
     def latest_status(self) -> Dict[str, Any]:
         return dict(self.__dict__.setdefault("_device_status_cache", {}))

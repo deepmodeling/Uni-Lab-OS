@@ -65,7 +65,12 @@ class HostLinkClient:
         self.device_descriptors: List[Dict[str, Any]] = []
         self.configure_device_ids(device_ids or [])
         self.configure_device_descriptors(device_descriptors or [])
-        self.capabilities = ["device-discovery", "ros-assist", "device-rpc"]
+        self.capabilities = [
+            "device-discovery",
+            "ros-assist",
+            "device-rpc",
+            "topic-pubsub",
+        ]
         self.hello_info: Dict[str, Any] = {}
         self.handlers: Dict[str, Callable[[Dict[str, Any]], Any]] = {}
 

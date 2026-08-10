@@ -12,6 +12,7 @@ from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
 from unilabos.device_runtime.resource import LocalResourceService, ResourceStore
+from unilabos.device_runtime.topic import TopicEvent, normalize_topic
 from unilabos.hostlink.client import HostLinkClient, set_hostlink_client
 from unilabos.hostlink.protocol import ActionType, LinkError
 from unilabos.hostlink.resource import HostLinkResourceService
@@ -59,10 +60,17 @@ class HostLinkBackendRuntime:
         self.client: Optional[HostLinkClient] = None
         self._started = False
         self._actions: Dict[str, tuple[str, ActionContext]] = {}
+        self._action_callers: Dict[str, str] = {}
         self._actions_lock = threading.Lock()
+        self._remote_topic_subscriptions: Dict[str, set[str]] = {}
+        self._remote_topic_lock = threading.Lock()
         self._io_executor = ThreadPoolExecutor(
             max_workers=2,
             thread_name_prefix="hostlink-backend-io",
+        )
+        self._topic_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="hostlink-backend-topic",
         )
         if not self.is_slave:
             self.local.set_resource_service(
@@ -70,6 +78,10 @@ class HostLinkBackendRuntime:
             )
         for node in self.local.devices.values():
             node.set_action_router(self)
+        self.local.topic_bus.add_outbound_listener(self._on_local_topic)
+        self.local.topic_bus.add_subscription_listener(
+            self._on_local_subscription_change
+        )
 
     def start(self) -> None:
         if self._started:
@@ -105,6 +117,10 @@ class HostLinkBackendRuntime:
             self._handle_action_feedback,
         )
         self.server.register_handler(
+            ActionType.ACTION_CANCEL,
+            self._handle_peer_action_cancel,
+        )
+        self.server.register_handler(
             ActionType.RESOURCE_UPDATE,
             self._handle_resource_update,
         )
@@ -115,6 +131,18 @@ class HostLinkBackendRuntime:
         self.server.register_handler(
             ActionType.DEVICE_CALL,
             self._handle_peer_device_call,
+        )
+        self.server.register_handler(
+            ActionType.TOPIC_PUBLISH,
+            self._handle_topic_publish,
+        )
+        self.server.register_handler(
+            ActionType.TOPIC_SUBSCRIBE,
+            self._handle_topic_subscribe,
+        )
+        self.server.register_handler(
+            ActionType.TOPIC_UNSUBSCRIBE,
+            self._handle_topic_unsubscribe,
         )
         self.server.start()
         set_hostlink_server(self.server)
@@ -140,6 +168,7 @@ class HostLinkBackendRuntime:
             request_timeout=HostLinkConfig.request_timeout,
             device_descriptors=self.local.descriptors(),
             heartbeat_payload_provider=self._heartbeat_payload,
+            on_status_change=self._on_client_status_change,
         )
         self.client.register_handler(ActionType.DEVICE_CALL, self._handle_device_call)
         self.client.register_handler(
@@ -149,6 +178,14 @@ class HostLinkBackendRuntime:
         self.client.register_handler(
             ActionType.ACTION_CANCEL,
             self._handle_action_cancel,
+        )
+        self.client.register_handler(
+            ActionType.ACTION_FEEDBACK,
+            self._handle_incoming_action_feedback,
+        )
+        self.client.register_handler(
+            ActionType.TOPIC_DELIVER,
+            self._handle_topic_deliver,
         )
         self.local.set_resource_service(HostLinkResourceService(self.client))
         for node in self.local.devices.values():
@@ -191,6 +228,177 @@ class HostLinkBackendRuntime:
 
     def _heartbeat_payload(self) -> Dict[str, Any]:
         return {"states": to_wire_value(self.local.snapshot_states())}
+
+    def _on_client_status_change(self, online: bool) -> None:
+        if not online:
+            return
+        try:
+            self._topic_executor.submit(self._register_topic_subscriptions)
+        except RuntimeError:
+            pass
+
+    def _register_topic_subscriptions(self) -> None:
+        client = self.client
+        if client is None or not client.online:
+            return
+        for topic in self.local.topic_bus.subscribed_topics():
+            try:
+                client.request(ActionType.TOPIC_SUBSCRIBE, {"topic": topic})
+            except LinkError:
+                return
+
+    def _on_local_subscription_change(self, topic: str, subscribed: bool) -> None:
+        if not self.is_slave:
+            return
+        client = self.client
+        if client is None or not client.online:
+            return
+        action_type = (
+            ActionType.TOPIC_SUBSCRIBE
+            if subscribed
+            else ActionType.TOPIC_UNSUBSCRIBE
+        )
+        try:
+            self._topic_executor.submit(
+                client.request,
+                action_type,
+                {"topic": topic},
+            )
+        except RuntimeError:
+            pass
+
+    def _on_local_topic(self, event: TopicEvent) -> None:
+        try:
+            if self.is_slave:
+                self._topic_executor.submit(self._send_topic_to_host, event)
+            else:
+                self._topic_executor.submit(self._forward_topic_to_slaves, event)
+        except RuntimeError:
+            pass
+
+    def _send_topic_to_host(self, event: TopicEvent) -> None:
+        client = self.client
+        if client is None or not client.online:
+            return
+        try:
+            client.request(ActionType.TOPIC_PUBLISH, {"event": event.to_wire()})
+        except LinkError:
+            logger.debug(
+                "[HostLink backend] topic publish failed while offline: %s",
+                event.topic,
+            )
+
+    def _forward_topic_to_slaves(
+        self,
+        event: TopicEvent,
+        *,
+        exclude_node_id: str = "",
+    ) -> None:
+        server = self.server
+        if server is None:
+            return
+        with self._remote_topic_lock:
+            interested = {
+                node_id
+                for node_id, topics in self._remote_topic_subscriptions.items()
+                if event.topic in topics and node_id != exclude_node_id
+            }
+        if not interested:
+            return
+        peers = {
+            str(peer.get("node_id") or ""): peer
+            for peer in server.peers()
+            if peer.get("online")
+        }
+        for node_id in interested:
+            peer = peers.get(node_id)
+            if peer is None:
+                continue
+            try:
+                server.request_peer(
+                    str(peer["addr"]),
+                    ActionType.TOPIC_DELIVER,
+                    {"event": event.to_wire()},
+                )
+            except LinkError:
+                logger.debug(
+                    "[HostLink backend] topic delivery failed: %s -> %s",
+                    event.topic,
+                    node_id,
+                )
+
+    @staticmethod
+    def _topic_from_data(data: Dict[str, Any]) -> str:
+        return normalize_topic(str(data.get("topic") or ""))
+
+    def _handle_topic_subscribe(
+        self,
+        data: Dict[str, Any],
+        peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        topic = self._topic_from_data(data)
+        node_id = str(peer.get("node_id") or "")
+        if not node_id:
+            raise PermissionError("HostLink topic subscriber 缺少 Slave 身份")
+        with self._remote_topic_lock:
+            self._remote_topic_subscriptions.setdefault(node_id, set()).add(topic)
+        return {"accepted": True, "topic": topic}
+
+    def _handle_topic_unsubscribe(
+        self,
+        data: Dict[str, Any],
+        peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        topic = self._topic_from_data(data)
+        node_id = str(peer.get("node_id") or "")
+        with self._remote_topic_lock:
+            topics = self._remote_topic_subscriptions.get(node_id)
+            if topics is not None:
+                topics.discard(topic)
+                if not topics:
+                    self._remote_topic_subscriptions.pop(node_id, None)
+        return {"accepted": True, "topic": topic}
+
+    def _handle_topic_publish(
+        self,
+        data: Dict[str, Any],
+        peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raw_event = data.get("event")
+        if not isinstance(raw_event, dict):
+            raise TypeError("topic.publish requires event")
+        event = TopicEvent.from_wire(raw_event)
+        owned = {str(item) for item in peer.get("device_ids") or []}
+        if event.publisher_device_id not in owned:
+            raise PermissionError(
+                f"Slave 未注册 topic 发布设备：{event.publisher_device_id!r}"
+            )
+        self.local.topic_bus.publish(event, forward=False)
+        try:
+            self._topic_executor.submit(
+                self._forward_topic_to_slaves,
+                event,
+                exclude_node_id=str(peer.get("node_id") or ""),
+            )
+        except RuntimeError:
+            pass
+        return {
+            "accepted": True,
+            "topic": event.topic,
+            "message_id": event.message_id,
+        }
+
+    def _handle_topic_deliver(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        raw_event = data.get("event")
+        if not isinstance(raw_event, dict):
+            raise TypeError("topic.deliver requires event")
+        event = TopicEvent.from_wire(raw_event)
+        self.local.topic_bus.publish(event, forward=False)
+        return {
+            "accepted": True,
+            "topic": event.topic,
+            "message_id": event.message_id,
+        }
 
     def _on_local_status(self, device_id: str, name: str, value: Any) -> None:
         client = self.client
@@ -285,11 +493,52 @@ class HostLinkBackendRuntime:
             arguments = {}
         if not isinstance(arguments, dict):
             raise TypeError("device.call arguments must be an object")
-        result = self.call_action(device_id, action, **arguments)
+        action_id = str(data.get("action_id") or "") or ActionContext().action_id
+        peer_addr = str(peer.get("addr") or "")
+
+        def forward_feedback(
+            feedback_action_id: str,
+            feedback: Dict[str, Any],
+        ) -> None:
+            server = self.server
+            if server is None or not peer_addr:
+                return
+            try:
+                server.request_peer(
+                    peer_addr,
+                    ActionType.ACTION_FEEDBACK,
+                    {
+                        "action_id": feedback_action_id,
+                        "device_id": device_id,
+                        "feedback": to_wire_value(feedback),
+                    },
+                )
+            except LinkError:
+                logger.warning(
+                    "[HostLink backend] Action feedback 转发失败：%s",
+                    feedback_action_id,
+                )
+
+        context = ActionContext(
+            action_id=action_id,
+            feedback_callback=forward_feedback,
+        )
+        try:
+            result = self.call_action(
+                device_id,
+                action,
+                action_context=context,
+                **arguments,
+            )
+            status = "succeeded"
+        except ActionCancelled:
+            result = None
+            status = "cancelled"
         return {
             "device_id": device_id,
             "action": action,
-            "status": "succeeded",
+            "action_id": action_id,
+            "status": status,
             "result": to_wire_value(result),
         }
 
@@ -324,6 +573,18 @@ class HostLinkBackendRuntime:
         data: Dict[str, Any],
         _peer: Dict[str, Any],
     ) -> Dict[str, Any]:
+        return self._deliver_action_feedback(data)
+
+    def _handle_incoming_action_feedback(
+        self,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return self._deliver_action_feedback(data)
+
+    def _deliver_action_feedback(
+        self,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
         action_id = str(data.get("action_id") or "")
         with self._actions_lock:
             active = self._actions.get(action_id)
@@ -349,6 +610,23 @@ class HostLinkBackendRuntime:
             return {"accepted": False, "action_id": action_id}
         active[1].request_cancel()
         return {"accepted": True, "action_id": action_id}
+
+    def _handle_peer_action_cancel(
+        self,
+        data: Dict[str, Any],
+        peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        caller_device_id = str(data.get("caller_device_id") or "")
+        owned = {str(item) for item in peer.get("device_ids") or []}
+        if caller_device_id not in owned:
+            raise PermissionError(
+                f"Slave 未注册取消动作的调用设备：{caller_device_id!r}"
+            )
+        action_id = str(data.get("action_id") or "")
+        return {
+            "accepted": self.cancel_action(action_id),
+            "action_id": action_id,
+        }
 
     @staticmethod
     def _validate_resource_owner(
@@ -463,32 +741,51 @@ class HostLinkBackendRuntime:
         arguments: Optional[Dict[str, Any]] = None,
         **options: Any,
     ) -> Any:
-        if options.get("action_type") is not None:
-            raise ValueError(
-                "hostlink backend 不能调用原生 ROS Action 类型"
-            )
         target = self.local._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        context = options.get("action_context")
+        if context is None and (
+            options.get("action_id") or options.get("feedback_callback")
+        ):
+            context = ActionContext(
+                action_id=str(options.get("action_id") or "")
+                or ActionContext().action_id,
+                feedback_callback=options.get("feedback_callback"),
+            )
         if target in self.local.devices or self.server is not None:
             return self.call_action(
                 target,
                 action_name,
+                action_context=context,
                 **dict(arguments or {}),
             )
         client = self.client
         if client is None:
             raise KeyError(f"未知 HostLink 设备：{target}")
-        response = client.request(
-            ActionType.DEVICE_CALL,
-            {
-                "caller_device_id": caller_device_id,
-                "device_id": target,
-                "action": action_name,
-                "arguments": dict(arguments or {}),
-            },
-            timeout=options.get("timeout"),
-        )
+        context = context or ActionContext()
+        with self._actions_lock:
+            self._actions[context.action_id] = (target, context)
+            self._action_callers[context.action_id] = caller_device_id
+        try:
+            response = client.request(
+                ActionType.DEVICE_CALL,
+                {
+                    "caller_device_id": caller_device_id,
+                    "device_id": target,
+                    "action": action_name,
+                    "arguments": dict(arguments or {}),
+                    "action_id": context.action_id,
+                },
+                timeout=options.get("timeout"),
+            )
+        finally:
+            with self._actions_lock:
+                self._actions.pop(context.action_id, None)
+                self._action_callers.pop(context.action_id, None)
+        if isinstance(response, dict) and response.get("status") == "cancelled":
+            context.request_cancel()
+            raise ActionCancelled(f"action cancelled: {context.action_id}")
         if isinstance(response, dict) and "result" in response:
             return response["result"]
         return response
@@ -522,6 +819,19 @@ class HostLinkBackendRuntime:
         if self.server is not None and device_id not in self.local.devices:
             response = self.server.cancel_device_action(device_id, context.action_id)
             return bool((response or {}).get("accepted"))
+        client = self.client
+        if client is not None and device_id not in self.local.devices:
+            with self._actions_lock:
+                caller_device_id = self._action_callers.get(context.action_id, "")
+            response = client.request(
+                ActionType.ACTION_CANCEL,
+                {
+                    "caller_device_id": caller_device_id,
+                    "device_id": device_id,
+                    "action_id": context.action_id,
+                },
+            )
+            return bool((response or {}).get("accepted"))
         return True
 
     def devices(self, online_only: bool = True) -> Dict[str, Dict[str, Any]]:
@@ -544,6 +854,10 @@ class HostLinkBackendRuntime:
         return result
 
     def stop(self) -> None:
+        self.local.topic_bus.remove_outbound_listener(self._on_local_topic)
+        self.local.topic_bus.remove_subscription_listener(
+            self._on_local_subscription_change
+        )
         for node in self.local.devices.values():
             node.remove_status_listener(self._on_local_status)
         client, self.client = self.client, None
@@ -556,6 +870,7 @@ class HostLinkBackendRuntime:
             set_hostlink_server(None)
         self.local.stop()
         self._io_executor.shutdown(wait=False, cancel_futures=True)
+        self._topic_executor.shutdown(wait=False, cancel_futures=True)
         self._started = False
 
 

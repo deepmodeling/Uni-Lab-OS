@@ -15,6 +15,13 @@ from unilabos.device_runtime.resource import (
     ResourceService,
     ResourceStore,
 )
+from unilabos.device_runtime.topic import (
+    LocalTopicBus,
+    TopicBus,
+    TopicEvent,
+    TopicPublisher,
+    TopicSubscription,
+)
 
 __all__ = [
     "ActionCancelled",
@@ -23,7 +30,12 @@ __all__ = [
     "DeviceNode",
     "DeviceActionRouter",
     "LocalResourceService",
+    "LocalTopicBus",
     "ResourceService",
     "ResourceStore",
     "StatusListener",
+    "TopicBus",
+    "TopicEvent",
+    "TopicPublisher",
+    "TopicSubscription",
 ]

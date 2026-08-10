@@ -48,6 +48,40 @@ class CounterDriver:
             {"amount": amount},
         )
 
+    def call_peer_with_action_type(self, target_device: str, amount: int) -> int:
+        return self.node.call_device_action(
+            target_device,
+            "increment",
+            {"amount": amount},
+            action_type=object,
+        )
+
+
+class TopicDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+        self.config = dict(config or {})
+        self.node = None
+        self.publisher = None
+        self.received = []
+
+    def post_init(self, node) -> None:
+        self.node = node
+        if self.config.get("publish"):
+            self.publisher = node.create_publisher(dict, "value", 10)
+        subscribe_to = str(self.config.get("subscribe_to") or "")
+        if subscribe_to:
+            node.create_subscription(
+                dict,
+                f"/devices/{subscribe_to}/value",
+                self.received.append,
+                10,
+            )
+
+    def send(self, value: int) -> int:
+        self.publisher.publish({"value": value})
+        return value
+
 
 class FeedbackDriver:
     def __init__(self, device_id=None, config=None):
@@ -81,7 +115,11 @@ def _counter_runtime(
             config={"initial": initial},
             registry_name="counter",
             display_name="Counter",
-            action_names=("increment", "call_peer"),
+            action_names=(
+                "increment",
+                "call_peer",
+                "call_peer_with_action_type",
+            ),
             status_names=("count",),
             resource_uuid=resource_uuid,
         )
@@ -187,6 +225,15 @@ def test_hostlink_backend_routes_basic_driver_actions_without_ros(
             )
             == 5
         )
+        assert (
+            host.call_action(
+                "slave-counter",
+                "call_peer_with_action_type",
+                target_device="host-local",
+                amount=2,
+            )
+            == 7
+        )
         assert _wait_until(
             lambda: host.devices()["slave-counter"]["state"].get("count") == 5
         )
@@ -194,6 +241,96 @@ def test_hostlink_backend_routes_basic_driver_actions_without_ros(
         assert host.devices()["host-local"]["location"] == "local"
         with pytest.raises(RemoteError, match="没有动作"):
             host.server.call_device("slave-counter", "missing")
+    finally:
+        slave.stop()
+        host.stop()
+
+
+def test_hostlink_routes_topics_in_both_directions(monkeypatch) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 1.0)
+    monkeypatch.setattr(BasicConfig, "machine_name", "topic-slave")
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    host_local = BasicRuntime("hostlink")
+    host_source = host_local.add_driver(
+        BasicDriverSpec(
+            device_id="host-source",
+            driver_class=TopicDriver,
+            config={"publish": True},
+            action_names=("send",),
+        )
+    )
+    host_sink = host_local.add_driver(
+        BasicDriverSpec(
+            device_id="host-sink",
+            driver_class=TopicDriver,
+            config={"subscribe_to": "slave-source"},
+        )
+    )
+    slave_local = BasicRuntime("hostlink")
+    slave_source = slave_local.add_driver(
+        BasicDriverSpec(
+            device_id="slave-source",
+            driver_class=TopicDriver,
+            config={"publish": True},
+            action_names=("send",),
+        )
+    )
+    slave_sink = slave_local.add_driver(
+        BasicDriverSpec(
+            device_id="slave-sink",
+            driver_class=TopicDriver,
+            config={"subscribe_to": "host-source"},
+        )
+    )
+    host = HostLinkBackendRuntime(host_local, is_slave=False)
+    slave = HostLinkBackendRuntime(slave_local, is_slave=True)
+    host.start()
+    assert host.server is not None
+    HostLinkConfig.port = host.server.port
+    try:
+        slave.start()
+        assert _wait_until(
+            lambda: any(
+                "/devices/host-source/value" in topics
+                for topics in host._remote_topic_subscriptions.values()
+            )
+        )
+
+        host_source.call_action("send", value=11)
+        assert _wait_until(
+            lambda: slave_sink.driver.received == [{"value": 11}]
+        )
+
+        slave_source.call_action("send", value=22)
+        assert _wait_until(
+            lambda: host_sink.driver.received == [{"value": 22}]
+        )
+
+        assert slave.client is not None
+        with host._remote_topic_lock:
+            host._remote_topic_subscriptions.clear()
+        slave.client._teardown_socket()
+        assert _wait_until(lambda: not slave.client.online)
+        assert _wait_until(lambda: slave.client.online, timeout=4)
+        assert _wait_until(
+            lambda: any(
+                "/devices/host-source/value" in topics
+                for topics in host._remote_topic_subscriptions.values()
+            )
+        )
+        host_source.call_action("send", value=33)
+        assert _wait_until(
+            lambda: slave_sink.driver.received
+            == [{"value": 11}, {"value": 33}]
+        )
     finally:
         slave.stop()
         host.stop()
@@ -262,6 +399,72 @@ def test_hostlink_action_feedback_and_cancel(monkeypatch) -> None:
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
         slave.stop()
+        host.stop()
+
+
+def test_hostlink_routes_action_feedback_and_cancel_between_slaves(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 2.0)
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    host = HostLinkBackendRuntime(BasicRuntime("hostlink"), is_slave=False)
+    caller = HostLinkBackendRuntime(
+        _counter_runtime("slave-caller"),
+        is_slave=True,
+    )
+    target = HostLinkBackendRuntime(
+        _feedback_runtime("slave-target"),
+        is_slave=True,
+    )
+    host.start()
+    assert host.server is not None
+    HostLinkConfig.port = host.server.port
+    feedback_received = threading.Event()
+    feedback = []
+    context = ActionContext(
+        action_id="slave-to-slave-cancel",
+        feedback_callback=lambda _action_id, data: (
+            feedback.append(data),
+            feedback_received.set(),
+        ),
+    )
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        BasicConfig.machine_name = "caller-slave"
+        caller.start()
+        BasicConfig.machine_name = "target-slave"
+        target.start()
+        assert _wait_until(lambda: "slave-target" in host.devices())
+
+        future = executor.submit(
+            caller.route_action,
+            "slave-caller",
+            "slave-target",
+            "run_steps",
+            {"steps": 100},
+            action_context=context,
+        )
+        assert feedback_received.wait(timeout=2)
+        assert caller.cancel_action(context.action_id) is True
+        with pytest.raises(
+            ActionCancelled,
+            match="slave-to-slave-cancel",
+        ):
+            future.result(timeout=2)
+        assert feedback
+        assert feedback[0]["progress"] >= 1
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+        target.stop()
+        caller.stop()
         host.stop()
 
 

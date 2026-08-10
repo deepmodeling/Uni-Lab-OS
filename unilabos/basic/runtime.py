@@ -12,6 +12,8 @@ from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional
 from unilabos.device_runtime.node import DeviceNode
 from unilabos.device_runtime.action import ActionContext
 from unilabos.device_runtime.resource import ResourceService
+from unilabos.device_runtime.topic import LocalTopicBus
+from unilabos.utils.decorator import get_all_subscriptions
 
 
 def instantiate_driver(
@@ -90,6 +92,7 @@ class BasicDeviceNode(DeviceNode):
         )
         self._started = False
         self._action_lock = threading.Lock()
+        self._decorated_subscriptions: list[Any] = []
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
@@ -129,6 +132,7 @@ class BasicDeviceNode(DeviceNode):
         try:
             if hasattr(self.driver, "post_init"):
                 self.driver.post_init(self)
+            self._setup_decorated_subscriptions()
             initialize = getattr(self.driver, "initialize", None)
             if callable(initialize):
                 self._call(initialize, _wait_timeout=30)
@@ -136,6 +140,27 @@ class BasicDeviceNode(DeviceNode):
             self.stop()
             raise
         self._logger.info("Basic 设备已就绪：%s", self.device_id)
+
+    def _setup_decorated_subscriptions(self) -> None:
+        for _method_name, method, config in get_all_subscriptions(self.driver):
+            topic = config.get("topic")
+            target_device = config.get("device_id")
+            status_name = config.get("status_name")
+            if target_device or status_name:
+                if not target_device or not status_name:
+                    raise ValueError("@subscribe 需要同时提供 device_id 和 status_name")
+                topic = f"/devices/{target_device}/{status_name}"
+            if not topic:
+                raise ValueError("@subscribe 缺少 topic")
+            self._decorated_subscriptions.append(
+                self.create_subscription(
+                    config.get("msg_type"),
+                    topic,
+                    method,
+                    config.get("qos", 10),
+                    trigger_when_change=config.get("trigger_when_change", False),
+                )
+            )
 
     def call_action(
         self,
@@ -208,6 +233,9 @@ class BasicDeviceNode(DeviceNode):
     def stop(self) -> None:
         if not self._started:
             return
+        for subscription in self._decorated_subscriptions:
+            subscription.destroy()
+        self._decorated_subscriptions.clear()
         cleanup = getattr(self.driver, "cleanup", None)
         if callable(cleanup):
             try:
@@ -238,6 +266,7 @@ class BasicRuntime:
     def __init__(self, backend_name: str = "basic") -> None:
         self.backend_name = str(backend_name or "basic")
         self.devices: dict[str, BasicDeviceNode] = {}
+        self.topic_bus = LocalTopicBus()
         self._resource_service: ResourceService | None = None
         self._stopped = threading.Event()
 
@@ -258,6 +287,7 @@ class BasicRuntime:
         if self._resource_service is not None:
             node.set_resource_service(self._resource_service)
         node.set_action_router(self)
+        node.set_topic_bus(self.topic_bus)
         self.devices[spec.device_id] = node
         return node
 
@@ -281,14 +311,24 @@ class BasicRuntime:
         arguments: Optional[Dict[str, Any]] = None,
         **options: Any,
     ) -> Any:
-        if options.get("action_type") is not None:
-            raise ValueError(
-                f"backend '{self.backend_name}' 不能调用原生 ROS Action 类型"
-            )
         target = self._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
-        return self.call_action(target, action_name, **dict(arguments or {}))
+        context = options.get("action_context")
+        if context is None and (
+            options.get("action_id") or options.get("feedback_callback")
+        ):
+            context = ActionContext(
+                action_id=str(options.get("action_id") or "")
+                or ActionContext().action_id,
+                feedback_callback=options.get("feedback_callback"),
+            )
+        return self.call_action(
+            target,
+            action_name,
+            action_context=context,
+            **dict(arguments or {}),
+        )
 
     async def route_action_async(
         self,
@@ -352,4 +392,5 @@ class BasicRuntime:
     def stop(self) -> None:
         for node in reversed(tuple(self.devices.values())):
             node.stop()
+        self.topic_bus.close()
         self._stopped.set()

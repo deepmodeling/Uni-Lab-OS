@@ -178,6 +178,7 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
                 request.template_ids,
                 request.sample_ids,
                 sample_start_interval_seconds=request.sample_start_interval_seconds,
+                template_node_parameters=request.template_node_parameters,
             ))
         except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
             raise mutation_error(exc) from exc

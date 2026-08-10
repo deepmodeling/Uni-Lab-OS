@@ -396,9 +396,27 @@ class WorkspaceService:
         sample_ids: list[str],
         *,
         sample_start_interval_seconds: float = 0,
+        template_node_parameters: dict[str, dict[str, dict[str, Any]]] | None = None,
     ):
         def operation(workspace: Workspace) -> Workspace:
             templates = [self._template(workspace, item) for item in template_ids]
+            remembered_parameters = template_node_parameters or {}
+            unknown_templates = set(remembered_parameters) - set(template_ids)
+            if unknown_templates:
+                raise WorkspaceServiceError(
+                    "unknown_template",
+                    f"parameter defaults reference unselected templates: {sorted(unknown_templates)}",
+                )
+            for template in templates:
+                unknown_nodes = (
+                    set(remembered_parameters.get(template.id, {}))
+                    - set(template.node_ids)
+                )
+                if unknown_nodes:
+                    raise WorkspaceServiceError(
+                        "unknown_action_node",
+                        f"action nodes are not in template {template.id}: {sorted(unknown_nodes)}",
+                    )
             generated: list[TaskInstance] = []
             batch_anchor = self._clock()
             interval_ms = round(sample_start_interval_seconds * 1_000)
@@ -419,6 +437,9 @@ class WorkspaceService:
                             sample_id=sample_id,
                             order=next_order,
                             not_before=sample_not_before,
+                            payload={
+                                "node_parameters": remembered_parameters[template.id]
+                            } if remembered_parameters.get(template.id) else {},
                         )
                     )
                     next_order += 1

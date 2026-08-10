@@ -1,0 +1,89 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import ts from 'typescript';
+
+async function importTypeScriptModule(path) {
+  const source = await readFile(path, 'utf8');
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2020,
+      strict: true,
+    },
+  });
+  const tempDir = await mkdtemp(join(tmpdir(), 'task-test-memory-'));
+  const tempFile = join(tempDir, 'taskTestMemory.mjs');
+  await writeFile(tempFile, transpiled.outputText, 'utf8');
+  return import(tempFile);
+}
+
+const {
+  createEmptyTaskTestMemory,
+  loadTaskTestMemory,
+  rememberedParametersForTemplates,
+  saveTaskTestMemory,
+  taskTestMemoryKey,
+  withRememberedTemplateParameters,
+  withoutRememberedTemplateParameters,
+  withTaskSampleCount,
+} = await importTypeScriptModule(new URL('../src/taskTestMemory.ts', import.meta.url));
+
+const values = new Map();
+const storage = {
+  getItem: (key) => values.get(key) ?? null,
+  setItem: (key, value) => values.set(key, value),
+};
+
+let memory = createEmptyTaskTestMemory();
+assert.equal(memory.sampleCount, 3);
+memory = withTaskSampleCount(memory, 5.8);
+memory = withRememberedTemplateParameters(memory, 's07-template', {
+  's07-node': {
+    powder_count: 2,
+    powder_additions: [{ coarse_position: 1, target_weight: 3.5 }],
+  },
+});
+saveTaskTestMemory(storage, 'demo.json', memory);
+
+const restored = loadTaskTestMemory(storage, 'demo.json');
+assert.equal(restored.sampleCount, 5, '样品数应持久化并限制在前端允许范围内');
+assert.deepEqual(restored.templateParameters, memory.templateParameters, '嵌套实例入参应完整恢复');
+assert.deepEqual(
+  rememberedParametersForTemplates(restored, ['s07-template']),
+  { 's07-template': memory.templateParameters['s07-template'] },
+  '生成队列时只应返回当前选中模板的记忆入参',
+);
+assert.deepEqual(
+  rememberedParametersForTemplates(restored, ['other-template']),
+  {},
+  '未排程模板的记忆入参不应发送给后端',
+);
+assert.deepEqual(
+  rememberedParametersForTemplates(restored, ['s07-template'], {
+    's07-template': { 's07-node': ['powder_count'] },
+  }),
+  { 's07-template': { 's07-node': { powder_count: 2 } } },
+  '旧记录应按当前模板节点和参数字段过滤',
+);
+assert.deepEqual(
+  rememberedParametersForTemplates(restored, ['s07-template'], {
+    's07-template': { 'replacement-node': ['powder_count'] },
+  }),
+  {},
+  '模板已删除的节点不应继续沿用旧入参',
+);
+
+const cleared = withoutRememberedTemplateParameters(restored);
+assert.deepEqual(cleared.templateParameters, {});
+assert.equal(cleared.sampleCount, 5, '清除入参记忆不应重置样品数');
+
+values.set(taskTestMemoryKey('broken.json'), '{broken');
+assert.deepEqual(
+  loadTaskTestMemory(storage, 'broken.json'),
+  createEmptyTaskTestMemory(),
+  '损坏的浏览器记录应安全回退默认配置',
+);
+
+console.log('task test memory tests passed');

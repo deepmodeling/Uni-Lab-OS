@@ -646,6 +646,75 @@ def test_instance_parameter_overrides_are_saved_only_on_the_target_instance(tmp_
     assert instances[1]["payload"] == {}
 
 
+def test_generate_instances_applies_remembered_parameters_to_each_new_instance(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    workspace = {
+        "workflow_path": "demo.json",
+        "templates": [{
+            **_template("prepare"),
+            "node_ids": ["s06-action", "s07-action"],
+        }],
+        "task_instances": [],
+    }
+    assert client.put(
+        "/workspaces",
+        json={"expected_version": 0, "workspace": workspace},
+    ).status_code == 200
+
+    response = client.post(
+        "/instances:generate",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 1,
+            "template_ids": ["prepare"],
+            "sample_ids": ["Sample A", "Sample B"],
+            "template_node_parameters": {
+                "prepare": {
+                    "s06-action": {"volume_ml": 12.5},
+                    "s07-action": {"temperature_c": 80},
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    instances = response.json()["workspace"]["task_instances"]
+    assert len(instances) == 2
+    assert all(instance["payload"]["node_parameters"] == {
+        "s06-action": {"volume_ml": 12.5},
+        "s07-action": {"temperature_c": 80},
+    } for instance in instances)
+
+
+def test_generate_instances_rejects_remembered_parameters_for_unknown_nodes(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    workspace = {
+        "workflow_path": "demo.json",
+        "templates": [_template("prepare")],
+        "task_instances": [],
+    }
+    assert client.put(
+        "/workspaces",
+        json={"expected_version": 0, "workspace": workspace},
+    ).status_code == 200
+
+    response = client.post(
+        "/instances:generate",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 1,
+            "template_ids": ["prepare"],
+            "sample_ids": ["Sample A"],
+            "template_node_parameters": {
+                "prepare": {"removed-node": {"volume_ml": 12.5}},
+            },
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "unknown_action_node"
+
+
 def test_instance_parameter_overrides_reject_running_instances(tmp_path):
     client = _client_with_workflow(tmp_path)
     workspace = {

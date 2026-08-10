@@ -21,7 +21,6 @@ import ast
 import hashlib
 import json
 import re
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
@@ -36,7 +35,7 @@ from unilabos.registry.utils import resolve_registry_displayname
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 6       # 缓存格式版本号，格式变更时递增
+_CACHE_VERSION = 7       # 缓存格式版本号，格式变更时递增
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 # 合法的装饰器来源模块
@@ -398,7 +397,11 @@ def _parse_file(
                     "displayname": displayname,
                     "icon": device_args.get("icon", ""),
                     "version": device_args.get("version", "1.0.0"),
-                    "device_type": _detect_class_type(node, import_map),
+                    "device_type": device_args.get("device_type")
+                    or _detect_class_type(node, import_map),
+                    "supported_backends": device_args.get(
+                        "supported_backends"
+                    ),
                     "handles": device_args.get("handles", []),
                     "model": device_args.get("model"),
                     "hardware_interface": device_args.get("hardware_interface"),
@@ -413,7 +416,15 @@ def _parse_file(
                     meta = dict(base_meta)
                     meta["device_id"] = did
                     overrides = id_meta.get(did, {})
-                    for key in ("handles", "description", "displayname", "icon", "model", "hardware_interface"):
+                    for key in (
+                        "handles",
+                        "description",
+                        "displayname",
+                        "icon",
+                        "model",
+                        "hardware_interface",
+                        "supported_backends",
+                    ):
                         if key in overrides:
                             meta[key] = overrides[key]
                     meta["displayname"] = resolve_registry_displayname(meta.get("displayname"), did)

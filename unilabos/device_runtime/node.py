@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
+
+if TYPE_CHECKING:
+    from unilabos.device_runtime.action import DeviceActionRouter
+    from unilabos.device_runtime.resource import ResourceService
 
 StatusListener = Callable[[str, str, Any], None]
 
@@ -22,6 +26,7 @@ class DeviceNode(ABC):
 
     backend_name = "unknown"
     device_id: str
+    resource_uuid = ""
 
     @property
     def identifier(self) -> str:
@@ -40,8 +45,15 @@ class DeviceNode(ABC):
         """Schedule an awaitable on the backend executor."""
 
     async def update_resource(self, resources: Any) -> Any:
-        raise BackendCapabilityError(
-            f"backend '{self.backend_name}' 尚未实现设备物料更新"
+        service = self.__dict__.get("_device_resource_service")
+        if service is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未实现设备物料更新"
+            )
+        return await service.update_resources(
+            self.device_id,
+            self.resource_uuid,
+            resources,
         )
 
     async def get_resource(
@@ -49,20 +61,73 @@ class DeviceNode(ABC):
         resources_uuid: list[str],
         with_children: bool = True,
     ) -> Any:
-        del resources_uuid, with_children
-        raise BackendCapabilityError(
-            f"backend '{self.backend_name}' 尚未实现设备物料查询"
+        service = self.__dict__.get("_device_resource_service")
+        if service is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未实现设备物料查询"
+            )
+        return await service.get_resources(
+            self.device_id,
+            resources_uuid,
+            with_children,
         )
 
-    async def call_device_action(
+    def set_resource_service(self, service: "ResourceService") -> None:
+        self.__dict__["_device_resource_service"] = service
+
+    def call_device_action(
         self,
         device_id: str,
         action_name: str,
         arguments: Optional[Dict[str, Any]] = None,
+        **options: Any,
     ) -> Any:
-        del device_id, action_name, arguments
+        router = self.__dict__.get("_device_action_router")
+        if router is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未实现跨设备动作调用"
+            )
+        return router.route_action(
+            self.device_id,
+            device_id,
+            action_name,
+            arguments,
+            **options,
+        )
+
+    async def call_device_action_async(
+        self,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        **options: Any,
+    ) -> Any:
+        router = self.__dict__.get("_device_action_router")
+        if router is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未实现跨设备动作调用"
+            )
+        return await router.route_action_async(
+            self.device_id,
+            device_id,
+            action_name,
+            arguments,
+            **options,
+        )
+
+    def set_action_router(self, router: "DeviceActionRouter") -> None:
+        self.__dict__["_device_action_router"] = router
+
+    async def transfer_resource_to_another(
+        self,
+        plr_resources: list[Any],
+        target_device_id: str,
+        target_resources: list[Any],
+        sites: list[Optional[str]],
+    ) -> Any:
+        del plr_resources, target_device_id, target_resources, sites
         raise BackendCapabilityError(
-            f"backend '{self.backend_name}' 尚未实现跨设备动作调用"
+            f"backend '{self.backend_name}' 尚未实现跨设备物料转移"
         )
 
     def add_status_listener(self, listener: StatusListener) -> None:

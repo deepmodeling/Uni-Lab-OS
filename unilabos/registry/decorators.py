@@ -257,6 +257,7 @@ def device(
     handles: Optional[List[_DeviceHandleBase]] = None,
     model: Optional[Dict[str, Any]] = None,
     device_type: str = "python",
+    supported_backends: Optional[List[str]] = None,
     hardware_interface: Optional[HardwareInterface] = None,
 ):
     """
@@ -281,6 +282,7 @@ def device(
         handles: 设备端口列表 (单设备或 id_meta 未覆盖时使用)
         model: 可选的 3D 模型配置
         device_type: 设备实现类型 ("python" / "ros2")
+        supported_backends: 可运行该驱动的 backend 名称列表
         hardware_interface: 硬件通信接口 (HardwareInterface)
     """
     # Resolve device ids
@@ -315,6 +317,7 @@ def device(
         "handles": _device_handles_to_list(handles),
         "model": model,
         "device_type": device_type,
+        "supported_backends": list(supported_backends or []),
         "hardware_interface": (hardware_interface.model_dump(exclude_none=True) if hardware_interface else None),
     }
 

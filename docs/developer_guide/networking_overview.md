@@ -117,9 +117,11 @@ Host 运行 ROS2 或 HostLink backend 时会在 TCP `7302` 监听 HostLink。Sla
 
 在 `--backend ros2` 下，HostLink 只辅助组网，设备 Action、节点注册和资源同步仍
 走 ROS2。`--backend hostlink` 则完全不导入 ROS：Host 与 Slave 都使用 BasicRuntime
-加载本地纯 Python 驱动，Slave 在 HELLO 中发布设备动作/状态字段，心跳携带状态快照，
-Host 沿同一条长连接发送 `device.call` 并取得结果。这次没有改物料同步和管理
-Web/API，它们仍按原来的方式工作。
+加载本地纯 Python 驱动。Slave 在 HELLO 中发布设备动作、状态字段和设备 UUID；驱动
+通过通用节点发布的状态通知会立即发送，心跳还会定期补发完整状态。Host 与 Slave 可以双向调用设备动作，
+动作带独立 ID，支持反馈和协作取消。Slave 启动时会把本地设备物料树同步给 Host，
+后续 `update_resource` 和 `get_resource` 也由 Host 保存和查询，不要求启动 ROS service
+或 Web API。
 
 ```bash
 # 无 ROS Host
@@ -130,9 +132,17 @@ unilab -g slave.json --backend hostlink --is-slave \
   --host-node-ip 192.168.1.10 --hostlink-port 7302
 ```
 
-HostLink backend 会跳过工作站聚合节点，并拒绝注册表中 `class.type: ros2` 的原生
-ROS 驱动。设备动作在每台设备内串行执行；不同 Slave/设备可以并行。连接断开时设备
-在 `heartbeat_timeout` 后离线，客户端会指数退避重连，但不会自动重放动作。
+驱动通过 `post_init(node)` 获得通用 `DeviceNode`，可使用日志、异步等待、任务调度、
+状态通知、物料更新/查询和跨设备动作调用。注册表可用
+`class.supported_backends: [basic, hostlink, ros2]` 明确声明可运行的 backend；
+`class.type: ros2` 默认只允许 ROS2。MoveIt、原生 ROS Action、ROS publisher/subscriber
+和工作站跨设备物料搬运仍使用 ROS2，这些驱动已标记为 `[ros2]`，HostLink 启动时会
+直接提示该驱动不支持，而不是在导入过程中报缺少 `rclpy`。
+
+设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
+接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制
+终止。连接断开时设备在 `heartbeat_timeout` 后离线，客户端会指数退避重连，但不会
+自动重放动作。HostLink 的物料树保存在 Host 进程内，目前不会自动上传云端。
 
 当前 HostLink 是面向可信实验室局域网的明文 TCP 协议，尚未提供 TLS 或双方身份认证。
 部署时应通过防火墙限制 `7302` 的来源；跨不可信网络使用时应先接入 VPN/安全隧道。

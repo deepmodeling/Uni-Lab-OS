@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional
 
 from unilabos.device_runtime.node import DeviceNode
 from unilabos.device_runtime.action import ActionContext
+from unilabos.device_runtime.resource import ResourceService
 
 
 def instantiate_driver(
@@ -56,6 +57,7 @@ class BasicDeviceNode(DeviceNode):
         device_id: str,
         *,
         backend_name: str = "basic",
+        resource_uuid: str = "",
         registry_name: str = "",
         display_name: str = "",
         action_names: Iterable[str] = (),
@@ -64,6 +66,7 @@ class BasicDeviceNode(DeviceNode):
         self.driver = driver
         self.device_id = device_id
         self.backend_name = str(backend_name or "basic")
+        self.resource_uuid = str(resource_uuid or "")
         self.registry_name = str(registry_name or "")
         self.display_name = str(display_name or registry_name or device_id)
         self.action_names = tuple(
@@ -100,9 +103,6 @@ class BasicDeviceNode(DeviceNode):
 
     def create_task(self, coroutine: Coroutine[Any, Any, Any]):
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop)
-
-    async def update_resource(self, resources: Any) -> Any:
-        return await super().update_resource(resources)
 
     def _call(
         self,
@@ -194,13 +194,16 @@ class BasicDeviceNode(DeviceNode):
         return result
 
     def describe(self) -> Dict[str, Any]:
-        return {
+        descriptor = {
             "id": self.device_id,
             "registry_name": self.registry_name,
             "display_name": self.display_name,
             "actions": list(self.action_names),
             "status_fields": list(self.status_names),
         }
+        if self.resource_uuid:
+            descriptor["resource_uuid"] = self.resource_uuid
+        return descriptor
 
     def stop(self) -> None:
         if not self._started:
@@ -226,6 +229,7 @@ class BasicDriverSpec:
     action_names: tuple[str, ...] = ()
     status_names: tuple[str, ...] = ()
     display_name: str = ""
+    resource_uuid: str = ""
 
 
 class BasicRuntime:
@@ -234,6 +238,7 @@ class BasicRuntime:
     def __init__(self, backend_name: str = "basic") -> None:
         self.backend_name = str(backend_name or "basic")
         self.devices: dict[str, BasicDeviceNode] = {}
+        self._resource_service: ResourceService | None = None
         self._stopped = threading.Event()
 
     def add_driver(self, spec: BasicDriverSpec) -> BasicDeviceNode:
@@ -244,13 +249,63 @@ class BasicRuntime:
             driver,
             spec.device_id,
             backend_name=self.backend_name,
+            resource_uuid=spec.resource_uuid,
             registry_name=spec.registry_name,
             display_name=spec.display_name,
             action_names=spec.action_names,
             status_names=spec.status_names,
         )
+        if self._resource_service is not None:
+            node.set_resource_service(self._resource_service)
+        node.set_action_router(self)
         self.devices[spec.device_id] = node
         return node
+
+    def set_resource_service(self, service: ResourceService) -> None:
+        self._resource_service = service
+        for node in self.devices.values():
+            node.set_resource_service(service)
+
+    @staticmethod
+    def _normalize_device_id(device_id: str) -> str:
+        normalized = str(device_id or "").strip()
+        if normalized.startswith("/devices/"):
+            normalized = normalized[len("/devices/") :]
+        return normalized.lstrip("/")
+
+    def route_action(
+        self,
+        caller_device_id: str,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        **options: Any,
+    ) -> Any:
+        if options.get("action_type") is not None:
+            raise ValueError(
+                f"backend '{self.backend_name}' 不能调用原生 ROS Action 类型"
+            )
+        target = self._normalize_device_id(device_id)
+        if target == caller_device_id:
+            raise ValueError("跨设备动作不能回调当前设备自身")
+        return self.call_action(target, action_name, **dict(arguments or {}))
+
+    async def route_action_async(
+        self,
+        caller_device_id: str,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        **options: Any,
+    ) -> Any:
+        return await asyncio.to_thread(
+            self.route_action,
+            caller_device_id,
+            device_id,
+            action_name,
+            arguments,
+            **options,
+        )
 
     def start(self) -> None:
         self._stopped.clear()

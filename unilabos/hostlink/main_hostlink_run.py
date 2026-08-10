@@ -19,11 +19,17 @@ def get_runtime() -> Optional[HostLinkBackendRuntime]:
     return _runtime
 
 
-def _run(devices_config: Any, *, is_slave: bool) -> None:
+def _run(
+    devices_config: Any,
+    resources_config: Any,
+    *,
+    is_slave: bool,
+) -> None:
     global _runtime
     _runtime = HostLinkBackendRuntime(
         build_runtime(devices_config, backend_name="hostlink"),
         is_slave=is_slave,
+        resources_config=resources_config,
     )
     _runtime.start()
     try:
@@ -46,7 +52,6 @@ def main(
     **kwargs: Any,
 ) -> None:
     del (
-        resources_config,
         resources_edge_config,
         graph,
         controllers_config,
@@ -56,7 +61,7 @@ def main(
         args,
         kwargs,
     )
-    _run(devices_config, is_slave=False)
+    _run(devices_config, resources_config, is_slave=False)
 
 
 def slave(
@@ -72,7 +77,6 @@ def slave(
     **kwargs: Any,
 ) -> None:
     del (
-        resources_config,
         resources_edge_config,
         graph,
         controllers_config,
@@ -82,7 +86,7 @@ def slave(
         args,
         kwargs,
     )
-    _run(devices_config, is_slave=True)
+    _run(devices_config, resources_config, is_slave=True)
 
 
 __all__ = ["get_runtime", "main", "slave", "validate_environment"]

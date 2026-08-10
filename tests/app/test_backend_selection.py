@@ -12,6 +12,7 @@ from unilabos.app.backend import (
     BACKEND_NAMES,
     BackendConfigurationError,
     normalize_backend_name,
+    resolve_driver_backends,
     resolve_backend_selection,
     start_backend,
 )
@@ -63,6 +64,22 @@ def test_backend_capability_validation() -> None:
     with pytest.raises(BackendConfigurationError, match="不支持 --visual"):
         resolve_backend_selection("dora", visual="rviz")
     assert resolve_backend_selection("hostlink", is_slave=True).name == "hostlink"
+
+
+def test_registry_driver_backend_defaults_and_explicit_support() -> None:
+    assert resolve_driver_backends({"type": "python"}) == (
+        "basic",
+        "hostlink",
+        "ros2",
+    )
+    assert resolve_driver_backends({"type": "ros2"}) == ("ros2",)
+    assert resolve_driver_backends(
+        {"type": "python", "supported_backends": ["hostlink", "ros2"]}
+    ) == ("hostlink", "ros2")
+    with pytest.raises(BackendConfigurationError, match="未知 backend"):
+        resolve_driver_backends(
+            {"type": "python", "supported_backends": ["missing"]}
+        )
 
 
 def test_cli_shows_canonical_names_and_accepts_aliases() -> None:

@@ -58,7 +58,7 @@ jobs:
         run: |
           call conda activate check-env
           echo Running HostLink, ROS2 domain and networking runtime tests...
-          python -m pytest -q tests\hostlink tests\networking tests\basic tests\device_runtime tests\app\test_backend_selection.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py -p no:launch_testing -p no:launch_ros
+          python -m pytest -q tests\hostlink tests\networking tests\basic tests\device_runtime tests\app\test_backend_selection.py tests\registry\test_backend_metadata.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py -p no:launch_testing -p no:launch_ros
 
       - name: Run check mode (AST registry validation)
         # check_mode 会真实 import 所有设备类(连带 matplotlib/opencv 等原生库)。

@@ -1153,6 +1153,15 @@ class Registry:
                 "status_types": status_types_str,
                 "action_value_mappings": action_value_mappings,
                 "type": ast_meta.get("device_type", "python"),
+                **(
+                    {
+                        "supported_backends": ast_meta[
+                            "supported_backends"
+                        ]
+                    }
+                    if ast_meta.get("supported_backends")
+                    else {}
+                ),
             },
             "config_info": [],
             "description": ast_meta.get("description", ""),

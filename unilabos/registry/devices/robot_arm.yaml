@@ -307,6 +307,7 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
           type: object
         type: SendCmd
     module: unilabos.devices.ros_dev.moveit_interface:MoveitInterface
+    supported_backends: [ros2]
     status_types: {}
     type: python
   config_info: []

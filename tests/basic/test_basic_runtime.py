@@ -40,6 +40,18 @@ class AsyncDriver:
     async def add(self, left: int, right: int) -> int:
         return left + right
 
+    async def call_peer(
+        self,
+        target_device: str,
+        left: int,
+        right: int,
+    ) -> int:
+        return self.node.call_device_action(
+            target_device,
+            "add",
+            {"left": left, "right": right},
+        )
+
     async def cleanup(self) -> bool:
         self.cleaned = True
         return True
@@ -79,6 +91,26 @@ def test_basic_runtime_owns_and_routes_devices() -> None:
     finally:
         runtime.stop()
     assert runtime.wait(timeout=0) is True
+
+
+def test_basic_runtime_routes_cross_device_actions() -> None:
+    runtime = BasicRuntime()
+    runtime.add_driver(BasicDriverSpec("caller", AsyncDriver, {}))
+    runtime.add_driver(BasicDriverSpec("target", AsyncDriver, {}))
+    runtime.start()
+    try:
+        assert (
+            runtime.call_action(
+                "caller",
+                "call_peer",
+                target_device="target",
+                left=4,
+                right=6,
+            )
+            == 10
+        )
+    finally:
+        runtime.stop()
 
 
 def test_basic_runtime_exposes_registered_actions_and_status() -> None:

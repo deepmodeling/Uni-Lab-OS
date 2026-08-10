@@ -820,6 +820,7 @@ linear_motion.toyo_xyz.sim:
           type: object
         type: SendCmd
     module: unilabos.devices.ros_dev.moveit_interface:MoveitInterface
+    supported_backends: [ros2]
     status_types: {}
     type: python
   config_info: []

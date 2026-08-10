@@ -11,9 +11,12 @@ from typing import Any, Dict, Optional
 from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
+from unilabos.device_runtime.resource import LocalResourceService, ResourceStore
 from unilabos.hostlink.client import HostLinkClient, set_hostlink_client
 from unilabos.hostlink.protocol import ActionType, LinkError
+from unilabos.hostlink.resource import HostLinkResourceService
 from unilabos.hostlink.server import HostLinkServer, set_hostlink_server
+from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils import logger
 
 
@@ -42,9 +45,16 @@ def to_wire_value(value: Any) -> Any:
 class HostLinkBackendRuntime:
     """Run local Python drivers and expose Slave devices to one Host."""
 
-    def __init__(self, local: BasicRuntime, *, is_slave: bool) -> None:
+    def __init__(
+        self,
+        local: BasicRuntime,
+        *,
+        is_slave: bool,
+        resources_config: Optional[ResourceTreeSet] = None,
+    ) -> None:
         self.local = local
         self.is_slave = bool(is_slave)
+        self.resource_store = ResourceStore(resources_config)
         self.server: Optional[HostLinkServer] = None
         self.client: Optional[HostLinkClient] = None
         self._started = False
@@ -54,17 +64,24 @@ class HostLinkBackendRuntime:
             max_workers=2,
             thread_name_prefix="hostlink-backend-io",
         )
+        if not self.is_slave:
+            self.local.set_resource_service(
+                LocalResourceService(self.resource_store)
+            )
+        for node in self.local.devices.values():
+            node.set_action_router(self)
 
     def start(self) -> None:
         if self._started:
             return
         if not HostLinkConfig.enable:
             raise ValueError("hostlink backend 不能与 --disable-hostlink 同时使用")
-        self.local.start()
         try:
             if self.is_slave:
                 self._start_slave()
+                self.local.start()
             else:
+                self.local.start()
                 self._start_host()
         except Exception:
             self.stop()
@@ -86,6 +103,18 @@ class HostLinkBackendRuntime:
         self.server.register_handler(
             ActionType.ACTION_FEEDBACK,
             self._handle_action_feedback,
+        )
+        self.server.register_handler(
+            ActionType.RESOURCE_UPDATE,
+            self._handle_resource_update,
+        )
+        self.server.register_handler(
+            ActionType.RESOURCE_GET,
+            self._handle_resource_get,
+        )
+        self.server.register_handler(
+            ActionType.DEVICE_CALL,
+            self._handle_peer_device_call,
         )
         self.server.start()
         set_hostlink_server(self.server)
@@ -121,6 +150,7 @@ class HostLinkBackendRuntime:
             ActionType.ACTION_CANCEL,
             self._handle_action_cancel,
         )
+        self.local.set_resource_service(HostLinkResourceService(self.client))
         for node in self.local.devices.values():
             node.add_status_listener(self._on_local_status)
         set_hostlink_client(self.client)
@@ -128,11 +158,35 @@ class HostLinkBackendRuntime:
             self.client.start()
         elif not self.client.connect_blocking(HostLinkConfig.connect_timeout):
             raise LinkError(f"无法连接 HostLink Host：{host}:{HostLinkConfig.port}")
+        else:
+            self._sync_initial_resources()
         logger.info(
             "[HostLink backend] Slave 已启动：Host=%s:%d，本地设备=%s",
             host,
             HostLinkConfig.port,
             sorted(self.local.devices),
+        )
+
+    def _sync_initial_resources(self) -> None:
+        client = self.client
+        if client is None or not client.online:
+            return
+        device_ids = sorted(self.local.devices)
+        resource_uuids = [
+            node.resource_uuid
+            for node in self.local.devices.values()
+            if node.resource_uuid
+        ]
+        resources = self.resource_store.get_resources(resource_uuids)
+        if not resources.trees:
+            return
+        client.request(
+            ActionType.RESOURCE_UPDATE,
+            {
+                "device_ids": device_ids,
+                "resources": resources.dump(),
+                "initial": True,
+            },
         )
 
     def _heartbeat_payload(self) -> Dict[str, Any]:
@@ -211,6 +265,34 @@ class HostLinkBackendRuntime:
             "state": to_wire_value(self.local.devices[device_id].snapshot_status()),
         }
 
+    def _handle_peer_device_call(
+        self,
+        data: Dict[str, Any],
+        peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        caller_device_id = str(data.get("caller_device_id") or "").strip()
+        owned = {str(item) for item in peer.get("device_ids") or []}
+        if caller_device_id not in owned:
+            raise PermissionError(
+                f"Slave 未注册调用设备：{caller_device_id!r}"
+            )
+        device_id = str(data.get("device_id") or "").strip()
+        action = str(data.get("action") or "").strip()
+        arguments = data.get("arguments")
+        if not device_id or not action:
+            raise ValueError("device.call requires device_id and action")
+        if arguments is None:
+            arguments = {}
+        if not isinstance(arguments, dict):
+            raise TypeError("device.call arguments must be an object")
+        result = self.call_action(device_id, action, **arguments)
+        return {
+            "device_id": device_id,
+            "action": action,
+            "status": "succeeded",
+            "result": to_wire_value(result),
+        }
+
     def _send_action_feedback(
         self,
         action_id: str,
@@ -268,6 +350,56 @@ class HostLinkBackendRuntime:
         active[1].request_cancel()
         return {"accepted": True, "action_id": action_id}
 
+    @staticmethod
+    def _validate_resource_owner(
+        data: Dict[str, Any],
+        peer: Dict[str, Any],
+    ) -> None:
+        claimed = {
+            str(device_id)
+            for device_id in data.get("device_ids") or []
+            if str(device_id)
+        }
+        device_id = str(data.get("device_id") or "").strip()
+        if device_id:
+            claimed.add(device_id)
+        owned = {str(item) for item in peer.get("device_ids") or []}
+        if not claimed or not claimed.issubset(owned):
+            raise PermissionError(
+                f"Slave 只能更新自己注册的设备物料：{sorted(claimed)}"
+            )
+
+    def _handle_resource_update(
+        self,
+        data: Dict[str, Any],
+        peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        self._validate_resource_owner(data, peer)
+        raw_resources = data.get("resources")
+        if not isinstance(raw_resources, list):
+            raise TypeError("resource.update requires resources")
+        tree_set = ResourceTreeSet.load(raw_resources)
+        uuid_mapping = self.resource_store.apply_update(tree_set)
+        return {
+            "updated_trees": len(tree_set.trees),
+            "updated_nodes": len(tree_set.all_nodes),
+            "uuid_mapping": uuid_mapping,
+        }
+
+    def _handle_resource_get(
+        self,
+        data: Dict[str, Any],
+        _peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raw_uuids = data.get("resources_uuid")
+        if not isinstance(raw_uuids, list):
+            raise TypeError("resource.get requires resources_uuid")
+        resources = self.resource_store.get_resources(
+            [str(item) for item in raw_uuids],
+            with_children=bool(data.get("with_children", True)),
+        )
+        return {"resources": resources.dump()}
+
     def _handle_device_state(self, data: Dict[str, Any]) -> Dict[str, Any]:
         device_id = str(data.get("device_id") or "").strip()
         states = self.local.snapshot_states()
@@ -322,6 +454,63 @@ class HostLinkBackendRuntime:
         if isinstance(response, dict) and "result" in response:
             return response["result"]
         return response
+
+    def route_action(
+        self,
+        caller_device_id: str,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        **options: Any,
+    ) -> Any:
+        if options.get("action_type") is not None:
+            raise ValueError(
+                "hostlink backend 不能调用原生 ROS Action 类型"
+            )
+        target = self.local._normalize_device_id(device_id)
+        if target == caller_device_id:
+            raise ValueError("跨设备动作不能回调当前设备自身")
+        if target in self.local.devices or self.server is not None:
+            return self.call_action(
+                target,
+                action_name,
+                **dict(arguments or {}),
+            )
+        client = self.client
+        if client is None:
+            raise KeyError(f"未知 HostLink 设备：{target}")
+        response = client.request(
+            ActionType.DEVICE_CALL,
+            {
+                "caller_device_id": caller_device_id,
+                "device_id": target,
+                "action": action_name,
+                "arguments": dict(arguments or {}),
+            },
+            timeout=options.get("timeout"),
+        )
+        if isinstance(response, dict) and "result" in response:
+            return response["result"]
+        return response
+
+    async def route_action_async(
+        self,
+        caller_device_id: str,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        **options: Any,
+    ) -> Any:
+        import asyncio
+
+        return await asyncio.to_thread(
+            self.route_action,
+            caller_device_id,
+            device_id,
+            action_name,
+            arguments,
+            **options,
+        )
 
     def cancel_action(self, action_id: str) -> bool:
         with self._actions_lock:

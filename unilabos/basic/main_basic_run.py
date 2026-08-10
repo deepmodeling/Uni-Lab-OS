@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from unilabos.app.backend import resolve_driver_backends
 from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.device_runtime.resource import LocalResourceService, ResourceStore
 from unilabos.registry.init_enforce import merge_init_param_enforce
 from unilabos.utils import logger
 from unilabos.utils.import_manager import default_manager
@@ -47,9 +49,11 @@ def build_runtime(devices_config: Any, backend_name: str = "basic") -> BasicRunt
             logger.info("[Basic] 跳过工作站聚合节点：%s", device_id)
             continue
         class_config = registry_entry.get("class") or {}
-        if class_config.get("type") == "ros2":
+        supported_backends = resolve_driver_backends(class_config)
+        if backend_name not in supported_backends:
             raise ValueError(
-                f"Basic backend 无法加载原生 ROS 设备 {device_id!r}"
+                f"设备 {device_id!r} 不支持 backend '{backend_name}'；"
+                f"该驱动支持：{', '.join(supported_backends)}"
             )
         module_spec = class_config.get("module")
         if not isinstance(module_spec, str) or ":" not in module_spec:
@@ -70,6 +74,7 @@ def build_runtime(devices_config: Any, backend_name: str = "basic") -> BasicRunt
                 display_name=str(
                     registry_entry.get("displayname") or registry_name
                 ),
+                resource_uuid=str(resource.uuid or ""),
                 action_names=tuple(
                     (class_config.get("action_value_mappings") or {}).keys()
                 ),
@@ -99,6 +104,9 @@ def main(
 
     global _runtime
     _runtime = build_runtime(devices_config)
+    _runtime.set_resource_service(
+        LocalResourceService(ResourceStore(resources_config))
+    )
     _runtime.start()
     logger.info(
         "[Basic] 运行时已启动，共 %d 台设备：%s",

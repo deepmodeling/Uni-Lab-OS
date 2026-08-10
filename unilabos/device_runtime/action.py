@@ -5,9 +5,31 @@ from __future__ import annotations
 import threading
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Protocol
 
 FeedbackCallback = Callable[[str, Dict[str, Any]], None]
+
+
+class DeviceActionRouter(Protocol):
+    """Route a driver's cross-device call through the active backend."""
+
+    def route_action(
+        self,
+        caller_device_id: str,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        **options: Any,
+    ) -> Any: ...
+
+    async def route_action_async(
+        self,
+        caller_device_id: str,
+        device_id: str,
+        action_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        **options: Any,
+    ) -> Any: ...
 
 
 class ActionCancelled(RuntimeError):
@@ -42,4 +64,9 @@ class ActionContext:
             raise ActionCancelled(f"action cancelled: {self.action_id}")
 
 
-__all__ = ["ActionCancelled", "ActionContext", "FeedbackCallback"]
+__all__ = [
+    "ActionCancelled",
+    "ActionContext",
+    "DeviceActionRouter",
+    "FeedbackCallback",
+]

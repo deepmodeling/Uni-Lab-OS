@@ -25,6 +25,8 @@ class ActionType:
     DEVICE_STATE = "device.state"
     ACTION_FEEDBACK = "action.feedback"
     ACTION_CANCEL = "action.cancel"
+    RESOURCE_UPDATE = "resource.update"
+    RESOURCE_GET = "resource.get"
 
 
 class LinkError(Exception):

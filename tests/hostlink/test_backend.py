@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import sys
 import threading
@@ -15,6 +16,7 @@ from unilabos.hostlink.backend import HostLinkBackendRuntime
 from unilabos.hostlink.client import HostLinkClient
 from unilabos.hostlink.protocol import ActionType, RemoteError
 from unilabos.hostlink.server import HostLinkServer
+from unilabos.resources.resource_tracker import ResourceTreeSet
 
 
 def _wait_until(predicate, timeout: float = 2.0) -> bool:
@@ -30,10 +32,21 @@ class CounterDriver:
     def __init__(self, device_id=None, config=None):
         self.device_id = device_id
         self.count = int((config or {}).get("initial", 0))
+        self.node = None
+
+    def post_init(self, node) -> None:
+        self.node = node
 
     def increment(self, amount: int = 1) -> int:
         self.count += amount
         return self.count
+
+    def call_peer(self, target_device: str, amount: int) -> int:
+        return self.node.call_device_action(
+            target_device,
+            "increment",
+            {"amount": amount},
+        )
 
 
 class FeedbackDriver:
@@ -55,7 +68,11 @@ class FeedbackDriver:
         return self.progress
 
 
-def _counter_runtime(device_id: str, initial: int = 0) -> BasicRuntime:
+def _counter_runtime(
+    device_id: str,
+    initial: int = 0,
+    resource_uuid: str = "",
+) -> BasicRuntime:
     runtime = BasicRuntime()
     runtime.add_driver(
         BasicDriverSpec(
@@ -64,8 +81,9 @@ def _counter_runtime(device_id: str, initial: int = 0) -> BasicRuntime:
             config={"initial": initial},
             registry_name="counter",
             display_name="Counter",
-            action_names=("increment",),
+            action_names=("increment", "call_peer"),
             status_names=("count",),
+            resource_uuid=resource_uuid,
         )
     )
     return runtime
@@ -160,6 +178,15 @@ def test_hostlink_backend_routes_basic_driver_actions_without_ros(
         slave.start()
         assert host.call_action("host-local", "increment", amount=2) == 2
         assert host.call_action("slave-counter", "increment", amount=4) == 5
+        assert (
+            host.call_action(
+                "slave-counter",
+                "call_peer",
+                target_device="host-local",
+                amount=3,
+            )
+            == 5
+        )
         assert _wait_until(
             lambda: host.devices()["slave-counter"]["state"].get("count") == 5
         )
@@ -234,5 +261,83 @@ def test_hostlink_action_feedback_and_cancel(monkeypatch) -> None:
         assert feedback[0]["progress"] >= 1
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
+        slave.stop()
+        host.stop()
+
+
+def _resource(
+    resource_id: str,
+    resource_uuid: str,
+    *,
+    parent_uuid: str | None = None,
+    resource_type: str = "container",
+) -> dict:
+    return {
+        "id": resource_id,
+        "uuid": resource_uuid,
+        "name": resource_id,
+        "parent_uuid": parent_uuid,
+        "type": resource_type,
+        "class": "",
+        "config": {},
+        "data": {},
+        "extra": {},
+    }
+
+
+def test_hostlink_syncs_and_serves_slave_resources(monkeypatch) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 2.0)
+    monkeypatch.setattr(BasicConfig, "machine_name", "resource-slave")
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    slave_resources = ResourceTreeSet.from_raw_dict_list(
+        [
+            _resource(
+                "resource-device",
+                "device-uuid",
+                resource_type="device",
+            ),
+            _resource(
+                "existing-material",
+                "existing-uuid",
+                parent_uuid="device-uuid",
+            ),
+        ]
+    )
+    host = HostLinkBackendRuntime(BasicRuntime("hostlink"), is_slave=False)
+    slave = HostLinkBackendRuntime(
+        _counter_runtime(
+            "resource-device",
+            resource_uuid="device-uuid",
+        ),
+        is_slave=True,
+        resources_config=slave_resources,
+    )
+    host.start()
+    assert host.server is not None
+    HostLinkConfig.port = host.server.port
+    try:
+        slave.start()
+        assert host.resource_store.resources.find_by_uuid("existing-uuid")
+
+        new_material = ResourceTreeSet.from_raw_dict_list(
+            [_resource("new-material", "new-uuid")]
+        )
+        slave_node = slave.local.devices["resource-device"]
+        asyncio.run(slave_node.update_resource(new_material))
+        queried = asyncio.run(slave_node.get_resource(["new-uuid"]))
+
+        assert queried.all_nodes_uuid == ["new-uuid"]
+        stored = host.resource_store.resources.find_by_uuid("new-uuid")
+        assert stored is not None
+        assert stored.res_content.parent_uuid == "device-uuid"
+    finally:
         slave.stop()
         host.stop()

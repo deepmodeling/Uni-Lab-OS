@@ -235,6 +235,7 @@ virtual_centrifuge:
           type: object
         type: Centrifuge
     module: unilabos.devices.virtual.virtual_centrifuge:VirtualCentrifuge
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       centrifuge_state: str
       current_speed: float
@@ -662,6 +663,7 @@ virtual_column:
           type: object
         type: RunColumn
     module: unilabos.devices.virtual.virtual_column:VirtualColumn
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       column_diameter: float
       column_length: float
@@ -1101,6 +1103,7 @@ virtual_filter:
           type: object
         type: Filter
     module: unilabos.devices.virtual.virtual_filter:VirtualFilter
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_status: str
       current_temp: float
@@ -1966,6 +1969,7 @@ virtual_heatchill:
           type: object
         type: HeatChillStop
     module: unilabos.devices.virtual.virtual_heatchill:VirtualHeatChill
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       is_stirring: bool
       max_stir_speed: float
@@ -2732,6 +2736,7 @@ virtual_rotavap:
           type: object
         type: Evaporate
     module: unilabos.devices.virtual.virtual_rotavap:VirtualRotavap
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_temp: float
       evaporated_volume: float
@@ -3950,6 +3955,7 @@ virtual_separator:
           type: object
         type: Separate
     module: unilabos.devices.virtual.virtual_separator:VirtualSeparator
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       has_phases: bool
       message: str
@@ -4300,6 +4306,7 @@ virtual_solenoid_valve:
           type: object
         type: SendCmd
     module: unilabos.devices.virtual.virtual_solenoid_valve:VirtualSolenoidValve
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       is_open: bool
       status: str
@@ -4704,6 +4711,7 @@ virtual_solid_dispenser:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.virtual.virtual_solid_dispenser:VirtualSolidDispenser
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_reagent: str
       dispensed_amount: float
@@ -5324,6 +5332,7 @@ virtual_stirrer:
           type: object
         type: StopStir
     module: unilabos.devices.virtual.virtual_stirrer:VirtualStirrer
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_speed: float
       current_vessel: str
@@ -5862,6 +5871,7 @@ virtual_transfer_pump:
           type: object
         type: Transfer
     module: unilabos.devices.virtual.virtual_transferpump:VirtualTransferPump
+    supported_backends: [basic, hostlink, ros2]
     status_types:
       current_volume: float
       max_velocity: float

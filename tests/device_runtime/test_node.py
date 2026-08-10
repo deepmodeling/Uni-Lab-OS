@@ -75,6 +75,7 @@ def test_migrated_virtual_driver_imports_without_ros() -> None:
     code = (
         "import sys; "
         "import unilabos.devices.virtual.virtual_centrifuge; "
+        "import unilabos.devices.virtual.workbench; "
         "assert not any(name.startswith('unilabos.ros') for name in sys.modules)"
     )
     result = subprocess.run(

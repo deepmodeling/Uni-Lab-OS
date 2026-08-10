@@ -107,6 +107,8 @@ BACKEND_ALIASES: dict[str, str] = {
     "ros": "ros2",
 }
 
+DEFAULT_PYTHON_DRIVER_BACKENDS = ("basic", "hostlink", "ros2")
+
 _REMOVED_BACKENDS: dict[str, str] = {
     "automancer": "automancer 从未实现，现已移除",
 }
@@ -138,6 +140,33 @@ def backend_cli_value(value: str) -> str:
     """供公开 CLI 使用的 ``argparse`` 类型适配器。"""
 
     return normalize_backend_name(value)
+
+
+def resolve_driver_backends(class_config: dict[str, Any]) -> tuple[str, ...]:
+    """Return backends a registry driver declares it can run on."""
+
+    configured = class_config.get("supported_backends")
+    if configured is None:
+        if class_config.get("type") == "ros2":
+            return ("ros2",)
+        return DEFAULT_PYTHON_DRIVER_BACKENDS
+    if isinstance(configured, str):
+        configured = [configured]
+    if not isinstance(configured, (list, tuple)):
+        raise BackendConfigurationError(
+            "class.supported_backends 必须是 backend 名称列表"
+        )
+    result = tuple(
+        dict.fromkeys(str(item).strip().lower() for item in configured if str(item).strip())
+    )
+    invalid = sorted(set(result) - set(BACKEND_NAMES))
+    if invalid:
+        raise BackendConfigurationError(
+            f"class.supported_backends 包含未知 backend：{', '.join(invalid)}"
+        )
+    if not result:
+        raise BackendConfigurationError("class.supported_backends 不能为空")
+    return result
 
 
 def resolve_backend_selection(

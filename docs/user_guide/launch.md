@@ -145,7 +145,7 @@ Uni-Lab 对外提供四个 backend 名称。名称、能力和实现入口由
 | Backend | 定位 | 默认 App bridges | Host/Slave | 可视化 |
 |---|---|---|---|---|
 | **basic** | 单进程直接加载纯 Python 设备驱动，不使用通信中间件；跳过工作站聚合节点 | 无 | 不支持 | 不支持 |
-| **hostlink** | Basic 驱动通过 HostLink TCP 组网，不导入 ROS；Host 可发现/调用 Slave 设备并接收状态 | 无 | 支持 | 不支持 |
+| **hostlink** | Basic 驱动通过 HostLink TCP 组网，不导入 ROS；支持设备发现、双向动作调用、状态和物料树同步 | 无 | 支持 | 不支持 |
 | **ros2**（默认） | 完整 ROS 2 分布式运行时 | `websocket fastapi` | 支持 | 支持 |
 | **dora** | 独立 dora-rs dataflow 运行时 | 无 | 暂不支持 | 暂不支持 |
 

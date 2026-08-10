@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from threading import Lock, RLock
-from typing import Any, Dict, List, Optional, cast, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, cast
 
 from typing_extensions import TypedDict
 
@@ -32,9 +32,8 @@ from unilabos.registry.decorators import (
     not_action,
     topic_config,
 )
+from unilabos.device_runtime.node import DeviceNode
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
-if TYPE_CHECKING:
-    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode
 from unilabos.resources.resource_tracker import (
     SampleUUIDsType,
     LabSample,
@@ -127,6 +126,7 @@ class HeatingStation:
     displayname="虚拟工作台",
     category=["virtual_device"],
     description="Virtual Workbench with 1 robotic arm and 3 heating stations for concurrent material processing",
+    supported_backends=["ros2"],
 )
 class VirtualWorkbench:
     """
@@ -143,7 +143,7 @@ class VirtualWorkbench:
     4. 加热完成后, 机械臂将物料移动到目标位置Cn
     """
 
-    _ros_node: "BaseROS2DeviceNode"
+    _ros_node: DeviceNode
 
     # 配置常量
     ARM_OPERATION_TIME: float = 2  # 机械臂操作时间(秒)
@@ -217,7 +217,7 @@ class VirtualWorkbench:
         )
 
     @not_action
-    def post_init(self, ros_node: "BaseROS2DeviceNode"):
+    def post_init(self, ros_node: DeviceNode):
         """ROS节点初始化后回调"""
         self._ros_node = ros_node
 
@@ -553,18 +553,12 @@ class VirtualWorkbench:
             target_device[目标设备]: 接收资源的目标设备 ID。
             mount_resource[目标孔位]: 目标设备上的挂载孔位列表。
         """
-        future = ROS2DeviceNode.run_async_func(
-            self._ros_node.transfer_resource_to_another,
-            True,
-            **{
-                "plr_resources": resource,
-                "target_device_id": target_device,
-                "target_resources": mount_resource,
-                "sites": [None] * len(mount_resource),
-            },
+        return await self._ros_node.transfer_resource_to_another(
+            plr_resources=resource,
+            target_device_id=target_device,
+            target_resources=mount_resource,
+            sites=[None] * len(mount_resource),
         )
-        result = await future
-        return result
 
     @action(
         description="扣电测试启动",

@@ -81,6 +81,16 @@ import {
 } from './taskLogSession';
 import { TASK_EXECUTION_POLL_INTERVAL_MS } from './taskPolling';
 import {
+  createEmptyTaskTestMemory,
+  loadTaskTestMemory,
+  rememberedParametersForTemplates,
+  saveTaskTestMemory,
+  withRememberedTemplateParameters,
+  withoutRememberedTemplateParameters,
+  withTaskSampleCount,
+  type TaskTestMemory,
+} from './taskTestMemory';
+import {
   buildSampleProcessRows,
   buildTaskGanttEntries,
   canDeleteTaskTemplate,
@@ -140,6 +150,81 @@ type ParamSpec = {
   unit?: string;
   options?: Array<{ value: string | number | boolean; label: string }>;
 };
+
+type CanvasPowderAddition = {
+  coarse_position: number | string;
+  fine_position: number | string;
+  target_weight: number | string;
+  recipe_name: string;
+};
+
+type CanvasLiquidAddition = {
+  liquid_station_index: number | string;
+  solvent_batch_id: string;
+  volume: number | string;
+};
+
+type CanvasS09TipStatus = {
+  initialized: boolean;
+  tips?: Record<string, { status: string; solvent_key?: string | null; current_box?: number; use_count?: number }>;
+  solvents?: Record<string, { active_tip_index?: number | null }>;
+  last_operation?: null | {
+    solvent_batch_id: string;
+    liquid_station_index: number;
+    liquid_tip_index: number;
+    density_tip_index: number;
+  };
+};
+
+const CANVAS_S07_POWDER_PARAMETERS = new Set([
+  'coarse_position', 'fine_position', 'target_weight', 'recipe_name', 'params_json', 'powder_count', 'powder_additions',
+]);
+const CANVAS_S09_LIQUID_PARAMETERS = new Set([
+  'liquid_station_index', 'solvent_batch_id', 'volume', 'liquid_count', 'liquid_additions', 'measure_density',
+  'initialize_tip_inventory', 'initial_used_tip_count',
+]);
+
+function canvasS09TipSummary(status: CanvasS09TipStatus | null) {
+  if (!status?.initialized) return ['TIP 库存尚未初始化'];
+  const bindings = Object.entries(status.solvents || {}).flatMap(([solventKey, binding]) => {
+    const index = binding.active_tip_index;
+    const tip = index == null ? undefined : status.tips?.[String(index)];
+    return index == null ? [] : [`${solventKey} → TIP ${index}（盒${tip?.current_box ?? '-'}，已用 ${tip?.use_count ?? 0} 次）`];
+  });
+  const nextTip = Object.entries(status.tips || {}).find(([, tip]) => tip.status === 'unused')?.[0];
+  return [...(bindings.length ? bindings : ['当前暂无溶剂与 TIP 绑定']), `下一支可用新 TIP：${nextTip ? `TIP ${nextTip}` : '无'}`];
+}
+
+function canvasPowderAdditions(params: Record<string, unknown>): CanvasPowderAddition[] {
+  if (Array.isArray(params.powder_additions) && params.powder_additions.length) {
+    return params.powder_additions as CanvasPowderAddition[];
+  }
+  const additions: CanvasPowderAddition[] = [{
+    coarse_position: Number(params.coarse_position ?? 1),
+    fine_position: Number(params.fine_position ?? 2),
+    target_weight: Number(params.target_weight ?? 0),
+    recipe_name: String(params.recipe_name ?? 'default'),
+  }];
+  const count = Math.max(1, Math.floor(Number(params.powder_count) || 1));
+  while (additions.length < count) {
+    additions.push({ coarse_position: 1, fine_position: 2, target_weight: '', recipe_name: 'default' });
+  }
+  return additions;
+}
+
+function canvasLiquidAdditions(params: Record<string, unknown>): CanvasLiquidAddition[] {
+  if (Array.isArray(params.liquid_additions) && params.liquid_additions.length) {
+    return params.liquid_additions as CanvasLiquidAddition[];
+  }
+  const additions: CanvasLiquidAddition[] = [{
+    liquid_station_index: Number(params.liquid_station_index ?? 1),
+    solvent_batch_id: String(params.solvent_batch_id ?? ''),
+    volume: Number(params.volume ?? 1),
+  }];
+  const count = Math.max(1, Math.floor(Number(params.liquid_count) || 1));
+  while (additions.length < count) additions.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
+  return additions;
+}
 
 type PresetPayload = {
   id: string;
@@ -724,6 +809,7 @@ function App() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [canvasS09TipStatus, setCanvasS09TipStatus] = useState<CanvasS09TipStatus | null>(null);
   const [selectedLogNodeId, setSelectedLogNodeId] = useState<string | null>(null);
   const [selectedLogCategory, setSelectedLogCategory] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<'devices' | 'stacks'>('devices');
@@ -764,6 +850,9 @@ function App() {
   const [taskOpcMessage, setTaskOpcMessage] = useState('');
   const [isTaskOpcConnecting, setIsTaskOpcConnecting] = useState(false);
   const [taskSampleCount, setTaskSampleCount] = useState(3);
+  const [taskTestMemory, setTaskTestMemory] = useState<TaskTestMemory>(
+    createEmptyTaskTestMemory,
+  );
   const [taskSampleStartIntervalSeconds, setTaskSampleStartIntervalSeconds] = useState(0);
   const [selectedTaskTemplateId, setSelectedTaskTemplateId] = useState<string | null>(null);
   const [selectedTaskInstanceId, setSelectedTaskInstanceId] = useState<string | null>(null);
@@ -820,6 +909,7 @@ function App() {
   const taskApiRef = useRef(createTaskOrchestrationClient());
   const taskWorkspaceVersionRef = useRef<number | null>(null);
   const taskWorkspacePathRef = useRef(taskWorkspacePath);
+  const taskTestMemoryRef = useRef(taskTestMemory);
   const taskWorkspaceEpochRef = useRef(createWorkspaceEpochController());
   const taskMutationGenerationRef = useRef(createOperationGenerationController());
   const taskActionInFlightCountRef = useRef(0);
@@ -856,6 +946,7 @@ function App() {
   scheduledTemplateIdsRef.current = scheduledTemplateIds;
   selectedTaskTemplateIdRef.current = selectedTaskTemplateId;
   taskWorkspacePathRef.current = taskWorkspacePath;
+  taskTestMemoryRef.current = taskTestMemory;
   taskRuntimeBusyRef.current = {
     schedulerBusy: isSchedulerRunning
       || isSchedulerTransitioning
@@ -865,6 +956,15 @@ function App() {
       || taskExecutionStatus.tick.claimed > 0,
     actionInFlight: taskActionInFlightCountRef.current > 0,
   };
+  const persistTaskTestMemory = useCallback((next: TaskTestMemory) => {
+    taskTestMemoryRef.current = next;
+    setTaskTestMemory(next);
+    try {
+      saveTaskTestMemory(window.localStorage, taskWorkspacePathRef.current, next);
+    } catch (error) {
+      setMessage(`测试参数记忆保存失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, []);
   const applyTaskWorkspace = useCallback((response: ApiWorkspaceResponse) => {
     if (response.workspace.workflow_path !== taskWorkspacePathRef.current) return;
     const next = taskWorkspaceFromApi(response);
@@ -1030,6 +1130,13 @@ function App() {
     () => nodes.find((node) => node.id === editingNodeId) || null,
     [editingNodeId, nodes],
   );
+  useEffect(() => {
+    if (editingNode?.data.method !== 'add_liquid_with_reusable_tip') return;
+    fetch('/api/s09-tip-status')
+      .then((response) => response.json())
+      .then((payload: CanvasS09TipStatus) => setCanvasS09TipStatus(payload))
+      .catch(() => setCanvasS09TipStatus(null));
+  }, [editingNode?.id, editingNode?.data.method]);
   const logEvents = useMemo(() => normalizeLogEvents(runStatus), [runStatus]);
   const opcChanges = useMemo(() => collectOpcChanges(logEvents), [logEvents]);
   const draftKey = useMemo(() => workflowDraftKey(workflowName, nodes, edges), [workflowName, nodes, edges]);
@@ -1500,7 +1607,13 @@ function App() {
         actionsRef.current = payloadActions;
         setActions(payloadActions);
         setDraftStorageKey(storageKey);
-        setTaskWorkspacePath(`${payload.default_workflow_name || 'szlab_canvas_workflow'}.json`);
+        const nextTaskWorkspacePath = `${payload.default_workflow_name || 'szlab_canvas_workflow'}.json`;
+        const savedTaskTestMemory = loadTaskTestMemory(window.localStorage, nextTaskWorkspacePath);
+        taskWorkspacePathRef.current = nextTaskWorkspacePath;
+        taskTestMemoryRef.current = savedTaskTestMemory;
+        setTaskWorkspacePath(nextTaskWorkspacePath);
+        setTaskTestMemory(savedTaskTestMemory);
+        setTaskSampleCount(savedTaskTestMemory.sampleCount);
         const savedDraft = loadSavedDraft(storageKey, payloadActions);
         if (savedDraft) {
           setWorkflowName(savedDraft.name);
@@ -1684,6 +1797,12 @@ function App() {
           : node,
       ),
     );
+  };
+
+  const updateNodeParams = (nodeId: string, values: Record<string, unknown>) => {
+    setNodes((current) => current.map((node) => node.id === nodeId
+      ? { ...node, data: { ...node.data, params: { ...node.data.params, ...values } } }
+      : node));
   };
 
   const setExecutionStart = (nodeId: string) => {
@@ -1905,6 +2024,17 @@ function App() {
     ));
   }, [mutateTaskWorkspace, taskWorkspacePath]);
 
+  const updateTaskSampleCount = useCallback((value: number) => {
+    const nextMemory = withTaskSampleCount(taskTestMemoryRef.current, value);
+    setTaskSampleCount(nextMemory.sampleCount);
+    persistTaskTestMemory(nextMemory);
+  }, [persistTaskTestMemory]);
+
+  const clearRememberedTaskParameters = useCallback(() => {
+    persistTaskTestMemory(withoutRememberedTemplateParameters(taskTestMemoryRef.current));
+    showCanvasToast('已清除最近实例入参；现有队列不受影响');
+  }, [persistTaskTestMemory, showCanvasToast]);
+
   const createTaskInstances = useCallback(() => {
     const templateIds = scheduledTemplateIdsRef.current;
     if (!templateIds.length) {
@@ -1912,15 +2042,42 @@ function App() {
       return;
     }
     const samples = SAMPLE_NAMES.slice(0, taskSampleCount);
+    const selectedTemplateIds = new Set(templateIds);
+    const actionNodeCatalog = nodes.map((node) => ({
+      id: node.id,
+      deviceId: node.data.deviceId,
+      method: node.data.method,
+      params: node.data.params,
+      paramSpecs: node.data.paramSpecs,
+    }));
+    const parameterSchema = Object.fromEntries(
+      taskTemplatesRef.current
+        .filter((template) => selectedTemplateIds.has(template.id))
+        .map((template) => [
+          template.id,
+          Object.fromEntries(
+            resolveTemplateNodes(template.nodeIds, actionNodeCatalog).flatMap((entry) => {
+              if (!entry.node) return [];
+              const names = new Set([
+                ...Object.keys(entry.node.params),
+                ...(entry.node.paramSpecs || []).flatMap((spec) => spec.name ? [spec.name] : []),
+              ]);
+              return [[entry.templateNodeId, [...names]]];
+            }),
+          ),
+        ]),
+    );
     void mutateTaskWorkspace((version) => taskApiRef.current.generateInstances(
       taskWorkspacePath,
       version,
       templateIds,
       samples,
       taskSampleStartIntervalSeconds,
+      rememberedParametersForTemplates(taskTestMemoryRef.current, templateIds, parameterSchema),
     ));
   }, [
     mutateTaskWorkspace,
+    nodes,
     taskSampleCount,
     taskSampleStartIntervalSeconds,
     taskWorkspacePath,
@@ -1943,13 +2100,21 @@ function App() {
     taskId: string,
     nodeParameters: Record<string, Record<string, unknown>>,
   ) => {
+    const templateId = taskInstancesRef.current.find((task) => task.id === taskId)?.templateId;
+    if (templateId) {
+      persistTaskTestMemory(withRememberedTemplateParameters(
+        taskTestMemoryRef.current,
+        templateId,
+        nodeParameters,
+      ));
+    }
     void mutateTaskWorkspace((version) => taskApiRef.current.updateInstanceParameters(
       taskWorkspacePath,
       version,
       taskId,
       nodeParameters,
     ));
-  }, [mutateTaskWorkspace, taskWorkspacePath]);
+  }, [mutateTaskWorkspace, persistTaskTestMemory, taskWorkspacePath]);
 
   const advanceTaskSchedule = useCallback(() => {
     void mutateTaskWorkspace((version) => taskApiRef.current.advance(taskWorkspacePath, version));
@@ -3397,6 +3562,7 @@ function App() {
             if (environment === 'real') setIsOpcSimulatorDrawerOpen(false);
           }}
           onGenerate={createTaskInstances}
+          onClearRememberedParameters={clearRememberedTaskParameters}
           onConnectOpc={() => void connectTaskOpc()}
           onOpenSimulator={() => {
             if (taskExecutionEnvironment === 'real') return;
@@ -3406,7 +3572,7 @@ function App() {
             }
             void openOpcSimulatorWorkbench();
           }}
-          onSampleCountChange={(value) => setTaskSampleCount(Math.min(5, Math.max(1, Math.round(value) || 1)))}
+          onSampleCountChange={updateTaskSampleCount}
           onSelectTask={(task) => {
             setSelectedTaskInstanceId(task.id);
             setSelectedTaskTemplateId(task.templateId);
@@ -3436,6 +3602,9 @@ function App() {
             ));
           }}
           sampleCount={taskSampleCount}
+          rememberedParameterCount={Object.keys(taskTestMemory.templateParameters).filter(
+            (templateId) => taskTemplates.some((template) => template.id === templateId),
+          ).length}
           scheduledTemplateIds={scheduledTemplateIds}
           selectedTaskId={selectedTaskInstanceId}
           actionNodes={nodes.map((node) => ({
@@ -3744,7 +3913,7 @@ function App() {
                     max={5}
                     step={1}
                     value={taskSampleCount}
-                    onChange={(event) => setTaskSampleCount(Math.min(5, Math.max(1, Math.round(Number(event.target.value)) || 1)))}
+                    onChange={(event) => updateTaskSampleCount(Number(event.target.value))}
                   />
                 </label>
                 <button onClick={createTaskInstances} disabled={!scheduledTemplateIds.length || isTaskWorkspaceLoading} type="button">生成队列</button>
@@ -4383,7 +4552,118 @@ function App() {
             </div>
             {editingNode.data.paramSpecs?.length ? (
               <div className="param-grid">
-                {editingNode.data.paramSpecs.map((param) => {
+                {editingNode.data.method === 'dose_powder' ? (() => {
+                  const additions = canvasPowderAdditions(editingNode.data.params);
+                  const updateAdditions = (next: CanvasPowderAddition[]) => updateNodeParams(editingNode.id, {
+                    powder_count: next.length,
+                    powder_additions: next,
+                  });
+                  return <section className="powder-sequence-editor">
+                    <label>
+                      <span className="param-label">固体粉末种类数</span>
+                      <input
+                        min={1}
+                        onChange={(event) => {
+                          const count = Math.max(1, Math.floor(Number(event.currentTarget.value) || 1));
+                          const next = additions.slice(0, count);
+                          while (next.length < count) next.push({ coarse_position: 1, fine_position: 2, target_weight: '', recipe_name: 'default' });
+                          updateAdditions(next);
+                        }}
+                        step={1}
+                        type="number"
+                        value={additions.length}
+                      />
+                      <small>同一样品需要依次加入的固体粉末数量。</small>
+                    </label>
+                    {additions.map((addition, additionIndex) => <fieldset key={additionIndex}>
+                      <legend>粉末 {additionIndex + 1}</legend>
+                      {([
+                        ['coarse_position', '粗加粉罐位', 'number'],
+                        ['fine_position', '细加粉罐位', 'number'],
+                        ['target_weight', '单独目标重量（g）', 'number'],
+                        ['recipe_name', '加粉策略', 'text'],
+                      ] as const).map(([field, label, type]) => <label key={field}>
+                        <span className="param-label">{label}</span>
+                        <input
+                          min={type === 'number' ? (field === 'target_weight' ? 0 : 1) : undefined}
+                          max={type === 'number' && field !== 'target_weight' ? 10 : undefined}
+                          onChange={(event) => updateAdditions(additions.map((item, index) => index === additionIndex
+                            ? { ...item, [field]: event.currentTarget.value }
+                            : item))}
+                          onBlur={(event) => {
+                            if (type !== 'number' || event.currentTarget.value === '') return;
+                            updateAdditions(additions.map((item, index) => index === additionIndex
+                              ? { ...item, [field]: Number(event.currentTarget.value) }
+                              : item));
+                          }}
+                          step={type === 'number' && field !== 'target_weight' ? 1 : 'any'}
+                          type={type}
+                          value={String(addition[field] ?? '')}
+                        />
+                      </label>)}
+                    </fieldset>)}
+                  </section>;
+                })() : null}
+                {editingNode.data.method === 'add_liquid_with_reusable_tip' ? (() => {
+                  const additions = canvasLiquidAdditions(editingNode.data.params);
+                  const updateAdditions = (next: CanvasLiquidAddition[]) => updateNodeParams(editingNode.id, {
+                    liquid_count: next.length,
+                    liquid_additions: next,
+                  });
+                  return <section className="powder-sequence-editor">
+                    <div className="s09-tip-status" role="status">
+                      {canvasS09TipSummary(canvasS09TipStatus).map((line) => <div key={line}>{line}</div>)}
+                      <div>{canvasS09TipStatus?.last_operation
+                        ? `上一次操作：工位 ${canvasS09TipStatus.last_operation.liquid_station_index} · ${canvasS09TipStatus.last_operation.solvent_batch_id} · 加液 TIP ${canvasS09TipStatus.last_operation.liquid_tip_index} · 测密度 TIP ${canvasS09TipStatus.last_operation.density_tip_index}`
+                        : '上一次操作：暂无记录'}</div>
+                    </div>
+                    <label><span className="param-label">液体种类数</span>
+                      <input min={1} onChange={(event) => {
+                        const count = Math.max(1, Math.floor(Number(event.currentTarget.value) || 1));
+                        const next = additions.slice(0, count);
+                        while (next.length < count) next.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
+                        updateAdditions(next);
+                      }} step={1} type="number" value={additions.length} />
+                      <small>测密度前需要依次加入的液体数量。</small>
+                    </label>
+                    {additions.map((addition, additionIndex) => <fieldset key={additionIndex}>
+                      <legend>液体 {additionIndex + 1}</legend>
+                      {([
+                        ['liquid_station_index', '液体工位', 'number'],
+                        ['solvent_batch_id', '溶剂标识', 'text'],
+                        ['volume', '独立加液体积', 'number'],
+                      ] as const).map(([field, label, type]) => <label key={field}>
+                        <span className="param-label">{label}</span>
+                        <input min={type === 'number' ? (field === 'volume' ? 0 : 1) : undefined}
+                          max={field === 'liquid_station_index' ? 5 : undefined}
+                          onChange={(event) => updateAdditions(additions.map((item, index) => index === additionIndex
+                            ? { ...item, [field]: event.currentTarget.value } : item))}
+                          onBlur={(event) => {
+                            if (type !== 'number' || event.currentTarget.value === '') return;
+                            updateAdditions(additions.map((item, index) => index === additionIndex
+                              ? { ...item, [field]: Number(event.currentTarget.value) } : item));
+                          }}
+                          step={field === 'liquid_station_index' ? 1 : 'any'} type={type} value={String(addition[field] ?? '')} />
+                      </label>)}
+                    </fieldset>)}
+                    <label><span className="param-label">执行前初始化 TIP 库存</span>
+                      <input checked={Boolean(editingNode.data.params.initialize_tip_inventory)}
+                        onChange={(event) => updateNodeParam(editingNode.id, 'initialize_tip_inventory', event.currentTarget.checked)} type="checkbox" />
+                      <small>会覆盖当前 TIP 使用和绑定记录；仅在确认 TIP 盒状态后启用。</small>
+                    </label>
+                    {editingNode.data.params.initialize_tip_inventory ? <label>
+                      <span className="param-label">初始化时已使用 TIP 数量</span>
+                      <input min={0} onChange={(event) => updateNodeParam(editingNode.id, 'initial_used_tip_count', Number(event.currentTarget.value))}
+                        step={1} type="number" value={String(editingNode.data.params.initial_used_tip_count ?? 0)} />
+                    </label> : null}
+                  </section>;
+                })() : null}
+                {editingNode.data.paramSpecs
+                  .filter((param) => (
+                    (editingNode.data.method !== 'dose_powder' || !CANVAS_S07_POWDER_PARAMETERS.has(String(param.name)))
+                    && (editingNode.data.method !== 'add_liquid_with_reusable_tip' || !CANVAS_S09_LIQUID_PARAMETERS.has(String(param.name)))
+                  ))
+                  .map((param) => {
                   const name = param.name || '';
                   if (!name) return null;
                   const currentValue = editingNode.data.params[name];

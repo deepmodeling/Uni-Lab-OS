@@ -1097,6 +1097,37 @@ code {
   line-height: 1.45;
 }
 
+.powder-sequence-editor {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 12px;
+}
+
+.powder-sequence-editor fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  padding: 8px 12px 12px;
+}
+
+.powder-sequence-editor legend {
+  color: #334155;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.s09-tip-status {
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 10px 12px;
+}
+
 @media (max-width: 1180px) {
   body {
     overflow: auto;

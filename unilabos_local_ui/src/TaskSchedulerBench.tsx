@@ -46,6 +46,10 @@ type ActionNode = {
 type ResolvedActionNode = ActionNode & { templateNodeId: string };
 type S09TipStatus = {
   initialized: boolean;
+  tip_count?: number;
+  max_use_count?: number;
+  tips?: Record<string, { status: string; solvent_key?: string | null; current_box?: number; use_count?: number }>;
+  solvents?: Record<string, { active_tip_index?: number | null }>;
   last_operation: null | {
     solvent_batch_id: string;
     liquid_station_index: number;
@@ -54,6 +58,76 @@ type S09TipStatus = {
   };
 };
 
+type PowderAddition = {
+  coarse_position: number | string;
+  fine_position: number | string;
+  target_weight: number | string;
+  recipe_name: string;
+};
+
+type LiquidAddition = {
+  liquid_station_index: number | string;
+  solvent_batch_id: string;
+  volume: number | string;
+};
+
+const S07_POWDER_PARAMETERS = new Set([
+  'coarse_position', 'fine_position', 'target_weight', 'recipe_name', 'params_json', 'powder_count', 'powder_additions',
+]);
+const S09_LIQUID_PARAMETERS = new Set([
+  'liquid_station_index', 'solvent_batch_id', 'volume', 'liquid_count', 'liquid_additions', 'measure_density',
+  'initialize_tip_inventory', 'initial_used_tip_count',
+]);
+
+function s09TipSummary(status: S09TipStatus | null) {
+  if (!status?.initialized) return ['TIP 库存尚未初始化'];
+  const bindings = Object.entries(status.solvents || {}).flatMap(([solventKey, binding]) => {
+    const index = binding.active_tip_index;
+    const tip = index == null ? undefined : status.tips?.[String(index)];
+    return index == null ? [] : [`${solventKey} → TIP ${index}（盒${tip?.current_box ?? '-'}，已用 ${tip?.use_count ?? 0} 次）`];
+  });
+  const nextTip = Object.entries(status.tips || {}).find(([, tip]) => tip.status === 'unused')?.[0];
+  return [
+    ...(bindings.length ? bindings : ['当前暂无溶剂与 TIP 绑定']),
+    `下一支可用新 TIP：${nextTip ? `TIP ${nextTip}` : '无'}`,
+  ];
+}
+
+function powderAdditionsFromValues(values: Record<string, unknown>): PowderAddition[] {
+  if (Array.isArray(values.powder_additions) && values.powder_additions.length) {
+    return values.powder_additions as PowderAddition[];
+  }
+  const additions: PowderAddition[] = [{
+    coarse_position: Number(values.coarse_position ?? 1),
+    fine_position: Number(values.fine_position ?? 2),
+    target_weight: Number(values.target_weight ?? 0),
+    recipe_name: String(values.recipe_name ?? 'default'),
+  }];
+  const count = Math.max(1, Math.floor(Number(values.powder_count) || 1));
+  while (additions.length < count) {
+    additions.push({ coarse_position: 1, fine_position: 2, target_weight: '', recipe_name: 'default' });
+  }
+  return additions;
+}
+
+function numberValue(value: unknown) {
+  return value === '' ? value : Number(value);
+}
+
+function liquidAdditionsFromValues(values: Record<string, unknown>): LiquidAddition[] {
+  if (Array.isArray(values.liquid_additions) && values.liquid_additions.length) {
+    return values.liquid_additions as LiquidAddition[];
+  }
+  const additions: LiquidAddition[] = [{
+    liquid_station_index: Number(values.liquid_station_index ?? 1),
+    solvent_batch_id: String(values.solvent_batch_id ?? ''),
+    volume: Number(values.volume ?? 1),
+  }];
+  const count = Math.max(1, Math.floor(Number(values.liquid_count) || 1));
+  while (additions.length < count) additions.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
+  return additions;
+}
+
 type Props = {
   templates: Template[];
   tasks: Task[];
@@ -61,6 +135,7 @@ type Props = {
   events: string[];
   waitingReasons: Record<string, { message?: string }>;
   sampleCount: number;
+  rememberedParameterCount: number;
   isRunning: boolean;
   isTransitioning: boolean;
   environment: 'simulated' | 'real';
@@ -69,6 +144,7 @@ type Props = {
   onToggleTemplate: (templateId: string) => void;
   onSelectAllTemplates: (selected: boolean) => void;
   onGenerate: () => void;
+  onClearRememberedParameters: () => void;
   onClear: () => void;
   onClearTemplates: () => void;
   clearTemplatesDisabled: boolean;
@@ -274,6 +350,24 @@ export function TaskSchedulerBench(props: Props) {
     }));
   };
 
+  const updatePowderAdditions = (nodeId: string, additions: PowderAddition[]) => {
+    setParameterDraft((current) => ({
+      ...current,
+      [nodeId]: {
+        ...current[nodeId],
+        powder_count: additions.length,
+        powder_additions: additions,
+      },
+    }));
+  };
+
+  const updateLiquidAdditions = (nodeId: string, additions: LiquidAddition[]) => {
+    setParameterDraft((current) => ({
+      ...current,
+      [nodeId]: { ...current[nodeId], liquid_count: additions.length, liquid_additions: additions },
+    }));
+  };
+
   return (
     <main className="scheduler-bench">
       {props.simulatorMessage && <p className="scheduler-bench__simulator-message" role="status">{props.simulatorMessage}</p>}
@@ -284,6 +378,18 @@ export function TaskSchedulerBench(props: Props) {
           <div className="scheduler-bench__section">
             <label>样品数</label>
             <div className="scheduler-bench__sample-input"><input min="1" max="5" type="number" value={props.sampleCount} onChange={(event) => props.onSampleCountChange(Number(event.target.value))} /><button className="scheduler-btn scheduler-btn--primary" onClick={props.onGenerate} type="button">生成队列</button></div>
+            <div className="scheduler-bench__parameter-memory">
+              <span>
+                {props.rememberedParameterCount
+                  ? `生成时将沿用 ${props.rememberedParameterCount} 个模板的最近实例入参`
+                  : '保存实例入参后，下次生成队列会自动沿用'}
+              </span>
+              <button
+                disabled={!props.rememberedParameterCount}
+                onClick={props.onClearRememberedParameters}
+                type="button"
+              >清除记忆</button>
+            </div>
           </div>
           <div className="scheduler-bench__section">
             <div className="scheduler-bench__template-head">
@@ -475,7 +581,13 @@ export function TaskSchedulerBench(props: Props) {
               const element = event.currentTarget;
               setIsFollowingLogs(element.scrollHeight - element.scrollTop - element.clientHeight < 12);
             }} ref={logContainerRef}>
-              {visibleLogLines.map((line) => <div className={`scheduler-bench__log-line ${line.category}`} key={line.id}><time>{new Date(line.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}</time> [{line.level}] {line.message}</div>)}
+              {visibleLogLines.map((line) => <div className={`scheduler-bench__log-line ${line.category}`} key={line.id}>
+                <div><time>{new Date(line.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}</time> [{line.level}] {line.message}</div>
+                {line.detail && Object.keys(line.detail).length ? <details>
+                  <summary>详情</summary>
+                  <pre>{JSON.stringify(line.detail, null, 2)}</pre>
+                </details> : null}
+              </div>)}
               {!visibleLogLines.length && <div>本次启动后暂无匹配日志。</div>}
             </div>
             <div className="scheduler-bench__log-foot">本次启动后 {visibleLogLines.length} 条 · {isFollowingLogs ? '自动滚动' : '滚动已暂停'}</div>
@@ -501,7 +613,7 @@ export function TaskSchedulerBench(props: Props) {
               <div>
                 <span>Task instance parameters</span>
                 <h2>{editingTask.sample} / {editingTemplate?.name || editingTask.templateId}</h2>
-                <p>{parametersEditable ? '修改仅应用于当前 Task 实例。' : `当前状态为「${stateLabel(editingTask.status)}」，入参仅可查看。`}</p>
+                <p>{parametersEditable ? '本次修改应用于当前实例，并作为该模板下次生成队列的初始值。' : `当前状态为「${stateLabel(editingTask.status)}」，入参仅可查看。`}</p>
               </div>
               <button aria-label="关闭参数编辑" onClick={() => setEditingTask(null)} type="button">×</button>
             </header>
@@ -515,13 +627,104 @@ export function TaskSchedulerBench(props: Props) {
                   <small>{node.method} · {node.templateNodeId}</small>
                   {node.method === 'add_liquid_with_reusable_tip' ? (
                     <div className="scheduler-bench__s09-binding" role="status">
-                      {s09TipStatus?.last_operation ? (
-                        <>上一次 S09 绑定：批次 {s09TipStatus.last_operation.solvent_batch_id} · 工位 {s09TipStatus.last_operation.liquid_station_index}
-                          {' · '}加液 TIP {s09TipStatus.last_operation.liquid_tip_index} · 测密度 TIP {s09TipStatus.last_operation.density_tip_index}</>
-                      ) : '上一次 S09 绑定：暂无记录'}
+                      {s09TipSummary(s09TipStatus).map((line) => <div key={line}>{line}</div>)}
+                      <div>{s09TipStatus?.last_operation
+                        ? `上一次操作：工位 ${s09TipStatus.last_operation.liquid_station_index} · ${s09TipStatus.last_operation.solvent_batch_id} · 加液 TIP ${s09TipStatus.last_operation.liquid_tip_index} · 测密度 TIP ${s09TipStatus.last_operation.density_tip_index}`
+                        : '上一次操作：暂无记录'}</div>
                     </div>
                   ) : null}
-                  {specs.map((spec) => {
+                  {node.method === 'dose_powder' ? (() => {
+                    const additions = powderAdditionsFromValues(values);
+                    return <div className="scheduler-bench__powder-additions">
+                      <label>
+                        <span>固体粉末种类数 · 同一样品需要依次加入的粉末数量</span>
+                        <input
+                          disabled={!parametersEditable}
+                          min={1}
+                          onChange={(event) => {
+                            const count = Math.max(1, Math.floor(Number(event.target.value) || 1));
+                            const next = additions.slice(0, count);
+                            while (next.length < count) next.push({ coarse_position: 1, fine_position: 2, target_weight: '', recipe_name: 'default' });
+                            updatePowderAdditions(node.templateNodeId, next);
+                          }}
+                          step={1}
+                          type="number"
+                          value={additions.length}
+                        />
+                      </label>
+                      {additions.map((addition, additionIndex) => (
+                        <fieldset key={additionIndex}>
+                          <legend>粉末 {additionIndex + 1}</legend>
+                          {([
+                            ['coarse_position', '粗加粉罐位', 'number'],
+                            ['fine_position', '细加粉罐位', 'number'],
+                            ['target_weight', '单独目标重量（g）', 'number'],
+                            ['recipe_name', '加粉策略', 'text'],
+                          ] as const).map(([field, label, type]) => <label key={field}>
+                            <span>{label}</span>
+                            <input
+                              disabled={!parametersEditable}
+                              min={type === 'number' ? (field === 'target_weight' ? 0 : 1) : undefined}
+                              max={type === 'number' && field !== 'target_weight' ? 10 : undefined}
+                              onChange={(event) => {
+                                const next = additions.map((item, index) => index === additionIndex
+                                  ? { ...item, [field]: event.target.value }
+                                  : item);
+                                updatePowderAdditions(node.templateNodeId, next);
+                              }}
+                              step={type === 'number' && field !== 'target_weight' ? 1 : 'any'}
+                              type={type}
+                              value={String(addition[field] ?? '')}
+                            />
+                          </label>)}
+                        </fieldset>
+                      ))}
+                    </div>;
+                  })() : null}
+                  {node.method === 'add_liquid_with_reusable_tip' ? (() => {
+                    const additions = liquidAdditionsFromValues(values);
+                    return <div className="scheduler-bench__powder-additions">
+                      <label>
+                        <span>液体种类数 · 测密度前需要依次加入的液体数量</span>
+                        <input disabled={!parametersEditable} min={1} onChange={(event) => {
+                          const count = Math.max(1, Math.floor(Number(event.target.value) || 1));
+                          const next = additions.slice(0, count);
+                          while (next.length < count) next.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
+                          updateLiquidAdditions(node.templateNodeId, next);
+                        }} step={1} type="number" value={additions.length} />
+                      </label>
+                      {additions.map((addition, additionIndex) => <fieldset key={additionIndex}>
+                        <legend>液体 {additionIndex + 1}</legend>
+                        {([
+                          ['liquid_station_index', '液体工位', 'number'],
+                          ['solvent_batch_id', '溶剂标识', 'text'],
+                          ['volume', '独立加液体积', 'number'],
+                        ] as const).map(([field, label, type]) => <label key={field}>
+                          <span>{label}</span>
+                          <input disabled={!parametersEditable} min={type === 'number' ? (field === 'volume' ? 0 : 1) : undefined}
+                            max={field === 'liquid_station_index' ? 5 : undefined}
+                            onChange={(event) => updateLiquidAdditions(node.templateNodeId, additions.map((item, index) => index === additionIndex
+                              ? { ...item, [field]: event.target.value } : item))}
+                            step={field === 'liquid_station_index' ? 1 : 'any'} type={type} value={String(addition[field] ?? '')} />
+                        </label>)}
+                      </fieldset>)}
+                      <label>
+                        <span>执行前初始化 TIP 库存 · 会覆盖当前 TIP 使用和绑定记录</span>
+                        <input checked={Boolean(values.initialize_tip_inventory)} disabled={!parametersEditable}
+                          onChange={(event) => updateParameter(node.templateNodeId, 'initialize_tip_inventory', event.target.checked)} type="checkbox" />
+                      </label>
+                      {values.initialize_tip_inventory ? <label>
+                        <span>初始化时已使用 TIP 数量</span>
+                        <input disabled={!parametersEditable} min={0}
+                          onChange={(event) => updateParameter(node.templateNodeId, 'initial_used_tip_count', event.target.value)}
+                          step={1} type="number" value={String(values.initial_used_tip_count ?? 0)} />
+                      </label> : null}
+                    </div>;
+                  })() : null}
+                  {specs.filter((spec) => (
+                    (node.method !== 'dose_powder' || !S07_POWDER_PARAMETERS.has(String(spec.name)))
+                    && (node.method !== 'add_liquid_with_reusable_tip' || !S09_LIQUID_PARAMETERS.has(String(spec.name)))
+                  )).map((spec) => {
                     const name = spec.name as string;
                     const value = values[name];
                     if (inheritsSampleS04Position(node.templateNodeId, name)) {
@@ -542,8 +745,13 @@ export function TaskSchedulerBench(props: Props) {
                           onChange={(event) => updateParameter(
                             node.templateNodeId,
                             name,
-                            inputType === 'number' && event.target.value !== '' ? Number(event.target.value) : event.target.value,
+                            event.target.value,
                           )}
+                          onBlur={(event) => {
+                            if (inputType === 'number' && event.target.value !== '') {
+                              updateParameter(node.templateNodeId, name, Number(event.target.value));
+                            }
+                          }}
                           step={spec.type === 'integer' ? 1 : 'any'}
                           type={inputType}
                           value={typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}
@@ -564,9 +772,35 @@ export function TaskSchedulerBench(props: Props) {
             </div>
             <div className="scheduler-bench__modal-actions">
               {parametersEditable && <button className="scheduler-btn scheduler-btn--primary" onClick={() => {
-                props.onUpdateTaskParameters(editingTask.id, parameterDraft);
+                const numericParameters = new Map(editingNodes.map((node) => [
+                  node.templateNodeId,
+                  new Set((node.paramSpecs || [])
+                    .filter((spec) => spec.type === 'integer' || spec.type === 'number')
+                    .map((spec) => String(spec.name))),
+                ]));
+                const normalizedDraft = Object.fromEntries(Object.entries(parameterDraft).map(([nodeId, parameters]) => [
+                  nodeId,
+                  Object.fromEntries(Object.entries(parameters).map(([name, value]) => [
+                    name,
+                    name === 'powder_additions' && Array.isArray(value)
+                      ? value.map((addition) => ({
+                        ...(addition as PowderAddition),
+                        coarse_position: numberValue((addition as PowderAddition).coarse_position),
+                        fine_position: numberValue((addition as PowderAddition).fine_position),
+                        target_weight: numberValue((addition as PowderAddition).target_weight),
+                      }))
+                      : name === 'liquid_additions' && Array.isArray(value)
+                        ? value.map((addition) => ({
+                          ...(addition as LiquidAddition),
+                          liquid_station_index: numberValue((addition as LiquidAddition).liquid_station_index),
+                          volume: numberValue((addition as LiquidAddition).volume),
+                        }))
+                        : numericParameters.get(nodeId)?.has(name) ? numberValue(value) : value,
+                  ])),
+                ]));
+                props.onUpdateTaskParameters(editingTask.id, normalizedDraft);
                 setEditingTask(null);
-              }} type="button">保存当前实例入参</button>}
+              }} type="button">保存并记住实例入参</button>}
               <span>实例 ID：{editingTask.id}</span>
             </div>
           </section>

@@ -328,7 +328,9 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     "fine_position": {"label": "精注粉粉罐位", "description": "参与精注粉的 S07 粉罐位置，范围 1–10。"},
     "target_weight": {"label": "目标注粉重量", "description": "S07 本次注粉的目标重量。", "unit": "g（待 PLC 确认）"},
     "params_json": {"label": "配方文件", "description": "粗/精注粉参数 JSON 路径；留空使用设备默认文件。"},
-    "recipe_name": {"label": "配方名称", "description": "注粉参数 JSON 中选用的配方键名。"},
+    "recipe_name": {"label": "加粉策略", "description": "从默认注粉参数 JSON 中选择的策略名称，例如 default、salt 或 salt2。"},
+    "powder_count": {"label": "固体粉末种类数", "description": "同一样品需要依次加入的固体粉末数量。"},
+    "powder_additions": {"label": "各粉末参数", "description": "每种粉末的粉罐位、单独目标重量和加粉策略。"},
     "工艺选择": {
         "description": "S08 开关盖工艺编号。",
         "options": [
@@ -352,8 +354,8 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
         "description": "本次使用的 S09 液体工位编号，范围 1–5；TIP 按溶剂批次与工位组合绑定。",
     },
     "solvent_batch_id": {
-        "label": "溶剂批次标识",
-        "description": "溶剂批次标识；相同批次和相同工位复用原 TIP，批次或工位任一变化都会分配新 TIP。",
+        "label": "溶剂标识",
+        "description": "用于复用加液 TIP；相同溶剂标识和相同工位复用原 TIP，标识或工位任一变化都会分配新 TIP。",
     },
     "used_tip_count": {
         "label": "已使用 TIP 数量",
@@ -384,6 +386,10 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
         ],
     },
     "liquid_steps": {"label": "移液步骤", "description": "S09 批量移液步骤数组；每项包含取 TIP、吸液和放液参数。"},
+    "liquid_count": {"label": "液体种类数", "description": "最终测密度前需要依次加入的液体数量。"},
+    "liquid_additions": {"label": "各液体参数", "description": "每种液体的工位、溶剂标识和独立加液体积。"},
+    "initialize_tip_inventory": {"label": "执行前初始化 TIP 库存", "description": "会覆盖当前 TIP 使用和绑定记录；仅在确认盒1状态后启用。"},
+    "initial_used_tip_count": {"label": "初始化时已使用 TIP 数量", "description": "初始化后从 TIP 1 开始标记为不可用的数量。"},
     "release_after": {"label": "结束后释放", "description": "流程完成后是否释放样品与工站绑定。"},
     "bottle": {"label": "液体瓶编号", "description": "S09 液体试剂瓶编号，范围 1–5。"},
     "remaining_volume": {"label": "剩余液量", "description": "液体瓶当前或初始化剩余体积。", "unit": "mL"},
@@ -936,9 +942,17 @@ def _run_node_with_live_opc_sampling(
         )
     for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
         logger.log(wait_log["message"], detail=wait_log.get("detail"))
-    if isinstance(result, dict) and result.get("display_message"):
-        logger.log(str(result["display_message"]))
-    logger.log(f"动作结果: {result}", detail={"result": result})
+    if isinstance(result, dict):
+        status_text = "成功" if result.get("success") is not False else "失败"
+        summary = f"动作结果：{status_text}"
+        display_message = result.get("display_message")
+        if display_message:
+            logger.log(str(display_message))
+        elif result.get("message"):
+            summary = f"{summary} · {result['message']}"
+    else:
+        summary = f"动作结果：{result}"
+    logger.log(summary, detail={"result": result})
 
     output = {
         "uuid": node.uuid,
@@ -2384,15 +2398,12 @@ def create_app(
     @app.get("/api/s09-tip-status", response_class=JSONResponse)
     async def get_s09_tip_status() -> dict[str, Any]:
         if not DEFAULT_TIP_REUSE_STATE_PATH.exists():
-            return {"initialized": False, "last_operation": None}
+            return {"initialized": False, "last_operation": None, "tips": {}, "solvents": {}}
         try:
             state = json.loads(DEFAULT_TIP_REUSE_STATE_PATH.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise HTTPException(status_code=500, detail="读取 S09 TIP 状态失败") from exc
-        return {
-            "initialized": bool(state.get("initialized")),
-            "last_operation": state.get("last_operation"),
-        }
+        return state
 
     @app.get("/api/csv-variables", response_class=JSONResponse)
     async def csv_variables(csv_path: str = "") -> dict[str, Any]:

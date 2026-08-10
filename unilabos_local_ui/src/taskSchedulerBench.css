@@ -954,9 +954,22 @@
   font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
-.scheduler-bench__log div {
+.scheduler-bench__log > div {
   padding: 8px 16px;
   border-bottom: 1px solid #1e293b;
+}
+
+.scheduler-bench__log-line details { margin: 5px 0 0 54px; }
+.scheduler-bench__log-line summary { color: #94a3b8; cursor: pointer; }
+.scheduler-bench__log-line pre {
+  overflow: auto;
+  max-height: 320px;
+  margin: 5px 0 0;
+  border-radius: 8px;
+  background: #020617;
+  color: #cbd5e1;
+  padding: 10px;
+  white-space: pre-wrap;
 }
 
 .scheduler-bench__log .scheduler-bench__log-line.opc { color: #7dd3fc; }
@@ -1227,6 +1240,44 @@
   cursor: not-allowed;
   background: #f8fafc;
   color: #64748b;
+}
+
+.scheduler-bench__powder-additions fieldset {
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  margin: 12px 0 0;
+  padding: 4px 14px 0;
+}
+
+.scheduler-bench__powder-additions legend {
+  color: #334155;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.scheduler-bench__parameter-memory {
+  align-items: center;
+  color: #64748b;
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 9px;
+}
+
+.scheduler-bench__parameter-memory button {
+  background: transparent;
+  border: 0;
+  color: #2563eb;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.scheduler-bench__parameter-memory button:disabled {
+  color: #94a3b8;
+  cursor: default;
 }
 
 @media (max-width: 1280px) {

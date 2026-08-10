@@ -6,6 +6,7 @@ export type TaskLogLine = {
   category: Exclude<TaskLogCategory, 'all'>;
   level: string;
   message: string;
+  detail?: Record<string, unknown>;
 };
 
 export type TaskWorkspaceLogEvent = {
@@ -64,6 +65,7 @@ export function buildTaskLogLines({
         : isOpc(entry) ? 'opc' as const : 'action' as const,
       level: entry.level,
       message: entry.message,
+      detail: entry.detail,
     }));
   return [...eventLines, ...actionLines].sort((left, right) => left.timestamp - right.timestamp);
 }

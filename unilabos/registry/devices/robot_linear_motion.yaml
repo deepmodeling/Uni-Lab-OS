@@ -130,7 +130,8 @@ linear_motion.grbl:
         handles: {}
         placeholder_keys: {}
         result:
-          result: result
+          error_code: error_code
+          error_msg: error_msg
         schema:
           description: ''
           properties:
@@ -348,10 +349,12 @@ linear_motion.grbl:
             result:
               additionalProperties: false
               properties:
-                result:
-                  additionalProperties: true
-                  title: result
-                  type: object
+                error_code:
+                  maximum: 65535
+                  minimum: 0
+                  type: integer
+                error_msg:
+                  type: string
               title: NavigateThroughPoses_Result
               type: object
           required:

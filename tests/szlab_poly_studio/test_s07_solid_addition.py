@@ -182,6 +182,43 @@ def test_s07_dose_powder_writes_positions_weight_and_powder_params():
     assert "balance_read_errors" not in result
 
 
+def test_s07_dose_powder_runs_each_powder_addition_in_order():
+    plc = FakeS07Plc()
+    device = make_s07_device(plc)
+
+    result = device.dose_powder(
+        coarse_position=1,
+        fine_position=2,
+        target_weight=0.045,
+        params_json="salt2",
+        powder_count=2,
+        powder_additions=[
+            {"coarse_position": 1, "fine_position": 2, "target_weight": 0.045, "recipe_name": "default"},
+            {"coarse_position": 3, "fine_position": 4, "target_weight": 0.020, "recipe_name": "default"},
+        ],
+    )
+
+    assert result["success"] is True
+    assert result["powder_count"] == 2
+    assert [item["target_weight"] for item in result["powder_results"]] == [0.045, 0.020]
+    assert plc.writes.count((sensors.NODE_PROCESS_SELECT, sensors.PROCESS_DOSE_POWDER)) == 2
+    assert (sensors.NODE_COARSE_POSITION, 3) in plc.writes
+    assert (sensors.NODE_FINE_POSITION, 4) in plc.writes
+
+
+def test_s07_accepts_legacy_recipe_name_in_params_json():
+    device = make_s07_device()
+
+    result = device.dose_powder(
+        coarse_position=1,
+        fine_position=2,
+        target_weight=0.045,
+        params_json="salt2",
+    )
+
+    assert result["success"] is True
+
+
 def test_s07_dose_powder_throttles_balance_reads_and_captures_final_value():
     plc = FakeS07Plc()
     plc.dose_completion_reads_remaining = 2

@@ -272,7 +272,17 @@ class SZLabS07SolidAdditionDevice:
 
     @not_action
     def _load_powder_params_from_json(self, params_json: str | None, recipe_name: str) -> tuple[dict[str, Any], dict[str, Any]]:
-        path = Path(params_json or DEFAULT_POWDER_PARAMS_PATH)
+        path = DEFAULT_POWDER_PARAMS_PATH
+        if params_json:
+            candidate = Path(params_json)
+            if candidate.is_file():
+                path = candidate
+            else:
+                default_data = json.loads(DEFAULT_POWDER_PARAMS_PATH.read_text(encoding="utf-8"))
+                if params_json in default_data:
+                    recipe_name = params_json
+                else:
+                    path = candidate
         data = json.loads(path.read_text(encoding="utf-8"))
         if recipe_name not in data:
             raise ValueError(f"注粉参数 JSON 中未找到 recipe: {recipe_name}")
@@ -319,7 +329,42 @@ class SZLabS07SolidAdditionDevice:
         target_weight: float,
         params_json: str | None = None,
         recipe_name: str = "default",
+        powder_count: int = 1,
+        powder_additions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        if powder_additions:
+            if powder_count != len(powder_additions):
+                return {"success": False, "message": "powder_count 与 powder_additions 数量不一致"}
+            addition_results: list[dict[str, Any]] = []
+            for index, addition in enumerate(powder_additions, start=1):
+                try:
+                    result = self.dose_powder(
+                        coarse_position=int(addition["coarse_position"]),
+                        fine_position=int(addition["fine_position"]),
+                        target_weight=float(addition["target_weight"]),
+                        params_json=None,
+                        recipe_name=str(addition["recipe_name"]),
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    return {
+                        "success": False,
+                        "message": f"第 {index} 种粉末参数无效：{exc}",
+                        "powder_results": addition_results,
+                    }
+                addition_results.append(result)
+                if not result.get("success"):
+                    return {
+                        "success": False,
+                        "message": f"第 {index} 种粉末加粉失败：{result.get('message') or '未知错误'}",
+                        "powder_results": addition_results,
+                    }
+            return {
+                "success": True,
+                "message": f"S07 已完成 {len(addition_results)} 种粉末加粉",
+                "display_message": f"S07 已依次完成 {len(addition_results)} 种粉末加粉",
+                "powder_count": len(addition_results),
+                "powder_results": addition_results,
+            }
         if coarse_position not in POSITION_RANGE or fine_position not in POSITION_RANGE:
             return {"success": False, "message": "coarse_position/fine_position 必须在 1-10 范围内"}
         coarse_params, fine_params = self._load_powder_params_from_json(params_json, recipe_name)

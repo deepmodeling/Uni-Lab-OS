@@ -1,4 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  automaticActionParameterDescription,
+  isAutomaticallyManagedActionParameter,
+  stripAutomaticallyManagedActionParameters,
+} from './automaticActionParameters';
 import ReactDOM from 'react-dom/client';
 import ReactFlow, {
   Background,
@@ -1778,7 +1783,11 @@ function App() {
           method: action.method,
           label: action.label,
           description: action.description,
-          params: buildDefaultParams(action.params || []),
+          params: stripAutomaticallyManagedActionParameters(
+            action.method,
+            buildDefaultParams(action.params || []),
+            id,
+          ),
           paramSpecs: action.params || [],
           opcVariables: action.opc_variables || [],
           runStatus: 'idle',
@@ -4662,6 +4671,11 @@ function App() {
                   .filter((param) => (
                     (editingNode.data.method !== 'dose_powder' || !CANVAS_S07_POWDER_PARAMETERS.has(String(param.name)))
                     && (editingNode.data.method !== 'add_liquid_with_reusable_tip' || !CANVAS_S09_LIQUID_PARAMETERS.has(String(param.name)))
+                    && !isAutomaticallyManagedActionParameter(
+                      editingNode.data.method,
+                      String(param.name || ''),
+                      editingNode.id,
+                    )
                   ))
                   .map((param) => {
                   const name = param.name || '';
@@ -4710,6 +4724,25 @@ function App() {
                     </label>
                   );
                 })}
+                {editingNode.data.paramSpecs.some((param) => isAutomaticallyManagedActionParameter(
+                  editingNode.data.method,
+                  String(param.name || ''),
+                  editingNode.id,
+                )) ? <p className="scheduler-bench__inherited-parameter">
+                  {editingNode.data.paramSpecs
+                    .filter((param) => isAutomaticallyManagedActionParameter(
+                      editingNode.data.method,
+                      String(param.name || ''),
+                      editingNode.id,
+                    ))
+                    .map((param) => automaticActionParameterDescription(
+                      editingNode.data.method,
+                      String(param.name || ''),
+                      editingNode.id,
+                    ))
+                    .filter(Boolean)
+                    .join('；')}
+                </p> : null}
               </div>
             ) : (
               <div className="empty-state">该动作没有可编辑参数。</div>

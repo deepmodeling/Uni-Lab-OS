@@ -1,3 +1,5 @@
+import { stripAutomaticallyManagedActionParameters } from './automaticActionParameters';
+
 type WorkflowDraftNode = {
   id: string;
   position: unknown;
@@ -555,10 +557,10 @@ function buildFlowNode(
   if (!action) {
     throw new Error(`导入失败：当前 preset 不包含动作 ${method}`);
   }
-  const params = {
+  const params = stripAutomaticallyManagedActionParameters(method, {
     ...buildDefaultParams(action.params || []),
     ...normalizeParams(importedParams),
-  };
+  }, id);
   return {
     id,
     type: 'actionNode',

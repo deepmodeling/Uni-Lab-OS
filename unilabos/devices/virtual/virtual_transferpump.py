@@ -6,7 +6,7 @@ import logging
 
 from unilabos.registry.decorators import topic_config
 if TYPE_CHECKING:
-    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+    from unilabos.device_runtime.node import DeviceNode
 
 
 class VirtualPumpMode(Enum):
@@ -18,7 +18,7 @@ class VirtualPumpMode(Enum):
 class VirtualTransferPump:
     """虚拟转移泵类 - 模拟泵的基本功能，无需实际硬件 🚰"""
 
-    _ros_node: "BaseROS2DeviceNode"
+    _ros_node: "DeviceNode"
 
     def __init__(self, device_id: str = None, config: dict = None, **kwargs):
         """
@@ -61,7 +61,7 @@ class VirtualTransferPump:
         )
         print(f"📊 最大容量: {self.max_volume}mL | 端口: {self.port}")
 
-    def post_init(self, ros_node: "BaseROS2DeviceNode"):
+    def post_init(self, ros_node: "DeviceNode"):
         self._ros_node = ros_node
 
     async def initialize(self) -> bool:

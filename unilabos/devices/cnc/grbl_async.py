@@ -12,7 +12,7 @@ from serial import Serial
 from serial.serialutil import SerialException
 
 from unilabos.messages import Point3D
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+from unilabos.device_runtime.node import DeviceNode
 
 
 class GrblCNCConnectionError(Exception):
@@ -33,7 +33,7 @@ class GrblCNCInfo:
 class GrblCNCAsync:
     _status: str = "Offline"
     _position: Point3D = Point3D(x=0.0, y=0.0, z=0.0)
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: DeviceNode
     
     def __init__(self, port: str, address: str = "1", limits: tuple[int, int, int, int, int, int] = (-150, 150, -200, 0, 0, 60)):
         self.port = port
@@ -60,7 +60,7 @@ class GrblCNCAsync:
         self._run_future: Optional[Future[Any]] = None
         self._run_lock = Lock()
     
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: DeviceNode):
         self._ros_node = ros_node
     
     def _read_all(self):

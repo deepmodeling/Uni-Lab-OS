@@ -5,12 +5,12 @@ from typing import Dict, Any, TYPE_CHECKING
 
 from unilabos.registry.decorators import topic_config
 if TYPE_CHECKING:
-    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+    from unilabos.device_runtime.node import DeviceNode
 
 class VirtualStirrer:
     """Virtual stirrer device for StirProtocol testing - 功能完整版 🌪️"""
     
-    _ros_node: "BaseROS2DeviceNode"
+    _ros_node: "DeviceNode"
     
     def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
         # 处理可能的不同调用方式
@@ -40,7 +40,7 @@ class VirtualStirrer:
         print(f"🌪️ === 虚拟搅拌器 {self.device_id} 已创建 === ✨")
         print(f"🔧 速度范围: {self._min_speed} ~ {self._max_speed} RPM | 📱 端口: {self.port}")
     
-    def post_init(self, ros_node: "BaseROS2DeviceNode"):
+    def post_init(self, ros_node: "DeviceNode"):
         self._ros_node = ros_node
     
     async def initialize(self) -> bool:

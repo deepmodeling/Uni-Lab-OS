@@ -8,7 +8,7 @@ import serial.tools.list_ports
 from serial import Serial
 from serial.serialutil import SerialException
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+from unilabos.device_runtime.node import DeviceNode
 
 
 class RunzeSyringePumpMode(Enum):
@@ -79,7 +79,7 @@ class RunzeSyringePumpInfo:
 
 
 class RunzeSyringePumpAsync:
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: DeviceNode
     
     def __init__(self, port: str, address: str = "1", volume: float = 25000, mode: RunzeSyringePumpMode = None):
         self.port = port
@@ -106,7 +106,7 @@ class RunzeSyringePumpAsync:
         self._run_future: Optional[Future[Any]] = None
         self._run_lock = Lock()
     
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: DeviceNode):
         self._ros_node = ros_node
     
     def _adjust_total_steps(self):

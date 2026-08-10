@@ -9,6 +9,9 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Type
 
+from unilabos.device_runtime.node import DeviceNode
+from unilabos.device_runtime.action import ActionContext
+
 
 def instantiate_driver(
     driver_class: Type[Any], device_id: str, config: Optional[Dict[str, Any]] = None
@@ -44,7 +47,7 @@ def instantiate_driver(
     return driver_class(**kwargs)
 
 
-class BasicDeviceNode:
+class BasicDeviceNode(DeviceNode):
     """向驱动提供异步辅助能力的轻量节点适配器。"""
 
     def __init__(
@@ -52,6 +55,7 @@ class BasicDeviceNode:
         driver: Any,
         device_id: str,
         *,
+        backend_name: str = "basic",
         registry_name: str = "",
         display_name: str = "",
         action_names: Iterable[str] = (),
@@ -59,6 +63,7 @@ class BasicDeviceNode:
     ) -> None:
         self.driver = driver
         self.device_id = device_id
+        self.backend_name = str(backend_name or "basic")
         self.registry_name = str(registry_name or "")
         self.display_name = str(display_name or registry_name or device_id)
         self.action_names = tuple(
@@ -96,9 +101,8 @@ class BasicDeviceNode:
     def create_task(self, coroutine: Coroutine[Any, Any, Any]):
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop)
 
-    async def update_resource(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        self._logger.debug("Basic backend 不发布资源更新")
-        return {}
+    async def update_resource(self, resources: Any) -> Any:
+        return await super().update_resource(resources)
 
     def _call(
         self,
@@ -133,7 +137,13 @@ class BasicDeviceNode:
             raise
         self._logger.info("Basic 设备已就绪：%s", self.device_id)
 
-    def call_action(self, action_name: str, **kwargs: Any) -> Any:
+    def call_action(
+        self,
+        action_name: str,
+        *,
+        action_context: Optional[ActionContext] = None,
+        **kwargs: Any,
+    ) -> Any:
         if not self._started:
             raise RuntimeError(f"Basic 设备 {self.device_id!r} 尚未启动")
         action_name = str(action_name or "").strip()
@@ -149,9 +159,16 @@ class BasicDeviceNode:
             raise AttributeError(
                 f"Basic 设备 {self.device_id!r} 没有动作 {action_name!r}"
             )
+        context = action_context or ActionContext()
+        signature = inspect.signature(action)
+        if "action_context" in signature.parameters:
+            kwargs.setdefault("action_context", context)
+        context.raise_if_cancelled()
         # 与 ROS backend 的单设备 Action 执行约束一致，避免同一驱动被并发调用。
         with self._action_lock:
-            return self._call(action, **kwargs)
+            result = self._call(action, **kwargs)
+        context.raise_if_cancelled()
+        return result
 
     def snapshot_status(self) -> Dict[str, Any]:
         """读取注册表声明的状态；单个状态失败不影响其他字段。"""
@@ -169,6 +186,7 @@ class BasicDeviceNode:
                         if callable(value):
                             value = self._call(value)
                     result[name] = value
+                    self.emit_status(name, value)
                 except Exception as exc:  # noqa: BLE001 - 状态快照需部分成功
                     errors[name] = str(exc)
         if errors:
@@ -213,7 +231,8 @@ class BasicDriverSpec:
 class BasicRuntime:
     """管理一个 Basic backend 进程内的全部驱动实例。"""
 
-    def __init__(self) -> None:
+    def __init__(self, backend_name: str = "basic") -> None:
+        self.backend_name = str(backend_name or "basic")
         self.devices: dict[str, BasicDeviceNode] = {}
         self._stopped = threading.Event()
 
@@ -224,6 +243,7 @@ class BasicRuntime:
         node = BasicDeviceNode(
             driver,
             spec.device_id,
+            backend_name=self.backend_name,
             registry_name=spec.registry_name,
             display_name=spec.display_name,
             action_names=spec.action_names,
@@ -244,12 +264,23 @@ class BasicRuntime:
                 node.stop()
             raise
 
-    def call_action(self, device_id: str, action_name: str, **kwargs: Any) -> Any:
+    def call_action(
+        self,
+        device_id: str,
+        action_name: str,
+        *,
+        action_context: Optional[ActionContext] = None,
+        **kwargs: Any,
+    ) -> Any:
         try:
             node = self.devices[device_id]
         except KeyError as exc:
             raise KeyError(f"未知 Basic 设备：{device_id}") from exc
-        return node.call_action(action_name, **kwargs)
+        return node.call_action(
+            action_name,
+            action_context=action_context,
+            **kwargs,
+        )
 
     def descriptors(self) -> list[Dict[str, Any]]:
         return [node.describe() for node in self.devices.values()]

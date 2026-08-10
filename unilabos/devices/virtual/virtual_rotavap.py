@@ -4,7 +4,7 @@ import time as time_module
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+    from unilabos.device_runtime.node import DeviceNode
 
 
 def debug_print(message):
@@ -15,7 +15,7 @@ def debug_print(message):
 class VirtualRotavap:
     """Virtual rotary evaporator device - 简化版，只保留核心功能 🌪️"""
 
-    _ros_node: "BaseROS2DeviceNode"
+    _ros_node: "DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
         # 处理可能的不同调用方式
@@ -45,7 +45,7 @@ class VirtualRotavap:
         print(f"🌪️ === 虚拟旋转蒸发仪 {self.device_id} 已创建 === ✨")
         print(f"🔥 温度范围: 10°C ~ {self._max_temp}°C | 🌀 转速范围: 10 ~ {self._max_rotation_speed} RPM")
 
-    def post_init(self, ros_node: "BaseROS2DeviceNode"):
+    def post_init(self, ros_node: "DeviceNode"):
         self._ros_node = ros_node
 
     async def initialize(self) -> bool:

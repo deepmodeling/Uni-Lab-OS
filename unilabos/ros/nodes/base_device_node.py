@@ -36,6 +36,7 @@ from unilabos_msgs.action import SendCmd, StrSingleInput
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 
 from unilabos.config.config import BasicConfig
+from unilabos.device_runtime.node import DeviceNode
 from unilabos.registry.decorators import get_topic_config
 from unilabos.registry.placeholder_type import ResourceSlotRawInput
 from unilabos.utils.decorator import get_all_subscriptions
@@ -335,6 +336,7 @@ class PropertyPublisher:
         try:
             # self.node.lab_logger().trace(f"【.publish_property】开始发布属性: {self.name}")
             value = self.get_property()
+            self.node.emit_status(self.name, value)
             if self.print_publish:
                 pass
                 # self.node.lab_logger().trace(f"【.publish_property】发布 {self.msg_type}: {value}")
@@ -361,7 +363,7 @@ class PropertyPublisher:
         self.timer = self.node.create_timer(self.timer_period, self.publish_property)
 
 
-class BaseROS2DeviceNode(Node, Generic[T]):
+class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
     """
     ROS2设备节点基类
 
@@ -380,6 +382,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
     _time_remaining = 0.0
     # 是否创建Action
     create_action_server = True
+    backend_name = "ros2"
 
     def __init__(
         self,
@@ -761,8 +764,7 @@ class BaseROS2DeviceNode(Node, Generic[T]):
             callback_group = self.callback_group
         await ROS2DeviceNode.async_wait_for(self, rel_time, callback_group)
 
-    @classmethod
-    async def create_task(cls, func, trace_error=True, **kwargs) -> Task:
+    def create_task(self, func, trace_error=True, **kwargs) -> Task:
         return ROS2DeviceNode.run_async_func(func, trace_error, **kwargs)
 
     async def update_resource(self, resources: List["ResourcePLR"]):

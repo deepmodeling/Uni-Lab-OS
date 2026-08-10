@@ -17,10 +17,10 @@ def get_runtime() -> Optional[BasicRuntime]:
     return _runtime
 
 
-def build_runtime(devices_config: Any) -> BasicRuntime:
+def build_runtime(devices_config: Any, backend_name: str = "basic") -> BasicRuntime:
     from unilabos.registry.registry import lab_registry
 
-    runtime = BasicRuntime()
+    runtime = BasicRuntime(backend_name=backend_name)
     if devices_config is None:
         return runtime
 

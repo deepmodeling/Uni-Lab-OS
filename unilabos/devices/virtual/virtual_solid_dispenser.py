@@ -4,7 +4,7 @@ import re
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+    from unilabos.device_runtime.node import DeviceNode
 
 class VirtualSolidDispenser:
     """
@@ -16,7 +16,7 @@ class VirtualSolidDispenser:
     - 简单反馈：成功/失败 + 消息 📊
     """
     
-    _ros_node: "BaseROS2DeviceNode"
+    _ros_node: "DeviceNode"
     
     def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
         self.device_id = device_id or "virtual_solid_dispenser"
@@ -37,7 +37,7 @@ class VirtualSolidDispenser:
         print(f"⚗️ === 虚拟固体分配器 {self.device_id} 创建成功! === ✨")
         print(f"📊 设备规格: 最大容量 {self.max_capacity}g | 精度 {self.precision}g 🎯")
     
-    def post_init(self, ros_node: "BaseROS2DeviceNode"):
+    def post_init(self, ros_node: "DeviceNode"):
         self._ros_node = ros_node
     
     async def initialize(self) -> bool:

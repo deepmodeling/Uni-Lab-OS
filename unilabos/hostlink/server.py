@@ -162,6 +162,7 @@ class HostLinkServer:
         self.register_handler(ActionType.HELLO, self._handle_hello)
         self.register_handler(ActionType.PING, self._handle_ping)
         self.register_handler(ActionType.ROS_INFO, self._handle_ros_info)
+        self.register_handler(ActionType.DEVICE_STATE, self._handle_device_state)
 
     def start(self) -> "HostLinkServer":
         if self._thread is not None and self._thread.is_alive():
@@ -256,6 +257,7 @@ class HostLinkServer:
         action_name: str,
         arguments: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
+        action_id: str = "",
     ) -> Any:
         return self.request_device(
             device_id,
@@ -264,7 +266,21 @@ class HostLinkServer:
                 "device_id": str(device_id),
                 "action": str(action_name),
                 "arguments": dict(arguments or {}),
+                "action_id": str(action_id),
             },
+            timeout,
+        )
+
+    def cancel_device_action(
+        self,
+        device_id: str,
+        action_id: str,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        return self.request_device(
+            device_id,
+            ActionType.ACTION_CANCEL,
+            {"device_id": str(device_id), "action_id": str(action_id)},
             timeout,
         )
 
@@ -364,8 +380,14 @@ class HostLinkServer:
                 )
                 if known_node and peer.get("addr") != peer_key:
                     return dict(peer)
-                if action == ActionType.PING and isinstance(data.get("states"), dict):
-                    peer["states"] = dict(data["states"])
+                if action in (ActionType.PING, ActionType.DEVICE_STATE):
+                    states = peer.setdefault("states", {})
+                    if isinstance(data.get("states"), dict):
+                        states.update(data["states"])
+                    device_id = str(data.get("device_id") or "").strip()
+                    state = data.get("state")
+                    if device_id and isinstance(state, dict):
+                        states[device_id] = dict(state)
             peer["last_seen"] = now
             peer["connected"] = True
             return dict(peer)
@@ -440,6 +462,16 @@ class HostLinkServer:
         _peer: Dict[str, Any],
     ) -> Dict[str, Any]:
         return {"ros": dict(self.hello_payload.get("ros") or {})}
+
+    def _handle_device_state(
+        self,
+        data: Dict[str, Any],
+        _peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return {
+            "accepted": True,
+            "device_id": str(data.get("device_id") or ""),
+        }
 
 
 _server_lock = threading.Lock()

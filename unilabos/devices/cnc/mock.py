@@ -2,7 +2,7 @@ import time
 import asyncio
 from pydantic import BaseModel
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+from unilabos.device_runtime.node import DeviceNode
 
 
 class Point3D(BaseModel):
@@ -16,7 +16,7 @@ def d(a: Point3D, b: Point3D) -> float:
 
 
 class MockCNCAsync:
-    _ros_node: BaseROS2DeviceNode["MockCNCAsync"]
+    _ros_node: DeviceNode
 
     def __init__(self):
         self._position: Point3D = Point3D(x=0.0, y=0.0, z=0.0)

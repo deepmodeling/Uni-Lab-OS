@@ -22,7 +22,7 @@ def get_runtime() -> Optional[HostLinkBackendRuntime]:
 def _run(devices_config: Any, *, is_slave: bool) -> None:
     global _runtime
     _runtime = HostLinkBackendRuntime(
-        build_runtime(devices_config),
+        build_runtime(devices_config, backend_name="hostlink"),
         is_slave=is_slave,
     )
     _runtime.start()

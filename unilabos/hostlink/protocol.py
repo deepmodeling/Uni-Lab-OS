@@ -23,6 +23,8 @@ class ActionType:
     ROS_INFO = "ros_info"
     DEVICE_CALL = "device.call"
     DEVICE_STATE = "device.state"
+    ACTION_FEEDBACK = "action.feedback"
+    ACTION_CANCEL = "action.cancel"
 
 
 class LinkError(Exception):

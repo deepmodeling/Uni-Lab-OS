@@ -25,6 +25,7 @@ from pylabrobot.resources import (
 )
 from typing_extensions import TypedDict
 
+from unilabos.device_runtime.node import DeviceNode
 from unilabos.devices.liquid_handling.rviz_backend import UniLiquidHandlerRvizBackend
 from unilabos.registry.placeholder_type import ResourceSlot
 from unilabos.resources.resource_tracker import (
@@ -33,7 +34,6 @@ from unilabos.resources.resource_tracker import (
     EXTRA_SAMPLE_UUID,
     EXTRA_UNILABOS_SAMPLE_UUID,
 )
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode
 
 
 class SimpleReturn(TypedDict):
@@ -608,7 +608,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
     """Extended LiquidHandler with additional operations."""
 
     support_touch_tip = True
-    _ros_node: BaseROS2DeviceNode
+    _ros_node: DeviceNode
 
     def __init__(
         self,
@@ -665,7 +665,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         self.group_info = dict()
         super().__init__(backend_type, deck, simulator, channel_num)
 
-    def post_init(self, ros_node: BaseROS2DeviceNode):
+    def post_init(self, ros_node: DeviceNode):
         self._ros_node = ros_node
 
     @classmethod
@@ -717,7 +717,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
             well.set_liquids([(liquid_name, volume)])  # type: ignore
             res_volumes.append(volume)
 
-        task = ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{"resources": wells})
+        task = self._ros_node.create_task(self._ros_node.update_resource(wells))
         submit_time = time.time()
         while not task.done():
             if time.time() - submit_time > 10:

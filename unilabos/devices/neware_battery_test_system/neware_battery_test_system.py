@@ -23,8 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TypedDict
 
 from pylabrobot.resources import ResourceHolder, Coordinate, create_ordered_items_2d, Deck, Plate
-from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
-from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
+from unilabos.device_runtime.node import DeviceNode
 
 # ========================
 # OSS 上传工具函数
@@ -351,10 +350,10 @@ class NewareBatteryTestSystem:
         self._last_status_update = None
         self._cached_status = {}
         self._last_backup_dir = None  # 记录最近一次的 backup_dir，供上传使用
-        self._ros_node: Optional[ROS2WorkstationNode] = None  # ROS节点引用，由框架设置
+        self._ros_node: Optional[DeviceNode] = None  # 运行时节点引用，由框架设置
 
 
-    def post_init(self, ros_node):
+    def post_init(self, ros_node: DeviceNode):
         """
         ROS节点初始化后的回调方法，用于建立设备连接
         
@@ -399,9 +398,9 @@ class NewareBatteryTestSystem:
         # 只有在真实ROS环境下才调用update_resource
         if hasattr(self._ros_node, 'update_resource') and callable(getattr(self._ros_node, 'update_resource')):
             try:
-                ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
-                    "resources": [deck_main]
-                })
+                self._ros_node.create_task(
+                    self._ros_node.update_resource([deck_main])
+                )
             except Exception as e:
                 if hasattr(self._ros_node, 'lab_logger'):
                     self._ros_node.lab_logger().warning(f"更新资源失败: {e}")
@@ -621,9 +620,9 @@ class NewareBatteryTestSystem:
                     if self._ros_node and hasattr(self._ros_node, 'lab_logger'):
                         self._ros_node.lab_logger().debug(f"P2映射错误: subdev{subdev_id}/chl{chl_id} - {e}")
                     continue
-        ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
-                    "resources": list(self.station_resources.values())
-                })
+        self._ros_node.create_task(
+            self._ros_node.update_resource(list(self.station_resources.values()))
+        )
 
     @property
     def connection_info(self) -> Dict[str, str]:

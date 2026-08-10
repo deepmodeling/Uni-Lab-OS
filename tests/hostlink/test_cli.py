@@ -1,0 +1,140 @@
+import pytest
+
+from unilabos.app.main import _apply_hostlink_cli, parse_args
+from unilabos.config.config import HostLinkConfig
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--port-management", 8100),
+        ("--port_management", 8200),
+        ("--port", 8300),
+    ],
+)
+def test_management_port_accepts_semantic_name_and_short_alias(option, value) -> None:
+    args = parse_args().parse_args([option, str(value)])
+
+    assert args.port_management == value
+
+
+def test_disable_browser_can_be_combined_with_management_port() -> None:
+    args = parse_args().parse_args(
+        ["--port-management", "8100", "--disable-browser"]
+    )
+
+    assert args.port_management == 8100
+    assert args.disable_browser is True
+
+
+def test_networking_cli_accepts_host_and_domain_aliases() -> None:
+    args = parse_args().parse_args(
+        [
+            "--is_slave",
+            "--host-node-ip",
+            "10.0.0.9:7402",
+            "--hostlink-port",
+            "7502",
+            "--ros-domain-id",
+            "52",
+            "--ros-discovery-range",
+            "OFF",
+            "--ros-static-peers",
+            "10.0.0.9;10.0.0.10",
+        ]
+    )
+    assert args.is_slave is True
+    assert args.host_node_ip == "10.0.0.9:7402"
+    assert args.hostlink_port == 7502
+    assert args.ros_domain_id == 52
+    assert args.ros_discovery_range == "OFF"
+    assert args.ros_static_peers == "10.0.0.9;10.0.0.10"
+
+
+@pytest.mark.parametrize("domain_id", ["-1", "233"])
+def test_networking_cli_domain_range_is_validated_at_startup(domain_id) -> None:
+    args = parse_args().parse_args(["--ros-domain-id", domain_id])
+    with pytest.raises(ValueError, match="between 0 and 232"):
+        _apply_hostlink_cli(vars(args), is_slave=False)
+
+
+def test_networking_cli_is_applied_after_config(monkeypatch) -> None:
+    monkeypatch.setattr(HostLinkConfig, "host", "")
+    monkeypatch.setattr(HostLinkConfig, "port", 7302)
+    monkeypatch.setattr(HostLinkConfig, "ros_domain_id", "")
+    monkeypatch.setattr(HostLinkConfig, "ros_discovery_range", "")
+    monkeypatch.delenv("ROS_DOMAIN_ID", raising=False)
+
+    _apply_hostlink_cli(
+        {
+            "host_node_ip": "10.0.0.9:7402",
+            "ros_domain_id": 52,
+            "ros_discovery_range": "OFF",
+            "ros_discovery_server": None,
+        },
+        is_slave=True,
+    )
+
+    assert HostLinkConfig.host == "10.0.0.9"
+    assert HostLinkConfig.port == 7402
+    assert HostLinkConfig.ros_domain_id == "52"
+    assert HostLinkConfig.ros_discovery_range == "OFF"
+
+
+def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "host", "")
+    monkeypatch.setattr(HostLinkConfig, "port", 7302)
+    monkeypatch.setattr(HostLinkConfig, "bind", "0.0.0.0")
+    monkeypatch.setattr(HostLinkConfig, "advertise_ip", "")
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 5.0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 15.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 5.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 10.0)
+    monkeypatch.setattr(HostLinkConfig, "ros_static_peers", "")
+    monkeypatch.setattr(HostLinkConfig, "ros_assist_apply", True)
+
+    _apply_hostlink_cli(
+        {
+            "host_node_ip": "10.0.0.9:7402",
+            "hostlink_port": 7502,
+            "hostlink_bind": "127.0.0.1",
+            "hostlink_advertise_ip": "10.0.0.8",
+            "disable_hostlink": True,
+            "hostlink_heartbeat_interval": 2.5,
+            "hostlink_heartbeat_timeout": 8,
+            "hostlink_connect_timeout": 3,
+            "hostlink_request_timeout": 6,
+            "ros_domain_id": None,
+            "ros_discovery_range": None,
+            "ros_static_peers": "10.0.0.8;10.0.0.9",
+            "ros_discovery_server": None,
+            "no_ros_assist": True,
+        },
+        is_slave=True,
+    )
+
+    assert HostLinkConfig.host == "10.0.0.9"
+    assert HostLinkConfig.port == 7502  # 显式端口覆盖 host-node-ip 中的兼容端口
+    assert HostLinkConfig.bind == "127.0.0.1"
+    assert HostLinkConfig.advertise_ip == "10.0.0.8"
+    assert HostLinkConfig.enable is False
+    assert HostLinkConfig.heartbeat_interval == 2.5
+    assert HostLinkConfig.heartbeat_timeout == 8.0
+    assert HostLinkConfig.connect_timeout == 3.0
+    assert HostLinkConfig.request_timeout == 6.0
+    assert HostLinkConfig.ros_static_peers == "10.0.0.8;10.0.0.9"
+    assert HostLinkConfig.ros_assist_apply is False
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"hostlink_port": 0},
+        {"hostlink_port": 65536},
+        {"hostlink_connect_timeout": 0},
+    ],
+)
+def test_invalid_hostlink_cli_values_are_rejected(overrides) -> None:
+    with pytest.raises(ValueError):
+        _apply_hostlink_cli(overrides, is_slave=False)

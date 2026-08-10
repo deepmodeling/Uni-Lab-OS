@@ -485,8 +485,10 @@ xrd_d7mate:
     type: python
   config_info: []
   description: XRD D7-Mate X射线衍射分析设备，通过TCP通信实现远程控制与状态监控，支持自动模式控制、上样流程、数据获取、下样流程和高压电源控制等功能。
+  displayname: xrd_d7mate
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

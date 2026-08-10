@@ -5,6 +5,7 @@ agilent_1_reservoir_290ml:
     module: pylabrobot.resources.opentrons.reservoirs:agilent_1_reservoir_290ml
     type: pylabrobot
   description: Agilent 1 reservoir 290ml
+  displayname: agilent_1_reservoir_290ml
   handles: []
   icon: ''
   init_param_schema: {}
@@ -16,6 +17,7 @@ axygen_1_reservoir_90ml:
     module: pylabrobot.resources.opentrons.reservoirs:axygen_1_reservoir_90ml
     type: pylabrobot
   description: Axygen 1 reservoir 90ml
+  displayname: axygen_1_reservoir_90ml
   handles: []
   icon: ''
   init_param_schema: {}
@@ -27,6 +29,7 @@ nest_12_reservoir_15ml:
     module: pylabrobot.resources.opentrons.reservoirs:nest_12_reservoir_15ml
     type: pylabrobot
   description: Nest 12 reservoir 15ml
+  displayname: nest_12_reservoir_15ml
   handles: []
   icon: ''
   init_param_schema: {}
@@ -38,6 +41,7 @@ nest_1_reservoir_195ml:
     module: pylabrobot.resources.opentrons.reservoirs:nest_1_reservoir_195ml
     type: pylabrobot
   description: Nest 1 reservoir 195ml
+  displayname: nest_1_reservoir_195ml
   handles: []
   icon: ''
   init_param_schema: {}
@@ -49,6 +53,7 @@ nest_1_reservoir_290ml:
     module: pylabrobot.resources.opentrons.reservoirs:nest_1_reservoir_290ml
     type: pylabrobot
   description: Nest 1 reservoir 290ml
+  displayname: nest_1_reservoir_290ml
   handles: []
   icon: ''
   init_param_schema: {}
@@ -60,6 +65,7 @@ usascientific_12_reservoir_22ml:
     module: pylabrobot.resources.opentrons.reservoirs:usascientific_12_reservoir_22ml
     type: pylabrobot
   description: USAScientific 12 reservoir 22ml
+  displayname: usascientific_12_reservoir_22ml
   handles: []
   icon: ''
   init_param_schema: {}

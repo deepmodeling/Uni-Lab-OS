@@ -406,8 +406,10 @@ separator.chinwe:
     type: python
   config_info: []
   description: ChinWe 简易工作站控制器 (3泵, 2电机, 1传感器)
+  displayname: separator.chinwe
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

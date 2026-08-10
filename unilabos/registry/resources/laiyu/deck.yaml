@@ -5,6 +5,7 @@ TransformXYZDeck:
     module: unilabos.devices.liquid_handling.laiyu.laiyu:TransformXYZDeck
     type: pylabrobot
   description: Laiyu deck
+  displayname: TransformXYZDeck
   handles: []
   icon: ''
   init_param_schema: {}

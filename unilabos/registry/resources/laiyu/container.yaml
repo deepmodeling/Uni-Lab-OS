@@ -6,6 +6,7 @@ bottle_container:
     module: unilabos.devices.resource_container.container:BottleRackContainer
     type: python
   description: 96孔板
+  displayname: bottle_container
   handles: []
   icon: ''
   init_param_schema: {}
@@ -38,6 +39,7 @@ tube_container:
     module: unilabos.devices.resource_container.container:TubeRackContainer
     type: python
   description: 96孔板
+  displayname: tube_container
   handles: []
   icon: ''
   init_param_schema: {}

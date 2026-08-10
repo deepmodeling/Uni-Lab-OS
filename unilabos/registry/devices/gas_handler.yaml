@@ -152,6 +152,7 @@ gas_source.mock:
     type: python
   config_info: []
   description: 模拟气体源设备，用于系统测试和开发调试。该设备模拟真实气体源的开关控制和状态监测功能，支持气体供应的启停操作。提供与真实气体源相同的接口和状态反馈，便于在没有实际硬件的情况下进行系统集成测试和算法验证。适用于气路系统调试、软件开发和实验流程验证等场景。
+  displayname: gas_source.mock
   handles:
   - data_key: fluid_out
     data_source: executor
@@ -160,6 +161,7 @@ gas_source.mock:
     io_type: source
     label: out
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -331,6 +333,7 @@ vacuum_pump.mock:
     type: python
   config_info: []
   description: 模拟真空泵设备，用于系统测试和开发调试。该设备模拟真实真空泵的抽气功能和状态控制，支持真空系统的启停操作和状态监测。提供与真实真空泵相同的接口和控制逻辑，便于在没有实际硬件的情况下进行真空系统的集成测试。适用于真空工艺调试、软件开发和实验流程验证等场景。
+  displayname: vacuum_pump.mock
   handles:
   - data_key: fluid_in
     data_source: handle
@@ -339,6 +342,7 @@ vacuum_pump.mock:
     io_type: source
     label: out
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

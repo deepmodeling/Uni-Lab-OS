@@ -3,7 +3,7 @@
 
 package:
   name: unilabos
-  version: 0.11.3
+  version: 0.12.1
 
 source:
   path: ../../unilabos
@@ -30,12 +30,13 @@ build:
 
 requirements:
   host:
-  - python ==3.11.14
+  - python ==3.12.13
   - pip
   - setuptools
   - zstd
   - zstandard
   run:
+  - python >=3.12,<3.13
   - zstd
   - zstandard
   - networkx
@@ -54,9 +55,9 @@ requirements:
   - pymodbus
   - matplotlib
   - pylibftdi
-  - uni-lab::unilabos-env ==0.11.3
+  - uni-lab::unilabos-env ==0.12.1
 
 about:
   repository: https://github.com/deepmodeling/Uni-Lab-OS
   license: GPL-3.0-only
-  description: "UniLabOS - Production package with minimal ROS2 dependencies"
+  description: "UniLabOS - Production package for ROS 2 Jazzy and CPython 3.12"

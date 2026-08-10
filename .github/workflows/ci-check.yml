@@ -8,7 +8,7 @@ on:
 
 jobs:
   registry-check:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     env:
       # Fix Unicode encoding issue on Windows runner (cp1252 -> utf-8)
@@ -33,25 +33,47 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          channels: robostack-staging,conda-forge,uni-lab
-          channel-priority: flexible
+          python-version: '3.12.13'
+          channels: conda-forge,robostack-jazzy
+          channel-priority: strict
           activate-environment: check-env
           auto-update-conda: false
           show-channel-urls: true
 
-      - name: Install ROS dependencies, uv and unilabos-msgs
+      - name: Install ROS 2 Jazzy dependencies and build tools
         run: |
-          echo Installing ROS dependencies...
-          mamba install -n check-env --override-channels -c robostack-staging -c conda-forge -c uni-lab conda-forge::uv conda-forge::opencv robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs robostack-staging::ros-humble-nav2-msgs uni-lab::ros-humble-unilabos-msgs robostack-staging::ros-humble-cv-bridge robostack-staging::ros-humble-vision-opencv robostack-staging::ros-humble-tf-transformations robostack-staging::ros-humble-moveit-msgs robostack-staging::ros-humble-tf2-ros robostack-staging::ros-humble-tf2-ros-py conda-forge::transforms3d -y
+          echo Installing ROS 2 Jazzy dependencies...
+          mamba install -n check-env --override-channels -c conda-forge -c robostack-jazzy conda-forge::numpy=2 conda-forge::uv conda-forge::opencv conda-forge::colcon-common-extensions robostack-jazzy::ros2-distro-mutex=0.15 robostack-jazzy::ros-jazzy-ros-core robostack-jazzy::ros-jazzy-action-msgs robostack-jazzy::ros-jazzy-std-msgs robostack-jazzy::ros-jazzy-geometry-msgs robostack-jazzy::ros-jazzy-control-msgs robostack-jazzy::ros-jazzy-nav2-msgs robostack-jazzy::ros-jazzy-cv-bridge robostack-jazzy::ros-jazzy-vision-opencv robostack-jazzy::ros-jazzy-tf-transformations robostack-jazzy::ros-jazzy-moveit-msgs robostack-jazzy::ros-jazzy-tf2-ros robostack-jazzy::ros-jazzy-tf2-ros-py conda-forge::transforms3d -y
+
+      - name: Initialize MSVC x64 toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build unilabos_msgs for Jazzy/cp312
+        run: |
+          call conda activate check-env
+          colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF
+          call install\unilabos_msgs\setup.bat
+          python -c "from unilabos_msgs.msg import Resource; print('unilabos_msgs Jazzy/cp312: OK')"
 
       - name: Install pip dependencies and unilabos
         run: |
           call conda activate check-env
+          call install\unilabos_msgs\setup.bat
           echo Installing pip dependencies...
           uv pip install -r unilabos/utils/requirements.txt
           uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git
           uv pip uninstall enum34 || echo enum34 not installed, skipping
+          uv pip install pytest
           uv pip install .
+
+      - name: Run HostLink networking tests
+        run: |
+          call conda activate check-env
+          call install\unilabos_msgs\setup.bat
+          echo Running HostLink, ROS2 domain and networking runtime tests...
+          python -m pytest -q tests\hostlink tests\networking tests\ros\test_domain_init.py -p no:launch_testing -p no:launch_ros
 
       - name: Run check mode (AST registry validation)
         # check_mode 会真实 import 所有设备类(连带 matplotlib/opencv 等原生库)。
@@ -61,6 +83,7 @@ jobs:
         # 不能用 "if errorlevel 1"(它对负数退出码会误判为成功)。
         run: |
           call conda activate check-env
+          call install\unilabos_msgs\setup.bat
           echo Running check mode...
           set ATTEMPTS=4
           set COUNT=0

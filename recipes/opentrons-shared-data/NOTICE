@@ -1,0 +1,13 @@
+Opentrons Platform
+Copyright 2015-2025 Opentrons Labworks, Inc.
+
+The source code in the upstream repository is licensed under the Apache
+License, Version 2.0. A copy of that license is distributed with this package.
+
+This package is an unofficial derivative build modified by UniLabOS
+contributors in 2026 to support NumPy 2. The changes relax the NumPy runtime
+constraint, replace the removed numpy.trapz API with numpy.trapezoid, and use a
+static local version for reproducible downstream packaging.
+
+This package is not affiliated with or endorsed by Opentrons.
+

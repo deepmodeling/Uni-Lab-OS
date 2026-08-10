@@ -69,7 +69,7 @@ jobs:
           - os: macos-latest # ARM64
             platform: osx-arm64
             env_file: unilabos-osx-arm64.yaml
-          - os: windows-latest
+          - os: windows-2022
             platform: win-64
             env_file: unilabos-win64.yaml
 
@@ -105,8 +105,8 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.14'
-          channels: conda-forge,robostack-staging
+          python-version: '3.12.13'
+          channels: conda-forge,robostack-jazzy
           channel-priority: strict
           activate-environment: build-env
           auto-update-conda: false
@@ -142,7 +142,7 @@ jobs:
       - name: Build conda package
         if: steps.should_build.outputs.should_build == 'true'
         run: |
-          conda run -n build-env rattler-build build -r ./recipes/msgs/recipe.yaml --target-platform ${{ matrix.platform }} -c robostack -c robostack-staging -c conda-forge
+          conda run -n build-env rattler-build build -r ./recipes/msgs/recipe.yaml --target-platform ${{ matrix.platform }} -c conda-forge -c robostack-jazzy
 
       - name: List built packages
         if: steps.should_build.outputs.should_build == 'true'

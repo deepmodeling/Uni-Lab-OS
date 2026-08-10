@@ -363,8 +363,10 @@ solid_dispenser.laiyu:
     type: python
   config_info: []
   description: 来渝固体粉末自动分装设备，用于实验室化学试剂的精确称量和分装。该设备通过Modbus RTU协议与控制系统通信，集成了精密天平、三轴运动平台、粉筒管理系统等组件。支持多种粉末试剂的自动拿取、精确称量、定点分装和归位操作。具备高精度称量、位置控制和批量处理能力，适用于化学合成、药物研发、材料制备等需要精确固体试剂配制的实验室应用场景。
+  displayname: solid_dispenser.laiyu
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

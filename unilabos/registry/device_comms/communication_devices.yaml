@@ -84,8 +84,10 @@ serial:
   config_info: []
   description: Serial communication interface, used when sharing same serial port
     for multiple devices
+  displayname: serial
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

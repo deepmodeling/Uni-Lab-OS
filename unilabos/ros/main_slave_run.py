@@ -27,6 +27,23 @@ from unilabos.config.config import BasicConfig
 from unilabos.utils.type_check import TypeEncoder
 
 
+def _init_rclpy(args: List[str], domain_id: Optional[int]) -> None:
+    """Initialize ROS with an explicit domain when supported by rclpy."""
+
+    if rclpy.ok():
+        logger.info("[ROS] rclpy already initialized, reusing context")
+        return
+    if domain_id is not None:
+        # Also populate the environment for child processes and older rclpy
+        # versions that do not accept the domain_id keyword.
+        os.environ["ROS_DOMAIN_ID"] = str(domain_id)
+    try:
+        rclpy.init(args=args, domain_id=domain_id)
+    except TypeError:
+        # Older rclpy builds read ROS_DOMAIN_ID from the environment only.
+        rclpy.init(args=args)
+
+
 def exit() -> None:
     """关闭ROS节点和资源"""
     host_instance = HostNode.get_instance()
@@ -40,6 +57,9 @@ def exit() -> None:
             if hasattr(device_node, "destroy_node"):
                 device_node.ros_node_instance.destroy_node()
         host_instance.destroy_node()
+    from unilabos.hostlink.runtime import shutdown_hostlink
+
+    shutdown_hostlink()
     rclpy.shutdown()
 
 
@@ -57,11 +77,13 @@ def main(
 ) -> None:
     """主函数"""
 
-    # Support restart - check if rclpy is already initialized
-    if not rclpy.ok():
-        rclpy.init(args=rclpy_init_args)
-    else:
-        logger.info("[ROS] rclpy already initialized, reusing context")
+    # HostLink must publish/apply the Host ROS2 policy before DDS is initialized.
+    from unilabos.hostlink.runtime import setup_hostlink_server
+
+    setup_hostlink_server()
+    raw_domain_id = os.environ.get("ROS_DOMAIN_ID", "").strip()
+    domain_id = int(raw_domain_id) if raw_domain_id else None
+    _init_rclpy(rclpy_init_args, domain_id)
     executor = rclpy.__executor = MultiThreadedExecutor(num_threads=max(os.cpu_count() * 4, 48))
     # 创建主机节点
     host_node = HostNode(
@@ -118,9 +140,14 @@ def slave(
     rclpy_init_args: List[str] = ["--log-level", "debug"],
 ) -> None:
     """从节点函数"""
-    # 1. 初始化 ROS2
-    if not rclpy.ok():
-        rclpy.init(args=rclpy_init_args)
+    # 1. Slave 先通过明确指定的 HostNode IP 获取 domain/discovery 信息，
+    # 再初始化 DDS；设备动作与注册流程仍继续走 ROS2。
+    from unilabos.hostlink.runtime import setup_hostlink_client, startup_device_ids
+
+    _hostlink_client, domain_id = setup_hostlink_client(
+        startup_device_ids(devices_config)
+    )
+    _init_rclpy(rclpy_init_args, domain_id)
     executor = rclpy.__executor
     if not executor:
         executor = rclpy.__executor = MultiThreadedExecutor(num_threads=max(os.cpu_count() * 4, 48))

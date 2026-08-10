@@ -7,7 +7,7 @@ Also follow the monorepo-level rules in `../AGENTS.md`.
 ## Build & Development
 
 ```bash
-# Install in editable mode (requires mamba env with python 3.11)
+# Install in editable mode (requires mamba env with Python 3.12 / ROS 2 Jazzy)
 pip install -e .
 uv pip install -r unilabos/utils/requirements.txt
 
@@ -75,7 +75,7 @@ Example device graphs and experiment configs are in `unilabos/test/experiments/`
 ## Code Conventions
 
 - Code comments and log messages in simplified Chinese
-- Python 3.11+, type hints expected
+- Python 3.12+, type hints expected
 - Pydantic models for data validation (`resource_tracker.py`)
 - Singleton pattern via `@singleton` decorator (`utils/decorator.py`)
 - Dynamic class loading via `utils/import_manager.py` — device classes resolved at runtime from registry YAML paths

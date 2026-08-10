@@ -86,8 +86,10 @@ agv.SEER:
     type: python
   config_info: []
   description: SEER AGV自动导引车设备，用于实验室内物料和设备的自主移动运输。该AGV通过TCP socket与导航系统通信，具备精确的定位和路径规划能力。支持实时位置监控、状态查询和导航任务执行，可在预设的实验室环境中自主移动至指定位置。适用于样品运输、设备转移、多工位协作等实验室自动化物流场景。
+  displayname: agv.SEER
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

@@ -28,6 +28,8 @@ Uni-Lab 使用 Python 格式的配置文件（`.py`），默认为 `unilabos_dat
 class BasicConfig:
     ak = ""  # 实验室网页给您提供的ak代码
     sk = ""  # 实验室网页给您提供的sk代码
+    port = 8002  # 管理端 HTTP/Web API 与主微前端端口
+    disable_browser = False  # 只禁止自动打开浏览器
 
 
 # WebSocket配置，一般无需调整
@@ -60,6 +62,8 @@ class BasicConfig:
     enable_resource_load = True  # 是否启用资源加载
     communication_protocol = "websocket"  # 通信协议
     log_level = "DEBUG"  # 日志级别：TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL
+    port = 8002  # 管理端 HTTP/Web API 与主微前端端口
+    disable_browser = False  # 只禁止自动打开浏览器，不停止管理端服务
 
 # WebSocket配置
 class WSConfig:
@@ -70,6 +74,18 @@ class WSConfig:
 # HTTP配置
 class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"  # 远程服务器地址
+
+# Host/Slave ROS2 组网控制通道
+class HostLinkConfig:
+    enable = True
+    host = ""  # Slave 的 HostNode IP；推荐用 --host-node-ip 覆盖
+    port = 7302
+    bind = "0.0.0.0"
+    advertise_ip = ""  # Host 多网卡时显式填写 Slave 可达 IP
+    ros_domain_id = ""  # Host 下发的 ROS_DOMAIN_ID
+    ros_discovery_range = ""
+    ros_static_peers = ""
+    ros_discovery_server = ""  # 外部 host:port；off 表示禁用
 
 # ROS配置
 class ROSConfig:
@@ -107,6 +123,8 @@ class ROSConfig:
 | `ak` / `sk`       | `--ak` / `--sk`     | **安全考虑**：避免敏感信息泄露       |
 | `working_dir`     | `--working_dir`     | **灵活性**：不同环境可能使用不同目录 |
 | `is_host_mode`    | `--is_slave`        | **运行模式**：由启动场景决定，不固定 |
+| HostNode 地址     | `--host-node-ip`    | **组网目标**：Slave 按部署指定 Host IP |
+| ROS2 domain       | `--ros-domain-id`   | **网络隔离**：由 Host 统一发布给 Slave |
 | `slave_no_host`   | `--slave_no_host`   | **运行模式**：从站特殊配置，按需使用 |
 | `upload_registry` | `--upload_registry` | **临时操作**：仅首次启动或更新时需要 |
 | `vis_2d_enable`   | `--2d_vis`          | **调试功能**：按需临时启用           |
@@ -173,18 +191,37 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `BasicConfig` | `upload_registry` | `--upload_registry` | 启动时上传注册表信息             |
 | `BasicConfig` | `vis_2d_enable`   | `--2d_vis`          | 启用 2D 可视化                   |
 | `HTTPConfig`  | `remote_addr`     | `--addr`            | 远程服务地址                     |
+| `HostLinkConfig` | `host`         | `--host-node-ip`    | Slave 连接的 HostNode IP/端口    |
+| `HostLinkConfig` | `port`         | `--hostlink-port`   | HostLink TCP 端口，默认 7302      |
+| `HostLinkConfig` | `bind`         | `--hostlink-bind`   | Host 监听地址                     |
+| `HostLinkConfig` | `advertise_ip` | `--hostlink-advertise-ip` | Host 多网卡发布地址          |
+| `HostLinkConfig` | `enable`       | `--disable-hostlink` | 禁用 HostLink                    |
+| `HostLinkConfig` | `heartbeat_interval` | `--hostlink-heartbeat-interval` | Slave 心跳周期        |
+| `HostLinkConfig` | `heartbeat_timeout` | `--hostlink-heartbeat-timeout` | Host 离线判定时间       |
+| `HostLinkConfig` | `connect_timeout` | `--hostlink-connect-timeout` | TCP 连接/握手超时          |
+| `HostLinkConfig` | `request_timeout` | `--hostlink-request-timeout` | 控制请求超时               |
+| `HostLinkConfig` | `ros_domain_id`| `--ros-domain-id`   | Host 发布或 Slave 本地兜底 domain |
+| `HostLinkConfig` | `ros_discovery_range` | `--ros-discovery-range` | ROS 自动发现范围       |
+| `HostLinkConfig` | `ros_static_peers` | `--ros-static-peers` | 分号分隔的静态对端          |
+| `HostLinkConfig` | `ros_discovery_server` | `--ros-discovery-server` | 外部 Fast DDS Server |
+| `HostLinkConfig` | `ros_assist_apply` | `--no-ros-assist` | 不应用 Host 下发的 ROS 环境   |
 
 ### 特殊命令行参数
 
 除了直接覆盖配置项的参数外，还有一些特殊的命令行参数：
 
-| 参数                | 说明                                 |
-| ------------------- | ------------------------------------ |
-| `--config`          | 指定配置文件路径                     |
-| `--port`            | Web 服务端口（不影响配置文件）       |
-| `--disable_browser` | 禁用自动打开浏览器（不影响配置文件） |
-| `--visual`          | 可视化工具选择（不影响配置文件）     |
-| `--skip_env_check`  | 跳过环境检查（不影响配置文件）       |
+| 参数 | 说明 |
+| --- | --- |
+| `--config` | 指定配置文件路径 |
+| `--port-management` / `--port_management` | 管理端 HTTP/Web API 与主微前端端口，默认 `8002`；`--port` 是兼容缩写 |
+| `--hostlink-port` | HostLink TCP 端口，默认 `7302`，与管理端口独立 |
+| `--disable-browser` / `--disable_browser` | 只禁用启动时自动打开浏览器，管理端 HTTP/Web 服务仍会启动 |
+| `--visual` | 可视化工具选择（不影响配置文件） |
+| `--skip_env_check` | 跳过环境检查（不影响配置文件） |
+
+`--port-management` 最终覆盖 `BasicConfig.port`。主前端和 API 客户端都连接该
+端口；即使设置 `--disable-browser`，该端口仍会监听。浏览器参数不影响
+HostLink 的 `7302/TCP`。
 
 ### 命令行覆盖使用示例
 
@@ -723,4 +760,4 @@ unilab --config base_config.py \
 
 - [工作目录详解](working_directory.md)
 - [启动参数详解](../user_guide/launch.md)
-- [快速安装指南](../user_guide/quick_install_guide.md)
+- [安装指南](../user_guide/installation.md)

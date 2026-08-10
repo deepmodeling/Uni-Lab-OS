@@ -6,6 +6,7 @@ BIOYOND_PolymerStation_Flask:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Flask
     type: pylabrobot
   description: 聚合站-烧杯容器
+  displayname: BIOYOND_PolymerStation_Flask
   handles: []
   icon: ''
   init_param_schema: {}
@@ -16,6 +17,7 @@ BIOYOND_PolymerStation_Liquid_Vial:
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Liquid_Vial
     type: pylabrobot
+  displayname: BIOYOND_PolymerStation_Liquid_Vial
   handles: []
   icon: ''
   init_param_schema: {}
@@ -27,6 +29,7 @@ BIOYOND_PolymerStation_Measurement_Vial:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Measurement_Vial
     type: pylabrobot
   description: 聚合站-测量小瓶（测密度）
+  displayname: BIOYOND_PolymerStation_Measurement_Vial
   handles: []
   icon: ''
   init_param_schema: {}
@@ -38,6 +41,7 @@ BIOYOND_PolymerStation_Reactor:
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Reactor
     type: pylabrobot
+  displayname: BIOYOND_PolymerStation_Reactor
   handles: []
   icon: ''
   init_param_schema: {}
@@ -48,6 +52,7 @@ BIOYOND_PolymerStation_Reagent_Bottle:
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Reagent_Bottle
     type: pylabrobot
+  displayname: BIOYOND_PolymerStation_Reagent_Bottle
   handles: []
   icon: ''
   init_param_schema: {}
@@ -58,6 +63,7 @@ BIOYOND_PolymerStation_Solid_Stock:
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Solid_Stock
     type: pylabrobot
+  displayname: BIOYOND_PolymerStation_Solid_Stock
   handles: []
   icon: ''
   init_param_schema: {}
@@ -68,6 +74,7 @@ BIOYOND_PolymerStation_Solid_Vial:
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Solid_Vial
     type: pylabrobot
+  displayname: BIOYOND_PolymerStation_Solid_Vial
   handles: []
   icon: ''
   init_param_schema: {}
@@ -78,6 +85,7 @@ BIOYOND_PolymerStation_Solution_Beaker:
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Solution_Beaker
     type: pylabrobot
+  displayname: BIOYOND_PolymerStation_Solution_Beaker
   handles: []
   icon: ''
   init_param_schema: {}
@@ -89,6 +97,7 @@ BIOYOND_PolymerStation_TipBox:
   class:
     module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_TipBox
     type: pylabrobot
+  displayname: BIOYOND_PolymerStation_TipBox
   handles: []
   icon: ''
   init_param_schema: {}

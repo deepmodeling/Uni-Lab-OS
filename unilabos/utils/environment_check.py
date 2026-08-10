@@ -301,7 +301,6 @@ class EnvironmentChecker:
             "websockets": "websockets",
             "msgcenterpy": "msgcenterpy",
             "orjson": "orjson",
-            "opentrons_shared_data": "opentrons_shared_data",
             "typing_extensions": "typing_extensions",
             "crcmod": "crcmod-plus",
         }

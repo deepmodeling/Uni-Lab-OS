@@ -4852,8 +4852,10 @@ liquid_handler:
     type: python
   config_info: []
   description: Liquid handler device controlled by pylabrobot
+  displayname: liquid_handler
   handles: []
   icon: icon_yiyezhan.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -5811,8 +5813,10 @@ liquid_handler.biomek:
     type: python
   config_info: []
   description: Biomek液体处理器设备，基于pylabrobot控制
+  displayname: liquid_handler.biomek
   handles: []
   icon: icon_yiyezhan.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties: {}
@@ -7008,8 +7012,10 @@ liquid_handler.laiyu:
     type: python
   config_info: []
   description: Laiyu液体处理器设备，基于pylabrobot控制
+  displayname: liquid_handler.laiyu
   handles: []
   icon: icon_yiyezhan.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -10240,8 +10246,10 @@ liquid_handler.prcxi:
     type: python
   config_info: []
   description: prcxi液体处理器设备，基于pylabrobot控制
+  displayname: liquid_handler.prcxi
   handles: []
   icon: icon_yiyezhan.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -10466,8 +10474,10 @@ liquid_handler.revvity:
     type: python
   config_info: []
   description: ''
+  displayname: liquid_handler.revvity
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties: {}

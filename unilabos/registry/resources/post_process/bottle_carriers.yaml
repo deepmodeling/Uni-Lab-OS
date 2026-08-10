@@ -5,6 +5,7 @@ POST_PROCESS_Raw_1BottleCarrier:
     module: unilabos.devices.workstation.post_process.bottle_carriers:POST_PROCESS_Raw_1BottleCarrier
     type: pylabrobot
   description: POST_PROCESS_Raw_1BottleCarrier
+  displayname: POST_PROCESS_Raw_1BottleCarrier
   handles: []
   icon: ''
   init_param_schema: {}
@@ -16,6 +17,7 @@ POST_PROCESS_Reaction_1BottleCarrier:
     module: unilabos.devices.workstation.post_process.bottle_carriers:POST_PROCESS_Reaction_1BottleCarrier
     type: pylabrobot
   description: POST_PROCESS_Reaction_1BottleCarrier
+  displayname: POST_PROCESS_Reaction_1BottleCarrier
   handles: []
   icon: ''
   init_param_schema: {}

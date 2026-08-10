@@ -1,0 +1,51 @@
+package:
+  name: opentrons-shared-data
+  version: 9.1.0+unilabos.np2.1
+
+source:
+  url: https://files.pythonhosted.org/packages/50/82/680fd30ad68bbb211a1407eb2b2e5e411321c089057ae7be80dd60a5a10a/opentrons_shared_data-9.1.0.tar.gz
+  sha256: faf194a52ffa82b471fd0fa82a1b3e33e6e278b9835210c45644123869c05794
+  patches:
+  - numpy2.patch
+
+build:
+  noarch: python
+  string: py312_np2_1
+  script: |
+    $PYTHON -m pip install . --no-deps --no-build-isolation -vv
+    mkdir -p "$PREFIX/share/licenses/opentrons-shared-data"
+    cp LICENSE "$PREFIX/share/licenses/opentrons-shared-data/LICENSE"
+    cp "$RECIPE_DIR/NOTICE" "$PREFIX/share/licenses/opentrons-shared-data/NOTICE"
+
+requirements:
+  host:
+  - python ==3.12.13
+  - pip
+  - hatchling ==1.27.0
+  run:
+  - python >=3.12,<3.13
+  - numpy >=2,<3
+  - jsonschema >=4.0.0,<5
+  - typing_extensions >=4.0.0,<5
+  - pydantic >=2.0.0,<3.0.0
+
+tests:
+- python:
+    imports:
+    - opentrons_shared_data
+    - opentrons_shared_data.labware.labware_definition
+    pip_check: true
+    python_version: 3.12.*
+- script:
+  - python -c "import importlib.metadata as m; import numpy as np; from opentrons_shared_data.labware import labware_definition as ld; assert int(np.__version__.split('.')[0]) == 2; assert ld.trapezoid([1, 2, 3]) == 4; assert m.version('opentrons-shared-data') == '9.1.0+unilabos.np2.1'"
+- package_contents:
+    files:
+    - share/licenses/opentrons-shared-data/LICENSE
+    - share/licenses/opentrons-shared-data/NOTICE
+
+about:
+  homepage: https://github.com/Opentrons/opentrons
+  repository: https://github.com/Opentrons/opentrons
+  license: Apache-2.0
+  license_file: LICENSE
+  description: "Unofficial UniLabOS NumPy 2 compatibility build of Opentrons shared data. Not affiliated with or endorsed by Opentrons."

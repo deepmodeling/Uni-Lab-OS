@@ -641,8 +641,10 @@ post_process_station:
     type: python
   config_info: []
   description: 后处理站
+  displayname: post_process_station
   handles: []
   icon: post_process_station.webp
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

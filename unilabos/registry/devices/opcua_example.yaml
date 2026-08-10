@@ -146,8 +146,10 @@ opcua_example:
     type: python
   config_info: []
   description: null
+  displayname: opcua_example
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

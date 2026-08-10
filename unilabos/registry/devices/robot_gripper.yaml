@@ -432,8 +432,10 @@ gripper.misumi_rz:
     type: python
   config_info: []
   description: Misumi RZ系列电子夹爪设备，集成旋转和抓取双重功能的精密夹爪系统。该设备通过Modbus RTU协议与控制系统通信，支持位置、速度、力矩的精确控制。具备高精度的位置反馈、实时状态监控和故障检测功能。适用于需要精密抓取和旋转操作的实验室自动化场景，如样品管理、精密装配、器件操作等应用。
+  displayname: gripper.misumi_rz
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:
@@ -593,8 +595,10 @@ gripper.mock:
     type: python
   config_info: []
   description: 模拟夹爪设备，用于系统测试和开发调试。该设备模拟真实夹爪的位置、速度、力矩等物理特性，支持虚拟的抓取和移动操作。提供与真实夹爪相同的接口和状态反馈，便于在没有实际硬件的情况下进行系统集成测试和算法验证。适用于软件开发、系统调试和培训演示等场景。
+  displayname: gripper.mock
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties: {}

@@ -167,8 +167,10 @@ raman.home_made:
     type: python
   config_info: []
   description: 拉曼光谱分析设备，用于物质的分子结构和化学成分表征。该设备集成激光器和CCD检测器，通过串口通信控制激光功率和光谱采集。具备背景扣除、多次平均、自动数据处理等功能，支持高精度的拉曼光谱测量。适用于材料表征、化学分析、质量控制、研究开发等需要分子指纹识别和结构分析的实验应用。
+  displayname: raman.home_made
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

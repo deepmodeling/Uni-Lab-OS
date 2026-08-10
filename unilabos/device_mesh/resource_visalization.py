@@ -216,9 +216,9 @@ class ResourceVisualization:
             raise OSError(
                 "ROS 2环境未正确设置。需要设置 AMENT_PREFIX_PATH 环境变量。\n"
                 "请确保：\n"
-                "1. 已安装ROS 2 (推荐使用 ros-humble-desktop-full)\n"
+                "1. 已安装ROS 2 (推荐使用 ros-jazzy-desktop-full)\n"
                 "2. 已激活Conda环境: conda activate unilab\n"
-                "3. 或手动source ROS 2 setup文件: source /opt/ros/humble/setup.bash\n"
+                "3. 或手动source ROS 2 setup文件: source /opt/ros/jazzy/setup.bash\n"
                 "4. 或者使用 --backend simple 参数跳过ROS依赖"
             )
 

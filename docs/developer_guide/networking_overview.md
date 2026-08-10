@@ -75,7 +75,8 @@ unilab --ak your_ak --sk your_sk -g host_devices.json
 **启动命令**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g slave_devices.json --is_slave
+unilab --ak your_ak --sk your_sk -g slave_devices.json \
+  --is_slave --host-node-ip 192.168.1.10
 ```
 
 ---
@@ -104,6 +105,54 @@ ros2 topic list
 # 查看action
 ros2 action list
 ```
+
+### HostLink 组网控制通道
+
+Host 运行 ROS backend 时会在 TCP `7302` 监听 HostLink。Slave 通过
+`--host-node-ip <host-ip>[:port]` 建立控制连接，在 `rclpy.init` 前完成两件事：
+
+- 上报启动图中的设备 ID，供 Host 发现 Slave 及其设备归属；
+- 接收并应用 Host 的 `ROS_DOMAIN_ID`、发现范围、静态对端和外部 Fast DDS
+  Discovery Server 地址。
+
+HostLink 只辅助 ROS2 组网。设备 Action、节点注册和资源同步仍走现有 ROS2
+接口；本阶段没有通过 HostLink 提供物料查询或无 ROS backend。
+
+#### 端口与前端归属
+
+| 服务 | 默认地址 | 协议 | 使用者 |
+|---|---|---|---|
+| 主 Web/API | `0.0.0.0:8002` | HTTP/WebSocket over TCP | 状态页、主微前端、API 客户端；由 `--port-management` 配置 |
+| HostLink | `0.0.0.0:7302` | NDJSON over raw TCP | Host/Slave 进程，不供浏览器访问 |
+| F003 Local Bridge API | `127.0.0.1:8014` | HTTP | 仅完整集成分支中的本地工作流微前端 |
+
+因此微前端不访问 `7302`。接入主 OS API 的微前端跟随
+`--port-management`（`--port` 为兼容缩写），默认访问 `8002`；F003 本地桥接
+微前端仍使用其独立的 `8014`。`--disable-browser` 只禁止自动打开页面，不会停止
+`8002` 的 HTTP/Web 服务。两个独立 TCP 服务不能绑定同一个 IP/端口。
+
+#### HostLink 与 ROS2 参数
+
+| 参数 | 作用域 | 默认值 | 说明 |
+|---|---|---:|---|
+| `--host-node-ip` | Slave | 空 | Host IP/主机名；兼容 `ip:port` |
+| `--hostlink-port` | Host + Slave | `7302` | HostLink TCP 监听/连接端口；优先于 `--host-node-ip` 中的端口 |
+| `--hostlink-bind` | Host | `0.0.0.0` | HostLink 监听网卡 |
+| `--hostlink-advertise-ip` | Host | 自动探测 | 多网卡时发布给 Slave 的可达 IP |
+| `--disable-hostlink` | Host + Slave | 否 | 禁用 HostLink，回退原 ROS2 发现 |
+| `--hostlink-heartbeat-interval` | Slave | `5` 秒 | 心跳发送间隔 |
+| `--hostlink-heartbeat-timeout` | Host | `15` 秒 | Slave 离线判定时间 |
+| `--hostlink-connect-timeout` | Slave | `5` 秒 | 单次 TCP 连接和握手超时 |
+| `--hostlink-request-timeout` | Slave | `10` 秒 | 控制请求超时 |
+| `--ros-domain-id` | Host + Slave | 环境值 | Host 下发给 Slave；Slave 本地值仅作连接前兜底 |
+| `--ros-discovery-range` | Host | 环境值 | `SYSTEM_DEFAULT/SUBNET/LOCALHOST/OFF` |
+| `--ros-static-peers` | Host | 自动加入 Host IP | 分号分隔的静态发现对端 |
+| `--ros-discovery-server` | Host | 环境值 | 外部 Fast DDS `host:port`；`off` 清除继承值 |
+| `--no-ros-assist` | Slave | 否 | 保留 HostLink 心跳/设备发现，但不应用 Host ROS 参数 |
+
+本切片没有启动 Fast DDS Discovery Server 进程，因此没有
+`--ros-discovery-port`；该参数应与托管 Discovery Server 功能一并引入，不能成为
+无效果的占位参数。
 
 ### WebSocket 通信
 
@@ -188,14 +237,16 @@ unilab --ak your_ak --sk your_sk -g all_devices.json
 **主节点**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g host.json
+unilab --ak your_ak --sk your_sk -g host.json --ros-domain-id 42
 ```
 
 **从节点**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave
-unilab --ak your_ak --sk your_sk -g slave2.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g slave1.json \
+  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302
+unilab --ak your_ak --sk your_sk -g slave2.json \
+  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302 --port-management 8003
 ```
 
 ### 云端集成模式
@@ -254,7 +305,7 @@ unilab --ak your_ak --sk your_sk -g host.json
 unilab --ak your_ak --sk your_sk -g host.json --upload_registry
 
 # 指定端口
-unilab --ak your_ak --sk your_sk -g host.json --port 8002
+unilab --ak your_ak --sk your_sk -g host.json --port-management 8002
 ```
 
 #### 3. 验证主节点
@@ -301,7 +352,7 @@ ros2 service list | grep host_node
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave
 
 # 指定不同端口（如果多个从节点在同一台机器）
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --port-management 8003
 
 # 跳过等待主节点（独立测试）
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --slave_no_host
@@ -358,9 +409,33 @@ ping <slave_node_ip>
 export ROS_DOMAIN_ID=42
 ```
 
+推荐由 Host 启动参数统一 domain，Slave 不再重复维护：
+
+```bash
+# Host：发布 domain 42
+unilab -g host.json --ros-domain-id 42
+
+# Slave：通过 HostLink 获取 domain 42 和发现配置
+unilab -g slave.json --is-slave --host-node-ip 192.168.1.10
+```
+
+如实验室使用已有 Fast DDS Discovery Server，可在 Host 指定并下发：
+
+```bash
+unilab -g host.json --ros-domain-id 42 \
+  --ros-discovery-server 192.168.1.10:11811
+```
+
+此功能切片不会自动启动 Discovery Server 进程；未指定时仍沿用 ROS2/DDS
+原有发现机制，并把 Host IP 加入 `ROS_STATIC_PEERS`。
+
 ### 防火墙配置
 
 **建议做法**：
+
+HostLink 需要 Slave 能访问 Host 的 TCP `7302`（若在 `--host-node-ip` 中指定
+其他端口，则开放对应端口）。该端口只承载组网握手、心跳和设备 ID，不承载设备
+动作或物料数据。
 
 为了确保 ROS2 DDS 通信正常，建议直接关闭防火墙，而不是配置特定端口。ROS2 使用动态端口范围，配置特定端口可能导致通信问题。
 
@@ -464,21 +539,21 @@ curl https://leap-lab.bohrium.com/api/v1/health
 
 ```bash
 # host.json
-unilab --ak your_ak --sk your_sk -g host.json --port 8002
+unilab --ak your_ak --sk your_sk -g host.json --port-management 8002
 ```
 
 ### 房间 B - 从节点 1
 
 ```bash
 # liquid_handler.json
-unilab --ak your_ak --sk your_sk -g liquid_handler.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g liquid_handler.json --is_slave --port-management 8003
 ```
 
 ### 房间 C - 从节点 2
 
 ```bash
 # analytical.json
-unilab --ak your_ak --sk your_sk -g analytical.json --is_slave --port 8004
+unilab --ak your_ak --sk your_sk -g analytical.json --is_slave --port-management 8004
 ```
 
 ---
@@ -583,12 +658,12 @@ ros2 topic list
 - [安装指南](../user_guide/installation.md) - 环境安装步骤
 - [启动参数详解](../user_guide/launch.md) - 启动参数说明
 - [添加设备驱动](add_device.md) - 自定义设备开发
-- [工作站架构](workstation_architecture.md) - 复杂工作站搭建
+- [工作站架构](examples/workstation_architecture.md) - 复杂工作站搭建
 
 ---
 
 ## 参考资料
 
-- [ROS2 网络配置](https://docs.ros.org/en/humble/Tutorials/Advanced/Networking.html)
+- [ROS2 网络配置](https://docs.ros.org/en/jazzy/Tutorials/Advanced/Networking.html)
 - [DDS 配置](https://fast-dds.docs.eprosima.com/)
 - Uni-Lab 云平台文档

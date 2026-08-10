@@ -1110,7 +1110,7 @@ return {
 ## 参考
 
 - [Python 类型注解](https://docs.python.org/3/library/typing.html)
-- [ROS2 rclpy 异步编程](https://docs.ros.org/en/humble/Tutorials/Intermediate/Writing-an-Action-Server-Client/Py.html) - Uni-Lab 使用 ROS2 的异步机制
+- [ROS2 rclpy 异步编程](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Writing-an-Action-Server-Client/Py.html) - Uni-Lab 使用 ROS2 的异步机制
 - [串口通信](https://pyserial.readthedocs.io/)
 
 > **注意：** 虽然设备驱动使用 `async def` 语法，但请**不要参考** Python 标准的 [asyncio 文档](https://docs.python.org/3/library/asyncio.html)。Uni-Lab 使用的是 ROS2 的异步机制，两者不兼容。请使用 `self.sleep()` 和 `self.create_task()` 等 BaseROS2DeviceNode 提供的方法。

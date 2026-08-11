@@ -23,15 +23,8 @@ from pylabrobot.liquid_handling.standard import (
 )
 from pylabrobot.resources import Resource, Tip
 
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import JointState
 import time
-from rclpy.action import ActionClient
-from unilabos_msgs.action import SendCmd
 import re
-
-from unilabos.devices.ros_dev.liquid_handler_joint_publisher_node import LiquidHandlerJointPublisher
 
 
 class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
@@ -53,26 +46,35 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
 
   def __init__(self, num_channels: int = 8 , tip_length: float = 0 , total_height: float = 310, **kwargs):
     """Initialize a chatter box backend."""
+    try:
+      import rclpy
+    except ModuleNotFoundError as exc:
+      raise RuntimeError(
+        "UniLiquidHandlerRvizBackend 需要 ROS2；Basic/HostLink 请改用非 RViz backend"
+      ) from exc
     super().__init__()
+    self._rclpy = rclpy
     self._num_channels = num_channels
     self.tip_length = tip_length
     self.total_height = total_height
     self.joint_config = kwargs.get("joint_config", None)
     self.lh_device_id = kwargs.get("lh_device_id", "lh_joint_publisher")
-    if not rclpy.ok():
-        rclpy.init()
+    if not self._rclpy.ok():
+        self._rclpy.init()
     self.joint_state_publisher = None
     self.executor = None
     self.executor_thread = None
 
   async def setup(self):
+    from unilabos.devices.ros_dev.liquid_handler_joint_publisher_node import LiquidHandlerJointPublisher
+
     self.joint_state_publisher = LiquidHandlerJointPublisher(
                                 joint_config=self.joint_config,
                                 lh_device_id=self.lh_device_id,
                                 simulate_rviz=True)
 
     # 启动ROS executor
-    self.executor = rclpy.executors.MultiThreadedExecutor()
+    self.executor = self._rclpy.executors.MultiThreadedExecutor()
     self.executor.add_node(self.joint_state_publisher)
     self.executor_thread = threading.Thread(target=self.executor.spin, daemon=True)
     self.executor_thread.start()

@@ -8,16 +8,17 @@ Workstation Base Class - 简化版
 
 import collections
 import time
-from typing import Dict, Any, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, Any, List, Optional, Union
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from pylabrobot.resources import Deck, Plate, Resource as PLRResource
 
 from pylabrobot.resources.coordinate import Coordinate
-from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
-
 from unilabos.utils.log import logger
+
+if TYPE_CHECKING:
+    from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 
 
 class WorkflowStatus(Enum):
@@ -136,7 +137,7 @@ class WorkstationBase(ABC):
     3. 简化的工作流管理
     """
 
-    _ros_node: ROS2WorkstationNode
+    _ros_node: "ROS2WorkstationNode"
 
     @property
     def _children(self) -> Dict[str, Any]:  # 不要删除这个下划线，不然会自动导入注册表，后面改成装饰器识别
@@ -168,7 +169,7 @@ class WorkstationBase(ABC):
         # 支持的工作流（静态预定义）
         self.supported_workflows: Dict[str, WorkflowInfo] = {}
 
-    def post_init(self, ros_node: ROS2WorkstationNode) -> None:
+    def post_init(self, ros_node: "ROS2WorkstationNode") -> None:
         # 初始化物料系统
         self._ros_node = ros_node
 

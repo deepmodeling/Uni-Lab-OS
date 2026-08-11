@@ -75,7 +75,12 @@ from unilabos.resources.resource_tracker import (
     PARAM_SAMPLE_UUIDS,
     JSON_UNILABOS_PARAM,
 )
-from unilabos.ros.utils.driver_creator import WorkstationNodeCreator, PyLabRobotCreator, DeviceClassCreator
+from unilabos.device_runtime.driver_creator import (
+    DeviceClassCreator,
+    PyLabRobotCreator,
+    WorkstationNodeCreator,
+    uses_pylabrobot_creator,
+)
 from rclpy.task import Task, Future
 from unilabos.utils.import_manager import default_manager
 from unilabos.utils.log import info, debug, warning, error, critical, logger, trace
@@ -2749,14 +2754,7 @@ class ROS2DeviceNode:
         self.resource_tracker = DeviceNodeResourceTracker()
 
         # use_pylabrobot_creator 使用 cls的包路径检测
-        use_pylabrobot_creator = (
-            driver_class.__module__.startswith("pylabrobot")
-            or driver_class.__name__ == "LiquidHandlerAbstract"
-            or driver_class.__name__ == "LiquidHandlerBiomek"
-            or driver_class.__name__ == "PRCXI9300Handler"
-            or driver_class.__name__ == "TransformXYZHandler"
-            or driver_class.__name__ == "OpcUaClient"
-        )
+        use_pylabrobot_creator = uses_pylabrobot_creator(driver_class)
 
         # 创建设备类实例
         if use_pylabrobot_creator:
@@ -2764,7 +2762,10 @@ class ROS2DeviceNode:
             # 在下方对于加载Deck等Resource要手动import
             register()
             self._driver_creator = PyLabRobotCreator(
-                driver_class, children=children, resource_tracker=self.resource_tracker
+                driver_class,
+                children=children,
+                resource_tracker=self.resource_tracker,
+                task_scheduler=rclpy.get_global_executor().create_task,
             )
         else:
             from unilabos.devices.workstation.workstation_base import WorkstationBase
@@ -2774,7 +2775,10 @@ class ROS2DeviceNode:
             ):  # 是WorkstationNode的子节点，就要调用WorkstationNodeCreator
                 self.driver_is_workstation = True
                 self._driver_creator = WorkstationNodeCreator(
-                    driver_class, children=children, resource_tracker=self.resource_tracker
+                    driver_class,
+                    children=children,
+                    resource_tracker=self.resource_tracker,
+                    task_scheduler=rclpy.get_global_executor().create_task,
                 )
             else:
                 self._driver_creator = DeviceClassCreator(

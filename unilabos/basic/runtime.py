@@ -6,18 +6,30 @@ import asyncio
 import inspect
 import logging
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Type
 
-from unilabos.device_runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.device_runtime.action import ActionContext
+from unilabos.device_runtime.driver_creator import (
+    PyLabRobotCreator,
+    uses_pylabrobot_creator,
+)
+from unilabos.device_runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.device_runtime.resource import ResourceService
-from unilabos.device_runtime.topic import LocalTopicBus
+from unilabos.device_runtime.service import LocalServiceBus
+from unilabos.device_runtime.topic import LocalTopicBus, message_to_value
+from unilabos.resources.plr_additional_res_reg import register
+from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
 from unilabos.utils.decorator import get_all_subscriptions
 
 
 def instantiate_driver(
-    driver_class: Type[Any], device_id: str, config: Optional[Dict[str, Any]] = None
+    driver_class: Type[Any],
+    device_id: str,
+    config: Optional[Dict[str, Any]] = None,
+    *,
+    device_config: Any = None,
+    resource_tracker: Optional[DeviceNodeResourceTracker] = None,
 ) -> Any:
     """使用 ``config`` 对象或展开参数实例化驱动。
 
@@ -26,6 +38,17 @@ def instantiate_driver(
     """
 
     config = dict(config or {})
+    if device_config is not None and uses_pylabrobot_creator(driver_class):
+        register()
+        creator = PyLabRobotCreator(
+            driver_class,
+            children=list(device_config.children),
+            resource_tracker=resource_tracker or DeviceNodeResourceTracker(),
+        )
+        driver = creator.create_instance(config)
+        if driver is None:
+            raise RuntimeError(f"Basic 设备 {device_id!r} 的驱动实例创建失败")
+        return driver
     signature = inspect.signature(driver_class.__init__)
     parameters = {
         name: parameter
@@ -63,7 +86,9 @@ class BasicDeviceNode(DeviceNode):
         registry_name: str = "",
         display_name: str = "",
         action_names: Iterable[str] = (),
+        action_value_mappings: Optional[Dict[str, Any]] = None,
         status_names: Iterable[str] = (),
+        resource_tracker: Optional[DeviceNodeResourceTracker] = None,
     ) -> None:
         self.driver = driver
         self.device_id = device_id
@@ -80,6 +105,7 @@ class BasicDeviceNode(DeviceNode):
                 }
             )
         )
+        self.action_value_mappings = message_to_value(dict(action_value_mappings or {}))
         self.status_names = tuple(
             sorted({str(name).strip() for name in status_names if str(name).strip()})
         )
@@ -95,25 +121,15 @@ class BasicDeviceNode(DeviceNode):
         self._action_lock: asyncio.Lock | None = None
         self._status_lock = threading.Lock()
         self._decorated_subscriptions: list[Any] = []
+        self.resource_tracker = resource_tracker or DeviceNodeResourceTracker()
 
     _ROS2_RUNTIME_ATTRIBUTES = frozenset(
         {
-            "create_timer",
-            "create_rate",
-            "create_service",
-            "create_client",
             "create_guard_condition",
             "create_action_server",
             "create_action_client",
-            "declare_parameter",
-            "declare_parameters",
-            "get_parameter",
-            "get_parameters",
-            "set_parameters",
-            "get_clock",
             "get_publishers_info_by_topic",
             "get_subscriptions_info_by_topic",
-            "wait_for_service",
         }
     )
 
@@ -154,6 +170,7 @@ class BasicDeviceNode(DeviceNode):
     ) -> Any:
         result = method(*args, **kwargs)
         if inspect.isawaitable(result):
+
             async def await_result(value: Awaitable[Any]) -> Any:
                 return await value
 
@@ -173,6 +190,9 @@ class BasicDeviceNode(DeviceNode):
             if hasattr(self.driver, "post_init"):
                 self.driver.post_init(self)
             self._setup_decorated_subscriptions()
+            setup = getattr(self.driver, "setup", None)
+            if callable(setup):
+                self._call(setup, _wait_timeout=30)
             initialize = getattr(self.driver, "initialize", None)
             if callable(initialize):
                 self._call(initialize, _wait_timeout=30)
@@ -333,6 +353,11 @@ class BasicDeviceNode(DeviceNode):
             "actions": list(self.action_names),
             "status_fields": list(self.status_names),
         }
+        if self.action_value_mappings:
+            descriptor["action_value_mappings"] = self.action_value_mappings
+        services = self.service_names()
+        if services:
+            descriptor["services"] = services
         if self.resource_uuid:
             descriptor["resource_uuid"] = self.resource_uuid
         return descriptor
@@ -343,7 +368,13 @@ class BasicDeviceNode(DeviceNode):
         for subscription in self._decorated_subscriptions:
             subscription.destroy()
         self._decorated_subscriptions.clear()
+        for timer in tuple(self.__dict__.get("_device_timers", [])):
+            self.destroy_timer(timer)
+        for service in tuple(self.__dict__.get("_device_services", [])):
+            self.destroy_service(service)
         cleanup = getattr(self.driver, "cleanup", None)
+        if not callable(cleanup):
+            cleanup = getattr(self.driver, "stop", None)
         if callable(cleanup):
             try:
                 self._call(cleanup, _wait_timeout=10)
@@ -362,9 +393,11 @@ class BasicDriverSpec:
     config: Dict[str, Any]
     registry_name: str = ""
     action_names: tuple[str, ...] = ()
+    action_value_mappings: Dict[str, Any] = field(default_factory=dict)
     status_names: tuple[str, ...] = ()
     display_name: str = ""
     resource_uuid: str = ""
+    device_config: Any = None
 
 
 class BasicRuntime:
@@ -374,13 +407,21 @@ class BasicRuntime:
         self.backend_name = str(backend_name or "basic")
         self.devices: dict[str, BasicDeviceNode] = {}
         self.topic_bus = LocalTopicBus()
+        self.service_bus = LocalServiceBus()
         self._resource_service: ResourceService | None = None
         self._stopped = threading.Event()
 
     def add_driver(self, spec: BasicDriverSpec) -> BasicDeviceNode:
         if spec.device_id in self.devices:
             raise ValueError(f"Basic 设备 ID 重复：{spec.device_id}")
-        driver = instantiate_driver(spec.driver_class, spec.device_id, spec.config)
+        resource_tracker = DeviceNodeResourceTracker()
+        driver = instantiate_driver(
+            spec.driver_class,
+            spec.device_id,
+            spec.config,
+            device_config=spec.device_config,
+            resource_tracker=resource_tracker,
+        )
         node = BasicDeviceNode(
             driver,
             spec.device_id,
@@ -389,12 +430,15 @@ class BasicRuntime:
             registry_name=spec.registry_name,
             display_name=spec.display_name,
             action_names=spec.action_names,
+            action_value_mappings=spec.action_value_mappings,
             status_names=spec.status_names,
+            resource_tracker=resource_tracker,
         )
         if self._resource_service is not None:
             node.set_resource_service(self._resource_service)
         node.set_action_router(self)
         node.set_topic_bus(self.topic_bus)
+        node.set_service_bus(self.service_bus)
         self.devices[spec.device_id] = node
         return node
 

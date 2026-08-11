@@ -59,6 +59,8 @@ def message_to_value(value: Any) -> Any:
 
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
+    if isinstance(value, type):
+        return message_type_name(value)
     if isinstance(value, (bytes, bytearray, memoryview, array)):
         return [message_to_value(item) for item in value]
     if isinstance(value, Enum):
@@ -84,6 +86,13 @@ def message_to_value(value: Any) -> Any:
         return {str(key): message_to_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [message_to_value(item) for item in value]
+    attributes = getattr(value, "__dict__", None)
+    if isinstance(attributes, dict):
+        return {
+            str(name): message_to_value(item)
+            for name, item in attributes.items()
+            if not str(name).startswith("_")
+        }
     # ROS 消息字段可能包含 numpy 数组；传输层本身不依赖 numpy，只识别其 tolist。
     # 限定模块名可以避免在任意驱动对象上调用同名方法。
     if type(value).__module__.split(".", 1)[0] == "numpy":
@@ -91,6 +100,37 @@ def message_to_value(value: Any) -> Any:
         if callable(to_list):
             return message_to_value(to_list())
     return repr(value)
+
+
+def value_to_message(message_type: Any, value: Any) -> Any:
+    """Rebuild a Python/ROS-like message from JSON-compatible data."""
+
+    if message_type in (None, Any) or not isinstance(value, dict):
+        return value
+    if message_type is dict:
+        return value
+    try:
+        if isinstance(value, message_type):
+            return value
+    except TypeError:
+        return value
+    try:
+        return message_type(**value)
+    except (TypeError, ValueError):
+        try:
+            message = message_type()
+        except (TypeError, ValueError):
+            return value
+        for name, item in value.items():
+            if not hasattr(message, name):
+                continue
+            current = getattr(message, name)
+            converted = value_to_message(type(current), item)
+            try:
+                setattr(message, name, converted)
+            except (AttributeError, TypeError, ValueError):
+                setattr(message, name, item)
+        return message
 
 
 @dataclass(frozen=True)
@@ -347,6 +387,7 @@ __all__ = [
     "TopicPublisher",
     "TopicSubscription",
     "message_to_value",
+    "value_to_message",
     "message_type_name",
     "normalize_topic",
 ]

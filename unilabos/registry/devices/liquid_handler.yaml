@@ -4850,6 +4850,8 @@ liquid_handler:
     module: unilabos.devices.liquid_handling.liquid_handler_abstract:LiquidHandlerAbstract
     status_types: {}
     supported_backends:
+    - basic
+    - hostlink
     - ros2
     type: python
   config_info: []
@@ -10246,6 +10248,8 @@ liquid_handler.prcxi:
     status_types:
       reset_ok: bool
     supported_backends:
+    - basic
+    - hostlink
     - ros2
     type: python
   config_info: []

@@ -4,13 +4,21 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import inspect
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterable, Optional
 
 from unilabos.device_runtime.async_utils import schedule_async_func
+from unilabos.device_runtime.primitives import (
+    DeviceClock,
+    DeviceParameter,
+    DeviceRate,
+    DeviceTimer,
+    SetParametersResult,
+)
 
 if TYPE_CHECKING:
     from unilabos.device_runtime.action import DeviceActionRouter
     from unilabos.device_runtime.resource import ResourceService
+    from unilabos.device_runtime.service import ServiceBus
     from unilabos.device_runtime.topic import (
         TopicBus,
         TopicPublisher,
@@ -39,6 +47,18 @@ class DeviceNode(ABC):
     @property
     def identifier(self) -> str:
         return self.device_id
+
+    def get_name(self) -> str:
+        return self.device_id.strip("/").split("/")[-1]
+
+    def get_namespace(self) -> str:
+        return f"/devices/{self.device_id.strip('/')}"
+
+    def get_fully_qualified_name(self) -> str:
+        return f"{self.get_namespace()}/{self.get_name()}"
+
+    def get_logger(self) -> Any:
+        return self.lab_logger()
 
     @abstractmethod
     def lab_logger(self) -> Any:
@@ -70,6 +90,147 @@ class DeviceNode(ABC):
             **kwargs,
         )
 
+    def get_clock(self) -> DeviceClock:
+        clock = self.__dict__.get("_device_clock")
+        if clock is None:
+            clock = DeviceClock()
+            self.__dict__["_device_clock"] = clock
+        return clock
+
+    def create_timer(
+        self,
+        timer_period_sec: float,
+        callback: Callable[[], Any],
+        callback_group: Any = None,
+        clock: Any = None,
+        autostart: bool = True,
+    ) -> DeviceTimer:
+        del callback_group, clock
+        timer = DeviceTimer(
+            self,
+            timer_period_sec,
+            callback,
+            autostart=autostart,
+        )
+        self.__dict__.setdefault("_device_timers", []).append(timer)
+        return timer
+
+    def destroy_timer(self, timer: DeviceTimer) -> bool:
+        timers = self.__dict__.setdefault("_device_timers", [])
+        timer.cancel()
+        if timer in timers:
+            timers.remove(timer)
+            return True
+        return False
+
+    def create_rate(self, frequency: float, clock: Any = None) -> DeviceRate:
+        del clock
+        return DeviceRate(frequency)
+
+    def declare_parameter(
+        self,
+        name: str,
+        value: Any = None,
+        descriptor: Any = None,
+        ignore_override: bool = False,
+    ) -> DeviceParameter:
+        del descriptor, ignore_override
+        parameters = self.__dict__.setdefault("_device_parameters", {})
+        key = str(name)
+        if key in parameters:
+            raise ValueError(f"parameter 已声明：{key}")
+        parameters[key] = value
+        return DeviceParameter(key, value)
+
+    def declare_parameters(
+        self,
+        namespace: str,
+        parameters: Iterable[Any],
+        ignore_override: bool = False,
+    ) -> list[DeviceParameter]:
+        prefix = str(namespace or "").strip(".")
+        declared = []
+        for item in parameters:
+            if isinstance(item, DeviceParameter):
+                name, value = item.name, item.value
+            elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                name, value = item[0], item[1]
+            else:
+                name, value = str(item), None
+            full_name = f"{prefix}.{name}" if prefix else str(name)
+            declared.append(
+                self.declare_parameter(
+                    full_name,
+                    value,
+                    ignore_override=ignore_override,
+                )
+            )
+        return declared
+
+    def has_parameter(self, name: str) -> bool:
+        return str(name) in self.__dict__.setdefault("_device_parameters", {})
+
+    def get_parameter(self, name: str) -> DeviceParameter:
+        key = str(name)
+        parameters = self.__dict__.setdefault("_device_parameters", {})
+        if key not in parameters:
+            return DeviceParameter(key, None)
+        return DeviceParameter(key, parameters[key])
+
+    def get_parameters(self, names: Iterable[str]) -> list[DeviceParameter]:
+        return [self.get_parameter(name) for name in names]
+
+    def get_parameter_or(
+        self,
+        name: str,
+        alternative_value: DeviceParameter,
+    ) -> DeviceParameter:
+        return (
+            self.get_parameter(name) if self.has_parameter(name) else alternative_value
+        )
+
+    def set_parameters(self, parameters: Iterable[Any]) -> list[SetParametersResult]:
+        normalized = [
+            item
+            if isinstance(item, DeviceParameter)
+            else DeviceParameter(
+                str(getattr(item, "name", "")), getattr(item, "value", None)
+            )
+            for item in parameters
+        ]
+        callbacks = tuple(self.__dict__.setdefault("_device_parameter_callbacks", []))
+        for callback in callbacks:
+            result = callback(normalized)
+            if getattr(result, "successful", True) is False:
+                reason = str(getattr(result, "reason", "parameter 被回调拒绝"))
+                return [SetParametersResult(False, reason) for _ in normalized]
+        storage = self.__dict__.setdefault("_device_parameters", {})
+        for parameter in normalized:
+            storage[parameter.name] = parameter.value
+        return [SetParametersResult() for _ in normalized]
+
+    def set_parameters_atomically(
+        self, parameters: Iterable[Any]
+    ) -> SetParametersResult:
+        results = self.set_parameters(parameters)
+        return next(
+            (result for result in results if not result.successful),
+            SetParametersResult(),
+        )
+
+    def undeclare_parameter(self, name: str) -> None:
+        self.__dict__.setdefault("_device_parameters", {}).pop(str(name), None)
+
+    def add_on_set_parameters_callback(self, callback: Callable[[Any], Any]) -> Any:
+        callbacks = self.__dict__.setdefault("_device_parameter_callbacks", [])
+        callbacks.append(callback)
+        return callback
+
+    def remove_on_set_parameters_callback(self, callback: Callable[[Any], Any]) -> None:
+        callbacks = self.__dict__.setdefault("_device_parameter_callbacks", [])
+        if callback in callbacks:
+            callbacks.remove(callback)
+
     async def update_resource(self, resources: Any) -> Any:
         service = self.__dict__.get("_device_resource_service")
         if service is None:
@@ -100,6 +261,89 @@ class DeviceNode(ABC):
 
     def set_resource_service(self, service: "ResourceService") -> None:
         self.__dict__["_device_resource_service"] = service
+
+    def set_service_bus(self, bus: "ServiceBus") -> None:
+        self.__dict__["_device_service_bus"] = bus
+
+    def create_service(
+        self,
+        srv_type: Any,
+        srv_name: str,
+        callback: Callable[..., Any],
+        *,
+        qos_profile: Any = None,
+        callback_group: Any = None,
+    ) -> Any:
+        del qos_profile, callback_group
+        from unilabos.device_runtime.service import (
+            DeviceService,
+            build_service_callback,
+            normalize_service_name,
+        )
+
+        bus = self.__dict__.get("_device_service_bus")
+        if bus is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未实现 service"
+            )
+        name = normalize_service_name(srv_name, self.device_id)
+        bus.register_service(
+            name,
+            build_service_callback(self, srv_type, callback),
+            owner_device_id=self.device_id,
+        )
+        service = DeviceService(bus, name, srv_type, self.device_id)
+        self.__dict__.setdefault("_device_services", []).append(service)
+        return service
+
+    def destroy_service(self, service: Any) -> bool:
+        services = self.__dict__.setdefault("_device_services", [])
+        service.destroy()
+        if service in services:
+            services.remove(service)
+            return True
+        return False
+
+    def create_client(
+        self,
+        srv_type: Any,
+        srv_name: str,
+        *,
+        qos_profile: Any = None,
+        callback_group: Any = None,
+    ) -> Any:
+        del qos_profile, callback_group
+        from unilabos.device_runtime.service import (
+            DeviceServiceClient,
+            normalize_service_name,
+        )
+
+        bus = self.__dict__.get("_device_service_bus")
+        if bus is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未实现 service client"
+            )
+        client = DeviceServiceClient(
+            bus,
+            normalize_service_name(srv_name, self.device_id),
+            srv_type,
+            self.device_id,
+        )
+        self.__dict__.setdefault("_device_service_clients", []).append(client)
+        return client
+
+    def destroy_client(self, client: Any) -> bool:
+        clients = self.__dict__.setdefault("_device_service_clients", [])
+        if client in clients:
+            clients.remove(client)
+            return True
+        return False
+
+    def service_names(self) -> list[str]:
+        return sorted(
+            str(service.service_name)
+            for service in self.__dict__.setdefault("_device_services", [])
+        )
 
     def call_device_action(
         self,
@@ -210,6 +454,14 @@ class DeviceNode(ABC):
             replay_retained=bool(kwargs.get("replay_retained", True)),
         )
 
+    def destroy_subscription(self, subscription: "TopicSubscription") -> bool:
+        subscription.destroy()
+        return True
+
+    def destroy_publisher(self, publisher: "TopicPublisher") -> bool:
+        del publisher
+        return True
+
     def publish_topic(
         self,
         topic: str,
@@ -267,9 +519,7 @@ class DeviceNode(ABC):
     def emit_status(self, name: str, value: Any) -> None:
         cache = self.__dict__.setdefault("_device_status_cache", {})
         cache[str(name)] = value
-        for listener in tuple(
-            self.__dict__.setdefault("_device_status_listeners", [])
-        ):
+        for listener in tuple(self.__dict__.setdefault("_device_status_listeners", [])):
             listener(self.device_id, str(name), value)
         if self.__dict__.get("_device_topic_bus") is not None:
             self.publish_topic(str(name), value, retain=True)

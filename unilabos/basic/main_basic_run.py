@@ -33,9 +33,10 @@ def build_runtime(devices_config: Any, backend_name: str = "basic") -> BasicRunt
         device_id = str(resource.id)
         registry_name = resource.klass
         if not isinstance(registry_name, str):
-            raise ValueError(
-                f"Basic 设备 {device_id!r} 的注册表 class 必须是字符串"
-            )
+            raise ValueError(f"Basic 设备 {device_id!r} 的注册表 class 必须是字符串")
+        if not registry_name.strip():
+            logger.debug("[Basic] 跳过没有驱动 class 的子节点：%s", device_id)
+            continue
         try:
             registry_entry = lab_registry.device_type_registry[registry_name]
         except KeyError as exc:
@@ -57,9 +58,7 @@ def build_runtime(devices_config: Any, backend_name: str = "basic") -> BasicRunt
             )
         module_spec = class_config.get("module")
         if not isinstance(module_spec, str) or ":" not in module_spec:
-            raise ValueError(
-                f"Basic 设备 {device_id!r} 缺少有效的 module:Class 配置"
-            )
+            raise ValueError(f"Basic 设备 {device_id!r} 缺少有效的 module:Class 配置")
         driver_class = default_manager.get_class(module_spec)
         config = merge_init_param_enforce(
             resource.config if isinstance(resource.config, dict) else {},
@@ -71,14 +70,16 @@ def build_runtime(devices_config: Any, backend_name: str = "basic") -> BasicRunt
                 driver_class=driver_class,
                 config=config,
                 registry_name=registry_name,
-                display_name=str(
-                    registry_entry.get("displayname") or registry_name
-                ),
+                display_name=str(registry_entry.get("displayname") or registry_name),
                 resource_uuid=str(resource.uuid or ""),
                 action_names=tuple(
                     (class_config.get("action_value_mappings") or {}).keys()
                 ),
+                action_value_mappings=dict(
+                    class_config.get("action_value_mappings") or {}
+                ),
                 status_names=tuple((class_config.get("status_types") or {}).keys()),
+                device_config=node,
             )
         )
     return runtime
@@ -104,9 +105,7 @@ def main(
 
     global _runtime
     _runtime = build_runtime(devices_config)
-    _runtime.set_resource_service(
-        LocalResourceService(ResourceStore(resources_config))
-    )
+    _runtime.set_resource_service(LocalResourceService(ResourceStore(resources_config)))
     _runtime.start()
     logger.info(
         "[Basic] 运行时已启动，共 %d 台设备：%s",

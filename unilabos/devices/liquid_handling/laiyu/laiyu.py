@@ -27,8 +27,6 @@ from pylabrobot.resources import Tip, Deck, Plate, Well, TipRack, Resource, Cont
 
 from unilabos.devices.liquid_handling.liquid_handler_abstract import LiquidHandlerAbstract
 from unilabos.devices.liquid_handling.rviz_backend import UniLiquidHandlerRvizBackend
-from unilabos.devices.liquid_handling.laiyu.backend.laiyu_v_backend import UniLiquidHandlerLaiyuBackend
-
 
 
 class TransformXYZDeck(Deck):
@@ -215,4 +213,3 @@ class TransformXYZHandler(LiquidHandlerAbstract):
         none_keys: List[str] = [],
     ):
         pass
-    

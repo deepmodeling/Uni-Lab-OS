@@ -44,9 +44,7 @@ def test_action_context_carries_feedback_and_cancellation() -> None:
     received = []
     context = ActionContext(
         action_id="action-1",
-        feedback_callback=lambda action_id, data: received.append(
-            (action_id, data)
-        ),
+        feedback_callback=lambda action_id, data: received.append((action_id, data)),
     )
 
     context.publish_feedback({"progress": 0.5})
@@ -130,5 +128,48 @@ def test_migrated_virtual_driver_imports_without_ros() -> None:
         capture_output=True,
         text=True,
         timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_liquid_handling_package_keeps_optional_rviz_ros_import_lazy() -> None:
+    code = (
+        "import sys; "
+        "from unilabos.config.config import BasicConfig; "
+        "BasicConfig.backend = 'hostlink'; "
+        "import unilabos.devices.liquid_handling; "
+        "assert 'rclpy' not in sys.modules; "
+        "assert 'unilabos.ros' not in sys.modules"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_liquid_handler_drivers_import_in_hostlink_without_ros_runtime() -> None:
+    pytest.importorskip("pylibftdi")
+    code = (
+        "import sys; "
+        "from unilabos.config.config import BasicConfig; "
+        "BasicConfig.backend = 'hostlink'; "
+        "from unilabos.devices.liquid_handling.liquid_handler_abstract "
+        "import LiquidHandlerAbstract; "
+        "from unilabos.devices.liquid_handling.prcxi.prcxi "
+        "import PRCXI9300Handler; "
+        "from unilabos.resources.plr_additional_res_reg import register; "
+        "register(); "
+        "assert LiquidHandlerAbstract and PRCXI9300Handler; "
+        "assert 'rclpy' not in sys.modules; "
+        "assert not any(name.startswith('unilabos.ros') for name in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert result.returncode == 0, result.stderr

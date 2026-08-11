@@ -11,6 +11,7 @@ from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
 from unilabos.device_runtime.resource import LocalResourceService, ResourceStore
+from unilabos.device_runtime.service import normalize_service_name
 from unilabos.device_runtime.topic import (
     TopicEvent,
     message_to_value,
@@ -60,11 +61,10 @@ class HostLinkBackendRuntime:
             thread_name_prefix="hostlink-backend-topic",
         )
         if not self.is_slave:
-            self.local.set_resource_service(
-                LocalResourceService(self.resource_store)
-            )
+            self.local.set_resource_service(LocalResourceService(self.resource_store))
         for node in self.local.devices.values():
             node.set_action_router(self)
+            node.set_service_bus(self)
         self.local.topic_bus.add_outbound_listener(self._on_local_topic)
         self.local.topic_bus.add_subscription_listener(
             self._on_local_subscription_change
@@ -79,6 +79,9 @@ class HostLinkBackendRuntime:
             if self.is_slave:
                 self._start_slave()
                 self.local.start()
+                if self.client is not None:
+                    self.client.configure_device_descriptors(self.local.descriptors())
+                self._connect_slave()
             else:
                 self.local.start()
                 self._start_host()
@@ -120,6 +123,10 @@ class HostLinkBackendRuntime:
             self._handle_peer_device_call,
         )
         self.server.register_handler(
+            ActionType.SERVICE_CALL,
+            self._handle_peer_service_call,
+        )
+        self.server.register_handler(
             ActionType.TOPIC_PUBLISH,
             self._handle_topic_publish,
         )
@@ -159,6 +166,10 @@ class HostLinkBackendRuntime:
         )
         self.client.register_handler(ActionType.DEVICE_CALL, self._handle_device_call)
         self.client.register_handler(
+            ActionType.SERVICE_CALL,
+            self._handle_service_call,
+        )
+        self.client.register_handler(
             ActionType.DEVICE_STATE,
             self._handle_device_state,
         )
@@ -178,9 +189,15 @@ class HostLinkBackendRuntime:
         for node in self.local.devices.values():
             node.add_status_listener(self._on_local_status)
         set_hostlink_client(self.client)
+
+    def _connect_slave(self) -> None:
+        client = self.client
+        if client is None:
+            raise RuntimeError("HostLink Slave client 尚未创建")
+        host = str(HostLinkConfig.host or "").strip()
         if BasicConfig.slave_no_host:
-            self.client.start()
-        elif not self.client.connect_blocking(HostLinkConfig.connect_timeout):
+            client.start()
+        elif not client.connect_blocking(HostLinkConfig.connect_timeout):
             raise LinkError(f"无法连接 HostLink Host：{host}:{HostLinkConfig.port}")
         else:
             self._sync_initial_resources()
@@ -190,6 +207,136 @@ class HostLinkBackendRuntime:
             HostLinkConfig.port,
             sorted(self.local.devices),
         )
+
+    def register_service(
+        self,
+        name: str,
+        callback: Any,
+        *,
+        owner_device_id: str,
+    ) -> None:
+        self.local.service_bus.register_service(
+            name,
+            callback,
+            owner_device_id=owner_device_id,
+        )
+
+    def unregister_service(
+        self,
+        name: str,
+        *,
+        owner_device_id: str,
+    ) -> None:
+        self.local.service_bus.unregister_service(
+            name,
+            owner_device_id=owner_device_id,
+        )
+
+    @staticmethod
+    def _service_target(name: str) -> str:
+        parts = normalize_service_name(name).strip("/").split("/")
+        if len(parts) >= 3 and parts[0] == "devices":
+            return parts[1]
+        return ""
+
+    def has_service(self, name: str) -> bool:
+        normalized = normalize_service_name(name)
+        if self.local.service_bus.has_service(normalized):
+            return True
+        target = self._service_target(normalized)
+        if not target:
+            return False
+        if self.server is not None:
+            remote = self.server.devices(online_only=True).get(target)
+            descriptor = (remote or {}).get("device") or {}
+            return normalized in descriptor.get("services", [])
+        if self.client is not None:
+            for descriptor in self.client.hello_info.get("devices") or []:
+                if descriptor.get("id") == target:
+                    return normalized in descriptor.get("services", [])
+        return False
+
+    def call_service(
+        self,
+        name: str,
+        request: Any,
+        *,
+        caller_device_id: str = "",
+        timeout: Optional[float] = None,
+    ) -> Any:
+        normalized = normalize_service_name(name)
+        if self.local.service_bus.has_service(normalized):
+            return self.local.service_bus.call_service(
+                normalized,
+                request,
+                caller_device_id=caller_device_id,
+                timeout=timeout,
+            )
+        target = self._service_target(normalized)
+        if not target:
+            raise KeyError(f"未知 HostLink service：{normalized}")
+        payload = {
+            "caller_device_id": str(caller_device_id),
+            "service": normalized,
+            "request": to_wire_value(request),
+        }
+        if self.server is not None:
+            response = self.server.request_device(
+                target,
+                ActionType.SERVICE_CALL,
+                payload,
+                timeout,
+            )
+        elif self.client is not None:
+            response = self.client.request(
+                ActionType.SERVICE_CALL,
+                payload,
+                timeout,
+            )
+        else:
+            raise KeyError(f"未知 HostLink service：{normalized}")
+        return response.get("response") if isinstance(response, dict) else response
+
+    async def call_service_async(
+        self,
+        name: str,
+        request: Any,
+        *,
+        caller_device_id: str = "",
+        timeout: Optional[float] = None,
+    ) -> Any:
+        normalized = normalize_service_name(name)
+        if self.local.service_bus.has_service(normalized):
+            return await self.local.service_bus.call_service_async(
+                normalized,
+                request,
+                caller_device_id=caller_device_id,
+                timeout=timeout,
+            )
+        target = self._service_target(normalized)
+        if not target:
+            raise KeyError(f"未知 HostLink service：{normalized}")
+        payload = {
+            "caller_device_id": str(caller_device_id),
+            "service": normalized,
+            "request": to_wire_value(request),
+        }
+        if self.server is not None:
+            response = await self.server.request_device_async(
+                target,
+                ActionType.SERVICE_CALL,
+                payload,
+                timeout,
+            )
+        elif self.client is not None:
+            response = await self.client.request_async(
+                ActionType.SERVICE_CALL,
+                payload,
+                timeout,
+            )
+        else:
+            raise KeyError(f"未知 HostLink service：{normalized}")
+        return response.get("response") if isinstance(response, dict) else response
 
     def _sync_initial_resources(self) -> None:
         client = self.client
@@ -241,9 +388,7 @@ class HostLinkBackendRuntime:
         if client is None or not client.online:
             return
         action_type = (
-            ActionType.TOPIC_SUBSCRIBE
-            if subscribed
-            else ActionType.TOPIC_UNSUBSCRIBE
+            ActionType.TOPIC_SUBSCRIBE if subscribed else ActionType.TOPIC_UNSUBSCRIBE
         )
         try:
             self._topic_executor.submit(
@@ -421,6 +566,36 @@ class HostLinkBackendRuntime:
             # 心跳会在重连后补发完整状态，这里不重放单字段通知。
             pass
 
+    def _handle_service_call(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        name = normalize_service_name(str(data.get("service") or ""))
+        if not self.local.service_bus.has_service(name):
+            raise KeyError(f"当前 Slave 没有 service：{name}")
+        result = self.local.service_bus.call_service(
+            name,
+            data.get("request"),
+            caller_device_id=str(data.get("caller_device_id") or ""),
+        )
+        return {"service": name, "response": to_wire_value(result)}
+
+    def _handle_peer_service_call(
+        self,
+        data: Dict[str, Any],
+        peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        caller_device_id = str(data.get("caller_device_id") or "").strip()
+        owned = {str(item) for item in peer.get("device_ids") or []}
+        if caller_device_id not in owned:
+            raise PermissionError(
+                f"Slave 未注册 service 调用设备：{caller_device_id!r}"
+            )
+        name = normalize_service_name(str(data.get("service") or ""))
+        result = self.call_service(
+            name,
+            data.get("request"),
+            caller_device_id=caller_device_id,
+        )
+        return {"service": name, "response": to_wire_value(result)}
+
     def _handle_device_call(self, data: Dict[str, Any]) -> Dict[str, Any]:
         device_id = str(data.get("device_id") or "").strip()
         action = str(data.get("action") or "").strip()
@@ -468,9 +643,7 @@ class HostLinkBackendRuntime:
         caller_device_id = str(data.get("caller_device_id") or "").strip()
         owned = {str(item) for item in peer.get("device_ids") or []}
         if caller_device_id not in owned:
-            raise PermissionError(
-                f"Slave 未注册调用设备：{caller_device_id!r}"
-            )
+            raise PermissionError(f"Slave 未注册调用设备：{caller_device_id!r}")
         device_id = str(data.get("device_id") or "").strip()
         action = str(data.get("action") or "").strip()
         arguments = data.get("arguments")
@@ -579,9 +752,7 @@ class HostLinkBackendRuntime:
             return {"accepted": False, "action_id": action_id}
         feedback = data.get("feedback")
         try:
-            active[1].publish_feedback(
-                feedback if isinstance(feedback, dict) else {}
-            )
+            active[1].publish_feedback(feedback if isinstance(feedback, dict) else {})
         except Exception:  # noqa: BLE001 - feedback 回调不能中断远端动作
             logger.exception(
                 "[HostLink backend] Action feedback 回调失败：%s",

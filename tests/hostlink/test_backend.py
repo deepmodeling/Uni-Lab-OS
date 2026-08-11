@@ -158,6 +158,41 @@ class FeedbackDriver:
         return self.progress
 
 
+class AddService:
+    class Request:
+        def __init__(self, left=0, right=0):
+            self.left = left
+            self.right = right
+
+    class Response:
+        def __init__(self):
+            self.total = 0
+
+
+class ServiceDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+        self.provide = bool((config or {}).get("provide"))
+
+    def post_init(self, node) -> None:
+        self.node = node
+        if self.provide:
+            node.create_service(AddService, "add", self.add)
+
+    @staticmethod
+    def add(request, response):
+        response.total = request.left + request.right
+        return response
+
+    async def call_service(self, target_device: str, left: int, right: int) -> int:
+        client = self.node.create_client(
+            AddService,
+            f"/devices/{target_device}/add",
+        )
+        response = await client.call_async(AddService.Request(left, right))
+        return response.total
+
+
 def _counter_runtime(
     device_id: str,
     initial: int = 0,
@@ -178,6 +213,17 @@ def _counter_runtime(
                 "call_peer_async",
                 "call_peer_with_action_type",
             ),
+            action_value_mappings={
+                "increment": {
+                    "type": "unilabos_msgs/action/IntSingleInput",
+                    "goal": {"amount": "value"},
+                    "result": {"return_info": "return_info"},
+                    "schema": {
+                        "type": "object",
+                        "properties": {"amount": {"type": "integer"}},
+                    },
+                }
+            },
             status_names=("count",),
             resource_uuid=resource_uuid,
         )
@@ -355,7 +401,85 @@ def test_hostlink_awaits_device_tools_without_thread_fallback(
         discovered = host.devices()["slave-target"]
         assert "increment_async" in discovered["device"]["actions"]
         assert discovered["device"]["status_fields"] == ["count"]
+        assert discovered["device"]["action_value_mappings"]["increment"]["goal"] == {
+            "amount": "value"
+        }
         assert discovered["online"] is True
+    finally:
+        slave.stop()
+        host.stop()
+
+
+def test_hostlink_routes_ros_shaped_services_in_both_directions(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 1.0)
+    monkeypatch.setattr(BasicConfig, "machine_name", "service-slave")
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    host_local = BasicRuntime("hostlink")
+    host_local.add_driver(
+        BasicDriverSpec("host-service", ServiceDriver, {"provide": True})
+    )
+    host_local.add_driver(
+        BasicDriverSpec(
+            "host-caller",
+            ServiceDriver,
+            {},
+            action_names=("call_service",),
+        )
+    )
+    slave_local = BasicRuntime("hostlink")
+    slave_local.add_driver(
+        BasicDriverSpec("slave-service", ServiceDriver, {"provide": True})
+    )
+    slave_local.add_driver(
+        BasicDriverSpec(
+            "slave-caller",
+            ServiceDriver,
+            {},
+            action_names=("call_service",),
+        )
+    )
+    host = HostLinkBackendRuntime(host_local, is_slave=False)
+    slave = HostLinkBackendRuntime(slave_local, is_slave=True)
+    host.start()
+    assert host.server is not None
+    HostLinkConfig.port = host.server.port
+    try:
+        slave.start()
+        assert _wait_until(lambda: "slave-service" in host.devices())
+        assert host.has_service("/devices/slave-service/add")
+        assert host.devices()["slave-service"]["device"]["services"] == [
+            "/devices/slave-service/add"
+        ]
+        assert (
+            host.call_action(
+                "host-caller",
+                "call_service",
+                target_device="slave-service",
+                left=4,
+                right=5,
+            )
+            == 9
+        )
+        assert (
+            host.call_action(
+                "slave-caller",
+                "call_service",
+                target_device="host-service",
+                left=7,
+                right=8,
+            )
+            == 15
+        )
     finally:
         slave.stop()
         host.stop()
@@ -420,14 +544,10 @@ def test_hostlink_routes_topics_in_both_directions(monkeypatch) -> None:
         )
 
         host_source.call_action("send", value=11)
-        assert _wait_until(
-            lambda: slave_sink.driver.received == [{"value": 11}]
-        )
+        assert _wait_until(lambda: slave_sink.driver.received == [{"value": 11}])
 
         slave_source.call_action("send", value=22)
-        assert _wait_until(
-            lambda: host_sink.driver.received == [{"value": 22}]
-        )
+        assert _wait_until(lambda: host_sink.driver.received == [{"value": 22}])
 
         assert slave.client is not None
         with host._remote_topic_lock:
@@ -443,8 +563,7 @@ def test_hostlink_routes_topics_in_both_directions(monkeypatch) -> None:
         )
         host_source.call_action("send", value=33)
         assert _wait_until(
-            lambda: slave_sink.driver.received
-            == [{"value": 11}, {"value": 33}]
+            lambda: slave_sink.driver.received == [{"value": 11}, {"value": 33}]
         )
     finally:
         slave.stop()
@@ -497,8 +616,9 @@ def test_hostlink_transports_ros_messages_as_json(monkeypatch) -> None:
 
         source.call_action("send", name="中文状态")
         assert _wait_until(
-            lambda: sink.driver.received
-            == [{"name": "中文状态", "samples": [1.25, 2.5]}]
+            lambda: (
+                sink.driver.received == [{"name": "中文状态", "samples": [1.25, 2.5]}]
+            )
         )
 
         result = host.call_action(

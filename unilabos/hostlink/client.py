@@ -94,6 +94,7 @@ class HostLinkClient:
             "device-discovery",
             "ros-assist",
             "device-rpc",
+            "service-rpc",
             "topic-pubsub",
         ]
         self.hello_info: Dict[str, Any] = {}

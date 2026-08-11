@@ -1,23 +1,25 @@
 export type TaskNodeParameters = Record<string, Record<string, unknown>>;
 export type TaskParameterSchema = Record<string, Record<string, readonly string[]>>;
+export type SampleTemplateParameters = Record<string, Record<string, TaskNodeParameters>>;
 
 export type TaskTestMemory = {
-  version: 1;
+  version: 2;
   sampleCount: number;
-  templateParameters: Record<string, TaskNodeParameters>;
+  sampleTemplateParameters: SampleTemplateParameters;
 };
 
 type StorageReader = Pick<Storage, 'getItem'>;
 type StorageWriter = Pick<Storage, 'setItem'>;
 
-const TASK_TEST_MEMORY_PREFIX = 'unilabos.taskTestMemory.v1';
+const TASK_TEST_MEMORY_PREFIX = 'unilabos.taskTestMemory.v2';
+const LEGACY_TASK_TEST_MEMORY_PREFIX = 'unilabos.taskTestMemory.v1';
 const DEFAULT_SAMPLE_COUNT = 3;
 
 export function createEmptyTaskTestMemory(): TaskTestMemory {
   return {
-    version: 1,
+    version: 2,
     sampleCount: DEFAULT_SAMPLE_COUNT,
-    templateParameters: {},
+    sampleTemplateParameters: {},
   };
 }
 
@@ -27,22 +29,32 @@ export function taskTestMemoryKey(workflowPath: string) {
 
 export function loadTaskTestMemory(storage: StorageReader, workflowPath: string): TaskTestMemory {
   try {
-    const raw = storage.getItem(taskTestMemoryKey(workflowPath));
+    const suffix = workflowPath || 'default';
+    const raw = storage.getItem(taskTestMemoryKey(workflowPath))
+      || storage.getItem(`${LEGACY_TASK_TEST_MEMORY_PREFIX}.${suffix}`);
     if (!raw) return createEmptyTaskTestMemory();
     const parsed = JSON.parse(raw) as unknown;
-    if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.templateParameters)) {
+    if (!isRecord(parsed)) {
       return createEmptyTaskTestMemory();
     }
-    const templateParameters = Object.fromEntries(
-      Object.entries(parsed.templateParameters).flatMap(([templateId, parameters]) => {
-        const normalized = normalizeNodeParameters(parameters);
-        return templateId && normalized ? [[templateId, normalized]] : [];
-      }),
+    if (parsed.version === 1) {
+      // v1 没有保存 sample_id，无法可靠判断最后一份参数属于哪个样品；只迁移样品数，
+      // 避免把最后编辑的 Sample D 参数错误套用到 Sample A/B/C。
+      return {
+        ...createEmptyTaskTestMemory(),
+        sampleCount: normalizeSampleCount(parsed.sampleCount),
+      };
+    }
+    if (parsed.version !== 2 || !isRecord(parsed.sampleTemplateParameters)) {
+      return createEmptyTaskTestMemory();
+    }
+    const sampleTemplateParameters = normalizeSampleTemplateParameters(
+      parsed.sampleTemplateParameters,
     );
     return {
-      version: 1,
+      version: 2,
       sampleCount: normalizeSampleCount(parsed.sampleCount),
-      templateParameters,
+      sampleTemplateParameters,
     };
   } catch {
     return createEmptyTaskTestMemory();
@@ -61,44 +73,78 @@ export function withTaskSampleCount(memory: TaskTestMemory, sampleCount: number)
   return { ...memory, sampleCount: normalizeSampleCount(sampleCount) };
 }
 
-export function withRememberedTemplateParameters(
+export function withRememberedSampleTemplateParameters(
   memory: TaskTestMemory,
+  sampleId: string,
   templateId: string,
   nodeParameters: TaskNodeParameters,
 ): TaskTestMemory {
-  if (!templateId) return memory;
+  if (!sampleId || !templateId) return memory;
   if (!Object.keys(nodeParameters).length) {
-    const { [templateId]: _removed, ...remaining } = memory.templateParameters;
-    return { ...memory, templateParameters: remaining };
+    const { [templateId]: _removed, ...remainingTemplates } = (
+      memory.sampleTemplateParameters[sampleId] || {}
+    );
+    const { [sampleId]: _sample, ...remainingSamples } = memory.sampleTemplateParameters;
+    return {
+      ...memory,
+      sampleTemplateParameters: Object.keys(remainingTemplates).length
+        ? { ...memory.sampleTemplateParameters, [sampleId]: remainingTemplates }
+        : remainingSamples,
+    };
   }
   return {
     ...memory,
-    templateParameters: {
-      ...memory.templateParameters,
-      [templateId]: cloneNodeParameters(nodeParameters),
+    sampleTemplateParameters: {
+      ...memory.sampleTemplateParameters,
+      [sampleId]: {
+        ...(memory.sampleTemplateParameters[sampleId] || {}),
+        [templateId]: cloneNodeParameters(nodeParameters),
+      },
     },
   };
 }
 
 export function withoutRememberedTemplateParameters(memory: TaskTestMemory): TaskTestMemory {
-  return { ...memory, templateParameters: {} };
+  return { ...memory, sampleTemplateParameters: {} };
 }
 
-export function rememberedParametersForTemplates(
+export function rememberedParametersForSamples(
   memory: TaskTestMemory,
+  sampleIds: string[],
   templateIds: string[],
   schema?: TaskParameterSchema,
-) {
-  const selected = new Set(templateIds);
+): SampleTemplateParameters {
+  const selectedSamples = new Set(sampleIds);
+  const selectedTemplates = new Set(templateIds);
   return Object.fromEntries(
-    Object.entries(memory.templateParameters)
-      .filter(([templateId]) => selected.has(templateId))
-      .flatMap(([templateId, parameters]) => {
-        const filtered = schema
-          ? filterNodeParameters(parameters, schema[templateId] || {})
-          : cloneNodeParameters(parameters);
-        return Object.keys(filtered).length ? [[templateId, filtered]] : [];
+    Object.entries(memory.sampleTemplateParameters)
+      .filter(([sampleId]) => selectedSamples.has(sampleId))
+      .flatMap(([sampleId, templateParameters]) => {
+        const filteredTemplates = Object.fromEntries(
+          Object.entries(templateParameters)
+            .filter(([templateId]) => selectedTemplates.has(templateId))
+            .flatMap(([templateId, parameters]) => {
+              const filtered = schema
+                ? filterNodeParameters(parameters, schema[templateId] || {})
+                : cloneNodeParameters(parameters);
+              return Object.keys(filtered).length ? [[templateId, filtered]] : [];
+            }),
+        );
+        return Object.keys(filteredTemplates).length ? [[sampleId, filteredTemplates]] : [];
       }),
+  );
+}
+
+export function rememberedSampleTemplateCount(
+  memory: TaskTestMemory,
+  templateIds?: string[],
+) {
+  const selectedTemplates = templateIds ? new Set(templateIds) : null;
+  return Object.values(memory.sampleTemplateParameters).reduce(
+    (count, templates) => count + Object.keys(templates).filter(
+      (templateId) => !selectedTemplates || selectedTemplates.has(templateId),
+    ).length,
+    0,
   );
 }
 
@@ -125,6 +171,21 @@ function normalizeNodeParameters(value: unknown): TaskNodeParameters | null {
     nodeId && isRecord(parameters) ? [[nodeId, { ...parameters }]] : []
   ));
   return Object.fromEntries(entries);
+}
+
+function normalizeSampleTemplateParameters(value: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([sampleId, templates]) => {
+      if (!sampleId || !isRecord(templates)) return [];
+      const normalizedTemplates = Object.fromEntries(
+        Object.entries(templates).flatMap(([templateId, parameters]) => {
+          const normalized = normalizeNodeParameters(parameters);
+          return templateId && normalized ? [[templateId, normalized]] : [];
+        }),
+      );
+      return Object.keys(normalizedTemplates).length ? [[sampleId, normalizedTemplates]] : [];
+    }),
+  );
 }
 
 function cloneNodeParameters(parameters: TaskNodeParameters): TaskNodeParameters {

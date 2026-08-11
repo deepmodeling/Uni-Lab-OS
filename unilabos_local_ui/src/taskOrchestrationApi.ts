@@ -360,7 +360,10 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
       templateIds: string[],
       sampleIds: string[],
       sampleStartIntervalSeconds = 0,
-      templateNodeParameters: Record<string, Record<string, Record<string, unknown>>> = {},
+      sampleTemplateNodeParameters: Record<
+        string,
+        Record<string, Record<string, Record<string, unknown>>>
+      > = {},
     ) => (
       request('/instances:generate', body({
         workflow_path: workflowPath,
@@ -368,7 +371,7 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
         template_ids: templateIds,
         sample_ids: sampleIds,
         sample_start_interval_seconds: sampleStartIntervalSeconds,
-        template_node_parameters: templateNodeParameters,
+        sample_template_node_parameters: sampleTemplateNodeParameters,
       }))
     ),
     clearInstances: (workflowPath: string, expectedVersion: number) => (

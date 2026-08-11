@@ -22,10 +22,11 @@ async function importTypeScriptModule(path) {
 const {
   createEmptyTaskTestMemory,
   loadTaskTestMemory,
-  rememberedParametersForTemplates,
+  rememberedParametersForSamples,
+  rememberedSampleTemplateCount,
   saveTaskTestMemory,
   taskTestMemoryKey,
-  withRememberedTemplateParameters,
+  withRememberedSampleTemplateParameters,
   withoutRememberedTemplateParameters,
   withTaskSampleCount,
 } = await importTypeScriptModule(new URL('../src/taskTestMemory.ts', import.meta.url));
@@ -39,36 +40,47 @@ const storage = {
 let memory = createEmptyTaskTestMemory();
 assert.equal(memory.sampleCount, 3);
 memory = withTaskSampleCount(memory, 5.8);
-memory = withRememberedTemplateParameters(memory, 's07-template', {
+memory = withRememberedSampleTemplateParameters(memory, 'Sample A', 's07-template', {
   's07-node': {
     powder_count: 2,
     powder_additions: [{ coarse_position: 1, target_weight: 3.5 }],
+  },
+});
+memory = withRememberedSampleTemplateParameters(memory, 'Sample B', 's07-template', {
+  's07-node': {
+    powder_count: 4,
+    powder_additions: [{ coarse_position: 7, target_weight: 8.5 }],
   },
 });
 saveTaskTestMemory(storage, 'demo.json', memory);
 
 const restored = loadTaskTestMemory(storage, 'demo.json');
 assert.equal(restored.sampleCount, 5, '样品数应持久化并限制在前端允许范围内');
-assert.deepEqual(restored.templateParameters, memory.templateParameters, '嵌套实例入参应完整恢复');
 assert.deepEqual(
-  rememberedParametersForTemplates(restored, ['s07-template']),
-  { 's07-template': memory.templateParameters['s07-template'] },
-  '生成队列时只应返回当前选中模板的记忆入参',
+  restored.sampleTemplateParameters,
+  memory.sampleTemplateParameters,
+  '每个样品的嵌套实例入参应分别恢复',
+);
+assert.equal(rememberedSampleTemplateCount(restored), 2, '应按样品/模板组合统计记忆');
+assert.deepEqual(
+  rememberedParametersForSamples(restored, ['Sample A', 'Sample B'], ['s07-template']),
+  memory.sampleTemplateParameters,
+  '生成队列时应返回各样品自己的模板入参',
 );
 assert.deepEqual(
-  rememberedParametersForTemplates(restored, ['other-template']),
+  rememberedParametersForSamples(restored, ['Sample A'], ['other-template']),
   {},
   '未排程模板的记忆入参不应发送给后端',
 );
 assert.deepEqual(
-  rememberedParametersForTemplates(restored, ['s07-template'], {
+  rememberedParametersForSamples(restored, ['Sample A'], ['s07-template'], {
     's07-template': { 's07-node': ['powder_count'] },
   }),
-  { 's07-template': { 's07-node': { powder_count: 2 } } },
+  { 'Sample A': { 's07-template': { 's07-node': { powder_count: 2 } } } },
   '旧记录应按当前模板节点和参数字段过滤',
 );
 assert.deepEqual(
-  rememberedParametersForTemplates(restored, ['s07-template'], {
+  rememberedParametersForSamples(restored, ['Sample A'], ['s07-template'], {
     's07-template': { 'replacement-node': ['powder_count'] },
   }),
   {},
@@ -76,8 +88,21 @@ assert.deepEqual(
 );
 
 const cleared = withoutRememberedTemplateParameters(restored);
-assert.deepEqual(cleared.templateParameters, {});
+assert.deepEqual(cleared.sampleTemplateParameters, {});
 assert.equal(cleared.sampleCount, 5, '清除入参记忆不应重置样品数');
+
+values.set('unilabos.taskTestMemory.v1.legacy.json', JSON.stringify({
+  version: 1,
+  sampleCount: 4,
+  templateParameters: {
+    's07-template': { 's07-node': { coarse_position: 4 } },
+  },
+}));
+assert.deepEqual(
+  loadTaskTestMemory(storage, 'legacy.json'),
+  { ...createEmptyTaskTestMemory(), sampleCount: 4 },
+  '无法判断 sample 归属的 v1 入参不得错误套用到所有样品',
+);
 
 values.set(taskTestMemoryKey('broken.json'), '{broken');
 assert.deepEqual(

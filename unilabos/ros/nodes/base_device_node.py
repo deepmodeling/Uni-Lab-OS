@@ -37,6 +37,7 @@ from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialComma
 
 from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.node import DeviceNode
+from unilabos.device_runtime.async_utils import schedule_async_func
 from unilabos.registry.decorators import get_topic_config
 from unilabos.registry.placeholder_type import ResourceSlotRawInput
 from unilabos.utils.decorator import get_all_subscriptions
@@ -768,7 +769,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         """Schedule a coroutine while accepting the legacy async-function form."""
 
         if callable(coroutine):
-            return ROS2DeviceNode.run_async_func(
+            return self.run_async_func(
                 coroutine,
                 trace_error,
                 **kwargs,
@@ -776,10 +777,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         if kwargs:
             raise TypeError("协程对象不能再接收额外关键字参数")
 
-        async def await_coroutine():
-            return await coroutine
-
-        return ROS2DeviceNode.run_async_func(await_coroutine, trace_error)
+        return rclpy.get_global_executor().create_task(coroutine)
 
     async def update_resource(self, resources: List["ResourcePLR"]):
         r = SerialCommand.Request()
@@ -2145,7 +2143,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                                     f"异步任务 {ACTION.__name__} 报错了\n{traceback.format_exc()}\n原始输入：{action_kwargs}"
                                 )
 
-                        future = ROS2DeviceNode.run_async_func(ACTION, trace_error=False, **action_kwargs)
+                        future = self.run_async_func(ACTION, trace_error=False, **action_kwargs)
                         future.add_done_callback(_handle_future_exception)
                     except Exception as e:
                         execution_error = traceback.format_exc()
@@ -2675,34 +2673,18 @@ class ROS2DeviceNode:
     def get_asyncio_loop(cls):
         return cls._asyncio_loop
 
-    @staticmethod
-    async def safe_task_wrapper(trace_callback, func, **kwargs):
-        try:
-            if callable(trace_callback):
-                trace_callback(await func(**kwargs))
-            return await func(**kwargs)
-        except Exception as e:
-            if callable(trace_callback):
-                trace_callback(e)
-            return e
-
     @classmethod
     def run_async_func(cls, func, trace_error=True, inner_trace_callback=None, **kwargs) -> Task:
-        def _handle_future_exception(fut: Future):
-            try:
-                ret = fut.result()
-                if isinstance(ret, BaseException):
-                    raise ret
-            except Exception as e:
-                error(f"异步任务 {func.__name__} 获取结果失败")
-                error(traceback.format_exc())
+        """兼容旧调用；新驱动应使用当前 DeviceNode 实例的同名方法。"""
 
-        future = rclpy.get_global_executor().create_task(
-            ROS2DeviceNode.safe_task_wrapper(inner_trace_callback, func, **kwargs)
+        return schedule_async_func(
+            rclpy.get_global_executor().create_task,
+            func,
+            trace_error=trace_error,
+            inner_trace_callback=inner_trace_callback,
+            error_callback=error,
+            **kwargs,
         )
-        if trace_error:
-            future.add_done_callback(_handle_future_exception)
-        return future
 
     @classmethod
     async def async_wait_for(cls, node: Node, wait_time: float, callback_group=None):

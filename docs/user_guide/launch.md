@@ -219,6 +219,10 @@ HostLink 可以加载 `std_msgs`、`geometry_msgs`、`unilabos_msgs` 等 ROS mes
 递归转换为 UTF-8 JSON，因此消息类型本身不要求使用 DDS。驱动直接依赖 ROS graph、TF、RViz
 插件或某个 rclpy Node/Service 时，仍需使用 `ros2`，或者先把该调用接入通用节点接口。
 
+驱动需要在后台安排异步函数时，使用 `node.run_async_func(async_function, **kwargs)`；它会根据
+当前 backend 选择 ROS executor 或 Python asyncio loop。不要在驱动中直接引用
+`ROS2DeviceNode.run_async_func`。
+
 推荐由 Host 统一发布 ROS2 domain，Slave 只指定 Host IP：
 
 ```bash

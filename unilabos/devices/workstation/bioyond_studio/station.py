@@ -19,7 +19,7 @@ from unilabos.resources.warehouse import WareHouse
 from unilabos.utils.log import logger
 from unilabos.resources.graphio import resource_bioyond_to_plr, resource_plr_to_bioyond
 
-from unilabos.ros.nodes.base_device_node import ROS2DeviceNode, BaseROS2DeviceNode
+from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.ros.msgs.message_converter import convert_to_ros_msg, Float64, String
 from pylabrobot.resources.resource import Resource as ResourcePLR
@@ -833,7 +833,7 @@ class BioyondWorkstation(WorkstationBase):
         # 注意：如果有从 Bioyond 同步的物料，它们已经被放置到 warehouse 中了
         # 所以只需要上传 deck，物料会作为 warehouse 的 children 一起上传
         logger.info("正在上传 deck（包括 warehouses 和物料）到云端...")
-        ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
+        self._ros_node.run_async_func(self._ros_node.update_resource, True, **{
             "resources": [self.deck]
         })
 
@@ -843,7 +843,7 @@ class BioyondWorkstation(WorkstationBase):
             self._synced_resources = []
 
     def transfer_resource_to_another(self, resource: List[ResourceSlot], mount_resource: List[ResourceSlot], sites: List[str], mount_device_id: DeviceSlot):
-        future = ROS2DeviceNode.run_async_func(self._ros_node.transfer_resource_to_another, True, **{
+        future = self._ros_node.run_async_func(self._ros_node.transfer_resource_to_another, True, **{
             "plr_resources": resource,
             "target_device_id": mount_device_id,
             "target_resources": mount_resource,

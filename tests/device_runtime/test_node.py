@@ -71,6 +71,52 @@ def test_runtime_propagates_selected_backend_to_nodes() -> None:
     assert runtime.backend_name == "hostlink"
 
 
+def test_run_async_func_uses_current_backend_and_executes_once() -> None:
+    node = BasicDeviceNode(Driver(), "device-1", backend_name="hostlink")
+    calls = []
+    traced = []
+
+    async def operation(value: int) -> int:
+        calls.append(value)
+        await asyncio.sleep(0)
+        return value * 2
+
+    node.start()
+    try:
+        future = node.run_async_func(
+            operation,
+            inner_trace_callback=traced.append,
+            value=21,
+        )
+        assert future.result(timeout=1) == 42
+        assert calls == [21]
+        assert traced == [42]
+    finally:
+        node.stop()
+
+
+def test_run_async_func_propagates_error_to_future_and_trace_callback() -> None:
+    node = BasicDeviceNode(Driver(), "device-1", backend_name="hostlink")
+    traced = []
+
+    async def operation() -> None:
+        raise ValueError("expected failure")
+
+    node.start()
+    try:
+        future = node.run_async_func(
+            operation,
+            trace_error=False,
+            inner_trace_callback=traced.append,
+        )
+        with pytest.raises(ValueError, match="expected failure"):
+            future.result(timeout=1)
+        assert len(traced) == 1
+        assert isinstance(traced[0], ValueError)
+    finally:
+        node.stop()
+
+
 def test_migrated_virtual_driver_imports_without_ros() -> None:
     code = (
         "import sys; "

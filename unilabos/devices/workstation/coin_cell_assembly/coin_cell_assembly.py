@@ -15,7 +15,7 @@ from unilabos.devices.workstation.workstation_base import WorkstationBase
 from unilabos.device_comms.modbus_plc.client import TCPClient, ModbusNode, PLCWorkflow, ModbusWorkflow, WorkflowAction, BaseClient
 from unilabos.device_comms.modbus_plc.modbus import DeviceType, Base as ModbusNodeBase, DataType, WorderOrder
 from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import *
-from unilabos.ros.nodes.base_device_node import ROS2DeviceNode, BaseROS2DeviceNode
+from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import CoincellDeck
 from unilabos.resources.graphio import convert_resources_to_type
@@ -194,7 +194,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
     def post_init(self, ros_node: ROS2WorkstationNode):
         self._ros_node = ros_node
         #self.deck = create_a_coin_cell_deck()
-        ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
+        self._ros_node.run_async_func(self._ros_node.update_resource, True, **{
             "resources": [self.deck]
         })
 
@@ -1403,7 +1403,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             raise
         
         #print(jipian2.parent)
-        ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
+        self._ros_node.run_async_func(self._ros_node.update_resource, True, **{
             "resources": [self.deck]
         })
 
@@ -1934,7 +1934,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                                 }
             liaopan3.children[i].assign_child_resource(battery, location=None)
             
-            ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
+            self._ros_node.run_async_func(self._ros_node.update_resource, True, **{
                 "resources": [self.deck]
             })
             # for i in range(40):
@@ -2149,4 +2149,3 @@ if __name__ == "__main__":
     workstation.func_pack_device_start()
     workstation.func_pack_send_bottle_num(16)
     workstation.func_allpack_cmd(elec_num=16, elec_use_num=16, elec_vol=50, assembly_type=7, assembly_pressure=4200, file_path="/Users/calvincao/Desktop/work/Uni-Lab-OS-hhm")
-    

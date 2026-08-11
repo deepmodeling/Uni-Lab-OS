@@ -1715,8 +1715,7 @@ class OpcUaClient(BaseClient):
         
         # 2. 上传云端
         try:
-            from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
-            ROS2DeviceNode.run_async_func(
+            ros_node.run_async_func(
                 ros_node.update_resource,
                 True,
                 resources=[self.deck]

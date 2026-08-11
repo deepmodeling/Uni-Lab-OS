@@ -1946,7 +1946,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
             "inbound_result": inbound_result,
         }
     def resource_tree_transfer(self, old_parent: ResourcePLR, plr_resource: ResourcePLR, parent_resource: ResourcePLR):
-        # ROS2DeviceNode.run_async_func(self._ros_node.resource_tree_transfer, True, **{
+        # self._ros_node.run_async_func(self._ros_node.resource_tree_transfer, True, **{
         #     "old_parent": old_parent,
         #     "plr_resource": plr_resource,
         #     "parent_resource": parent_resource,

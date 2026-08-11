@@ -294,7 +294,16 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
         if hasattr(self.device_instance, "setup") and asyncio.iscoroutinefunction(
             getattr(self.device_instance, "setup")
         ):
-            from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
+            import rclpy
+
+            from unilabos.device_runtime import schedule_async_func
+
+            def run_async(func):
+                return schedule_async_func(
+                    rclpy.get_global_executor().create_task,
+                    func,
+                    error_callback=logger.error,
+                )
 
             def done_cb(*args):
                 from pylabrobot.resources import set_volume_tracking
@@ -313,10 +322,10 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
                     def vis_done_cb(*args):
                         logger.info(f"PyLabRobot设备实例开启了Visualizer {self.device_instance}")
 
-                    ROS2DeviceNode.run_async_func(vis.setup).add_done_callback(vis_done_cb)
+                    run_async(vis.setup).add_done_callback(vis_done_cb)
                     logger.debug(f"PyLabRobot设备实例提交开启Visualizer {self.device_instance}")
 
-            ROS2DeviceNode.run_async_func(getattr(self.device_instance, "setup")).add_done_callback(done_cb)
+            run_async(getattr(self.device_instance, "setup")).add_done_callback(done_cb)
 
 
 class WorkstationNodeCreator(DeviceClassCreator[T]):

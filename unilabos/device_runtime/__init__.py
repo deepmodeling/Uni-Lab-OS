@@ -1,5 +1,6 @@
 """Backend-neutral contracts shared by device drivers and runtime adapters."""
 
+from unilabos.device_runtime.async_utils import schedule_async_func
 from unilabos.device_runtime.action import (
     ActionCancelled,
     ActionContext,
@@ -33,6 +34,7 @@ __all__ = [
     "LocalTopicBus",
     "ResourceService",
     "ResourceStore",
+    "schedule_async_func",
     "StatusListener",
     "TopicBus",
     "TopicEvent",

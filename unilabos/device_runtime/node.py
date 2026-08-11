@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 import inspect
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 
+from unilabos.device_runtime.async_utils import schedule_async_func
+
 if TYPE_CHECKING:
     from unilabos.device_runtime.action import DeviceActionRouter
     from unilabos.device_runtime.resource import ResourceService
@@ -49,6 +51,24 @@ class DeviceNode(ABC):
     @abstractmethod
     def create_task(self, coroutine: Awaitable[Any]) -> Any:
         """Schedule an awaitable on the backend executor."""
+
+    def run_async_func(
+        self,
+        func: Any,
+        trace_error: bool = True,
+        inner_trace_callback: Optional[Callable[[Any], None]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """在当前 backend 的执行器上运行异步函数，并返回对应 Future。"""
+
+        return schedule_async_func(
+            self.create_task,
+            func,
+            trace_error=trace_error,
+            inner_trace_callback=inner_trace_callback,
+            error_callback=self.lab_logger().error,
+            **kwargs,
+        )
 
     async def update_resource(self, resources: Any) -> Any:
         service = self.__dict__.get("_device_resource_service")

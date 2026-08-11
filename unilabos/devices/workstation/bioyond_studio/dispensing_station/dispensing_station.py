@@ -9,7 +9,7 @@ import pint
 
 from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import BioyondException
 from unilabos.devices.workstation.bioyond_studio.station import BioyondWorkstation
-from unilabos.ros.nodes.base_device_node import ROS2DeviceNode, BaseROS2DeviceNode
+from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 import json
 import sys
 from pathlib import Path
@@ -1820,7 +1820,7 @@ class BioyondDispensingStation(BioyondWorkstation):
                         )
 
                     # 目标位点（包含UUID）
-                    future = ROS2DeviceNode.run_async_func(
+                    future = self._ros_node.run_async_func(
                         self._ros_node.get_resource_with_dir,
                         True,
                         **{

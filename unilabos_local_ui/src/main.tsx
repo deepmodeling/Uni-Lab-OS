@@ -4619,7 +4619,7 @@ function App() {
                     liquid_count: next.length,
                     liquid_additions: next,
                   });
-                  return <section className="powder-sequence-editor">
+                  return <section className="powder-sequence-editor liquid-addition-editor">
                     <div className="s09-tip-status" role="status">
                       {canvasS09TipSummary(canvasS09TipStatus).map((line) => <div key={line}>{line}</div>)}
                       <div>{canvasS09TipStatus?.last_operation
@@ -4638,8 +4638,8 @@ function App() {
                     {additions.map((addition, additionIndex) => <fieldset key={additionIndex}>
                       <legend>液体 {additionIndex + 1}</legend>
                       {([
-                        ['liquid_station_index', '液体工位', 'number'],
-                        ['solvent_batch_id', '溶剂标识', 'text'],
+                        ['solvent_batch_id', '溶剂批次', 'text'],
+                        ['liquid_station_index', '加工工位', 'number'],
                         ['volume', '独立加液体积', 'number'],
                       ] as const).map(([field, label, type]) => <label key={field}>
                         <span className="param-label">{label}</span>

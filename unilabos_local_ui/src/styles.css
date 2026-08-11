@@ -1112,6 +1112,10 @@ code {
   padding: 8px 12px 12px;
 }
 
+.liquid-addition-editor fieldset {
+  grid-template-columns: 1fr;
+}
+
 .powder-sequence-editor legend {
   color: #334155;
   font-weight: 700;

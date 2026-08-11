@@ -696,8 +696,8 @@ export function TaskSchedulerBench(props: Props) {
                       {additions.map((addition, additionIndex) => <fieldset key={additionIndex}>
                         <legend>液体 {additionIndex + 1}</legend>
                         {([
-                          ['liquid_station_index', '液体工位', 'number'],
-                          ['solvent_batch_id', '溶剂标识', 'text'],
+                          ['solvent_batch_id', '溶剂批次', 'text'],
+                          ['liquid_station_index', '加工工位', 'number'],
                           ['volume', '独立加液体积', 'number'],
                         ] as const).map(([field, label, type]) => <label key={field}>
                           <span>{label}</span>

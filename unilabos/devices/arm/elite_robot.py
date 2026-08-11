@@ -1,14 +1,13 @@
 import socket
 import re
 import time
-from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
 
 class EliteRobot:
     def __init__(self,device_id, host, **kwargs):
         self.host = host
-        self.node = Node(f"{device_id}")
+        self.node = None
         self.joint_state_msg = JointState()
         self.joint_state_msg.name = [f"{device_id}_shoulder_pan_joint",
                                      f"{device_id}_shoulder_lift_joint", 
@@ -18,7 +17,7 @@ class EliteRobot:
                                      f"{device_id}_wrist_3_joint"]
         
         self.job_id = 0
-        self.joint_state_pub = self.node.create_publisher(JointState, "/joint_states", 10)
+        self.joint_state_pub = None
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # 实现一个简单的Modbus TCP/IP协议客户端，端口为502
         self.modbus_port = 502
@@ -34,6 +33,16 @@ class EliteRobot:
             print(f"已成功连接到 {self.host}:{40011}")
         except Exception as e:
             print(f"连接到 {self.host}:{40011} 失败: {e}")
+
+    def post_init(self, node):
+        """使用当前 backend 提供的通用节点创建关节状态发布者。"""
+
+        self.node = node
+        self.joint_state_pub = node.create_publisher(
+            JointState,
+            "/joint_states",
+            10,
+        )
 
     def modbus_close(self):
         self.modbus_sock.close()
@@ -187,8 +196,11 @@ class EliteRobot:
 
 if __name__ == "__main__":
     import rclpy
+    from rclpy.node import Node
+
     rclpy.init()
     client = EliteRobot('aa',"192.168.1.200")
+    client.post_init(Node("aa"))
     print(client.parse_success_response(client.send_command("req 1 get_actual_joint_positions()\n")))
     client.modbus_write_single_register(1, 256, 4)
     print(client.modbus_read_holding_registers(1, 257, 1))

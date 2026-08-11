@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from unilabos.basic.runtime import (
     BasicDeviceNode,
     BasicDriverSpec,
     BasicRuntime,
     instantiate_driver,
 )
+from unilabos.device_runtime import BackendCapabilityError
 
 
 class ConfigDriver:
@@ -69,6 +72,18 @@ class AsyncDriver:
     async def cleanup(self) -> bool:
         self.cleaned = True
         return True
+
+
+class RosTimerDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+        self.node = None
+
+    def post_init(self, node) -> None:
+        self.node = node
+
+    def start_timer(self) -> None:
+        self.node.create_timer(1.0, lambda: None)
 
 
 def test_driver_instantiation_supports_config_and_flat_styles() -> None:
@@ -173,5 +188,26 @@ def test_basic_runtime_exposes_registered_actions_and_status() -> None:
         ]
         assert runtime.snapshot_states() == {"dev-1": {"ready": "idle"}}
         assert runtime.call_action("dev-1", "auto-add", left=1, right=2) == 3
+    finally:
+        runtime.stop()
+
+
+def test_basic_runtime_reports_direct_ros_node_calls_clearly() -> None:
+    runtime = BasicRuntime("hostlink")
+    runtime.add_driver(
+        BasicDriverSpec(
+            "ros-timer",
+            RosTimerDriver,
+            {},
+            action_names=("start_timer",),
+        )
+    )
+    runtime.start()
+    try:
+        with pytest.raises(
+            BackendCapabilityError,
+            match="设备 'ros-timer'.*create_timer.*DeviceNode",
+        ):
+            runtime.call_action("ros-timer", "start_timer")
     finally:
         runtime.stop()

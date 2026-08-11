@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Type
 
-from unilabos.device_runtime.node import DeviceNode
+from unilabos.device_runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.device_runtime.action import ActionContext
 from unilabos.device_runtime.resource import ResourceService
 from unilabos.device_runtime.topic import LocalTopicBus
@@ -96,6 +96,40 @@ class BasicDeviceNode(DeviceNode):
         self._status_lock = threading.Lock()
         self._decorated_subscriptions: list[Any] = []
 
+    _ROS2_RUNTIME_ATTRIBUTES = frozenset(
+        {
+            "create_timer",
+            "create_rate",
+            "create_service",
+            "create_client",
+            "create_guard_condition",
+            "create_action_server",
+            "create_action_client",
+            "declare_parameter",
+            "declare_parameters",
+            "get_parameter",
+            "get_parameters",
+            "set_parameters",
+            "get_clock",
+            "get_publishers_info_by_topic",
+            "get_subscriptions_info_by_topic",
+            "wait_for_service",
+        }
+    )
+
+    def _raise_backend_attribute_error(self, exc: AttributeError) -> None:
+        """把驱动对 ROS2 Node API 的直接调用转换成容易定位的错误。"""
+
+        name = str(getattr(exc, "name", "") or "")
+        owner = getattr(exc, "obj", None)
+        if owner is self and name in self._ROS2_RUNTIME_ATTRIBUTES:
+            raise BackendCapabilityError(
+                f"设备 {self.device_id!r} 在 backend '{self.backend_name}' 中调用了 "
+                f"ROS2 Node 方法 {name!r}；请改用通用 DeviceNode 接口，或把该设备的 "
+                "supported_backends 限制为 ros2"
+            ) from exc
+        raise exc
+
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
         self._action_lock = asyncio.Lock()
@@ -142,6 +176,9 @@ class BasicDeviceNode(DeviceNode):
             initialize = getattr(self.driver, "initialize", None)
             if callable(initialize):
                 self._call(initialize, _wait_timeout=30)
+        except AttributeError as exc:
+            self.stop()
+            self._raise_backend_attribute_error(exc)
         except Exception:
             self.stop()
             raise
@@ -205,16 +242,19 @@ class BasicDeviceNode(DeviceNode):
         lock = self._action_lock
         if lock is None:
             raise RuntimeError(f"Basic 设备 {self.device_id!r} 事件循环尚未就绪")
-        async with lock:
-            context.raise_if_cancelled()
-            if inspect.iscoroutinefunction(action):
-                result = await action(**kwargs)
-            else:
-                result = await asyncio.to_thread(action, **kwargs)
-                if inspect.isawaitable(result):
-                    result = await result
-            context.raise_if_cancelled()
-            return result
+        try:
+            async with lock:
+                context.raise_if_cancelled()
+                if inspect.iscoroutinefunction(action):
+                    result = await action(**kwargs)
+                else:
+                    result = await asyncio.to_thread(action, **kwargs)
+                    if inspect.isawaitable(result):
+                        result = await result
+                context.raise_if_cancelled()
+                return result
+        except AttributeError as exc:
+            self._raise_backend_attribute_error(exc)
 
     def call_action(
         self,

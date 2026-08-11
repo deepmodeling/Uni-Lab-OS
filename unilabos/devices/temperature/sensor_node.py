@@ -32,9 +32,6 @@ import threading,time
 
 import serial
 import struct
-from rclpy.node import Node
-import rclpy
-import threading
 
 class TempSensorNode():
     def __init__(self,port,warning,address,baudrate=9600):

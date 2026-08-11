@@ -13,6 +13,7 @@ import re
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
@@ -53,6 +54,7 @@ from scripts.opc_simulator_process_manager import (
     UnsafeSimulatorUrlConfirmationRequired,
 )
 from scripts.task_action_log_store import TaskActionLogStore
+from scripts.run_history_store import RunHistoryStore
 from scripts.task_execution_coordinator import (
     TaskApiConflict,
     TaskExecutionCoordinator,
@@ -975,6 +977,7 @@ class WorkflowRunManager:
         runtime_config: RuntimeConfig,
         *,
         timing_enabled: bool = False,
+        run_history_store: RunHistoryStore | None = None,
     ) -> None:
         self._preset = preset
         self._runtime_config = runtime_config
@@ -991,6 +994,7 @@ class WorkflowRunManager:
         self._sensor_event_plc: Any = None
         self._task_snapshot_publisher = TaskOrchestrationSnapshotPublisher()
         self._task_action_log_store = TaskActionLogStore()
+        self._run_history_store = run_history_store or RunHistoryStore()
         self._task_execution_coordinator = TaskExecutionCoordinator(
             task_client=self._task_snapshot_publisher,
             node_runner=self._run_task_action_node,
@@ -1018,7 +1022,45 @@ class WorkflowRunManager:
             )
         except Exception:
             # 日志收集失败不得影响 Action 执行
-            return
+            pass
+        try:
+            self._run_history_store.append_event(
+                workflow_path=str(context.get("workflow_path") or ""),
+                instance_id=str(context.get("instance_id") or ""),
+                node_id=str(context.get("node_id") or ""),
+                execution_id=str(context.get("execution_id") or ""),
+                sample_id=str(context.get("sample_id") or ""),
+                level=level,
+                message=message,
+                detail=detail,
+            )
+        except Exception:
+            # 持久化失败不得影响 Action 执行
+            pass
+        normalized_level = str(level).lower()
+        if normalized_level in {"warning", "error", "critical"} or any(
+            keyword in message for keyword in ("报警", "告警")
+        ):
+            try:
+                self._run_history_store.record_incident(
+                    category="action_alarm",
+                    code="action_log_alarm",
+                    severity=(
+                        normalized_level
+                        if normalized_level in {"warning", "error", "critical"}
+                        else "warning"
+                    ),
+                    message=message,
+                    workflow_path=str(context.get("workflow_path") or ""),
+                    instance_id=str(context.get("instance_id") or ""),
+                    sample_id=str(context.get("sample_id") or ""),
+                    node_id=str(context.get("node_id") or ""),
+                    execution_id=str(context.get("execution_id") or ""),
+                    phase="动作执行中",
+                    detail=detail,
+                )
+            except Exception:
+                pass
 
     def _run_task_action_node(
         self,
@@ -1027,6 +1069,22 @@ class WorkflowRunManager:
         action_callable: Callable[..., Any],
         context: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        execution_id = str(context.get("execution_id") or "")
+        try:
+            self._run_history_store.record_action_start(
+                workflow_path=str(context.get("workflow_path") or ""),
+                instance_id=str(context.get("instance_id") or ""),
+                node_id=str(context.get("node_id") or node.uuid),
+                execution_id=execution_id,
+                sample_id=str(context.get("sample_id") or ""),
+                device_id=node.device_name,
+                action_name=node_method(node),
+                params=node.param,
+            )
+        except Exception:
+            # 台账不得改变原有动作执行路径
+            pass
+
         def writer(message: str, *, level: str = "info", detail: dict[str, Any] | None = None) -> None:
             self._append_task_action_log(
                 context,
@@ -1036,13 +1094,49 @@ class WorkflowRunManager:
             )
 
         logger = WorkflowLogger(writer=writer)
-        return _run_node_with_live_opc_sampling(
-            node,
-            devices,
-            action_callable=action_callable,
-            logger=logger,
-            runtime_config=self._runtime_config,
-        )
+        try:
+            result = _run_node_with_live_opc_sampling(
+                node,
+                devices,
+                action_callable=action_callable,
+                logger=logger,
+                runtime_config=self._runtime_config,
+            )
+        except Exception as exc:
+            try:
+                self._run_history_store.record_action_finish(
+                    execution_id=execution_id,
+                    status="failed",
+                    error={
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+                self._run_history_store.record_incident(
+                    category="action_error",
+                    code="action_failed",
+                    severity="error",
+                    message=str(exc),
+                    execution_id=execution_id,
+                    phase="动作执行中",
+                    detail={
+                        "type": type(exc).__name__,
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+            except Exception:
+                pass
+            raise
+        try:
+            self._run_history_store.record_action_finish(
+                execution_id=execution_id,
+                status="completed",
+                result=result,
+            )
+        except Exception:
+            pass
+        return result
 
     def list_task_action_logs(
         self,
@@ -1055,6 +1149,53 @@ class WorkflowRunManager:
             workflow_path,
             after_seq=after_seq,
             instance_id=instance_id,
+        )
+
+    def list_run_history(self, *, limit: int = 50) -> dict[str, Any]:
+        return self._run_history_store.list_runs(limit=limit)
+
+    def get_timing_ledger(self, *, run_id: str | None = None) -> dict[str, Any]:
+        return self._run_history_store.timing_ledger(run_id)
+
+    def get_station_ledger(
+        self,
+        *,
+        run_id: str | None = None,
+        station: str | None = None,
+        limit: int = 1000,
+    ) -> dict[str, Any]:
+        return self._run_history_store.station_ledger(
+            run_id,
+            station=station,
+            limit=limit,
+        )
+
+    def get_incident_ledger(
+        self,
+        *,
+        run_id: str | None = None,
+        sample_id: str | None = None,
+        status: str | None = None,
+        limit: int = 1000,
+    ) -> dict[str, Any]:
+        return self._run_history_store.incident_ledger(
+            run_id,
+            sample_id=sample_id,
+            status=status,
+            limit=limit,
+        )
+
+    def export_run_history(
+        self,
+        *,
+        ledger: str,
+        run_id: str | None = None,
+        file_format: str = "json",
+    ) -> Path:
+        return self._run_history_store.export_ledger(
+            ledger=ledger,
+            run_id=run_id,
+            file_format=file_format,
         )
 
     def start(self, payload: dict[str, Any]) -> RunRecord:
@@ -1110,6 +1251,7 @@ class WorkflowRunManager:
     def shutdown(self) -> dict[str, Any]:
         shutdown_result = self._task_execution_coordinator.shutdown()
         self._disconnect_cached_devices()
+        self._run_history_store.close()
         return shutdown_result
 
     def _task_execution_devices(self) -> dict[str, Any]:
@@ -1123,7 +1265,7 @@ class WorkflowRunManager:
         workflow_path: str,
         workflow_payload: dict[str, Any] | None = None,
         harvest_only: bool = False,
-    ) -> dict[str, int | bool]:
+    ) -> dict[str, Any]:
         """解析当前 workflow，并推进一次非阻塞动作协调周期。"""
         if type(harvest_only) is not bool:
             raise TypeError("harvest_only 必须为 bool")
@@ -1134,11 +1276,43 @@ class WorkflowRunManager:
             if harvest_only
             else workflow_nodes_from_payload(workflow_payload)
         )
-        return self._task_execution_coordinator.cycle(
-            workflow_path=workflow_path,
-            workflow_nodes=workflow_nodes,
-            harvest_only=harvest_only,
-        )
+        try:
+            stats = self._task_execution_coordinator.cycle(
+                workflow_path=workflow_path,
+                workflow_nodes=workflow_nodes,
+                harvest_only=harvest_only,
+            )
+        except Exception as exc:
+            try:
+                self._run_history_store.record_incident(
+                    category="scheduler_error",
+                    code="execution_cycle_failed",
+                    severity="error",
+                    message=str(exc),
+                    workflow_path=workflow_path,
+                    phase="排程循环",
+                    detail={
+                        "type": type(exc).__name__,
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+            except Exception:
+                pass
+            raise
+        if not harvest_only:
+            try:
+                self._run_history_store.observe_scheduler_cycle(
+                    workflow_path=workflow_path,
+                    diagnostics=stats.get("diagnostics"),
+                    cycle_stats={
+                        key: value
+                        for key, value in stats.items()
+                        if key != "diagnostics"
+                    },
+                )
+            except Exception:
+                pass
+        return stats
 
     def get_live_devices(self) -> dict[str, Any]:
         with self._lock:
@@ -2338,13 +2512,17 @@ def create_app(
     *,
     timing_enabled: bool = False,
     opc_simulator_manager: OpcSimulatorProcessManager | None = None,
+    run_history_store: RunHistoryStore | None = None,
 ) -> FastAPI:
     preset = load_preset(preset_name)
     runtime_config = runtime_config or _load_preset_runtime_config(preset)
     active_preset = _preset_for_runtime(preset, runtime_config)
     app = FastAPI(title="szlab Workflow Debugger")
     manager = WorkflowRunManager(
-        active_preset, runtime_config, timing_enabled=timing_enabled
+        active_preset,
+        runtime_config,
+        timing_enabled=timing_enabled,
+        run_history_store=run_history_store,
     )
     opc_simulator_manager = opc_simulator_manager or OpcSimulatorProcessManager(
         config_dir=OPC_SIMULATOR_CONFIG_DIR
@@ -2674,6 +2852,99 @@ def create_app(
                 "latest_seq": 0,
                 "entries": [],
             }
+
+    @app.get("/api/run-history/runs", response_class=JSONResponse)
+    async def list_run_history(limit: int = 50) -> dict[str, Any]:
+        try:
+            return {
+                "success": True,
+                **await asyncio.to_thread(
+                    manager.list_run_history,
+                    limit=max(1, min(int(limit), 500)),
+                ),
+            }
+        except Exception as exc:
+            return {"success": False, "message": str(exc), "runs": []}
+
+    @app.get("/api/run-history/timing", response_class=JSONResponse)
+    async def get_timing_ledger(run_id: str = "") -> dict[str, Any]:
+        try:
+            return {
+                "success": True,
+                **await asyncio.to_thread(
+                    manager.get_timing_ledger,
+                    run_id=str(run_id).strip() or None,
+                ),
+            }
+        except Exception as exc:
+            return {"success": False, "message": str(exc)}
+
+    @app.get("/api/run-history/stations", response_class=JSONResponse)
+    async def get_station_ledger(
+        run_id: str = "",
+        station: str = "",
+        limit: int = 1000,
+    ) -> dict[str, Any]:
+        try:
+            return {
+                "success": True,
+                **await asyncio.to_thread(
+                    manager.get_station_ledger,
+                    run_id=str(run_id).strip() or None,
+                    station=str(station).strip() or None,
+                    limit=max(1, min(int(limit), 10000)),
+                ),
+            }
+        except Exception as exc:
+            return {"success": False, "message": str(exc), "stations": []}
+
+    @app.get("/api/run-history/incidents", response_class=JSONResponse)
+    async def get_incident_ledger(
+        run_id: str = "",
+        sample_id: str = "",
+        status: str = "",
+        limit: int = 1000,
+    ) -> dict[str, Any]:
+        try:
+            return {
+                "success": True,
+                **await asyncio.to_thread(
+                    manager.get_incident_ledger,
+                    run_id=str(run_id).strip() or None,
+                    sample_id=str(sample_id).strip() or None,
+                    status=str(status).strip() or None,
+                    limit=max(1, min(int(limit), 10000)),
+                ),
+            }
+        except Exception as exc:
+            return {"success": False, "message": str(exc), "incidents": []}
+
+    @app.get("/api/run-history/export", response_class=FileResponse)
+    async def export_run_history(
+        ledger: str = "timing",
+        run_id: str = "",
+        format: str = "json",
+    ) -> FileResponse:
+        try:
+            export_path = await asyncio.to_thread(
+                manager.export_run_history,
+                ledger=str(ledger).strip(),
+                run_id=str(run_id).strip() or None,
+                file_format=str(format).strip(),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail="台账导出失败") from exc
+        return FileResponse(
+            export_path,
+            filename=export_path.name,
+            media_type=(
+                "application/json"
+                if export_path.suffix == ".json"
+                else "text/csv; charset=utf-8"
+            ),
+        )
 
     @app.post("/api/opc-simulator/profiles:generate", response_class=JSONResponse)
     async def generate_opc_simulator_profile(

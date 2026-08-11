@@ -20,6 +20,7 @@ from scripts.task_execution_coordinator import (
     TaskExecutionCoordinator,
     _atomic_start_signal_conditions,
     _atomic_task_start_trigger_satisfied,
+    _find_free_s04_position,
     _resolve_sample_s04_position,
     deterministic_execution_id,
     workflow_nodes_from_payload,
@@ -338,6 +339,20 @@ def test_s09_to_s04_start_uses_next_place_node_target_position():
         "传感器状态_上位机[2].NO[11]": False,
         "S042准备信号": True,
     }
+
+
+def test_find_free_s04_position_continues_after_one_position_read_error():
+    plc = FakeTriggerPlc({
+        "传感器状态_上位机[2].NO[11]": False,
+        "S042准备信号": True,
+    })
+
+    assert _find_free_s04_position({"szlab_poly_plc": plc}) == 2
+    assert plc.reads == [
+        "传感器状态_上位机[2].NO[10]",
+        "传感器状态_上位机[2].NO[11]",
+        "S042准备信号",
+    ]
 
 
 @pytest.mark.parametrize(

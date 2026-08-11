@@ -15,11 +15,13 @@ export function isAutomaticallyManagedActionParameter(
   parameter: string,
   nodeId = '',
 ) {
+  const normalizedMethod = (method || '').split('.').pop() || '';
   return (
     parameter === 'position'
     && (
-      AUTOMATIC_S04_POSITION_METHODS.has(method || '')
+      AUTOMATIC_S04_POSITION_METHODS.has(normalizedMethod)
       || AUTOMATIC_S04_POSITION_NODE_IDS.has(nodeId)
+      || /(?:^|_)s04(?:_|$)/i.test(nodeId)
     )
   ) || parameter === '瓶盖暂存位';
 }

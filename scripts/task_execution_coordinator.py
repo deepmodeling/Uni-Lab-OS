@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -38,6 +39,9 @@ from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensor
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
     product_slot_sensor,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class TaskApiConflict(RuntimeError):
@@ -202,16 +206,26 @@ def _find_free_s04_position(devices: dict[str, Any]) -> int | None:
     """按位置顺序读取实机信号，返回首个空闲且就绪的 S04 工位。"""
     plc = devices.get("szlab_poly_plc")
     if plc is None:
+        logger.warning("S04 自动选位失败：缺少 PLC 设备 szlab_poly_plc")
         return None
-    try:
-        for position in range(1, 7):
+
+    read_errors: list[str] = []
+    for position in range(1, 7):
+        try:
             if bool(_read_trigger_variable(plc, s04_material_sensor_var(position))):
                 continue
             if not bool(_read_trigger_variable(plc, s04_ready_var(position))):
                 continue
             return position
-    except Exception:
-        return None
+        except Exception as exc:
+            read_errors.append(f"位置 {position}: {exc}")
+            continue
+
+    if read_errors:
+        logger.warning(
+            "S04 自动选位未找到可用工位，部分位置读取失败：%s",
+            "; ".join(read_errors),
+        )
     return None
 
 

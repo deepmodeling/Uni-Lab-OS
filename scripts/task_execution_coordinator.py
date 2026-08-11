@@ -58,6 +58,46 @@ def deterministic_execution_id(instance_id: str, cursor: int, node_id: str) -> s
     return f"task-action-{hashlib.sha256(identity).hexdigest()[:32]}"
 
 
+def _append_diagnostic(
+    stats: dict[str, Any],
+    *,
+    instance: dict[str, Any] | None,
+    code: str,
+    message: str,
+    node: WorkflowNode | None = None,
+    node_id: str = "",
+    immediate: bool = False,
+    severity: str = "warning",
+    category: str = "dispatch_stall",
+    detail: dict[str, Any] | None = None,
+) -> None:
+    diagnostics = stats.setdefault("diagnostics", [])
+    if not isinstance(diagnostics, list):
+        return
+    action_name = ""
+    if node is not None:
+        try:
+            action_name = node_method(node)
+        except ValueError:
+            action_name = ""
+    diagnostics.append(
+        {
+            "category": category,
+            "code": code,
+            "message": message,
+            "severity": severity,
+            "immediate": immediate,
+            "phase": "等待派发",
+            "instance_id": str((instance or {}).get("id") or ""),
+            "sample_id": str((instance or {}).get("sample_id") or ""),
+            "node_id": node_id or (node.uuid if node is not None else ""),
+            "device_id": node.device_name if node is not None else "",
+            "action_name": action_name,
+            "detail": detail or {},
+        }
+    )
+
+
 def workflow_nodes_from_payload(payload: dict[str, Any]) -> list[WorkflowNode]:
     """按 workflow JSON 契约解析节点，不创建临时文件。"""
     if not isinstance(payload, dict):
@@ -660,7 +700,7 @@ class TaskExecutionCoordinator:
         workflow_path: str,
         workflow_nodes: Iterable[WorkflowNode],
         harvest_only: bool = False,
-    ) -> dict[str, int | bool]:
+    ) -> dict[str, Any]:
         """收割已完成动作并认领新动作；不等待设备动作完成。"""
         if type(harvest_only) is not bool:
             raise TypeError("harvest_only 必须为 bool")
@@ -669,13 +709,14 @@ class TaskExecutionCoordinator:
             for node in workflow_nodes
             if not node.disabled
         }
-        stats: dict[str, int | bool] = {
+        stats: dict[str, Any] = {
             "success": True,
             "active": 0,
             "in_flight": 0,
             "claimed": 0,
             "completed": 0,
             "failed": 0,
+            "diagnostics": [],
         }
         with self._lock:
             self._harvest_completed(stats)
@@ -702,6 +743,29 @@ class TaskExecutionCoordinator:
             )
             workspace = _workspace_from_response(response)
             if workspace.get("scheduler_paused") or workspace.get("pause_reason"):
+                pause_reason = workspace.get("pause_reason")
+                reason = pause_reason if isinstance(pause_reason, dict) else {}
+                reason_instance_id = str(reason.get("instance_id") or "")
+                affected_instance = next(
+                    (
+                        item
+                        for item in workspace.get("task_instances", [])
+                        if isinstance(item, dict)
+                        and str(item.get("id") or "") == reason_instance_id
+                    ),
+                    None,
+                )
+                _append_diagnostic(
+                    stats,
+                    instance=affected_instance,
+                    code=str(reason.get("code") or "scheduler_paused"),
+                    message=str(reason.get("message") or "Task 排程已暂停"),
+                    node_id=str(reason.get("node_id") or ""),
+                    immediate=True,
+                    severity="warning",
+                    category="scheduler_alarm",
+                    detail=reason.get("detail") if isinstance(reason.get("detail"), dict) else {},
+                )
                 self._update_activity_stats(
                     stats, workflow_path=workflow_path
                 )
@@ -758,6 +822,15 @@ class TaskExecutionCoordinator:
                         continuation_owner is not None
                         and continuation_owner != instance_id
                     ):
+                        _append_diagnostic(
+                            stats,
+                            instance=instance,
+                            code="device_continuation_owned",
+                            message="设备由另一正在继续执行的样品占用",
+                            node=node,
+                            node_id=node_id,
+                            detail={"owner_instance_id": continuation_owner},
+                        )
                         continue
                 payload = instance.get("payload")
                 node_parameters = (
@@ -830,12 +903,28 @@ class TaskExecutionCoordinator:
                     instance_id=instance_id,
                     node_id=node_id,
                 ):
+                    _append_diagnostic(
+                        stats,
+                        instance=instance,
+                        code="s072_material_state_wait",
+                        message="等待 S072 临时有料状态满足",
+                        node=node,
+                        node_id=node_id,
+                    )
                     continue
                 if not _temporary_s09_trigger_satisfied(
                     trigger_workspace,
                     instance_id=instance_id,
                     node_id=node_id,
                 ):
+                    _append_diagnostic(
+                        stats,
+                        instance=instance,
+                        code="s09_material_state_wait",
+                        message="等待 S09 临时有料状态满足",
+                        node=node,
+                        node_id=node_id,
+                    )
                     continue
                 if (
                     cursor == 0
@@ -847,6 +936,14 @@ class TaskExecutionCoordinator:
                         devices=devices,
                     )
                 ):
+                    _append_diagnostic(
+                        stats,
+                        instance=instance,
+                        code="input_trigger_wait",
+                        message="等待首动作输入条件、工站状态或液量条件满足",
+                        node=node,
+                        node_id=node_id,
+                    )
                     continue
                 method_name = ""
                 action_callable: Callable[..., Any] | None = None
@@ -866,6 +963,17 @@ class TaskExecutionCoordinator:
                     or device is None
                     or not callable(action_callable)
                 ):
+                    _append_diagnostic(
+                        stats,
+                        instance=instance,
+                        code="unsupported_action",
+                        message=f"不支持的 Task 动作节点: {node_id}",
+                        node=node,
+                        node_id=node_id,
+                        immediate=True,
+                        severity="error",
+                        category="dispatch_error",
+                    )
                     claimed_response = self._claim(
                         current_response,
                         workflow_path=workflow_path,
@@ -897,6 +1005,14 @@ class TaskExecutionCoordinator:
                     break
 
                 if node.device_name in busy_device_names:
+                    _append_diagnostic(
+                        stats,
+                        instance=instance,
+                        code="device_busy",
+                        message=f"设备 {node.device_name} 正在执行其他动作",
+                        node=node,
+                        node_id=node_id,
+                    )
                     continue
 
                 claimed_response = self._claim(
@@ -908,6 +1024,14 @@ class TaskExecutionCoordinator:
                     resources=[],
                 )
                 if claimed_response is None:
+                    _append_diagnostic(
+                        stats,
+                        instance=instance,
+                        code="claim_wait",
+                        message="动作认领遇到版本、活动动作或暂停冲突，等待重试",
+                        node=node,
+                        node_id=node_id,
+                    )
                     continue
                 current_response = claimed_response
                 stats["claimed"] = int(stats["claimed"]) + 1
@@ -927,6 +1051,17 @@ class TaskExecutionCoordinator:
                         },
                     )
                 except Exception as exc:
+                    _append_diagnostic(
+                        stats,
+                        instance=instance,
+                        code="action_dispatch_failed",
+                        message=str(exc),
+                        node=node,
+                        node_id=node_id,
+                        immediate=True,
+                        severity="error",
+                        category="dispatch_error",
+                    )
                     pending = _PendingTerminalReport(
                         workflow_path=workflow_path,
                         instance_id=str(instance.get("id")),

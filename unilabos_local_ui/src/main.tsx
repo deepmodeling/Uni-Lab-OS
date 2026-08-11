@@ -88,9 +88,10 @@ import { TASK_EXECUTION_POLL_INTERVAL_MS } from './taskPolling';
 import {
   createEmptyTaskTestMemory,
   loadTaskTestMemory,
-  rememberedParametersForTemplates,
+  rememberedParametersForSamples,
+  rememberedSampleTemplateCount,
   saveTaskTestMemory,
-  withRememberedTemplateParameters,
+  withRememberedSampleTemplateParameters,
   withoutRememberedTemplateParameters,
   withTaskSampleCount,
   type TaskTestMemory,
@@ -2041,7 +2042,7 @@ function App() {
 
   const clearRememberedTaskParameters = useCallback(() => {
     persistTaskTestMemory(withoutRememberedTemplateParameters(taskTestMemoryRef.current));
-    showCanvasToast('已清除最近实例入参；现有队列不受影响');
+    showCanvasToast('已清除各样品的最近实例入参；现有队列不受影响');
   }, [persistTaskTestMemory, showCanvasToast]);
 
   const createTaskInstances = useCallback(() => {
@@ -2082,7 +2083,12 @@ function App() {
       templateIds,
       samples,
       taskSampleStartIntervalSeconds,
-      rememberedParametersForTemplates(taskTestMemoryRef.current, templateIds, parameterSchema),
+      rememberedParametersForSamples(
+        taskTestMemoryRef.current,
+        samples,
+        templateIds,
+        parameterSchema,
+      ),
     ));
   }, [
     mutateTaskWorkspace,
@@ -2109,11 +2115,12 @@ function App() {
     taskId: string,
     nodeParameters: Record<string, Record<string, unknown>>,
   ) => {
-    const templateId = taskInstancesRef.current.find((task) => task.id === taskId)?.templateId;
-    if (templateId) {
-      persistTaskTestMemory(withRememberedTemplateParameters(
+    const task = taskInstancesRef.current.find((item) => item.id === taskId);
+    if (task) {
+      persistTaskTestMemory(withRememberedSampleTemplateParameters(
         taskTestMemoryRef.current,
-        templateId,
+        task.sample,
+        task.templateId,
         nodeParameters,
       ));
     }
@@ -3611,9 +3618,10 @@ function App() {
             ));
           }}
           sampleCount={taskSampleCount}
-          rememberedParameterCount={Object.keys(taskTestMemory.templateParameters).filter(
-            (templateId) => taskTemplates.some((template) => template.id === templateId),
-          ).length}
+          rememberedParameterCount={rememberedSampleTemplateCount(
+            taskTestMemory,
+            taskTemplates.map((template) => template.id),
+          )}
           scheduledTemplateIds={scheduledTemplateIds}
           selectedTaskId={selectedTaskInstanceId}
           actionNodes={nodes.map((node) => ({

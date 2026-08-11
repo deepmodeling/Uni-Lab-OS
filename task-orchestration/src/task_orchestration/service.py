@@ -397,26 +397,47 @@ class WorkspaceService:
         *,
         sample_start_interval_seconds: float = 0,
         template_node_parameters: dict[str, dict[str, dict[str, Any]]] | None = None,
+        sample_template_node_parameters: dict[
+            str, dict[str, dict[str, dict[str, Any]]]
+        ] | None = None,
     ):
         def operation(workspace: Workspace) -> Workspace:
             templates = [self._template(workspace, item) for item in template_ids]
             remembered_parameters = template_node_parameters or {}
+            sample_parameters = sample_template_node_parameters or {}
             unknown_templates = set(remembered_parameters) - set(template_ids)
             if unknown_templates:
                 raise WorkspaceServiceError(
                     "unknown_template",
                     f"parameter defaults reference unselected templates: {sorted(unknown_templates)}",
                 )
-            for template in templates:
-                unknown_nodes = (
-                    set(remembered_parameters.get(template.id, {}))
-                    - set(template.node_ids)
+            unknown_samples = set(sample_parameters) - set(sample_ids)
+            if unknown_samples:
+                raise WorkspaceServiceError(
+                    "unknown_sample",
+                    f"parameter defaults reference unselected samples: {sorted(unknown_samples)}",
                 )
-                if unknown_nodes:
+            for sample_id, template_parameters in sample_parameters.items():
+                unknown_sample_templates = set(template_parameters) - set(template_ids)
+                if unknown_sample_templates:
                     raise WorkspaceServiceError(
-                        "unknown_action_node",
-                        f"action nodes are not in template {template.id}: {sorted(unknown_nodes)}",
+                        "unknown_template",
+                        "sample parameter defaults reference unselected templates "
+                        f"for {sample_id}: {sorted(unknown_sample_templates)}",
                     )
+            for template in templates:
+                parameter_sets = [remembered_parameters.get(template.id, {})]
+                parameter_sets.extend(
+                    parameters.get(template.id, {})
+                    for parameters in sample_parameters.values()
+                )
+                for node_parameters in parameter_sets:
+                    unknown_nodes = set(node_parameters) - set(template.node_ids)
+                    if unknown_nodes:
+                        raise WorkspaceServiceError(
+                            "unknown_action_node",
+                            f"action nodes are not in template {template.id}: {sorted(unknown_nodes)}",
+                        )
             generated: list[TaskInstance] = []
             batch_anchor = self._clock()
             interval_ms = round(sample_start_interval_seconds * 1_000)
@@ -429,6 +450,11 @@ class WorkspaceService:
                     default=-1,
                 ) + 1
                 for template in templates:
+                    per_sample_parameters = sample_parameters.get(sample_id, {})
+                    if template.id in per_sample_parameters:
+                        instance_parameters = per_sample_parameters[template.id]
+                    else:
+                        instance_parameters = remembered_parameters.get(template.id, {})
                     generated.append(
                         TaskInstance(
                             id=uuid4().hex,
@@ -438,8 +464,8 @@ class WorkspaceService:
                             order=next_order,
                             not_before=sample_not_before,
                             payload={
-                                "node_parameters": remembered_parameters[template.id]
-                            } if remembered_parameters.get(template.id) else {},
+                                "node_parameters": instance_parameters
+                            } if instance_parameters else {},
                         )
                     )
                     next_order += 1

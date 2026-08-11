@@ -992,7 +992,18 @@ def test_resource_leased_claim_conflict_is_not_a_coordinator_wait():
 
 
 def test_paused_workspace_does_not_claim():
-    client = FakeTaskClient(_workspace_response(paused=True))
+    response = _workspace_response(
+        paused=True,
+        pause_reason={
+            "code": "plc_alarm",
+            "message": "S08 工站报警",
+            "instance_id": "instance-1",
+            "node_id": "node_001_pick_from_s03",
+            "detail": {"status": 0},
+        },
+    )
+    response["workspace"]["task_instances"][0]["sample_id"] = "sample-1"
+    client = FakeTaskClient(response)
     coordinator = _coordinator(client, lambda *_: None)
 
     result = coordinator.cycle(
@@ -1002,6 +1013,22 @@ def test_paused_workspace_does_not_claim():
 
     assert result["active"] == 0
     assert client.claims == []
+    assert result["diagnostics"] == [
+        {
+            "category": "scheduler_alarm",
+            "code": "plc_alarm",
+            "message": "S08 工站报警",
+            "severity": "warning",
+            "immediate": True,
+            "phase": "等待派发",
+            "instance_id": "instance-1",
+            "sample_id": "sample-1",
+            "node_id": "node_001_pick_from_s03",
+            "device_id": "",
+            "action_name": "",
+            "detail": {"status": 0},
+        }
+    ]
 
 
 def test_disconnected_plc_does_not_block_claim():

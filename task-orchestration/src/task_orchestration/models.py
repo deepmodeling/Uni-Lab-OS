@@ -565,6 +565,9 @@ class GenerateInstancesRequest(StrictModel):
     template_node_parameters: dict[str, dict[str, dict[str, Any]]] = Field(
         default_factory=dict
     )
+    sample_template_node_parameters: dict[
+        str, dict[str, dict[str, dict[str, Any]]]
+    ] = Field(default_factory=dict)
 
 
 class ClearInstancesRequest(StrictModel):

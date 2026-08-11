@@ -686,6 +686,58 @@ def test_generate_instances_applies_remembered_parameters_to_each_new_instance(t
     } for instance in instances)
 
 
+def test_generate_instances_applies_parameters_by_sample(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    workspace = {
+        "workflow_path": "demo.json",
+        "templates": [{
+            **_template("prepare"),
+            "node_ids": ["s06-action"],
+        }],
+        "task_instances": [],
+    }
+    assert client.put(
+        "/workspaces",
+        json={"expected_version": 0, "workspace": workspace},
+    ).status_code == 200
+
+    response = client.post(
+        "/instances:generate",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 1,
+            "template_ids": ["prepare"],
+            "sample_ids": ["Sample A", "Sample B", "Sample D"],
+            "sample_template_node_parameters": {
+                "Sample A": {
+                    "prepare": {"s06-action": {"coarse_position": 1}},
+                },
+                "Sample B": {
+                    "prepare": {"s06-action": {"coarse_position": 2}},
+                },
+                "Sample D": {
+                    "prepare": {"s06-action": {"coarse_position": 4}},
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    instances = {
+        instance["sample_id"]: instance
+        for instance in response.json()["workspace"]["task_instances"]
+    }
+    assert instances["Sample A"]["payload"]["node_parameters"] == {
+        "s06-action": {"coarse_position": 1},
+    }
+    assert instances["Sample B"]["payload"]["node_parameters"] == {
+        "s06-action": {"coarse_position": 2},
+    }
+    assert instances["Sample D"]["payload"]["node_parameters"] == {
+        "s06-action": {"coarse_position": 4},
+    }
+
+
 def test_generate_instances_rejects_remembered_parameters_for_unknown_nodes(tmp_path):
     client = _client_with_workflow(tmp_path)
     workspace = {

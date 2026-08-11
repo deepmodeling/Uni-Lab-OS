@@ -381,7 +381,7 @@ export function TaskSchedulerBench(props: Props) {
             <div className="scheduler-bench__parameter-memory">
               <span>
                 {props.rememberedParameterCount
-                  ? `生成时将沿用 ${props.rememberedParameterCount} 个模板的最近实例入参`
+                  ? `生成时将按样品沿用 ${props.rememberedParameterCount} 组最近实例入参`
                   : '保存实例入参后，下次生成队列会自动沿用'}
               </span>
               <button

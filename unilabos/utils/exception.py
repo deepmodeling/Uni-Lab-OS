@@ -34,3 +34,7 @@ class DeviceActionError(RuntimeError):
         detail = " (目标拒绝了请求)" if rejected else ""
         suffix = f": {self.remote_error}" if self.remote_error else ""
         super().__init__(f"调用设备动作 [{device_id}.{action_name}] 失败{detail}{suffix}")
+
+
+class ActionResultError(RuntimeError):
+    """设备未抛异常、但通过原生 Action 结果明确报告失败。"""

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from unilabos.app.ws_client import MessageProcessor, QueueItem
+from unilabos.app.ws_client import MessageProcessor, QueueItem, WebSocketClient
 from unilabos.registry.action_policy import (
     ERROR_DECISION_TARGET_BACKEND,
     ERROR_DECISION_TARGET_MICRO_BACKEND,
@@ -19,6 +19,10 @@ from unilabos.registry.ast_registry_scanner import (
     _extract_class_body,
 )
 from unilabos.registry.decorators import action, get_action_meta
+from unilabos.ros.nodes.base_device_node import (
+    _coerce_device_error_info,
+    _native_driver_result_failed,
+)
 from unilabos.ros.nodes.presets.host_node import HostNode
 from unilabos.utils.type_check import (
     get_result_info_str,
@@ -215,6 +219,41 @@ def test_policy_rejects_boolean_numeric_settings(field, value):
         normalize_error_policy(policy)
 
 
+def test_policy_requires_timeout_action_for_every_exception_class():
+    with pytest.raises(ValueError, match="每个异常 options"):
+        normalize_error_policy(
+            {
+                "options": {
+                    "CommunicationError": [
+                        {"action": "retry", "label": "重试"},
+                    ],
+                    "ValueError": [
+                        {"action": "abort", "label": "终止"},
+                    ],
+                },
+                "default_on_decision_timeout": "retry",
+            }
+        )
+
+
+def test_policy_accepts_timeout_action_present_for_every_exception_class():
+    policy = normalize_error_policy(
+        {
+            "options": {
+                "CommunicationError": [
+                    {"action": "skip", "label": "跳过"},
+                ],
+                "ValueError": [
+                    {"action": "skip", "label": "跳过"},
+                ],
+            },
+            "default_on_decision_timeout": "skip",
+        }
+    )
+
+    assert policy["default_on_decision_timeout"] == "skip"
+
+
 def test_failed_result_carries_structured_error_info():
     error_info = {
         "exception_type": "CommunicationError",
@@ -236,6 +275,65 @@ def test_failed_result_carries_structured_error_info():
     assert "suc_type" not in encoded
 
 
+def test_native_action_failure_is_not_confused_with_json_command_boolean_data():
+    class HeatChill:
+        pass
+
+    class UniLabJsonCommand:
+        pass
+
+    assert _native_driver_result_failed("heat_chill", HeatChill, False)
+    assert _native_driver_result_failed(
+        "set_position", HeatChill, {"success": False}
+    )
+    assert not _native_driver_result_failed(
+        "heat_chill", HeatChill, {"success": True}
+    )
+    assert not _native_driver_result_failed(
+        "auto-is_empty", UniLabJsonCommand, False
+    )
+    assert not _native_driver_result_failed(
+        "_execute_driver_command", HeatChill, False
+    )
+
+
+def test_native_false_result_gets_structured_action_result_error():
+    error_info = _coerce_device_error_info(
+        "heat_chill",
+        False,
+        "driver returned an unsuccessful native action result: False",
+    )
+
+    assert error_info["action_name"] == "heat_chill"
+    assert error_info["exception_type"] == "ActionResultError"
+    assert error_info["exception_mro"][:2] == ["ActionResultError", "RuntimeError"]
+    assert "unsuccessful native action result" in error_info["error_message"]
+
+
+def test_native_structured_failure_preserves_driver_error_classification():
+    error_info = _coerce_device_error_info(
+        "set_position",
+        {
+            "success": False,
+            "error": "top-level fallback",
+            "error_info": {
+                "exception_type": "CommunicationError",
+                "exception_mro": ["CommunicationError", "Exception"],
+                "error_message": "serial port closed",
+                "category": "communication",
+                "severity": "recoverable",
+            },
+        },
+        "native result failed",
+    )
+
+    assert error_info["exception_type"] == "CommunicationError"
+    assert error_info["exception_mro"] == ["CommunicationError", "Exception"]
+    assert error_info["error_message"] == "serial port closed"
+    assert error_info["category"] == "communication"
+    assert error_info["severity"] == "recoverable"
+
+
 class _Logger:
     def info(self, message):
         pass
@@ -247,10 +345,41 @@ class _Logger:
 class _DecisionBridge:
     def __init__(self):
         self.reports = []
+        self.resolved_reports = []
 
     def publish_job_error_decision_required(self, report):
         self.reports.append(report)
         return True
+
+    def publish_job_error_decision_resolved(self, report):
+        self.resolved_reports.append(report)
+        return True
+
+
+def test_ws_resolved_error_decision_uses_documented_envelope():
+    class _Processor:
+        def __init__(self):
+            self.messages = []
+
+        def send_message(self, message):
+            self.messages.append(message)
+            return True
+
+    class _Client:
+        is_disabled = False
+        message_processor = _Processor()
+
+        @staticmethod
+        def is_connected():
+            return True
+
+    client = _Client()
+    report = {"decision_id": "d-1", "selected_action": "abort"}
+
+    assert WebSocketClient.publish_job_error_decision_resolved(client, report)
+    assert client.message_processor.messages == [
+        {"action": "job_error_decision_resolved", "data": report}
+    ]
 
 
 class FakeHostDecisionNode:
@@ -260,6 +389,11 @@ class FakeHostDecisionNode:
         HostNode._handle_action_error_decision_timeout
     )
     handle_action_error_decision = HostNode.handle_action_error_decision
+    _publish_action_error_decision_resolved = (
+        HostNode._publish_action_error_decision_resolved
+    )
+    _request_goal_cancel = HostNode._request_goal_cancel
+    cancel_job = HostNode.cancel_job
     get_pending_action_error_decisions = (
         HostNode.get_pending_action_error_decisions
     )
@@ -272,6 +406,7 @@ class FakeHostDecisionNode:
         self._goals = {"job-1": object()}
         self._pending_action_error_decisions = {}
         self._pending_action_error_decisions_lock = threading.RLock()
+        self._canceled_jobs = set()
         self._error_execution_contexts = {
             "job-1": {
                 "item": _queue_item(),
@@ -321,6 +456,8 @@ class FakeHostDecisionNode:
     ):
         self.finished.append((item, status, return_info, result_data))
         self._error_execution_contexts.pop(item.job_id, None)
+        self._goals.pop(item.job_id, None)
+        self._canceled_jobs.discard(item.job_id)
 
 
 def _queue_item(
@@ -649,9 +786,38 @@ def test_host_decision_validates_identity_and_first_result_wins():
     )
     assert host.finished[0][1] == "success"
     assert host.finished[0][2]["suc_type"] == SUCCESS_TYPE_SKIP
+    assert host.bridge.resolved_reports[0]["selected_action"] == "skip"
 
 
 def test_host_retry_limit_fails_closed():
+    host = FakeHostDecisionNode()
+    host._error_execution_contexts["job-1"]["retry_count"] = 1
+    host._action_value_mappings["device-1"]["run"]["error_policy"] = (
+        normalize_error_policy(
+            {
+                "options": {
+                    "CommunicationError": [
+                        {"action": "retry", "label": "重试"}
+                    ]
+                },
+                "max_retries": 1,
+            }
+        )
+    )
+
+    return_info = _error_return_info()
+    assert not host._begin_action_error_decision(
+        _queue_item(),
+        return_info,
+        {"return_info": "failed"},
+    )
+    assert not host.sent_goals
+    assert not host._pending_action_error_decisions
+    assert not host.bridge.reports
+    assert "达到最大重试次数（1）" in return_info["error"]
+
+
+def test_host_retry_exhaustion_hides_retry_and_timeout_falls_back_to_abort():
     host = FakeHostDecisionNode()
     host._error_execution_contexts["job-1"]["retry_count"] = 1
     decision_id = _begin_pending(
@@ -659,22 +825,113 @@ def test_host_retry_limit_fails_closed():
         {
             "options": {
                 "CommunicationError": [
-                    {"action": "retry", "label": "重试"}
+                    {"action": "retry", "label": "重试"},
+                    {"action": "abort", "label": "终止"},
                 ]
             },
             "max_retries": 1,
+            "default_on_decision_timeout": "retry",
         },
     )
 
-    assert host.handle_action_error_decision(
+    report = host.bridge.reports[0]
+    assert [option["action"] for option in report["options"]] == ["abort"]
+    assert "达到最大重试次数（1）" in report["error_message"]
+    assert report["default_on_decision_timeout"] == "abort"
+
+    host._handle_action_error_decision_timeout(decision_id)
+
+    assert host.finished[0][1] == "failed"
+    assert host.bridge.resolved_reports[0]["selected_action"] == "abort"
+    assert host.bridge.resolved_reports[0]["reason"] == "decision_timeout"
+
+
+def test_host_without_execution_context_does_not_offer_retry():
+    host = FakeHostDecisionNode()
+    host._error_execution_contexts.clear()
+
+    assert host._begin_action_error_decision(
+        _queue_item(),
+        _error_return_info(),
+        {"return_info": "failed"},
+    )
+
+    report = host.bridge.reports[0]
+    assert [option["action"] for option in report["options"]] == [
+        "skip",
+        "abort",
+    ]
+    assert "缺少原动作上下文，无法重试" in report["error_message"]
+
+
+def test_cancel_pending_error_decision_closes_timer_and_rejects_late_reply():
+    host = FakeHostDecisionNode()
+    decision_id = _begin_pending(host)
+    timer = host._pending_action_error_decisions[decision_id]["timer"]
+
+    assert host.cancel_job("job-1")
+
+    timer.join(timeout=1)
+    assert not timer.is_alive()
+    assert not host._pending_action_error_decisions
+    assert not host._error_execution_contexts
+    assert host.finished[0][1] == "failed"
+    assert host.bridge.resolved_reports[0]["selected_action"] == "cancel"
+    assert host.bridge.resolved_reports[0]["reason"] == "job_canceled"
+    assert not host.handle_action_error_decision(
         decision_id,
         "job-1",
         {"action": "retry"},
     )
 
-    assert not host.sent_goals
-    assert host.finished[0][1] == "failed"
-    assert "exceeded 1 retries" in host.finished[0][2]["error"]
+
+def test_goal_accepted_after_inflight_cancel_is_canceled_immediately():
+    class _CancelFuture:
+        def add_done_callback(self, callback):
+            self.callback = callback
+
+    class _ResultFuture:
+        def add_done_callback(self, callback):
+            self.callback = callback
+
+        def result(self):
+            raise AssertionError("canceled goal response must not block on result")
+
+    class _GoalHandle:
+        accepted = True
+
+        def __init__(self):
+            self.cancel_calls = 0
+            self.result_future = _ResultFuture()
+
+        def get_result_async(self):
+            return self.result_future
+
+        def cancel_goal_async(self):
+            self.cancel_calls += 1
+            return _CancelFuture()
+
+    class _GoalResponseFuture:
+        def __init__(self, goal_handle):
+            self.goal_handle = goal_handle
+
+        def result(self):
+            return self.goal_handle
+
+    host = FakeHostDecisionNode()
+    host._goals.clear()
+    host._canceled_jobs.add("job-1")
+    goal_handle = _GoalHandle()
+
+    HostNode.goal_response_callback(
+        host,
+        _queue_item(),
+        "/devices/device-1/run",
+        _GoalResponseFuture(goal_handle),
+    )
+
+    assert host._goals["job-1"] is goal_handle
+    assert goal_handle.cancel_calls == 1
 
 
 def test_host_dispatches_registered_fallback_action():

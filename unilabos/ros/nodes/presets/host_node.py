@@ -372,6 +372,8 @@ class HostNode(BaseROS2DeviceNode):
         self._error_execution_contexts: Dict[str, Dict[str, Any]] = {}
         self._pending_action_error_decisions: Dict[str, Dict[str, Any]] = {}
         self._pending_action_error_decisions_lock = threading.RLock()
+        # cancel 可能发生在 Goal 等待响应、执行中或等待异常决策三个阶段。
+        self._canceled_jobs: Set[str] = set()
         self._online_devices: Set[str] = {f"{self.namespace}/{device_id}"}  # 用于跟踪在线设备
         self._last_discovery_time = 0.0  # 上次设备发现的时间
         self._discovery_lock = threading.Lock()  # 设备发现的互斥锁
@@ -884,6 +886,12 @@ class HostNode(BaseROS2DeviceNode):
             server_info: 服务器发送信息，包含发送时间戳等
         """
         callback_item = result_item or item
+        with self._pending_action_error_decisions_lock:
+            if callback_item.job_id in self._canceled_jobs:
+                self.lab_logger().info(
+                    f"[Host Node] Skip canceled goal {callback_item.job_id[:8]}"
+                )
+                return
         u = uuid.UUID(transport_goal_id or item.job_id)
         device_id = item.device_id
         action_name = item.action_name
@@ -1085,6 +1093,7 @@ class HostNode(BaseROS2DeviceNode):
                 timer = pending.get("timer")
                 if timer is not None:
                     timer.cancel()
+            self._canceled_jobs.discard(job_id)
 
         try:
             from unilabos.app.web.controller import store_job_result
@@ -1119,6 +1128,10 @@ class HostNode(BaseROS2DeviceNode):
     ) -> bool:
         """设备失败后在 Host 创建决策点；成功上报时原 job 继续保持 pending。"""
 
+        with self._pending_action_error_decisions_lock:
+            if item.job_id in self._canceled_jobs:
+                return False
+
         raw_error_info = return_info.get("error_info")
         if not isinstance(raw_error_info, dict):
             return False
@@ -1148,16 +1161,65 @@ class HostNode(BaseROS2DeviceNode):
         options = resolve_error_options_by_names(policy, exception_mro)
         if not options:
             return False
+        execution_context = self._error_execution_contexts.get(item.job_id)
+        retry_count = int((execution_context or {}).get("retry_count", 0))
+        max_retries = int(policy.get("max_retries", 3))
+        has_retry_option = any(
+            str(option.get("action")) == "retry" for option in options
+        )
+        retry_unavailable_message = ""
+        if has_retry_option and execution_context is None:
+            options = [
+                option
+                for option in options
+                if str(option.get("action")) != "retry"
+            ]
+            retry_unavailable_message = "缺少原动作上下文，无法重试"
+        elif has_retry_option and retry_count >= max_retries:
+            options = [
+                option
+                for option in options
+                if str(option.get("action")) != "retry"
+            ]
+            retry_unavailable_message = f"达到最大重试次数（{max_retries}）"
+
+        if retry_unavailable_message:
+            previous_message = str(
+                raw_error_info.get("error_message")
+                or return_info.get("error")
+                or ""
+            )
+            raw_error_info = {
+                **raw_error_info,
+                "error_message": (
+                    f"{previous_message}\n{retry_unavailable_message}"
+                    if previous_message
+                    else retry_unavailable_message
+                ),
+            }
+            return_info["error"] = raw_error_info["error_message"]
+            return_info["error_info"] = dict(raw_error_info)
+            if "return_info" in result_data:
+                result_data["return_info"] = json.dumps(
+                    return_info,
+                    ensure_ascii=False,
+                )
+            # 重试是唯一选项且已不可用时，不创建无法处理的决策点，直接失败。
+            if not options:
+                return False
+        timeout_action = str(policy.get("default_on_decision_timeout", "abort"))
+        if timeout_action != "abort" and timeout_action not in {
+            str(option.get("action")) for option in options
+        }:
+            timeout_action = "abort"
         error_info = {
             **raw_error_info,
             "options": options,
-            "max_retries": int(policy.get("max_retries", 3)),
+            "max_retries": max_retries,
             "decision_timeout_seconds": float(
                 policy.get("decision_timeout_seconds", 300.0)
             ),
-            "default_on_decision_timeout": str(
-                policy.get("default_on_decision_timeout", "abort")
-            ),
+            "default_on_decision_timeout": timeout_action,
         }
         decision_target = str(
             getattr(item, "error_decision_target", ERROR_DECISION_TARGET_BACKEND)
@@ -1171,7 +1233,6 @@ class HostNode(BaseROS2DeviceNode):
             )
             decision_target = ERROR_DECISION_TARGET_BACKEND
 
-        execution_context = self._error_execution_contexts.get(item.job_id)
         if execution_context is None:
             self.lab_logger().warning(
                 f"[Host Node] Job {item.job_id[:8]} 缺少重试上下文，仅支持 skip/abort"
@@ -1206,7 +1267,7 @@ class HostNode(BaseROS2DeviceNode):
             "error_message": error_info.get("error_message", return_info.get("error", "")),
             "traceback": error_info.get("traceback", return_info.get("error", "")),
             "options": options,
-            "retry_count": int((execution_context or {}).get("retry_count", 0)),
+            "retry_count": retry_count,
             "max_retries": int(error_info.get("max_retries", 3)),
             "created_at": created_at,
             "decision_timeout_seconds": timeout_seconds,
@@ -1290,6 +1351,48 @@ class HostNode(BaseROS2DeviceNode):
             ]
         return reports
 
+    def _publish_action_error_decision_resolved(
+        self,
+        pending: Dict[str, Any],
+        selected_action: str,
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        """发布决策终态审计；观测/通信失败不影响实际决策。"""
+
+        item = pending["item"]
+        resolved_report = {
+            "decision_id": pending["decision_id"],
+            "job_id": pending["job_id"],
+            "task_id": item.task_id,
+            "device_id": item.device_id,
+            "action_name": item.action_name,
+            "selected_action": selected_action,
+            "reason": reason,
+            "resolved_at": time.time(),
+        }
+        self._emit_local_action_event(
+            item,
+            "job_error_decision_resolved",
+            resolved_report,
+        )
+        if pending.get("decision_target") == ERROR_DECISION_TARGET_BACKEND:
+            for bridge in self.bridges:
+                publish_resolved = getattr(
+                    bridge,
+                    "publish_job_error_decision_resolved",
+                    None,
+                )
+                if not callable(publish_resolved):
+                    continue
+                try:
+                    if publish_resolved(deepcopy(resolved_report)):
+                        break
+                except Exception as ex:  # noqa: BLE001 - 审计上报失败不阻断决策
+                    self.lab_logger().warning(
+                        f"[Host Node] 异常决策结果上报失败: {bridge!r}: {ex}"
+                    )
+        return resolved_report
+
     def _handle_action_error_decision_timeout(self, decision_id: str) -> None:
         with self._pending_action_error_decisions_lock:
             pending = self._pending_action_error_decisions.get(decision_id)
@@ -1297,13 +1400,22 @@ class HostNode(BaseROS2DeviceNode):
                 return
             error_info = pending["error_info"]
             job_id = pending["job_id"]
+            timeout_action = str(
+                error_info.get("default_on_decision_timeout", "abort")
+            )
+            allowed_actions = {
+                str(option.get("action"))
+                for option in error_info.get("options", [])
+            }
+            if timeout_action != "abort" and timeout_action not in allowed_actions:
+                timeout_action = "abort"
         self.handle_action_error_decision(
             decision_id,
             job_id,
             {
                 "decision_id": decision_id,
                 "job_id": job_id,
-                "action": error_info.get("default_on_decision_timeout", "abort"),
+                "action": timeout_action,
                 "reason": "decision_timeout",
             },
         )
@@ -1327,7 +1439,11 @@ class HostNode(BaseROS2DeviceNode):
                     if candidate.get("job_id") == job_id
                 ]
                 pending = matches[0] if len(matches) == 1 else None
-            if pending is None or pending.get("resolving"):
+            if (
+                pending is None
+                or pending.get("resolving")
+                or pending.get("job_id") in self._canceled_jobs
+            ):
                 return False
             if (
                 decision_target is not None
@@ -1359,7 +1475,10 @@ class HostNode(BaseROS2DeviceNode):
                 (candidate for candidate in options if str(candidate.get("action")) == selected),
                 None,
             )
-            if option is None and decision.get("reason") != "decision_timeout":
+            if option is None and not (
+                decision.get("reason") == "decision_timeout"
+                and selected == "abort"
+            ):
                 return False
 
             pending["resolving"] = True
@@ -1369,19 +1488,10 @@ class HostNode(BaseROS2DeviceNode):
                 timer.cancel()
 
         item = pending["item"]
-        self._emit_local_action_event(
-            item,
-            "job_error_decision_resolved",
-            {
-                "decision_id": pending["decision_id"],
-                "job_id": pending["job_id"],
-                "task_id": item.task_id,
-                "device_id": item.device_id,
-                "action_name": item.action_name,
-                "selected_action": selected,
-                "reason": str(decision.get("reason") or ""),
-                "resolved_at": time.time(),
-            },
+        self._publish_action_error_decision_resolved(
+            pending,
+            selected,
+            str(decision.get("reason") or ""),
         )
         if selected == "abort":
             self._finish_error_handled_job(
@@ -1566,6 +1676,14 @@ class HostNode(BaseROS2DeviceNode):
                 recovery_suc_type=recovery_suc_type,
             )
         )
+        with self._pending_action_error_decisions_lock:
+            canceled = item.job_id in self._canceled_jobs
+        if canceled:
+            self.lab_logger().info(
+                f"[Host Node] Goal {item.job_id[:8]} accepted after cancel; cancel immediately"
+            )
+            self._request_goal_cancel(item.job_id, goal_handle)
+            return
         goal_future.result()
 
     def feedback_callback(self, item: "QueueItem", action_id: str, feedback_msg) -> None:
@@ -1597,9 +1715,11 @@ class HostNode(BaseROS2DeviceNode):
             result = future.result()
             result_msg = result.result
             goal_status = result.status
+            with self._pending_action_error_decisions_lock:
+                cancel_requested = job_id in self._canceled_jobs
 
             # 检查是否是被取消的任务
-            if goal_status == GoalStatus.STATUS_CANCELED:
+            if cancel_requested or goal_status == GoalStatus.STATUS_CANCELED:
                 self.lab_logger().info(f"[Host Node] Goal {action_id} ({job_id[:8]}) was cancelled")
                 status = "failed"
                 return_info = serialize_result_info("Job was cancelled", False, {})
@@ -1647,7 +1767,7 @@ class HostNode(BaseROS2DeviceNode):
                     )
 
             terminal_result_data = (
-                {} if goal_status == GoalStatus.STATUS_CANCELED else result_data
+                {} if cancel_requested or goal_status == GoalStatus.STATUS_CANCELED else result_data
             )
             if (
                 status == "failed"
@@ -1664,7 +1784,7 @@ class HostNode(BaseROS2DeviceNode):
                 return
 
             self.lab_logger().info(f"[Host Node] Result for {action_id} ({job_id[:8]}): {status}")
-            if goal_status != GoalStatus.STATUS_CANCELED:
+            if not cancel_requested and goal_status != GoalStatus.STATUS_CANCELED:
                 self.lab_logger().trace(f"[Host Node] Result data: {result_data}")
             self._finish_error_handled_job(
                 item,
@@ -1688,29 +1808,68 @@ class HostNode(BaseROS2DeviceNode):
                 {},
             )
 
-    def cancel_goal(self, goal_uuid: str) -> bool:
-        """
-        取消目标
+    def _request_goal_cancel(self, job_id: str, goal_handle: Any) -> None:
+        """向已受理的 ROS Goal 发起取消。"""
 
-        Args:
-            goal_uuid: 目标UUID（job_id）
+        cancel_future = goal_handle.cancel_goal_async()
+        cancel_future.add_done_callback(
+            lambda future: self._cancel_goal_callback(job_id, future)
+        )
 
-        Returns:
-            bool: 如果找到目标并发起取消请求返回True，否则返回False
-        """
-        if goal_uuid in self._goals:
-            self.lab_logger().info(f"[Host Node] Cancelling goal {goal_uuid[:8]}")
-            goal_handle = self._goals[goal_uuid]
+    def cancel_job(self, job_id: str) -> bool:
+        """取消运行中、等待 Goal 响应或等待异常决策的逻辑 job。"""
 
-            # 发起异步取消请求
-            cancel_future = goal_handle.cancel_goal_async()
+        pending = None
+        with self._pending_action_error_decisions_lock:
+            for decision_id, candidate in list(
+                self._pending_action_error_decisions.items()
+            ):
+                if candidate.get("job_id") != job_id:
+                    continue
+                pending = self._pending_action_error_decisions.pop(decision_id)
+                pending["resolving"] = True
+                timer = pending.get("timer")
+                if timer is not None:
+                    timer.cancel()
+                break
 
-            # 添加取消完成的回调
-            cancel_future.add_done_callback(lambda future: self._cancel_goal_callback(goal_uuid, future))
+            goal_handle = self._goals.get(job_id)
+            has_context = job_id in self._error_execution_contexts
+            if pending is None and goal_handle is None and not has_context:
+                self.lab_logger().warning(
+                    f"[Host Node] Job {job_id[:8]} not found, cannot cancel"
+                )
+                return False
+            self._canceled_jobs.add(job_id)
+
+        if pending is not None:
+            item = pending["item"]
+            self._publish_action_error_decision_resolved(
+                pending,
+                "cancel",
+                "job_canceled",
+            )
+            self._finish_error_handled_job(
+                item,
+                "failed",
+                serialize_result_info("Job was cancelled", False, {}),
+                {},
+            )
             return True
+
+        if goal_handle is not None:
+            self.lab_logger().info(f"[Host Node] Cancelling goal {job_id[:8]}")
+            self._request_goal_cancel(job_id, goal_handle)
         else:
-            self.lab_logger().warning(f"[Host Node] Goal {goal_uuid[:8]} not found in _goals, cannot cancel")
-            return False
+            self.lab_logger().info(
+                f"[Host Node] Marked in-flight goal {job_id[:8]} canceled before acceptance"
+            )
+        return True
+
+    def cancel_goal(self, goal_uuid: str) -> bool:
+        """兼容旧接口；统一走可覆盖异常决策和重试在途状态的取消逻辑。"""
+
+        return self.cancel_job(goal_uuid)
 
     def _cancel_goal_callback(self, goal_uuid: str, future) -> None:
         """取消目标的回调"""

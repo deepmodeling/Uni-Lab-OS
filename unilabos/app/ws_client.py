@@ -1734,6 +1734,18 @@ class WebSocketClient(BaseCommunicationClient):
             )
         return queued
 
+    def publish_job_error_decision_resolved(self, report: Dict[str, Any]) -> bool:
+        """向云端上报 Host 已采用的异常决策，供 timeout/人工操作审计。"""
+
+        if self.is_disabled or not self.is_connected():
+            logger.warning(
+                "[WebSocketClient] Not connected, cannot report resolved error decision"
+            )
+            return False
+        return self.message_processor.send_message(
+            {"action": "job_error_decision_resolved", "data": report}
+        )
+
     def send_ping(self, ping_id: str, timestamp: float) -> None:
         """发送ping消息"""
         if self.is_disabled or not self.is_connected():

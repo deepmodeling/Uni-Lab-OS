@@ -96,6 +96,11 @@ class BaseCommunicationClient(ABC):
         """
         pass
 
+    def publish_job_error_decision_resolved(self, report: dict) -> bool:
+        """上报自动或人工异常决策的最终选择；不支持时返回 False。"""
+
+        return False
+
     def setup_pong_subscription(self) -> None:
         """
         设置pong消息订阅（可选实现）

@@ -50,6 +50,7 @@ Frontend                 Host microbackend        HostNode              Device
 ```text
 Device --suc:false--> HostNode --job_error_decision_required--> Cloud Backend
 Device <--goal-------- HostNode <--job_error_decision----------- Cloud Backend
+                         HostNode --job_error_decision_resolved--> Cloud Backend
 Cloud Backend <------------------job_status--------------------- HostNode
 ```
 
@@ -134,6 +135,8 @@ Cloud Backend <------------------job_status--------------------- HostNode
 
 前端必须以 `option.action` 为稳定值，`label/description` 只用于展示。
 `fallback_action` 是只读说明，浏览器不得调用其中的设备动作或修改参数。
+当 `retry_count >= max_retries` 或原动作上下文不可用时，Host 会从 `options` 中移除
+`retry`；前端应直接按最新报告渲染，不得重新补出“重试”按钮。
 
 ## 5. REST 示例
 
@@ -458,6 +461,28 @@ Host → Backend：
   }
 }
 ```
+
+Host 采用人工选择、执行超时默认动作或取消等待中的 job 后，还会发送终态审计：
+
+```json
+{
+  "action": "job_error_decision_resolved",
+  "data": {
+    "decision_id": "8a714f4c-5bb0-47b7-9245-9ddf907ef8d4",
+    "job_id": "df958dcb-b2bf-4a48-94a2-81410bf95a6b",
+    "task_id": "3f39b087-aec2-4b76-b31d-a3da277e7ec1",
+    "device_id": "pump-1",
+    "action_name": "transfer",
+    "selected_action": "abort",
+    "reason": "decision_timeout",
+    "resolved_at": 1786440300.0
+  }
+}
+```
+
+`reason` 由操作来源决定：人工提交时透传后端给出的说明；自动超时为
+`decision_timeout`；工作流/job 取消为 `job_canceled`。云后端收到 resolved 后应按
+`decision_id` 幂等移除 pending，并继续等待原 `job_id` 的 `job_status` 终态。
 
 Backend → Host：
 

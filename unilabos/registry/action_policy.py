@@ -136,6 +136,18 @@ def normalize_error_policy(
     timeout_action = policy.get("default_on_decision_timeout", "abort")
     if timeout_action not in {"abort", "retry", "skip"}:
         raise ValueError("default_on_decision_timeout 仅支持 abort/retry/skip")
+    if timeout_action != "abort":
+        missing = [
+            error_class_name
+            for error_class_name, class_options in options.items()
+            if timeout_action
+            not in {str(option.get("action")) for option in class_options}
+        ]
+        if missing:
+            raise ValueError(
+                "default_on_decision_timeout 必须存在于每个异常 options 中；"
+                f"缺少 {timeout_action!r}: {missing}"
+            )
     normalized["default_on_decision_timeout"] = timeout_action
     return normalized
 

@@ -74,6 +74,9 @@ class JobAddReq(BaseModel):
 class ErrorDecisionIn(BaseModel):
     """Host 微后端提交的异常处理决策。"""
 
+    decision_id: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    device_id: str = Field(min_length=1)
     action: str = ""
     option: Any = None
     result: Any = None

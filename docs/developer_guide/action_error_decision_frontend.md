@@ -178,7 +178,13 @@ Accept: application/json
 POST /api/v1/error-decisions/8a714f4c-5bb0-47b7-9245-9ddf907ef8d4
 Content-Type: application/json
 
-{"action":"retry","reason":"operator confirmed"}
+{
+  "decision_id": "8a714f4c-5bb0-47b7-9245-9ddf907ef8d4",
+  "job_id": "df958dcb-b2bf-4a48-94a2-81410bf95a6b",
+  "device_id": "pump-1",
+  "action": "retry",
+  "reason": "operator confirmed"
+}
 ```
 
 成功只表示 Host 接受了命令，不表示恢复动作已经成功：
@@ -194,6 +200,9 @@ Content-Type: application/json
 
 ```json
 {
+  "decision_id": "8a714f4c-5bb0-47b7-9245-9ddf907ef8d4",
+  "job_id": "df958dcb-b2bf-4a48-94a2-81410bf95a6b",
+  "device_id": "pump-1",
   "action": "reset_connection",
   "reason": "operator selected registered recovery"
 }
@@ -203,6 +212,9 @@ Content-Type: application/json
 
 ```json
 {
+  "decision_id": "8a714f4c-5bb0-47b7-9245-9ddf907ef8d4",
+  "job_id": "df958dcb-b2bf-4a48-94a2-81410bf95a6b",
+  "device_id": "pump-1",
   "action": "manual_result",
   "result": {"confirmed_volume": 10.0},
   "reason": "verified on instrument"
@@ -211,9 +223,14 @@ Content-Type: application/json
 
 错误语义：
 
-- `404`：不存在、已被其他请求处理、已经超时，或通道来源不匹配。
+- `422`：缺少 `decision_id/job_id/device_id` 中任一项或请求结构非法。
+- `409`：路径与正文身份不一致，或 Host 在 timer 回调前已按 `expires_at`
+  原子执行超时默认动作。
+- `404`：不存在或通道来源不匹配。
 - `503`：HostNode 尚未就绪。
-- 第一次合法决策获胜；前端收到 `404` 时重新 GET 列表。若列表中已不存在该 ID，关闭弹窗并继续追踪原 job。
+- 第一次合法决策获胜。重复提交同一已解决决策时，Host 在短期 tombstone
+  保留窗口内返回 `status=resolved, replayed=true` 和原 `resolution`，但不会再次执行。
+  前端收到 `404/409` 时重新 GET 列表；若列表中已不存在该 ID，关闭弹窗并继续追踪原 job。
 
 ### 5.3 查询原 job
 
@@ -416,13 +433,16 @@ async function resolveDecision(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        decision_id: decision.decision_id,
+        job_id: decision.job_id,
+        device_id: decision.device_id,
         action,
         ...(result === undefined ? {} : { result }),
         reason: "operator confirmed",
       }),
     },
   );
-  if (response.status === 404) {
+  if (response.status === 404 || response.status === 409) {
     await refreshDecisions();
     return;
   }
@@ -483,6 +503,12 @@ Host 采用人工选择、执行超时默认动作或取消等待中的 job 后�
 `reason` 由操作来源决定：人工提交时透传后端给出的说明；自动超时为
 `decision_timeout`；工作流/job 取消为 `job_canceled`。云后端收到 resolved 后应按
 `decision_id` 幂等移除 pending，并继续等待原 `job_id` 的 `job_status` 终态。
+取消 pending 决策时 `selected_action=abort`，原 job 终态为 `canceled`；设备动作此前
+已经返回失败，因此 Host 不会再次向设备发送 cancel。
+
+Host 默认在内存中保留一小时 resolved/expired tombstone，并在云 WS 重连时重放仍在
+窗口内的 required 与 resolved。云后端仍须永久保存决策终态；Host tombstone 只用于
+覆盖短时断线和重复提交，不替代后端审计。
 
 Backend → Host：
 
@@ -521,9 +547,10 @@ tracking_job
 2. pending 期间原 job 仍为执行中，不能先标记 failed。
 3. POST `delivered` 不是 job 成功，只是 Host 已接受选择。
 4. retry 使用新的 ROS transport goal UUID，但前端始终追踪原 `job_id`。
-5. 只允许提交报告 `options` 中的 action；最终合法性仍由 Host 校验。
-6. Host 超时是权威；浏览器倒计时归零后只刷新，不自行执行默认动作。
-7. fallback 由 Host 通过 ActionClient 发给真实设备，浏览器绝不调用设备 Service/Action。
+5. 每次提交必须原样携带 `decision_id/job_id/device_id`，三项完全一致后 Host 才消费。
+6. 只允许提交报告 `options` 中的 action；最终合法性仍由 Host 校验。
+7. Host 超时是权威；浏览器倒计时归零后只刷新，不自行执行默认动作。
+8. fallback 由 Host 通过 ActionClient 发给真实设备，浏览器绝不调用设备 Service/Action。
 
 ## 10. 前端验收清单
 
@@ -531,7 +558,7 @@ tracking_job
 - 新异常通过 SSE 在不刷新页面时出现。
 - 同一 `decision_id` 的 snapshot/SSE 重复消息只产生一个 UI 项。
 - 点击后立即禁用按钮，成功响应后继续追踪原 job。
-- POST 响应丢失后再次提交得到 404，前端通过 snapshot 正确收敛。
+- POST 响应丢失后再次提交得到原 resolved tombstone，前端不会重复执行并继续追踪 job。
 - SSE `seq` 出现空洞时重新拉 snapshot。
 - timeout、另一个浏览器先处理、云/本地通道错投时不会重复执行。
 - retry/fallback 成功后展示 `suc_type`；skip 明确提示需要物料复核。

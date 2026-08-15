@@ -763,11 +763,11 @@ class MessageProcessor:
         decision_id = str(data.get("decision_id") or "")
         job_id = str(data.get("job_id") or "")
         device_id = str(data.get("device_id") or "")
-        if not decision_id and not job_id:
-            logger.warning("[MessageProcessor] job_error_decision missing decision_id and job_id")
-            return
-        if not device_id:
-            logger.warning("[MessageProcessor] job_error_decision missing device_id")
+        if not decision_id or not job_id or not device_id:
+            logger.warning(
+                "[MessageProcessor] job_error_decision requires "
+                "decision_id, job_id and device_id"
+            )
             return
 
         host_node = HostNode.get_instance(0)
@@ -780,6 +780,18 @@ class MessageProcessor:
             dict(data),
             decision_target=ERROR_DECISION_TARGET_BACKEND,
         ):
+            replayed = host_node.replay_action_error_decision_resolution(
+                decision_id,
+                job_id,
+                device_id,
+                decision_target=ERROR_DECISION_TARGET_BACKEND,
+            )
+            if replayed is not None:
+                logger.info(
+                    f"[MessageProcessor] Replayed resolved error decision "
+                    f"decision={decision_id} job={job_id[:8]}"
+                )
+                return
             logger.warning(
                 f"[MessageProcessor] No pending error decision matched "
                 f"decision={decision_id} job={job_id[:8]} device={device_id}"
@@ -1560,7 +1572,7 @@ class WebSocketClient(BaseCommunicationClient):
     def replay_cached_job_start_response(self, job_id: str, task_id: str) -> bool:
         """回放同一 (task_id, job_id) 已缓存的最终结果。
 
-        仅当已缓存到 success/failed 的终态结果时才回放；若原任务仍在执行
+        仅当已缓存到 success/failed/canceled 的终态结果时才回放；若原任务仍在执行
         (只缓存了 running 中间态)，返回 False，由调用方决定如何处理。
         """
         key = self._job_start_cache_key(job_id, task_id)
@@ -1571,7 +1583,7 @@ class WebSocketClient(BaseCommunicationClient):
             cached = self._job_start_cache.get(key)
             if cached is None or cached.response_message is None:
                 return False
-            if cached.response_status not in ("success", "failed"):
+            if cached.response_status not in ("success", "failed", "canceled"):
                 return False
             message = copy.deepcopy(cached.response_message)
             status = cached.response_status
@@ -1657,7 +1669,7 @@ class WebSocketClient(BaseCommunicationClient):
         job_log = format_job_log(item.job_id, item.task_id, item.device_id, item.action_name)
 
         # 拦截最终结果状态，与原版本逻辑一致
-        if status in ["success", "failed"]:
+        if status in ["success", "failed", "canceled"]:
             self._job_running_last_sent.pop(item.job_id, None)
 
             host_node = HostNode.get_instance(0)
@@ -1670,7 +1682,7 @@ class WebSocketClient(BaseCommunicationClient):
             self.queue_processor.handle_job_completed(item.job_id, status)
 
             cached_status = self.get_cached_job_start_response_status(item.job_id, item.task_id)
-            if cached_status in ["success", "failed"]:
+            if cached_status in ["success", "failed", "canceled"]:
                 # 断线重连时，旧 READY 占位可能在结果已回放后触发 timeout failed。
                 # 已有终态时不允许重复终态覆盖缓存或再次发送，success 也不允许被 failed 降级。
                 if cached_status == "success" or cached_status == status:
@@ -1745,6 +1757,23 @@ class WebSocketClient(BaseCommunicationClient):
         return self.message_processor.send_message(
             {"action": "job_error_decision_resolved", "data": report}
         )
+
+    def report_action_error_decisions(self) -> None:
+        """连接/重连后重放 Host 持有的 pending 与短期终态。"""
+
+        if self.is_disabled or not self.is_connected():
+            return
+        host_node = HostNode.get_instance(0)
+        if host_node is None:
+            return
+        for report in host_node.get_pending_action_error_decisions(
+            ERROR_DECISION_TARGET_BACKEND,
+        ):
+            self.publish_job_error_decision_required(report)
+        for report in host_node.get_resolved_action_error_decisions(
+            ERROR_DECISION_TARGET_BACKEND,
+        ):
+            self.publish_job_error_decision_resolved(report)
 
     def send_ping(self, ping_id: str, timestamp: float) -> None:
         """发送ping消息"""
@@ -1897,6 +1926,7 @@ class WebSocketClient(BaseCommunicationClient):
         # 先上报全量锁快照，再发 host_ready：借助发送队列 FIFO 顺序，
         # 服务端会先收到 report_action_lock、再收到 host_node_ready。
         # 启动时全部 free，重连时按 DeviceActionManager 反映正在运行/排队的 busy，实现锁状态对齐。
+        self.report_action_error_decisions()
         self.report_all_action_locks()
         self.message_processor.send_message(message)
         logger.info(f"[WebSocketClient] Host node ready signal published with {len(devices)} devices")

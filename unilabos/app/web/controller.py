@@ -106,6 +106,7 @@ def store_job_result(
         "success": 4,  # SUCCEEDED
         "failed": 6,  # ABORTED
         "cancelled": 5,  # CANCELED
+        "canceled": 5,  # CANCELED (canonical spelling)
         "running": 2,  # EXECUTING
     }
     status_int = status_map.get(status, 0)
@@ -374,12 +375,44 @@ def submit_action_error_decision(
     decision_id = str(decision_id or "")
     if not decision_id:
         return False, {"error": "decision_id is required"}
+    body_decision_id = str(decision.get("decision_id") or "")
+    job_id = str(decision.get("job_id") or "")
+    device_id = str(decision.get("device_id") or "")
+    if not body_decision_id or not job_id or not device_id:
+        return False, {
+            "error": "decision_id, job_id and device_id are required",
+            "error_code": "decision_identity_required",
+        }
+    if body_decision_id != decision_id:
+        return False, {
+            "error": "path decision_id does not match request body",
+            "error_code": "decision_identity_mismatch",
+        }
     if not host_node.handle_action_error_decision(
         decision_id,
-        "",
+        job_id,
         decision,
         decision_target=ERROR_DECISION_TARGET_MICRO_BACKEND,
     ):
+        resolved = host_node.get_resolved_action_error_decision(
+            decision_id,
+            job_id,
+            device_id,
+            decision_target=ERROR_DECISION_TARGET_MICRO_BACKEND,
+        )
+        if resolved is not None:
+            if resolved.get("reason") == "decision_timeout":
+                return False, {
+                    "error": "action error decision expired",
+                    "error_code": "decision_expired",
+                    "resolution": resolved,
+                }
+            return True, {
+                "decision_id": decision_id,
+                "status": "resolved",
+                "replayed": True,
+                "resolution": resolved,
+            }
         return False, {"error": "pending action error decision not found or mismatched"}
     return True, {"decision_id": decision_id, "status": "delivered"}
 

@@ -1334,8 +1334,18 @@ def api_submit_action_error_decision(decision_id: str, req: ErrorDecisionIn):
         decision = req.dict(exclude_unset=True)
     isok, data = submit_action_error_decision(decision_id, decision)
     if not isok:
+        error_code = str(data.get("error_code") or "")
         raise HTTPException(
-            status_code=404,
+            status_code=(
+                409
+                if error_code in {
+                    "decision_expired",
+                    "decision_identity_mismatch",
+                }
+                else 422
+                if error_code == "decision_identity_required"
+                else 404
+            ),
             detail=data.get("error", "Pending decision not found"),
         )
     return data

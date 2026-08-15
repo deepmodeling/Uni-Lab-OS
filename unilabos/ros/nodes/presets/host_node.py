@@ -155,6 +155,7 @@ class HostNode(BaseROS2DeviceNode):
         DeviceActionStatus
     )
     _resource_tracker: ClassVar[DeviceNodeResourceTracker] = DeviceNodeResourceTracker()  # 资源管理器实例
+    _ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS: ClassVar[float] = 3600.0
 
     @classmethod
     def get_instance(cls, timeout=None) -> Optional["HostNode"]:
@@ -371,6 +372,7 @@ class HostNode(BaseROS2DeviceNode):
         # 异常决策只存在于 Host：设备返回结构化失败，Host 保留原 job 并负责恢复动作。
         self._error_execution_contexts: Dict[str, Dict[str, Any]] = {}
         self._pending_action_error_decisions: Dict[str, Dict[str, Any]] = {}
+        self._resolved_action_error_decisions: Dict[str, Dict[str, Any]] = {}
         self._pending_action_error_decisions_lock = threading.RLock()
         # cancel 可能发生在 Goal 等待响应、执行中或等待异常决策三个阶段。
         self._canceled_jobs: Set[str] = set()
@@ -1351,15 +1353,32 @@ class HostNode(BaseROS2DeviceNode):
             ]
         return reports
 
-    def _publish_action_error_decision_resolved(
+    def _prune_action_error_decision_tombstones_locked(
+        self,
+        now: Optional[float] = None,
+    ) -> None:
+        """清理 Host 内存中的短期决策终态；后端仍负责持久审计。"""
+
+        current = time.time() if now is None else now
+        tombstones = getattr(self, "_resolved_action_error_decisions", {})
+        stale_ids = [
+            decision_id
+            for decision_id, tombstone in tombstones.items()
+            if float(tombstone.get("retain_until", 0.0)) <= current
+        ]
+        for decision_id in stale_ids:
+            tombstones.pop(decision_id, None)
+
+    def _remember_action_error_decision_resolution_locked(
         self,
         pending: Dict[str, Any],
         selected_action: str,
-        reason: str = "",
+        reason: str,
     ) -> Dict[str, Any]:
-        """发布决策终态审计；观测/通信失败不影响实际决策。"""
+        """在消费 pending 的同一临界区记录可重放终态。"""
 
         item = pending["item"]
+        resolved_at = time.time()
         resolved_report = {
             "decision_id": pending["decision_id"],
             "job_id": pending["job_id"],
@@ -1368,8 +1387,135 @@ class HostNode(BaseROS2DeviceNode):
             "action_name": item.action_name,
             "selected_action": selected_action,
             "reason": reason,
-            "resolved_at": time.time(),
+            "resolved_at": resolved_at,
         }
+        tombstones = getattr(self, "_resolved_action_error_decisions", None)
+        if tombstones is None:
+            tombstones = {}
+            self._resolved_action_error_decisions = tombstones
+        self._prune_action_error_decision_tombstones_locked(resolved_at)
+        tombstones[pending["decision_id"]] = {
+            "report": deepcopy(resolved_report),
+            "decision_target": pending.get("decision_target"),
+            "retain_until": (
+                resolved_at + self._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS
+            ),
+        }
+        return resolved_report
+
+    def get_resolved_action_error_decision(
+        self,
+        decision_id: str,
+        job_id: str,
+        device_id: str,
+        *,
+        decision_target: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """按完整身份读取短期终态，供断线重放和 REST 幂等响应。"""
+
+        if not decision_id or not job_id or not device_id:
+            return None
+        with self._pending_action_error_decisions_lock:
+            self._prune_action_error_decision_tombstones_locked()
+            tombstone = getattr(
+                self,
+                "_resolved_action_error_decisions",
+                {},
+            ).get(decision_id)
+            if tombstone is None:
+                return None
+            if (
+                decision_target is not None
+                and tombstone.get("decision_target") != decision_target
+            ):
+                return None
+            report = tombstone.get("report")
+            if not isinstance(report, dict):
+                return None
+            if (
+                report.get("job_id") != job_id
+                or report.get("device_id") != device_id
+            ):
+                return None
+            return deepcopy(report)
+
+    def get_resolved_action_error_decisions(
+        self,
+        decision_target: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """读取仍在 Host tombstone 窗口内的决策终态。"""
+
+        with self._pending_action_error_decisions_lock:
+            self._prune_action_error_decision_tombstones_locked()
+            return [
+                deepcopy(tombstone["report"])
+                for tombstone in getattr(
+                    self,
+                    "_resolved_action_error_decisions",
+                    {},
+                ).values()
+                if isinstance(tombstone.get("report"), dict)
+                and (
+                    decision_target is None
+                    or tombstone.get("decision_target") == decision_target
+                )
+            ]
+
+    def replay_action_error_decision_resolution(
+        self,
+        decision_id: str,
+        job_id: str,
+        device_id: str,
+        *,
+        decision_target: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """向原决策端重放已解决终态，不再次执行恢复动作。"""
+
+        resolved_report = self.get_resolved_action_error_decision(
+            decision_id,
+            job_id,
+            device_id,
+            decision_target=decision_target,
+        )
+        if resolved_report is None:
+            return None
+        if decision_target == ERROR_DECISION_TARGET_BACKEND:
+            for bridge in self.bridges:
+                publish_resolved = getattr(
+                    bridge,
+                    "publish_job_error_decision_resolved",
+                    None,
+                )
+                if not callable(publish_resolved):
+                    continue
+                try:
+                    if publish_resolved(deepcopy(resolved_report)):
+                        break
+                except Exception as ex:  # noqa: BLE001 - 重放失败不改变终态
+                    self.lab_logger().warning(
+                        f"[Host Node] 异常决策终态重放失败: {bridge!r}: {ex}"
+                    )
+        return resolved_report
+
+    def _publish_action_error_decision_resolved(
+        self,
+        pending: Dict[str, Any],
+        selected_action: str,
+        reason: str = "",
+        resolved_report: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """发布决策终态审计；观测/通信失败不影响实际决策。"""
+
+        item = pending["item"]
+        if resolved_report is None:
+            with self._pending_action_error_decisions_lock:
+                resolved_report = (
+                    self._remember_action_error_decision_resolution_locked(
+                        pending,
+                        selected_action,
+                        reason,
+                    )
+                )
         self._emit_local_action_event(
             item,
             "job_error_decision_resolved",
@@ -1400,6 +1546,7 @@ class HostNode(BaseROS2DeviceNode):
                 return
             error_info = pending["error_info"]
             job_id = pending["job_id"]
+            device_id = pending["item"].device_id
             timeout_action = str(
                 error_info.get("default_on_decision_timeout", "abort")
             )
@@ -1415,9 +1562,11 @@ class HostNode(BaseROS2DeviceNode):
             {
                 "decision_id": decision_id,
                 "job_id": job_id,
+                "device_id": device_id,
                 "action": timeout_action,
                 "reason": "decision_timeout",
             },
+            _timeout_resolution=True,
         )
 
     def handle_action_error_decision(
@@ -1427,18 +1576,27 @@ class HostNode(BaseROS2DeviceNode):
         decision: Dict[str, Any],
         *,
         decision_target: Optional[str] = None,
+        _timeout_resolution: bool = False,
     ) -> bool:
         """在 Host 上处理决策，并通过现有 ActionClient 发起恢复动作。"""
 
+        body_decision_id = str(decision.get("decision_id") or "")
+        body_job_id = str(decision.get("job_id") or "")
+        body_device_id = str(decision.get("device_id") or "")
+        if (
+            not decision_id
+            or not job_id
+            or not body_decision_id
+            or not body_job_id
+            or not body_device_id
+            or body_decision_id != decision_id
+            or body_job_id != job_id
+        ):
+            return False
+
+        caller_accepted = True
         with self._pending_action_error_decisions_lock:
-            pending = self._pending_action_error_decisions.get(decision_id) if decision_id else None
-            if pending is None and job_id:
-                matches = [
-                    candidate
-                    for candidate in self._pending_action_error_decisions.values()
-                    if candidate.get("job_id") == job_id
-                ]
-                pending = matches[0] if len(matches) == 1 else None
+            pending = self._pending_action_error_decisions.get(decision_id)
             if (
                 pending is None
                 or pending.get("resolving")
@@ -1450,17 +1608,37 @@ class HostNode(BaseROS2DeviceNode):
                 and pending.get("decision_target") != decision_target
             ):
                 return False
-            if job_id and pending["job_id"] != job_id:
+            if pending["job_id"] != job_id:
                 return False
-            body_decision_id = str(decision.get("decision_id") or "")
-            body_job_id = str(decision.get("job_id") or "")
-            if body_decision_id and body_decision_id != pending["decision_id"]:
+            if body_device_id != pending["item"].device_id:
                 return False
-            if body_job_id and body_job_id != pending["job_id"]:
-                return False
-            body_device_id = str(decision.get("device_id") or "")
-            if body_device_id and body_device_id != pending["item"].device_id:
-                return False
+
+            expires_at = float(pending["error_info"].get("expires_at", 0.0))
+            if (
+                not _timeout_resolution
+                and expires_at > 0.0
+                and time.time() >= expires_at
+            ):
+                timeout_action = str(
+                    pending["error_info"].get(
+                        "default_on_decision_timeout",
+                        "abort",
+                    )
+                )
+                allowed_actions = {
+                    str(option.get("action"))
+                    for option in pending["error_info"].get("options", [])
+                }
+                if timeout_action != "abort" and timeout_action not in allowed_actions:
+                    timeout_action = "abort"
+                decision = {
+                    "decision_id": decision_id,
+                    "job_id": job_id,
+                    "device_id": body_device_id,
+                    "action": timeout_action,
+                    "reason": "decision_timeout",
+                }
+                caller_accepted = False
 
             selected_option = decision.get("option")
             if isinstance(selected_option, dict):
@@ -1486,12 +1664,18 @@ class HostNode(BaseROS2DeviceNode):
             timer = pending.get("timer")
             if timer is not None:
                 timer.cancel()
+            resolved_report = self._remember_action_error_decision_resolution_locked(
+                pending,
+                selected,
+                str(decision.get("reason") or ""),
+            )
 
         item = pending["item"]
         self._publish_action_error_decision_resolved(
             pending,
             selected,
             str(decision.get("reason") or ""),
+            resolved_report,
         )
         if selected == "abort":
             self._finish_error_handled_job(
@@ -1500,7 +1684,7 @@ class HostNode(BaseROS2DeviceNode):
                 pending["return_info"],
                 pending["result_data"],
             )
-            return True
+            return caller_accepted
 
         if selected == "skip":
             return_value = decision.get("result", decision.get("return_value"))
@@ -1513,7 +1697,7 @@ class HostNode(BaseROS2DeviceNode):
             result_data = dict(pending["result_data"])
             result_data["return_info"] = json.dumps(return_info, ensure_ascii=False)
             self._finish_error_handled_job(item, "success", return_info, result_data)
-            return True
+            return caller_accepted
 
         execution_context = pending.get("execution_context")
         if selected == "retry":
@@ -1524,7 +1708,7 @@ class HostNode(BaseROS2DeviceNode):
                     serialize_result_info("缺少原动作上下文，无法重试", False, {}),
                     pending["result_data"],
                 )
-                return True
+                return caller_accepted
             retries = int(execution_context.get("retry_count", 0))
             max_retries = int(pending["error_info"].get("max_retries", 3))
             if retries >= max_retries:
@@ -1538,7 +1722,7 @@ class HostNode(BaseROS2DeviceNode):
                     ),
                     pending["result_data"],
                 )
-                return True
+                return caller_accepted
             execution_context["retry_count"] = retries + 1
             try:
                 self.send_goal(
@@ -1557,7 +1741,7 @@ class HostNode(BaseROS2DeviceNode):
                     serialize_result_info(traceback.format_exc(), False, {}),
                     {"error": str(ex)},
                 )
-            return True
+            return caller_accepted
 
         fallback = option.get("fallback_action") if isinstance(option, dict) else None
         if not isinstance(fallback, dict):
@@ -1570,7 +1754,7 @@ class HostNode(BaseROS2DeviceNode):
                     suc_type=SUCCESS_TYPE_OPERATOR_INTERVENTION,
                 )
                 self._finish_error_handled_job(item, "success", return_info, {})
-                return True
+                return caller_accepted
             self._finish_error_handled_job(
                 item,
                 "failed",
@@ -1581,7 +1765,7 @@ class HostNode(BaseROS2DeviceNode):
                 ),
                 pending["result_data"],
             )
-            return True
+            return caller_accepted
 
         fallback_name = str(fallback.get("action_name") or "")
         action_mappings = self._action_value_mappings.get(item.device_id, {})
@@ -1601,7 +1785,7 @@ class HostNode(BaseROS2DeviceNode):
                 ),
                 pending["result_data"],
             )
-            return True
+            return caller_accepted
 
         fallback_item = type(item)(
             task_type=item.task_type,
@@ -1632,7 +1816,7 @@ class HostNode(BaseROS2DeviceNode):
                 serialize_result_info(traceback.format_exc(), False, {}),
                 {"error": str(ex)},
             )
-        return True
+        return caller_accepted
 
     def goal_response_callback(
         self,
@@ -1820,6 +2004,7 @@ class HostNode(BaseROS2DeviceNode):
         """取消运行中、等待 Goal 响应或等待异常决策的逻辑 job。"""
 
         pending = None
+        resolved_report = None
         with self._pending_action_error_decisions_lock:
             for decision_id, candidate in list(
                 self._pending_action_error_decisions.items()
@@ -1831,6 +2016,13 @@ class HostNode(BaseROS2DeviceNode):
                 timer = pending.get("timer")
                 if timer is not None:
                     timer.cancel()
+                resolved_report = (
+                    self._remember_action_error_decision_resolution_locked(
+                        pending,
+                        "abort",
+                        "job_canceled",
+                    )
+                )
                 break
 
             goal_handle = self._goals.get(job_id)
@@ -1846,12 +2038,13 @@ class HostNode(BaseROS2DeviceNode):
             item = pending["item"]
             self._publish_action_error_decision_resolved(
                 pending,
-                "cancel",
+                "abort",
                 "job_canceled",
+                resolved_report,
             )
             self._finish_error_handled_job(
                 item,
-                "failed",
+                "canceled",
                 serialize_result_info("Job was cancelled", False, {}),
                 {},
             )

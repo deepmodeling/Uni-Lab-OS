@@ -21,7 +21,13 @@ def get_host_node_info() -> Dict[str, Any]:
     Returns:
         Dict: 包含主机节点信息的字典
     """
-    host_info = {"available": False, "devices": {}, "subscribed_topics": [], "action_clients": {}}
+    host_info = {
+        "available": False,
+        "devices": {},
+        "subscribed_topics": [],
+        "action_clients": {},
+        "business_actions": {},
+    }
     if not BasicConfig.is_host_mode:
         return host_info
     # 尝试获取HostNode实例，设置超时为0秒
@@ -43,6 +49,22 @@ def get_host_node_info() -> Dict[str, Any]:
     # 获取动作客户端信息
     for action_id, client in host_node._action_clients.items():
         host_info["action_clients"][action_id] = get_action_info(client, full_name=action_id)
+
+    # @action 生成的 UniLabJsonCommand 复用底层 command ROS action，不会出现在
+    # _action_clients 中；单独展示业务映射，避免主机页误认为动作未注册。
+    for device_id, mappings in host_node._action_value_mappings.items():
+        for action_name, mapping in (mappings or {}).items():
+            action_type = str(mapping.get("type", ""))
+            if not action_type.startswith("UniLabJsonCommand") or action_name == "auto-close":
+                continue
+            schema = mapping.get("schema") or {}
+            key = f"{device_id}/{action_name}"
+            host_info["business_actions"][key] = {
+                "device_id": device_id,
+                "action_name": action_name,
+                "action_type": action_type,
+                "description": schema.get("description", ""),
+            }
 
     # 获取设备状态
     host_info["device_status"] = host_node.device_status

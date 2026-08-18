@@ -16,7 +16,7 @@ import threading
 import asyncio
 import traceback
 import websockets
-import ssl as ssl_module
+from websockets.exceptions import ConnectionClosed, InvalidStatus
 import copy
 from queue import Queue, Empty
 from dataclasses import dataclass, field
@@ -33,6 +33,7 @@ from unilabos.utils.type_check import serialize_result_info
 from unilabos.app.communication import BaseCommunicationClient
 from unilabos.config.config import WSConfig, HTTPConfig, BasicConfig
 from unilabos.utils.log import get_comm_logger
+from unilabos.app.ssl_utils import create_wss_ssl_context
 
 # 服务端通信专用 logger：独立成文件(unilabos_data/logs/ws_comm_*.log)，
 # 全量 TRACE 落本地、微秒级时间戳 + 线程名，便于排查通信/queue 时序问题。
@@ -456,7 +457,7 @@ class MessageProcessor:
                 # 构建SSL上下文
                 ssl_context = None
                 if self.websocket_url.startswith("wss://"):
-                    ssl_context = ssl_module.create_default_context()
+                    ssl_context = create_wss_ssl_context()
 
                 ws_logger = logging.getLogger("websockets.client")
                 ws_logger.setLevel(logging.INFO)
@@ -504,13 +505,13 @@ class MessageProcessor:
                         except asyncio.CancelledError:
                             pass
 
-            except websockets.exceptions.ConnectionClosed:
+            except ConnectionClosed:
                 logger.warning("[MessageProcessor] 与服务端连接中断")
             except TimeoutError:
                 logger.warning(
                     f"[MessageProcessor] 与服务端连接通信超时 (已尝试 {self.reconnect_count + 1} 次)，请检查您的网络状况"
                 )
-            except websockets.exceptions.InvalidStatus as e:
+            except InvalidStatus as e:
                 logger.warning(
                     f"[MessageProcessor] 收到服务端注册码 {e.response.status_code}, 上一进程可能还未退出"
                 )

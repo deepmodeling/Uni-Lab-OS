@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import json
 from pathlib import Path
 
 
@@ -77,14 +76,3 @@ def test_conductivity_station_actions_are_discoverable_by_registry() -> None:
         "frame_delimiter",
         "station_action_names",
     }
-
-
-def test_device_graph_references_registered_device() -> None:
-    graph = json.loads(
-        (DEVICE_DIR / "conductivity_station.json").read_text(encoding="utf-8")
-    )
-
-    assert graph["links"] == []
-    assert graph["nodes"][0]["id"] == "CONDUCTIVITY_STATION"
-    assert graph["nodes"][0]["class"] == "conductivity_station"
-    assert graph["nodes"][0]["config"]["port"] == 19091

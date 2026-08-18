@@ -1,0 +1,29 @@
+{
+  "nodes": [
+    {
+      "id": "CONDUCTIVITY_STATION",
+      "name": "电导率自动化测试工站",
+      "parent": null,
+      "type": "device",
+      "class": "conductivity_station",
+      "position": {
+        "x": 720.0,
+        "y": 200.0,
+        "z": 0
+      },
+      "config": {
+        "ip": "127.0.0.1",
+        "port": 19091,
+        "connect_timeout": 5.0,
+        "response_timeout": 10.0,
+        "max_message_bytes": 4194304,
+        "encoding": "utf-8",
+        "frame_delimiter": "\\r\\n",
+        "station_action_names": {}
+      },
+      "data": {},
+      "children": []
+    }
+  ],
+  "links": []
+}

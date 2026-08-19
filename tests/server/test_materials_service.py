@@ -1,0 +1,284 @@
+"""新 materials authority 的聚合与协议测试。"""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from unilabos.server.protocol.common import AggregatePrecondition, InventoryMutation
+from unilabos.server.protocol.materials import (
+    MaterialDataWrite,
+    MaterialIdentityWrite,
+    MaterialMove,
+    MaterialNodeCreate,
+    MaterialPosition,
+    MaterialSnapshot,
+    MaterialSubstance,
+    MaterialTreeCreate,
+    ResourceTemplateWrite,
+)
+from unilabos.server.services.materials import (
+    MaterialConflictError,
+    MaterialsService,
+)
+
+
+def _mutation(operation: str, *, command_uuid: str | None = None, **values):
+    return InventoryMutation(
+        command_uuid=command_uuid or str(uuid4()),
+        effect_key=operation,
+        operation=operation,
+        **values,
+    )
+
+
+def _template(
+    service: MaterialsService,
+    template_uuid: str,
+    name: str,
+    *,
+    with_site: bool = False,
+):
+    return service.put_template(
+        _mutation("put_template"),
+        ResourceTemplateWrite(
+            template_uuid=template_uuid,
+            name=name,
+            display_name=name.title(),
+            resource_type="container",
+            class_name="Container",
+            available_sites=(
+                [{"index": 0, "label": "A1", "content_type": ["container"]}]
+                if with_site
+                else []
+            ),
+        ),
+    )
+
+
+def _node(
+    ref: str,
+    template_uuid: str,
+    template_name: str,
+    *,
+    parent: str | None = None,
+):
+    return MaterialNodeCreate(
+        client_ref=ref,
+        parent_client_ref=parent,
+        identity=MaterialIdentityWrite(
+            resource_id=f"resource-{ref}",
+            template_uuid=template_uuid,
+            name=ref,
+            resource_type="container",
+            class_name="Container",
+            template_name=template_name,
+        ),
+        data=MaterialDataWrite(
+            substances=[
+                MaterialSubstance(
+                    name="NaCl",
+                    quantity=2,
+                    quantity_unit="ug",
+                    physical_state="solid",
+                )
+            ]
+        ),
+    )
+
+
+def test_template_and_material_tree_roundtrip_is_authoritative(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "deck-template", "deck", with_site=True)
+        _template(service, "tube-template", "tube")
+        request = MaterialTreeCreate(
+            nodes=[
+                _node("random-root", "deck-template", "deck"),
+                _node(
+                    "random-child", "tube-template", "tube", parent="random-root"
+                ),
+            ],
+            known_random_uuid=True,
+        )
+        command_uuid = str(uuid4())
+        mutation = _mutation("create_material_tree", command_uuid=command_uuid)
+        result = service.create_tree(mutation, request)
+
+        assert result.replayed is False
+        assert result.data.client_uuid_map.keys() == {
+            "random-root",
+            "random-child",
+        }
+        assert result.data.root_material_uuid != "random-root"
+        assert len(result.data.nodes) == 2
+        assert result.data.nodes[1].material.parent_material_uuid == (
+            result.data.root_material_uuid
+        )
+        assert result.data.nodes[1].data.substances[0].physical_state == "solid"
+        assert result.data.nodes[0].sites[0].label == "A1"
+
+        replay = service.create_tree(mutation, request)
+        assert replay.replayed is True
+        assert replay.data == result.data
+    finally:
+        service.close()
+
+
+def test_position_update_checks_material_version(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "tube-template", "tube")
+        created = service.create_tree(
+            _mutation("create_material_tree"),
+            MaterialTreeCreate(
+                nodes=[_node("tube", "tube-template", "tube")]
+            ),
+        )
+        material = created.data.nodes[0]
+        updated = service.put_position(
+            _mutation(
+                "put_position",
+                preconditions=[
+                    AggregatePrecondition(
+                        aggregate_type="material",
+                        aggregate_uuid=material.material.material_uuid,
+                        expected_version=1,
+                    )
+                ],
+            ),
+            material.material.material_uuid,
+            MaterialPosition(position_x=1, position_y=2, position_z=3),
+        )
+        assert updated.data.material.version == 2
+        assert updated.data.position.position_x == 1
+
+        with pytest.raises(MaterialConflictError, match="expected 1"):
+            service.put_position(
+                _mutation(
+                    "put_position",
+                    preconditions=[
+                        AggregatePrecondition(
+                            aggregate_type="material",
+                            aggregate_uuid=material.material.material_uuid,
+                            expected_version=1,
+                        )
+                    ],
+                ),
+                material.material.material_uuid,
+                MaterialPosition(position_x=4, position_y=5, position_z=6),
+            )
+    finally:
+        service.close()
+
+
+def test_move_clears_source_and_sets_destination_atomically(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "deck-template", "deck", with_site=True)
+        _template(service, "tube-template", "tube")
+        first = service.create_tree(
+            _mutation("create_material_tree"),
+            MaterialTreeCreate(
+                nodes=[
+                    _node("deck-1", "deck-template", "deck"),
+                    _node("tube", "tube-template", "tube", parent="deck-1"),
+                ]
+            ),
+        )
+        second = service.create_tree(
+            _mutation("create_material_tree"),
+            MaterialTreeCreate(
+                nodes=[_node("deck-2", "deck-template", "deck")]
+            ),
+        )
+        child_uuid = first.data.client_uuid_map["tube"]
+        source_site_uuid = first.data.nodes[0].sites[0].site_uuid
+        destination_site_uuid = second.data.nodes[0].sites[0].site_uuid
+
+        # 初次放入 source。
+        service.move_material(
+            _mutation("move_material"),
+            MaterialMove(
+                material_uuid=child_uuid,
+                destination_site_uuid=source_site_uuid,
+            ),
+        )
+        moved = service.move_material(
+            _mutation("move_material"),
+            MaterialMove(
+                material_uuid=child_uuid,
+                destination_site_uuid=destination_site_uuid,
+            ),
+        )
+
+        assert moved.data.material.parent_material_uuid == (
+            second.data.root_material_uuid
+        )
+        assert service.repository.get_site(source_site_uuid).occupied_material_uuid is None
+        assert (
+            service.repository.get_site(destination_site_uuid).occupied_material_uuid
+            == child_uuid
+        )
+    finally:
+        service.close()
+
+
+def test_snapshot_diff_and_apply_increment_material_once(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "tube-template", "tube")
+        created = service.create_tree(
+            _mutation("create_material_tree"),
+            MaterialTreeCreate(
+                nodes=[_node("tube", "tube-template", "tube")]
+            ),
+        )
+        node = created.data.nodes[0]
+        changed_data = node.data.model_copy(
+            update={
+                "substances": [
+                    MaterialSubstance(
+                        substance_uuid=node.data.substances[0].substance_uuid,
+                        name="NaCl",
+                        quantity=5,
+                        quantity_unit="ug",
+                        physical_state="solid",
+                    )
+                ]
+            }
+        )
+        observed_node = node.model_copy(
+            update={
+                "position": MaterialPosition(
+                    position_x=10, position_y=20, position_z=30
+                ),
+                "data": changed_data,
+            }
+        )
+        snapshot = MaterialSnapshot(
+            root_material_uuid=created.data.root_material_uuid,
+            nodes=[observed_node],
+        )
+
+        diff = service.compare_snapshot(snapshot)
+        assert [(change.section, change.changed_fields) for change in diff.changes] == [
+            ("position", ["position_x", "position_y", "position_z"]),
+            ("data", ["substances"]),
+        ]
+
+        result = service.apply_snapshot(
+            _mutation("apply_material_snapshot"), snapshot
+        )
+        updated = result.data.nodes[0]
+        assert updated.material.version == 2
+        assert updated.position_version == 2
+        assert updated.data.version == 2
+        assert updated.data.content_version == 2
+        assert updated.data.substances[0].quantity == 5
+        assert {
+            item.aggregate_uuid for item in result.affected
+        } == {updated.material.material_uuid}
+    finally:
+        service.close()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from unilabos.app.communication import (
     CommunicationClientFactory,
 )
 from unilabos.app.cli.router import run_package_command
+from unilabos.app.main import main as app_main
 from unilabos.app.main import parse_args
 from unilabos.app.web.client import HTTPClient
 from unilabos.app.ws_client import MessageProcessor, WebSocketClient
@@ -138,6 +140,15 @@ def test_old_package_upload_is_preserved_but_requires_legacy() -> None:
     assert values["package_action"] == "upload"
     with pytest.raises(SystemExit):
         run_package_command(values)
+
+
+def test_old_registry_upload_requires_legacy(monkeypatch) -> None:
+    parser = parse_args()
+    assert parser.parse_args(["--legacy", "--upload_registry"]).upload_registry
+
+    monkeypatch.setattr(sys, "argv", ["unilab", "--upload_registry"])
+    with pytest.raises(SystemExit):
+        app_main()
 
 
 def test_old_http_client_is_available_only_in_legacy_mode() -> None:

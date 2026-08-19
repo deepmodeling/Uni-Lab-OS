@@ -396,6 +396,13 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--upload_registry",
+        "--upload-registry",
+        dest="upload_registry",
+        action="store_true",
+        help="Upload registry through the old Backend HTTP API (requires --legacy).",
+    )
+    parser.add_argument(
         "--config",
         type=str,
         default=None,
@@ -554,6 +561,8 @@ def main():
     from unilabos.legacy_support import configure_legacy_support
 
     configure_legacy_support(bool(args_dict["legacy"]))
+    if args_dict["upload_registry"] and not args_dict["legacy"]:
+        parser.error("--upload_registry uses the old Backend HTTP API; add --legacy")
 
     from unilabos.app.backend import (
         BackendConfigurationError,
@@ -834,6 +843,14 @@ def main():
         resource_count = len(lab_registry.resource_type_registry)
         print_status(f"Check mode: 注册表验证完成 ({device_count} 设备, {resource_count} 资源)，退出", "info")
         os._exit(0)
+
+    if args_dict["upload_registry"]:
+        if BasicConfig.ak and BasicConfig.sk:
+            from unilabos.app.register import register_devices_and_resources
+
+            register_devices_and_resources(lab_registry)
+        else:
+            print_status("未提供 ak 和 sk，跳过旧 Backend 注册表上报", "warning")
 
     # 以下导入依赖 ROS2 环境，check_mode 已退出不需要
     from unilabos.resources.graphio import (

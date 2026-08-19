@@ -23,8 +23,9 @@
   （每个 job 完结 append，含实际/预估时长与截断返回值）；进程重启时
   把上一世代残留的非终态 run 标记 ``interrupted``；REST 面
   ``GET /api/v1/history/*``（跨重启查询）
-- Host/Slave 网络由选中的 ``hostlink`` 或 ``ros2`` backend 统一管理；Provider
-  只消费 backend-neutral device execution adapter，不另开 discovery server 或控制端口。
+- ``ros2`` 模式的 HostLink 组网控制面由微后端管理；``hostlink`` direct backend
+  则由其执行运行时管理同一条设备传输连接。两者都向调度层暴露 backend-neutral
+  execution adapter，ROS HostNode 不拥有 HostLink listener。
 
 三库分立：inventory.db（物料事务）/ device_state.db（高频遥测）/
 workflow_history.db（低频审计），读写模式不同互不阻塞。

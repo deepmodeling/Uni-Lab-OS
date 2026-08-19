@@ -41,6 +41,8 @@ def test_networking_cli_accepts_host_and_domain_aliases() -> None:
             "OFF",
             "--ros-static-peers",
             "10.0.0.9;10.0.0.10",
+            "--ros-discovery-port",
+            "7600",
         ]
     )
     assert args.is_slave is True
@@ -49,6 +51,7 @@ def test_networking_cli_accepts_host_and_domain_aliases() -> None:
     assert args.ros_domain_id == 52
     assert args.ros_discovery_range == "OFF"
     assert args.ros_static_peers == "10.0.0.9;10.0.0.10"
+    assert args.ros_discovery_port == 7600
 
 
 @pytest.mark.parametrize("option", ["--is_slave", "--is-slave"])
@@ -83,6 +86,7 @@ def test_networking_cli_is_applied_after_config(monkeypatch) -> None:
             "ros_domain_id": 52,
             "ros_discovery_range": "OFF",
             "ros_discovery_server": None,
+            "ros_discovery_port": None,
         },
         is_slave=True,
     )
@@ -104,6 +108,7 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
     monkeypatch.setattr(HostLinkConfig, "connect_timeout", 5.0)
     monkeypatch.setattr(HostLinkConfig, "request_timeout", 10.0)
     monkeypatch.setattr(HostLinkConfig, "ros_static_peers", "")
+    monkeypatch.setattr(HostLinkConfig, "ros_discovery_port", 0)
     monkeypatch.setattr(HostLinkConfig, "ros_assist_apply", True)
 
     _apply_hostlink_cli(
@@ -121,6 +126,7 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
             "ros_discovery_range": None,
             "ros_static_peers": "10.0.0.8;10.0.0.9",
             "ros_discovery_server": None,
+            "ros_discovery_port": 7600,
             "no_ros_assist": True,
         },
         is_slave=True,
@@ -136,6 +142,7 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
     assert HostLinkConfig.connect_timeout == 3.0
     assert HostLinkConfig.request_timeout == 6.0
     assert HostLinkConfig.ros_static_peers == "10.0.0.8;10.0.0.9"
+    assert HostLinkConfig.ros_discovery_port == 7600
     assert HostLinkConfig.ros_assist_apply is False
 
 
@@ -145,6 +152,8 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
         {"hostlink_port": 0},
         {"hostlink_port": 65536},
         {"hostlink_connect_timeout": 0},
+        {"ros_discovery_port": -1},
+        {"ros_discovery_port": 65536},
     ],
 )
 def test_invalid_hostlink_cli_values_are_rejected(overrides) -> None:

@@ -23,6 +23,9 @@ class ActionType:
 
     HELLO = "hello"
     PING = "ping"
+    # ROS2 组网控制面向微后端查询物料快照；写入仍只走物料服务，
+    # direct HostLink backend 不安装隐式 Resource Authority。
+    MATERIAL = "material"
     ROS_INFO = "ros_info"
     DEVICE_CALL = "device.call"
     DEVICE_STATE = "device.state"

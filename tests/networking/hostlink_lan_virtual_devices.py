@@ -9,7 +9,7 @@ from typing import Any
 from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink.backend import HostLinkBackendRuntime
-from unilabos.utils.decorator import subscribe
+from unilabos.utils.decorator import subscribe, topic_config
 
 
 SUB_DEVICE_ID = "sub_reporter"
@@ -108,12 +108,14 @@ class VirtualLanReporter:
         self._paused = False
 
     @property
+    @topic_config(period=0.02)
     def counter(self) -> int:
         if self._paused:
             return 0
         return max(1, int((time.monotonic() - self._started_at) * self._count_rate))
 
     @property
+    @topic_config(period=0.02)
     def state(self) -> str:
         return "paused" if self._paused else "running"
 

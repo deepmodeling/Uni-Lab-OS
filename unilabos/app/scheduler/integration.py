@@ -528,8 +528,14 @@ def shutdown_edge_services() -> None:
 
     global _scheduler, _backend, _inventory, _outbox_worker, _workflow_executor
 
-    # HostLink 网络生命周期由当前 backend 统一管理；Provider 只关闭自己拥有的
-    # 调度、工作流和库存组件，避免重复操作 discovery server 与 Slave 连接。
+    # ROS2 模式的 HostLink 组网控制面归微后端所有；direct hostlink backend
+    # 则由 HostLinkBackendRuntime 自己关闭，不能在这里抢先断开其设备传输。
+    if BasicConfig.backend == "ros2":
+        from unilabos.app.scheduler.host_network import (
+            shutdown_network_services,
+        )
+
+        shutdown_network_services()
     if _workflow_executor is not None:
         _workflow_executor.service.set_task_submitter(None)
         _workflow_executor.stop()

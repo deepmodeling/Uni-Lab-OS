@@ -8,9 +8,22 @@ both processes join the same ROS graph.
 from __future__ import annotations
 
 import os
+import shutil
 import socket
+import subprocess
+import sys
+import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, MutableMapping, Optional, Tuple
+from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    List,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 _VALID_DISCOVERY_RANGES = ("SYSTEM_DEFAULT", "SUBNET", "LOCALHOST", "OFF")
 
@@ -23,6 +36,7 @@ class RosNetworkInfo:
     automatic_discovery_range: str = ""
     static_peers: List[str] = field(default_factory=list)
     discovery_server: str = ""
+    discovery_server_managed: bool = False
     discovery_server_disabled: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
@@ -43,6 +57,9 @@ class RosNetworkInfo:
                 if str(peer).strip()
             ],
             discovery_server=str(payload.get("discovery_server") or "").strip(),
+            discovery_server_managed=bool(
+                payload.get("discovery_server_managed", False)
+            ),
             discovery_server_disabled=bool(
                 payload.get("discovery_server_disabled", False)
             ),
@@ -66,6 +83,7 @@ def build_host_ros_info(
     discovery_range: str = "",
     static_peers: Optional[List[str]] = None,
     discovery_server: str = "",
+    discovery_server_managed: bool = False,
     discovery_server_disabled: bool = False,
     environ: Optional[MutableMapping[str, str]] = None,
 ) -> RosNetworkInfo:
@@ -107,6 +125,7 @@ def build_host_ros_info(
         automatic_discovery_range=discovery_range,
         static_peers=list(dict.fromkeys(static_peers)),
         discovery_server=discovery_server,
+        discovery_server_managed=discovery_server_managed,
         discovery_server_disabled=discovery_server_disabled,
     )
 
@@ -198,6 +217,100 @@ def format_host_port(host: str, port: int) -> str:
     return f"{clean_host}:{int(port)}"
 
 
+def use_connected_host(endpoint: str, connected_host: str) -> str:
+    """Use the proven HostLink address with a Host-managed discovery port."""
+
+    if not endpoint or not connected_host:
+        return endpoint
+    _advertised_host, port = parse_host_port(endpoint)
+    return format_host_port(connected_host, port)
+
+
+def available_udp_port(bind: str = "0.0.0.0") -> int:
+    """Ask the OS for an available UDP port."""
+
+    family = socket.AF_INET6 if ":" in bind else socket.AF_INET
+    with socket.socket(family, socket.SOCK_DGRAM) as probe:
+        probe.bind((bind, 0))
+        return int(probe.getsockname()[1])
+
+
+def _discovery_command() -> Optional[Sequence[str]]:
+    """Find a Fast DDS discovery executable in PATH or the active env."""
+
+    for executable, suffix in (
+        ("fast-discovery-server", ()),
+        ("fastdds", ("discovery",)),
+    ):
+        direct = shutil.which(executable)
+        if direct:
+            return [direct, *suffix]
+        sibling = Path(sys.executable).resolve().with_name(executable)
+        if os.name == "nt":
+            sibling = sibling.with_suffix(".exe")
+        if sibling.is_file():
+            return [str(sibling), *suffix]
+    return None
+
+
+class FastDDSDiscoveryServer:
+    """Lifecycle wrapper for a Host-managed Fast DDS discovery process."""
+
+    def __init__(self, bind: str, port: int, server_id: int = 0) -> None:
+        self.bind = str(bind or "0.0.0.0")
+        self.port = int(port)
+        self.server_id = int(server_id)
+        self.process: Optional[subprocess.Popen[Any]] = None
+
+    def start(self) -> "FastDDSDiscoveryServer":
+        if self.process is not None and self.process.poll() is None:
+            return self
+        command = _discovery_command()
+        if command is None:
+            raise RuntimeError(
+                "Fast DDS discovery executable not found "
+                "(fast-discovery-server/fastdds)"
+            )
+        args = [*command, "-i", str(self.server_id)]
+        if self.bind not in {"", "0.0.0.0", "::"}:
+            args.extend(["-l", self.bind])
+        args.extend(["-p", str(self.port)])
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+        self.process = subprocess.Popen(
+            args,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=os.name != "nt",
+            creationflags=creationflags,
+        )
+        time.sleep(0.15)
+        return_code = self.process.poll()
+        if return_code is not None:
+            self.process = None
+            raise RuntimeError(
+                "Fast DDS discovery server exited during startup "
+                f"(code={return_code})"
+            )
+        return self
+
+    def stop(self) -> None:
+        process, self.process = self.process, None
+        if process is None or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+
+
 def detect_local_ip(probe_addr: str = "8.8.8.8") -> str:
     """Detect the preferred outbound IPv4 address without sending traffic."""
 
@@ -210,12 +323,15 @@ def detect_local_ip(probe_addr: str = "8.8.8.8") -> str:
 
 
 __all__ = [
+    "FastDDSDiscoveryServer",
     "RosNetworkInfo",
     "apply_ros_network_env",
+    "available_udp_port",
     "build_host_ros_info",
     "detect_local_ip",
     "format_host_port",
     "parse_host_port",
     "parse_host_target",
+    "use_connected_host",
     "validate_domain_id",
 ]

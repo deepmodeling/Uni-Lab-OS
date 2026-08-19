@@ -119,7 +119,9 @@ class HostLinkConfig:
     ros_discovery_range = ""  # SYSTEM_DEFAULT / SUBNET / LOCALHOST / OFF
     ros_static_peers = ""  # 分号分隔
     # 外部 Fast DDS Discovery Server 的 host:port；off 表示明确清除继承值。
+    # 空值由 ROS2 组网微后端托管；0 复用 HostLink 数字端口（TCP/UDP 可共存）。
     ros_discovery_server = ""
+    ros_discovery_port = 0
 
 
 class OTelConfig:

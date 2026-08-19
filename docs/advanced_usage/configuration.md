@@ -85,7 +85,8 @@ class HostLinkConfig:
     ros_domain_id = ""  # Host 下发的 ROS_DOMAIN_ID
     ros_discovery_range = ""
     ros_static_peers = ""
-    ros_discovery_server = ""  # 外部 host:port；off 表示禁用
+    ros_discovery_server = ""  # 空=微后端托管；外部 host:port；off=禁用
+    ros_discovery_port = 0  # 0=复用 HostLink 数字端口（TCP/UDP）
 
 # ROS配置
 class ROSConfig:
@@ -203,7 +204,8 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `HostLinkConfig` | `ros_domain_id`| `--ros-domain-id`   | Host 发布或 Slave 本地兜底 domain |
 | `HostLinkConfig` | `ros_discovery_range` | `--ros-discovery-range` | ROS 自动发现范围       |
 | `HostLinkConfig` | `ros_static_peers` | `--ros-static-peers` | 分号分隔的静态对端          |
-| `HostLinkConfig` | `ros_discovery_server` | `--ros-discovery-server` | 外部 Fast DDS Server |
+| `HostLinkConfig` | `ros_discovery_server` | `--ros-discovery-server` | 空=微后端托管；外部 Fast DDS Server；off=禁用 |
+| `HostLinkConfig` | `ros_discovery_port` | `--ros-discovery-port` | 托管 Fast DDS Server 的 UDP 端口；0=复用 HostLink 数字端口 |
 | `HostLinkConfig` | `ros_assist_apply` | `--no-ros-assist` | ROS2 Slave 不应用 Host 下发的 ROS 环境 |
 
 ### 特殊命令行参数

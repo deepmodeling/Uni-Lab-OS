@@ -57,9 +57,9 @@ def exit() -> None:
             if hasattr(device_node, "destroy_node"):
                 device_node.ros_node_instance.destroy_node()
         host_instance.destroy_node()
-    from unilabos.hostlink.runtime import shutdown_hostlink
+    from unilabos.app.scheduler.host_network import shutdown_network_services
 
-    shutdown_hostlink()
+    shutdown_network_services()
     rclpy.shutdown()
 
 
@@ -77,10 +77,11 @@ def main(
 ) -> None:
     """主函数"""
 
-    # HostLink must publish/apply the Host ROS2 policy before DDS is initialized.
-    from unilabos.hostlink.runtime import setup_hostlink_server
+    # ROS2 模式下 HostLink 只负责组网控制面，并由微后端持有生命周期。
+    # 必须先发布/应用 Host ROS 策略，再初始化 DDS。
+    from unilabos.app.scheduler.host_network import setup_host_network_service
 
-    setup_hostlink_server()
+    setup_host_network_service()
     raw_domain_id = os.environ.get("ROS_DOMAIN_ID", "").strip()
     domain_id = int(raw_domain_id) if raw_domain_id else None
     _init_rclpy(rclpy_init_args, domain_id)
@@ -96,6 +97,7 @@ def main(
         bridges,
         discovery_interval,
     )
+    _attach_hostlink_resource_tree(host_node)
 
     if visual != "disable":
         from unilabos.ros.nodes.presets.joint_republisher import JointRepublisher
@@ -128,6 +130,14 @@ def main(
         time.sleep(1)
 
 
+def _attach_hostlink_resource_tree(host_node: HostNode) -> None:
+    """把 ROS HostNode 实时资源树挂到微后端，不转移网络所有权。"""
+
+    from unilabos.app.scheduler.host_network import setup_host_network_service
+
+    setup_host_network_service(lambda: host_node.resources_config)
+
+
 def slave(
     devices_config: ResourceTreeSet,
     resources_config: ResourceTreeSet,
@@ -140,12 +150,15 @@ def slave(
     rclpy_init_args: List[str] = ["--log-level", "debug"],
 ) -> None:
     """从节点函数"""
-    # 1. Slave 先通过明确指定的 HostNode IP 获取 domain/discovery 信息，
-    # 再初始化 DDS；设备动作与注册流程仍继续走 ROS2。
-    from unilabos.hostlink.runtime import setup_hostlink_client, startup_device_ids
+    # 1. Slave 先由微后端通过 HostLink 获取 domain/discovery 信息，再初始化
+    # DDS；设备动作、装饰器、Topic、Service 与注册流程仍全部走 ROS2。
+    from unilabos.app.scheduler.host_network import (
+        require_slave_startup_device_ids,
+        setup_slave_network_client,
+    )
 
-    _hostlink_client, domain_id = setup_hostlink_client(
-        startup_device_ids(devices_config)
+    _hostlink_client, domain_id = setup_slave_network_client(
+        device_ids=require_slave_startup_device_ids(devices_config)
     )
     _init_rclpy(rclpy_init_args, domain_id)
     executor = rclpy.__executor
@@ -183,7 +196,7 @@ def slave(
             cls=TypeEncoder,
         )
         sclient.call_async(request).result()
-        logger.info(f"Slave node info updated.")
+        logger.info("Slave node info updated.")
 
         # 3.2 报送物料树，获取 UUID 映射
         if resources_config:

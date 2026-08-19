@@ -104,11 +104,11 @@ jobs:
           echo Checking LabDeviceWorkstationDemo registry...
           python -m unilabos --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo\workstation_demo" --external_devices_only
 
-      - name: Run HostLink networking tests
+      - name: Gate HostLink direct and ROS2-assisted networking
         run: |
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
-          echo Running HostLink, ROS2 domain and networking runtime tests...
+          echo Running HostLink direct backend, microbackend ownership, ROS2 assist and decorator tests...
           python -m pytest -q tests\hostlink tests\networking tests\basic tests\device_runtime tests\app\test_backend_selection.py tests\app\test_rclpy_dll_patch.py tests\registry\test_backend_metadata.py tests\ros\test_action_schema_compat.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py -p no:launch_testing -p no:launch_ros
 
       - name: Run check mode (AST registry validation)

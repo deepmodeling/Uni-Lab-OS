@@ -182,12 +182,14 @@ unilab -g slave.json --backend hostlink --is-slave \
 | `--ros-domain-id` | Host + Slave | 环境值 | Host 下发给 Slave；Slave 本地值仅作连接前兜底 |
 | `--ros-discovery-range` | Host | 环境值 | `SYSTEM_DEFAULT/SUBNET/LOCALHOST/OFF` |
 | `--ros-static-peers` | Host | 自动加入 Host IP | 分号分隔的静态发现对端 |
-| `--ros-discovery-server` | Host | 环境值 | 外部 Fast DDS `host:port`；`off` 清除继承值 |
+| `--ros-discovery-server` | Host | 空 | 外部 Fast DDS `host:port`；`off` 禁用；空值由微后端托管 |
+| `--ros-discovery-port` | Host | `0` | 托管 Discovery Server 的 UDP 端口；`0` 复用 HostLink 数字端口 |
 | `--no-ros-assist` | ROS2 Slave | 否 | 保留 HostLink 心跳/设备发现，但不应用 Host ROS 参数 |
 
-本切片没有启动 Fast DDS Discovery Server 进程，因此没有
-`--ros-discovery-port`；该参数应与托管 Discovery Server 功能一并引入，不能成为
-无效果的占位参数。
+ROS2 Host 的微后端会在 `rclpy.init` 前启动托管的 Fast DDS Discovery
+Server；若当前环境找不到 `fast-discovery-server`/`fastdds` 可执行文件，会记录错误并
+回退到现有 `ROS_AUTOMATIC_DISCOVERY_RANGE`/`ROS_STATIC_PEERS` 策略。direct
+`hostlink` backend 不启动 DDS 进程。
 
 ### WebSocket 通信
 

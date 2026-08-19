@@ -219,6 +219,27 @@ class HostLinkClient:
         data = self.request(ActionType.ROS_INFO, timeout=timeout)
         return RosNetworkInfo.from_dict((data or {}).get("ros") or data)
 
+    def get_resource(
+        self,
+        uuid: Optional[str] = None,
+        res_id: Optional[str] = None,
+        with_children: bool = True,
+        timeout: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
+        """Query the Host microbackend's read-only material snapshot."""
+
+        data = self.request(
+            ActionType.MATERIAL,
+            {
+                "uuid": uuid,
+                "id": res_id,
+                "with_children": bool(with_children),
+            },
+            timeout,
+        )
+        nodes = (data or {}).get("nodes") if isinstance(data, dict) else None
+        return list(nodes or [])
+
     def hello_ros_info(self) -> RosNetworkInfo:
         return RosNetworkInfo.from_dict(self.hello_info.get("ros"))
 

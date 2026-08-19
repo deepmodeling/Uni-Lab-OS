@@ -223,6 +223,11 @@ def _apply_hostlink_cli(args_dict: Dict[str, Any], *, is_slave: bool) -> None:
         HostLinkConfig.ros_discovery_server = str(
             args_dict["ros_discovery_server"]
         ).strip()
+    ros_discovery_port = args_dict.get("ros_discovery_port")
+    if ros_discovery_port is not None:
+        if not 0 <= int(ros_discovery_port) <= 65535:
+            raise ValueError("--ros-discovery-port must be between 0 and 65535")
+        HostLinkConfig.ros_discovery_port = int(ros_discovery_port)
     if args_dict.get("no_ros_assist", False):
         HostLinkConfig.ros_assist_apply = False
 
@@ -563,8 +568,19 @@ def parse_args():
         dest="ros_discovery_server",
         default=None,
         help=(
-            "外部 Fast DDS Discovery Server 的 host:port；off 表示清除。"
-            "本切片不会自动启动 Discovery Server 进程。"
+            "Fast DDS Discovery Server 的 host:port；off 表示禁用；"
+            "空值由 ROS2 组网微后端托管。"
+        ),
+    )
+    parser.add_argument(
+        "--ros_discovery_port",
+        "--ros-discovery-port",
+        dest="ros_discovery_port",
+        type=int,
+        default=None,
+        help=(
+            "微后端托管 Fast DDS Discovery Server 的 UDP 端口；"
+            "0 表示复用 HostLink 数字端口。"
         ),
     )
     parser.add_argument(
@@ -1492,11 +1508,41 @@ def main():
                 "info",
             )
 
+        if args_dict["backend"] == "ros2":
+            # ROS2 的 HostLink 仅是组网控制面。由微后端在 ROS backend
+            # 启动/rclpy.init 之前持有 listener；HostNode 只在创建后挂接
+            # 实时资源树，绝不再成为第二个网络生命周期所有者。
+            from unilabos.app.scheduler.host_network import (
+                setup_host_network_service,
+            )
+            from unilabos.config.config import HostLinkConfig
+
+            host_network = setup_host_network_service()
+            if host_network is not None:
+                print_status(
+                    "ROS2 HostLink 组网微后端已启用: "
+                    f"{HostLinkConfig.bind}:{host_network.server.port}",
+                    "info",
+                )
+
         # 微后端必须先于控制链路接收命令，避免首个 job_start 绕过生命周期权威。
         if comm_client is not None:
             comm_client.start()
     else:
         print_status("SlaveMode跳过Websocket连接")
+        if args_dict["backend"] == "ros2":
+            # 正常 Slave 必须在 rclpy.init 前拿到 Host 的 ROS policy；
+            # --slave_no_host 才允许离线启动并后台重连。
+            from unilabos.app.scheduler.host_network import (
+                require_slave_startup_device_ids,
+                setup_slave_network_client,
+            )
+
+            setup_slave_network_client(
+                device_ids=require_slave_startup_device_ids(
+                    args_dict["devices_config"]
+                )
+            )
 
     args_dict["resources_mesh_config"] = {}
     args_dict["resources_edge_config"] = resource_edge_info

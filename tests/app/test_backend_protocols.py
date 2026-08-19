@@ -11,9 +11,9 @@ from unilabos.app.communication import (
     COMMUNICATION_PROTOCOL,
     CommunicationClientFactory,
 )
+from unilabos.app.cli.parser import build_parser
 from unilabos.app.cli.router import run_package_command
 from unilabos.app.main import main as app_main
-from unilabos.app.main import parse_args
 from unilabos.app.web.client import HTTPClient
 from unilabos.app.ws_client import MessageProcessor, WebSocketClient
 from unilabos.config.config import BasicConfig, _update_config_from_module
@@ -125,7 +125,7 @@ def test_factory_selects_legacy_payload_only_from_global_switch() -> None:
 
 
 def test_cli_exposes_only_legacy_compatibility_switch() -> None:
-    parser = parse_args()
+    parser = build_parser()
     assert parser.parse_args([]).legacy is False
     assert parser.parse_args(["--legacy"]).legacy is True
     for removed in ("--app_bridges", "--backend_protocol", "--communication_protocol"):
@@ -134,7 +134,7 @@ def test_cli_exposes_only_legacy_compatibility_switch() -> None:
 
 
 def test_old_package_upload_is_preserved_but_requires_legacy() -> None:
-    parser = parse_args()
+    parser = build_parser()
     values = vars(
         parser.parse_args(["package", "upload", "--path", "."])
     )
@@ -144,7 +144,7 @@ def test_old_package_upload_is_preserved_but_requires_legacy() -> None:
 
 
 def test_old_registry_upload_requires_legacy(monkeypatch) -> None:
-    parser = parse_args()
+    parser = build_parser()
     assert parser.parse_args(["--legacy", "--upload_registry"]).upload_registry
 
     monkeypatch.setattr(sys, "argv", ["unilab", "--upload_registry"])

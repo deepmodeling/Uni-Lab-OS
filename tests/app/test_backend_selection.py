@@ -18,7 +18,7 @@ from unilabos.app.backend import (
     resolve_backend_selection,
     start_backend,
 )
-from unilabos.app.main import parse_args
+from unilabos.app.cli.parser import build_parser
 from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink import main_hostlink_run
@@ -86,7 +86,7 @@ def test_registry_driver_backend_defaults_and_explicit_support() -> None:
 
 
 def test_cli_shows_and_accepts_only_public_backend_names() -> None:
-    parser = parse_args()
+    parser = build_parser()
     assert parser.parse_args(["--backend", "hostlink"]).backend == "hostlink"
     assert parser.parse_args(["--backend", "ros2"]).backend == "ros2"
     for value in ("basic", "simple", "dora", "ros"):
@@ -98,7 +98,7 @@ def test_cli_shows_and_accepts_only_public_backend_names() -> None:
 
 
 def test_workflow_upload_uses_grouped_cli_only() -> None:
-    parser = parse_args()
+    parser = build_parser()
     parsed = parser.parse_args(
         [
             "workflow",
@@ -122,7 +122,7 @@ def test_workflow_upload_uses_grouped_cli_only() -> None:
 
 
 def test_local_scheduler_cli_is_removed() -> None:
-    parser = parse_args()
+    parser = build_parser()
     parsed = parser.parse_args([])
     assert not hasattr(parsed, "edge_scheduler")
     assert not hasattr(parsed, "scheduler_authority_profile")
@@ -137,7 +137,7 @@ def test_local_scheduler_cli_is_removed() -> None:
 
 
 def test_server_database_cli_resolves_only_the_four_new_files(tmp_path) -> None:
-    parsed = parse_args().parse_args(
+    parsed = build_parser().parse_args(
         [
             "--server-database-root",
             str(tmp_path),

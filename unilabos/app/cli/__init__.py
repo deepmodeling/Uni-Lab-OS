@@ -8,6 +8,7 @@
 - material: 物料管理
 - workflow: 工作流管理
 - package: 社区设备包 inspect / upload / install
+- parser/router: 顶层参数契约与轻量子命令统一分发
 """
 
 from .auth import cmd_login, cmd_logout, cmd_whoami
@@ -21,6 +22,8 @@ from .package import (
     register_package_commands,
     run_package_command,
 )
+from .parser import build_parser
+from .router import run_cli_command, run_client_command
 from .workflow import cmd_workflow_upload
 
 __all__ = [
@@ -35,5 +38,8 @@ __all__ = [
     "cmd_package",
     "register_package_commands",
     "run_package_command",
+    "build_parser",
+    "run_cli_command",
+    "run_client_command",
     "cmd_workflow_upload",
 ]

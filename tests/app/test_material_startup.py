@@ -1,11 +1,9 @@
-from unilabos.app.main import (
-    parse_args,
-)
+from unilabos.app.cli.parser import build_parser
 from unilabos.app.web.client import HTTPClient
 
 
 def test_material_startup_uses_address_as_the_only_authority_switch() -> None:
-    parser = parse_args()
+    parser = build_parser()
 
     assert parser.parse_args([]).material_microbackend_addr is None
     assert (
@@ -18,7 +16,7 @@ def test_material_startup_uses_address_as_the_only_authority_switch() -> None:
 
 
 def test_edge_has_no_direct_backend_material_switch_or_writes() -> None:
-    parser = parse_args()
+    parser = build_parser()
     assert "--material_source" not in parser._option_string_actions
     assert "--legacy" in parser._option_string_actions
     for method_name in (

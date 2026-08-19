@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from unilabos.app.cli.parser import build_parser
 from unilabos.app.cli.router import run_client_command
-from unilabos.app.main import parse_args
 
 
 def test_material_list_uses_microbackend_without_legacy(monkeypatch, capsys) -> None:
@@ -25,7 +25,7 @@ def test_material_list_uses_microbackend_without_legacy(monkeypatch, capsys) -> 
         "unilabos.app.cli.material.HTTPMaterialsClient",
         _Client,
     )
-    parser = parse_args()
+    parser = build_parser()
     args = parser.parse_args(
         [
             "--material_microbackend_addr",

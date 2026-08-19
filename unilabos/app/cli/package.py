@@ -77,6 +77,7 @@ def register_package_commands(subparsers: Any) -> None:
         if action == "upload":
             action_parser.add_argument(
                 "--download-url",
+                "--download_url",
                 dest="download_url",
                 type=str,
                 default="",
@@ -94,6 +95,7 @@ def register_package_commands(subparsers: Any) -> None:
     )
     install_parser.add_argument(
         "--no-inspect",
+        "--no_inspect",
         dest="no_inspect",
         action="store_true",
         help="Skip post-install @device scan / device listing",
@@ -674,7 +676,12 @@ def cmd_package(args_dict: Dict[str, Any], http_client: Any = None) -> None:
         raise PackageCLIError(f"未知 package 子动作：{action}")
 
 
-def run_package_command(args: Dict[str, Any]) -> bool:
+def run_package_command(
+    args: Dict[str, Any],
+    *,
+    args_namespace: Any = None,
+    session_manager: Any = None,
+) -> bool:
     """执行 package 命令；非 package 命令返回 ``False``。"""
 
     if args.get("command") not in {"package", "pkg"}:
@@ -686,9 +693,33 @@ def run_package_command(args: Dict[str, Any]) -> bool:
                 raise PackageCLIError(
                     "package upload uses the old Backend HTTP API; add --legacy"
                 )
-            from unilabos.legacy_support.http import get_legacy_http_client
+            if args_namespace is not None and session_manager is not None:
+                import base64
 
-            http_client = get_legacy_http_client()
+                from unilabos.app.cli.auth_resolver import resolve_effective_auth
+                from unilabos.legacy_support.http import LegacyHTTPClient
+
+                with session_manager:
+                    effective = resolve_effective_auth(
+                        args_namespace,
+                        session_manager,
+                    )
+                if not effective["ak"] or not effective["sk"]:
+                    raise PackageCLIError(
+                        "package upload requires ak/sk; use `unilab login` or "
+                        "pass --ak/--sk"
+                    )
+                secret = base64.b64encode(
+                    f"{effective['ak']}:{effective['sk']}".encode()
+                ).decode()
+                http_client = LegacyHTTPClient(
+                    remote_addr=effective["base_url"],
+                    auth=secret,
+                )
+            else:
+                from unilabos.legacy_support.http import get_legacy_http_client
+
+                http_client = get_legacy_http_client()
         cmd_package(args, http_client=http_client)
     except PackageCLIError as exc:
         print_status(str(exc), "error")

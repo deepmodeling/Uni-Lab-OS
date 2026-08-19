@@ -1,4 +1,3 @@
-import argparse
 import faulthandler
 import json
 import os
@@ -34,6 +33,8 @@ unilabos_dir = os.path.dirname(os.path.dirname(current_dir))
 if unilabos_dir not in sys.path:
     sys.path.append(unilabos_dir)
 
+from unilabos.app.cli.parser import build_parser  # noqa: E402
+from unilabos.app.cli.router import run_cli_command  # noqa: E402
 from unilabos.app.utils import cleanup_for_restart  # noqa: E402
 from unilabos.utils.banner_print import print_status, print_unilab_banner  # noqa: E402
 from unilabos.config.config import (  # noqa: E402
@@ -141,390 +142,6 @@ def load_config_from_file(config_path):
         load_config(config_path)
 
 
-def convert_argv_dashes_to_underscores(args: argparse.ArgumentParser):
-    # easier for user input, easier for dev search code
-    option_strings = list(args._option_string_actions.keys())
-    for i, arg in enumerate(sys.argv):
-        for option_string in option_strings:
-            if arg.startswith(option_string):
-                new_arg = arg[:2] + arg[2 : len(option_string)].replace("-", "_") + arg[len(option_string) :]
-                sys.argv[i] = new_arg
-                break
-
-
-def parse_args():
-    """解析命令行参数"""
-    from unilabos.app.backend import BACKEND_NAMES, backend_cli_value
-
-    parser = argparse.ArgumentParser(description="Start Uni-Lab Edge server.")
-    subparsers = parser.add_subparsers(title="Valid subcommands", dest="command")
-
-    parser.add_argument("-g", "--graph", help="Physical setup graph file path.")
-    parser.add_argument("-c", "--controllers", default=None, help="Controllers config file path.")
-    parser.add_argument(
-        "--registry_path",
-        type=str,
-        default=None,
-        action="append",
-        help="Path to the registry directory",
-    )
-    parser.add_argument(
-        "--devices",
-        type=str,
-        default=None,
-        action="append",
-        help="Path to Python code directory for AST-based device/resource scanning",
-    )
-    parser.add_argument(
-        "--working_dir",
-        type=str,
-        default=None,
-        help="Path to the working directory",
-    )
-    parser.add_argument(
-        "--backend",
-        type=backend_cli_value,
-        choices=BACKEND_NAMES,
-        default="ros2",
-        metavar="{hostlink,ros2}",
-        help=(
-            "Communication backend: hostlink (distributed, no DDS) or "
-            "ros2 (default)."
-        ),
-    )
-    parser.add_argument(
-        "--material_microbackend_addr",
-        type=str,
-        default=None,
-        help=(
-            "External materials microbackend API base. Omit it to use the "
-            "process-owned materials service."
-        ),
-    )
-    parser.add_argument(
-        "--legacy",
-        action="store_true",
-        default=False,
-        help="Connect to the old Backend WS protocol and enable old HTTP APIs.",
-    )
-    parser.add_argument(
-        "--server_database_root",
-        "--server-database-root",
-        default="~/.unilabos",
-        help="Directory containing runtime/materials/telemetry/history SQLite files.",
-    )
-    parser.add_argument(
-        "--runtime_db",
-        "--runtime-db",
-        default="",
-        help="Optional runtime.db path override.",
-    )
-    parser.add_argument(
-        "--materials_db",
-        "--materials-db",
-        default="",
-        help="Optional materials.db path override.",
-    )
-    parser.add_argument(
-        "--telemetry_db",
-        "--telemetry-db",
-        default="",
-        help="Optional telemetry.db path override.",
-    )
-    parser.add_argument(
-        "--history_db",
-        "--history-db",
-        default="",
-        help="Optional history.db path override.",
-    )
-    parser.add_argument(
-        "--is_slave",
-        "--is-slave",
-        dest="is_slave",
-        action="store_true",
-        help="Run the backend as slave node (without host privileges).",
-    )
-    parser.add_argument(
-        "--host_node_name",
-        "--host-node-name",
-        "--host_node_id",
-        "--host-node-id",
-        dest="host_node_name",
-        default=None,
-        help="Rename the HostNode runtime instance; registry type remains host_node.",
-    )
-    parser.add_argument(
-        "--host_node_ip",
-        "--host-node-ip",
-        dest="host_node_ip",
-        default="",
-        help=(
-            "Slave 连接的 HostNode IP/主机名，可兼容写成 ip:port；"
-            "建议端口单独使用 --hostlink-port。"
-        ),
-    )
-    parser.add_argument(
-        "--hostlink_port",
-        "--hostlink-port",
-        dest="hostlink_port",
-        type=int,
-        default=None,
-        help="HostLink TCP 端口；Host 监听、Slave 连接，默认 7302。",
-    )
-    parser.add_argument(
-        "--hostlink_bind",
-        "--hostlink-bind",
-        dest="hostlink_bind",
-        default=None,
-        help="HostLink 在 Host 上的监听地址，默认 0.0.0.0；Slave 忽略。",
-    )
-    parser.add_argument(
-        "--hostlink_advertise_ip",
-        "--hostlink-advertise-ip",
-        dest="hostlink_advertise_ip",
-        default=None,
-        help="Host 向 Slave 发布的可达 IP；多网卡环境建议显式指定。",
-    )
-    parser.add_argument(
-        "--disable_hostlink",
-        "--disable-hostlink",
-        dest="disable_hostlink",
-        action="store_true",
-        help=(
-            "关闭 HostLink；ROS2 使用原有发现和注册流程。"
-            "不能与 --backend hostlink 同时使用。"
-        ),
-    )
-    parser.add_argument(
-        "--hostlink_heartbeat_interval",
-        "--hostlink-heartbeat-interval",
-        dest="hostlink_heartbeat_interval",
-        type=float,
-        default=None,
-        help="Slave 心跳发送间隔（秒），默认 5。",
-    )
-    parser.add_argument(
-        "--hostlink_heartbeat_timeout",
-        "--hostlink-heartbeat-timeout",
-        dest="hostlink_heartbeat_timeout",
-        type=float,
-        default=None,
-        help="Host 判定 Slave 离线的心跳超时（秒），默认 15。",
-    )
-    parser.add_argument(
-        "--hostlink_connect_timeout",
-        "--hostlink-connect-timeout",
-        dest="hostlink_connect_timeout",
-        type=float,
-        default=None,
-        help="单次 HostLink TCP 连接/握手超时（秒），默认 5。",
-    )
-    parser.add_argument(
-        "--hostlink_request_timeout",
-        "--hostlink-request-timeout",
-        dest="hostlink_request_timeout",
-        type=float,
-        default=None,
-        help="HostLink 控制请求超时（秒），默认 10。",
-    )
-    parser.add_argument(
-        "--ros_domain_id",
-        "--ros-domain-id",
-        dest="ros_domain_id",
-        type=int,
-        default=None,
-        help=(
-            "ROS2 domain id（0-232）；Host 下发给 Slave，Slave 本地值仅作连接前兜底。"
-        ),
-    )
-    parser.add_argument(
-        "--ros_discovery_range",
-        "--ros-discovery-range",
-        dest="ros_discovery_range",
-        choices=["SYSTEM_DEFAULT", "SUBNET", "LOCALHOST", "OFF"],
-        default=None,
-        help="Host 下发的 ROS_AUTOMATIC_DISCOVERY_RANGE。",
-    )
-    parser.add_argument(
-        "--ros_static_peers",
-        "--ros-static-peers",
-        dest="ros_static_peers",
-        default=None,
-        help="Host 发布的 ROS_STATIC_PEERS，多个地址用分号分隔。",
-    )
-    parser.add_argument(
-        "--ros_discovery_server",
-        "--ros-discovery-server",
-        dest="ros_discovery_server",
-        default=None,
-        help=(
-            "Fast DDS Discovery Server 的 host:port；off 表示禁用；"
-            "空值由 ROS2 组网微后端托管。"
-        ),
-    )
-    parser.add_argument(
-        "--ros_discovery_port",
-        "--ros-discovery-port",
-        dest="ros_discovery_port",
-        type=int,
-        default=None,
-        help=(
-            "微后端托管 Fast DDS Discovery Server 的 UDP 端口；"
-            "0 表示复用 HostLink 数字端口。"
-        ),
-    )
-    parser.add_argument(
-        "--no_ros_assist",
-        "--no-ros-assist",
-        dest="no_ros_assist",
-        action="store_true",
-        help=(
-            "ROS2 backend：保留 HostLink 设备发现和心跳，"
-            "但不应用 Host 下发的 ROS2 环境。"
-        ),
-    )
-    parser.add_argument(
-        "--slave_no_host",
-        "--slave-no-host",
-        dest="slave_no_host",
-        action="store_true",
-        help=(
-            "允许 Slave 在 HostLink/Host ROS 服务离线时启动；"
-            "控制通道仍会在后台重连。"
-        ),
-    )
-    parser.add_argument(
-        "--upload_registry",
-        "--upload-registry",
-        dest="upload_registry",
-        action="store_true",
-        help="Upload registry through the old Backend HTTP API (requires --legacy).",
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Configuration file path, supports .py format Python config files",
-    )
-    parser.add_argument(
-        "--port_management",
-        "--port-management",
-        "--port",
-        dest="port_management",
-        type=int,
-        default=None,
-        help=(
-            "管理端 HTTP/Web API 端口，状态页和主微前端使用，默认 8002；"
-            "--port 是兼容缩写，不影响 HostLink TCP 端口。"
-        ),
-    )
-    parser.add_argument(
-        "--disable_browser",
-        "--disable-browser",
-        dest="disable_browser",
-        action="store_true",
-        help=(
-            "仅禁止启动时自动打开浏览器；管理端 HTTP/Web 服务仍会在 "
-            "--port-management 指定的端口启动。"
-        ),
-    )
-    parser.add_argument(
-        "--2d_vis",
-        action="store_true",
-        help="Enable 2D visualization when starting pylabrobot instance",
-    )
-    parser.add_argument(
-        "--visual",
-        choices=["rviz", "web", "disable"],
-        default="disable",
-        help="Choose visualization tool: rviz, web, or disable",
-    )
-    parser.add_argument(
-        "--ak",
-        type=str,
-        default="",
-        help="Access key for laboratory requests",
-    )
-    parser.add_argument(
-        "--sk",
-        type=str,
-        default="",
-        help="Secret key for laboratory requests",
-    )
-    parser.add_argument(
-        "--addr",
-        type=str,
-        default="https://leap-lab.bohrium.com/api/v1",
-        help="Laboratory backend address (API)",
-    )
-    parser.add_argument(
-        "--schedule_addr",
-        type=str,
-        default="",
-        help=(
-            "Schedule WebSocket address. If empty, derived from --addr: "
-            "port +1 when --addr has a port, otherwise the same host is used."
-        ),
-    )
-    parser.add_argument(
-        "--skip_env_check",
-        action="store_true",
-        help="Skip environment dependency check on startup",
-    )
-    parser.add_argument(
-        "--check_mode",
-        action="store_true",
-        default=False,
-        help="Run in check mode for CI: validates registry imports and ensures no file changes",
-    )
-    parser.add_argument(
-        "--complete_registry",
-        action="store_true",
-        default=False,
-        help="Complete and rewrite YAML registry files using AST analysis results",
-    )
-    parser.add_argument(
-        "--no_update_feedback",
-        action="store_true",
-        help="Disable sending update feedback to server",
-    )
-    parser.add_argument(
-        "--test_mode",
-        action="store_true",
-        default=False,
-        help="Test mode: all actions simulate execution and return mock results without running real hardware",
-    )
-    parser.add_argument(
-        "--external_devices_only",
-        action="store_true",
-        default=False,
-        help="Only load external device packages (--devices), skip built-in unilabos/devices/ scanning and YAML device registry",
-    )
-    parser.add_argument(
-        "--extra_resource",
-        action="store_true",
-        default=False,
-        help="Load extra lab_ prefixed labware resources (529 auto-generated definitions from lab_resources.py)",
-    )
-    parser.add_argument(
-        "--restart_mode",
-        action="store_true",
-        default=False,
-        help="Enable supervisor mode: automatically restart the process when triggered via WebSocket",
-    )
-    parser.add_argument(
-        "--auto_restart_count",
-        type=int,
-        default=500,
-        help="Maximum number of automatic restarts in restart mode (default: 500)",
-    )
-    from unilabos.app.cli.router import register_cli_commands
-
-    register_cli_commands(parser, subparsers)
-
-    return parser
-
-
 def _resolve_graph_file_path(file_path: str | None) -> str | None:
     if file_path is None:
         return None
@@ -550,9 +167,8 @@ def _load_graph_json_preview(file_path: str | None) -> Dict[str, Any] | None:
 
 def main():
     """主函数"""
-    # 解析命令行参数
-    parser = parse_args()
-    convert_argv_dashes_to_underscores(parser)
+    # CLI 仅负责解析和轻量子命令分流；设备 runtime 在后续按需启动。
+    parser = build_parser()
     args = parser.parse_args()
     args_dict = vars(args)
 
@@ -561,6 +177,9 @@ def main():
     configure_legacy_support(bool(args_dict["legacy"]))
     if args_dict["upload_registry"] and not args_dict["legacy"]:
         parser.error("--upload_registry uses the old Backend HTTP API; add --legacy")
+
+    if run_cli_command(args, parser):
+        return
 
     from unilabos.app.backend import (
         BackendConfigurationError,
@@ -581,11 +200,6 @@ def main():
         from unilabos.app.utils import patch_rclpy_dll_windows
 
         patch_rclpy_dll_windows()
-
-    from unilabos.app.cli.router import run_client_command
-
-    if run_client_command(args, parser):
-        return
 
     # Supervisor mode: spawn child processes and monitor for restart
     if args_dict.get("restart_mode", False):
@@ -715,11 +329,6 @@ def main():
         BasicConfig.sk = args_dict.get("sk", "")
         print_status("传入了sk参数，优先采用传入参数！", "info")
     BasicConfig.working_dir = working_dir
-
-    from unilabos.app.cli.router import run_package_command
-
-    if run_package_command(args_dict):
-        return
 
     # ROS2 backend 用 HostLink 辅助发现；hostlink backend 则在同一 TCP 长连接上
     # 直接同步设备描述/状态和执行设备动作，不导入 ROS。

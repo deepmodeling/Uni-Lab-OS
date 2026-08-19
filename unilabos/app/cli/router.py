@@ -15,6 +15,7 @@ from .package import (
 CLIENT_COMMANDS = frozenset(
     {"login", "logout", "whoami", "config", "lab", "material", "workflow"}
 )
+PACKAGE_COMMANDS = frozenset({"package", "pkg"})
 
 
 def register_cli_commands(
@@ -49,7 +50,9 @@ def register_cli_commands(
     )
     lab_list = lab_actions.add_parser("list", help="List laboratories")
     lab_list.add_argument("--page", type=int, default=1, help="Page number")
-    lab_list.add_argument("--page_size", type=int, default=20, help="Page size")
+    lab_list.add_argument(
+        "--page_size", "--page-size", type=int, default=20, help="Page size"
+    )
 
     material_parser = subparsers.add_parser("material", help="Material management")
     material_actions = material_parser.add_subparsers(
@@ -60,6 +63,7 @@ def register_cli_commands(
     )
     material_list.add_argument(
         "--roots_only",
+        "--roots-only",
         action="store_true",
         default=False,
         help="Only return root material instances",
@@ -73,10 +77,20 @@ def register_cli_commands(
         "upload", help="Upload workflow file"
     )
     workflow_upload.add_argument(
-        "-f", "--workflow_file", type=str, required=True, help="Workflow file (JSON)"
+        "-f",
+        "--workflow_file",
+        "--workflow-file",
+        type=str,
+        required=True,
+        help="Workflow file (JSON)",
     )
     workflow_upload.add_argument(
-        "-n", "--workflow_name", type=str, default=None, help="Workflow name"
+        "-n",
+        "--workflow_name",
+        "--workflow-name",
+        type=str,
+        default=None,
+        help="Workflow name",
     )
     workflow_upload.add_argument(
         "--tags", type=str, nargs="*", default=[], help="Tags (space-separated)"
@@ -89,9 +103,33 @@ def register_cli_commands(
     )
 
 
+def _prepare_command_session(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+):
+    from unilabos.client import SessionManager, resolve_addr
+
+    values = vars(args)
+    working_dir = os.path.abspath(values.get("working_dir") or os.getcwd())
+    if os.path.basename(working_dir) != "unilabos_data":
+        data_dir = os.path.join(working_dir, "unilabos_data")
+        if os.path.isdir(data_dir):
+            working_dir = data_dir
+
+    address = values.get("addr")
+    args.addr_resolved = (
+        resolve_addr(address)
+        if address and address != parser.get_default("addr")
+        else None
+    )
+    return SessionManager(working_dir=working_dir)
+
+
 def run_client_command(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
+    *,
+    session_manager: Any = None,
 ) -> bool:
     """执行轻量 HTTP/会话命令；非此类命令返回 ``False``。"""
 
@@ -107,30 +145,12 @@ def run_client_command(
     from unilabos.app.cli.lab import cmd_lab_list
     from unilabos.app.cli.material import cmd_material_list
     from unilabos.app.cli.workflow import cmd_workflow_upload
-    from unilabos.client import (
-        OutputFormat,
-        SessionManager,
-        print_error,
-        resolve_addr,
-        set_output_format,
-    )
+    from unilabos.client import OutputFormat, print_error, set_output_format
 
     if values.get("json", False):
         set_output_format(OutputFormat.JSON)
 
-    working_dir = os.path.abspath(values.get("working_dir") or os.getcwd())
-    if os.path.basename(working_dir) != "unilabos_data":
-        data_dir = os.path.join(working_dir, "unilabos_data")
-        if os.path.isdir(data_dir):
-            working_dir = data_dir
-
-    address = values.get("addr")
-    args.addr_resolved = (
-        resolve_addr(address)
-        if address and address != parser.get_default("addr")
-        else None
-    )
-    session_manager = SessionManager(working_dir=working_dir)
+    session_manager = session_manager or _prepare_command_session(args, parser)
 
     if command == "login":
         cmd_login(args, session_manager)
@@ -155,9 +175,34 @@ def run_client_command(
     return True
 
 
+def run_cli_command(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> bool:
+    """统一分发所有无需启动设备 runtime 的 CLI 子命令。"""
+
+    command = getattr(args, "command", None)
+    if command not in CLIENT_COMMANDS | PACKAGE_COMMANDS:
+        return False
+    session_manager = _prepare_command_session(args, parser)
+    if command in PACKAGE_COMMANDS:
+        return run_package_command(
+            vars(args),
+            args_namespace=args,
+            session_manager=session_manager,
+        )
+    return run_client_command(
+        args,
+        parser,
+        session_manager=session_manager,
+    )
+
+
 __all__ = [
     "CLIENT_COMMANDS",
+    "PACKAGE_COMMANDS",
     "register_cli_commands",
+    "run_cli_command",
     "run_client_command",
     "run_package_command",
 ]

@@ -1,6 +1,6 @@
 import pytest
 
-from unilabos.app.main import parse_args
+from unilabos.app.cli.parser import build_parser
 from unilabos.config.config import HostLinkConfig
 from unilabos.hostlink.startup import apply_hostlink_cli
 
@@ -14,13 +14,13 @@ from unilabos.hostlink.startup import apply_hostlink_cli
     ],
 )
 def test_management_port_accepts_semantic_name_and_short_alias(option, value) -> None:
-    args = parse_args().parse_args([option, str(value)])
+    args = build_parser().parse_args([option, str(value)])
 
     assert args.port_management == value
 
 
 def test_disable_browser_can_be_combined_with_management_port() -> None:
-    args = parse_args().parse_args(
+    args = build_parser().parse_args(
         ["--port-management", "8100", "--disable-browser"]
     )
 
@@ -29,7 +29,7 @@ def test_disable_browser_can_be_combined_with_management_port() -> None:
 
 
 def test_networking_cli_accepts_host_and_domain_aliases() -> None:
-    args = parse_args().parse_args(
+    args = build_parser().parse_args(
         [
             "--is_slave",
             "--host-node-ip",
@@ -57,19 +57,19 @@ def test_networking_cli_accepts_host_and_domain_aliases() -> None:
 
 @pytest.mark.parametrize("option", ["--is_slave", "--is-slave"])
 def test_slave_role_accepts_dash_and_underscore(option) -> None:
-    args = parse_args().parse_args([option])
+    args = build_parser().parse_args([option])
     assert args.is_slave is True
 
 
 @pytest.mark.parametrize("option", ["--slave_no_host", "--slave-no-host"])
 def test_slave_offline_mode_accepts_dash_and_underscore(option) -> None:
-    args = parse_args().parse_args([option])
+    args = build_parser().parse_args([option])
     assert args.slave_no_host is True
 
 
 @pytest.mark.parametrize("domain_id", ["-1", "233"])
 def test_networking_cli_domain_range_is_validated_at_startup(domain_id) -> None:
-    args = parse_args().parse_args(["--ros-domain-id", domain_id])
+    args = build_parser().parse_args(["--ros-domain-id", domain_id])
     with pytest.raises(ValueError, match="between 0 and 232"):
         apply_hostlink_cli(vars(args), is_slave=False)
 

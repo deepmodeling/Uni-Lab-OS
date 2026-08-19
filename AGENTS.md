@@ -36,7 +36,7 @@ pytest tests/resources/test_resourcetreeset.py::TestClassName::test_method  # si
 
 ### Startup Flow
 
-`unilab` CLI → `unilabos/app/main.py:main()` → loads config → builds registry → reads device graph (JSON/GraphML) → starts the selected backend (`hostlink`/`ros2`) → starts only the bridges supported by that backend. `BasicRuntime` is HostLink's internal local driver executor, not a public backend.
+`unilab` CLI → `unilabos/app/cli/parser.py:build_parser()` → `app/cli/router.py` handles lightweight subcommands (`package` included) → `unilabos/app/main.py:main()` loads config and starts device runtime only when no CLI subcommand handled the request. Runtime then builds the registry, reads the device graph (JSON/GraphML), and starts `hostlink` or `ros2`. `BasicRuntime` is HostLink's internal local driver executor, not a public backend.
 
 ### Core Layers
 

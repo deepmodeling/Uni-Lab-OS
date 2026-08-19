@@ -1,16 +1,36 @@
 #!/usr/bin/env python
 # coding=utf-8
-"""
-通信模块
-
-提供WebSocket的统一接口，支持通过配置选择通信协议。
-包含通信抽象层基类和通信客户端工厂。
-"""
+"""后端通信协议抽象与客户端工厂。"""
 
 from abc import ABC, abstractmethod
 from typing import Optional
 from unilabos.config.config import BasicConfig
 from unilabos.utils import logger
+
+
+PROTOCOL_ALIASES = {
+    "control": "control",
+    "control.v1": "control",
+    "old": "old",
+    "legacy": "old",
+    "old-websocket": "old",
+    "websocket": "old",
+    "ws": "old",
+}
+
+
+def normalize_communication_protocol(protocol: str) -> str:
+    """规范化后端线协议名称；旧 ``websocket`` 配置继续映射到 ``old``。"""
+
+    value = str(protocol or "").strip().lower()
+    try:
+        return PROTOCOL_ALIASES[value]
+    except KeyError as exc:
+        supported = ", ".join(CommunicationClientFactory.get_supported_protocols())
+        raise ValueError(
+            f"Unsupported backend communication protocol {protocol!r}; "
+            f"expected one of: {supported}"
+        ) from exc
 
 
 class BaseCommunicationClient(ABC):
@@ -139,14 +159,10 @@ class CommunicationClientFactory:
         if protocol is None:
             protocol = BasicConfig.communication_protocol
 
-        protocol = protocol.lower()
-
-        if protocol == "websocket":
-            return cls._create_websocket_client()
-        else:
-            logger.error(f"[CommunicationFactory] Unsupported protocol: {protocol}")
-            logger.warning(f"[CommunicationFactory] Falling back to WebSocket")
-            return cls._create_websocket_client()
+        normalized = normalize_communication_protocol(protocol)
+        if normalized == "control":
+            return cls._create_control_client()
+        return cls._create_old_protocol_client()
 
     @classmethod
     def get_client(cls, protocol: Optional[str] = None) -> BaseCommunicationClient:
@@ -166,14 +182,26 @@ class CommunicationClientFactory:
         return cls._client_cache
 
     @classmethod
-    def _create_websocket_client(cls) -> BaseCommunicationClient:
-        """创建WebSocket客户端"""
-        try:
-            from unilabos.app.ws_client import WebSocketClient
+    def _create_control_client(cls) -> BaseCommunicationClient:
+        """创建新微后端的 WS 轻通知客户端。"""
 
-            return WebSocketClient()
+        from unilabos.app.backend_protocol.control import ControlWebSocketClient
+
+        return ControlWebSocketClient()
+
+    @classmethod
+    def _create_old_protocol_client(cls) -> BaseCommunicationClient:
+        """创建旧后端完整 WebSocket payload 客户端。"""
+
+        try:
+            from unilabos.app.backend_protocol.old import OldBackendProtocolClient
+
+            return OldBackendProtocolClient()
         except Exception as e:
-            logger.error(f"[CommunicationFactory] Failed to create WebSocket client: {str(e)}")
+            logger.error(
+                "[CommunicationFactory] Failed to create old protocol client: "
+                f"{str(e)}"
+            )
             raise
 
     @classmethod
@@ -196,7 +224,7 @@ class CommunicationClientFactory:
         Returns:
             支持的协议列表
         """
-        return ["websocket"]
+        return ["control", "old"]
 
 
 def get_communication_client(protocol: Optional[str] = None) -> BaseCommunicationClient:
@@ -210,3 +238,11 @@ def get_communication_client(protocol: Optional[str] = None) -> BaseCommunicatio
         通信客户端实例
     """
     return CommunicationClientFactory.get_client(protocol)
+
+
+__all__ = [
+    "BaseCommunicationClient",
+    "CommunicationClientFactory",
+    "get_communication_client",
+    "normalize_communication_protocol",
+]

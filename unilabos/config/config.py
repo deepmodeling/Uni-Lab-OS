@@ -31,7 +31,8 @@ class BasicConfig:
     vis_2d_enable = False
     no_update_feedback = False
     enable_resource_load = True
-    communication_protocol = "websocket"
+    # 后端线协议：control=WS 轻通知 + HTTP 正文；old=旧完整 WS payload。
+    communication_protocol: str = "control"
     startup_json_path = None  # 填写绝对路径
     disable_browser = False  # 只禁止浏览器自动打开，不停止管理端服务
     port = 8002  # 管理端 HTTP/Web API 与主微前端服务

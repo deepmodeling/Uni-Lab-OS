@@ -357,6 +357,17 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--backend_protocol",
+        "--communication_protocol",
+        dest="backend_protocol",
+        choices=["control", "old"],
+        default=None,
+        help=(
+            "Backend wire protocol: control uses WebSocket notices plus HTTP "
+            "pull; old connects to the legacy full-payload WebSocket backend."
+        ),
+    )
+    parser.add_argument(
         "--material_source",
         choices=["microbackend", "backend", "auto"],
         default=None,
@@ -1135,9 +1146,11 @@ def main():
         print_status("启用额外资源加载：将加载lab_开头的labware资源定义", "info")
     BasicConfig.backend = args_dict["backend"]
     BasicConfig.app_bridges = tuple(args_dict["app_bridges"])
-    BasicConfig.communication_protocol = (
-        "websocket" if "websocket" in BasicConfig.app_bridges else ""
-    )
+    if "websocket" in BasicConfig.app_bridges:
+        if args_dict.get("backend_protocol"):
+            BasicConfig.communication_protocol = args_dict["backend_protocol"]
+    else:
+        BasicConfig.communication_protocol = ""
     machine_name = platform.node()
     machine_name = "".join([c if c.isalnum() or c == "_" else "_" for c in machine_name])
     BasicConfig.machine_name = machine_name
@@ -1365,7 +1378,7 @@ def main():
         and HTTPConfig.material_source == "backend"
     ):
         args_dict["bridges"].append(http_client)
-    # 获取通信客户端（仅支持WebSocket）
+    # 根据线协议创建后端通信客户端（传输层均为 WebSocket）
     if BasicConfig.is_host_mode:
         comm_client = None
         materials_gateway = None

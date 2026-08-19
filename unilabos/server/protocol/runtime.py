@@ -159,6 +159,20 @@ class ExecutionJobTransition(ServerObject):
     occurred_at_ms: int = Field(default=0, ge=0)
 
 
+class ExecutionJobFeedback(ServerObject):
+    expected_version: int = Field(ge=1)
+    feedback_sequence: int = Field(ge=1)
+    observed_at_ms: int = Field(default=0, ge=0)
+
+
+class ExecutionJobCancel(ServerObject):
+    expected_version: int = Field(ge=1)
+    cancel_command_uuid: NonEmptyStr
+    adapter_command_uuid: NonEmptyStr
+    payload_uuid: Optional[NonEmptyStr] = None
+    requested_at_ms: int = Field(default=0, ge=0)
+
+
 class ErrorGateOpen(ServerObject):
     expected_version: int = Field(ge=1)
     error_uuid: NonEmptyStr
@@ -166,6 +180,7 @@ class ErrorGateOpen(ServerObject):
     error_summary: NonEmptyStr
     required_scheduler_revision: int = Field(ge=0)
     request_event_uuid: NonEmptyStr
+    detail_payload_uuid: Optional[NonEmptyStr] = None
     summary: JsonObject = Field(default_factory=dict)
     opened_at_ms: int = Field(default=0, ge=0)
 
@@ -273,6 +288,8 @@ __all__ = [
     "ErrorGateDecision",
     "ErrorGateOpen",
     "ExecutionJobCreate",
+    "ExecutionJobCancel",
+    "ExecutionJobFeedback",
     "ExecutionJobTransition",
     "RUNTIME_PROTOCOL_VERSION",
 ]

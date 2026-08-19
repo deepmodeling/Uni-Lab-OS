@@ -30,7 +30,9 @@ from unilabos.server.protocol.runtime import (
     EndpointSnapshotUpsert,
     ErrorGateDecision,
     ErrorGateOpen,
+    ExecutionJobCancel,
     ExecutionJobCreate,
+    ExecutionJobFeedback,
     ExecutionJobTransition,
 )
 from unilabos.server.repositories.runtime import RuntimeRepository
@@ -510,8 +512,18 @@ class RuntimeService:
 
     _TRANSITIONS = {
         "accepted": {"dispatch_pending", "rejected", "canceled"},
-        "dispatch_pending": {"dispatched", "rejected", "canceled"},
-        "dispatched": {"running", "execution_unknown", "canceled"},
+        "dispatch_pending": {
+            "dispatched",
+            "succeeded",
+            "rejected",
+            "canceled",
+        },
+        "dispatched": {
+            "running",
+            "succeeded",
+            "execution_unknown",
+            "canceled",
+        },
         "running": {"succeeded", "execution_unknown", "canceled"},
         "failure_waiting": {"execution_unknown", "canceled"},
         "terminal_waiting": {"succeeded", "failed", "canceled"},
@@ -573,6 +585,87 @@ class RuntimeService:
             self.repository.update_job(updated, expected_version=current.version)
             return updated
 
+    def record_execution_feedback(
+        self, job_uuid: str, value: ExecutionJobFeedback
+    ) -> ExecutionJobRecord:
+        """单调推进 feedback cursor，并为每次出站变更分配新的 job version。"""
+
+        with self.repository.write():
+            current = self.repository.get_job(job_uuid)
+            if current is None:
+                raise RuntimeNotFoundError(f"execution job {job_uuid!r} not found")
+            self._require_version(current.version, value.expected_version, "job")
+            if current.status not in {"dispatched", "running", "execution_unknown"}:
+                raise RuntimeConflictError(
+                    f"job status {current.status!r} cannot accept feedback"
+                )
+            expected_sequence = current.feedback_sequence + 1
+            if value.feedback_sequence != expected_sequence:
+                raise RuntimeConflictError(
+                    f"feedback sequence is {value.feedback_sequence}, "
+                    f"expected {expected_sequence}"
+                )
+            updated = current.model_copy(
+                update={
+                    "feedback_sequence": value.feedback_sequence,
+                    "version": current.version + 1,
+                }
+            )
+            self.repository.update_job(updated, expected_version=current.version)
+            return updated
+
+    def request_execution_cancel(
+        self, job_uuid: str, value: ExecutionJobCancel
+    ) -> ExecutionJobRecord:
+        """持久化 Backend cancel 命令，再由 endpoint adapter outbox 执行。"""
+
+        timestamp = self._now_ms(value.requested_at_ms)
+        with self.repository.write():
+            current = self.repository.get_job(job_uuid)
+            if current is None:
+                raise RuntimeNotFoundError(f"execution job {job_uuid!r} not found")
+            command = self.repository.get_command(value.cancel_command_uuid)
+            if command is None:
+                raise RuntimeNotFoundError(
+                    f"cancel command {value.cancel_command_uuid!r} not found"
+                )
+            if command.command_type != "cancel_job" or command.job_uuid != job_uuid:
+                raise RuntimeValidationError(
+                    "cancel command type/job_uuid does not match execution job"
+                )
+            if current.status in {"succeeded", "failed", "canceled", "rejected"}:
+                self._complete_command(command, timestamp=timestamp)
+                return current
+            self._require_version(current.version, value.expected_version, "job")
+            if current.status == "terminal_waiting":
+                raise RuntimeConflictError(
+                    "terminal-waiting job must be resolved through its error gate"
+                )
+            if current.endpoint_uuid is None:
+                raise RuntimeValidationError(
+                    "routed endpoint is required to cancel execution"
+                )
+            endpoint = self.repository.get_endpoint(current.endpoint_uuid)
+            if endpoint is None:
+                raise RuntimeNotFoundError(
+                    f"endpoint {current.endpoint_uuid!r} not found"
+                )
+            self._insert_adapter_command(
+                AdapterCommandEnqueue(
+                    adapter_command_uuid=value.adapter_command_uuid,
+                    job_uuid=job_uuid,
+                    endpoint_uuid=current.endpoint_uuid,
+                    source_command_uuid=value.cancel_command_uuid,
+                    target_adapter_epoch=endpoint.adapter_epoch,
+                    command_type="cancel",
+                    payload_uuid=value.payload_uuid,
+                    available_at_ms=timestamp,
+                ),
+                timestamp=timestamp,
+            )
+            self._complete_command(command, timestamp=timestamp)
+            return current
+
     # -- Backend-controlled terminal error gate -------------------------
 
     def open_error_gate(
@@ -593,7 +686,13 @@ class RuntimeService:
                     "job already has another terminal error gate"
                 )
             self._require_version(current.version, value.expected_version, "job")
-            if current.status not in {"dispatched", "running", "execution_unknown"}:
+            if current.status not in {
+                "accepted",
+                "dispatch_pending",
+                "dispatched",
+                "running",
+                "execution_unknown",
+            }:
                 raise RuntimeConflictError(
                     f"job status {current.status!r} cannot open an error gate"
                 )
@@ -630,6 +729,7 @@ class RuntimeService:
                     aggregate_version=updated.version,
                     job_uuid=job_uuid,
                     summary=summary,
+                    detail_payload_uuid=value.detail_payload_uuid,
                     available_at_ms=timestamp,
                 ),
                 timestamp=timestamp,

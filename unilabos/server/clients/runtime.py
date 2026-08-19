@@ -31,7 +31,9 @@ from unilabos.server.protocol.runtime import (
     EndpointSnapshotUpsert,
     ErrorGateDecision,
     ErrorGateOpen,
+    ExecutionJobCancel,
     ExecutionJobCreate,
+    ExecutionJobFeedback,
     ExecutionJobTransition,
 )
 from unilabos.server.services.runtime import RuntimeService
@@ -146,6 +148,16 @@ class LocalRuntimeClient:
         self, job_uuid: str, value: ExecutionJobTransition
     ) -> ExecutionJobRecord:
         return self.service.transition_execution_job(job_uuid, value)
+
+    def record_execution_feedback(
+        self, job_uuid: str, value: ExecutionJobFeedback
+    ) -> ExecutionJobRecord:
+        return self.service.record_execution_feedback(job_uuid, value)
+
+    def request_execution_cancel(
+        self, job_uuid: str, value: ExecutionJobCancel
+    ) -> ExecutionJobRecord:
+        return self.service.request_execution_cancel(job_uuid, value)
 
     def open_error_gate(
         self, job_uuid: str, value: ErrorGateOpen
@@ -406,6 +418,20 @@ class HTTPRuntimeClient:
     ) -> ExecutionJobRecord:
         return ExecutionJobRecord.model_validate(
             self._request("POST", f"/jobs/{job_uuid}/transitions", value)
+        )
+
+    def record_execution_feedback(
+        self, job_uuid: str, value: ExecutionJobFeedback
+    ) -> ExecutionJobRecord:
+        return ExecutionJobRecord.model_validate(
+            self._request("POST", f"/jobs/{job_uuid}/feedback", value)
+        )
+
+    def request_execution_cancel(
+        self, job_uuid: str, value: ExecutionJobCancel
+    ) -> ExecutionJobRecord:
+        return ExecutionJobRecord.model_validate(
+            self._request("POST", f"/jobs/{job_uuid}/cancel", value)
         )
 
     def open_error_gate(

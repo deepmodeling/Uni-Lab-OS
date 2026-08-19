@@ -18,7 +18,9 @@ from unilabos.server.protocol.runtime import (
     EndpointSnapshotUpsert,
     ErrorGateDecision,
     ErrorGateOpen,
+    ExecutionJobCancel,
     ExecutionJobCreate,
+    ExecutionJobFeedback,
     ExecutionJobTransition,
 )
 from unilabos.server.services.runtime import (
@@ -154,6 +156,14 @@ def create_runtime_router(service: RuntimeService) -> APIRouter:
     @router.post("/jobs/{job_uuid}/transitions")
     async def transition_execution_job(job_uuid: str, value: ExecutionJobTransition):
         return _call(service.transition_execution_job, job_uuid, value)
+
+    @router.post("/jobs/{job_uuid}/feedback")
+    async def record_execution_feedback(job_uuid: str, value: ExecutionJobFeedback):
+        return _call(service.record_execution_feedback, job_uuid, value)
+
+    @router.post("/jobs/{job_uuid}/cancel")
+    async def request_execution_cancel(job_uuid: str, value: ExecutionJobCancel):
+        return _call(service.request_execution_cancel, job_uuid, value)
 
     @router.post("/jobs/{job_uuid}/error-gate/open")
     async def open_error_gate(job_uuid: str, value: ErrorGateOpen):

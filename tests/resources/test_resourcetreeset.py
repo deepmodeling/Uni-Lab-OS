@@ -1,6 +1,7 @@
 import pytest
 import json
 import os
+from pathlib import Path
 
 from unilabos.resources.graphio import resource_bioyond_to_plr
 from unilabos.resources.resource_tracker import ResourceTreeSet
@@ -26,7 +27,9 @@ type_mapping = {
 def bioyond_materials_reaction() -> list[dict]:
     print("加载 BioYond 物料数据...")
     print(os.getcwd())
-    with open("bioyond_materials_reaction.json", "r", encoding="utf-8") as f:
+    with Path(__file__).with_name("bioyond_materials_reaction.json").open(
+        "r", encoding="utf-8"
+    ) as f:
         data = json.load(f)
     print(f"加载了 {len(data)} 条物料数据")
     return data
@@ -36,7 +39,9 @@ def bioyond_materials_reaction() -> list[dict]:
 def bioyond_materials_liquidhandling_1() -> list[dict]:
     print("加载 BioYond 物料数据...")
     print(os.getcwd())
-    with open("bioyond_materials_liquidhandling_1.json", "r", encoding="utf-8") as f:
+    with Path(__file__).with_name("bioyond_materials_liquidhandling_1.json").open(
+        "r", encoding="utf-8"
+    ) as f:
         data = json.load(f)
     print(f"加载了 {len(data)} 条物料数据")
     return data
@@ -46,7 +51,9 @@ def bioyond_materials_liquidhandling_1() -> list[dict]:
 def bioyond_materials_liquidhandling_2() -> list[dict]:
     print("加载 BioYond 物料数据...")
     print(os.getcwd())
-    with open("bioyond_materials_liquidhandling_2.json", "r", encoding="utf-8") as f:
+    with Path(__file__).with_name("bioyond_materials_liquidhandling_2.json").open(
+        "r", encoding="utf-8"
+    ) as f:
         data = json.load(f)
     print(f"加载了 {len(data)} 条物料数据")
     return data
@@ -62,6 +69,6 @@ def test_resourcetreeset_from_plr(materials_fixture, request) -> list[dict]:
     output = resource_bioyond_to_plr(materials, type_mapping=type_mapping, deck=deck)
     print(deck.summary())
 
-    r = ResourceTreeSet.from_plr_resources([deck])
+    r = ResourceTreeSet.from_plr_resources([deck], known_random_uuid=True)
     print(r.dump())
     # json.dump(deck.serialize(), open("test.json", "w", encoding="utf-8"), indent=4)

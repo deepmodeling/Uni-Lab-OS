@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from pylabrobot.resources import Coordinate, Rotation
+from pylabrobot.resources import Coordinate, Resource, Rotation
 from pylabrobot.resources.barcode import Barcode
 from pylabrobot import serializer as plr_serializer
 
@@ -41,6 +41,57 @@ def _resource_payload(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+def test_from_plr_resources_only_generates_missing_uuids_for_tests():
+    root = Resource(name="test_root", size_x=10, size_y=20, size_z=30)
+    child = Resource(name="test_child", size_x=1, size_y=2, size_z=3)
+    root.assign_child_resource(child, location=Coordinate.zero())
+
+    with pytest.raises(ValueError, match="缺少微后端分配的 UUID"):
+        ResourceTreeSet.from_plr_resources([root])
+
+    assert not getattr(root, "unilabos_uuid", "")
+    assert not getattr(child, "unilabos_uuid", "")
+
+    tree = ResourceTreeSet.from_plr_resources([root], known_random_uuid=True)
+
+    assert UUID(root.unilabos_uuid)
+    assert UUID(child.unilabos_uuid)
+    assert tree.root_nodes[0].res_content.uuid == root.unilabos_uuid
+    assert tree.root_nodes[0].children[0].res_content.uuid == child.unilabos_uuid
+
+
+def test_graphio_accepts_sparse_plr_serialization(monkeypatch):
+    graphio = pytest.importorskip(
+        "unilabos.resources.graphio",
+        reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
+        exc_type=ImportError,
+    )
+    resource = RegularContainer(
+        name="sparse_root",
+        size_x=10,
+        size_y=20,
+        size_z=30,
+        max_volume=100.0,
+    )
+    resource.unilabos_uuid = str(uuid4())
+    original_serialize = resource.serialize
+
+    def serialize_without_default_geometry():
+        serialized = original_serialize()
+        for key in ("location", "rotation", "children", "parent_name"):
+            serialized.pop(key, None)
+        return serialized
+
+    monkeypatch.setattr(resource, "serialize", serialize_without_default_geometry)
+
+    graph_payload = graphio.resource_plr_to_ulab(resource)
+    assert graph_payload["children"] == []
+    graph_resource = ResourceDict.model_validate(graph_payload)
+    assert graph_resource.pose.position is None
+    assert graph_resource.pose.rotation.model_dump() == {"x": 0.0, "y": 0.0, "z": 0.0}
+    assert graph_resource.parent is None
 
 
 def test_tracker_state_is_promoted_from_data_to_root():
@@ -83,7 +134,7 @@ def test_root_tracker_state_wins_and_roundtrips_to_plr_shape():
     assert resource.unknown_counter == 0
     assert assemble_tracker_state(resource) == {
         "max_volume": 100.0,
-        "liquids": [],
+        "substances": [],
         "liquid_history": [],
         "unknown_counter": 0,
     }
@@ -130,15 +181,18 @@ def test_plr_container_tracker_state_survives_resource_tree_roundtrip(monkeypatc
     root = tree.root_nodes[0].res_content
     original_state = container.serialize_state()
 
-    expected_liquids = [
+    expected_substances = [
         (item[0], item[1], item[2] if len(item) >= 3 else "ul")
-        for item in original_state["liquids"]
+        for item in original_state["substances"]
     ]
     expected_history = [
         (item[0], item[1], item[2] if len(item) >= 3 else "ul")
         for item in original_state["liquid_history"]
     ]
-    assert root.liquids == expected_liquids
+    assert root.substances == expected_substances
+    assert root.liquids == [
+        item for item in expected_substances if item[2] == "ul"
+    ]
     assert root.liquid_history == expected_history
     assert root.unknown_counter == original_state["unknown_counter"]
     assert all(state_key not in root.data for state_key in TRACKER_STATE_KEYS)

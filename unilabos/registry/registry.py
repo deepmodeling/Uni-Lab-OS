@@ -1411,7 +1411,7 @@ class Registry:
                 if callable(res_class) and not isinstance(res_class, type):
                     res_instance = res_class(res_class.__name__)
                     tree_set = ResourceTreeSet.from_plr_resources(
-                        [res_instance], known_newly_created=True, old_size=True
+                        [res_instance], known_random_uuid=True, old_size=True
                     )
                     dumped = tree_set.dump()
                     return resource_id, dumped[0] if dumped else []

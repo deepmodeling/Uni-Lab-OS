@@ -783,10 +783,21 @@ class ResourceTreeSet(object):
 
     @classmethod
     def from_plr_resources(
-        cls, resources: List["PLRResource"], known_newly_created=False, old_size=False
+        cls,
+        resources: List["PLRResource"],
+        known_newly_created=False,
+        old_size=False,
+        *,
+        known_random_uuid: bool = False,
     ) -> "ResourceTreeSet":
         """
-        从plr资源创建ResourceTreeSet
+        从 PLR 资源创建 ResourceTreeSet。
+
+        ``known_random_uuid`` 只用于尚未登记的创建草稿/模板测试。开启后会为
+        缺少 UUID 的 Resource 和 Carrier Site 递归生成临时 UUID；它们只是
+        client_ref，必须再交给微后端 create 并使用返回的权威 UUID 树。
+
+        ``known_newly_created`` 为兼容旧调用保留，不再改变 UUID 校验规则。
         """
 
         missing = object()
@@ -831,10 +842,26 @@ class ResourceTreeSet(object):
             """递归构建uuid和extra映射字典，返回(current_uuid, parent_uuid, extra)元组列表"""
             uid = getattr(res, "unilabos_uuid", "")
             if not uid:
-                raise ValueError(
-                    f"PLR 资源 {res.name} 缺少微后端分配的 UUID；"
-                    "请先调用 runtime create 并用返回的规范树构造 PLR"
-                )
+                if not known_random_uuid:
+                    raise ValueError(
+                        f"PLR 资源 {res.name} 缺少微后端分配的 UUID；"
+                        "请先调用 runtime create 并用返回的规范树构造 PLR"
+                    )
+                uid = str(uuid.uuid4())
+                res.unilabos_uuid = uid
+
+            plr_sites = getattr(res, "sites", None)
+            if isinstance(plr_sites, dict):
+                for site_index, site_holder in plr_sites.items():
+                    if site_holder is None:
+                        continue
+                    if not getattr(site_holder, "unilabos_site_uuid", ""):
+                        if not known_random_uuid:
+                            raise ValueError(
+                                f"载架 {res.name} 的 Site {site_index} "
+                                "缺少微后端分配的 UUID"
+                            )
+                        site_holder.unilabos_site_uuid = str(uuid.uuid4())
 
             # 获取unilabos_extra，默认为空字典
             extra = copy.deepcopy(getattr(res, "unilabos_extra", {}) or {})
@@ -890,13 +917,14 @@ class ResourceTreeSet(object):
                 resource_meta_data,
             ) = uuids.pop(0)
 
+            serialized_location = d.get("location")
             raw_pos = (
                 {
-                    "x": d["location"]["x"],
-                    "y": d["location"]["y"],
-                    "z": d["location"]["z"],
+                    "x": serialized_location["x"],
+                    "y": serialized_location["y"],
+                    "z": serialized_location["z"],
                 }
-                if d["location"] is not None
+                if serialized_location is not None
                 else None
             )
             sidecar_position = (
@@ -905,6 +933,7 @@ class ResourceTreeSet(object):
                 else missing
             )
             if static_pose is None:
+                serialized_rotation = d.get("rotation") or {"x": 0, "y": 0, "z": 0}
                 static_pose = {
                     "size": {
                         "width": d["size_x"],
@@ -916,9 +945,9 @@ class ResourceTreeSet(object):
                     # PLR serializer 会额外输出 ``type=Rotation``；它是传输标签，
                     # 不属于规范静态几何模型。
                     "rotation": {
-                        "x": d["rotation"]["x"],
-                        "y": d["rotation"]["y"],
-                        "z": d["rotation"]["z"],
+                        "x": serialized_rotation["x"],
+                        "y": serialized_rotation["y"],
+                        "z": serialized_rotation["z"],
                     },
                     "cross_section_type": d.get("cross_section_type", "rectangle"),
                     "extra": legacy_pose_extra,
@@ -1000,7 +1029,7 @@ class ResourceTreeSet(object):
                     child_resource, child_dict, current_resource, states, uuids
                 )
                 for child_resource, child_dict in zip(
-                    plr_resource.children, d["children"]
+                    plr_resource.children, d.get("children", [])
                 )
             ]
 
@@ -1166,6 +1195,8 @@ class ResourceTreeSet(object):
                 if "category" not in spec.parameters:
                     plr_dict.pop("category", None)
                 plr_resource = sub_cls.deserialize(plr_dict, allow_marshal=True)
+                # PLR 的 Resource.deserialize 仍不恢复自身 location；统一只在
+                # UniLabOS 适配边界补一次，避免再改 PLR 各个子类的 deserialize。
                 from pylabrobot.resources import Coordinate
                 from pylabrobot.serializer import deserialize
 

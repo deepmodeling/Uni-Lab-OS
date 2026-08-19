@@ -836,9 +836,14 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
         for state_key in TRACKER_STATE_KEYS:
             if state_key in state:
                 tracker_roots[state_key] = state.pop(state_key)
+        serialized_location = d.get("location")
         actual_position = (
-            {"x": d["location"]["x"], "y": d["location"]["y"], "z": d["location"]["z"]}
-            if d["location"] is not None
+            {
+                "x": serialized_location["x"],
+                "y": serialized_location["y"],
+                "z": serialized_location["z"],
+            }
+            if serialized_location is not None
             else None
         )
         sidecar_position = (
@@ -847,12 +852,13 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
             else missing
         )
         if static_pose is None:
+            serialized_rotation = d.get("rotation") or {"x": 0, "y": 0, "z": 0}
             static_pose = {
                 "size": {"width": d["size_x"], "height": d["size_y"], "depth": d["size_z"]},
                 "rotation": {
-                    "x": d["rotation"]["x"],
-                    "y": d["rotation"]["y"],
-                    "z": d["rotation"]["z"],
+                    "x": serialized_rotation["x"],
+                    "y": serialized_rotation["y"],
+                    "z": serialized_rotation["z"],
                 },
                 "layout": d.get("layout", "x-y"),
                 "cross_section_type": d.get("cross_section_type", "rectangle"),
@@ -876,12 +882,14 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
             "children": (
                 [
                     resource_plr_to_ulab_inner(child_resource, child_dict, all_states)
-                    for child_resource, child_dict in zip(plr_node.children, d["children"])
+                    for child_resource, child_dict in zip(
+                        plr_node.children, d.get("children", [])
+                    )
                 ]
                 if child
                 else []
             ),
-            "parent": d["parent_name"] if d["parent_name"] else parent_name if parent_name else None,
+            "parent": d.get("parent_name") or parent_name,
             "type": replace_plr_type_to_ulab(d.get("category")),  # FIXME plr自带的type是python class name
             "class": d.get("class", ""),
             "template_name": get_plr_template_name(plr_node, d),

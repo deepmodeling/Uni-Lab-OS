@@ -705,21 +705,6 @@ liquid_handler:
                       description: VolumeTracker (liquid_name, delta, unit) event
                         history
                       title: Liquid History
-                    liquids:
-                      anyOf:
-                      - items:
-                          maxItems: 3
-                          minItems: 3
-                          prefixItems:
-                          - type: string
-                          - type: number
-                          - type: string
-                          type: array
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: Current (liquid_name, amount, unit) entries
-                      title: Liquids
                     machine_name:
                       default: ''
                       description: Machine this resource belongs to
@@ -782,6 +767,21 @@ liquid_handler:
                         instance
                       title: Sites Initialized
                       type: boolean
+                    substances:
+                      anyOf:
+                      - items:
+                          maxItems: 3
+                          minItems: 3
+                          prefixItems:
+                          - type: string
+                          - type: number
+                          - type: string
+                          type: array
+                        type: array
+                      - type: 'null'
+                      default: null
+                      description: Current (substance_name, quantity, unit) entries
+                      title: Substances
                     template_name:
                       default: ''
                       description: Edge resource template name
@@ -1255,21 +1255,6 @@ liquid_handler:
                       description: VolumeTracker (liquid_name, delta, unit) event
                         history
                       title: Liquid History
-                    liquids:
-                      anyOf:
-                      - items:
-                          maxItems: 3
-                          minItems: 3
-                          prefixItems:
-                          - type: string
-                          - type: number
-                          - type: string
-                          type: array
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: Current (liquid_name, amount, unit) entries
-                      title: Liquids
                     machine_name:
                       default: ''
                       description: Machine this resource belongs to
@@ -1332,6 +1317,21 @@ liquid_handler:
                         instance
                       title: Sites Initialized
                       type: boolean
+                    substances:
+                      anyOf:
+                      - items:
+                          maxItems: 3
+                          minItems: 3
+                          prefixItems:
+                          - type: string
+                          - type: number
+                          - type: string
+                          type: array
+                        type: array
+                      - type: 'null'
+                      default: null
+                      description: Current (substance_name, quantity, unit) entries
+                      title: Substances
                     template_name:
                       default: ''
                       description: Edge resource template name
@@ -9959,21 +9959,6 @@ liquid_handler.prcxi:
                       description: VolumeTracker (liquid_name, delta, unit) event
                         history
                       title: Liquid History
-                    liquids:
-                      anyOf:
-                      - items:
-                          maxItems: 3
-                          minItems: 3
-                          prefixItems:
-                          - type: string
-                          - type: number
-                          - type: string
-                          type: array
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: Current (liquid_name, amount, unit) entries
-                      title: Liquids
                     machine_name:
                       default: ''
                       description: Machine this resource belongs to
@@ -10036,6 +10021,21 @@ liquid_handler.prcxi:
                         instance
                       title: Sites Initialized
                       type: boolean
+                    substances:
+                      anyOf:
+                      - items:
+                          maxItems: 3
+                          minItems: 3
+                          prefixItems:
+                          - type: string
+                          - type: number
+                          - type: string
+                          type: array
+                        type: array
+                      - type: 'null'
+                      default: null
+                      description: Current (substance_name, quantity, unit) entries
+                      title: Substances
                     template_name:
                       default: ''
                       description: Edge resource template name

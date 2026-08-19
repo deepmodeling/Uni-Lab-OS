@@ -1,13 +1,9 @@
-"""
-社区设备包 CLI：inspect / upload / install
-"""
+"""社区设备包命令：参数注册、分发与 inspect/upload/install 实现。"""
 
 import hashlib
 import json
-import os
 import re
 import subprocess
-import sys
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -37,6 +33,71 @@ ARCHIVE_EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
 
 class PackageCLIError(RuntimeError):
     """package 子命令执行过程中的可预期错误。"""
+
+
+def register_package_commands(subparsers: Any) -> None:
+    """把 package 命令组注册到统一 CLI。"""
+
+    package_parser = subparsers.add_parser(
+        "package",
+        aliases=["pkg"],
+        help="Community device package tools: inspect / upload / install",
+    )
+    package_actions = package_parser.add_subparsers(
+        title="package actions", dest="package_action"
+    )
+    for action in ("inspect", "upload"):
+        action_parser = package_actions.add_parser(
+            action,
+            help=(
+                "Scan package dir and generate package_info/archive (local only)"
+                if action == "inspect"
+                else "Upload package through the old Backend HTTP API (--legacy)"
+            ),
+        )
+        action_parser.add_argument(
+            "--path",
+            dest="package_path",
+            type=str,
+            required=True,
+            help="Path to the community device package directory (contains pyproject.toml)",
+        )
+        action_parser.add_argument(
+            "--namespace",
+            type=str,
+            default=None,
+            help="Class namespace, e.g. community.acme; defaults from pyproject name",
+        )
+        action_parser.add_argument(
+            "--out",
+            type=str,
+            default=None,
+            help="Output dir for archive/package_info.json",
+        )
+        if action == "upload":
+            action_parser.add_argument(
+                "--download-url",
+                dest="download_url",
+                type=str,
+                default="",
+                help="Explicit archive URL; otherwise upload through legacy OSS API",
+            )
+
+    install_parser = package_actions.add_parser(
+        "install",
+        help="Install a pip spec / git URL locally, then scan @device IDs",
+    )
+    install_parser.add_argument(
+        "install_spec",
+        type=str,
+        help="pip spec (name==version / name) or git URL (git+https://...)",
+    )
+    install_parser.add_argument(
+        "--no-inspect",
+        dest="no_inspect",
+        action="store_true",
+        help="Skip post-install @device scan / device listing",
+    )
 
 
 def normalize_name(name: str) -> str:
@@ -611,6 +672,28 @@ def cmd_package(args_dict: Dict[str, Any], http_client: Any = None) -> None:
         )
     else:
         raise PackageCLIError(f"未知 package 子动作：{action}")
+
+
+def run_package_command(args: Dict[str, Any]) -> bool:
+    """执行 package 命令；非 package 命令返回 ``False``。"""
+
+    if args.get("command") not in {"package", "pkg"}:
+        return False
+    try:
+        http_client = None
+        if args.get("package_action") == "upload":
+            if not args.get("legacy"):
+                raise PackageCLIError(
+                    "package upload uses the old Backend HTTP API; add --legacy"
+                )
+            from unilabos.legacy_support.http import get_legacy_http_client
+
+            http_client = get_legacy_http_client()
+        cmd_package(args, http_client=http_client)
+    except PackageCLIError as exc:
+        print_status(str(exc), "error")
+        raise SystemExit(1) from exc
+    return True
 
 
 # --- 内部工具 ---

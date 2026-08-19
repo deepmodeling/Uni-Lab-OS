@@ -6,7 +6,7 @@
 
 from pathlib import Path
 
-from unilabos.app.package_cli import (
+from unilabos.app.cli.package import (
     inspect_package,
     read_external_registry_devices,
     read_registry_yaml_devices,

@@ -1,40 +1,29 @@
-"""物料命令模块
-
-提供 material 子命令：
-- material list: 查询实验室物料（GET /lab/material?id=<lab_uuid>&with_children=<bool>）
-"""
+"""直接访问 Edge 物料权威的命令。"""
 
 import sys
 
-from unilabos.client import (
-    EnvelopeError,
-    SessionManager,
-    print_error,
-    print_output,
-)
-
-from ._client_factory import make_authenticated_client
+from unilabos.client import SessionManager, print_error, print_output
+from unilabos.config.config import BasicConfig
+from unilabos.server.clients.materials import HTTPMaterialsClient
 
 
 def cmd_material_list(args, session_manager: SessionManager):
-    """material list 命令处理 — GET /lab/material?id=<lab_uuid>&with_children=<bool>"""
+    """列出微后端中的物料实例。"""
+
+    del session_manager
     try:
-        with session_manager:
-            client, _ = make_authenticated_client(args, session_manager)
-
-            params = {"id": args.lab_uuid, "with_children": str(args.with_children).lower()}
-
-            try:
-                data = client.get("/lab/material", params=params)
-                print_output(data)
-            except EnvelopeError as e:
-                print_error(f"获取物料列表失败: {e.error}")
-                sys.exit(1)
-            except Exception as e:
-                print_error(f"获取物料列表失败: {e}")
-                sys.exit(1)
+        address = str(getattr(args, "material_microbackend_addr", "") or "").strip()
+        if not address:
+            port = getattr(args, "port_management", None) or BasicConfig.port
+            address = f"http://127.0.0.1:{port}"
+        materials = HTTPMaterialsClient(address).list_materials(
+            roots_only=bool(args.roots_only)
+        )
+        print_output(
+            [item.model_dump(mode="json", exclude_none=False) for item in materials]
+        )
     except SystemExit:
         raise
     except Exception as e:
-        print_error(f"操作失败: {e}")
+        print_error(f"获取物料列表失败: {e}")
         sys.exit(1)

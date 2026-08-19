@@ -7,6 +7,10 @@ import os
 import sys
 from typing import Any
 
+from .package import (
+    register_package_commands,
+    run_package_command,
+)
 
 CLIENT_COMMANDS = frozenset(
     {"login", "logout", "whoami", "config", "lab", "material", "workflow"}
@@ -19,66 +23,7 @@ def register_cli_commands(
 ) -> None:
     """注册不参与设备 runtime bootstrap 的命令。"""
 
-    package_parser = subparsers.add_parser(
-        "package",
-        aliases=["pkg"],
-        help="Community device package tools: inspect / install",
-    )
-    package_actions = package_parser.add_subparsers(
-        title="package actions", dest="package_action"
-    )
-    for action in ("inspect", "upload"):
-        action_parser = package_actions.add_parser(
-            action,
-            help=(
-                "Scan package dir and generate package_info/archive (local only)"
-                if action == "inspect"
-                else "Upload package through the old Backend HTTP API (--legacy)"
-            ),
-        )
-        action_parser.add_argument(
-            "--path",
-            dest="package_path",
-            type=str,
-            required=True,
-            help="Path to the community device package directory (contains pyproject.toml)",
-        )
-        action_parser.add_argument(
-            "--namespace",
-            type=str,
-            default=None,
-            help="Class namespace, e.g. community.acme; defaults from pyproject name",
-        )
-        action_parser.add_argument(
-            "--out",
-            type=str,
-            default=None,
-            help="Output dir for archive/package_info.json",
-        )
-        if action == "upload":
-            action_parser.add_argument(
-                "--download-url",
-                dest="download_url",
-                type=str,
-                default="",
-                help="Explicit archive URL; otherwise upload through legacy OSS API",
-            )
-
-    install_parser = package_actions.add_parser(
-        "install",
-        help="Install a pip spec / git URL locally, then scan @device IDs",
-    )
-    install_parser.add_argument(
-        "install_spec",
-        type=str,
-        help="pip spec (name==version / name) or git URL (git+https://...)",
-    )
-    install_parser.add_argument(
-        "--no-inspect",
-        dest="no_inspect",
-        action="store_true",
-        help="Skip post-install @device scan / device listing",
-    )
+    register_package_commands(subparsers)
 
     parser.add_argument(
         "--json",
@@ -111,14 +56,13 @@ def register_cli_commands(
         title="material subcommands", dest="material_command"
     )
     material_list = material_actions.add_parser(
-        "list", help="List materials in a lab"
+        "list", help="List material instances from the materials authority"
     )
-    material_list.add_argument("--lab_uuid", type=str, required=True, help="Lab UUID")
     material_list.add_argument(
-        "--with_children",
+        "--roots_only",
         action="store_true",
         default=False,
-        help="Include child resources",
+        help="Only return root material instances",
     )
 
     workflow_parser = subparsers.add_parser("workflow", help="Workflow management")
@@ -155,7 +99,7 @@ def run_client_command(
     command = values.get("command")
     if command not in CLIENT_COMMANDS:
         return False
-    if command in {"lab", "material", "workflow"} and not values.get("legacy"):
+    if command in {"lab", "workflow"} and not values.get("legacy"):
         parser.error(f"{command} uses the old Backend HTTP API; add --legacy")
 
     from unilabos.app.cli.auth import cmd_login, cmd_logout, cmd_whoami
@@ -208,31 +152,6 @@ def run_client_command(
 
     sys.stdout.flush()
     sys.stderr.flush()
-    return True
-
-
-def run_package_command(args: dict[str, Any]) -> bool:
-    """执行本地 package 命令；非 package 命令返回 ``False``。"""
-
-    if args.get("command") not in {"package", "pkg"}:
-        return False
-    from unilabos.app.package_cli import PackageCLIError, cmd_package
-    from unilabos.utils.banner_print import print_status
-
-    try:
-        http_client = None
-        if args.get("package_action") == "upload":
-            if not args.get("legacy"):
-                raise PackageCLIError(
-                    "package upload uses the old Backend HTTP API; add --legacy"
-                )
-            from unilabos.legacy_support.http import get_legacy_http_client
-
-            http_client = get_legacy_http_client()
-        cmd_package(args, http_client=http_client)
-    except PackageCLIError as exc:
-        print_status(str(exc), "error")
-        raise SystemExit(1) from exc
     return True
 
 

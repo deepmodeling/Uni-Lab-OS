@@ -1,14 +1,7 @@
-"""工作流命令模块
-
-提供 workflow 子命令：
-- workflow upload: 上传工作流文件（迁移自 workflow_upload）
-
-通过 resolve_effective_auth 注入凭据到 BasicConfig / HTTPConfig，
-然后委托给现有的 handle_workflow_upload_command 实现。
-"""
+"""``unilab workflow upload`` 微后端工作流上传命令。"""
 
 import sys
-from typing import Any, Dict
+from typing import Any
 
 from unilabos.client import (
     SessionManager,
@@ -51,17 +44,15 @@ def cmd_workflow_upload(args, session_manager: SessionManager):
             if not _inject_credentials(args, session_manager):
                 sys.exit(1)
 
-        # 注意：handle_workflow_upload_command 期待 args_dict 形式
-        from unilabos.workflow.wf_utils import handle_workflow_upload_command
+        from unilabos.server.workflow.upload import upload_workflow
 
-        args_dict: Dict[str, Any] = {
-            "workflow_file": args.workflow_file,
-            "workflow_name": args.workflow_name,
-            "tags": args.tags or [],
-            "published": args.published,
-            "description": args.description or "",
-        }
-        handle_workflow_upload_command(args_dict)
+        upload_workflow(
+            args.workflow_file,
+            args.workflow_name,
+            args.tags or [],
+            args.published,
+            args.description or "",
+        )
         print_success("工作流上传完成")
     except SystemExit:
         raise

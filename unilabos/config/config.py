@@ -76,21 +76,6 @@ class WSConfig:
     ws_ping_timeout = 8  # pong等待超时（秒），对齐服务端 PongWait
 
 
-class EdgeControlConfig:
-    """Uni-Lab Backend 生产控制面配置。"""
-
-    api_key = ""
-    edge_key = ""
-    instance_uuid = ""
-    capability_revision = "unilabos-edge-v1"
-    scheduler_addr = ""
-    backend_addr = ""
-    state_db = ""
-    reconnect_interval = 5.0
-    request_timeout = 10.0
-    event_retry_interval = 5.0
-
-
 # HTTP配置
 class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"

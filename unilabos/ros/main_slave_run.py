@@ -57,7 +57,7 @@ def exit() -> None:
             if hasattr(device_node, "destroy_node"):
                 device_node.ros_node_instance.destroy_node()
         host_instance.destroy_node()
-    from unilabos.app.scheduler.host_network import shutdown_network_services
+    from unilabos.server.scheduler.host_network import shutdown_network_services
 
     shutdown_network_services()
     rclpy.shutdown()
@@ -79,7 +79,7 @@ def main(
 
     # ROS2 模式下 HostLink 只负责组网控制面，并由微后端持有生命周期。
     # 必须先发布/应用 Host ROS 策略，再初始化 DDS。
-    from unilabos.app.scheduler.host_network import setup_host_network_service
+    from unilabos.server.scheduler.host_network import setup_host_network_service
 
     setup_host_network_service()
     raw_domain_id = os.environ.get("ROS_DOMAIN_ID", "").strip()
@@ -133,7 +133,7 @@ def main(
 def _attach_hostlink_resource_tree(host_node: HostNode) -> None:
     """把 ROS HostNode 实时资源树挂到微后端，不转移网络所有权。"""
 
-    from unilabos.app.scheduler.host_network import setup_host_network_service
+    from unilabos.server.scheduler.host_network import setup_host_network_service
 
     setup_host_network_service(lambda: host_node.resources_config)
 
@@ -152,7 +152,7 @@ def slave(
     """从节点函数"""
     # 1. Slave 先由微后端通过 HostLink 获取 domain/discovery 信息，再初始化
     # DDS；设备动作、装饰器、Topic、Service 与注册流程仍全部走 ROS2。
-    from unilabos.app.scheduler.host_network import (
+    from unilabos.server.scheduler.host_network import (
         require_slave_startup_device_ids,
         setup_slave_network_client,
     )

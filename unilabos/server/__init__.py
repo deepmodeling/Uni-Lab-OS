@@ -1,4 +1,4 @@
-"""UniLabOS 微后端的领域记录与独立 SQLite schema。"""
+"""UniLabOS 微后端的数据库、工作流、调度与兼容存储实现。"""
 
 from unilabos.server.database import (
     DATABASE_SPECS,

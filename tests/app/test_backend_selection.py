@@ -115,6 +115,30 @@ def test_cli_shows_and_accepts_only_public_backend_names() -> None:
     assert "automancer" not in help_text
 
 
+def test_workflow_upload_uses_grouped_cli_only() -> None:
+    parser = parse_args()
+    parsed = parser.parse_args(
+        [
+            "workflow",
+            "upload",
+            "-f",
+            "workflow.json",
+            "-n",
+            "demo",
+            "--tags",
+            "chemistry",
+        ]
+    )
+    assert parsed.command == "workflow"
+    assert parsed.workflow_command == "upload"
+    assert parsed.workflow_file == "workflow.json"
+    assert parsed.workflow_name == "demo"
+    assert parsed.tags == ["chemistry"]
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["workflow_upload", "-f", "workflow.json"])
+
+
 def test_backend_controlled_execution_is_the_default(monkeypatch) -> None:
     parsed = parse_args().parse_args([])
     assert parsed.edge_scheduler is False

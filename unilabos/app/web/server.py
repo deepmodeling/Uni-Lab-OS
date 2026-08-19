@@ -95,10 +95,10 @@ def setup_server() -> FastAPI:
     # 执行与可观测面，避免 /workflows 的定义和运行语义互相覆盖。
     if not workflow_routes_mounted and BasicConfig.working_dir:
         try:
-            from unilabos.app.workflow_api import install_workflow_api
-            from unilabos.storage.paths import RuntimeStoragePaths
-            from unilabos.storage.profiles import SchedulerAuthorityProfile
-            from unilabos.workflow.composition import compose_workflow_runtime
+            from unilabos.server.workflow.api import install_workflow_api
+            from unilabos.server.storage.paths import RuntimeStoragePaths
+            from unilabos.server.storage.profiles import SchedulerAuthorityProfile
+            from unilabos.server.workflow.composition import compose_workflow_runtime
 
             storage_paths = BasicConfig.runtime_storage_paths
             if storage_paths is None:
@@ -112,12 +112,12 @@ def setup_server() -> FastAPI:
                     BasicConfig.scheduler_authority_profile
                 ),
             )
-            from unilabos.app.scheduler.integration import bind_workflow_executor
+            from unilabos.server.scheduler.integration import bind_workflow_executor
 
             bind_workflow_executor(workflow_service)
             install_workflow_api(app, workflow_service)
 
-            from unilabos.app.scheduler.history import WorkflowHistoryStore
+            from unilabos.server.scheduler.history import WorkflowHistoryStore
 
             workflow_history_projection = WorkflowHistoryStore(
                 str(storage_paths.workflow_db), read_only=True
@@ -129,8 +129,8 @@ def setup_server() -> FastAPI:
     # Scheduler / Inventory / Backend-shaped Resource / Lab 共用主进程组合根。
     if not edge_routes_mounted:
         try:
-            from unilabos.app.scheduler.api import create_scheduler_router
-            from unilabos.app.scheduler.integration import (
+            from unilabos.server.scheduler.api import create_scheduler_router
+            from unilabos.server.scheduler.integration import (
                 get_edge_backend,
                 get_edge_scheduler,
                 get_inventory_service,
@@ -146,17 +146,17 @@ def setup_server() -> FastAPI:
             )
             inventory_service = get_inventory_service()
             if inventory_service is not None:
-                from unilabos.app.scheduler.inventory.backend_api import (
+                from unilabos.server.scheduler.inventory.backend_api import (
                     install_backend_resource_api,
                 )
-                from unilabos.app.scheduler.inventory.backend_contract import (
+                from unilabos.server.scheduler.inventory.backend_contract import (
                     BackendResourceService,
                 )
-                from unilabos.app.scheduler.inventory.api import (
+                from unilabos.server.scheduler.inventory.api import (
                     create_legacy_material_router,
                     create_router as create_inventory_router,
                 )
-                from unilabos.app.scheduler.inventory.layout import create_lab_router
+                from unilabos.server.scheduler.inventory.layout import create_lab_router
 
                 if not resource_contract_routes_mounted:
                     install_backend_resource_api(

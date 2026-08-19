@@ -4,7 +4,7 @@ The ROS backend used to own a second HostLink server/client implementation in
 this module.  That split made the declared microbackend networking service
 dead code and allowed the two lifecycle owners to drift.  Keep the historical
 function names for embedders, but delegate every operation to
-``unilabos.app.scheduler.host_network``.
+``unilabos.server.scheduler.host_network``.
 
 The direct ``hostlink`` backend does not use this facade; its
 ``HostLinkBackendRuntime`` owns the transport that executes Python drivers.
@@ -21,7 +21,7 @@ from unilabos.hostlink.server import HostLinkServer
 def setup_hostlink_server() -> Optional[HostLinkServer]:
     """Start/reuse the microbackend-owned ROS2 networking listener."""
 
-    from unilabos.app.scheduler.host_network import setup_host_network_service
+    from unilabos.server.scheduler.host_network import setup_host_network_service
 
     service = setup_host_network_service()
     return service.server if service is not None else None
@@ -34,7 +34,7 @@ def setup_hostlink_client(
 ) -> Tuple[Optional[HostLinkClient], Optional[int]]:
     """Connect/reuse the microbackend-owned Slave networking client."""
 
-    from unilabos.app.scheduler.host_network import setup_slave_network_client
+    from unilabos.server.scheduler.host_network import setup_slave_network_client
 
     return setup_slave_network_client(
         device_ids=device_ids,
@@ -45,7 +45,7 @@ def setup_hostlink_client(
 def startup_device_ids(devices_config: Any) -> list[str]:
     """Compatibility wrapper for startup graph identity extraction."""
 
-    from unilabos.app.scheduler.host_network import startup_device_ids as extract
+    from unilabos.server.scheduler.host_network import startup_device_ids as extract
 
     return extract(devices_config)
 
@@ -53,7 +53,7 @@ def startup_device_ids(devices_config: Any) -> list[str]:
 def shutdown_hostlink() -> None:
     """Stop the microbackend-owned ROS2 HostLink services."""
 
-    from unilabos.app.scheduler.host_network import shutdown_network_services
+    from unilabos.server.scheduler.host_network import shutdown_network_services
 
     shutdown_network_services()
 

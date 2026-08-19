@@ -4,6 +4,12 @@
 物料事务、高频设备状态和大历史写入；不是为了把每个数据模型字段再拆成表。
 业务代码不得使用 `ATTACH DATABASE` 或跨库外键。
 
+代码命名空间统一归属微后端：工作流定义/上传位于
+`unilabos.server.workflow`，调度与执行期 DAG 位于
+`unilabos.server.scheduler`，旧运行库存储组合兼容位于
+`unilabos.server.storage`。不再保留顶层 `unilabos.workflow`、
+`unilabos.scheduler` 或 `unilabos.storage`。
+
 | 数据库 | 权威内容 | 表数（含 migration） |
 | --- | --- | ---: |
 | `runtime.db` | 后端命令、执行 job、endpoint 与可靠收发 | 8 |

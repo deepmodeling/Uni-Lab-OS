@@ -24,7 +24,7 @@ unilab --visual rviz|web|disable          # visualization mode
 unilab --is_slave                         # run as slave node
 
 # Workflow upload subcommand
-unilab workflow_upload -f <workflow.json> -n <name> --tags tag1 tag2
+unilab workflow upload -f <workflow.json> -n <name> --tags tag1 tag2
 
 # Tests
 pytest tests/                              # all tests

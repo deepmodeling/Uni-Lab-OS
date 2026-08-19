@@ -17,7 +17,7 @@ from unilabos.utils import logger
 
 def _job_execution_backend():
     try:
-        from unilabos.app.scheduler.integration import get_edge_backend
+        from unilabos.server.scheduler.integration import get_edge_backend
 
         return get_edge_backend()
     except ImportError:

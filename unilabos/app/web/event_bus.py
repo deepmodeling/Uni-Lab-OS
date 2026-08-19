@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from unilabos.app.scheduler.monitor import CHANNELS, MonitorBus, monitor_bus
+from unilabos.server.scheduler.monitor import CHANNELS, MonitorBus, monitor_bus
 
 
 def format_sse_event(event: Dict[str, Any]) -> str:

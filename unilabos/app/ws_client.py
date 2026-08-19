@@ -40,7 +40,7 @@ def _get_job_execution_backend():
     """Resolve the process-owned microbackend without creating an import cycle."""
 
     try:
-        from unilabos.app.scheduler.integration import get_edge_backend
+        from unilabos.server.scheduler.integration import get_edge_backend
 
         return get_edge_backend()
     except ImportError:
@@ -707,7 +707,7 @@ class MessageProcessor:
             return
 
         try:
-            from unilabos.app.scheduler.inventory.commands import (
+            from unilabos.server.scheduler.inventory.commands import (
                 backend_command_actor,
                 execute_command,
             )
@@ -732,7 +732,7 @@ class MessageProcessor:
     def _send_inventory_command_result(self, response: Dict[str, Any]) -> None:
         """经 WebSocket 与 HTTP 回调双路上报库存命令结果。"""
 
-        from unilabos.app.scheduler.inventory.schemas import (
+        from unilabos.server.scheduler.inventory.schemas import (
             CloudInventoryCommandResult,
         )
 
@@ -745,7 +745,7 @@ class MessageProcessor:
 
         def _http_callback():
             try:
-                from unilabos.app.scheduler.integration import (
+                from unilabos.server.scheduler.integration import (
                     report_http_inventory_command_result,
                 )
 

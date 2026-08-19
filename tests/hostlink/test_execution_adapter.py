@@ -13,7 +13,7 @@ from unilabos.app.execution_adapter import (
     get_execution_adapter,
     set_execution_adapter,
 )
-from unilabos.app.scheduler.backend import JobExecutionBackend
+from unilabos.server.scheduler.backend import JobExecutionBackend
 from unilabos.app.web.utils.host_utils import get_host_node_info
 from unilabos.app.ws_client import QueueItem, WebSocketClient
 from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime

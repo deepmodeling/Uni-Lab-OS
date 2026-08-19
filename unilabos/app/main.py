@@ -40,17 +40,16 @@ from unilabos.app.utils import cleanup_for_restart  # noqa: E402
 from unilabos.utils.banner_print import print_status, print_unilab_banner  # noqa: E402
 from unilabos.config.config import (  # noqa: E402
     BasicConfig,
-    EdgeControlConfig,
     HTTPConfig,
     load_config,
     resolve_host_node_name,
 )
-from unilabos.storage.migrations import (  # noqa: E402
+from unilabos.server.storage.migrations import (  # noqa: E402
     build_store_migration_manifest,
     validate_store_layout,
 )
-from unilabos.storage.paths import RuntimeStoragePaths  # noqa: E402
-from unilabos.storage.profiles import (  # noqa: E402
+from unilabos.server.storage.paths import RuntimeStoragePaths  # noqa: E402
+from unilabos.server.storage.profiles import (  # noqa: E402
     SchedulerAuthorityConflict,
     SchedulerAuthorityProfile,
     select_scheduler_authority_profile,
@@ -282,7 +281,7 @@ def configure_material_startup(args_dict: Dict[str, Any]) -> str:
 def configure_runtime_storage(
     args_dict: Dict[str, Any], *, working_dir: str | os.PathLike[str]
 ) -> tuple[RuntimeStoragePaths, SchedulerAuthorityProfile]:
-    """一次解析 Workflow/Inventory/Device/Edge Control 的权威路径。"""
+    """一次解析 Workflow/Inventory/Device 三类旧存储的权威路径。"""
 
     config: Dict[str, Any] = dict(args_dict)
     config["working_dir"] = working_dir
@@ -293,10 +292,7 @@ def configure_runtime_storage(
         if args_dict.get("edge_scheduler", False)
         else "backend_controlled"
     )
-    profile = select_scheduler_authority_profile(
-        requested_profile,
-        edge_control_enabled=False,
-    )
+    profile = select_scheduler_authority_profile(requested_profile)
     local_scheduler_enabled = bool(args_dict.get("edge_scheduler", False))
     if local_scheduler_enabled != profile.can_recover_local_workflow_task:
         raise SchedulerAuthorityConflict(
@@ -305,7 +301,6 @@ def configure_runtime_storage(
         )
     BasicConfig.runtime_storage_paths = paths
     BasicConfig.scheduler_authority_profile = profile.value
-    EdgeControlConfig.state_db = str(paths.edge_control_db)
     return paths, profile
 
 
@@ -731,46 +726,6 @@ def parse_args():
         default=500,
         help="Maximum number of automatic restarts in restart mode (default: 500)",
     )
-    # workflow upload subcommand
-    workflow_parser = subparsers.add_parser(
-        "workflow_upload",
-        aliases=["wf"],
-        help="Upload workflow from xdl/json/python files",
-    )
-    workflow_parser.add_argument(
-        "-f",
-        "--workflow_file",
-        type=str,
-        required=True,
-        help="Path to the workflow file (JSON format)",
-    )
-    workflow_parser.add_argument(
-        "-n",
-        "--workflow_name",
-        type=str,
-        default=None,
-        help="Workflow name, if not provided will use the name from file or filename",
-    )
-    workflow_parser.add_argument(
-        "--tags",
-        type=str,
-        nargs="*",
-        default=[],
-        help="Tags for the workflow (space-separated)",
-    )
-    workflow_parser.add_argument(
-        "--published",
-        action="store_true",
-        default=False,
-        help="Whether to publish the workflow (default: False)",
-    )
-    workflow_parser.add_argument(
-        "--description",
-        type=str,
-        default="",
-        help="Workflow description, used when publishing the workflow",
-    )
-
     # package subcommand: 社区设备包 inspect / upload
     package_parser = subparsers.add_parser(
         "package",
@@ -1174,8 +1129,6 @@ def main():
             os._exit(1)
         return
 
-    workflow_upload = args_dict.get("command") in ("workflow_upload", "wf")
-
     # ROS2 backend 用 HostLink 辅助发现；hostlink backend 则在同一 TCP 长连接上
     # 直接同步设备描述/状态和执行设备动作，不导入 ROS。
     is_slave = bool(args_dict.get("is_slave", False))
@@ -1191,7 +1144,7 @@ def main():
             )
 
     # 使用远程资源启动
-    if not workflow_upload and args_dict["use_remote_resource"]:
+    if args_dict["use_remote_resource"]:
         print_status("使用远程资源启动", "info")
         from unilabos.app.web import http_client
 
@@ -1243,7 +1196,7 @@ def main():
     print_unilab_banner(args_dict)
 
     # Step -1: 预读取 graph 中的 community.* class，并在 build_registry 前挂载社区设备包
-    if not check_mode and not workflow_upload:
+    if not check_mode:
         startup_json_preview = None
         graph_file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
         args_dict["_graph_file_path"] = graph_file_path
@@ -1346,10 +1299,8 @@ def main():
     else:
         print_status("本次启动注册表不报送云端，如果您需要联网调试，请在启动命令增加--upload_registry", "warning")
 
-    workflow_upload = args_dict.get("command") in ("workflow_upload", "wf")
-
     # 使用远程资源启动
-    if not workflow_upload and args_dict["use_remote_resource"]:
+    if args_dict["use_remote_resource"]:
         print_status("后续运行必须拥有一个实验室，请前往 https://leap-lab.bohrium.com 注册实验室！", "warning")
         os._exit(1)
     graph: nx.Graph
@@ -1464,7 +1415,7 @@ def main():
         if should_start_embedded_material_service(
             args_dict, is_host_mode=BasicConfig.is_host_mode
         ):
-            from unilabos.app.scheduler.integration import setup_edge_inventory
+            from unilabos.server.scheduler.integration import setup_edge_inventory
 
             inventory_path = runtime_storage_paths.inventory_db
             if inventory_path is None:
@@ -1478,7 +1429,7 @@ def main():
         if should_start_edge_scheduler(
             args_dict, is_host_mode=BasicConfig.is_host_mode
         ):
-            from unilabos.app.scheduler.integration import setup_edge_scheduler
+            from unilabos.server.scheduler.integration import setup_edge_scheduler
 
             _, edge_execution_backend = setup_edge_scheduler(
                 ws_client=comm_client,
@@ -1494,7 +1445,7 @@ def main():
                 "info",
             )
         elif authority_profile.can_execute_backend_command:
-            from unilabos.app.scheduler.integration import (
+            from unilabos.server.scheduler.integration import (
                 setup_job_execution_backend,
             )
 
@@ -1512,7 +1463,7 @@ def main():
             # ROS2 的 HostLink 仅是组网控制面。由微后端在 ROS backend
             # 启动/rclpy.init 之前持有 listener；HostNode 只在创建后挂接
             # 实时资源树，绝不再成为第二个网络生命周期所有者。
-            from unilabos.app.scheduler.host_network import (
+            from unilabos.server.scheduler.host_network import (
                 setup_host_network_service,
             )
             from unilabos.config.config import HostLinkConfig
@@ -1533,7 +1484,7 @@ def main():
         if args_dict["backend"] == "ros2":
             # 正常 Slave 必须在 rclpy.init 前拿到 Host 的 ROS policy；
             # --slave_no_host 才允许离线启动并后台重连。
-            from unilabos.app.scheduler.host_network import (
+            from unilabos.server.scheduler.host_network import (
                 require_slave_startup_device_ids,
                 setup_slave_network_client,
             )

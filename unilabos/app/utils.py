@@ -281,7 +281,7 @@ def cleanup_for_restart() -> bool:
     # Step 3: Stop the Edge providers before resetting process singletons.
     print_status("[Restart] Step 3: Stopping Edge providers...", "info")
     try:
-        from unilabos.app.scheduler.integration import shutdown_edge_services
+        from unilabos.server.scheduler.integration import shutdown_edge_services
 
         shutdown_edge_services()
         print_status("[Restart] Edge providers stopped", "info")

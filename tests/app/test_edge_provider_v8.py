@@ -10,24 +10,24 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import unilabos.app.ws_client as ws_module
-from unilabos.app.scheduler.api import create_scheduler_router
-from unilabos.app.scheduler.backend import JobExecutionBackend
-from unilabos.app.scheduler.inventory.service import InventoryService
-from unilabos.app.scheduler.inventory.site_spec import canonical_component_sites
-from unilabos.app.scheduler.inventory.store import InventoryStore
-from unilabos.app.scheduler.monitor import MonitorBus
-from unilabos.app.scheduler.service import EdgeScheduler
-from unilabos.app.scheduler.status_incidents import StatusIncidentManager
+from unilabos.server.scheduler.api import create_scheduler_router
+from unilabos.server.scheduler.backend import JobExecutionBackend
+from unilabos.server.scheduler.inventory.service import InventoryService
+from unilabos.server.scheduler.inventory.site_spec import canonical_component_sites
+from unilabos.server.scheduler.inventory.store import InventoryStore
+from unilabos.server.scheduler.monitor import MonitorBus
+from unilabos.server.scheduler.service import EdgeScheduler
+from unilabos.server.scheduler.status_incidents import StatusIncidentManager
 from unilabos.app.web.event_bus import monitor_bus as host_monitor_bus
-from unilabos.app.workflow_api import install_workflow_api
+from unilabos.server.workflow.api import install_workflow_api
 from unilabos.app.ws_client import DeviceActionManager, MessageProcessor
-from unilabos.workflow.models import WorkflowNodeWrite
-from unilabos.workflow.service import WorkflowService
-from unilabos.workflow.store import WorkflowStore
+from unilabos.server.workflow.models import WorkflowNodeWrite
+from unilabos.server.workflow.service import WorkflowService
+from unilabos.server.workflow.store import WorkflowStore
 
 
 def test_host_and_provider_publish_into_one_monitor_sequence():
-    from unilabos.app.scheduler.monitor import (
+    from unilabos.server.scheduler.monitor import (
         CHANNELS,
         monitor_bus as provider_monitor_bus,
     )

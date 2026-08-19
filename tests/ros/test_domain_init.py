@@ -44,7 +44,7 @@ def test_old_rclpy_falls_back_to_environment_path(monkeypatch) -> None:
 
 
 def test_ros_host_starts_microbackend_network_before_rclpy(monkeypatch) -> None:
-    from unilabos.app.scheduler import host_network
+    from unilabos.server.scheduler import host_network
 
     events = []
 
@@ -107,7 +107,7 @@ def test_ros_host_starts_microbackend_network_before_rclpy(monkeypatch) -> None:
 
 
 def test_ros_slave_gets_hostlink_policy_before_rclpy(monkeypatch) -> None:
-    from unilabos.app.scheduler import host_network
+    from unilabos.server.scheduler import host_network
 
     events = []
     device_config = object()

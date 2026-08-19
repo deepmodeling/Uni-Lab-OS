@@ -13,7 +13,7 @@ from unilabos.app.ws_client import (
     MessageProcessor,
     QueueItem,
 )
-from unilabos.app.scheduler.backend import JobExecutionBackend
+from unilabos.server.scheduler.backend import JobExecutionBackend
 from unilabos.registry.action_policy import (
     SUCCESS_TYPE_NORMAL,
     SUCCESS_TYPE_OPERATOR_INTERVENTION,

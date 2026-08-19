@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from unilabos.app.scheduler.host_network import (
+from unilabos.server.scheduler.host_network import (
     SERVICE_OWNER,
     get_host_network_service,
     require_slave_startup_device_ids,
@@ -132,7 +132,7 @@ def isolated_network(monkeypatch):
 def test_host_microbackend_owns_listener_material_and_ros(monkeypatch) -> None:
     from fastapi.testclient import TestClient
 
-    from unilabos.app.scheduler.api import create_app
+    from unilabos.server.scheduler.api import create_app
     from unilabos.app.web.client import http_client
 
     material_calls: list[dict[str, object]] = []

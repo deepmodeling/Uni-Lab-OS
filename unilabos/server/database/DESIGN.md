@@ -114,6 +114,23 @@
   `supersedes_event_uuid` 关联，不覆盖原始历史。
 - Site category 仅供前端画布识别，不参与 materials writer 的占用准入。
 
+## 四库业务接口
+
+四个数据库都只通过各自 Repository 和 Service 写入，并提供同构的 FastAPI、
+Local client 与 HTTP client。公共安装入口是
+`unilabos.server.api.install_server_apis`，一次挂载以下命名空间：
+
+| 数据库 | HTTP 前缀 | 写入语义 |
+| --- | --- | --- |
+| `runtime.db` | `/api/v1/runtime` | session/endpoint upsert、命令和 job 状态机、gate 与可靠 outbox |
+| `materials.db` | `/api/v1/materials` | 模板和物料聚合 CRUD、move、snapshot 与 ledger ACK |
+| `telemetry.db` | `/api/v1/telemetry` | event ingest 推进 cursor/latest，另提供只读查询 |
+| `history.db` | `/api/v1/history` | payload 保存、event 追加和人工 replacement chain |
+
+`telemetry_event`、`history_event` 和 runtime outbox 是追加式数据，不提供任意
+PUT/PATCH/DELETE。Runtime job 更新必须经过合法 transition/error gate；这些约束在
+Local 和 HTTP 两种调用方式下保持一致。
+
 ## materials authority 实现入口
 
 `materials.db` 已经通过下列分层接入运行时，不再要求调用方直接拼 SQL：

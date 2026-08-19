@@ -30,6 +30,7 @@ install_http_tracing(app)
 pages = None
 edge_routes_mounted = False
 materials_routes_mounted = False
+server_routes_mounted = False
 
 # noinspection PyTypeChecker
 app.add_middleware(
@@ -78,7 +79,7 @@ def setup_server() -> FastAPI:
     Returns:
         FastAPI: 配置好的FastAPI应用实例
     """
-    global pages, edge_routes_mounted, materials_routes_mounted
+    global pages, edge_routes_mounted, materials_routes_mounted, server_routes_mounted
 
     # 创建页面路由
     if pages is None:
@@ -108,6 +109,20 @@ def setup_server() -> FastAPI:
         except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
             error(f"[Web] 挂载微后端执行路由失败: {exc}")
 
+    if not server_routes_mounted:
+        try:
+            from unilabos.server.api import install_server_apis
+            from unilabos.server.composition import get_server_services
+
+            services = get_server_services()
+            if services is not None:
+                install_server_apis(app, services)
+                server_routes_mounted = True
+                materials_routes_mounted = True
+        except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
+            error(f"[Web] 挂载微后端四库 API 失败: {exc}")
+
+    # 兼容仅单独装配 MaterialsService 的测试或嵌入式调用。
     if not materials_routes_mounted:
         try:
             from unilabos.server.api.materials import install_materials_api

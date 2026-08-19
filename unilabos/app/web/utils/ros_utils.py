@@ -7,8 +7,6 @@ ROS 工具函数模块
 import traceback
 from typing import Dict, Any
 
-from unilabos.app.web.utils.action_utils import get_action_info
-
 # 存储 ROS 节点信息的全局变量
 ros_node_info = {"online_devices": {}, "device_topics": {}, "device_actions": {}}
 
@@ -34,7 +32,14 @@ def update_ros_node_info() -> Dict[str, Any]:
     global ros_node_info
     result = {"registered_devices": {}, "device_topics": {}, "device_actions": {}}
 
+    from unilabos.config.config import BasicConfig
+
+    if BasicConfig.backend != "ros2":
+        ros_node_info = result
+        return result
+
     try:
+        from unilabos.app.web.utils.action_utils import get_action_info
         from unilabos.ros.nodes.base_device_node import registered_devices
         from unilabos.ros.nodes.presets.host_node import HostNode
 

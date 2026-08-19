@@ -17,7 +17,6 @@ from jinja2 import Environment, FileSystemLoader
 
 from unilabos.config.config import BasicConfig
 from unilabos.registry.registry import lab_registry
-from unilabos.ros.msgs.message_converter import msg_converter_manager
 from unilabos.utils.log import error, debug
 from unilabos.utils.type_check import TypeEncoder
 from unilabos.app.web.utils.device_utils import get_registry_info
@@ -27,6 +26,18 @@ from unilabos.app.web.utils.ros_utils import get_ros_node_info, update_ros_node_
 # 设置Jinja2模板环境
 template_dir = Path(__file__).parent / "templates"
 env = Environment(loader=FileSystemLoader(template_dir))
+
+
+def _get_message_converter_manager():
+    """Load the optional ROS message catalogue only in a ROS2 environment."""
+
+    if BasicConfig.backend != "ros2":
+        return None
+    try:
+        from unilabos.ros.msgs.message_converter import msg_converter_manager
+    except ImportError:
+        return None
+    return msg_converter_manager
 
 
 def setup_web_pages(router: APIRouter) -> None:
@@ -106,6 +117,7 @@ def setup_web_pages(router: APIRouter) -> None:
                     )
 
             # 获取导入的模块（初始数据）
+            msg_converter_manager = _get_message_converter_manager()
             if msg_converter_manager:
                 modules["names"] = msg_converter_manager.list_modules()
                 all_classes = [i for i in msg_converter_manager.list_classes() if "." in i]

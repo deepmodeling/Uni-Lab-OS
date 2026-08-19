@@ -7,9 +7,8 @@
 import time
 from typing import Dict, Any
 
+from unilabos.app.execution_adapter import get_execution_adapter
 from unilabos.config.config import BasicConfig
-from unilabos.ros.nodes.presets.host_node import HostNode
-from unilabos.app.web.utils.action_utils import get_action_info
 
 
 def get_host_node_info() -> Dict[str, Any]:
@@ -21,14 +20,21 @@ def get_host_node_info() -> Dict[str, Any]:
     Returns:
         Dict: 包含主机节点信息的字典
     """
-    host_info = {"available": False, "devices": {}, "subscribed_topics": [], "action_clients": {}}
+    host_info = {
+        "available": False,
+        "host_node_id": BasicConfig.host_node_name,
+        "devices": {},
+        "subscribed_topics": [],
+        "action_clients": {},
+    }
     if not BasicConfig.is_host_mode:
         return host_info
     # 尝试获取HostNode实例，设置超时为0秒
-    host_node = HostNode.get_instance(0)
+    host_node = get_execution_adapter(0)
     if not host_node:
         return host_info
     host_info["available"] = True
+    host_info["host_node_id"] = host_node.device_id
     host_info["devices"] = {
         edge_device_id: {
             "namespace": namespace,
@@ -40,9 +46,30 @@ def get_host_node_info() -> Dict[str, Any]:
     }
     # 获取已订阅的主题
     host_info["subscribed_topics"] = sorted(list(host_node._subscribed_topics))
-    # 获取动作客户端信息
-    for action_id, client in host_node._action_clients.items():
-        host_info["action_clients"][action_id] = get_action_info(client, full_name=action_id)
+    action_clients = getattr(host_node, "_action_clients", {})
+    if action_clients:
+        # ROS2 继续展示真实 DDS ActionClient 信息；延迟导入避免 HostLink
+        # backend 触发 rclpy/unilabos.ros 依赖。
+        from unilabos.app.web.utils.action_utils import get_action_info
+
+        for action_id, client in action_clients.items():
+            host_info["action_clients"][action_id] = get_action_info(
+                client,
+                full_name=action_id,
+            )
+    else:
+        # HostLink 没有 ROS ActionClient，从同一份动作注册映射展示能力。
+        for device_id, mappings in host_node._action_value_mappings.items():
+            for action_name, mapping in mappings.items():
+                if action_name.startswith("_execute_driver_command"):
+                    continue
+                action_id = f"/devices/{device_id}/{action_name}"
+                host_info["action_clients"][action_id] = {
+                    "type_name": str(mapping.get("type", "")),
+                    "type_name_convert": str(mapping.get("type", "")),
+                    "action_path": action_id,
+                    "goal_info": mapping.get("schema", {}),
+                }
 
     # 获取设备状态
     host_info["device_status"] = host_node.device_status

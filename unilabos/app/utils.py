@@ -5,10 +5,15 @@ UniLabOS 应用工具函数
 """
 
 import glob
+import gc
 import json
 import os
 import shutil
 import sys
+import threading
+import time
+
+from unilabos.utils.banner_print import print_status
 
 
 _PATCH_MARKER = "# UniLabOS DLL Patch"
@@ -225,15 +230,6 @@ def patch_rclpy_dll_windows():
         return
 
     _print_restart_banner(patched)
-
-
-patch_rclpy_dll_windows()
-
-import gc
-import threading
-import time
-
-from unilabos.utils.banner_print import print_status
 
 
 def cleanup_for_restart() -> bool:

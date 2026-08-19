@@ -267,8 +267,8 @@ def parse_args():
         nargs="*",
         default=None,
         help=(
-            "Application bridges. Defaults are backend-specific: ros2 enables "
-            "websocket and fastapi; hostlink enables none. Pass the flag with "
+            "Application bridges. Host modes enable websocket and fastapi by "
+            "default; HostLink slaves enable none. Pass the flag with "
             "no values to disable all bridges explicitly."
         ),
     )
@@ -739,6 +739,11 @@ def main():
         parser.error(str(exc))
     args_dict["backend"] = backend_selection.name
     args_dict["app_bridges"] = list(backend_selection.app_bridges)
+    if backend_selection.name == "ros2":
+        # HostLink direct backend must not probe/import rclpy as a side effect.
+        from unilabos.app.utils import patch_rclpy_dll_windows
+
+        patch_rclpy_dll_windows()
 
     # 处理 HTTP 客户端子命令（login, logout, whoami, config, lab, material, workflow）
     # 这些命令不需要加载完整的 UniLab-OS 环境，提前处理并退出

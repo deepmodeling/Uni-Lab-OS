@@ -16,6 +16,8 @@ class BasicConfig:
     config_path = ""
     is_host_mode = True
     slave_no_host = False  # 是否跳过rclient.wait_for_service()
+    # 可重命名的 HostNode 运行时实例；注册表类型仍固定为 host_node。
+    host_node_name = "host_node"
     upload_registry = False
     machine_name = "undefined"
     vis_2d_enable = False

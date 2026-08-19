@@ -62,8 +62,8 @@ BACKEND_PROFILES: dict[str, BackendProfile] = {
         display_name="HostLink",
         module="unilabos.hostlink.main_hostlink_run",
         description="HostLink TCP 分布式 Python 驱动运行时（不启动 rclpy/DDS）",
-        default_app_bridges=(),
-        supported_app_bridges=(),
+        default_app_bridges=("websocket", "fastapi"),
+        supported_app_bridges=("websocket", "fastapi"),
         supports_slave=True,
         supports_visualization=False,
     ),
@@ -154,11 +154,16 @@ def resolve_backend_selection(
 
     name = normalize_backend_name(backend)
     profile = BACKEND_PROFILES[name]
-    bridges = (
-        profile.default_app_bridges
-        if app_bridges is None
-        else tuple(dict.fromkeys(str(item).strip().lower() for item in app_bridges))
-    )
+    if name == "hostlink" and is_slave and app_bridges is None:
+        bridges = ()
+    else:
+        bridges = (
+            profile.default_app_bridges
+            if app_bridges is None
+            else tuple(
+                dict.fromkeys(str(item).strip().lower() for item in app_bridges)
+            )
+        )
     bridges = tuple(item for item in bridges if item)
     unsupported_bridges = sorted(set(bridges) - set(profile.supported_app_bridges))
     if unsupported_bridges:
@@ -171,6 +176,11 @@ def resolve_backend_selection(
         raise BackendConfigurationError(
             f"backend '{name}' 不支持 --is_slave；"
             "请使用 backend 'hostlink' 或 'ros2'"
+        )
+    if name == "hostlink" and is_slave and bridges:
+        raise BackendConfigurationError(
+            "backend 'hostlink' 的 Slave 不启动 websocket/fastapi 应用桥；"
+            "应用桥只属于 Host"
         )
     if visual != "disable" and not profile.supports_visualization:
         raise BackendConfigurationError(

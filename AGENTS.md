@@ -16,7 +16,7 @@ unilab --graph <graph.json> --config <config.py> --backend ros2
 unilab --graph <graph.json> --config <config.py> --backend hostlink  # no ROS2 runtime
 
 # Common CLI flags
-unilab --app_bridges websocket fastapi    # communication bridges
+unilab --legacy                          # old Backend WS + HTTP API compatibility
 unilab --test_mode                        # simulate hardware, no real execution
 unilab --check_mode                       # CI validation of registry imports
 unilab --skip_env_check                   # skip auto-install of dependencies

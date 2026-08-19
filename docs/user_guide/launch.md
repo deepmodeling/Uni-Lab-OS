@@ -18,13 +18,12 @@ options:
   --backend {hostlink,ros2}
                         Communication backend: hostlink (distributed, no DDS) or
                         ros2 (default).
-  --app_bridges [APP_BRIDGES ...]
-                        Application bridges. Defaults depend on the selected backend.
+  --legacy              兼容旧 Backend 的完整载荷 WebSocket 与旧 HTTP API
   --is_slave, --is-slave
                         Run the backend as slave node (without host privileges).
   --slave_no_host, --slave-no-host
                         Skip waiting for host service in slave mode
-  --upload_registry     Upload registry information when starting unilab
+  --upload_registry     通过旧 Backend HTTP API 上报注册表（需要 --legacy）
   --config CONFIG       Configuration file path, supports .py format Python config files
   --port_management PORT_MANAGEMENT, --port-management PORT_MANAGEMENT, --port PORT_MANAGEMENT
                         管理端 HTTP/Web API 与主微前端端口，默认 8002
@@ -165,19 +164,12 @@ unilab -g graph.json --backend ros2
 `--backend basic` 独立选择。Dora 代码仅保留作实验，不属于公开部署 backend。
 旧名称 `simple`、`ros` 以及 `basic`、`dora` 都不会被 CLI 接受。
 
-## 端云桥接 `--app_bridges`
+## 端云通信与 `--legacy`
 
-ROS2 backend 提供 WebSocket、FastAPI (HTTP) 两种端云通信方式：
-
-- **WebSocket**：负责实时通信和任务下发
-- **FastAPI**：负责端对云物料更新和 HTTP API
-
-`hostlink` 当前没有兼容的 HostNode bridge，因此默认不加载这些桥，也会拒绝
-显式传入不支持的组合。若要让 ROS2 也不启动桥，可以使用空参数：
-
-```bash
-unilab -g graph.json --backend ros2 --app_bridges
-```
+Host 的端云传输固定使用 WebSocket：正常模式只发送轻量变更通知，正文通过 HTTP
+拉取。Host 本地微后端 HTTP API 固定启动，不再作为可选 bridge。连接仍使用完整
+WebSocket payload 和 `/lab/*` 等旧 HTTP API 的旧 Backend 时，显式增加
+`--legacy`；配置文件不再保存协议或 bridge 选择。
 
 ## 分布式组网
 
@@ -267,13 +259,13 @@ Host/Slave 进程通信。需要 Web/API 时仍使用 `ros2` backend。
 
 ```bash
 # 使用组态图启动，上传注册表
-unilab --ak your_ak --sk your_sk -g path/to/graph.json --upload_registry
+unilab --legacy --ak your_ak --sk your_sk -g path/to/graph.json --upload_registry
 
-# 使用远程资源启动
-unilab --ak your_ak --sk your_sk
+# 从旧 Backend 获取启动图
+unilab --legacy --ak your_ak --sk your_sk
 
-# 更新注册表
-unilab --ak your_ak --sk your_sk --complete_registry
+# 本地完整校验注册表
+unilab --check_mode --complete_registry --skip_env_check
 
 # 启动从站模式
 unilab --ak your_ak --sk your_sk --is_slave

@@ -141,14 +141,13 @@ def create_scheduler_router(
 ) -> APIRouter:
     """调度器 REST 路由（可挂独立 app，也可挂主进程 web server）。
 
-    ``get_scheduler`` 动态取实例：主进程里 ``setup_edge_scheduler`` 的装配时机
-    可能晚于 web server 启动，绑定 getter 而非实例。
+    ``get_scheduler`` 动态取实例；后端受控模式固定返回 ``None``，避免把
+    FastAPI 路由误当成本地 DAG 调度入口。
     ``get_backend`` 提供 JobExecutionBackend（本地异常决策审批入口）；
     不传时 error-decisions 端点返回 503。
-    ``get_device_state`` 提供 DeviceStateStore；不传时退回
+    ``get_device_state`` 提供 telemetry latest 投影；不传时退回
     ``get_backend().device_state``，都没有则 device-state 端点 503。
-    ``get_history`` 提供 WorkflowHistoryStore；不传时退回调度器内部
-    ``_history``，都没有则 history 端点 503。
+    ``get_history`` 仅用于旧查询投影；未显式提供时 history 端点返回 503。
     """
     router = APIRouter(prefix="/api/v1", tags=["edge-scheduler"])
 

@@ -19,4 +19,5 @@ def test_microbackend_namespaces_live_under_server() -> None:
     assert (server_root / "workflow" / "api.py").is_file()
     assert (server_root / "scheduler" / "workflow_execution.py").is_file()
     assert (server_root / "scheduler" / "dag" / "dag_executor.py").is_file()
-    assert (server_root / "storage" / "paths.py").is_file()
+    assert (server_root / "composition.py").is_file()
+    assert not list((server_root / "storage").glob("*.py"))

@@ -1,5 +1,4 @@
-"""微后端工作流定义、转换、上传、CRUD 与持久化。
+"""微后端工作流定义、转换与上传协议。
 
-工作流的执行调度不在本包；对应实现位于
-``unilabos.server.scheduler.workflow_execution``。
+工作流执行图由后端调度器持有；Edge 仅接收已经选定 route 的 job 命令。
 """

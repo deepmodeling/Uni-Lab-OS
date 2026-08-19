@@ -244,6 +244,11 @@ class TelemetryService:
     ) -> Optional[DeviceStateLatestRecord]:
         return self.repository.get_device_state(endpoint_uuid, device_uuid)
 
+    def list_device_states(
+        self, endpoint_uuid: Optional[str] = None
+    ) -> list[DeviceStateLatestRecord]:
+        return self.repository.list_device_states(endpoint_uuid)
+
     def query_events(
         self, query: Optional[TelemetryEventQuery] = None, **filters: object
     ) -> list[TelemetryEventRecord]:

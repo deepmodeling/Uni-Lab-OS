@@ -24,7 +24,7 @@ except ImportError:  # pragma: no cover - exercised on Windows CI/runtime
 
 from pydantic import ValidationError
 
-from unilabos.server.storage.profiles import SchedulerAuthorityProfile
+from unilabos.server.scheduler.authority import SchedulerAuthorityProfile
 from unilabos.server.workflow.graph_validation import GraphValidationError, validate_graph
 from unilabos.server.workflow.json_codec import encode_json, strict_json_equal
 from unilabos.server.workflow.models import (

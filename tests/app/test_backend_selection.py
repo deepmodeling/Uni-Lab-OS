@@ -18,7 +18,7 @@ from unilabos.app.backend import (
     resolve_backend_selection,
     start_backend,
 )
-from unilabos.app.main import parse_args, should_start_edge_scheduler
+from unilabos.app.main import configure_server_databases, parse_args
 from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink import main_hostlink_run
@@ -139,21 +139,41 @@ def test_workflow_upload_uses_grouped_cli_only() -> None:
         parser.parse_args(["workflow_upload", "-f", "workflow.json"])
 
 
-def test_backend_controlled_execution_is_the_default(monkeypatch) -> None:
-    parsed = parse_args().parse_args([])
-    assert parsed.edge_scheduler is False
-    assert BasicConfig.scheduler_authority_profile == "backend_controlled"
-    assert not should_start_edge_scheduler(vars(parsed), is_host_mode=True)
+def test_local_scheduler_cli_is_removed() -> None:
+    parser = parse_args()
+    parsed = parser.parse_args([])
+    assert not hasattr(parsed, "edge_scheduler")
+    assert not hasattr(parsed, "scheduler_authority_profile")
 
-    monkeypatch.setattr(
-        BasicConfig,
-        "scheduler_authority_profile",
-        "local_scheduler",
+    for arguments in (
+        ["--edge-scheduler"],
+        ["--scheduler-authority-profile", "local_scheduler"],
+        ["--edge-inventory-db", "inventory.db"],
+    ):
+        with pytest.raises(SystemExit):
+            parser.parse_args(arguments)
+
+
+def test_server_database_cli_resolves_only_the_four_new_files(tmp_path) -> None:
+    parsed = parse_args().parse_args(
+        [
+            "--server-database-root",
+            str(tmp_path),
+            "--runtime-db",
+            "control.db",
+        ]
     )
-    assert should_start_edge_scheduler(
-        {"edge_scheduler": True},
-        is_host_mode=True,
-    )
+
+    paths = configure_server_databases(vars(parsed), working_dir=tmp_path)
+
+    assert paths.runtime_db == (tmp_path / "control.db").resolve()
+    assert {path.name for path in paths.as_mapping().values()} == {
+        "control.db",
+        "materials.db",
+        "telemetry.db",
+        "history.db",
+    }
+    assert list(tmp_path.glob("*.db")) == []
 
 
 def test_start_backend_imports_only_selected_profile(monkeypatch) -> None:

@@ -1,4 +1,4 @@
-"""UniLabOS 微后端的数据库、工作流、调度与兼容存储实现。"""
+"""UniLabOS 微后端的四库、工作流协议与执行桥。"""
 
 from unilabos.server.database import (
     DATABASE_SPECS,
@@ -14,6 +14,19 @@ from unilabos.server.database import (
     initialize_database,
     validate_distinct_database_paths,
 )
+from unilabos.server.composition import ServerServices
+from unilabos.server.repositories import (
+    HistoryRepository,
+    MaterialsRepository,
+    RuntimeRepository,
+    TelemetryRepository,
+)
+from unilabos.server.services import (
+    HistoryService,
+    MaterialsService,
+    RuntimeService,
+    TelemetryService,
+)
 
 __all__ = [
     "DATABASE_SPECS",
@@ -21,11 +34,20 @@ __all__ = [
     "DatabaseIdentityConflict",
     "DatabaseSpec",
     "HISTORY_DATABASE",
+    "HistoryRepository",
+    "HistoryService",
     "MATERIALS_DATABASE",
+    "MaterialsRepository",
+    "MaterialsService",
     "RUNTIME_DATABASE",
+    "RuntimeRepository",
+    "RuntimeService",
+    "ServerServices",
     "ServerDatabasePaths",
     "SchemaDriftError",
     "TELEMETRY_DATABASE",
+    "TelemetryRepository",
+    "TelemetryService",
     "initialize_database",
     "validate_distinct_database_paths",
 ]

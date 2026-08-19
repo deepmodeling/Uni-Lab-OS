@@ -161,6 +161,23 @@ class TelemetryRepository:
         ).fetchone()
         return self._state(row) if row is not None else None
 
+    def list_device_states(
+        self, endpoint_uuid: Optional[str] = None
+    ) -> list[DeviceStateLatestRecord]:
+        if endpoint_uuid is None:
+            rows = self.connection.execute(
+                "SELECT * FROM device_state_latest ORDER BY endpoint_uuid,device_uuid"
+            )
+        else:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM device_state_latest
+                WHERE endpoint_uuid=? ORDER BY device_uuid
+                """,
+                (endpoint_uuid,),
+            )
+        return [self._state(row) for row in rows]
+
     def upsert_device_state(
         self, record: DeviceStateLatestRecord
     ) -> DeviceStateLatestRecord:

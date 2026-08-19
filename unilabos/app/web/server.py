@@ -15,7 +15,6 @@ from unilabos.utils.log import info, error
 from unilabos.utils.tracing import install_http_tracing
 from unilabos.app.web.api import setup_api_routes
 from unilabos.app.web.pages import setup_web_pages
-from unilabos.config.config import BasicConfig
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -29,10 +28,8 @@ install_http_tracing(app)
 
 # 创建页面路由
 pages = None
-workflow_routes_mounted = False
 edge_routes_mounted = False
-resource_contract_routes_mounted = False
-workflow_history_projection = None
+materials_routes_mounted = False
 
 # noinspection PyTypeChecker
 app.add_middleware(
@@ -81,8 +78,7 @@ def setup_server() -> FastAPI:
     Returns:
         FastAPI: 配置好的FastAPI应用实例
     """
-    global pages, edge_routes_mounted, resource_contract_routes_mounted
-    global workflow_history_projection, workflow_routes_mounted
+    global pages, edge_routes_mounted, materials_routes_mounted
 
     # 创建页面路由
     if pages is None:
@@ -91,84 +87,38 @@ def setup_server() -> FastAPI:
     # 设置API路由
     setup_api_routes(app)
 
-    # Workflow 定义/运行使用同一 Workflow Authority；Scheduler 路由只提供
-    # 执行与可观测面，避免 /workflows 的定义和运行语义互相覆盖。
-    if not workflow_routes_mounted and BasicConfig.working_dir:
-        try:
-            from unilabos.server.workflow.api import install_workflow_api
-            from unilabos.server.storage.paths import RuntimeStoragePaths
-            from unilabos.server.storage.profiles import SchedulerAuthorityProfile
-            from unilabos.server.workflow.composition import compose_workflow_runtime
-
-            storage_paths = BasicConfig.runtime_storage_paths
-            if storage_paths is None:
-                storage_paths = RuntimeStoragePaths.resolve(
-                    {"working_dir": BasicConfig.working_dir}
-                )
-                BasicConfig.runtime_storage_paths = storage_paths
-            workflow_service = compose_workflow_runtime(
-                storage_paths,
-                authority_profile=SchedulerAuthorityProfile.parse(
-                    BasicConfig.scheduler_authority_profile
-                ),
-            )
-            from unilabos.server.scheduler.integration import bind_workflow_executor
-
-            bind_workflow_executor(workflow_service)
-            install_workflow_api(app, workflow_service)
-
-            from unilabos.server.scheduler.history import WorkflowHistoryStore
-
-            workflow_history_projection = WorkflowHistoryStore(
-                str(storage_paths.workflow_db), read_only=True
-            )
-            workflow_routes_mounted = True
-        except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
-            error(f"[Web] 挂载 Workflow Provider 失败: {exc}")
-
-    # Scheduler / Inventory / Backend-shaped Resource / Lab 共用主进程组合根。
+    # Scheduler 路由只暴露微后端执行观测面；本地不创建 Workflow/DAG 权威。
     if not edge_routes_mounted:
         try:
             from unilabos.server.scheduler.api import create_scheduler_router
             from unilabos.server.scheduler.integration import (
                 get_edge_backend,
                 get_edge_scheduler,
-                get_inventory_service,
             )
 
             app.include_router(
                 create_scheduler_router(
                     get_edge_scheduler,
                     get_edge_backend,
-                    get_history=lambda: workflow_history_projection,
+                    get_history=lambda: None,
                     include_execution_shaped_workflow_routes=False,
                 )
             )
-            inventory_service = get_inventory_service()
-            if inventory_service is not None:
-                from unilabos.server.scheduler.inventory.backend_api import (
-                    install_backend_resource_api,
-                )
-                from unilabos.server.scheduler.inventory.backend_contract import (
-                    BackendResourceService,
-                )
-                from unilabos.server.scheduler.inventory.api import (
-                    create_legacy_material_router,
-                    create_router as create_inventory_router,
-                )
-                from unilabos.server.scheduler.inventory.layout import create_lab_router
-
-                if not resource_contract_routes_mounted:
-                    install_backend_resource_api(
-                        app, BackendResourceService(inventory_service.store)
-                    )
-                    resource_contract_routes_mounted = True
-                app.include_router(create_inventory_router(inventory_service))
-                app.include_router(create_legacy_material_router(inventory_service))
-                app.include_router(create_lab_router(inventory_service))
             edge_routes_mounted = True
         except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
-            error(f"[Web] 挂载 Edge Providers 失败: {exc}")
+            error(f"[Web] 挂载微后端执行路由失败: {exc}")
+
+    if not materials_routes_mounted:
+        try:
+            from unilabos.server.api.materials import install_materials_api
+            from unilabos.server.scheduler.integration import get_materials_service
+
+            materials_service = get_materials_service()
+            if materials_service is not None:
+                install_materials_api(app, materials_service)
+                materials_routes_mounted = True
+        except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
+            error(f"[Web] 挂载 Materials Provider 失败: {exc}")
 
     # 设置页面路由
     try:

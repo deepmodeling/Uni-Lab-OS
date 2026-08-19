@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Dict, Any, List
 import networkx as nx
 import yaml
@@ -44,15 +45,8 @@ from unilabos.config.config import (  # noqa: E402
     load_config,
     resolve_host_node_name,
 )
-from unilabos.server.storage.migrations import (  # noqa: E402
-    build_store_migration_manifest,
-    validate_store_layout,
-)
-from unilabos.server.storage.paths import RuntimeStoragePaths  # noqa: E402
-from unilabos.server.storage.profiles import (  # noqa: E402
-    SchedulerAuthorityConflict,
-    SchedulerAuthorityProfile,
-    select_scheduler_authority_profile,
+from unilabos.server.database import (  # noqa: E402
+    ServerDatabasePaths,
 )
 
 # Global restart flags (used by ws_client and web/server)
@@ -278,30 +272,28 @@ def configure_material_startup(args_dict: Dict[str, Any]) -> str:
     return mode
 
 
-def configure_runtime_storage(
+def configure_server_databases(
     args_dict: Dict[str, Any], *, working_dir: str | os.PathLike[str]
-) -> tuple[RuntimeStoragePaths, SchedulerAuthorityProfile]:
-    """一次解析 Workflow/Inventory/Device 三类旧存储的权威路径。"""
+) -> ServerDatabasePaths:
+    """一次解析微后端四库；仅 Host 组合根会实际打开数据库。"""
 
-    config: Dict[str, Any] = dict(args_dict)
-    config["working_dir"] = working_dir
-    paths = RuntimeStoragePaths.resolve(config)
-    validate_store_layout(build_store_migration_manifest(paths))
-    requested_profile = args_dict.get("scheduler_authority_profile") or (
-        "local_scheduler"
-        if args_dict.get("edge_scheduler", False)
-        else "backend_controlled"
+    root = str(
+        args_dict.get("server_database_root")
+        or (Path(working_dir).expanduser() / ".unilabos")
     )
-    profile = select_scheduler_authority_profile(requested_profile)
-    local_scheduler_enabled = bool(args_dict.get("edge_scheduler", False))
-    if local_scheduler_enabled != profile.can_recover_local_workflow_task:
-        raise SchedulerAuthorityConflict(
-            "--edge-scheduler requires local_scheduler/offline_recovery; "
-            "backend_controlled must run without the local DAG scheduler"
-        )
-    BasicConfig.runtime_storage_paths = paths
-    BasicConfig.scheduler_authority_profile = profile.value
-    return paths, profile
+    overrides = {
+        key: value
+        for key, value in {
+            "runtime": args_dict.get("runtime_db"),
+            "materials": args_dict.get("materials_db"),
+            "telemetry": args_dict.get("telemetry_db"),
+            "history": args_dict.get("history_db"),
+        }.items()
+        if value is not None and str(value).strip()
+    }
+    paths = ServerDatabasePaths.resolve(root, overrides)
+    BasicConfig.server_database_paths = paths
+    return paths
 
 
 def should_start_embedded_material_service(
@@ -311,19 +303,6 @@ def should_start_embedded_material_service(
         is_host_mode
         and HTTPConfig.material_source in {"microbackend", "auto"}
         and args_dict.get("_material_service_mode") == "embedded"
-    )
-
-
-def should_start_edge_scheduler(
-    args_dict: Dict[str, Any], *, is_host_mode: bool
-) -> bool:
-    profile = SchedulerAuthorityProfile.parse(
-        BasicConfig.scheduler_authority_profile
-    )
-    return (
-        is_host_mode
-        and profile.can_recover_local_workflow_task
-        and bool(args_dict.get("edge_scheduler", False))
     )
 
 
@@ -395,52 +374,35 @@ def parse_args():
         default=None,
         help="External material Provider API base.",
     )
-    scheduler_group = parser.add_mutually_exclusive_group()
-    scheduler_group.add_argument(
-        "--edge_scheduler",
-        dest="edge_scheduler",
-        action="store_true",
-        default=False,
-        help="Explicitly enable the embedded local Scheduler Provider.",
-    )
-    scheduler_group.add_argument(
-        "--no_edge_scheduler",
-        dest="edge_scheduler",
-        action="store_false",
-        help="Disable the embedded Scheduler Provider.",
+    parser.add_argument(
+        "--server_database_root",
+        "--server-database-root",
+        default="~/.unilabos",
+        help="Directory containing runtime/materials/telemetry/history SQLite files.",
     )
     parser.add_argument(
-        "--scheduler_authority_profile",
-        choices=[item.value for item in SchedulerAuthorityProfile],
+        "--runtime_db",
+        "--runtime-db",
         default="",
-        help="Scheduler authority profile; default is backend_controlled.",
+        help="Optional runtime.db path override.",
     )
     parser.add_argument(
-        "--edge_scheduler_ordering_url",
-        type=str,
+        "--materials_db",
+        "--materials-db",
         default="",
-        help="Optional remote ordering service; empty uses stable local ordering.",
+        help="Optional materials.db path override.",
     )
     parser.add_argument(
-        "--edge_inventory_db",
-        "--material_db",
-        dest="edge_inventory_db",
-        default="~/.unilabos/inventory.db",
-        help="Host Inventory SQLite path.",
+        "--telemetry_db",
+        "--telemetry-db",
+        default="",
+        help="Optional telemetry.db path override.",
     )
     parser.add_argument(
-        "--edge_device_state_db",
-        "--device_state_db",
-        dest="edge_device_state_db",
-        default="~/.unilabos/device_state.db",
-        help="Device telemetry SQLite path; 'off' disables persistence.",
-    )
-    parser.add_argument(
-        "--edge_workflow_history_db",
-        "--workflow_history_db",
-        dest="edge_workflow_history_db",
-        default="~/.unilabos/workflow_history.db",
-        help="Workflow Authority SQLite path.",
+        "--history_db",
+        "--history-db",
+        default="",
+        help="Optional history.db path override.",
     )
     parser.add_argument(
         "--is_slave",
@@ -1186,7 +1148,7 @@ def main():
     )
 
     configure_material_startup(args_dict)
-    runtime_storage_paths, authority_profile = configure_runtime_storage(
+    server_database_paths = configure_server_databases(
         args_dict, working_dir=working_dir
     )
 
@@ -1259,7 +1221,13 @@ def main():
         registry_paths=args_dict["registry_path"],
         devices_dirs=devices_dirs,
         community_namespaces=args_dict.get("_community_namespaces"),
-        upload_registry=BasicConfig.upload_registry,
+        upload_registry=(
+            BasicConfig.upload_registry
+            or (
+                BasicConfig.is_host_mode
+                and HTTPConfig.material_source in {"microbackend", "auto"}
+            )
+        ),
         check_mode=check_mode,
         complete_registry=complete_registry,
         external_only=external_only,
@@ -1411,53 +1379,60 @@ def main():
             signal.signal(signal.SIGINT, _exit)
             signal.signal(signal.SIGTERM, _exit)
 
-        inventory_db = ""
         if should_start_embedded_material_service(
             args_dict, is_host_mode=BasicConfig.is_host_mode
         ):
-            from unilabos.server.scheduler.integration import setup_edge_inventory
+            from unilabos.server.scheduler.integration import setup_materials_service
 
-            inventory_path = runtime_storage_paths.inventory_db
-            if inventory_path is None:
-                raise ValueError("embedded material service requires an inventory DB")
-            inventory_db = str(inventory_path)
-            setup_edge_inventory(inventory_db, ws_client=comm_client)
-            print_status(
-                f"Inventory/Resource Provider 已启用: {inventory_db}", "info"
+            materials_service = setup_materials_service(
+                database_paths=server_database_paths,
+                ws_client=comm_client,
             )
+            from unilabos.server.adapters.registry_materials import (
+                sync_registry_resources,
+            )
+            from unilabos.server.clients.materials import LocalMaterialsClient
 
-        if should_start_edge_scheduler(
-            args_dict, is_host_mode=BasicConfig.is_host_mode
+            template_report = sync_registry_resources(
+                lab_registry,
+                LocalMaterialsClient(materials_service),
+            )
+            print_status(
+                f"Materials Provider 已启用: {server_database_paths.materials_db} "
+                f"({template_report.resource_count} 个资源模板)",
+                "info",
+            )
+        elif (
+            BasicConfig.is_host_mode
+            and HTTPConfig.material_source in {"microbackend", "auto"}
+            and args_dict.get("_material_service_mode") == "external"
         ):
-            from unilabos.server.scheduler.integration import setup_edge_scheduler
-
-            _, edge_execution_backend = setup_edge_scheduler(
-                ws_client=comm_client,
-                ordering_url=args_dict.get("edge_scheduler_ordering_url", ""),
-                inventory_db_path=inventory_db,
-                storage_paths=runtime_storage_paths,
-                authority_profile=authority_profile,
+            from unilabos.server.adapters.registry_materials import (
+                sync_registry_resources,
             )
-            # 作为 backend-neutral bridge 接收设备状态和 job 终态回报。
-            args_dict["bridges"].append(edge_execution_backend)
+            from unilabos.server.clients.materials import HTTPMaterialsClient
+
+            template_report = sync_registry_resources(
+                lab_registry,
+                HTTPMaterialsClient(HTTPConfig.material_microbackend_addr),
+            )
             print_status(
-                "Scheduler Provider 已启用（Workflow + Device State + History）",
+                "外部 Materials Provider 模板同步完成 "
+                f"({template_report.resource_count} 个资源模板)",
                 "info",
             )
-        elif authority_profile.can_execute_backend_command:
-            from unilabos.server.scheduler.integration import (
-                setup_job_execution_backend,
-            )
 
-            edge_execution_backend = setup_job_execution_backend(
-                ws_client=comm_client,
-                storage_paths=runtime_storage_paths,
-            )
-            args_dict["bridges"].append(edge_execution_backend)
-            print_status(
-                "Job 微后端已启用（仅消费后端调度命令）",
-                "info",
-            )
+        from unilabos.server.scheduler.integration import setup_job_execution_backend
+
+        edge_execution_backend = setup_job_execution_backend(
+            ws_client=comm_client,
+            database_paths=server_database_paths,
+        )
+        args_dict["bridges"].append(edge_execution_backend)
+        print_status(
+            "Job 微后端已启用（仅消费后端调度命令）",
+            "info",
+        )
 
         if args_dict["backend"] == "ros2":
             # ROS2 的 HostLink 仅是组网控制面。由微后端在 ROS backend

@@ -6,9 +6,9 @@
 
 代码命名空间统一归属微后端：工作流定义/上传位于
 `unilabos.server.workflow`，调度与执行期 DAG 位于
-`unilabos.server.scheduler`，旧运行库存储组合兼容位于
-`unilabos.server.storage`。不再保留顶层 `unilabos.workflow`、
-`unilabos.scheduler` 或 `unilabos.storage`。
+`unilabos.server.scheduler`，四库组合根位于 `unilabos.server.composition`。
+不保留 `unilabos.server.storage`，也不保留顶层 `unilabos.workflow`、
+`unilabos.scheduler` 或 `unilabos.storage`；旧库不会被探测、打开或迁移。
 
 | 数据库 | 权威内容 | 表数（含 migration） |
 | --- | --- | ---: |

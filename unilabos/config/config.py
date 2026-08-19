@@ -19,10 +19,8 @@ class BasicConfig:
     ak = ""
     sk = ""
     working_dir = ""
-    # 由主组合根一次解析；各 Store 不再自行推导数据库路径。
-    runtime_storage_paths = None
-    # 正常运行只消费后端调度下发的 job；本地 DAG 调度必须显式开启。
-    scheduler_authority_profile = "backend_controlled"
+    # 由微后端组合根一次解析；四个数据库 writer 不得自行推导路径。
+    server_database_paths = None
     config_path = ""
     is_host_mode = True
     slave_no_host = False  # 是否跳过rclient.wait_for_service()

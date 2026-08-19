@@ -72,6 +72,25 @@ class AggregateVersion(ServerObject):
     state_hash: NonEmptyStr
 
 
+class InventoryChange(ServerObject):
+    sequence: int = Field(ge=1)
+    event_uuid: NonEmptyStr
+    aggregate_type: AggregateType
+    aggregate_uuid: NonEmptyStr
+    operation: NonEmptyStr
+    previous_version: int = Field(ge=0)
+    aggregate_version: int = Field(ge=1)
+    state_hash: NonEmptyStr
+    delta: JsonObject = Field(default_factory=dict)
+    job_uuid: Optional[NonEmptyStr] = None
+    command_uuid: Optional[NonEmptyStr] = None
+    effect_key: Optional[NonEmptyStr] = None
+    actor_type: NonEmptyStr
+    actor_uuid: Optional[NonEmptyStr] = None
+    occurred_at_ms: int = Field(ge=0)
+    delivery_status: Literal["pending", "sent", "acknowledged", "dead_letter"]
+
+
 ResultT = TypeVar("ResultT")
 
 
@@ -98,6 +117,7 @@ __all__ = [
     "AggregateType",
     "AggregateVersion",
     "InventoryMutation",
+    "InventoryChange",
     "MutationResult",
     "PROTOCOL_VERSION",
     "canonical_hash",

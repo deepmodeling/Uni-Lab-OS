@@ -9,6 +9,7 @@ import pytest
 from unilabos.server.protocol.common import AggregatePrecondition, InventoryMutation
 from unilabos.server.protocol.materials import (
     MaterialDataWrite,
+    MaterialDelete,
     MaterialIdentityWrite,
     MaterialMove,
     MaterialNodeCreate,
@@ -280,5 +281,141 @@ def test_snapshot_diff_and_apply_increment_material_once(tmp_path) -> None:
         assert {
             item.aggregate_uuid for item in result.affected
         } == {updated.material.material_uuid}
+    finally:
+        service.close()
+
+
+def test_recursive_delete_and_change_feed_are_aggregate_based(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "deck-template", "deck", with_site=True)
+        _template(service, "tube-template", "tube")
+        created = service.create_tree(
+            _mutation("create_material_tree"),
+            MaterialTreeCreate(
+                nodes=[
+                    _node("deck", "deck-template", "deck"),
+                    _node("tube", "tube-template", "tube", parent="deck"),
+                ]
+            ),
+        )
+        result = service.delete_material(
+            _mutation("delete_material"),
+            MaterialDelete(
+                material_uuid=created.data.root_material_uuid,
+                recursive=True,
+            ),
+        )
+
+        assert set(result.data.deleted_material_uuids) == set(
+            created.data.client_uuid_map.values()
+        )
+        assert service.list_materials() == []
+        changes = service.changes()
+        assert changes[-1].delta["deleted"] is True
+        assert not hasattr(changes[-1], "delta_json")
+        assert service.acknowledge_changes(changes[-1].sequence) == len(changes)
+        assert all(item.delivery_status == "acknowledged" for item in service.changes())
+    finally:
+        service.close()
+
+
+def test_snapshot_moves_between_sites_in_one_transaction(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "root-template", "root")
+        _template(service, "carrier-template", "carrier", with_site=True)
+        _template(service, "tube-template", "tube")
+        created = service.create_tree(
+            _mutation("create_material_tree"),
+            MaterialTreeCreate(
+                nodes=[
+                    _node("root", "root-template", "root"),
+                    _node(
+                        "carrier-1", "carrier-template", "carrier", parent="root"
+                    ),
+                    _node(
+                        "carrier-2", "carrier-template", "carrier", parent="root"
+                    ),
+                    _node("tube", "tube-template", "tube", parent="carrier-1"),
+                ]
+            ),
+        )
+        identities = created.data.client_uuid_map
+        base = service.get_tree(created.data.root_material_uuid)
+        carrier_1 = next(
+            node
+            for node in base.nodes
+            if node.material.material_uuid == identities["carrier-1"]
+        )
+        carrier_2 = next(
+            node
+            for node in base.nodes
+            if node.material.material_uuid == identities["carrier-2"]
+        )
+        service.move_material(
+            _mutation("move_material"),
+            MaterialMove(
+                material_uuid=identities["tube"],
+                destination_site_uuid=carrier_1.sites[0].site_uuid,
+            ),
+        )
+        base = service.get_tree(created.data.root_material_uuid)
+        changed_nodes = []
+        for node in base.nodes:
+            if node.material.material_uuid == identities["carrier-1"]:
+                node = node.model_copy(
+                    update={
+                        "sites": [
+                            node.sites[0].model_copy(
+                                update={"occupied_material_uuid": None}
+                            )
+                        ]
+                    }
+                )
+            elif node.material.material_uuid == identities["carrier-2"]:
+                node = node.model_copy(
+                    update={
+                        "sites": [
+                            node.sites[0].model_copy(
+                                update={
+                                    "occupied_material_uuid": identities["tube"]
+                                }
+                            )
+                        ]
+                    }
+                )
+            elif node.material.material_uuid == identities["tube"]:
+                node = node.model_copy(
+                    update={
+                        "material": node.material.model_copy(
+                            update={
+                                "parent_material_uuid": identities["carrier-2"]
+                            }
+                        )
+                    }
+                )
+            changed_nodes.append(node)
+
+        result = service.apply_snapshot(
+            _mutation("apply_material_snapshot"),
+            MaterialSnapshot(
+                root_material_uuid=base.root_material_uuid,
+                nodes=changed_nodes,
+            ),
+        )
+
+        tube = next(
+            node
+            for node in result.data.nodes
+            if node.material.material_uuid == identities["tube"]
+        )
+        assert tube.material.parent_material_uuid == identities["carrier-2"]
+        assert service.repository.get_site(
+            carrier_1.sites[0].site_uuid
+        ).occupied_material_uuid is None
+        assert service.repository.get_site(
+            carrier_2.sites[0].site_uuid
+        ).occupied_material_uuid == identities["tube"]
     finally:
         service.close()

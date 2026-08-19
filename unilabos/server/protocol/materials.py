@@ -15,7 +15,7 @@ from unilabos.server.models.materials import ResourceTemplateHandle
 
 
 class ResourceTemplateWrite(ServerObject):
-    template_uuid: NonEmptyStr
+    template_uuid: Optional[NonEmptyStr] = None
     name: NonEmptyStr
     display_name: Optional[NonEmptyStr] = None
     resource_type: NonEmptyStr = "resource"
@@ -30,6 +30,7 @@ class ResourceTemplateWrite(ServerObject):
 
 
 class ResourceTemplateRead(ResourceTemplateWrite):
+    template_uuid: NonEmptyStr
     definition_hash: NonEmptyStr
     status: Literal["active", "deprecated", "deleted"] = "active"
     created_at_ms: int = Field(ge=0)

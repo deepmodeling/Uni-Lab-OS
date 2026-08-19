@@ -23,6 +23,7 @@ from unilabos.server.protocol.common import (
     AggregatePrecondition,
     AggregateVersion,
     InventoryMutation,
+    InventoryChange,
     MutationResult,
     canonical_hash,
 )
@@ -147,6 +148,7 @@ class MaterialsService:
         request = self._bound_request(mutation, body)
         request_hash = canonical_hash(request)
         timestamp = self._now_ms(mutation)
+        effect_started = False
         try:
             with self.repository.write():
                 existing = self.repository.get_effect(
@@ -158,7 +160,16 @@ class MaterialsService:
                             "command_uuid/effect_key was already used with another request"
                         )
                     if existing.status == "rejected":
-                        raise RejectedMutationError(
+                        error_types = {
+                            MaterialNotFoundError.code: MaterialNotFoundError,
+                            MaterialConflictError.code: MaterialConflictError,
+                            MaterialValidationError.code: MaterialValidationError,
+                            MaterialNoChangeError.code: MaterialNoChangeError,
+                        }
+                        error_type = error_types.get(
+                            existing.error_code or "", RejectedMutationError
+                        )
+                        raise error_type(
                             existing.error_message or "mutation was previously rejected"
                         )
                     if existing.status != "applied":
@@ -180,6 +191,7 @@ class MaterialsService:
                         updated_at_ms=timestamp,
                     )
                 )
+                effect_started = True
                 self._check_preconditions(mutation.preconditions)
                 applied = apply(timestamp)
                 if not applied.sequences:
@@ -201,8 +213,60 @@ class MaterialsService:
                     completed_at_ms=timestamp,
                 )
                 return result
+        except MaterialsServiceError as exc:
+            if effect_started:
+                self._persist_rejection(
+                    mutation,
+                    request=request,
+                    request_hash=request_hash,
+                    timestamp=timestamp,
+                    error=exc,
+                )
+            raise
         except sqlite3.IntegrityError as exc:
-            raise MaterialConflictError(str(exc)) from exc
+            error = MaterialConflictError(str(exc))
+            if effect_started:
+                self._persist_rejection(
+                    mutation,
+                    request=request,
+                    request_hash=request_hash,
+                    timestamp=timestamp,
+                    error=error,
+                )
+            raise error from exc
+
+    def _persist_rejection(
+        self,
+        mutation: InventoryMutation,
+        *,
+        request: dict[str, Any],
+        request_hash: str,
+        timestamp: int,
+        error: MaterialsServiceError,
+    ) -> None:
+        """失败事务回滚后单独保存幂等拒绝结果。"""
+
+        with self.repository.write():
+            if self.repository.get_effect(
+                mutation.command_uuid, mutation.effect_key
+            ) is not None:
+                return
+            self.repository.insert_effect(
+                InventoryCommandEffectRecord(
+                    command_uuid=mutation.command_uuid,
+                    effect_key=mutation.effect_key,
+                    job_uuid=mutation.job_uuid,
+                    operation=mutation.operation,
+                    request_json=request,
+                    request_hash=request_hash,
+                    status="rejected",
+                    error_code=error.code,
+                    error_message=str(error),
+                    started_at_ms=timestamp,
+                    updated_at_ms=timestamp,
+                    completed_at_ms=timestamp,
+                )
+            )
 
     def _check_preconditions(
         self, preconditions: list[AggregatePrecondition]
@@ -320,16 +384,15 @@ class MaterialsService:
             raise MaterialValidationError("template mutation operation is invalid")
 
         def apply(timestamp: int) -> _Applied[ResourceTemplateRead]:
-            current = self.repository.get_template(
-                value.template_uuid, include_deleted=True
-            )
+            template_uuid = value.template_uuid or str(uuid4())
+            current = self.repository.get_template(template_uuid, include_deleted=True)
             definition_hash = self._template_definition_hash(value)
             if current is not None and current.definition_hash == definition_hash:
                 raise MaterialNoChangeError("template already has this definition")
             version = 1 if current is None else current.version + 1
             created_at = timestamp if current is None else current.created_at_ms
             record = ResourceTemplateRecord(
-                template_uuid=value.template_uuid,
+                template_uuid=template_uuid,
                 name=value.name,
                 display_name=value.display_name or value.name,
                 resource_type=value.resource_type,
@@ -378,6 +441,15 @@ class MaterialsService:
         return self._run_mutation(
             mutation, value, MutationResult[ResourceTemplateRead], apply
         )
+
+    def create_template(
+        self, mutation: InventoryMutation, value: ResourceTemplateWrite
+    ) -> MutationResult[ResourceTemplateRead]:
+        if value.template_uuid is not None:
+            raise MaterialValidationError(
+                "create_template requires the authority to allocate template_uuid"
+            )
+        return self.put_template(mutation, value)
 
     def get_template(self, template_uuid: str) -> ResourceTemplateRead:
         record = self.repository.get_template(template_uuid)
@@ -905,11 +977,28 @@ class MaterialsService:
         *,
         content_version: int,
         timestamp: int,
+        previous: Optional[list[MaterialSubstanceRecord]] = None,
     ) -> list[MaterialSubstanceRecord]:
         records: list[MaterialSubstanceRecord] = []
         seen: set[str] = set()
+        previous_by_uuid = {
+            item.substance_uuid: item for item in (previous or [])
+        }
         for ordinal, substance in enumerate(value.substances):
-            substance_uuid = substance.substance_uuid or str(uuid4())
+            prior_at_ordinal = (
+                previous[ordinal]
+                if previous is not None and ordinal < len(previous)
+                else None
+            )
+            substance_uuid = substance.substance_uuid
+            if (
+                substance_uuid is None
+                and prior_at_ordinal is not None
+                and prior_at_ordinal.name == substance.name
+                and prior_at_ordinal.quantity_unit == substance.quantity_unit
+            ):
+                substance_uuid = prior_at_ordinal.substance_uuid
+            substance_uuid = substance_uuid or str(uuid4())
             if substance_uuid in seen:
                 raise MaterialValidationError("duplicate substance_uuid")
             seen.add(substance_uuid)
@@ -927,6 +1016,11 @@ class MaterialsService:
                     content_version=content_version,
                     observed_at_ms=max(timestamp, value.observed_at_ms),
                     updated_at_ms=max(timestamp, value.observed_at_ms),
+                    version=(
+                        previous_by_uuid[substance_uuid].version + 1
+                        if substance_uuid in previous_by_uuid
+                        else 1
+                    ),
                 )
             )
         return records
@@ -1072,6 +1166,7 @@ class MaterialsService:
                 value,
                 content_version=new_content_version,
                 timestamp=timestamp,
+                previous=current.substances,
             )
             public_substances = [self._substance_read(item) for item in substances]
             state_hash = self._data_state_hash(
@@ -1577,23 +1672,8 @@ class MaterialsService:
                         desired_data,
                         content_version=content_version,
                         timestamp=timestamp,
+                        previous=current_data.substances,
                     )
-                    previous_substances = {
-                        item.substance_uuid: item for item in current_data.substances
-                    }
-                    substances = [
-                        MaterialSubstanceRecord.model_validate(
-                            {
-                                **item.model_dump(mode="json"),
-                                "version": (
-                                    previous_substances[item.substance_uuid].version + 1
-                                    if item.substance_uuid in previous_substances
-                                    else 1
-                                ),
-                            }
-                        )
-                        for item in substances
-                    ]
                     state_hash = self._data_state_hash(
                         {
                             **desired_data.model_dump(mode="json"),
@@ -1744,8 +1824,24 @@ class MaterialsService:
 
     # -- Ledger transport -------------------------------------------------
 
-    def changes(self, *, after_sequence: int = 0, limit: int = 100) -> list[InventoryLedgerRecord]:
-        return self.repository.list_ledger(after_sequence=after_sequence, limit=limit)
+    def changes(self, *, after_sequence: int = 0, limit: int = 100) -> list[InventoryChange]:
+        result: list[InventoryChange] = []
+        for record in self.repository.list_ledger(
+            after_sequence=after_sequence, limit=limit
+        ):
+            values = record.model_dump(
+                mode="json",
+                exclude={
+                    "delivery_attempt_count",
+                    "available_at_ms",
+                    "last_sent_at_ms",
+                    "acked_at_ms",
+                    "last_error",
+                },
+            )
+            values["delta"] = values.pop("delta_json")
+            result.append(InventoryChange.model_validate(values))
+        return result
 
     def acknowledge_changes(self, through_sequence: int) -> int:
         with self.repository.write():

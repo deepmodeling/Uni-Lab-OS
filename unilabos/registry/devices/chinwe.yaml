@@ -412,6 +412,7 @@ separator.chinwe:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.separator.chinwe:ChinweDevice
+    status_policies: {}
     status_types:
       is_connected: bool
       sensor_level: bool

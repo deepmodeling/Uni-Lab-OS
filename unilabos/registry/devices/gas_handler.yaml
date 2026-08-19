@@ -153,6 +153,7 @@ gas_source.mock:
           type: object
         type: StrSingleInput
     module: unilabos.devices.pump_and_valve.vacuum_pump_mock:VacuumPumpMock
+    status_policies: {}
     status_types:
       status: str
     supported_backends:
@@ -343,6 +344,7 @@ vacuum_pump.mock:
           type: object
         type: StrSingleInput
     module: unilabos.devices.pump_and_valve.vacuum_pump_mock:VacuumPumpMock
+    status_policies: {}
     status_types:
       status: str
     supported_backends:

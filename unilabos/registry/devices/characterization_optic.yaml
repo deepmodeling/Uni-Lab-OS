@@ -169,6 +169,7 @@ raman.home_made:
           type: object
         type: SendCmd
     module: unilabos.devices.raman_uv.home_made_raman:RamanObj
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink

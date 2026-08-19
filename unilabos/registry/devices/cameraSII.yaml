@@ -53,6 +53,7 @@ cameracontroller_device:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.cameraSII.cameraUSB:CameraController
+    status_policies: {}
     status_types:
       status: Dict[str, Any]
     supported_backends:

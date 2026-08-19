@@ -646,6 +646,7 @@ post_process_station:
           type: object
         type: SendCmd
     module: unilabos.devices.workstation.post_process.post_process:OpcUaClient
+    status_policies: {}
     status_types:
       cache_stats: Dict[str, Any]
     supported_backends:

@@ -149,6 +149,7 @@ opcua_example:
           type: object
         type: UniLabJsonCommand
     module: unilabos.device_comms.opcua_client.client:OpcUaClient
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink

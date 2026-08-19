@@ -215,6 +215,7 @@ def test_registry_completion_publishes_backend_site_and_policy_defaults(
     ]
     assert completion["native_ros"]["class"]["supported_backends"] == ["ros2"]
     assert completion["ordinary"]["available_sites"] == []
+    assert completion["ordinary"]["class"]["status_policies"] == {}
     assert completion["ordinary"]["class"]["action_value_mappings"]["run"][
         "error_policy"
     ] == {}
@@ -222,6 +223,7 @@ def test_registry_completion_publishes_backend_site_and_policy_defaults(
     yaml_entry = yaml.safe_load(registry.get_yaml_output("ordinary"))["ordinary"]
     assert yaml_entry["available_sites"] == []
     assert yaml_entry["class"]["supported_backends"] == ["hostlink", "ros2"]
+    assert yaml_entry["class"]["status_policies"] == {}
     assert yaml_entry["class"]["action_value_mappings"]["run"][
         "error_policy"
     ] == {}
@@ -236,7 +238,7 @@ def test_ast_cache_rejects_previous_metadata_version(tmp_path) -> None:
 
     cache = load_scan_cache(cache_path)
 
-    assert _CACHE_VERSION == 11
+    assert _CACHE_VERSION == 12
     assert cache == {"version": _CACHE_VERSION, "files": {}}
 
 

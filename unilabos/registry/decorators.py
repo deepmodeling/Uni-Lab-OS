@@ -656,6 +656,7 @@ def topic_config(
     print_publish: Optional[bool] = None,
     qos: Optional[int] = None,
     name: Optional[str] = None,
+    status_policy: Optional[Dict[str, Any]] = None,
 ) -> Callable[[F], F]:
     """
     Topic发布配置装饰器
@@ -667,11 +668,19 @@ def topic_config(
         print_publish: 是否打印发布日志。None 表示使用节点默认配置
         qos: QoS深度配置。None 表示使用默认值 10
         name: 自定义发布名称。None 表示使用方法名（去掉 get_ 前缀）
+        status_policy: 标量状态的 incident/联锁策略。注册时会校验并归一化，
+            运行时由微后端根据设备状态生成 incident。
 
     Note:
         与 @property 连用时，@topic_config 必须放在 @property 下面，
         这样装饰器执行顺序为：先 topic_config 添加配置，再 property 包装。
     """
+
+    normalized_status_policy: Dict[str, Any] = {}
+    if status_policy:
+        from unilabos.registry.status_policy import normalize_status_policy
+
+        normalized_status_policy = normalize_status_policy(status_policy) or {}
 
     def decorator(func: F) -> F:
         @wraps(func)
@@ -682,6 +691,7 @@ def topic_config(
         wrapper._topic_print_publish = print_publish  # type: ignore[attr-defined]
         wrapper._topic_qos = qos  # type: ignore[attr-defined]
         wrapper._topic_name = name  # type: ignore[attr-defined]
+        wrapper._topic_status_policy = normalized_status_policy  # type: ignore[attr-defined]
         wrapper._has_topic_config = True  # type: ignore[attr-defined]
 
         return wrapper  # type: ignore[return-value]
@@ -690,13 +700,14 @@ def topic_config(
 
 
 def get_topic_config(func) -> dict:
-    """获取函数上的 topic 配置 (period, print_publish, qos, name)"""
+    """获取函数上的 topic 配置及已归一化的状态策略。"""
     if hasattr(func, "_has_topic_config") and getattr(func, "_has_topic_config", False):
         return {
             "period": getattr(func, "_topic_period", None),
             "print_publish": getattr(func, "_topic_print_publish", None),
             "qos": getattr(func, "_topic_qos", None),
             "name": getattr(func, "_topic_name", None),
+            "status_policy": getattr(func, "_topic_status_policy", {}),
         }
     return {}
 

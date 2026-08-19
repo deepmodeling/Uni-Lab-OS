@@ -209,6 +209,7 @@ opsky_ATR30007:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.opsky_Raman.opsky_ATR30007:opsky_ATR30007
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink

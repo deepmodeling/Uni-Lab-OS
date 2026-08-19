@@ -701,6 +701,7 @@ bioyond_dispensing_station:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.workstation.bioyond_studio.dispensing_station.dispensing_station:BioyondDispensingStation
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink

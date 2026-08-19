@@ -5284,6 +5284,7 @@ liquid_handler:
           type: object
         type: LiquidHandlerTransfer
     module: unilabos.devices.liquid_handling.liquid_handler_abstract:LiquidHandlerAbstract
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink
@@ -6258,6 +6259,7 @@ liquid_handler.biomek:
           type: object
         type: LiquidHandlerTransfer
     module: unilabos.devices.liquid_handling.biomek:LiquidHandlerBiomek
+    status_policies: {}
     status_types:
       success: ''
     supported_backends:
@@ -7469,6 +7471,7 @@ liquid_handler.laiyu:
     module: unilabos.devices.liquid_handling.laiyu.laiyu:TransformXYZHandler
     properties:
       support_touch_tip: bool
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink
@@ -10933,6 +10936,7 @@ liquid_handler.prcxi:
           type: object
         type: LiquidHandlerTransfer
     module: unilabos.devices.liquid_handling.prcxi.prcxi:PRCXI9300Handler
+    status_policies: {}
     status_types:
       reset_ok: bool
     supported_backends:
@@ -11165,6 +11169,7 @@ liquid_handler.revvity:
           type: object
         type: WorkStationRun
     module: unilabos.devices.liquid_handling.revvity:Revvity
+    status_policies: {}
     status_types:
       status: str
       success: bool

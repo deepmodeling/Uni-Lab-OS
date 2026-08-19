@@ -168,6 +168,7 @@ chiller:
           type: object
         type: SendCmd
     module: unilabos.devices.temperature.chiller:Chiller
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink
@@ -565,6 +566,7 @@ heaterstirrer.dalong:
           type: object
         type: SendCmd
     module: unilabos.devices.heaterstirrer.dalong:HeaterStirrer_DaLong
+    status_policies: {}
     status_types:
       status: str
       stir_speed: float
@@ -782,6 +784,7 @@ tempsensor:
           type: object
         type: SendCmd
     module: unilabos.devices.temperature.sensor_node:TempSensorNode
+    status_policies: {}
     status_types:
       value: float
     supported_backends:

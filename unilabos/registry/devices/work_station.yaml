@@ -6562,6 +6562,7 @@ workstation:
           type: object
         type: WashSolid
     module: unilabos.devices.workstation.workstation_base:ProtocolNode
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink

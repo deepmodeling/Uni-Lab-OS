@@ -754,6 +754,7 @@ coincellassemblyworkstation_device:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinCellAssemblyWorkstation
+    status_policies: {}
     status_types:
       data_assembly_coin_cell_num: int
       data_assembly_pressure: int

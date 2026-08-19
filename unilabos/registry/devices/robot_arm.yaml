@@ -316,6 +316,7 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
           type: object
         type: SendCmd
     module: unilabos.devices.ros_dev.moveit_interface:MoveitInterface
+    status_policies: {}
     status_types: {}
     supported_backends:
     - ros2
@@ -497,6 +498,7 @@ robotic_arm.UR:
           type: object
         type: SendCmd
     module: unilabos.devices.agv.ur_arm_task:UrArmTask
+    status_policies: {}
     status_types:
       arm_pose: list
       arm_status: str
@@ -781,6 +783,7 @@ robotic_arm.elite:
           type: object
         type: SendCmd
     module: unilabos.devices.arm.elite_robot:EliteRobot
+    status_policies: {}
     status_types:
       actual_joint_positions: ''
       arm_pose: list[float]

@@ -176,6 +176,7 @@ hplc.agilent:
           type: object
         type: SendCmd
     module: unilabos.devices.hplc.AgilentHPLC:HPLCDriver
+    status_policies: {}
     status_types:
       could_run: bool
       device_status: str
@@ -382,6 +383,7 @@ hplc.agilent-zhida:
           type: object
         type: StrSingleInput
     module: unilabos.devices.zhida_hplc.zhida:ZhidaClient
+    status_policies: {}
     status_types:
       methods: dict
       status: dict

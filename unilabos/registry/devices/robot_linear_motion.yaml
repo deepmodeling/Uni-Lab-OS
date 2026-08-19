@@ -467,6 +467,7 @@ linear_motion.grbl:
           type: object
         type: SingleJointPosition
     module: unilabos.devices.cnc.grbl_sync:GrblCNC
+    status_policies: {}
     status_types:
       position: Point3D
       spindle_speed: float
@@ -835,6 +836,7 @@ linear_motion.toyo_xyz.sim:
           type: object
         type: SendCmd
     module: unilabos.devices.ros_dev.moveit_interface:MoveitInterface
+    status_policies: {}
     status_types: {}
     supported_backends:
     - ros2
@@ -1006,6 +1008,7 @@ motor.iCL42:
           type: object
         type: SendCmd
     module: unilabos.devices.motor.iCL42:iCL42Driver
+    status_policies: {}
     status_types:
       is_executing_run: bool
       motor_position: int

@@ -287,6 +287,7 @@ zhida_gcms:
           type: object
         type: StrSingleInput
     module: unilabos.devices.zhida_gcms.zhida:ZhidaClient
+    status_policies: {}
     status_types:
       methods: dict
       status: str

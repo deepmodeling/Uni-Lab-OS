@@ -802,18 +802,64 @@ class JobExecutionBackend:
                 )
             except Exception:  # noqa: BLE001 - 监控故障不影响状态落盘
                 pass
-        if self.status_incidents is not None and self._status_policy_resolver is not None:
-            try:
-                policy = self._status_policy_resolver(device_id, prop)
-                if policy:
-                    self.status_incidents.observe(device_id, prop, value, policy)
-            except Exception:  # noqa: BLE001 - invalid policy cannot kill the status worker
-                logger.exception(
-                    "[JobExecutionBackend] status policy evaluation failed for %s/%s",
-                    device_id,
-                    prop,
-                )
+        self._observe_status_policy(device_id, prop, value)
         return changed
+
+    def _observe_status_policy(
+        self,
+        device_id: str,
+        prop: str,
+        value: Any,
+        *,
+        now: Optional[float] = None,
+    ) -> bool:
+        """在调度权威侧求值；损坏的显式策略按设备级 fail-closed 处理。"""
+
+        if self.status_incidents is None or self._status_policy_resolver is None:
+            return False
+        try:
+            policy = self._status_policy_resolver(device_id, prop)
+            if not policy:
+                return False
+            self.status_incidents.observe(
+                device_id,
+                prop,
+                value,
+                policy,
+                now=now,
+            )
+        except (TypeError, ValueError) as exc:
+            logger.error(
+                "[JobExecutionBackend] invalid status policy for %s/%s: %s",
+                device_id,
+                prop,
+                exc,
+            )
+            self.status_incidents.observe(
+                device_id,
+                prop,
+                value,
+                {
+                    "unknown_incident": {
+                        "code": "unilabos.status_policy.invalid",
+                        "severity": "critical",
+                        "message": (
+                            f"设备 {device_id} 的状态 {prop} 策略无效；"
+                            "已暂停该设备的新调度，请修复注册表配置"
+                        ),
+                        "hold": True,
+                    }
+                },
+                now=now,
+            )
+        except Exception:  # noqa: BLE001 - 状态线程必须继续消费后续消息
+            logger.exception(
+                "[JobExecutionBackend] status policy evaluation failed for %s/%s",
+                device_id,
+                prop,
+            )
+            return False
+        return True
 
     def rebuild_status_incidents(self) -> int:
         """Re-evaluate persisted latest values after process restart."""
@@ -827,17 +873,13 @@ class JobExecutionBackend:
         observed = 0
         for device_id, properties in self.device_state.latest_all().items():
             for prop, item in properties.items():
-                policy = self._status_policy_resolver(device_id, prop)
-                if not policy:
-                    continue
-                self.status_incidents.observe(
+                if self._observe_status_policy(
                     device_id,
                     prop,
                     item["value"],
-                    policy,
                     now=float(item["updated_at"]) / 1000.0,
-                )
-                observed += 1
+                ):
+                    observed += 1
         return observed
 
     def _on_status_incident_event(self, event: Dict[str, Any]) -> None:
@@ -1270,6 +1312,8 @@ def make_device_status_policy_resolver(
 ) -> Callable[[str, str], Optional[Dict[str, Any]]]:
     """Resolve ``@topic_config(status_policy=...)`` for local or mirrored devices."""
 
+    from unilabos.registry.status_policy import normalize_status_policy
+
     getter = host_node_getter or JobExecutionBackend._default_host_getter
 
     def _from_class(driver_class: Any, property_name: str) -> Optional[Dict[str, Any]]:
@@ -1287,7 +1331,7 @@ def make_device_status_policy_resolver(
                     continue
                 default_name = method_name[4:] if method_name.startswith("get_") else method_name
                 if (config.get("name") or default_name) == property_name:
-                    return config.get("status_policy")
+                    return normalize_status_policy(config.get("status_policy"))
         return None
 
     def _registry_name(host_node: Any, device_id: str) -> str:
@@ -1318,14 +1362,17 @@ def make_device_status_policy_resolver(
             return None
         from unilabos.registry.registry import lab_registry
 
-        entry = lab_registry.device_type_registry.get(registry_name, {})
-        if not entry:
-            entry = getattr(host_node, "_slave_registry_configs", {}).get(
-                registry_name, {}
-            )
-        policies = entry.get("class", {}).get("status_policies", {})
-        policy = policies.get(property_name) if isinstance(policies, dict) else None
-        return dict(policy) if isinstance(policy, dict) else None
+        # 镜像设备以 slave 随注册表同步过来的版本为准；本地注册表仅作回退。
+        entries = (
+            getattr(host_node, "_slave_registry_configs", {}).get(registry_name, {}),
+            lab_registry.device_type_registry.get(registry_name, {}),
+        )
+        for entry in entries:
+            policies = entry.get("class", {}).get("status_policies", {})
+            if not isinstance(policies, dict) or property_name not in policies:
+                continue
+            return normalize_status_policy(policies[property_name])
+        return None
 
     return resolve
 

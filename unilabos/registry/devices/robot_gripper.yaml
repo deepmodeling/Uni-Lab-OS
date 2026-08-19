@@ -443,6 +443,7 @@ gripper.misumi_rz:
           type: object
         type: SendCmd
     module: unilabos.devices.motor.Grasp:EleGripper
+    status_policies: {}
     status_types:
       status: str
     supported_backends:
@@ -609,6 +610,7 @@ gripper.mock:
           type: object
         type: GripperCommand
     module: unilabos.devices.gripper.mock:MockGripper
+    status_policies: {}
     status_types:
       position: float
       status: str

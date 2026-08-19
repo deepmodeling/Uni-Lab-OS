@@ -333,6 +333,7 @@ neware_battery_test_system:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.neware_battery_test_system.neware_battery_test_system:NewareBatteryTestSystem
+    status_policies: {}
     status_types:
       channel_status: Dict[int, Dict]
       connection_info: Dict[str, str]

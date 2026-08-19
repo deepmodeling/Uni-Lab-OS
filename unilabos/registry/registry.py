@@ -38,6 +38,7 @@ from unilabos.registry.decorators import (
     normalize_enum_value,
 )
 from unilabos.registry.init_enforce import validate_init_param_enforce
+from unilabos.registry.status_policy import normalize_status_policy
 from unilabos.registry.yaml_ref import resolve_yaml_refs
 from unilabos.registry.utils import (
     ROSMsgNotFound,
@@ -76,6 +77,52 @@ from msgcenterpy.instances.json_schema_instance import JSONSchemaMessageInstance
 from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
 
 _module_hash_cache: Dict[str, Optional[str]] = {}
+
+
+def _normalize_status_policy_map(
+    policies: Any,
+    *,
+    device_id: str,
+) -> Dict[str, Dict[str, Any]]:
+    """校验注册表中的 property -> status_policy 映射并生成稳定副本。"""
+
+    if policies is None:
+        return {}
+    if not isinstance(policies, dict):
+        raise TypeError(f"设备 {device_id!r} 的 class.status_policies 必须是字典")
+
+    normalized: Dict[str, Dict[str, Any]] = {}
+    for property_name, policy in policies.items():
+        if not isinstance(property_name, str) or not property_name.strip():
+            raise ValueError(f"设备 {device_id!r} 的 status_policy 属性名必须是非空字符串")
+        try:
+            parsed = normalize_status_policy(policy)
+        except (TypeError, ValueError) as exc:
+            raise type(exc)(
+                f"设备 {device_id!r} 状态 {property_name!r} 的 status_policy 无效: {exc}"
+            ) from exc
+        if parsed is not None:
+            normalized[property_name] = parsed
+    return dict(sorted(normalized.items()))
+
+
+def _status_policies_from_ast(
+    status_properties: Dict[str, Any],
+    *,
+    device_id: str,
+) -> Dict[str, Dict[str, Any]]:
+    raw: Dict[str, Any] = {}
+    for property_name, info in status_properties.items():
+        topic_config = info.get("topic_config") or {}
+        if isinstance(topic_config, dict) and topic_config.get("status_policy") is not None:
+            published_name = topic_config.get("name") or property_name
+            if published_name in raw:
+                raise ValueError(
+                    f"设备 {device_id!r} 存在重复的 status_policy 发布名 "
+                    f"{published_name!r}"
+                )
+            raw[published_name] = topic_config["status_policy"]
+    return _normalize_status_policy_map(raw, device_id=device_id)
 
 
 @singleton
@@ -220,6 +267,7 @@ class Registry:
             "class": {
                 "module": "unilabos.ros.nodes.presets.host_node:HostNode",
                 "status_types": {},
+                "status_policies": {},
                 "action_value_mappings": {
                     "create_resource": {
                         "type": ResourceCreateFromOuterEasy,
@@ -883,7 +931,8 @@ class Registry:
 
         # --- status_types (string version) ---
         status_types_str: Dict[str, str] = {}
-        for name, info in ast_meta.get("status_properties", {}).items():
+        status_properties = ast_meta.get("status_properties", {})
+        for name, info in status_properties.items():
             ret_type = info.get("return_type", "str")
             if not ret_type or ret_type in ("Any", "None", "Unknown", ""):
                 ret_type = "String"
@@ -907,6 +956,10 @@ class Registry:
                         ret_type = inner
             status_types_str[name] = ret_type
         status_types_str = dict(sorted(status_types_str.items()))
+        status_policies = _status_policies_from_ast(
+            status_properties,
+            device_id=device_id,
+        )
 
         # --- action_value_mappings ---
         action_value_mappings: Dict[str, Any] = {}
@@ -1162,6 +1215,7 @@ class Registry:
             "class": {
                 "module": module_str,
                 "status_types": status_types_str,
+                "status_policies": status_policies,
                 "action_value_mappings": action_value_mappings,
                 "type": ast_meta.get("device_type", "python"),
                 "supported_backends": normalize_supported_backends(
@@ -1604,6 +1658,10 @@ class Registry:
             return
 
         class_info = entry.get("class", {})
+        class_info["status_policies"] = _normalize_status_policy_map(
+            class_info.get("status_policies"),
+            device_id=device_id,
+        )
 
         # 解析 status_types
         status_types = class_info.get("status_types", {})
@@ -1650,6 +1708,28 @@ class Registry:
                         resolved = self._replace_type_with_class(ret_type, device_id, f"状态 {name}")
                         if resolved:
                             class_info["status_types"][name] = resolved
+
+                    topic_config = info.get("topic_config") or {}
+                    policy = (
+                        topic_config.get("status_policy")
+                        if isinstance(topic_config, dict)
+                        else None
+                    )
+                    published_name = (
+                        topic_config.get("name") or name
+                        if isinstance(topic_config, dict)
+                        else name
+                    )
+                    if (
+                        policy is not None
+                        and published_name not in class_info["status_policies"]
+                    ):
+                        class_info["status_policies"].update(
+                            _normalize_status_policy_map(
+                                {published_name: policy},
+                                device_id=device_id,
+                            )
+                        )
 
                 for action_name_key, action_config in action_mappings.items():
                     type_obj = action_config.get("type")
@@ -1966,6 +2046,12 @@ class Registry:
                         device_type=device_config["class"].get("type", "python"),
                     )
                 )
+                device_config["class"]["status_policies"] = (
+                    _normalize_status_policy_map(
+                        device_config["class"].get("status_policies"),
+                        device_id=device_id,
+                    )
+                )
 
                 enhanced_info = {}
                 enhanced_import_map: Dict[str, str] = {}
@@ -2229,6 +2315,10 @@ class Registry:
         for device_id, device_config in data.items():
             if "class" not in device_config:
                 continue
+            device_config["class"]["status_policies"] = _normalize_status_policy_map(
+                device_config["class"].get("status_policies"),
+                device_id=device_id,
+            )
             # status_types: str → class
             for st_name, st_type in device_config["class"].get("status_types", {}).items():
                 if isinstance(st_type, str):
@@ -2470,6 +2560,10 @@ class Registry:
                     class_config.get("supported_backends"),
                     device_type=class_config.get("type", "python"),
                 )
+                class_config["status_policies"] = _normalize_status_policy_map(
+                    class_config.get("status_policies"),
+                    device_id=device_id,
+                )
             if "class" in device_info_copy and "action_value_mappings" in device_info_copy["class"]:
                 action_mappings = device_info_copy["class"]["action_value_mappings"]
                 builtin_actions = ["_execute_driver_command", "_execute_driver_command_async"]
@@ -2542,6 +2636,10 @@ class Registry:
             entry["class"]["supported_backends"] = normalize_supported_backends(
                 entry["class"].get("supported_backends"),
                 device_type=entry["class"].get("type", "python"),
+            )
+            entry["class"]["status_policies"] = _normalize_status_policy_map(
+                entry["class"].get("status_policies"),
+                device_id=device_id,
             )
             status_types = entry["class"].get("status_types", {})
             for name, type_obj in status_types.items():

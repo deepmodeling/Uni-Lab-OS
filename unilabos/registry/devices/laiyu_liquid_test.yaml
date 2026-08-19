@@ -642,6 +642,7 @@ xyz_stepper_controller:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.liquid_handling.laiyu.drivers.xyz_stepper_driver:XYZStepperController
+    status_policies: {}
     status_types:
       all_positions: Dict[MotorAxis, MotorPosition]
     supported_backends:

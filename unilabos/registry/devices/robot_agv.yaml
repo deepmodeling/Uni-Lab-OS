@@ -83,6 +83,7 @@ agv.SEER:
           type: object
         type: SendCmd
     module: unilabos.devices.agv.agv_navigator:AgvNavigator
+    status_policies: {}
     status_types:
       pose: list
       status: str

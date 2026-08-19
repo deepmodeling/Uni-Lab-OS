@@ -493,6 +493,7 @@ xrd_d7mate:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.xrd_d7mate.xrd_d7mate:XRDClient
+    status_policies: {}
     status_types:
       current_acquire_data: dict
       sample_request: dict

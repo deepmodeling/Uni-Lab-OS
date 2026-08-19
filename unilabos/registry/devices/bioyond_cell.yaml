@@ -2190,6 +2190,7 @@ bioyond_cell:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.workstation.bioyond_studio.bioyond_cell.bioyond_cell_workstation:BioyondCellWorkstation
+    status_policies: {}
     status_types:
       device_id: ''
     supported_backends:

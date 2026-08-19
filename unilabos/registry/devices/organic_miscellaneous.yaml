@@ -149,6 +149,7 @@ rotavap.one:
           type: object
         type: SendCmd
     module: unilabos.devices.rotavap.rotavap_one:RotavapOne
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink
@@ -497,6 +498,7 @@ separator.homemade:
           type: object
         type: SendCmd
     module: unilabos.devices.separator.homemade_grbl_conductivity:SeparatorController
+    status_policies: {}
     status_types: {}
     supported_backends:
     - hostlink

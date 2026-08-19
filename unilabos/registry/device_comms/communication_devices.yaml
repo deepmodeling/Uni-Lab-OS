@@ -83,6 +83,7 @@ serial:
           type: object
         type: UniLabJsonCommand
     module: unilabos.ros.nodes.presets.serial_node:ROS2SerialNode
+    status_policies: {}
     status_types: {}
     supported_backends:
     - ros2

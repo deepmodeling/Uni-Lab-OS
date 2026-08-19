@@ -37,7 +37,7 @@ from unilabos.resources.site_definition import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 11      # 缓存格式版本号，格式变更时递增
+_CACHE_VERSION = 12      # 缓存/entry 构建格式版本号，格式变更时递增
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 # 合法的装饰器来源模块
@@ -965,6 +965,15 @@ def _extract_class_body(
             topic_dec = _find_method_decorator(item, "topic_config")
             if topic_dec is not None:
                 topic_args = _extract_decorator_args(topic_dec, import_map)
+                topic_args.setdefault("status_policy", {})
+                if topic_args["status_policy"]:
+                    from unilabos.registry.status_policy import (
+                        normalize_status_policy,
+                    )
+
+                    topic_args["status_policy"] = (
+                        normalize_status_policy(topic_args["status_policy"]) or {}
+                    )
 
             return_type = _get_annotation_str(item.returns, import_map)
             # 非 @property 的 @topic_config 方法，用去掉 get_ 前缀的名称

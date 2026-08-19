@@ -50,6 +50,7 @@ class StatusIncidentManager:
             "device_id": device_id,
             "property_name": property_name,
             "observed_value": value,
+            "severity": str(config.get("severity") or "error"),
             "when": {"eq": value},
             "clear_when": {"ne": value},
             "state": "awaiting_decision",

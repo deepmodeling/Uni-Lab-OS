@@ -189,6 +189,7 @@ Qone_nmr:
           type: object
         type: StrSingleInput
     module: unilabos.devices.Qone_nmr.Qone_nmr:Qone_nmr
+    status_policies: {}
     status_types:
       status: str
     supported_backends:

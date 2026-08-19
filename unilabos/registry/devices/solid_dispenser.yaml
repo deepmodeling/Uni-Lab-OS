@@ -368,6 +368,7 @@ solid_dispenser.laiyu:
           type: object
         type: EmptyIn
     module: unilabos.devices.powder_dispense.laiyu:Laiyu
+    status_policies: {}
     status_types:
       status: str
     supported_backends:

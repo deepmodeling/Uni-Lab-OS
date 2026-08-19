@@ -851,7 +851,7 @@ def main():
         read_graphml,
         modify_to_backend_format,
     )
-    from unilabos.app.communication import get_communication_client
+    from unilabos.server.backend import get_backend_client
     from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDict
 
     graph: nx.Graph
@@ -927,7 +927,7 @@ def main():
 
     # Host 持有唯一微后端；Slave 只能经 HostLink 间接访问它。
     if BasicConfig.is_host_mode:
-        comm_client = get_communication_client()
+        comm_client = get_backend_client()
         args_dict["bridges"].append(comm_client)
 
         def _exit(signum, frame):

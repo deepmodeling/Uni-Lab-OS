@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from unilabos.app.backend_protocol.control import ControlWebSocketClient
 from unilabos.app.communication import (
     APP_BRIDGES,
     COMMUNICATION_PROTOCOL,
@@ -26,6 +25,7 @@ from unilabos.legacy_support.http import (
     reset_legacy_http_client,
 )
 from unilabos.legacy_support.websocket import LegacyWebSocketClient
+from unilabos.server.backend.websocket import BackendWebSocketClient
 
 
 class _Coordinator:
@@ -119,7 +119,7 @@ def test_factory_selects_legacy_payload_only_from_global_switch() -> None:
     control = CommunicationClientFactory.create_client()
     configure_legacy_support(True)
     legacy = CommunicationClientFactory.create_client()
-    assert isinstance(control, ControlWebSocketClient)
+    assert isinstance(control, BackendWebSocketClient)
     assert isinstance(legacy, LegacyWebSocketClient)
     assert isinstance(legacy, WebSocketClient)
 
@@ -234,7 +234,7 @@ def test_old_protocol_does_not_consume_control_messages() -> None:
 
 def test_control_protocol_routes_only_short_control_notices() -> None:
     coordinator = _Coordinator()
-    client = ControlWebSocketClient(
+    client = BackendWebSocketClient(
         "ws://backend.example/api/v1/ws/schedule",
         coordinator_getter=lambda: coordinator,
     )
@@ -249,7 +249,7 @@ def test_control_protocol_routes_only_short_control_notices() -> None:
 
 def test_control_protocol_publishes_only_edge_change_index() -> None:
     coordinator = _Coordinator()
-    client = ControlWebSocketClient(
+    client = BackendWebSocketClient(
         "ws://backend.example/api/v1/ws/schedule",
         coordinator_getter=lambda: coordinator,
     )

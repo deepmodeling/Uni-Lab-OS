@@ -1,190 +1,25 @@
-#!/usr/bin/env python
-# coding=utf-8
-"""后端通信协议抽象与客户端工厂。"""
+"""应用启动层的 Backend 会话入口。
 
-from abc import ABC, abstractmethod
-from typing import Optional
+连接实现及生命周期归属于 :mod:`unilabos.server.backend`；这里仅保留稳定的
+应用层导入路径，避免 CLI、HostNode 和运行时工具各自创建连接。
+"""
 
-from unilabos.legacy_support import legacy_support_enabled
-from unilabos.utils import logger
-
-APP_BRIDGES = ("websocket",)
-COMMUNICATION_PROTOCOL = "websocket"
-
-
-class BaseCommunicationClient(ABC):
-    """
-    通信客户端抽象基类
-
-    定义了所有通信客户端（WebSocket等）需要实现的接口。
-    """
-
-    def __init__(self):
-        self.is_disabled = True
-        self.client_id = ""
-
-    @abstractmethod
-    def start(self) -> None:
-        """
-        启动通信客户端连接
-        """
-        pass
-
-    @abstractmethod
-    def stop(self) -> None:
-        """
-        停止通信客户端连接
-        """
-        pass
-
-    @abstractmethod
-    def publish_device_status(self, device_status: dict, device_id: str, property_name: str) -> None:
-        """
-        发布设备状态信息
-
-        Args:
-            device_status: 设备状态字典
-            device_id: 设备ID
-            property_name: 属性名称
-        """
-        pass
-
-    @abstractmethod
-    def publish_job_status(
-        self, feedback_data: dict, job_id: str, status: str, return_info: Optional[dict] = None
-    ) -> None:
-        """
-        发布作业状态信息
-
-        Args:
-            feedback_data: 反馈数据
-            job_id: 作业ID
-            status: 作业状态
-            return_info: 返回信息
-        """
-        pass
-
-    @abstractmethod
-    def send_ping(self, ping_id: str, timestamp: float) -> None:
-        """
-        发送ping消息
-
-        Args:
-            ping_id: ping ID
-            timestamp: 时间戳
-        """
-        pass
-
-    def publish_action_lock(self, device_id: str, action_name: str, free: bool) -> None:
-        """
-        主动上报单个 device+action 的锁(可用性)状态(默认空实现)
-
-        Args:
-            device_id: 设备ID
-            action_name: 动作名称
-            free: 是否空闲(True 空闲, False 占用)
-        """
-        pass
-
-    def publish_action_locks(self, locks: list) -> None:
-        """
-        批量主动上报 device+action 的锁(可用性)状态(默认空实现)
-
-        Args:
-            locks: [{"device_id": str, "action_name": str, "free": bool}, ...]
-        """
-        pass
-
-    def setup_pong_subscription(self) -> None:
-        """
-        设置pong消息订阅（可选实现）
-        """
-        pass
-
-    @property
-    def is_connected(self) -> bool:
-        """
-        检查是否已连接
-
-        Returns:
-            是否已连接
-        """
-        return not self.is_disabled
-
-
-class CommunicationClientFactory:
-    """创建固定 WebSocket 传输的后端客户端；--legacy 只改变线协议。"""
-
-    _client_cache: Optional[BaseCommunicationClient] = None
-
-    @classmethod
-    def create_client(cls) -> BaseCommunicationClient:
-        """
-        创建通信客户端实例
-
-        Returns:
-            通信客户端实例
-        """
-        if legacy_support_enabled():
-            return cls._create_legacy_client()
-        return cls._create_control_client()
-
-    @classmethod
-    def get_client(cls) -> BaseCommunicationClient:
-        """
-        获取通信客户端实例（单例模式）
-
-        Returns:
-            通信客户端实例
-        """
-        if cls._client_cache is None:
-            cls._client_cache = cls.create_client()
-            logger.trace(f"[CommunicationFactory] Created {type(cls._client_cache).__name__} client")
-
-        return cls._client_cache
-
-    @classmethod
-    def _create_control_client(cls) -> BaseCommunicationClient:
-        """创建新微后端的 WS 轻通知客户端。"""
-
-        from unilabos.app.backend_protocol.control import ControlWebSocketClient
-
-        return ControlWebSocketClient()
-
-    @classmethod
-    def _create_legacy_client(cls) -> BaseCommunicationClient:
-        """创建旧后端完整 WebSocket payload 客户端。"""
-
-        from unilabos.legacy_support.websocket import LegacyWebSocketClient
-
-        return LegacyWebSocketClient()
-
-    @classmethod
-    def reset_client(cls):
-        """重置客户端缓存（用于测试或重新配置）"""
-        if cls._client_cache:
-            try:
-                cls._client_cache.stop()
-            except Exception as e:
-                logger.warning(f"[CommunicationFactory] Error stopping client: {str(e)}")
-
-        cls._client_cache = None
-        logger.info("[CommunicationFactory] Client cache reset")
-
-def get_communication_client() -> BaseCommunicationClient:
-    """
-    获取通信客户端实例的便捷函数
-
-    Returns:
-        通信客户端实例
-    """
-    return CommunicationClientFactory.get_client()
-
+from unilabos.server.backend.session import (
+    APP_BRIDGES,
+    COMMUNICATION_PROTOCOL,
+    BackendSessionFactory,
+    BaseCommunicationClient,
+    CommunicationClientFactory,
+    get_backend_client,
+    get_communication_client,
+)
 
 __all__ = [
     "APP_BRIDGES",
-    "BaseCommunicationClient",
     "COMMUNICATION_PROTOCOL",
+    "BackendSessionFactory",
+    "BaseCommunicationClient",
     "CommunicationClientFactory",
+    "get_backend_client",
     "get_communication_client",
 ]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding=utf-8
-"""旧后端完整载荷 WebSocket 协议的实现。\n\n该模块保留旧后端使用的 job_start、设备状态、物料变更和完整结果 payload。\n新微后端的 control.v1 位于 unilabos.app.backend_protocol.control。\n"""
+"""旧后端完整载荷 WebSocket 协议的实现。\n\n该模块保留旧后端使用的 job_start、设备状态、物料变更和完整结果 payload。\n新微后端的通用 Backend 会话位于 unilabos.server.backend。\n"""
 
 import json
 import logging
@@ -23,11 +23,11 @@ from unilabos.app.model import JobAddReq
 from unilabos.resources.objects.resource import ResourceDictType
 from unilabos.app.execution_adapter import get_execution_adapter
 from unilabos.utils.type_check import serialize_result_info
-from unilabos.app.communication import BaseCommunicationClient
+from unilabos.server.backend.session import BaseBackendClient
 from unilabos.config.config import WSConfig, BasicConfig
 from unilabos.utils.log import get_comm_logger
 from unilabos.utils.tracing import wrap_with_current_context
-from unilabos.app.backend_protocol.common import build_schedule_websocket_url
+from unilabos.server.backend.url import build_backend_websocket_url
 
 
 def _get_job_execution_backend():
@@ -1372,7 +1372,7 @@ class QueueProcessor:
             self.websocket_client.publish_action_lock(device_id, action_name, free=True)
 
 
-class WebSocketClient(BaseCommunicationClient):
+class WebSocketClient(BaseBackendClient):
     """
     重构后的WebSocket客户端 v2
 
@@ -1419,7 +1419,7 @@ class WebSocketClient(BaseCommunicationClient):
     def _build_websocket_url(self) -> Optional[str]:
         """构建旧协议 schedule 通道的 WebSocket URL。"""
 
-        return build_schedule_websocket_url()
+        return build_backend_websocket_url()
 
     @staticmethod
     def _job_start_cache_key(job_id: str, task_id: str) -> Optional[Tuple[str, str]]:
@@ -1603,7 +1603,7 @@ class WebSocketClient(BaseCommunicationClient):
 
         logger.info("[WebSocketClient] All threads stopped")
 
-    # BaseCommunicationClient接口实现
+    # BaseBackendClient 接口实现
     def is_connected(self) -> bool:
         """检查是否已连接"""
         return self.message_processor.is_connected() and not self.is_disabled

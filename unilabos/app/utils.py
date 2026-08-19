@@ -250,9 +250,9 @@ def cleanup_for_restart() -> bool:
     # Step 1: Stop WebSocket communication client
     print_status("[Restart] Step 1: Stopping WebSocket client...", "info")
     try:
-        from unilabos.app.communication import get_communication_client
+        from unilabos.server.backend import get_backend_client
 
-        comm_client = get_communication_client()
+        comm_client = get_backend_client()
         if comm_client is not None:
             comm_client.stop()
             print_status("[Restart] WebSocket client stopped", "info")

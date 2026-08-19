@@ -1,4 +1,7 @@
-"""从 Backend HTTP 数据面拉取权威控制命令。"""
+"""Backend HTTP 数据面客户端。
+
+WebSocket 只通知对象变化；调度命令及其他数据域的权威正文通过这里拉取。
+"""
 
 from __future__ import annotations
 
@@ -12,12 +15,12 @@ from unilabos.server.protocol.control import BackendCommandDocument
 from unilabos.utils.tracing import inject_trace_context
 
 
-class BackendControlHTTPError(RuntimeError):
-    """Backend 控制数据面返回了无效或失败响应。"""
+class BackendHTTPError(RuntimeError):
+    """Backend HTTP 数据面返回了无效或失败响应。"""
 
 
-class BackendControlHTTPClient:
-    """WS 通知对应的 HTTP pull 客户端。"""
+class BackendHTTPClient:
+    """Backend WS 通知对应的通用 HTTP 数据面客户端。"""
 
     def __init__(
         self,
@@ -49,19 +52,19 @@ class BackendControlHTTPClient:
         try:
             body = response.json()
         except ValueError as exc:
-            raise BackendControlHTTPError(
+            raise BackendHTTPError(
                 f"command {command_uuid!r} returned non-JSON HTTP "
                 f"{response.status_code}"
             ) from exc
         if not 200 <= response.status_code < 300:
-            raise BackendControlHTTPError(
+            raise BackendHTTPError(
                 f"command {command_uuid!r} returned HTTP {response.status_code}: "
                 f"{body}"
             )
         if not isinstance(body, dict):
-            raise BackendControlHTTPError("backend command response must be an object")
+            raise BackendHTTPError("backend command response must be an object")
         if "code" in body and int(body.get("code") or 0) != 0:
-            raise BackendControlHTTPError(
+            raise BackendHTTPError(
                 f"backend command business error {body.get('code')}: "
                 f"{body.get('error') or body.get('message')}"
             )
@@ -69,9 +72,9 @@ class BackendControlHTTPClient:
         try:
             return BackendCommandDocument.model_validate(data)
         except Exception as exc:
-            raise BackendControlHTTPError(
+            raise BackendHTTPError(
                 f"command {command_uuid!r} has an invalid document"
             ) from exc
 
 
-__all__ = ["BackendControlHTTPClient", "BackendControlHTTPError"]
+__all__ = ["BackendHTTPClient", "BackendHTTPError"]

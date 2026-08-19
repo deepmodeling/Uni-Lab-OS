@@ -1,4 +1,4 @@
-"""新微后端 ``control.v1`` WebSocket 轻通知客户端。"""
+"""微后端与 Backend 之间的 ``control.v1`` WebSocket 轻通知客户端。"""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ from typing import Any, Optional
 
 import websockets
 
-from unilabos.app.backend_protocol.common import build_schedule_websocket_url
-from unilabos.app.communication import BaseCommunicationClient
 from unilabos.app.execution_adapter import get_execution_adapter
 from unilabos.config.config import BasicConfig, WSConfig
+from unilabos.server.backend.session import BaseBackendClient
+from unilabos.server.backend.url import build_backend_websocket_url
 from unilabos.server.protocol.control import CONTROL_PROTOCOL_VERSION
 from unilabos.utils.log import get_comm_logger
 
@@ -36,8 +36,8 @@ def _get_business_coordinator() -> Any:
         return None
 
 
-class ControlWebSocketClient(BaseCommunicationClient):
-    """只传输短通知，业务命令和结果正文固定走 HTTP 数据面。"""
+class BackendWebSocketClient(BaseBackendClient):
+    """只传输短通知，各业务域的完整正文固定走 HTTP 数据面。"""
 
     def __init__(
         self,
@@ -51,7 +51,7 @@ class ControlWebSocketClient(BaseCommunicationClient):
         self.websocket_url = (
             websocket_url
             if websocket_url is not None
-            else build_schedule_websocket_url()
+            else build_backend_websocket_url()
         ) or ""
         self._coordinator_getter = coordinator_getter or _get_business_coordinator
         self._send_queue: Queue[dict[str, Any]] = Queue(maxsize=1000)
@@ -298,4 +298,4 @@ class ControlWebSocketClient(BaseCommunicationClient):
                 return
 
 
-__all__ = ["ControlWebSocketClient"]
+__all__ = ["BackendWebSocketClient"]

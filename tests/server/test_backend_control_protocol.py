@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from unilabos.server.clients.backend_control import BackendControlHTTPClient
+from unilabos.server.backend.http import BackendHTTPClient
+from unilabos.server.backend.sync import InstanceSynchronizer, TemplateSynchronizer
+from unilabos.server.backend.websocket import BackendWebSocketClient
 from unilabos.server.protocol.common import canonical_hash
 from unilabos.server.protocol.control import BackendCommandNotice
 
@@ -72,7 +74,7 @@ def test_http_client_fetches_full_document_from_uuid_derived_path() -> None:
         },
     }
     session = _Session(body)
-    client = BackendControlHTTPClient(
+    client = BackendHTTPClient(
         "https://backend.example/api/v1", session=session
     )
 
@@ -80,3 +82,10 @@ def test_http_client_fetches_full_document_from_uuid_derived_path() -> None:
 
     assert document.payload == payload
     assert session.calls[0][0].endswith("/edge/commands/command%2F1")
+
+
+def test_backend_package_owns_transport_and_data_sync() -> None:
+    assert BackendWebSocketClient.__module__ == "unilabos.server.backend.websocket"
+    assert BackendHTTPClient.__module__ == "unilabos.server.backend.http"
+    assert InstanceSynchronizer.__module__ == "unilabos.server.backend.sync.instances"
+    assert TemplateSynchronizer.__module__ == "unilabos.server.backend.sync.templates"

@@ -9,7 +9,7 @@ import uuid
 from dataclasses import asdict, is_dataclass
 from typing import Any, Callable, Optional
 
-from unilabos.server.clients.backend_control import BackendControlHTTPClient
+from unilabos.server.backend.http import BackendHTTPClient
 from unilabos.server.models.runtime import ExecutionJobRecord
 from unilabos.server.protocol.common import canonical_hash, canonical_json
 from unilabos.server.protocol.control import (
@@ -62,7 +62,7 @@ class WorkflowBusinessCoordinator:
         transport: str,
         host_uuid: str,
         instance_name: str,
-        data_plane: Optional[BackendControlHTTPClient] = None,
+        data_plane: Optional[BackendHTTPClient] = None,
         legacy_bridge: Any = None,
         notice_callback: Optional[Callable[[], None]] = None,
     ) -> None:
@@ -75,7 +75,7 @@ class WorkflowBusinessCoordinator:
         self.transport = transport
         self.host_uuid = host_uuid
         self.instance_name = instance_name
-        self.data_plane = data_plane or BackendControlHTTPClient()
+        self.data_plane = data_plane or BackendHTTPClient()
         self.legacy_bridge = legacy_bridge
         self.notice_callback = notice_callback
         self.adapter_epoch = str(uuid.uuid4())

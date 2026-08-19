@@ -169,7 +169,8 @@ class ItemizedCarrier(ResourcePLR):
       )
 
     for ordinal, site in enumerate(normalized):
-      location = self.child_locations[site.label]
+      site_key = site.label if site.label in self.child_locations else site.index
+      location = self.child_locations[site_key]
       if location != Coordinate(
         site.pose.position3d.x,
         site.pose.position3d.y,
@@ -178,7 +179,7 @@ class ItemizedCarrier(ResourcePLR):
         raise ValueError(
           f"ItemizedCarrier {self.name} 的 Site {site.label} 位置与 canonical 快照冲突"
         )
-      if self.child_size[site.label] != site.pose.size.model_dump():
+      if self.child_size[site_key] != site.pose.size.model_dump():
         raise ValueError(
           f"ItemizedCarrier {self.name} 的 Site {site.label} 尺寸与 canonical 快照冲突"
         )

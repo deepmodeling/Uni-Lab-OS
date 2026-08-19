@@ -109,6 +109,7 @@ def get_plr_template_name(
         extra_template_name
         or serialized_template_name
         or serialized.get("model")
+        or getattr(resource, "model", None)
         or serialized.get("type")
         or resource.__class__.__name__
     )

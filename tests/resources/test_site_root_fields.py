@@ -582,9 +582,9 @@ def test_known_random_uuid_seeds_itemized_carrier_draft_sites():
         size_x=100,
         size_y=100,
         size_z=20,
-        sites={"A1": None, "A2": None},
+        sites={0: None, "A2": None},
+        model="StrictCarrier",
     )
-    set_plr_template_name(carrier, "StrictCarrier")
 
     tree = ResourceTreeSet.from_plr_resources(
         [carrier], known_random_uuid=True
@@ -592,7 +592,8 @@ def test_known_random_uuid_seeds_itemized_carrier_draft_sites():
 
     sites = tree.root_nodes[0].res_content.sites
     assert sites is not None
-    assert [site.label for site in sites] == ["A1", "A2"]
+    assert [site.label for site in sites] == ["0", "A2"]
+    assert all(site.template_name == "StrictCarrier" for site in sites)
     assert all(site.material_uuid == carrier.unilabos_uuid for site in sites)
     assert all(UUID(site.uuid) for site in sites)
     assert carrier.resource_sites == sites

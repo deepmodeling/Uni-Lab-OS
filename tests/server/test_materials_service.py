@@ -101,14 +101,13 @@ def test_template_and_material_tree_roundtrip_is_authoritative(tmp_path) -> None
                     "random-child", "tube-template", "tube", parent="random-root"
                 ),
             ],
-            known_random_uuid=True,
         )
         command_uuid = str(uuid4())
         mutation = _mutation("create_material_tree", command_uuid=command_uuid)
         result = service.create_tree(mutation, request)
 
         assert result.replayed is False
-        assert result.data.client_uuid_map.keys() == {
+        assert result.data.client_ref_map.keys() == {
             "random-root",
             "random-child",
         }
@@ -194,7 +193,7 @@ def test_move_clears_source_and_sets_destination_atomically(tmp_path) -> None:
                 nodes=[_node("deck-2", "deck-template", "deck")]
             ),
         )
-        child_uuid = first.data.client_uuid_map["tube"]
+        child_uuid = first.data.client_ref_map["tube"]
         source_site_uuid = first.data.nodes[0].sites[0].site_uuid
         destination_site_uuid = second.data.nodes[0].sites[0].site_uuid
 
@@ -308,7 +307,7 @@ def test_recursive_delete_and_change_feed_are_aggregate_based(tmp_path) -> None:
         )
 
         assert set(result.data.deleted_material_uuids) == set(
-            created.data.client_uuid_map.values()
+            created.data.client_ref_map.values()
         )
         assert service.list_materials() == []
         changes = service.changes()
@@ -341,7 +340,7 @@ def test_snapshot_moves_between_sites_in_one_transaction(tmp_path) -> None:
                 ]
             ),
         )
-        identities = created.data.client_uuid_map
+        identities = created.data.client_ref_map
         base = service.get_tree(created.data.root_material_uuid)
         carrier_1 = next(
             node

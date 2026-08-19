@@ -21,6 +21,8 @@ from unilabos.server.protocol.materials import (
     MaterialSubstance,
     MaterialTreeCreate,
     MaterialTreeRead,
+    ResourceTemplateRead,
+    SiteCreate,
     SiteRead,
     SiteWrite,
 )
@@ -35,6 +37,8 @@ class MaterialGateway(Protocol):
     ) -> MutationResult[MaterialTreeRead]: ...
 
     def get_tree(self, root_material_uuid: str) -> MaterialTreeRead: ...
+
+    def list_templates(self) -> list[ResourceTemplateRead]: ...
 
 
 def _position_from_resource(resource: ResourceDict) -> MaterialPosition:
@@ -139,19 +143,49 @@ def _site_from_resource(value: Any) -> SiteWrite:
     )
 
 
+def _site_create_from_resource(
+    value: Any, client_refs: Mapping[str, str]
+) -> SiteCreate:
+    occupied_client_ref = None
+    if value.occupied_material_uuid is not None:
+        occupied_client_ref = client_refs.get(value.occupied_material_uuid)
+        if occupied_client_ref is None:
+            raise ValueError(
+                f"Site {value.label} 引用了创建树外的物料 UUID"
+            )
+    return SiteCreate(
+        schema_version=value.schema_version,
+        template_name=value.template_name,
+        site_index=value.index,
+        label=value.label,
+        visible=value.visible,
+        occupied_client_ref=occupied_client_ref,
+        pose=value.pose.model_dump(mode="json"),
+        allowed_resource_categories=value.allowed_resource_categories,
+        parent_link=value.parent_link,
+        description=value.description,
+        meta_data=value.meta_data,
+        extra=value.extra,
+    )
+
+
 def resource_tree_to_create(
     value: ResourceTreeSet,
     *,
-    known_random_uuid: bool = False,
     template_uuid_by_name: Optional[Mapping[str, str]] = None,
 ) -> MaterialTreeCreate:
-    """把一棵创建草稿转为请求；草稿 UUID 只进入 ``client_ref``。"""
+    """把一棵内部草稿转为不携带实例 UUID 的创建请求。"""
 
     if len(value.trees) != 1:
         raise ValueError("one create request must contain exactly one resource tree")
     mapping = dict(template_uuid_by_name or {})
+    instances = value.trees[0].get_all_nodes()
+    client_refs = {
+        instance.res_content.uuid: f"node-{ordinal}"
+        for ordinal, instance in enumerate(instances)
+    }
     nodes: list[MaterialNodeCreate] = []
-    for instance in value.trees[0].get_all_nodes():
+    for instance in instances:
         resource = instance.res_content
         template_uuid = resource.resource_template_uuid or mapping.get(
             resource.template_name, ""
@@ -164,8 +198,8 @@ def resource_tree_to_create(
         extra.pop(SUBSTANCE_METADATA_EXTRA, None)
         nodes.append(
             MaterialNodeCreate(
-                client_ref=resource.uuid,
-                parent_client_ref=resource.uuid_parent,
+                client_ref=client_refs[resource.uuid],
+                parent_client_ref=client_refs.get(resource.uuid_parent),
                 identity=MaterialIdentityWrite(
                     resource_id=resource.id,
                     template_uuid=template_uuid,
@@ -194,24 +228,52 @@ def resource_tree_to_create(
                     sites_initialized=resource.sites_initialized,
                     unknown_counter=resource.unknown_counter,
                 ),
-                sites=[_site_from_resource(site) for site in (resource.sites or [])],
+                sites=[
+                    _site_create_from_resource(site, client_refs)
+                    for site in (resource.sites or [])
+                ],
             )
         )
-    return MaterialTreeCreate(nodes=nodes, known_random_uuid=known_random_uuid)
+    return MaterialTreeCreate(nodes=nodes)
 
 
 def plr_resources_to_create(
     resources: Sequence[Any],
     *,
-    known_random_uuid: bool = False,
     template_uuid_by_name: Optional[Mapping[str, str]] = None,
 ) -> MaterialTreeCreate:
+    """从无 UUID 的 PLR 树生成创建请求，不修改调用方对象。"""
+
+    def validate_new(resource: Any) -> None:
+        if getattr(resource, "unilabos_uuid", ""):
+            raise ValueError(
+                f"PLR 资源 {resource.name} 已有 UUID；已有物料应走更新而不是创建"
+            )
+        resource_sites = getattr(resource, "resource_sites", None)
+        if resource_sites:
+            raise ValueError(
+                f"PLR 资源 {resource.name} 已有 canonical Site UUID；"
+                "新物料 Site 应由已登记模板和微后端创建"
+            )
+        native_sites = getattr(resource, "sites", None)
+        if isinstance(native_sites, dict):
+            for site in native_sites.values():
+                if site is not None and getattr(site, "unilabos_site_uuid", ""):
+                    raise ValueError(
+                        f"PLR 资源 {resource.name} 已有 Site UUID；"
+                        "已有物料应走更新而不是创建"
+                    )
+        for child in getattr(resource, "children", []) or []:
+            validate_new(child)
+
+    for resource in resources:
+        validate_new(resource)
+    draft_resources = copy.deepcopy(list(resources))
     tree = ResourceTreeSet.from_plr_resources(
-        list(resources), known_random_uuid=known_random_uuid
+        draft_resources, known_random_uuid=True
     )
     return resource_tree_to_create(
         tree,
-        known_random_uuid=known_random_uuid,
         template_uuid_by_name=template_uuid_by_name,
     )
 
@@ -371,6 +433,7 @@ def resource_tree_to_snapshot(
 @dataclass(frozen=True)
 class CreatedPLRMaterials:
     result: MutationResult[MaterialTreeRead]
+    tree: ResourceTreeSet
     resources: list[Any]
 
 
@@ -379,18 +442,22 @@ def create_plr_materials(
     mutation: InventoryMutation,
     resources: Sequence[Any],
     *,
-    known_random_uuid: bool = False,
     template_uuid_by_name: Optional[Mapping[str, str]] = None,
 ) -> CreatedPLRMaterials:
+    authority_templates = {
+        template.name: template.template_uuid for template in gateway.list_templates()
+    }
+    authority_templates.update(template_uuid_by_name or {})
     request = plr_resources_to_create(
         resources,
-        known_random_uuid=known_random_uuid,
-        template_uuid_by_name=template_uuid_by_name,
+        template_uuid_by_name=authority_templates,
     )
     result = gateway.create_tree(mutation, request)
+    tree = material_tree_to_resource_tree(result.data)
     return CreatedPLRMaterials(
         result=result,
-        resources=material_tree_to_plr_resources(result.data),
+        tree=tree,
+        resources=tree.to_plr_resources(),
     )
 
 

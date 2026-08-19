@@ -44,6 +44,7 @@ from unilabos.server.protocol.materials import (
     MaterialTreeRead,
     ResourceTemplateRead,
     ResourceTemplateWrite,
+    SiteCreate,
     SiteRead,
     SiteWrite,
 )
@@ -663,7 +664,7 @@ class MaterialsService:
         return self.get_material(record.material_uuid)
 
     def get_tree(
-        self, root_material_uuid: str, *, client_uuid_map: Optional[dict[str, str]] = None
+        self, root_material_uuid: str, *, client_ref_map: Optional[dict[str, str]] = None
     ) -> MaterialTreeRead:
         records = self.repository.tree_materials(root_material_uuid)
         if not records:
@@ -688,7 +689,7 @@ class MaterialsService:
             root_material_uuid=root_material_uuid,
             snapshot_sequence=self.repository.latest_ledger_sequence(),
             nodes=nodes,
-            client_uuid_map=client_uuid_map or {},
+            client_ref_map=client_ref_map or {},
             state_hash=tree_hash,
         )
 
@@ -725,7 +726,7 @@ class MaterialsService:
     @staticmethod
     def _site_from_template(
         value: dict[str, Any], *, template_name: str, ordinal: int
-    ) -> SiteWrite:
+    ) -> SiteCreate:
         payload = dict(value)
         for field in (
             "uuid",
@@ -753,7 +754,7 @@ class MaterialsService:
         extras = {key: payload.pop(key) for key in list(payload) if key not in known}
         extra = dict(payload.pop("extra", {}) or {})
         extra.update(extras)
-        return SiteWrite(
+        return SiteCreate(
             schema_version=int(payload.pop("schema_version", 1)),
             template_name=template_name,
             site_index=index,
@@ -776,7 +777,7 @@ class MaterialsService:
         def apply(timestamp: int) -> _Applied[MaterialTreeRead]:
             client_map = {node.client_ref: str(uuid4()) for node in value.nodes}
             templates: dict[str, ResourceTemplateRecord] = {}
-            node_sites: dict[str, list[SiteWrite]] = {}
+            node_sites: dict[str, list[SiteCreate]] = {}
             for node in value.nodes:
                 if node.identity.parent_material_uuid is not None:
                     raise MaterialValidationError(
@@ -879,9 +880,9 @@ class MaterialsService:
             for node in value.nodes:
                 owner_uuid = client_map[node.client_ref]
                 for site in node_sites[node.client_ref]:
-                    occupant = site.occupied_material_uuid
+                    occupant = site.occupied_client_ref
                     if occupant is not None:
-                        occupant = client_map.get(occupant, occupant)
+                        occupant = client_map[occupant]
                     record = SiteRecord(
                         site_uuid=str(uuid4()),
                         schema_version=site.schema_version,
@@ -963,7 +964,7 @@ class MaterialsService:
                 for node in value.nodes
                 if node.parent_client_ref is None
             )
-            tree = self.get_tree(client_map[root_ref], client_uuid_map=client_map)
+            tree = self.get_tree(client_map[root_ref], client_ref_map=client_map)
             return _Applied(data=tree, affected=affected, sequences=sequences)
 
         return self._run_mutation(

@@ -148,6 +148,23 @@ class SiteWrite(ServerObject):
     extra: JsonObject = Field(default_factory=dict)
 
 
+class SiteCreate(ServerObject):
+    """创建树中的 Site；只允许关联 client_ref，不接受实例 UUID。"""
+
+    schema_version: Literal[1] = 1
+    template_name: NonEmptyStr
+    site_index: Union[int, NonEmptyStr]
+    label: NonEmptyStr
+    visible: bool = True
+    occupied_client_ref: Optional[NonEmptyStr] = None
+    pose: JsonObject = Field(default_factory=dict)
+    allowed_resource_categories: list[str] = Field(default_factory=list)
+    parent_link: str = ""
+    description: str = ""
+    meta_data: JsonObject = Field(default_factory=dict)
+    extra: JsonObject = Field(default_factory=dict)
+
+
 class SiteRead(SiteWrite):
     site_uuid: NonEmptyStr
     owner_material_uuid: NonEmptyStr
@@ -168,12 +185,11 @@ class MaterialNodeCreate(ServerObject):
     identity: MaterialIdentityWrite
     position: MaterialPosition = Field(default_factory=MaterialPosition)
     data: MaterialDataWrite = Field(default_factory=MaterialDataWrite)
-    sites: list[SiteWrite] = Field(default_factory=list)
+    sites: list[SiteCreate] = Field(default_factory=list)
 
 
 class MaterialTreeCreate(ServerObject):
     nodes: list[MaterialNodeCreate]
-    known_random_uuid: bool = False
 
     @model_validator(mode="after")
     def _validate_tree(self) -> "MaterialTreeCreate":
@@ -182,6 +198,7 @@ class MaterialTreeCreate(ServerObject):
         refs = [node.client_ref for node in self.nodes]
         if len(refs) != len(set(refs)):
             raise ValueError("material tree client_ref values must be unique")
+        ref_set = set(refs)
         known: set[str] = set()
         roots = 0
         for node in self.nodes:
@@ -189,6 +206,14 @@ class MaterialTreeCreate(ServerObject):
                 roots += 1
             elif node.parent_client_ref not in known:
                 raise ValueError("material tree must be parent-first")
+            for site in node.sites:
+                if (
+                    site.occupied_client_ref is not None
+                    and site.occupied_client_ref not in ref_set
+                ):
+                    raise ValueError(
+                        "site occupied_client_ref must reference a node in the create tree"
+                    )
             known.add(node.client_ref)
         if roots != 1:
             raise ValueError("material tree requires exactly one root")
@@ -208,7 +233,7 @@ class MaterialTreeRead(ServerObject):
     root_material_uuid: NonEmptyStr
     snapshot_sequence: int = Field(ge=0)
     nodes: list[MaterialAggregateRead]
-    client_uuid_map: dict[str, str] = Field(default_factory=dict)
+    client_ref_map: dict[str, str] = Field(default_factory=dict)
     state_hash: NonEmptyStr
 
 
@@ -297,6 +322,7 @@ __all__ = [
     "MaterialTreeRead",
     "ResourceTemplateRead",
     "ResourceTemplateWrite",
+    "SiteCreate",
     "SiteRead",
     "SiteWrite",
 ]

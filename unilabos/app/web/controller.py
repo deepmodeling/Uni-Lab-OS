@@ -10,9 +10,18 @@ import traceback
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, Tuple
 
+from unilabos.app.execution_adapter import get_execution_adapter
 from unilabos.app.model import JobAddReq, JobData
-from unilabos.ros.nodes.presets.host_node import HostNode
 from unilabos.utils import logger
+
+
+def _job_execution_backend():
+    try:
+        from unilabos.app.scheduler.integration import get_edge_backend
+
+        return get_edge_backend()
+    except ImportError:
+        return None
 
 
 @dataclass
@@ -120,7 +129,7 @@ def get_resources() -> Tuple[bool, Any]:
     Returns:
         Tuple[bool, Any]: (是否成功, 资源配置或错误信息)
     """
-    host_node = HostNode.get_instance(0)
+    host_node = get_execution_adapter(0)
     if host_node is None:
         return False, "Host node not initialized"
 
@@ -133,7 +142,7 @@ def devices() -> Tuple[bool, Any]:
     Returns:
         Tuple[bool, Any]: (是否成功, 设备配置或错误信息)
     """
-    host_node = HostNode.get_instance(0)
+    host_node = get_execution_adapter(0)
     if host_node is None:
         return False, "Host node not initialized"
 
@@ -164,8 +173,13 @@ def job_info(job_id: str, remove_after_read: bool = True) -> JobData:
             result=stored_result.result,
         )
 
-    # 没有存储的结果，从 HostNode 获取当前状态
-    host_node = HostNode.get_instance(0)
+    # 没有存储的结果，先从微后端读取 canonical job 状态。
+    microbackend = _job_execution_backend()
+    if microbackend is not None:
+        active = microbackend.device_manager.get_job_info(job_id)
+        if active is not None:
+            return JobData(jobId=job_id, status=2)
+    host_node = get_execution_adapter(0)
     if host_node is None:
         return JobData(jobId=job_id, status=0)
 
@@ -183,19 +197,14 @@ def check_device_action_busy(device_id: str, action_name: str) -> Tuple[bool, Op
     Returns:
         Tuple[bool, Optional[str]]: (是否繁忙, 当前执行的job_id或None)
     """
-    host_node = HostNode.get_instance(0)
-    if host_node is None:
+    microbackend = _job_execution_backend()
+    if microbackend is None:
         return False, None
 
     device_action_key = f"/devices/{device_id}/{action_name}"
-
-    # 检查 _device_action_status 中是否有正在执行的任务
-    if device_action_key in host_node._device_action_status:
-        status = host_node._device_action_status[device_action_key]
-        if status.job_ids:
-            # 返回第一个正在执行的job_id
-            current_job_id = next(iter(status.job_ids.keys()), None)
-            return True, current_job_id
+    for job in microbackend.device_manager.get_active_jobs():
+        if job.device_action_key == device_action_key:
+            return True, job.job_id
 
     return False, None
 
@@ -210,55 +219,22 @@ def _get_action_type(device_id: str, action_name: str) -> Optional[str]:
     Returns:
         动作类型字符串，未找到返回None
     """
-    try:
-        from unilabos.ros.nodes.base_device_node import registered_devices
-
-        # 方法1: 从运行时注册设备获取
-        if device_id in registered_devices:
-            device_info = registered_devices[device_id]
-            base_node = device_info.get("base_node_instance")
-            if base_node and hasattr(base_node, "_action_value_mappings"):
-                action_mappings = base_node._action_value_mappings
-                # 尝试直接匹配或 auto- 前缀匹配
-                for key in [action_name, f"auto-{action_name}"]:
-                    if key in action_mappings:
-                        action_type = action_mappings[key].get("type")
-                        if action_type:
-                            # 转换为字符串格式
-                            if hasattr(action_type, "__module__") and hasattr(action_type, "__name__"):
-                                return f"{action_type.__module__}.{action_type.__name__}"
-                            return str(action_type)
-
-        # 方法2: 从lab_registry获取
-        from unilabos.registry.registry import lab_registry
-
-        host_node = HostNode.get_instance(0)
-        if host_node and lab_registry:
-            devices_config = host_node.devices_config
-            device_class = None
-
-            for tree in devices_config.trees:
-                node = tree.root_node
-                if node.res_content.id == device_id:
-                    device_class = node.res_content.klass
-                    break
-
-            if device_class and device_class in lab_registry.device_type_registry:
-                device_type_info = lab_registry.device_type_registry[device_class]
-                class_info = device_type_info.get("class", {})
-                action_mappings = class_info.get("action_value_mappings", {})
-
-                for key in [action_name, f"auto-{action_name}"]:
-                    if key in action_mappings:
-                        action_type = action_mappings[key].get("type")
-                        if action_type:
-                            if hasattr(action_type, "__module__") and hasattr(action_type, "__name__"):
-                                return f"{action_type.__module__}.{action_type.__name__}"
-                            return str(action_type)
-
-    except Exception as e:
-        logger.warning(f"[Controller] Failed to get action type for {device_id}/{action_name}: {str(e)}")
-
+    host_node = get_execution_adapter(0)
+    if host_node is None:
+        return None
+    mappings = host_node._action_value_mappings.get(device_id, {})
+    for key in (action_name, f"auto-{action_name}"):
+        mapping = mappings.get(key)
+        if not isinstance(mapping, dict):
+            continue
+        action_type = mapping.get("type")
+        if action_type:
+            if hasattr(action_type, "__module__") and hasattr(
+                action_type,
+                "__name__",
+            ):
+                return f"{action_type.__module__}.{action_type.__name__}"
+            return str(action_type)
     return None
 
 
@@ -274,12 +250,12 @@ def job_add(req: JobAddReq) -> JobData:
 
 
 def get_pending_action_error_decisions() -> Tuple[bool, Dict[str, Any]]:
-    """只读查看 Host 正在等待后端 release 的设备失败。"""
+    """只读查看微后端正在等待 Backend release 的设备失败。"""
 
-    host_node = HostNode.get_instance(0)
-    if host_node is None:
-        return False, {"error": "Host node not initialized"}
-    return True, {"decisions": host_node.get_pending_action_error_decisions()}
+    microbackend = _job_execution_backend()
+    if microbackend is None:
+        return False, {"error": "Job execution microbackend not initialized"}
+    return True, {"decisions": microbackend.get_pending_action_error_decisions()}
 
 
 def submit_action_error_decision(
@@ -304,44 +280,30 @@ def get_online_devices() -> Tuple[bool, Dict[str, Any]]:
     Returns:
         Tuple[bool, Dict]: (是否成功, 在线设备信息)
     """
-    host_node = HostNode.get_instance(0)
+    host_node = get_execution_adapter(0)
     if host_node is None:
         return False, {"error": "Host node not initialized"}
 
-    try:
-        from unilabos.ros.nodes.base_device_node import registered_devices
-
-        online_devices = {}
-        for device_key in host_node._online_devices:
-            # device_key 格式: "namespace/device_id"
-            parts = device_key.split("/")
-            if len(parts) >= 2:
-                device_id = parts[-1]
-            else:
-                device_id = device_key
-
-            # 获取设备详细信息
-            device_info = registered_devices.get(device_id, {})
-            machine_name = host_node.device_machine_names.get(device_id, "未知")
-
-            online_devices[device_id] = {
-                "device_key": device_key,
-                "namespace": host_node.devices_names.get(device_id, ""),
-                "machine_name": machine_name,
-                "uuid": device_info.get("uuid", "") if device_info else "",
-                "node_name": device_info.get("node_name", "") if device_info else "",
-            }
-
-        return True, {
-            "online_devices": online_devices,
-            "total_count": len(online_devices),
-            "timestamp": time.time(),
+    descriptors = getattr(host_node, "_device_descriptors", {})
+    online_devices = {}
+    for device_key in host_node._online_devices:
+        device_id = device_key.rsplit("/", 1)[-1]
+        descriptor = descriptors.get(device_id, {})
+        online_devices[device_id] = {
+            "device_key": device_key,
+            "namespace": host_node.devices_names.get(device_id, ""),
+            "machine_name": host_node.device_machine_names.get(
+                device_id,
+                "未知",
+            ),
+            "uuid": descriptor.get("resource_uuid", ""),
+            "node_name": descriptor.get("registry_name", ""),
         }
-
-    except Exception as e:
-        logger.error(f"[Controller] Error getting online devices: {str(e)}")
-        traceback.print_exc()
-        return False, {"error": str(e)}
+    return True, {
+        "online_devices": online_devices,
+        "total_count": len(online_devices),
+        "timestamp": time.time(),
+    }
 
 
 def get_device_actions(device_id: str) -> Tuple[bool, Dict[str, Any]]:
@@ -353,51 +315,36 @@ def get_device_actions(device_id: str) -> Tuple[bool, Dict[str, Any]]:
     Returns:
         Tuple[bool, Dict]: (是否成功, 动作列表信息)
     """
-    host_node = HostNode.get_instance(0)
+    host_node = get_execution_adapter(0)
     if host_node is None:
         return False, {"error": "Host node not initialized"}
 
-    try:
-        from unilabos.ros.nodes.base_device_node import registered_devices
-        from unilabos.app.web.utils.action_utils import get_action_info
-
-        # 检查设备是否已注册
-        if device_id not in registered_devices:
-            return False, {"error": f"Device not found: {device_id}"}
-
-        device_info = registered_devices[device_id]
-        actions = device_info.get("actions", {})
-
-        actions_list = {}
-        for action_name, action_server in actions.items():
-            try:
-                action_info = get_action_info(action_server, action_name)
-                # 检查动作是否繁忙
-                is_busy, current_job = check_device_action_busy(device_id, action_name)
-                actions_list[action_name] = {
-                    **action_info,
-                    "is_busy": is_busy,
-                    "current_job_id": current_job[:8] if current_job else None,
-                }
-            except Exception as e:
-                logger.warning(f"[Controller] Error getting action info for {action_name}: {str(e)}")
-                actions_list[action_name] = {
-                    "type_name": "unknown",
-                    "action_path": f"/devices/{device_id}/{action_name}",
-                    "is_busy": False,
-                    "error": str(e),
-                }
-
-        return True, {
-            "device_id": device_id,
-            "actions": actions_list,
-            "action_count": len(actions_list),
+    mappings = host_node._action_value_mappings.get(device_id)
+    if mappings is None:
+        return False, {"error": f"Device not found: {device_id}"}
+    actions_list = {}
+    for action_name, mapping in mappings.items():
+        if action_name.startswith("_execute_driver_command"):
+            continue
+        is_busy, current_job = check_device_action_busy(device_id, action_name)
+        actions_list[action_name] = {
+            "type_name": str(mapping.get("type", "")),
+            "action_path": f"/devices/{device_id}/{action_name}",
+            "schema": mapping.get("schema"),
+            "handles": mapping.get("handles", {}),
+            "placeholder_keys": mapping.get("placeholder_keys", {}),
+            "error_policy": mapping.get("error_policy", {}),
+            "node_type": mapping.get("node_type"),
+            "feedback_interval": mapping.get("feedback_interval"),
+            "supported_backends": mapping.get("supported_backends"),
+            "is_busy": is_busy,
+            "current_job_id": current_job[:8] if current_job else None,
         }
-
-    except Exception as e:
-        logger.error(f"[Controller] Error getting device actions: {str(e)}")
-        traceback.print_exc()
-        return False, {"error": str(e)}
+    return True, {
+        "device_id": device_id,
+        "actions": actions_list,
+        "action_count": len(actions_list),
+    }
 
 
 def get_action_schema(device_id: str, action_name: str) -> Tuple[bool, Dict[str, Any]]:
@@ -410,14 +357,11 @@ def get_action_schema(device_id: str, action_name: str) -> Tuple[bool, Dict[str,
     Returns:
         Tuple[bool, Dict]: (是否成功, Schema信息)
     """
-    host_node = HostNode.get_instance(0)
+    host_node = get_execution_adapter(0)
     if host_node is None:
         return False, {"error": "Host node not initialized"}
 
     try:
-        from unilabos.registry.registry import lab_registry
-        from unilabos.ros.nodes.base_device_node import registered_devices
-
         result = {
             "device_id": device_id,
             "action_name": action_name,
@@ -432,47 +376,20 @@ def get_action_schema(device_id: str, action_name: str) -> Tuple[bool, Dict[str,
         result["is_busy"] = is_busy
         result["current_job_id"] = current_job[:8] if current_job else None
 
-        # 方法1: 从 registered_devices 获取运行时信息
-        if device_id in registered_devices:
-            device_info = registered_devices[device_id]
-            base_node = device_info.get("base_node_instance")
-
-            if base_node and hasattr(base_node, "_action_value_mappings"):
-                action_mappings = base_node._action_value_mappings
-                if action_name in action_mappings:
-                    mapping = action_mappings[action_name]
-                    result["schema"] = mapping.get("schema")
-                    result["goal_default"] = mapping.get("goal_default")
-                    result["action_type"] = str(mapping.get("type", ""))
-
-        # 方法2: 从 lab_registry 获取注册表信息（如果运行时没有）
-        if result["schema"] is None and lab_registry:
-            # 尝试查找设备类型
-            devices_config = host_node.devices_config
-            device_class = None
-
-            # 从配置中获取设备类型
-            for tree in devices_config.trees:
-                node = tree.root_node
-                if node.res_content.id == device_id:
-                    device_class = node.res_content.klass
-                    break
-
-            if device_class and device_class in lab_registry.device_type_registry:
-                device_type_info = lab_registry.device_type_registry[device_class]
-                class_info = device_type_info.get("class", {})
-                action_mappings = class_info.get("action_value_mappings", {})
-
-                # 尝试直接匹配或 auto- 前缀匹配
-                for key in [action_name, f"auto-{action_name}"]:
-                    if key in action_mappings:
-                        mapping = action_mappings[key]
-                        result["schema"] = mapping.get("schema")
-                        result["goal_default"] = mapping.get("goal_default")
-                        result["action_type"] = str(mapping.get("type", ""))
-                        result["handles"] = mapping.get("handles", {})
-                        result["placeholder_keys"] = mapping.get("placeholder_keys", {})
-                        break
+        action_mappings = host_node._action_value_mappings.get(device_id, {})
+        mapping = action_mappings.get(action_name) or action_mappings.get(
+            f"auto-{action_name}"
+        )
+        if isinstance(mapping, dict):
+            result["schema"] = mapping.get("schema")
+            result["goal_default"] = mapping.get("goal_default")
+            result["action_type"] = str(mapping.get("type", ""))
+            result["handles"] = mapping.get("handles", {})
+            result["placeholder_keys"] = mapping.get("placeholder_keys", {})
+            result["error_policy"] = mapping.get("error_policy", {})
+            result["node_type"] = mapping.get("node_type")
+            result["feedback_interval"] = mapping.get("feedback_interval")
+            result["supported_backends"] = mapping.get("supported_backends")
 
         if result["schema"] is None:
             return False, {"error": f"Action schema not found: {device_id}/{action_name}"}
@@ -491,50 +408,29 @@ def get_all_available_actions() -> Tuple[bool, Dict[str, Any]]:
     Returns:
         Tuple[bool, Dict]: (是否成功, 所有设备的动作信息)
     """
-    host_node = HostNode.get_instance(0)
+    host_node = get_execution_adapter(0)
     if host_node is None:
         return False, {"error": "Host node not initialized"}
 
-    try:
-        from unilabos.ros.nodes.base_device_node import registered_devices
-        from unilabos.app.web.utils.action_utils import get_action_info
-
-        all_actions = {}
-        total_action_count = 0
-
-        for device_id, device_info in registered_devices.items():
-            actions = device_info.get("actions", {})
-            device_actions = {}
-
-            for action_name, action_server in actions.items():
-                try:
-                    action_info = get_action_info(action_server, action_name)
-                    is_busy, current_job = check_device_action_busy(device_id, action_name)
-                    device_actions[action_name] = {
-                        "type_name": action_info.get("type_name", ""),
-                        "action_path": action_info.get("action_path", ""),
-                        "is_busy": is_busy,
-                        "current_job_id": current_job[:8] if current_job else None,
-                    }
-                    total_action_count += 1
-                except Exception as e:
-                    logger.warning(f"[Controller] Error processing action {device_id}/{action_name}: {str(e)}")
-
-            if device_actions:
-                all_actions[device_id] = {
-                    "actions": device_actions,
-                    "action_count": len(device_actions),
-                    "machine_name": host_node.device_machine_names.get(device_id, "未知"),
-                }
-
-        return True, {
-            "devices": all_actions,
-            "device_count": len(all_actions),
-            "total_action_count": total_action_count,
-            "timestamp": time.time(),
+    all_actions = {}
+    total_action_count = 0
+    for device_id, mappings in host_node._action_value_mappings.items():
+        ok, payload = get_device_actions(device_id)
+        if not ok or not payload.get("actions"):
+            continue
+        actions = payload["actions"]
+        total_action_count += len(actions)
+        all_actions[device_id] = {
+            "actions": actions,
+            "action_count": len(actions),
+            "machine_name": host_node.device_machine_names.get(
+                device_id,
+                "未知",
+            ),
         }
-
-    except Exception as e:
-        logger.error(f"[Controller] Error getting all available actions: {str(e)}")
-        traceback.print_exc()
-        return False, {"error": str(e)}
+    return True, {
+        "devices": all_actions,
+        "device_count": len(all_actions),
+        "total_action_count": total_action_count,
+        "timestamp": time.time(),
+    }

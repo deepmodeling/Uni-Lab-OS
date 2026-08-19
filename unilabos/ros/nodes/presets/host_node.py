@@ -4,11 +4,10 @@ import threading
 import time
 import traceback
 import uuid
-from copy import deepcopy
 
 from unilabos.utils.tools import fast_dumps_str as _fast_dumps_str, fast_loads as _fast_loads
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Mapping, Set, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Set, Tuple, Union
 
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point
@@ -28,10 +27,6 @@ from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialComma
 from unique_identifier_msgs.msg import UUID
 
 from unilabos.registry.decorators import device, action, NodeType, ActionInputHandle, ActionOutputHandle, DataSource
-from unilabos.registry.action_policy import (
-    SUCCESS_TYPE_OPERATOR_INTERVENTION,
-    resolve_error_options_by_names,
-)
 from unilabos.registry.placeholder_type import (
     ResourceSlot,
     DeviceSlot,
@@ -71,6 +66,7 @@ from unilabos.utils.exception import DeviceClassInvalid
 from unilabos.utils.log import warning
 from unilabos.utils.type_check import serialize_result_info
 from unilabos.config.config import BasicConfig
+from unilabos.app.execution_adapter import execution_result_bridges
 
 if TYPE_CHECKING:
     from unilabos.app.ws_client import QueueItem
@@ -152,8 +148,6 @@ class HostNode(BaseROS2DeviceNode):
         DeviceActionStatus
     )
     _resource_tracker: ClassVar[DeviceNodeResourceTracker] = DeviceNodeResourceTracker()  # 资源管理器实例
-    _ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS: ClassVar[float] = 3600.0
-
     @classmethod
     def get_instance(cls, timeout=None) -> Optional["HostNode"]:
         if cls._ready_event.wait(timeout):
@@ -188,7 +182,7 @@ class HostNode(BaseROS2DeviceNode):
 
         # Clear the thread list
         cls._background_threads.clear()
-        logger.info(f"[Host Node] Background threads shutdown complete")
+        logger.info("[Host Node] Background threads shutdown complete")
 
     @classmethod
     def reset_state(cls) -> None:
@@ -274,7 +268,6 @@ class HostNode(BaseROS2DeviceNode):
                     resource_start_time = time.time()
                     # 传递 ResourceTreeSet 对象，在 client 中转换为字典并获取 UUID 映射
                     uuid_mapping = client.resource_tree_add(resources_config, "", True)
-                    device_uuid = resources_config.root_nodes[0].res_content.uuid
                     resource_end_time = time.time()
                     logger.info(
                         f"[Host Node-Resource] 物料上传 {round(resource_end_time - resource_start_time, 5) * 1000} ms"
@@ -282,7 +275,7 @@ class HostNode(BaseROS2DeviceNode):
                     for edge in self.resources_edge_config:
                         edge["source_uuid"] = uuid_mapping.get(edge["source_uuid"], edge["source_uuid"])
                         edge["target_uuid"] = uuid_mapping.get(edge["target_uuid"], edge["target_uuid"])
-                    resource_add_res = client.resource_edge_add(self.resources_edge_config)
+                    client.resource_edge_add(self.resources_edge_config)
                     resource_edge_end_time = time.time()
                     logger.info(
                         f"[Host Node-Resource] 物料关系上传 {round(resource_edge_end_time - resource_end_time, 5) * 1000} ms"
@@ -299,9 +292,9 @@ class HostNode(BaseROS2DeviceNode):
                             try:
                                 for plr_resource in ResourceTreeSet([tree]).to_plr_resources():
                                     self._resource_tracker.add_resource(plr_resource)
-                            except Exception as ex:
+                            except Exception:
                                 warning(f"[Host Node-Resource] 根节点物料{tree}序列化失败！")
-        except Exception as ex:
+        except Exception:
             logger.error(f"[Host Node-Resource] 添加物料出错！\n{traceback.format_exc()}")
         # 初始化Node基类，传递空参数覆盖列表
         BaseROS2DeviceNode.__init__(
@@ -366,13 +359,9 @@ class HostNode(BaseROS2DeviceNode):
         }  # device_id -> action_value_mappings(本地+远程设备统一存储)
         self._slave_registry_configs: Dict[str, Dict] = {}  # registry_name -> registry_config(含action_value_mappings)
         self._goals: Dict[str, Any] = {}  # 用来存储多个目标的状态
-        # 设备失败先暂存在 Host；后端完成前端询问和调度更新后，再释放终态上报。
-        # Host 不执行 retry/skip/fallback，唯一可在这里改变结果的是人工结果替代。
+        # HostNode 只负责 ROS2 transport；job 生命周期与错误决策归微后端。
         self._inflight_goal_jobs: Set[str] = set()
-        self._pending_action_error_decisions: Dict[str, Dict[str, Any]] = {}
-        self._resolved_action_error_decisions: Dict[str, Dict[str, Any]] = {}
-        self._pending_action_error_decisions_lock = threading.RLock()
-        # cancel 可能发生在 Goal 等待响应、执行中或等待异常决策三个阶段。
+        self._goal_state_lock = threading.RLock()
         self._canceled_jobs: Set[str] = set()
         self._online_devices: Set[str] = {f"{self.namespace}/{device_id}"}  # 用于跟踪在线设备
         self._last_discovery_time = 0.0  # 上次设备发现的时间
@@ -706,7 +695,7 @@ class HostNode(BaseROS2DeviceNode):
             if "suc" in res and not res["suc"]:
                 raise ValueError(res.get("error", "未知错误"))
             return res
-        raise ValueError(f"创建资源时失败！响应为空")
+        raise ValueError("创建资源时失败！响应为空")
 
     def initialize_device(self, device_id: str, device_config: ResourceDictInstance) -> None:
         """
@@ -880,7 +869,7 @@ class HostNode(BaseROS2DeviceNode):
             action_kwargs: 动作参数
             server_info: 服务器发送信息，包含发送时间戳等
         """
-        with self._pending_action_error_decisions_lock:
+        with self._goal_state_lock:
             if item.job_id in self._canceled_jobs:
                 self.lab_logger().info(
                     f"[Host Node] Skip canceled goal {item.job_id[:8]}"
@@ -988,474 +977,29 @@ class HostNode(BaseROS2DeviceNode):
 
         self.lab_logger().info(f"[TEST MODE] Result for {action_id} ({job_id[:8]}): {status}")
 
-        from unilabos.app.web.controller import store_job_result
-        store_job_result(job_id, status, return_info, mock_return)
-
-        # 发布状态到桥接器
-        for bridge in self.bridges:
+        for bridge in execution_result_bridges(self.bridges):
             if hasattr(bridge, "publish_job_status"):
                 bridge.publish_job_status(mock_return, item, status, return_info)
-        self._emit_local_action_event(
-            item,
-            "job_status",
-            self._job_status_event_data(
-                item,
-                status,
-                mock_return,
-                return_info,
-            ),
-        )
         self._inflight_goal_jobs.discard(job_id)
 
-    @staticmethod
-    def _job_status_event_data(
-        item: "QueueItem",
-        status: str,
-        feedback_data: Dict[str, Any],
-        return_info: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """生成与边云 ``job_status.data`` 一致的本地事件载荷。"""
-
-        return {
-            "job_id": item.job_id,
-            "node_id": str(getattr(item, "node_id", "") or ""),
-            "retry_count": int(getattr(item, "retry_count", 0) or 0),
-            "task_id": item.task_id,
-            "device_id": item.device_id,
-            "notebook_id": item.notebook_id,
-            "action_name": item.action_name,
-            "status": status,
-            "feedback_data": feedback_data,
-            "return_info": return_info,
-            "timestamp": time.time(),
-        }
-
-    @staticmethod
-    def _emit_local_action_event(
-        item: "QueueItem",
-        event_type: str,
-        data: Dict[str, Any],
-    ) -> None:
-        """向 Host 微后端发布事件；事件系统故障不得影响 action。"""
-
-        try:
-            from unilabos.app.web.event_bus import monitor_bus
-
-            monitor_bus.emit("action", event_type, data)
-        except Exception:  # noqa: BLE001 - 观测链路必须 fail-open
-            pass
-
-    def _finish_error_handled_job(
+    def _publish_terminal_result(
         self,
         item: "QueueItem",
         status: str,
         return_info: Dict[str, Any],
         result_data: Dict[str, Any],
     ) -> None:
-        """结束由 Host 管理的异常决策 job，并释放正常队列状态。"""
+        """清理 ROS Goal 状态，并把原始终态交给微后端。"""
 
         job_id = item.job_id
         self._goals.pop(job_id, None)
         self._inflight_goal_jobs.discard(job_id)
-        with self._pending_action_error_decisions_lock:
-            stale_ids = [
-                decision_id
-                for decision_id, pending in self._pending_action_error_decisions.items()
-                if pending.get("job_id") == job_id
-            ]
-            for decision_id in stale_ids:
-                pending = self._pending_action_error_decisions.pop(decision_id)
-                timer = pending.get("timer")
-                if timer is not None:
-                    timer.cancel()
+        with self._goal_state_lock:
             self._canceled_jobs.discard(job_id)
 
-        try:
-            from unilabos.app.web.controller import store_job_result
-
-            store_job_result(job_id, status, return_info, result_data)
-        except ImportError:
-            pass
-        except Exception as ex:  # noqa: BLE001 - 不能阻断队列终态上报
-            self.lab_logger().warning(
-                f"[Host Node] Store job result failed for {job_id[:8]}: {ex}"
-            )
-
-        for bridge in self.bridges:
+        for bridge in execution_result_bridges(self.bridges):
             if hasattr(bridge, "publish_job_status"):
                 bridge.publish_job_status(result_data, item, status, return_info)
-        self._emit_local_action_event(
-            item,
-            "job_status",
-            self._job_status_event_data(
-                item,
-                status,
-                result_data,
-                return_info,
-            ),
-        )
-
-    def _begin_action_error_decision(
-        self,
-        item: "QueueItem",
-        return_info: Dict[str, Any],
-        result_data: Dict[str, Any],
-    ) -> bool:
-        """暂存设备失败，并请求后端在完成调度更新后释放该终态。"""
-
-        with self._pending_action_error_decisions_lock:
-            if item.job_id in self._canceled_jobs:
-                return False
-
-        raw_error_info = return_info.get("error_info")
-        if not isinstance(raw_error_info, dict):
-            return False
-        action_mappings = self._action_value_mappings.get(item.device_id, {})
-        report_action_name = str(
-            raw_error_info.get("action_name") or item.action_name
-        )
-        candidates = [report_action_name, item.action_name]
-        candidates.extend(
-            f"auto-{candidate}"
-            for candidate in list(candidates)
-            if not candidate.startswith("auto-")
-        )
-        policy = None
-        for candidate in candidates:
-            mapping = action_mappings.get(candidate)
-            if isinstance(mapping, dict) and mapping.get("error_policy"):
-                policy = mapping["error_policy"]
-                break
-        if not isinstance(policy, Mapping):
-            return False
-        exception_mro = raw_error_info.get("exception_mro")
-        if not isinstance(exception_mro, list):
-            exception_mro = [
-                str(raw_error_info.get("exception_type") or "Exception")
-            ]
-        options = resolve_error_options_by_names(policy, exception_mro)
-        if not options:
-            return False
-        # retry 次数属于后端调度 attempt，不由 Host 的 transport 重发次数推导。
-        retry_count = int(getattr(item, "retry_count", 0) or 0)
-        max_retries = int(policy.get("max_retries", 3))
-        timeout_action = str(policy.get("default_on_decision_timeout", "abort"))
-        if timeout_action != "abort" and timeout_action not in {
-            str(option.get("action")) for option in options
-        }:
-            timeout_action = "abort"
-        error_info = {
-            **raw_error_info,
-            "options": options,
-            "max_retries": max_retries,
-            "decision_timeout_seconds": float(
-                policy.get("decision_timeout_seconds", 300.0)
-            ),
-            "default_on_decision_timeout": timeout_action,
-        }
-        decision_bridges = [
-            bridge
-            for bridge in self.bridges
-            if hasattr(bridge, "publish_job_error_decision_required")
-        ]
-        if not decision_bridges:
-            # 本地直跑或未配置调度后端时不能制造永远无法释放的 pending。
-            return False
-
-        decision_id = str(uuid.uuid4())
-        pending = {
-            "decision_id": decision_id,
-            "job_id": item.job_id,
-            "item": item,
-            "return_info": dict(return_info),
-            "result_data": dict(result_data),
-            "error_info": dict(error_info),
-            "report": None,
-            "resolving": False,
-            "timer": None,
-        }
-        with self._pending_action_error_decisions_lock:
-            self._pending_action_error_decisions[decision_id] = pending
-
-        created_at = time.time()
-        timeout_seconds = float(error_info.get("decision_timeout_seconds", 300.0))
-        expires_at = created_at + timeout_seconds
-        # 截止时间只作为调度后端的前端询问策略输入；Host 不自行执行超时动作。
-        error_info["expires_at"] = expires_at
-        pending["error_info"]["expires_at"] = expires_at
-        report = {
-            "decision_id": decision_id,
-            "device_id": item.device_id,
-            "action_name": error_info.get("action_name") or item.action_name,
-            "task_id": item.task_id,
-            "job_id": item.job_id,
-            "node_id": str(getattr(item, "node_id", "") or ""),
-            "exception_type": error_info.get("exception_type", "Exception"),
-            "error_message": error_info.get("error_message", return_info.get("error", "")),
-            "traceback": error_info.get("traceback", return_info.get("error", "")),
-            "options": options,
-            "retry_count": retry_count,
-            "max_retries": int(error_info.get("max_retries", 3)),
-            "created_at": created_at,
-            "decision_timeout_seconds": timeout_seconds,
-            "expires_at": expires_at,
-            "default_on_decision_timeout": error_info.get(
-                "default_on_decision_timeout",
-                "abort",
-            ),
-            "require_confirmation": True,
-        }
-        for key in ("category", "severity"):
-            if error_info.get(key) is not None:
-                report[key] = error_info[key]
-        pending["report"] = report
-
-        self._goals.pop(item.job_id, None)
-
-        with self._pending_action_error_decisions_lock:
-            still_pending = decision_id in self._pending_action_error_decisions
-        if still_pending:
-            for bridge in decision_bridges:
-                try:
-                    bridge.publish_job_error_decision_required(deepcopy(report))
-                except Exception as ex:  # noqa: BLE001 - pending 可在重连后重放
-                    self.lab_logger().warning(
-                        f"[Host Node] Failed to publish error decision "
-                        f"{decision_id}: {ex}"
-                    )
-            self._emit_local_action_event(
-                item,
-                "job_error_decision_required",
-                deepcopy(report),
-            )
-            self.lab_logger().info(
-                f"[Host Node] Job {item.job_id[:8]} 等待后端完成决策与调度更新 "
-                f"{decision_id}"
-            )
-        return True
-
-    def get_pending_action_error_decisions(self) -> List[Dict[str, Any]]:
-        """查询等待调度后端 release 的 pending 失败报告。"""
-
-        with self._pending_action_error_decisions_lock:
-            reports = [
-                deepcopy(pending["report"])
-                for pending in self._pending_action_error_decisions.values()
-                if pending.get("report") is not None
-            ]
-        return reports
-
-    def _prune_action_error_decision_tombstones_locked(
-        self,
-        now: Optional[float] = None,
-    ) -> None:
-        """清理 Host 内存中的短期决策终态；后端仍负责持久审计。"""
-
-        current = time.time() if now is None else now
-        tombstones = getattr(self, "_resolved_action_error_decisions", {})
-        stale_ids = [
-            decision_id
-            for decision_id, tombstone in tombstones.items()
-            if float(tombstone.get("retain_until", 0.0)) <= current
-        ]
-        for decision_id in stale_ids:
-            tombstones.pop(decision_id, None)
-
-    def _remember_action_error_decision_resolution_locked(
-        self,
-        pending: Dict[str, Any],
-        selected_action: str,
-        reason: str,
-    ) -> Dict[str, Any]:
-        """在消费 pending 的同一临界区记录可重放终态。"""
-
-        item = pending["item"]
-        resolved_at = time.time()
-        resolved_report = {
-            "decision_id": pending["decision_id"],
-            "job_id": pending["job_id"],
-            "task_id": item.task_id,
-            "node_id": str(getattr(item, "node_id", "") or ""),
-            "device_id": item.device_id,
-            "action_name": item.action_name,
-            "selected_action": selected_action,
-            "reason": reason,
-            "resolved_at": resolved_at,
-        }
-        tombstones = getattr(self, "_resolved_action_error_decisions", None)
-        if tombstones is None:
-            tombstones = {}
-            self._resolved_action_error_decisions = tombstones
-        self._prune_action_error_decision_tombstones_locked(resolved_at)
-        tombstones[pending["decision_id"]] = {
-            "report": deepcopy(resolved_report),
-            "retain_until": (
-                resolved_at + self._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS
-            ),
-        }
-        return resolved_report
-
-    def get_resolved_action_error_decision(
-        self,
-        decision_id: str,
-        job_id: str,
-        device_id: str,
-    ) -> Optional[Dict[str, Any]]:
-        """按完整身份读取短期终态，供后端重复 release 幂等识别。"""
-
-        if not decision_id or not job_id or not device_id:
-            return None
-        with self._pending_action_error_decisions_lock:
-            self._prune_action_error_decision_tombstones_locked()
-            tombstone = getattr(
-                self,
-                "_resolved_action_error_decisions",
-                {},
-            ).get(decision_id)
-            if tombstone is None:
-                return None
-            report = tombstone.get("report")
-            if not isinstance(report, dict):
-                return None
-            if (
-                report.get("job_id") != job_id
-                or report.get("device_id") != device_id
-            ):
-                return None
-            return deepcopy(report)
-
-    def _publish_action_error_decision_resolved(
-        self,
-        pending: Dict[str, Any],
-        selected_action: str,
-        reason: str = "",
-        resolved_report: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """发布决策终态审计；观测/通信失败不影响实际决策。"""
-
-        item = pending["item"]
-        if resolved_report is None:
-            with self._pending_action_error_decisions_lock:
-                resolved_report = (
-                    self._remember_action_error_decision_resolution_locked(
-                        pending,
-                        selected_action,
-                        reason,
-                    )
-                )
-        self._emit_local_action_event(
-            item,
-            "job_error_decision_resolved",
-            resolved_report,
-        )
-        return resolved_report
-
-    def handle_action_error_decision(
-        self,
-        decision_id: str,
-        job_id: str,
-        decision: Dict[str, Any],
-    ) -> bool:
-        """消费后端 release；除人工替代外，原始设备失败保持 failed。"""
-
-        body_decision_id = str(decision.get("decision_id") or "")
-        body_job_id = str(decision.get("job_id") or "")
-        body_device_id = str(decision.get("device_id") or "")
-        if (
-            not decision_id
-            or not job_id
-            or not body_decision_id
-            or not body_job_id
-            or not body_device_id
-            or body_decision_id != decision_id
-            or body_job_id != job_id
-            or decision.get("scheduler_updated") is not True
-        ):
-            return False
-
-        caller_accepted = True
-        with self._pending_action_error_decisions_lock:
-            pending = self._pending_action_error_decisions.get(decision_id)
-            if (
-                pending is None
-                or pending.get("resolving")
-                or pending.get("job_id") in self._canceled_jobs
-            ):
-                return False
-            if pending["job_id"] != job_id:
-                return False
-            if body_device_id != pending["item"].device_id:
-                return False
-
-            selected_option = decision.get("option")
-            if isinstance(selected_option, dict):
-                selected = str(selected_option.get("action") or "abort")
-                for result_key in ("result", "return_value"):
-                    if result_key not in decision and result_key in selected_option:
-                        decision[result_key] = selected_option[result_key]
-            else:
-                selected = str(decision.get("action") or selected_option or "abort")
-            options = pending["error_info"]["options"]
-            option = next(
-                (candidate for candidate in options if str(candidate.get("action")) == selected),
-                None,
-            )
-            if option is None:
-                return False
-
-            pending["resolving"] = True
-            self._pending_action_error_decisions.pop(pending["decision_id"], None)
-            timer = pending.get("timer")
-            if timer is not None:
-                timer.cancel()
-            resolved_report = self._remember_action_error_decision_resolution_locked(
-                pending,
-                selected,
-                str(decision.get("reason") or ""),
-            )
-
-        item = pending["item"]
-        self._publish_action_error_decision_resolved(
-            pending,
-            selected,
-            str(decision.get("reason") or ""),
-            resolved_report,
-        )
-        if selected == "operator_intervention" and (
-            "result" in decision or "return_value" in decision
-        ):
-            return_value = decision.get("result", decision.get("return_value"))
-            return_info = serialize_result_info(
-                "",
-                True,
-                return_value,
-                suc_type=SUCCESS_TYPE_OPERATOR_INTERVENTION,
-            )
-            return_info["error_resolution"] = {
-                "decision_id": decision_id,
-                "selected_action": selected,
-                "reason": str(decision.get("reason") or ""),
-                "scheduler_updated": True,
-            }
-            result_data = dict(pending["result_data"])
-            result_data["raw_return_info"] = deepcopy(pending["return_info"])
-            result_data["return_info"] = json.dumps(return_info, ensure_ascii=False)
-            self._finish_error_handled_job(item, "success", return_info, result_data)
-            return caller_accepted
-
-        # retry/skip/abort/fallback 都已由后端更新调度；Host 只保留并上报原始失败。
-        return_info = deepcopy(pending["return_info"])
-        return_info["error_resolution"] = {
-            "decision_id": decision_id,
-            "selected_action": selected,
-            "reason": str(decision.get("reason") or ""),
-            "scheduler_updated": True,
-        }
-        result_data = dict(pending["result_data"])
-        if "return_info" in result_data:
-            result_data["return_info"] = json.dumps(return_info, ensure_ascii=False)
-        self._finish_error_handled_job(item, "failed", return_info, result_data)
-        return caller_accepted
 
     def goal_response_callback(
         self,
@@ -1471,7 +1015,7 @@ class HostNode(BaseROS2DeviceNode):
             self.lab_logger().error(
                 f"[Host Node] Goal {item.action_name} ({item.job_id}) response failed: {ex}"
             )
-            self._finish_error_handled_job(
+            self._publish_terminal_result(
                 item,
                 "failed",
                 serialize_result_info(traceback.format_exc(), False, {}),
@@ -1480,7 +1024,7 @@ class HostNode(BaseROS2DeviceNode):
             return
         if not goal_handle.accepted:
             self.lab_logger().warning(f"[Host Node] Goal {item.action_name} ({item.job_id}) rejected")
-            self._finish_error_handled_job(
+            self._publish_terminal_result(
                 item,
                 "failed",
                 serialize_result_info("Goal was rejected", False, {}),
@@ -1498,7 +1042,7 @@ class HostNode(BaseROS2DeviceNode):
                 f,
             )
         )
-        with self._pending_action_error_decisions_lock:
+        with self._goal_state_lock:
             canceled = item.job_id in self._canceled_jobs
         if canceled:
             self.lab_logger().info(
@@ -1514,14 +1058,9 @@ class HostNode(BaseROS2DeviceNode):
         feedback_data.pop("goal_id")
         self.lab_logger().trace(f"[Host Node] Feedback for {action_id} ({item.job_id}): {feedback_data}")
 
-        for bridge in self.bridges:
+        for bridge in execution_result_bridges(self.bridges):
             if hasattr(bridge, "publish_job_status"):
                 bridge.publish_job_status(feedback_data, item, "running")
-        self._emit_local_action_event(
-            item,
-            "job_status",
-            self._job_status_event_data(item, "running", feedback_data),
-        )
 
     def get_result_callback(
         self,
@@ -1536,7 +1075,7 @@ class HostNode(BaseROS2DeviceNode):
             result = future.result()
             result_msg = result.result
             goal_status = result.status
-            with self._pending_action_error_decisions_lock:
+            with self._goal_state_lock:
                 cancel_requested = job_id in self._canceled_jobs
 
             # 检查是否是被取消的任务
@@ -1583,23 +1122,10 @@ class HostNode(BaseROS2DeviceNode):
             terminal_result_data = (
                 {} if cancel_requested or goal_status == GoalStatus.STATUS_CANCELED else result_data
             )
-            if (
-                status == "failed"
-                and self._begin_action_error_decision(
-                    item,
-                    return_info,
-                    terminal_result_data,
-                )
-            ):
-                self.lab_logger().info(
-                    f"[Host Node] Result for {action_id} ({job_id[:8]}): awaiting_error_decision"
-                )
-                return
-
             self.lab_logger().info(f"[Host Node] Result for {action_id} ({job_id[:8]}): {status}")
             if not cancel_requested and goal_status != GoalStatus.STATUS_CANCELED:
                 self.lab_logger().trace(f"[Host Node] Result data: {result_data}")
-            self._finish_error_handled_job(
+            self._publish_terminal_result(
                 item,
                 status,
                 return_info,
@@ -1614,7 +1140,7 @@ class HostNode(BaseROS2DeviceNode):
 
             self.lab_logger().error(traceback.format_exc())
 
-            self._finish_error_handled_job(
+            self._publish_terminal_result(
                 item,
                 "failed",
                 serialize_result_info(f"Callback error: {str(e)}", False, {}),
@@ -1630,54 +1156,17 @@ class HostNode(BaseROS2DeviceNode):
         )
 
     def cancel_job(self, job_id: str) -> bool:
-        """取消运行中、等待 Goal 响应或等待异常决策的逻辑 job。"""
+        """取消运行中或仍在等待 ROS Goal 响应的执行。"""
 
-        pending = None
-        resolved_report = None
-        with self._pending_action_error_decisions_lock:
-            for decision_id, candidate in list(
-                self._pending_action_error_decisions.items()
-            ):
-                if candidate.get("job_id") != job_id:
-                    continue
-                pending = self._pending_action_error_decisions.pop(decision_id)
-                pending["resolving"] = True
-                timer = pending.get("timer")
-                if timer is not None:
-                    timer.cancel()
-                resolved_report = (
-                    self._remember_action_error_decision_resolution_locked(
-                        pending,
-                        "abort",
-                        "job_canceled",
-                    )
-                )
-                break
-
+        with self._goal_state_lock:
             goal_handle = self._goals.get(job_id)
             is_inflight = job_id in self._inflight_goal_jobs
-            if pending is None and goal_handle is None and not is_inflight:
+            if goal_handle is None and not is_inflight:
                 self.lab_logger().warning(
                     f"[Host Node] Job {job_id[:8]} not found, cannot cancel"
                 )
                 return False
             self._canceled_jobs.add(job_id)
-
-        if pending is not None:
-            item = pending["item"]
-            self._publish_action_error_decision_resolved(
-                pending,
-                "abort",
-                "job_canceled",
-                resolved_report,
-            )
-            self._finish_error_handled_job(
-                item,
-                "canceled",
-                serialize_result_info("Job was cancelled", False, {}),
-                {},
-            )
-            return True
 
         if goal_handle is not None:
             self.lab_logger().info(f"[Host Node] Cancelling goal {job_id[:8]}")
@@ -1689,7 +1178,7 @@ class HostNode(BaseROS2DeviceNode):
         return True
 
     def cancel_goal(self, goal_uuid: str) -> bool:
-        """兼容旧接口；统一走可覆盖异常决策和重试在途状态的取消逻辑。"""
+        """兼容旧接口；统一走 ROS2 transport 的取消逻辑。"""
 
         return self.cancel_job(goal_uuid)
 
@@ -1714,12 +1203,6 @@ class HostNode(BaseROS2DeviceNode):
             status = g.status
             self.lab_logger().debug(f"[Host Node] Goal status for {job_id}: {status}")
             return status
-        with self._pending_action_error_decisions_lock:
-            if any(
-                pending.get("job_id") == job_id
-                for pending in self._pending_action_error_decisions.values()
-            ):
-                return GoalStatus.STATUS_EXECUTING
         if job_id in self._inflight_goal_jobs:
             return GoalStatus.STATUS_EXECUTING
         self.lab_logger().warning(f"[Host Node] Goal {job_id} not found, status unknown")
@@ -1748,7 +1231,11 @@ class HostNode(BaseROS2DeviceNode):
         if controller_config["parameters"] is None:
             controller_config["parameters"] = {}
 
-        controller = ControllerNode(controller_id, controller_func=controller_func, **controller_config)
+        ControllerNode(
+            controller_id,
+            controller_func=controller_func,
+            **controller_config,
+        )
         self.lab_logger().info(f"[Host Node] Controller {controller_id} created.")
         # rclpy.get_global_executor().add_node(controller)
 
@@ -1805,7 +1292,7 @@ class HostNode(BaseROS2DeviceNode):
         success = False
         uuid_mapping = {}
         if len(self.bridges) > 0:
-            from unilabos.app.web.client import HTTPClient, http_client
+            from unilabos.app.web.client import http_client
 
             resource_start_time = time.time()
             uuid_mapping = http_client.resource_tree_add(resource_tree_set, mount_uuid, first_add)
@@ -1844,9 +1331,9 @@ class HostNode(BaseROS2DeviceNode):
         """
         子节点通知Host物料树删除
         """
-        self.lab_logger().info(f"[Host Node-Resource] Resource tree remove request received")
+        self.lab_logger().info("[Host Node-Resource] Resource tree remove request received")
         response.response = "OK"
-        self.lab_logger().info(f"[Host Node-Resource] Resource tree remove completed")
+        self.lab_logger().info("[Host Node-Resource] Resource tree remove completed")
 
     async def _resource_tree_action_update_callback(self, data: dict, response: SerialCommand_Response):
         """
@@ -1940,8 +1427,7 @@ class HostNode(BaseROS2DeviceNode):
         """
         self.lab_logger().trace(f"[Host Node] Node info update request received: {request}")
         try:
-            from unilabos.app.communication import get_communication_client
-            from unilabos.app.web.client import HTTPClient, http_client
+            from unilabos.app.web.client import http_client
 
             info = json.loads(request.command)
             if "SYNC_SLAVE_NODE_INFO" in info:
@@ -2032,7 +1518,7 @@ class HostNode(BaseROS2DeviceNode):
 
         success = False
         if len(self.bridges) > 0:  # 边的提交待定
-            from unilabos.app.web.client import HTTPClient, http_client
+            from unilabos.app.web.client import http_client
 
             r = http_client.resource_add(add_schema(resources))
             success = bool(r)
@@ -2151,7 +1637,7 @@ class HostNode(BaseROS2DeviceNode):
         Returns:
             响应对象，包含资源列表
         """
-        self.lab_logger().info(f"[Host Node-Resource] List request received")
+        self.lab_logger().info("[Host Node-Resource] List request received")
         # 这里可以实现返回资源列表的逻辑
         self.lab_logger().debug(f"[Host Node-Resource] List parameters: {request}")
         return response
@@ -2213,7 +1699,6 @@ class HostNode(BaseROS2DeviceNode):
 
             # 计算本次测试结果
             receive_timestamp = time.time()
-            client_timestamp = pong_data["client_timestamp"]
             server_timestamp = pong_data["server_timestamp"]
 
             # 往返时间
@@ -2918,7 +2403,7 @@ class HostNode(BaseROS2DeviceNode):
                     return False
                 time.sleep(0.05)
 
-            response = future.result()
+            future.result()
             self.lab_logger().trace(
                 f"[Host Node-Resource] Host -> {device_id} ResourceTree {action} operation completed -------"
             )
@@ -2988,7 +2473,7 @@ class HostNode(BaseROS2DeviceNode):
                     return False
                 time.sleep(0.05)
 
-            response = future.result()
+            future.result()
             self.lab_logger().info(
                 f"[Host Node-DeviceMgr] {action}_device on {target_node_id} completed"
             )

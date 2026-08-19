@@ -18,7 +18,7 @@ from unilabos.app.backend import (
     resolve_backend_selection,
     start_backend,
 )
-from unilabos.app.main import parse_args
+from unilabos.app.main import parse_args, should_start_edge_scheduler
 from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink import main_hostlink_run
@@ -113,6 +113,23 @@ def test_cli_shows_and_accepts_only_public_backend_names() -> None:
     help_text = parser.format_help()
     assert "{hostlink,ros2}" in help_text
     assert "automancer" not in help_text
+
+
+def test_backend_controlled_execution_is_the_default(monkeypatch) -> None:
+    parsed = parse_args().parse_args([])
+    assert parsed.edge_scheduler is False
+    assert BasicConfig.scheduler_authority_profile == "backend_controlled"
+    assert not should_start_edge_scheduler(vars(parsed), is_host_mode=True)
+
+    monkeypatch.setattr(
+        BasicConfig,
+        "scheduler_authority_profile",
+        "local_scheduler",
+    )
+    assert should_start_edge_scheduler(
+        {"edge_scheduler": True},
+        is_host_mode=True,
+    )
 
 
 def test_start_backend_imports_only_selected_profile(monkeypatch) -> None:

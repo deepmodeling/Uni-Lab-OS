@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from unilabos.app.web.controller import (
     devices,
+    get_resources as get_resource_config,
     job_info,
     get_online_devices,
     get_device_actions,
@@ -58,6 +59,9 @@ def compute_host_node_diff(current: dict, previous: dict) -> dict:
     # 检查可用性变化
     if current.get("available") != previous.get("available"):
         diff["available"] = current.get("available")
+
+    if current.get("host_node_id") != previous.get("host_node_id"):
+        diff["host_node_id"] = current.get("host_node_id")
 
     # 检查设备列表变化
     current_devices = current.get("devices", {})
@@ -125,9 +129,11 @@ async def broadcast_status_page_data():
                 from unilabos.app.web.utils.device_utils import get_registry_info
                 from unilabos.config.config import BasicConfig
                 from unilabos.registry.registry import lab_registry
-                from unilabos.ros.msgs.message_converter import msg_converter_manager
+                from unilabos.app.web.pages import _get_message_converter_manager
                 from unilabos.utils.type_check import TypeEncoder
                 import json
+
+                msg_converter_manager = _get_message_converter_manager()
 
                 # 获取当前数据
                 host_node_info = get_host_node_info()
@@ -300,7 +306,7 @@ async def websocket_status_page(websocket: WebSocket):
     try:
         while True:
             # 接收来自客户端的消息（用于保持连接活跃）
-            message = await websocket.receive_text()
+            await websocket.receive_text()
             # 状态页面通常只需要接收数据，不需要发送复杂指令
 
     except WebSocketDisconnect:
@@ -707,7 +713,7 @@ async def handle_file_content_import(websocket: WebSocket, request_data: dict):
             await send_error(f"模块中未找到类: {class_name}")
             return
 
-        target_class = getattr(module, class_name)
+        getattr(module, class_name)
         await send_log(f"找到目标类: {class_name}")
 
         # 使用registry.py的增强类信息功能进行分析
@@ -1230,11 +1236,18 @@ def get_file_browser_data(path: str = ""):
 @api.get("/resources", summary="Resource list", response_model=Resp)
 def get_resources():
     """获取资源列表"""
-    isok, data = devices()
+    isok, data = get_resource_config()
     if not isok:
         return Resp(code=RespCode.ErrorHostNotInit, message=str(data))
 
-    return Resp(data=dict(data))
+    return Resp(data=data.dump() if hasattr(data, "dump") else data)
+
+
+@api.get("/manual-confirm/users", summary="Manual confirmation users", response_model=Resp)
+def get_manual_confirm_users():
+    """当前没有用户权威库，允许前端自由输入指派人。"""
+
+    return Resp(data={"users": [], "source": "none", "allow_free_input": True})
 
 
 @api.get("/devices", summary="Device list", response_model=Resp)
@@ -1244,7 +1257,7 @@ def get_devices():
     if not isok:
         return Resp(code=RespCode.ErrorHostNotInit, message=str(data))
 
-    return Resp(data=dict(data))
+    return Resp(data=data.dump() if hasattr(data, "dump") else data)
 
 
 @api.get("/online-devices", summary="Online devices list", response_model=Resp)
@@ -1306,15 +1319,15 @@ def api_get_all_actions():
     return Resp(data=data)
 
 
-@api.get("/error-decisions", summary="查询本地待处理的动作异常决策")
+@api.get("/error-decisions", summary="查询微后端暂存的异常决策")
 def api_get_pending_action_error_decisions():
-    """只读查询 Host 正在等待调度后端 release 的设备失败。"""
+    """只读查询微后端正在等待调度后端 release 的设备失败。"""
 
     isok, data = get_pending_action_error_decisions()
     if not isok:
         raise HTTPException(
             status_code=503,
-            detail=data.get("error", "Host node not initialized"),
+            detail=data.get("error", "Job execution microbackend not initialized"),
         )
     return data
 
@@ -1350,7 +1363,7 @@ def api_submit_action_error_decision(decision_id: str, req: ErrorDecisionIn):
     return data
 
 
-@api.get("/monitor/events", summary="订阅 Host 微后端实时事件")
+@api.get("/monitor/events", summary="订阅微后端实时事件")
 async def monitor_events(
     request: Request,
     channels: str = "",
@@ -1406,16 +1419,16 @@ async def monitor_events(
     )
 
 
-@api.get("/monitor/snapshot", summary="获取 Host 微后端监控快照")
+@api.get("/monitor/snapshot", summary="获取微后端监控快照")
 def monitor_snapshot():
     """前端初始化与 SSE 丢事件后的权威快照。"""
 
     from unilabos.app.web.event_bus import monitor_bus
 
-    host_ready, pending = get_pending_action_error_decisions()
+    microbackend_ready, pending = get_pending_action_error_decisions()
     return {
         "now": time.time(),
-        "host_ready": host_ready,
+        "host_ready": microbackend_ready,
         "pending_error_decisions": pending.get("decisions", []),
         "recent": {"action": monitor_bus.recent("action", 40)},
     }

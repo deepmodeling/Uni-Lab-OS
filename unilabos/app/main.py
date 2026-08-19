@@ -38,7 +38,23 @@ if unilabos_dir not in sys.path:
 
 from unilabos.app.utils import cleanup_for_restart  # noqa: E402
 from unilabos.utils.banner_print import print_status, print_unilab_banner  # noqa: E402
-from unilabos.config.config import load_config, BasicConfig, HTTPConfig  # noqa: E402
+from unilabos.config.config import (  # noqa: E402
+    BasicConfig,
+    EdgeControlConfig,
+    HTTPConfig,
+    load_config,
+    resolve_host_node_name,
+)
+from unilabos.storage.migrations import (  # noqa: E402
+    build_store_migration_manifest,
+    validate_store_layout,
+)
+from unilabos.storage.paths import RuntimeStoragePaths  # noqa: E402
+from unilabos.storage.profiles import (  # noqa: E402
+    SchedulerAuthorityConflict,
+    SchedulerAuthorityProfile,
+    select_scheduler_authority_profile,
+)
 
 # Global restart flags (used by ws_client and web/server)
 _restart_requested: bool = False
@@ -222,6 +238,95 @@ def convert_argv_dashes_to_underscores(args: argparse.ArgumentParser):
                 break
 
 
+def configure_material_startup(args_dict: Dict[str, Any]) -> str:
+    """应用物料来源配置并解析嵌入式/独立 Provider 模式。"""
+
+    source = str(
+        args_dict.get("material_source")
+        or HTTPConfig.material_source
+        or "microbackend"
+    ).strip().lower()
+    source = {
+        "edge": "microbackend",
+        "local": "microbackend",
+        "cloud": "backend",
+        "remote": "backend",
+    }.get(source, source)
+    if source not in {"microbackend", "backend", "auto"}:
+        raise ValueError("material source must be microbackend, backend, or auto")
+    HTTPConfig.material_source = source
+
+    address_arg = args_dict.get("material_microbackend_addr")
+    if address_arg is not None:
+        HTTPConfig.material_microbackend_addr = str(address_arg).strip()
+    address = str(HTTPConfig.material_microbackend_addr or "").strip()
+    mode = str(
+        args_dict.get("material_service_mode")
+        or ("external" if address else "embedded")
+    )
+    if mode == "external":
+        HTTPConfig.material_microbackend_addr = (
+            address or "http://127.0.0.1:8092/api/v1"
+        )
+    else:
+        HTTPConfig.material_microbackend_addr = ""
+    args_dict["_material_service_mode"] = mode
+    return mode
+
+
+def configure_runtime_storage(
+    args_dict: Dict[str, Any], *, working_dir: str | os.PathLike[str]
+) -> tuple[RuntimeStoragePaths, SchedulerAuthorityProfile]:
+    """一次解析 Workflow/Inventory/Device/Edge Control 的权威路径。"""
+
+    config: Dict[str, Any] = dict(args_dict)
+    config["working_dir"] = working_dir
+    paths = RuntimeStoragePaths.resolve(config)
+    validate_store_layout(build_store_migration_manifest(paths))
+    requested_profile = args_dict.get("scheduler_authority_profile") or (
+        "local_scheduler"
+        if args_dict.get("edge_scheduler", False)
+        else "backend_controlled"
+    )
+    profile = select_scheduler_authority_profile(
+        requested_profile,
+        edge_control_enabled=False,
+    )
+    local_scheduler_enabled = bool(args_dict.get("edge_scheduler", False))
+    if local_scheduler_enabled != profile.can_recover_local_workflow_task:
+        raise SchedulerAuthorityConflict(
+            "--edge-scheduler requires local_scheduler/offline_recovery; "
+            "backend_controlled must run without the local DAG scheduler"
+        )
+    BasicConfig.runtime_storage_paths = paths
+    BasicConfig.scheduler_authority_profile = profile.value
+    EdgeControlConfig.state_db = str(paths.edge_control_db)
+    return paths, profile
+
+
+def should_start_embedded_material_service(
+    args_dict: Dict[str, Any], *, is_host_mode: bool
+) -> bool:
+    return (
+        is_host_mode
+        and HTTPConfig.material_source in {"microbackend", "auto"}
+        and args_dict.get("_material_service_mode") == "embedded"
+    )
+
+
+def should_start_edge_scheduler(
+    args_dict: Dict[str, Any], *, is_host_mode: bool
+) -> bool:
+    profile = SchedulerAuthorityProfile.parse(
+        BasicConfig.scheduler_authority_profile
+    )
+    return (
+        is_host_mode
+        and profile.can_recover_local_workflow_task
+        and bool(args_dict.get("edge_scheduler", False))
+    )
+
+
 def parse_args():
     """解析命令行参数"""
     from unilabos.app.backend import BACKEND_NAMES, backend_cli_value
@@ -273,11 +378,85 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--material_source",
+        choices=["microbackend", "backend", "auto"],
+        default=None,
+        help="Host material source; default is the embedded microbackend.",
+    )
+    parser.add_argument(
+        "--material_service_mode",
+        choices=["embedded", "external"],
+        default=None,
+        help="Run Inventory/Resource Provider in this process or use :8092.",
+    )
+    parser.add_argument(
+        "--material_microbackend_addr",
+        type=str,
+        default=None,
+        help="External material Provider API base.",
+    )
+    scheduler_group = parser.add_mutually_exclusive_group()
+    scheduler_group.add_argument(
+        "--edge_scheduler",
+        dest="edge_scheduler",
+        action="store_true",
+        default=False,
+        help="Explicitly enable the embedded local Scheduler Provider.",
+    )
+    scheduler_group.add_argument(
+        "--no_edge_scheduler",
+        dest="edge_scheduler",
+        action="store_false",
+        help="Disable the embedded Scheduler Provider.",
+    )
+    parser.add_argument(
+        "--scheduler_authority_profile",
+        choices=[item.value for item in SchedulerAuthorityProfile],
+        default="",
+        help="Scheduler authority profile; default is backend_controlled.",
+    )
+    parser.add_argument(
+        "--edge_scheduler_ordering_url",
+        type=str,
+        default="",
+        help="Optional remote ordering service; empty uses stable local ordering.",
+    )
+    parser.add_argument(
+        "--edge_inventory_db",
+        "--material_db",
+        dest="edge_inventory_db",
+        default="~/.unilabos/inventory.db",
+        help="Host Inventory SQLite path.",
+    )
+    parser.add_argument(
+        "--edge_device_state_db",
+        "--device_state_db",
+        dest="edge_device_state_db",
+        default="~/.unilabos/device_state.db",
+        help="Device telemetry SQLite path; 'off' disables persistence.",
+    )
+    parser.add_argument(
+        "--edge_workflow_history_db",
+        "--workflow_history_db",
+        dest="edge_workflow_history_db",
+        default="~/.unilabos/workflow_history.db",
+        help="Workflow Authority SQLite path.",
+    )
+    parser.add_argument(
         "--is_slave",
         "--is-slave",
         dest="is_slave",
         action="store_true",
         help="Run the backend as slave node (without host privileges).",
+    )
+    parser.add_argument(
+        "--host_node_name",
+        "--host-node-name",
+        "--host_node_id",
+        "--host-node-id",
+        dest="host_node_name",
+        default=None,
+        help="Rename the HostNode runtime instance; registry type remains host_node.",
     )
     parser.add_argument(
         "--host_node_ip",
@@ -1033,6 +1212,14 @@ def main():
     BasicConfig.machine_name = machine_name
     BasicConfig.vis_2d_enable = args_dict["2d_vis"]
     BasicConfig.check_mode = check_mode
+    BasicConfig.host_node_name = resolve_host_node_name(
+        args_dict.get("host_node_name") or BasicConfig.host_node_name
+    )
+
+    configure_material_startup(args_dict)
+    runtime_storage_paths, authority_profile = configure_runtime_storage(
+        args_dict, working_dir=working_dir
+    )
 
     from unilabos.registry.registry import build_registry
 
@@ -1236,10 +1423,16 @@ def main():
 
     args_dict["bridges"] = []
 
-    if "fastapi" in args_dict["app_bridges"]:
+    # 旧 HTTP bridge 只在正式 Backend 拥有物料写权威时挂载；启用本地
+    # FastAPI 不再隐式把 ResourceTree 写到远端。
+    if (
+        "fastapi" in args_dict["app_bridges"]
+        and HTTPConfig.material_source == "backend"
+    ):
         args_dict["bridges"].append(http_client)
     # 获取通信客户端（仅支持WebSocket）
     if BasicConfig.is_host_mode:
+        comm_client = None
         if "websocket" in args_dict["app_bridges"]:
             comm_client = get_communication_client()
             args_dict["bridges"].append(comm_client)
@@ -1250,6 +1443,57 @@ def main():
 
             signal.signal(signal.SIGINT, _exit)
             signal.signal(signal.SIGTERM, _exit)
+
+        inventory_db = ""
+        if should_start_embedded_material_service(
+            args_dict, is_host_mode=BasicConfig.is_host_mode
+        ):
+            from unilabos.app.scheduler.integration import setup_edge_inventory
+
+            inventory_path = runtime_storage_paths.inventory_db
+            if inventory_path is None:
+                raise ValueError("embedded material service requires an inventory DB")
+            inventory_db = str(inventory_path)
+            setup_edge_inventory(inventory_db, ws_client=comm_client)
+            print_status(
+                f"Inventory/Resource Provider 已启用: {inventory_db}", "info"
+            )
+
+        if should_start_edge_scheduler(
+            args_dict, is_host_mode=BasicConfig.is_host_mode
+        ):
+            from unilabos.app.scheduler.integration import setup_edge_scheduler
+
+            _, edge_execution_backend = setup_edge_scheduler(
+                ws_client=comm_client,
+                ordering_url=args_dict.get("edge_scheduler_ordering_url", ""),
+                inventory_db_path=inventory_db,
+                storage_paths=runtime_storage_paths,
+                authority_profile=authority_profile,
+            )
+            # 作为 backend-neutral bridge 接收设备状态和 job 终态回报。
+            args_dict["bridges"].append(edge_execution_backend)
+            print_status(
+                "Scheduler Provider 已启用（Workflow + Device State + History）",
+                "info",
+            )
+        elif authority_profile.can_execute_backend_command:
+            from unilabos.app.scheduler.integration import (
+                setup_job_execution_backend,
+            )
+
+            edge_execution_backend = setup_job_execution_backend(
+                ws_client=comm_client,
+                storage_paths=runtime_storage_paths,
+            )
+            args_dict["bridges"].append(edge_execution_backend)
+            print_status(
+                "Job 微后端已启用（仅消费后端调度命令）",
+                "info",
+            )
+
+        # 微后端必须先于控制链路接收命令，避免首个 job_start 绕过生命周期权威。
+        if comm_client is not None:
             comm_client.start()
     else:
         print_status("SlaveMode跳过Websocket连接")

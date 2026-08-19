@@ -2,8 +2,14 @@ import base64
 import traceback
 import os
 import importlib.util
-from typing import Literal
+import re
+from typing import Literal, Optional
 from unilabos.utils import logger
+
+
+HOST_NODE_REGISTRY_NAME = "host_node"
+DEFAULT_HOST_NODE_NAME = HOST_NODE_REGISTRY_NAME
+_ROS_NODE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class BasicConfig:
@@ -13,6 +19,10 @@ class BasicConfig:
     ak = ""
     sk = ""
     working_dir = ""
+    # 由主组合根一次解析；各 Store 不再自行推导数据库路径。
+    runtime_storage_paths = None
+    # 正常运行只消费后端调度下发的 job；本地 DAG 调度必须显式开启。
+    scheduler_authority_profile = "backend_controlled"
     config_path = ""
     is_host_mode = True
     slave_no_host = False  # 是否跳过rclient.wait_for_service()
@@ -42,6 +52,20 @@ class BasicConfig:
         return base64_target
 
 
+def resolve_host_node_name(value: Optional[str] = None) -> str:
+    """返回可用于 ROS/HostLink 的 HostNode 运行时名称。"""
+
+    name = str(BasicConfig.host_node_name if value is None else value).strip()
+    if not name:
+        name = DEFAULT_HOST_NODE_NAME
+    if not _ROS_NODE_NAME_PATTERN.fullmatch(name):
+        raise ValueError(
+            "HostNode name must start with a letter or underscore and contain "
+            "only ASCII letters, digits, and underscores"
+        )
+    return name
+
+
 # WebSocket配置
 class WSConfig:
     reconnect_interval = 5  # 重连间隔（秒）
@@ -52,11 +76,30 @@ class WSConfig:
     ws_ping_timeout = 8  # pong等待超时（秒），对齐服务端 PongWait
 
 
+class EdgeControlConfig:
+    """Uni-Lab Backend 生产控制面配置。"""
+
+    api_key = ""
+    edge_key = ""
+    instance_uuid = ""
+    capability_revision = "unilabos-edge-v1"
+    scheduler_addr = ""
+    backend_addr = ""
+    state_db = ""
+    reconnect_interval = 5.0
+    request_timeout = 10.0
+    event_retry_interval = 5.0
+
+
 # HTTP配置
 class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"
     # schedule 通道（WebSocket）地址；为空时从 remote_addr 派生：带端口则 +1，否则沿用原 netloc
     schedule_addr = ""
+    # Edge 物料来源与嵌入式/独立微后端地址。
+    material_source = "microbackend"
+    material_microbackend_addr = ""
+    material_query_timeout = 10
 
 
 # Host/Slave 控制通道。ROS2 backend 用它同步发现参数；hostlink backend 还会
@@ -77,6 +120,27 @@ class HostLinkConfig:
     ros_static_peers = ""  # 分号分隔
     # 外部 Fast DDS Discovery Server 的 host:port；off 表示明确清除继承值。
     ros_discovery_server = ""
+
+
+class OTelConfig:
+    """OpenTelemetry 配置；默认关闭且所有调用均 fail-open。"""
+
+    enabled = False
+    endpoint = ""
+    insecure = True
+    service_name = "uni-lab-edge"
+    service_namespace = "unilab"
+    service_version = "0.11.3"
+    deployment_environment = ""
+    headers = ""
+    resource_attributes = ""
+    trace_sampler = "parentbased_always_on"
+    sample_ratio = 1.0
+    max_queue_size = 2048
+    max_export_batch_size = 512
+    schedule_delay_ms = 5000
+    export_timeout_ms = 5000
+    shutdown_timeout_ms = 5000
 
 
 # ROS配置

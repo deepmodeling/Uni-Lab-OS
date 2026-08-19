@@ -259,8 +259,83 @@ def cleanup_for_restart() -> bool:
     except Exception as e:
         print_status(f"[Restart] Error stopping WebSocket: {e}", "warning")
 
-    # Step 2: Get HostNode and cleanup ROS
-    print_status("[Restart] Step 2: Cleaning up ROS nodes...", "info")
+    # Step 2: Stop the selected execution backend without importing the other stack.
+    from unilabos.config.config import BasicConfig
+
+    print_status("[Restart] Step 2: Cleaning up execution backend...", "info")
+    if BasicConfig.backend == "hostlink":
+        try:
+            from unilabos.hostlink.main_hostlink_run import get_runtime
+
+            runtime = get_runtime()
+            if runtime is not None:
+                runtime.request_stop()
+                print_status("[Restart] HostLink backend stop requested", "info")
+        except Exception as e:
+            print_status(f"[Restart] Error stopping HostLink backend: {e}", "warning")
+            return False
+    else:
+        if not _cleanup_ros_for_restart():
+            return False
+
+    # Step 3: Stop the Edge providers before resetting process singletons.
+    print_status("[Restart] Step 3: Stopping Edge providers...", "info")
+    try:
+        from unilabos.app.scheduler.integration import shutdown_edge_services
+
+        shutdown_edge_services()
+        print_status("[Restart] Edge providers stopped", "info")
+    except Exception as e:
+        print_status(f"[Restart] Error stopping Edge providers: {e}", "warning")
+
+    # Step 4: Reset communication client singleton
+    print_status("[Restart] Step 4: Resetting singletons...", "info")
+    try:
+        from unilabos.app import communication
+
+        if hasattr(communication, "_communication_client"):
+            communication._communication_client = None
+            print_status("[Restart] Communication client singleton reset", "info")
+    except Exception as e:
+        print_status(f"[Restart] Error resetting communication singleton: {e}", "warning")
+
+    # Step 5: Wait for threads to finish
+    print_status("[Restart] Step 5: Waiting for threads to finish...", "info")
+    time.sleep(3)  # Give threads time to finish
+
+    # Check remaining threads
+    remaining_threads = []
+    for t in threading.enumerate():
+        if t.name != "MainThread" and t.is_alive():
+            remaining_threads.append(t.name)
+
+    if remaining_threads:
+        print_status(
+            f"[Restart] Warning: {len(remaining_threads)} threads still running: {remaining_threads}", "warning"
+        )
+    else:
+        print_status("[Restart] All threads stopped", "info")
+
+    try:
+        from unilabos.utils.tracing import shutdown_tracing
+
+        shutdown_tracing()
+    except Exception as e:
+        print_status(f"[Restart] Error shutting down tracing: {e}", "warning")
+
+    # Step 6: Force garbage collection
+    print_status("[Restart] Step 6: Running garbage collection...", "info")
+    gc.collect()
+    gc.collect()  # Run twice for weak references
+    print_status("[Restart] Garbage collection complete", "info")
+
+    print_status("[Restart] Cleanup complete. Ready for re-initialization.", "info")
+    return True
+
+
+def _cleanup_ros_for_restart() -> bool:
+    """Clean up the ROS2 runtime; only called when ros2 is selected."""
+
     try:
         from unilabos.ros.nodes.presets.host_node import HostNode
         import rclpy
@@ -325,40 +400,4 @@ def cleanup_for_restart() -> bool:
     except Exception as e:
         print_status(f"[Restart] Error in ROS cleanup: {e}", "warning")
         return False
-
-    # Step 3: Reset communication client singleton
-    print_status("[Restart] Step 3: Resetting singletons...", "info")
-    try:
-        from unilabos.app import communication
-
-        if hasattr(communication, "_communication_client"):
-            communication._communication_client = None
-            print_status("[Restart] Communication client singleton reset", "info")
-    except Exception as e:
-        print_status(f"[Restart] Error resetting communication singleton: {e}", "warning")
-
-    # Step 4: Wait for threads to finish
-    print_status("[Restart] Step 4: Waiting for threads to finish...", "info")
-    time.sleep(3)  # Give threads time to finish
-
-    # Check remaining threads
-    remaining_threads = []
-    for t in threading.enumerate():
-        if t.name != "MainThread" and t.is_alive():
-            remaining_threads.append(t.name)
-
-    if remaining_threads:
-        print_status(
-            f"[Restart] Warning: {len(remaining_threads)} threads still running: {remaining_threads}", "warning"
-        )
-    else:
-        print_status("[Restart] All threads stopped", "info")
-
-    # Step 5: Force garbage collection
-    print_status("[Restart] Step 5: Running garbage collection...", "info")
-    gc.collect()
-    gc.collect()  # Run twice for weak references
-    print_status("[Restart] Garbage collection complete", "info")
-
-    print_status("[Restart] Cleanup complete. Ready for re-initialization.", "info")
     return True

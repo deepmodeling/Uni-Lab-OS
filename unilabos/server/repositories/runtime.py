@@ -89,6 +89,31 @@ class RuntimeRepository:
         ).fetchone()
         return self._session(row) if row is not None else None
 
+    def list_sessions(
+        self,
+        *,
+        edge_uuid: Optional[str] = None,
+        state: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[BackendSessionRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if edge_uuid is not None:
+            clauses.append("edge_uuid=?")
+            params.append(edge_uuid)
+        if state is not None:
+            clauses.append("state=?")
+            params.append(state)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.connection.execute(
+            f"""
+            SELECT * FROM backend_session{where}
+            ORDER BY last_seen_at_ms DESC,session_uuid LIMIT ?
+            """,
+            [*params, limit],
+        )
+        return [self._session(row) for row in rows]
+
     def insert_session(self, record: BackendSessionRecord) -> None:
         self.connection.execute(
             """
@@ -165,6 +190,34 @@ class RuntimeRepository:
             (transport, host_uuid, instance_name),
         ).fetchone()
         return self._endpoint(row) if row is not None else None
+
+    def list_endpoints(
+        self,
+        *,
+        transport: Optional[str] = None,
+        state: Optional[str] = None,
+        host_uuid: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[ExecutorEndpointRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for field, value in (
+            ("transport", transport),
+            ("state", state),
+            ("host_uuid", host_uuid),
+        ):
+            if value is not None:
+                clauses.append(f"{field}=?")
+                params.append(value)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.connection.execute(
+            f"""
+            SELECT * FROM executor_endpoint{where}
+            ORDER BY last_seen_at_ms DESC,endpoint_uuid LIMIT ?
+            """,
+            [*params, limit],
+        )
+        return [self._endpoint(row) for row in rows]
 
     @staticmethod
     def _endpoint_values(record: ExecutorEndpointRecord) -> dict[str, Any]:
@@ -245,6 +298,35 @@ class RuntimeRepository:
         ).fetchone()
         return self._command(row) if row is not None else None
 
+    def list_commands(
+        self,
+        *,
+        session_uuid: Optional[str] = None,
+        status: Optional[str] = None,
+        job_uuid: Optional[str] = None,
+        command_type: Optional[str] = None,
+        after_sequence: int = 0,
+        limit: int = 100,
+    ) -> list[CommandInboxRecord]:
+        clauses = ["backend_sequence>?"]
+        params: list[Any] = [after_sequence]
+        for field, value in (
+            ("session_uuid", session_uuid),
+            ("status", status),
+            ("job_uuid", job_uuid),
+            ("command_type", command_type),
+        ):
+            if value is not None:
+                clauses.append(f"{field}=?")
+                params.append(value)
+        rows = self.connection.execute(
+            "SELECT * FROM command_inbox WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY session_uuid,backend_sequence LIMIT ?",
+            [*params, limit],
+        )
+        return [self._command(row) for row in rows]
+
     def insert_command(self, record: CommandInboxRecord) -> None:
         values = record.model_dump(mode="json")
         values["summary_json"] = canonical_json(values.pop("summary"))
@@ -302,6 +384,38 @@ class RuntimeRepository:
             "SELECT * FROM execution_job WHERE job_uuid=?", (job_uuid,)
         ).fetchone()
         return self._job(row) if row is not None else None
+
+    def list_jobs(
+        self,
+        *,
+        status: Optional[str] = None,
+        device_uuid: Optional[str] = None,
+        endpoint_uuid: Optional[str] = None,
+        retry_of_job_uuid: Optional[str] = None,
+        attempt_group_uuid: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[ExecutionJobRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for field, value in (
+            ("status", status),
+            ("device_uuid", device_uuid),
+            ("endpoint_uuid", endpoint_uuid),
+            ("retry_of_job_uuid", retry_of_job_uuid),
+            ("attempt_group_uuid", attempt_group_uuid),
+        ):
+            if value is not None:
+                clauses.append(f"{field}=?")
+                params.append(value)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.connection.execute(
+            f"""
+            SELECT * FROM execution_job{where}
+            ORDER BY accepted_at_ms DESC,job_uuid LIMIT ?
+            """,
+            [*params, limit],
+        )
+        return [self._job(row) for row in rows]
 
     @staticmethod
     def _job_values(record: ExecutionJobRecord) -> dict[str, Any]:
@@ -392,6 +506,33 @@ class RuntimeRepository:
         ).fetchone()
         return self._adapter_command(row) if row is not None else None
 
+    def list_adapter_commands(
+        self,
+        *,
+        endpoint_uuid: Optional[str] = None,
+        status: Optional[str] = None,
+        job_uuid: Optional[str] = None,
+        after_sequence: int = 0,
+        limit: int = 100,
+    ) -> list[AdapterCommandOutboxRecord]:
+        clauses = ["sequence>?"]
+        params: list[Any] = [after_sequence]
+        for field, value in (
+            ("endpoint_uuid", endpoint_uuid),
+            ("status", status),
+            ("job_uuid", job_uuid),
+        ):
+            if value is not None:
+                clauses.append(f"{field}=?")
+                params.append(value)
+        rows = self.connection.execute(
+            "SELECT * FROM adapter_command_outbox WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY sequence LIMIT ?",
+            [*params, limit],
+        )
+        return [self._adapter_command(row) for row in rows]
+
     def insert_adapter_command(self, record: AdapterCommandOutboxRecord) -> int:
         values = record.model_dump(mode="json", exclude={"sequence"})
         cursor = self.connection.execute(
@@ -478,6 +619,35 @@ class RuntimeRepository:
             "SELECT * FROM backend_event_outbox WHERE event_uuid=?", (event_uuid,)
         ).fetchone()
         return self._backend_event(row) if row is not None else None
+
+    def list_backend_events(
+        self,
+        *,
+        status: Optional[str] = None,
+        job_uuid: Optional[str] = None,
+        aggregate_type: Optional[str] = None,
+        aggregate_uuid: Optional[str] = None,
+        after_sequence: int = 0,
+        limit: int = 100,
+    ) -> list[BackendEventOutboxRecord]:
+        clauses = ["sequence>?"]
+        params: list[Any] = [after_sequence]
+        for field, value in (
+            ("status", status),
+            ("job_uuid", job_uuid),
+            ("aggregate_type", aggregate_type),
+            ("aggregate_uuid", aggregate_uuid),
+        ):
+            if value is not None:
+                clauses.append(f"{field}=?")
+                params.append(value)
+        rows = self.connection.execute(
+            "SELECT * FROM backend_event_outbox WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY sequence LIMIT ?",
+            [*params, limit],
+        )
+        return [self._backend_event(row) for row in rows]
 
     def insert_backend_event(self, record: BackendEventOutboxRecord) -> int:
         values = record.model_dump(mode="json", exclude={"sequence"})

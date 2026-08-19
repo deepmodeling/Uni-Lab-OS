@@ -154,6 +154,18 @@ class RuntimeService:
             raise RuntimeNotFoundError(f"backend session {session_uuid!r} not found")
         return record
 
+    def list_backend_sessions(
+        self,
+        *,
+        edge_uuid: Optional[str] = None,
+        state: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[BackendSessionRecord]:
+        self._validate_limit(limit)
+        return self.repository.list_sessions(
+            edge_uuid=edge_uuid, state=state, limit=limit
+        )
+
     # -- Endpoint snapshot ----------------------------------------------
 
     @staticmethod
@@ -241,11 +253,32 @@ class RuntimeService:
             raise RuntimeNotFoundError(f"endpoint {endpoint_uuid!r} not found")
         return record
 
+    def list_endpoint_snapshots(
+        self,
+        *,
+        transport: Optional[str] = None,
+        state: Optional[str] = None,
+        host_uuid: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[ExecutorEndpointRecord]:
+        self._validate_limit(limit)
+        return self.repository.list_endpoints(
+            transport=transport,
+            state=state,
+            host_uuid=host_uuid,
+            limit=limit,
+        )
+
     # -- Command inbox ---------------------------------------------------
 
     @staticmethod
     def _command_fingerprint(value: CommandEnvelope) -> str:
         return canonical_hash(value.model_dump(mode="json", exclude={"received_at_ms"}))
+
+    @staticmethod
+    def _validate_limit(limit: int) -> None:
+        if not 1 <= limit <= 1000:
+            raise RuntimeValidationError("limit must be between 1 and 1000")
 
     def receive_command(self, value: CommandEnvelope) -> CommandReceipt:
         fingerprint = self._command_fingerprint(value)
@@ -317,6 +350,39 @@ class RuntimeService:
                 backend_sequence=value.backend_sequence,
                 command_fingerprint=fingerprint,
             )
+
+    def get_command(self, command_uuid: str) -> CommandInboxRecord:
+        record = self.repository.get_command(command_uuid)
+        if record is None:
+            raise RuntimeNotFoundError(f"command {command_uuid!r} not found")
+        return record
+
+    def list_commands(
+        self,
+        *,
+        session_uuid: Optional[str] = None,
+        status: Optional[str] = None,
+        job_uuid: Optional[str] = None,
+        command_type: Optional[str] = None,
+        after_sequence: int = 0,
+        limit: int = 100,
+    ) -> list[CommandInboxRecord]:
+        if after_sequence < 0:
+            raise RuntimeValidationError("after_sequence cannot be negative")
+        if after_sequence and session_uuid is None:
+            raise RuntimeValidationError(
+                "after_sequence requires session_uuid because backend sequence is "
+                "session-local"
+            )
+        self._validate_limit(limit)
+        return self.repository.list_commands(
+            session_uuid=session_uuid,
+            status=status,
+            job_uuid=job_uuid,
+            command_type=command_type,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
 
     def _complete_command(
         self,
@@ -421,6 +487,26 @@ class RuntimeService:
         if record is None:
             raise RuntimeNotFoundError(f"execution job {job_uuid!r} not found")
         return record
+
+    def list_execution_jobs(
+        self,
+        *,
+        status: Optional[str] = None,
+        device_uuid: Optional[str] = None,
+        endpoint_uuid: Optional[str] = None,
+        retry_of_job_uuid: Optional[str] = None,
+        attempt_group_uuid: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[ExecutionJobRecord]:
+        self._validate_limit(limit)
+        return self.repository.list_jobs(
+            status=status,
+            device_uuid=device_uuid,
+            endpoint_uuid=endpoint_uuid,
+            retry_of_job_uuid=retry_of_job_uuid,
+            attempt_group_uuid=attempt_group_uuid,
+            limit=limit,
+        )
 
     _TRANSITIONS = {
         "accepted": {"dispatch_pending", "rejected", "canceled"},
@@ -676,6 +762,36 @@ class RuntimeService:
         with self.repository.write():
             return self._insert_adapter_command(value, timestamp=timestamp)
 
+    def get_adapter_command(
+        self, adapter_command_uuid: str
+    ) -> AdapterCommandOutboxRecord:
+        record = self.repository.get_adapter_command(adapter_command_uuid)
+        if record is None:
+            raise RuntimeNotFoundError(
+                f"adapter command {adapter_command_uuid!r} not found"
+            )
+        return record
+
+    def list_adapter_commands(
+        self,
+        *,
+        endpoint_uuid: Optional[str] = None,
+        status: Optional[str] = None,
+        job_uuid: Optional[str] = None,
+        after_sequence: int = 0,
+        limit: int = 100,
+    ) -> list[AdapterCommandOutboxRecord]:
+        if after_sequence < 0:
+            raise RuntimeValidationError("after_sequence cannot be negative")
+        self._validate_limit(limit)
+        return self.repository.list_adapter_commands(
+            endpoint_uuid=endpoint_uuid,
+            status=status,
+            job_uuid=job_uuid,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
+
     def claim_adapter_commands(
         self, value: AdapterCommandClaim
     ) -> list[AdapterCommandOutboxRecord]:
@@ -767,6 +883,34 @@ class RuntimeService:
         timestamp = self._now_ms(value.available_at_ms)
         with self.repository.write():
             return self._insert_backend_event(value, timestamp=timestamp)
+
+    def get_backend_event(self, event_uuid: str) -> BackendEventOutboxRecord:
+        record = self.repository.get_backend_event(event_uuid)
+        if record is None:
+            raise RuntimeNotFoundError(f"backend event {event_uuid!r} not found")
+        return record
+
+    def list_backend_events(
+        self,
+        *,
+        status: Optional[str] = None,
+        job_uuid: Optional[str] = None,
+        aggregate_type: Optional[str] = None,
+        aggregate_uuid: Optional[str] = None,
+        after_sequence: int = 0,
+        limit: int = 100,
+    ) -> list[BackendEventOutboxRecord]:
+        if after_sequence < 0:
+            raise RuntimeValidationError("after_sequence cannot be negative")
+        self._validate_limit(limit)
+        return self.repository.list_backend_events(
+            status=status,
+            job_uuid=job_uuid,
+            aggregate_type=aggregate_type,
+            aggregate_uuid=aggregate_uuid,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
 
     def claim_backend_events(
         self, value: BackendEventClaim

@@ -167,6 +167,67 @@ def _validate_canonical_plr_sites(
     return result
 
 
+def _seed_random_plr_sites(resource: "PLRResource", owner_uuid: str) -> None:
+    """为创建草稿补齐 ItemizedCarrier 的临时 canonical Site 快照。"""
+
+    if getattr(resource, "resource_sites", None) is not None:
+        return
+    site_setter = getattr(resource, "set_resource_sites", None)
+    child_locations = getattr(resource, "child_locations", None)
+    child_size = getattr(resource, "child_size", None)
+    occupants = getattr(resource, "sites", None)
+    if (
+        not callable(site_setter)
+        or not isinstance(child_locations, dict)
+        or not isinstance(child_size, dict)
+        or not isinstance(occupants, list)
+    ):
+        return
+
+    from pylabrobot.resources import ResourceHolder
+
+    template_name = get_plr_template_name(resource)
+    invisible_slots = getattr(resource, "invisible_slots", []) or []
+    if isinstance(invisible_slots, str):
+        invisible_slots = [invisible_slots]
+    draft_sites: List[ResourceSite] = []
+    for ordinal, (site_index, location) in enumerate(child_locations.items()):
+        label = str(site_index)
+        occupant = occupants[ordinal] if ordinal < len(occupants) else None
+        occupied_material_uuid = None
+        if occupant is not None and not isinstance(occupant, ResourceHolder):
+            occupied_material_uuid = getattr(occupant, "unilabos_uuid", "") or None
+            if occupied_material_uuid is None:
+                occupied_material_uuid = str(uuid.uuid4())
+                occupant.unilabos_uuid = occupied_material_uuid
+        size = child_size.get(site_index) or {}
+        draft_sites.append(
+            ResourceSite(
+                uuid=str(uuid.uuid4()),
+                template_name=template_name,
+                material_uuid=owner_uuid,
+                index=site_index if isinstance(site_index, (int, str)) else ordinal,
+                label=label,
+                visible=site_index not in invisible_slots and label not in invisible_slots,
+                occupied_material_uuid=occupied_material_uuid,
+                pose={
+                    "position": {
+                        "x": getattr(location, "x", 0.0),
+                        "y": getattr(location, "y", 0.0),
+                        "z": getattr(location, "z", 0.0),
+                    },
+                    "position3d": {
+                        "x": getattr(location, "x", 0.0),
+                        "y": getattr(location, "y", 0.0),
+                        "z": getattr(location, "z", 0.0),
+                    },
+                    "size": size,
+                },
+            )
+        )
+    site_setter(draft_sites)
+
+
 def extract_plr_sites(
     resource: "PLRResource", serialized: Optional[Dict[str, Any]] = None
 ) -> Optional[List[ResourceSite]]:
@@ -849,6 +910,9 @@ class ResourceTreeSet(object):
                     )
                 uid = str(uuid.uuid4())
                 res.unilabos_uuid = uid
+
+            if known_random_uuid:
+                _seed_random_plr_sites(res, uid)
 
             plr_sites = getattr(res, "sites", None)
             if isinstance(plr_sites, dict):

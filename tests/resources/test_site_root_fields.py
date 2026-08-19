@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -574,6 +574,28 @@ def test_itemized_carrier_uses_native_sites_and_injected_extra_metadata():
     assert restored[0].parent_link == "deck/main"
     assert restored[0].meta_data == {"vendor": {"slot": "A1"}}
     assert restored[0].pose.position.model_dump() == {"x": 101.0, "y": 102.0, "z": 0.0}
+
+
+def test_known_random_uuid_seeds_itemized_carrier_draft_sites():
+    carrier = ItemizedCarrier(
+        name="carrier",
+        size_x=100,
+        size_y=100,
+        size_z=20,
+        sites={"A1": None, "A2": None},
+    )
+    set_plr_template_name(carrier, "StrictCarrier")
+
+    tree = ResourceTreeSet.from_plr_resources(
+        [carrier], known_random_uuid=True
+    )
+
+    sites = tree.root_nodes[0].res_content.sites
+    assert sites is not None
+    assert [site.label for site in sites] == ["A1", "A2"]
+    assert all(site.material_uuid == carrier.unilabos_uuid for site in sites)
+    assert all(UUID(site.uuid) for site in sites)
+    assert carrier.resource_sites == sites
 
 
 def test_itemized_carrier_rejects_canonical_site_not_in_native_layout():

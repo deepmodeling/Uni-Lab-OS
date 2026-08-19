@@ -362,15 +362,24 @@ def test_backend_controlled_microbackend_rejects_scheduler_conflict(
             "action_args": {},
         }
     )
-    deadline = time.time() + 2
-    while time.time() < deadline and not any(
-        job_id == conflicting.job_id for job_id, *_ in bridge.statuses
-    ):
-        time.sleep(0.01)
-
-    rejected = next(
-        status for status in bridge.statuses if status[0] == conflicting.job_id
+    assert bridge.decision_event.wait(2)
+    pending = next(
+        report for report in bridge.decisions if report["job_id"] == conflicting.job_id
     )
+    assert pending["exception_type"] == "SchedulerDispatchConflict"
+    assert not any(job_id == conflicting.job_id for job_id, *_ in bridge.statuses)
+    assert microbackend.handle_action_error_decision(
+        pending["decision_id"],
+        conflicting.job_id,
+        {
+            "decision_id": pending["decision_id"],
+            "job_id": conflicting.job_id,
+            "device_id": conflicting.device_id,
+            "action": "abort",
+            "scheduler_updated": True,
+        },
+    )
+    rejected = next(status for status in bridge.statuses if status[0] == conflicting.job_id)
     assert rejected[1] == "failed"
     assert rejected[3]["error_info"]["exception_type"] == (
         "SchedulerDispatchConflict"

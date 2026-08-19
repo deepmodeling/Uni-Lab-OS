@@ -567,6 +567,24 @@ def test_host_holds_failure_and_publishes_registry_options_to_backend():
     )
 
 
+def test_empty_registry_policy_still_uses_backend_owned_default_error_flow():
+    host = FakeHostDecisionNode()
+    host._action_value_mappings["device-1"]["run"]["error_policy"] = {}
+
+    decision_id = _begin_pending(host)
+
+    report = next(
+        item
+        for item in host.get_pending_action_error_decisions()
+        if item["decision_id"] == decision_id
+    )
+    assert [option["action"] for option in report["options"]] == [
+        "retry",
+        "abort",
+        "operator_intervention",
+    ]
+
+
 def test_backend_release_keeps_retry_as_failed_without_host_redispatch():
     host = FakeHostDecisionNode()
     decision_id = _begin_pending(host)

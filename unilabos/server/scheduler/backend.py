@@ -285,7 +285,8 @@ class JobExecutionBackend:
                 "severity": "fatal",
             },
         )
-        self._release_terminal(item, "failed", return_info, {})
+        if not self._begin_action_error_decision(item, return_info, {}):
+            self._release_terminal(item, "failed", return_info, {})
 
     def add_job_finished_listener(self, listener: Callable[..., None]) -> None:
         """注册完成回调；兼容 3 参 (job_id, success, ret_value) 旧签名。"""
@@ -499,12 +500,27 @@ class JobExecutionBackend:
         normalized_return_info = (
             dict(return_info) if isinstance(return_info, dict) else {}
         )
-        if status == "failed" and self._begin_action_error_decision(
-            item,
-            normalized_return_info,
-            dict(feedback_data or {}),
-        ):
-            return
+        if status == "failed":
+            normalized_return_info.setdefault(
+                "error_info",
+                {
+                    "action_name": item.action_name,
+                    "exception_type": "DeviceActionError",
+                    "exception_mro": ["DeviceActionError", "Exception"],
+                    "error_message": str(
+                        normalized_return_info.get("error")
+                        or "device action failed"
+                    ),
+                    "category": "execution",
+                    "severity": "error",
+                },
+            )
+            if self._begin_action_error_decision(
+                item,
+                normalized_return_info,
+                dict(feedback_data or {}),
+            ):
+                return
         self._release_terminal(
             item,
             status,
@@ -523,6 +539,19 @@ class JobExecutionBackend:
                 except Exception:  # noqa: BLE001 - 回报失败不能重复执行 action
                     logger.exception(
                         "[JobExecutionBackend] failed to publish job started"
+                    )
+
+    def publish_host_ready(self) -> None:
+        """HostLink/ROS2 adapter ready 后恢复数据库中的未下发 attempt。"""
+
+        for bridge in self.result_bridges:
+            callback = getattr(bridge, "resume_pending_dispatches", None)
+            if callable(callback):
+                try:
+                    callback()
+                except Exception:  # noqa: BLE001 - 后续重连仍可恢复
+                    logger.exception(
+                        "[JobExecutionBackend] failed to resume pending dispatches"
                     )
 
     def _publish_to_result_bridges(
@@ -602,27 +631,50 @@ class JobExecutionBackend:
         policy: Optional[Mapping[str, Any]] = None
         for candidate in candidates:
             mapping = action_mappings.get(candidate)
-            if isinstance(mapping, dict) and isinstance(
-                mapping.get("error_policy"), Mapping
-            ):
-                policy = mapping["error_policy"]
+            configured_policy = (
+                mapping.get("error_policy") if isinstance(mapping, dict) else None
+            )
+            if isinstance(configured_policy, Mapping) and configured_policy:
+                policy = configured_policy
                 break
-        if policy is None:
-            return False
-
         exception_mro = raw_error_info.get("exception_mro")
         if not isinstance(exception_mro, list):
             exception_mro = [
                 str(raw_error_info.get("exception_type") or "Exception")
             ]
-        options = resolve_error_options_by_names(policy, exception_mro)
-        if not options:
-            return False
+        if policy is None:
+            # 所有设备失败都走同一条 Backend 决策链；具体 retry 由 Backend
+            # 创建新的 attempt，本地只放行原 attempt 的 failed 或人工替换。
+            options = [
+                {
+                    "action": "retry",
+                    "label": "重试",
+                    "description": "Backend 更新调度并创建新的执行 attempt",
+                },
+                {
+                    "action": "abort",
+                    "label": "标记失败",
+                    "description": "放行当前 attempt 的 failed 结果",
+                },
+                {
+                    "action": "operator_intervention",
+                    "label": "人工替换结果",
+                    "description": "由人工提供当前 attempt 的有效结果",
+                },
+            ]
+            policy = {}
+        else:
+            options = resolve_error_options_by_names(policy, exception_mro)
+            if not options:
+                return False
         decision_bridges = [
             bridge
             for bridge in self.result_bridges
-            if callable(
-                getattr(bridge, "publish_job_error_decision_required", None)
+            if (
+                callable(getattr(bridge, "publish_job_error_pending", None))
+                or callable(
+                    getattr(bridge, "publish_job_error_decision_required", None)
+                )
             )
         ]
         if not decision_bridges:
@@ -689,7 +741,17 @@ class JobExecutionBackend:
 
         for bridge in decision_bridges:
             try:
-                bridge.publish_job_error_decision_required(deepcopy(report))
+                rich_callback = getattr(bridge, "publish_job_error_pending", None)
+                if callable(rich_callback):
+                    rich_callback(
+                        deepcopy(report),
+                        item,
+                        deepcopy(return_info),
+                        deepcopy(result_data),
+                        deepcopy(error_info),
+                    )
+                else:
+                    bridge.publish_job_error_decision_required(deepcopy(report))
             except Exception:  # noqa: BLE001 - reconnect replay keeps it pending
                 logger.exception(
                     "[JobExecutionBackend] failed to publish error decision %s",
@@ -816,6 +878,49 @@ class JobExecutionBackend:
         """Compatibility name used by reconnect/reporting paths."""
 
         return self.list_error_decisions()
+
+    def restore_action_error_decision(self, snapshot: Dict[str, Any]) -> bool:
+        """从 history.db 恢复重启前尚未由 Backend 放行的失败。"""
+
+        report = snapshot.get("report")
+        item_data = snapshot.get("item")
+        return_info = snapshot.get("return_info")
+        result_data = snapshot.get("result_data")
+        error_info = snapshot.get("error_info")
+        if not all(
+            isinstance(value, dict)
+            for value in (report, item_data, return_info, result_data, error_info)
+        ):
+            return False
+        decision_id = str(report.get("decision_id") or "")
+        job_id = str(report.get("job_id") or "")
+        if not decision_id or not job_id:
+            return False
+        item_fields = {
+            name: item_data[name]
+            for name in QueueItem.__dataclass_fields__
+            if name in item_data
+        }
+        try:
+            item = QueueItem(**item_fields)
+        except (TypeError, ValueError):
+            return False
+        with self._pending_action_error_decisions_lock:
+            existing = self._pending_action_error_decisions.get(decision_id)
+            if existing is not None:
+                return existing.get("job_id") == job_id
+            self._pending_action_error_decisions[decision_id] = {
+                "decision_id": decision_id,
+                "job_id": job_id,
+                "item": item,
+                "return_info": deepcopy(return_info),
+                "result_data": deepcopy(result_data),
+                "error_info": deepcopy(error_info),
+                "report": deepcopy(report),
+                "resolving": False,
+                "timer": None,
+            }
+        return True
 
     def host_ready(self) -> bool:
         """Whether a transport adapter is ready to execute commands."""
@@ -1035,14 +1140,23 @@ class JobExecutionBackend:
                 "[JobExecutionBackend] execution adapter unavailable for job %s",
                 job_log,
             )
-            self._release_terminal(
-                queue_item,
-                "failed",
-                serialize_result_info(
-                    "Device execution adapter is not available", False, {}
-                ),
-                {},
+            return_info = serialize_result_info(
+                "Device execution adapter is not available", False, {}
             )
+            return_info["error_info"] = {
+                "action_name": job.action_name,
+                "exception_type": "ExecutionAdapterUnavailable",
+                "exception_mro": ["ExecutionAdapterUnavailable", "Exception"],
+                "error_message": "Device execution adapter is not available",
+                "category": "transport",
+                "severity": "fatal",
+            }
+            if not self._begin_action_error_decision(
+                queue_item,
+                return_info,
+                {},
+            ):
+                self._release_terminal(queue_item, "failed", return_info, {})
             return
         try:
             adapter.send_goal(
@@ -1056,14 +1170,21 @@ class JobExecutionBackend:
             logger.info("[JobExecutionBackend] goal sent for job %s", job_log)
         except Exception:  # noqa: BLE001 - 启动失败必须走完结流程释放锁
             logger.exception("[JobExecutionBackend] send_goal failed for job %s", job_log)
-            self._release_terminal(
-                queue_item,
-                "failed",
-                serialize_result_info(
-                    "Failed to dispatch action to device adapter", False, {}
-                ),
-                {},
+            return_info = serialize_result_info(
+                "Failed to dispatch action to device adapter", False, {}
             )
+            return_info["error_info"] = {
+                "action_name": job.action_name,
+                "exception_type": "ExecutionDispatchError",
+                "exception_mro": ["ExecutionDispatchError", "Exception"],
+                "error_message": "Failed to dispatch action to device adapter",
+                "category": "transport",
+                "severity": "fatal",
+            }
+            if not self._begin_action_error_decision(
+                queue_item, return_info, {}
+            ):
+                self._release_terminal(queue_item, "failed", return_info, {})
 
     def _handle_finished(
         self, job_id: str, success: bool, ret_value: Any, suc_type: str = "normal"

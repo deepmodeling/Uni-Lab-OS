@@ -16,6 +16,7 @@ from unilabos.server.scheduler.backend import (
     JobExecutionBackend,
     make_device_status_policy_resolver,
 )
+from unilabos.server.scheduler.coordinator import WorkflowBusinessCoordinator
 from unilabos.server.scheduler.telemetry_state import TelemetryDeviceStateProjection
 from unilabos.server.services.materials import MaterialsService
 from unilabos.utils.tracing import inject_trace_context
@@ -23,6 +24,7 @@ from unilabos.utils.tracing import inject_trace_context
 logger = logging.getLogger(__name__)
 
 _backend: Optional[JobExecutionBackend] = None
+_coordinator: Optional[WorkflowBusinessCoordinator] = None
 _materials: Optional[MaterialsService] = None
 _materials_gateway: Any = None
 _owns_materials = False
@@ -63,6 +65,10 @@ def get_edge_scheduler() -> None:
 
 def get_edge_backend() -> Optional[JobExecutionBackend]:
     return _backend
+
+
+def get_business_coordinator() -> Optional[WorkflowBusinessCoordinator]:
+    return _coordinator
 
 
 def get_materials_service() -> Optional[MaterialsService]:
@@ -214,7 +220,7 @@ def setup_job_execution_backend(
 ) -> JobExecutionBackend:
     """启动只消费后端命令的微后端，不创建本地 DAG 或旧 Store。"""
 
-    global _backend, _device_state_projection
+    global _backend, _coordinator, _device_state_projection
     if _backend is not None:
         return _backend
 
@@ -243,10 +249,28 @@ def setup_job_execution_backend(
         monitor=monitor_bus,
         status_policy_resolver=make_device_status_policy_resolver(host_node_getter),
         status_incidents=status_incidents,
-        result_bridges=[ws_client] if ws_client is not None else [],
+        result_bridges=[],
     )
+    coordinator = WorkflowBusinessCoordinator(
+        services.runtime,
+        services.history,
+        backend,
+        endpoint_uuid=endpoint_uuid,
+        transport=BasicConfig.backend,
+        host_uuid=BasicConfig.machine_name or BasicConfig.host_node_name or "host",
+        instance_name=BasicConfig.host_node_name or "host",
+        legacy_bridge=ws_client,
+        notice_callback=(
+            getattr(ws_client, "publish_runtime_events", None)
+            if ws_client is not None
+            else None
+        ),
+    )
+    backend.result_bridges.append(coordinator)
+    _coordinator = coordinator
     backend.start()
     backend.rebuild_status_incidents()
+    coordinator.restore()
     _backend = backend
     logger.info(
         "[JobExecutionIntegration] backend-controlled microbackend ready (%s)",
@@ -258,7 +282,7 @@ def setup_job_execution_backend(
 def shutdown_edge_services() -> None:
     """关闭执行 bridge 和四库组合根。"""
 
-    global _backend, _materials, _materials_gateway, _owns_materials
+    global _backend, _coordinator, _materials, _materials_gateway, _owns_materials
     global _device_state_projection
 
     if BasicConfig.backend == "ros2":
@@ -272,6 +296,7 @@ def shutdown_edge_services() -> None:
     shutdown_server_services()
 
     _backend = None
+    _coordinator = None
     _materials = None
     _materials_gateway = None
     _owns_materials = False
@@ -286,6 +311,7 @@ __all__ = [
     "CloudBusinessError",
     "bind_workflow_executor",
     "get_edge_backend",
+    "get_business_coordinator",
     "get_edge_scheduler",
     "get_materials_service",
     "get_materials_gateway",

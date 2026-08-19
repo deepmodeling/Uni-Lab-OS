@@ -46,6 +46,17 @@ def _get_job_execution_backend():
     except ImportError:
         return None
 
+
+def _get_business_coordinator():
+    """Resolve the durable WS-notice/HTTP-pull business coordinator."""
+
+    try:
+        from unilabos.server.scheduler.integration import get_business_coordinator
+
+        return get_business_coordinator()
+    except ImportError:
+        return None
+
 # 服务端通信专用 logger：独立成文件(unilabos_data/logs/ws_comm_*.log)，
 # 全量 TRACE 落本地、微秒级时间戳 + 线程名，便于排查通信/queue 时序问题。
 # 未调用 configure_comm_logger 时安全回退到根 logger。
@@ -505,6 +516,7 @@ class MessageProcessor:
                     # 首连若设备尚未就绪则不会在此发送，待 HostNode 初始化完成后由其回调补发。
                     if self.websocket_client:
                         self.websocket_client.publish_host_ready()
+                        self.websocket_client.publish_runtime_events()
 
                     try:
                         # 接收消息循环
@@ -657,6 +669,12 @@ class MessageProcessor:
                 await self._handle_query_action_lock(message_data)
             elif message_type == "job_start":
                 await self._handle_job_start(message_data)
+            elif message_type == "backend_change":
+                await self._handle_backend_change(message_data)
+            elif message_type == "backend_session":
+                await self._handle_backend_session(message_data)
+            elif message_type == "edge_change_ack":
+                await self._handle_edge_change_ack(message_data)
             elif message_type == "inventory_command":
                 await self._handle_inventory_command(message_data)
             elif message_type == "cancel_action" or message_type == "cancel_task":
@@ -856,6 +874,13 @@ class MessageProcessor:
     async def _handle_job_error_decision(self, data: Dict[str, Any]) -> None:
         """后端完成前端询问和调度更新后，释放 Host 暂存的设备失败。"""
 
+        if _get_business_coordinator() is not None:
+            logger.warning(
+                "[MessageProcessor] Ignore legacy full job_error_decision; "
+                "use backend_change and HTTP command pull"
+            )
+            return
+
         decision_id = str(data.get("decision_id") or "")
         job_id = str(data.get("job_id") or "")
         device_id = str(data.get("device_id") or "")
@@ -900,8 +925,42 @@ class MessageProcessor:
                 f"decision={decision_id} job={job_id[:8]} device={device_id}"
             )
 
+    async def _handle_backend_change(self, data: Dict[str, Any]) -> None:
+        """消费轻量 WS 通知；完整命令固定经 Backend HTTP 数据面拉取。"""
+
+        coordinator = _get_business_coordinator()
+        if coordinator is None:
+            raise RuntimeError("workflow business coordinator is not available")
+        await asyncio.to_thread(coordinator.handle_backend_notice, dict(data or {}))
+
+    async def _handle_backend_session(self, data: Dict[str, Any]) -> None:
+        """绑定重连 session，使 durable Edge events 不依赖下一条业务命令。"""
+
+        coordinator = _get_business_coordinator()
+        if coordinator is None:
+            raise RuntimeError("workflow business coordinator is not available")
+        await asyncio.to_thread(
+            coordinator.bind_backend_session, dict(data or {})
+        )
+
+    async def _handle_edge_change_ack(self, data: Dict[str, Any]) -> None:
+        """确认 Backend 已经通过 HTTP 拉取并处理到指定 Edge event。"""
+
+        coordinator = _get_business_coordinator()
+        if coordinator is None:
+            raise RuntimeError("workflow business coordinator is not available")
+        await asyncio.to_thread(
+            coordinator.acknowledge_edge_changes, dict(data or {})
+        )
+
     async def _handle_job_start(self, data: Dict[str, Any]):
         """处理后端 job_start：统一交给微后端入队和下发执行。"""
+        if _get_business_coordinator() is not None:
+            logger.warning(
+                "[MessageProcessor] Ignore legacy full job_start; use "
+                "backend_change and HTTP command pull"
+            )
+            return
         try:
             data = dict(data or {})
             if not data.get("sample_material"):
@@ -982,6 +1041,12 @@ class MessageProcessor:
 
     async def _handle_cancel_action(self, data: Dict[str, Any]):
         """处理cancel_action/cancel_task消息"""
+        if _get_business_coordinator() is not None:
+            logger.warning(
+                "[MessageProcessor] Ignore legacy cancel_action/cancel_task; "
+                "use backend_change and HTTP command pull"
+            )
+            return
         task_id = data.get("task_id")
         job_id = data.get("job_id")
 
@@ -1728,10 +1793,29 @@ class WebSocketClient(BaseCommunicationClient):
             )
         )
 
+    def publish_runtime_events(self) -> None:
+        """发送 runtime outbox 的短通知；事件正文留在 Edge HTTP API。"""
+
+        if self.is_disabled or not self.is_connected():
+            return
+        coordinator = _get_business_coordinator()
+        if coordinator is None:
+            return
+        for notice in coordinator.claim_edge_changes():
+            self.message_processor.send_message(
+                {
+                    "action": "edge_change",
+                    "data": notice.model_dump(mode="json", exclude_none=True),
+                }
+            )
+
     def report_action_error_decisions(self) -> None:
         """连接或重连后重放仍等待后端 release 的失败。"""
 
         if self.is_disabled or not self.is_connected():
+            return
+        if _get_business_coordinator() is not None:
+            self.publish_runtime_events()
             return
         microbackend = _get_job_execution_backend()
         if microbackend is None:

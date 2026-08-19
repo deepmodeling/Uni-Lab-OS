@@ -46,7 +46,7 @@ from unilabos.registry.placeholder_type import ResourceSlotRawInput
 from unilabos.utils.decorator import get_all_subscriptions
 
 from unilabos.resources.container import RegularContainer
-from unilabos.resources.liquids import apply_substances, resolve_site_spot
+from unilabos.resources.materials import apply_substances, resolve_site_spot
 from unilabos.resources.graphio import (
     initialize_resources,
 )

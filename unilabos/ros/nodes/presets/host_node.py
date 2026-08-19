@@ -39,7 +39,7 @@ from unilabos.registry.placeholder_type import (
 from unilabos.registry.registry import lab_registry
 from unilabos.resources.container import RegularContainer
 from unilabos.resources.graphio import initialize_resource
-from unilabos.resources.liquids import apply_substances
+from unilabos.resources.materials import apply_substances
 from unilabos.resources.registry import add_schema
 from unilabos.resources.objects.resource import ResourceDictType
 from unilabos.resources.objects.sample import LabSample, SampleUUIDsType

@@ -63,51 +63,56 @@ def setup_host_server_stack(
     )
     from unilabos.server.scheduler.integration import (
         set_materials_gateway,
+        shutdown_edge_services,
         setup_job_execution_backend,
         setup_materials_service,
     )
 
     paths = resolve_database_paths(args, working_dir=working_dir)
-    address_arg = args.get("material_microbackend_addr")
-    if address_arg is not None:
-        HTTPConfig.material_microbackend_addr = str(address_arg).strip()
-    external_address = str(HTTPConfig.material_microbackend_addr or "").strip()
+    try:
+        address_arg = args.get("material_microbackend_addr")
+        if address_arg is not None:
+            HTTPConfig.material_microbackend_addr = str(address_arg).strip()
+        external_address = str(HTTPConfig.material_microbackend_addr or "").strip()
 
-    if external_address:
-        materials_gateway = HTTPMaterialsClient(external_address)
-        material_authority = external_address
-    else:
-        materials_service = setup_materials_service(
-            database_paths=paths,
+        if external_address:
+            materials_gateway = HTTPMaterialsClient(external_address)
+            material_authority = external_address
+        else:
+            materials_service = setup_materials_service(
+                database_paths=paths,
+                ws_client=communication_client,
+            )
+            materials_gateway = LocalMaterialsClient(materials_service)
+            material_authority = str(paths.materials_db)
+
+        template_report = sync_registry_resources(registry, materials_gateway)
+        set_materials_gateway(materials_gateway)
+
+        execution_backend = setup_job_execution_backend(
             ws_client=communication_client,
-        )
-        materials_gateway = LocalMaterialsClient(materials_service)
-        material_authority = str(paths.materials_db)
-
-    template_report = sync_registry_resources(registry, materials_gateway)
-    set_materials_gateway(materials_gateway)
-
-    execution_backend = setup_job_execution_backend(
-        ws_client=communication_client,
-        database_paths=paths,
-    )
-
-    host_network = None
-    if args.get("backend") == "ros2":
-        from unilabos.server.scheduler.host_network import setup_host_network_service
-
-        host_network = setup_host_network_service(
-            material_gateway=materials_gateway
+            database_paths=paths,
         )
 
-    return HostServerStack(
-        database_paths=paths,
-        materials_gateway=materials_gateway,
-        execution_backend=execution_backend,
-        material_authority=material_authority,
-        template_count=template_report.resource_count,
-        host_network=host_network,
-    )
+        host_network = None
+        if args.get("backend") == "ros2":
+            from unilabos.server.scheduler.host_network import setup_host_network_service
+
+            host_network = setup_host_network_service(
+                material_gateway=materials_gateway
+            )
+
+        return HostServerStack(
+            database_paths=paths,
+            materials_gateway=materials_gateway,
+            execution_backend=execution_backend,
+            material_authority=material_authority,
+            template_count=template_report.resource_count,
+            host_network=host_network,
+        )
+    except BaseException:
+        shutdown_edge_services()
+        raise
 
 
 __all__ = [

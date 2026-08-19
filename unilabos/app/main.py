@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import faulthandler
 import json
 import os
@@ -8,7 +7,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import threading
 import time
 from typing import Dict, Any, List
 import networkx as nx
@@ -769,7 +767,6 @@ def main():
 
     # Step -1: 预读取 graph 中的 community.* class，并在 build_registry 前挂载社区设备包
     if not check_mode:
-        startup_json_preview = None
         graph_file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
         args_dict["_graph_file_path"] = graph_file_path
         graph_preview = _load_graph_json_preview(graph_file_path)
@@ -779,10 +776,6 @@ def main():
             from unilabos.legacy_support.http import get_legacy_http_client
 
             http_client_for_community = get_legacy_http_client()
-            if graph_preview is None and graph_file_path is None:
-                startup_json_preview = http_client_for_community.request_startup_json()
-                args_dict["_startup_json"] = startup_json_preview
-                graph_preview = startup_json_preview
 
         if graph_preview:
             from unilabos.app.community_packages import (
@@ -856,37 +849,24 @@ def main():
     from unilabos.resources.graphio import (
         read_node_link_json,
         read_graphml,
-        dict_from_graph,
         modify_to_backend_format,
     )
     from unilabos.app.communication import get_communication_client
-    from unilabos.app.backend import start_backend
     from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDict
 
     graph: nx.Graph
     resource_tree_set: ResourceTreeSet
     resource_links: List[Dict[str, Any]]
 
-    request_startup_json = args_dict.get("_startup_json")
-    if request_startup_json is None and args_dict["legacy"]:
-        from unilabos.legacy_support.http import get_legacy_http_client
-
-        request_startup_json = get_legacy_http_client().request_startup_json()
-
     file_path = args_dict.get("_graph_file_path")
     if file_path is None:
         file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
     if file_path is None:
-        if not request_startup_json:
-            print_status(
-                "未指定设备加载文件；请使用 -g 指定本地图，或用 --legacy 连接旧后端获取",
-                "error",
-            )
-            os._exit(1)
-        print_status("联网获取设备加载文件成功", "info")
-        graph, resource_tree_set, resource_links = read_node_link_json(
-            request_startup_json
+        print_status(
+            "未指定设备加载文件；请使用 -g 指定本地图",
+            "error",
         )
+        os._exit(1)
     else:
         if file_path.endswith(".json"):
             graph, resource_tree_set, resource_links = read_node_link_json(file_path)
@@ -943,6 +923,7 @@ def main():
         args_dict["controllers_config"] = None
 
     args_dict["bridges"] = []
+    comm_client = None
 
     # Host 持有唯一微后端；Slave 只能经 HostLink 间接访问它。
     if BasicConfig.is_host_mode:
@@ -1000,84 +981,22 @@ def main():
 
     args_dict["resources_mesh_config"] = {}
     args_dict["resources_edge_config"] = resource_edge_info
-    # web visiualize 2D
-    if args_dict["visual"] != "disable":
-        enable_rviz = args_dict["visual"] == "rviz"
-        devices_and_resources = dict_from_graph(graph_res.physical_setup_graph)
-        if devices_and_resources is not None:
-            from unilabos.device_mesh.resource_visalization import (
-                ResourceVisualization,
-            )  # 此处开启后，logger会变更为INFO，有需要请调整
+    from unilabos.app.runtime_startup import run_runtime
 
-            resource_visualization = ResourceVisualization(
-                devices_and_resources,
-                [n.res_content for n in args_dict["resources_config"].all_nodes],  # type: ignore  # FIXME
-                enable_rviz=enable_rviz,
-            )
-            args_dict["resources_mesh_config"] = resource_visualization.resource_model
-            start_backend(**args_dict)
-            if BasicConfig.is_host_mode:
-                from unilabos.app.web import start_server
-
-                server_thread = threading.Thread(
-                    target=start_server,
-                    kwargs=dict(
-                        open_browser=not BasicConfig.disable_browser,
-                        port=BasicConfig.port,
-                    ),
-                )
-                server_thread.start()
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            try:
-                resource_visualization.start()
-            except OSError as e:
-                if "AMENT_PREFIX_PATH" in str(e):
-                    print_status(f"ROS 2环境未正确设置，跳过3D可视化启动。错误详情: {e}", "warning")
-                    print_status(
-                        "建议解决方案：\n"
-                        "1. 激活Conda环境: conda activate unilab\n"
-                        "2. 或使用 --backend hostlink 参数（无需 ROS2 可视化）\n"
-                        "3. 或使用 --visual disable 参数禁用可视化",
-                        "info",
-                    )
-                else:
-                    raise
-            while True:
-                time.sleep(1)
-        else:
-            backend_thread = start_backend(**args_dict)
-            if BasicConfig.is_host_mode:
-                from unilabos.app.web import start_server
-
-                restart_requested = start_server(
-                    open_browser=not BasicConfig.disable_browser,
-                    port=BasicConfig.port,
-                )
-            else:
-                backend_thread.join()
-                restart_requested = False
-            if restart_requested:
-                print_status("[Main] Restart requested, cleaning up...", "info")
-                cleanup_for_restart()
-                return
-    else:
-        backend_thread = start_backend(**args_dict)
-
-        # Host 固定启动本地微后端 HTTP API；它不是可选择的应用 bridge。
+    try:
+        restart_requested = run_runtime(args_dict)
+    finally:
+        if comm_client is not None:
+            comm_client.stop()
         if BasicConfig.is_host_mode:
-            from unilabos.app.web import start_server
+            from unilabos.server.scheduler.integration import shutdown_edge_services
 
-            restart_requested = start_server(
-                open_browser=not BasicConfig.disable_browser,
-                port=BasicConfig.port,
-            )
-        else:
-            backend_thread.join()
-            restart_requested = False
-        if restart_requested:
-            print_status("[Main] Restart requested, cleaning up...", "info")
-            cleanup_for_restart()
-            os._exit(RESTART_EXIT_CODE)
+            shutdown_edge_services()
+
+    if restart_requested:
+        print_status("[Main] Restart requested, cleaning up...", "info")
+        cleanup_for_restart()
+        raise SystemExit(RESTART_EXIT_CODE)
 
 
 if __name__ == "__main__":

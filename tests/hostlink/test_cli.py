@@ -1,7 +1,8 @@
 import pytest
 
-from unilabos.app.main import _apply_hostlink_cli, parse_args
+from unilabos.app.main import parse_args
 from unilabos.config.config import HostLinkConfig
+from unilabos.hostlink.startup import apply_hostlink_cli
 
 
 @pytest.mark.parametrize(
@@ -70,7 +71,7 @@ def test_slave_offline_mode_accepts_dash_and_underscore(option) -> None:
 def test_networking_cli_domain_range_is_validated_at_startup(domain_id) -> None:
     args = parse_args().parse_args(["--ros-domain-id", domain_id])
     with pytest.raises(ValueError, match="between 0 and 232"):
-        _apply_hostlink_cli(vars(args), is_slave=False)
+        apply_hostlink_cli(vars(args), is_slave=False)
 
 
 def test_networking_cli_is_applied_after_config(monkeypatch) -> None:
@@ -80,7 +81,7 @@ def test_networking_cli_is_applied_after_config(monkeypatch) -> None:
     monkeypatch.setattr(HostLinkConfig, "ros_discovery_range", "")
     monkeypatch.delenv("ROS_DOMAIN_ID", raising=False)
 
-    _apply_hostlink_cli(
+    apply_hostlink_cli(
         {
             "host_node_ip": "10.0.0.9:7402",
             "ros_domain_id": 52,
@@ -111,7 +112,7 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
     monkeypatch.setattr(HostLinkConfig, "ros_discovery_port", 0)
     monkeypatch.setattr(HostLinkConfig, "ros_assist_apply", True)
 
-    _apply_hostlink_cli(
+    apply_hostlink_cli(
         {
             "host_node_ip": "10.0.0.9:7402",
             "hostlink_port": 7502,
@@ -158,4 +159,4 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
 )
 def test_invalid_hostlink_cli_values_are_rejected(overrides) -> None:
     with pytest.raises(ValueError):
-        _apply_hostlink_cli(overrides, is_slave=False)
+        apply_hostlink_cli(overrides, is_slave=False)

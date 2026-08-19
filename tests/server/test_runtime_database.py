@@ -1,4 +1,4 @@
-"""``runtime.db`` 的幂等、重连和终态门控约束。"""
+"""runtime.db 的 endpoint、job、错误闸门和可靠收发测试。"""
 
 from __future__ import annotations
 
@@ -10,90 +10,82 @@ from pydantic import ValidationError
 from unilabos.server.database.runtime import RUNTIME_DATABASE
 from unilabos.server.database.schema import initialize_database
 from unilabos.server.models.runtime import (
-    AdapterCommandOutboxRecord,
+    DeviceActionCapability,
+    DeviceRoute,
     ExecutionJobRecord,
-    TerminalGateRecord,
+    ExecutorEndpointRecord,
 )
 
 
-def _open_runtime(tmp_path):
-    return initialize_database(tmp_path / RUNTIME_DATABASE.filename, RUNTIME_DATABASE)
+def _open(tmp_path) -> sqlite3.Connection:
+    return initialize_database(tmp_path / "runtime.db", RUNTIME_DATABASE)
 
 
-def _insert_session(
-    connection: sqlite3.Connection,
-    session_uuid: str,
-    connection_epoch: str,
-    *,
-    state: str = "active",
-) -> None:
-    disconnected_at_ms = 2 if state == "disconnected" else None
+def _insert_session(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
         INSERT INTO backend_session(
-            session_uuid,edge_uuid,backend_uri,authority_epoch,
-            connection_epoch,state,connected_at_ms,disconnected_at_ms,
-            last_seen_at_ms
-        ) VALUES (?, 'edge', 'wss://backend', 'authority-1', ?, ?, 1, ?, 2)
-        """,
-        (session_uuid, connection_epoch, state, disconnected_at_ms),
+            session_uuid,edge_uuid,backend_uri,authority_epoch,connection_epoch,
+            state,last_seen_at_ms
+        ) VALUES ('session','edge','wss://backend','authority','connection','active',1)
+        """
     )
 
 
 def _insert_endpoint(
     connection: sqlite3.Connection,
-    endpoint_uuid: str,
+    uuid: str,
     transport: str,
 ) -> None:
     connection.execute(
         """
         INSERT INTO executor_endpoint(
-            endpoint_uuid,transport,host_uuid,instance_name,authority_epoch,
-            adapter_epoch,state,registered_at_ms,last_seen_at_ms
-        ) VALUES (?, ?, 'host', ?, 'authority-1', 'adapter-1', 'online', 1, 1)
+            endpoint_uuid,transport,host_uuid,instance_name,authority_epoch,state,
+            device_routes_json,action_capabilities_json,
+            registered_at_ms,last_seen_at_ms
+        ) VALUES (?,?, 'host',?, 'authority','online','[]','[]',1,1)
         """,
-        (endpoint_uuid, transport, endpoint_uuid),
+        (uuid, transport, uuid),
     )
 
 
 def _insert_command(
     connection: sqlite3.Connection,
-    command_uuid: str,
+    uuid: str,
     sequence: int,
     command_type: str,
     *,
-    job_uuid: str | None = None,
-    session_uuid: str = "session-1",
+    job_uuid: str | None,
+    status: str = "applied",
 ) -> None:
+    applied_at = 1 if status in {"applied", "rejected"} else None
     connection.execute(
         """
         INSERT INTO command_inbox(
             command_uuid,session_uuid,backend_sequence,command_type,job_uuid,
-            payload_sha256,command_fingerprint,status,received_at_ms
-        ) VALUES (?, ?, ?, ?, ?, 'sha256', ?, 'received', 1)
+            payload_sha256,command_fingerprint,status,received_at_ms,applied_at_ms
+        ) VALUES (?, 'session',?,?,?,?,?,?,1,?)
         """,
         (
-            command_uuid,
-            session_uuid,
+            uuid,
             sequence,
             command_type,
             job_uuid,
-            f"fingerprint-{command_uuid}",
+            f"sha-{uuid}",
+            f"fingerprint-{uuid}",
+            status,
+            applied_at,
         ),
     )
 
 
 def _insert_job(
     connection: sqlite3.Connection,
-    job_uuid: str,
+    uuid: str,
     command_uuid: str,
     *,
-    task_uuid: str = "task",
-    node_uuid: str = "node",
-    attempt_group_uuid: str = "attempt-group",
-    retry_of_job_uuid: str | None = None,
     attempt_no: int = 1,
-    status: str = "accepted",
+    retry_of: str | None = None,
 ) -> None:
     connection.execute(
         """
@@ -101,225 +93,166 @@ def _insert_job(
             job_uuid,task_uuid,node_uuid,attempt_group_uuid,retry_of_job_uuid,
             attempt_no,execute_command_uuid,device_uuid,action_name,
             action_payload_uuid,scheduler_revision,status,accepted_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'device', 'transfer', 'payload', 1, ?, 1)
+        ) VALUES (?, 'task','node', 'attempt-group', ?, ?, ?, 'device',
+                  'transfer','payload',1,'accepted',1)
         """,
-        (
-            job_uuid,
-            task_uuid,
-            node_uuid,
-            attempt_group_uuid,
-            retry_of_job_uuid,
-            attempt_no,
-            command_uuid,
-            status,
-        ),
+        (uuid, retry_of, attempt_no, command_uuid),
     )
 
 
-def test_backend_reconnect_has_a_new_connection_epoch_and_command_stream(
-    tmp_path,
-) -> None:
-    connection = _open_runtime(tmp_path)
+def test_endpoint_aggregates_routes_and_action_capabilities(tmp_path) -> None:
+    connection = _open(tmp_path)
     try:
         with connection:
-            _insert_session(
-                connection,
-                "session-old",
-                "connection-1",
-                state="disconnected",
-            )
-            _insert_session(connection, "session-1", "connection-2")
-            _insert_command(connection, "command-1", 1, "reconcile")
-
-        with pytest.raises(sqlite3.IntegrityError):
-            with connection:
-                _insert_session(connection, "session-duplicate", "connection-2")
-
-        with pytest.raises(sqlite3.IntegrityError):
-            with connection:
-                _insert_session(connection, "session-active-2", "connection-3")
-
-        with connection:
-            _insert_command(
-                connection,
-                "command-replayed-sequence",
-                1,
-                "reconcile",
-                session_uuid="session-old",
-            )
-
-        with pytest.raises(sqlite3.IntegrityError):
-            with connection:
-                _insert_command(connection, "command-sequence-conflict", 1, "reconcile")
-    finally:
-        connection.close()
-
-
-def test_route_transport_and_backend_attempt_identity_are_database_invariants(
-    tmp_path,
-) -> None:
-    connection = _open_runtime(tmp_path)
-    try:
-        with connection:
-            _insert_session(connection, "session-1", "connection-1")
             _insert_endpoint(connection, "host-endpoint", "hostlink")
             _insert_endpoint(connection, "ros-endpoint", "ros2")
-
-        with pytest.raises(sqlite3.IntegrityError):
-            with connection:
-                connection.execute(
-                    """
-                    INSERT INTO device_route(
-                        route_uuid,device_uuid,endpoint_uuid,transport,driver_key,
-                        config_hash,created_at_ms,updated_at_ms
-                    ) VALUES (
-                        'bad-route','device','host-endpoint','ros2','driver',
-                        'hash',1,1
-                    )
-                    """
-                )
-
-        with connection:
-            _insert_command(
-                connection, "retry-command", 1, "execute_job", job_uuid="retry"
+            connection.execute(
+                """
+                UPDATE executor_endpoint
+                SET device_routes_json='[{"route_uuid":"route","device_uuid":"d"}]',
+                    action_capabilities_json=
+                    '[{"device_uuid":"d","action_name":"move","availability":"free"}]'
+                WHERE endpoint_uuid='host-endpoint'
+                """
             )
-            # 原 job 可以在另一 edge；这里只保存后端规范 UUID，不要求本库存在父 job。
+
+        assert tuple(
+            connection.execute(
+                """
+                SELECT transport,
+                       json_extract(device_routes_json,'$[0].route_uuid'),
+                       json_extract(action_capabilities_json,'$[0].availability')
+                FROM executor_endpoint WHERE endpoint_uuid='host-endpoint'
+                """
+            ).fetchone()
+        ) == ("hostlink", "route", "free")
+
+        endpoint = ExecutorEndpointRecord(
+            endpoint_uuid="endpoint",
+            transport="hostlink",
+            host_uuid="host",
+            instance_name="edge",
+            authority_epoch="epoch",
+            state="online",
+            device_routes=[
+                DeviceRoute(
+                    route_uuid="route",
+                    device_uuid="device",
+                    driver_key="driver",
+                    config_hash="hash",
+                )
+            ],
+            action_capabilities=[
+                DeviceActionCapability(
+                    device_uuid="device",
+                    action_name="move",
+                    concurrency_mode="exclusive",
+                    availability="free",
+                    descriptor_hash="hash",
+                    observed_at_ms=1,
+                )
+            ],
+            registered_at_ms=1,
+            last_seen_at_ms=1,
+        )
+        assert endpoint.device_routes[0].route_uuid == "route"
+    finally:
+        connection.close()
+
+
+def test_retry_is_a_new_backend_job_not_a_local_attempt(tmp_path) -> None:
+    connection = _open(tmp_path)
+    try:
+        with connection:
+            _insert_session(connection)
+            _insert_command(connection, "command-1", 1, "execute_job", job_uuid="job-1")
+            _insert_command(connection, "command-2", 2, "execute_job", job_uuid="job-2")
+            _insert_job(connection, "job-1", "command-1")
             _insert_job(
                 connection,
-                "retry",
-                "retry-command",
-                retry_of_job_uuid="job-on-another-edge",
+                "job-2",
+                "command-2",
                 attempt_no=2,
-            )
-            _insert_command(
-                connection,
-                "duplicate-attempt-command",
-                2,
-                "execute_job",
-                job_uuid="duplicate-attempt",
+                retry_of="job-1",
             )
 
-        with pytest.raises(sqlite3.IntegrityError):
-            with connection:
-                _insert_job(
-                    connection,
-                    "duplicate-attempt",
-                    "duplicate-attempt-command",
-                    attempt_group_uuid="different-group",
-                    retry_of_job_uuid="other-parent",
-                    attempt_no=2,
-                )
+        assert [
+            tuple(row)
+            for row in connection.execute(
+                "SELECT job_uuid,retry_of_job_uuid,attempt_no FROM execution_job "
+                "ORDER BY attempt_no"
+            )
+        ] == [("job-1", None, 1), ("job-2", "job-1", 2)]
     finally:
         connection.close()
 
 
-def test_release_failed_requires_confirmed_scheduler_revision(tmp_path) -> None:
-    connection = _open_runtime(tmp_path)
+def test_failed_report_is_released_only_after_backend_decision(tmp_path) -> None:
+    connection = _open(tmp_path)
     try:
         with connection:
-            _insert_session(connection, "session-1", "connection-1")
+            _insert_session(connection)
             _insert_command(connection, "execute", 1, "execute_job", job_uuid="job")
-            _insert_job(connection, "job", "execute", status="failure_waiting")
-            _insert_command(
-                connection,
-                "release",
-                2,
-                "release_failed",
-                job_uuid="job",
-            )
+            _insert_job(connection, "job", "execute")
             connection.execute(
                 """
-                INSERT INTO terminal_gate(
-                    gate_uuid,job_uuid,error_uuid,state,
-                    required_scheduler_revision,request_event_uuid,opened_at_ms
-                ) VALUES (
-                    'gate','job','error','waiting_backend',2,'request-event',1
-                )
+                UPDATE execution_job
+                SET status='terminal_waiting',
+                    terminal_gate_state='waiting_backend',
+                    terminal_error_uuid='error',
+                    terminal_required_scheduler_revision=2,
+                    terminal_request_event_uuid='request-event',
+                    terminal_opened_at_ms=2,version=2
+                WHERE job_uuid='job'
                 """
             )
 
         with pytest.raises(sqlite3.IntegrityError):
             with connection:
                 connection.execute(
-                    """
-                    UPDATE terminal_gate
-                    SET state='released_failed',decision_command_uuid='release',
-                        resolved_at_ms=2
-                    WHERE gate_uuid='gate'
-                    """
+                    "UPDATE execution_job SET status='failed',finished_at_ms=3 "
+                    "WHERE job_uuid='job'"
                 )
 
         with connection:
+            _insert_command(connection, "release", 2, "release_failed", job_uuid="job")
             connection.execute(
                 """
-                UPDATE terminal_gate
-                SET state='backend_confirmed',confirmed_scheduler_revision=2
-                WHERE gate_uuid='gate'
-                """
-            )
-            connection.execute(
-                """
-                INSERT INTO terminal_decision(
-                    decision_uuid,gate_uuid,job_uuid,command_uuid,action,
-                    trusted_actor_type,scheduler_revision,request_fingerprint,
-                    decided_at_ms
-                ) VALUES (
-                    'decision','gate','job','release','release_failed',
-                    'backend',2,'release-fingerprint',2
-                )
-                """
-            )
-            connection.execute(
-                """
-                UPDATE terminal_gate
-                SET state='released_failed',decision_command_uuid='release',
-                    resolved_at_ms=2
-                WHERE gate_uuid='gate'
+                UPDATE execution_job
+                SET terminal_gate_state='released_failed',
+                    terminal_confirmed_scheduler_revision=2,
+                    terminal_decision_command_uuid='release',
+                    terminal_decision_json='{"action":"release_failed"}',
+                    terminal_resolved_at_ms=3,status='failed',finished_at_ms=3,
+                    version=3
+                WHERE job_uuid='job'
                 """
             )
 
-        row = connection.execute(
-            """
-            SELECT state,confirmed_scheduler_revision
-            FROM terminal_gate WHERE gate_uuid='gate'
-            """
-        ).fetchone()
-        assert tuple(row) == ("released_failed", 2)
-        assert "expires_at_ms" not in {
-            column[1]
-            for column in connection.execute("PRAGMA table_info(terminal_gate)")
-        }
+        assert tuple(
+            connection.execute(
+                "SELECT status,terminal_gate_state FROM execution_job"
+            ).fetchone()
+        ) == ("failed", "released_failed")
     finally:
         connection.close()
 
 
-def test_adapter_epoch_resets_sequence_without_creating_a_business_attempt(
-    tmp_path,
-) -> None:
-    connection = _open_runtime(tmp_path)
+def test_adapter_event_sequence_is_scoped_by_adapter_epoch(tmp_path) -> None:
+    connection = _open(tmp_path)
     try:
         with connection:
-            _insert_endpoint(connection, "endpoint", "hostlink")
-            connection.execute(
-                """
-                INSERT INTO adapter_event_inbox(
-                    adapter_event_uuid,endpoint_uuid,adapter_epoch,
-                    adapter_sequence,event_type,status,received_at_ms
-                ) VALUES (
-                    'ready-1','endpoint','adapter-1',1,'endpoint_ready','received',1
+            _insert_endpoint(connection, "endpoint", "ros2")
+            for event_uuid, epoch in (("event-1", "epoch-1"), ("event-2", "epoch-2")):
+                connection.execute(
+                    """
+                    INSERT INTO adapter_event_inbox(
+                        adapter_event_uuid,endpoint_uuid,adapter_epoch,
+                        adapter_sequence,event_type,payload_sha256,status,received_at_ms
+                    ) VALUES (?, 'endpoint',?,1,'endpoint_ready','sha','received',1)
+                    """,
+                    (event_uuid, epoch),
                 )
-                """
-            )
-            connection.execute(
-                """
-                INSERT INTO adapter_command_outbox(
-                    adapter_command_uuid,endpoint_uuid,trigger_event_uuid,
-                    command_type,status,created_at_ms
-                ) VALUES (
-                    'reconcile','endpoint','ready-1','reconcile_state','pending',1
-                )
-                """
-            )
 
         with pytest.raises(sqlite3.IntegrityError):
             with connection:
@@ -327,113 +260,30 @@ def test_adapter_epoch_resets_sequence_without_creating_a_business_attempt(
                     """
                     INSERT INTO adapter_event_inbox(
                         adapter_event_uuid,endpoint_uuid,adapter_epoch,
-                        adapter_sequence,event_type,status,received_at_ms
+                        adapter_sequence,event_type,payload_sha256,status,received_at_ms
                     ) VALUES (
-                        'same-position','endpoint','adapter-1',1,
-                        'endpoint_ready','received',1
+                        'duplicate','endpoint','epoch-2',1,
+                        'endpoint_ready','sha','received',1
                     )
                     """
                 )
-
-        with connection:
-            # 进程重启后 epoch 改变，adapter_sequence 可以从 1 重新开始。
-            connection.execute(
-                """
-                INSERT INTO adapter_event_inbox(
-                    adapter_event_uuid,endpoint_uuid,adapter_epoch,
-                    adapter_sequence,event_type,status,received_at_ms
-                ) VALUES (
-                    'ready-2','endpoint','adapter-2',1,'endpoint_ready','received',2
-                )
-                """
-            )
-            connection.execute(
-                """
-                UPDATE adapter_command_outbox
-                SET status='sent',target_adapter_epoch='adapter-2',
-                    last_sent_at_ms=2,delivery_attempt_count=1
-                WHERE adapter_command_uuid='reconcile'
-                """
-            )
-            connection.execute(
-                """
-                INSERT INTO adapter_event_inbox(
-                    adapter_event_uuid,endpoint_uuid,adapter_epoch,
-                    adapter_command_uuid,adapter_sequence,event_type,status,
-                    received_at_ms
-                ) VALUES (
-                    'ack','endpoint','adapter-2','reconcile',2,
-                    'command_ack','received',3
-                )
-                """
-            )
-            connection.execute(
-                """
-                UPDATE adapter_command_outbox
-                SET status='acknowledged',acked_at_ms=3,ack_event_uuid='ack'
-                WHERE adapter_command_uuid='reconcile'
-                """
-            )
-
-        columns = {
-            column[1]
-            for column in connection.execute(
-                "PRAGMA table_info(adapter_command_outbox)"
-            )
-        }
-        assert "delivery_attempt_count" in columns
-        assert "attempt_count" not in columns
-        assert (
-            connection.execute(
-                """
-            SELECT delivery_attempt_count
-            FROM adapter_command_outbox WHERE adapter_command_uuid='reconcile'
-            """
-            ).fetchone()[0]
-            == 1
-        )
     finally:
         connection.close()
 
 
-def test_runtime_models_distinguish_business_attempts_from_delivery_retries() -> None:
-    with pytest.raises(ValidationError, match="later attempt"):
+def test_job_model_requires_new_identity_for_retry() -> None:
+    with pytest.raises(ValidationError, match="retry link"):
         ExecutionJobRecord(
-            job_uuid="retry",
+            job_uuid="job",
             task_uuid="task",
             node_uuid="node",
             attempt_group_uuid="attempt-group",
-            retry_of_job_uuid="parent",
-            attempt_no=1,
+            attempt_no=2,
             execute_command_uuid="command",
             device_uuid="device",
-            action_name="transfer",
+            action_name="action",
             action_payload_uuid="payload",
             scheduler_revision=1,
             status="accepted",
             accepted_at_ms=1,
         )
-
-    with pytest.raises(ValidationError, match="scheduler confirmation"):
-        TerminalGateRecord(
-            gate_uuid="gate",
-            job_uuid="job",
-            error_uuid="error",
-            state="released_failed",
-            required_scheduler_revision=1,
-            request_event_uuid="request",
-            decision_command_uuid="release",
-            opened_at_ms=1,
-            resolved_at_ms=2,
-        )
-
-    command = AdapterCommandOutboxRecord(
-        adapter_command_uuid="reconcile",
-        endpoint_uuid="endpoint",
-        trigger_event_uuid="ready-event",
-        command_type="reconcile_state",
-        status="pending",
-        delivery_attempt_count=3,
-        created_at_ms=1,
-    )
-    assert command.delivery_attempt_count == 3

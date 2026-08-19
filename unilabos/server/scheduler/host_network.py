@@ -47,18 +47,24 @@ class HostNetworkService:
         server: HostLinkServer,
         ros_info: RosNetworkInfo,
         resource_tree_getter: Optional[ResourceTreeGetter] = None,
+        material_gateway: Any = None,
         fallback_discovery_range: str = "",
     ) -> None:
         self.server = server
         self.ros_info = ros_info
         self._resource_tree_getter = resource_tree_getter
         self._resource_lock = threading.Lock()
+        self._material_gateway = material_gateway
+        self._material_gateway_lock = threading.Lock()
         self._resolver = LocalResourceResolver(self._resource_tree)
         self._discovery_server: Optional[FastDDSDiscoveryServer] = None
         self._fallback_discovery_range = fallback_discovery_range
 
         self._refresh_hello_payload()
         self.server.register_handler(ActionType.MATERIAL, self._material)
+        self.server.register_handler(
+            ActionType.MATERIAL_CREATE, self._material_create
+        )
         self.server.register_handler(ActionType.ROS_INFO, self._ros_info)
 
     def _refresh_hello_payload(self) -> None:
@@ -77,6 +83,7 @@ class HostNetworkService:
     def from_config(
         cls,
         resource_tree_getter: Optional[ResourceTreeGetter] = None,
+        material_gateway: Any = None,
     ) -> "HostNetworkService":
         host_ip = HostLinkConfig.advertise_ip or detect_local_ip() or "127.0.0.1"
         domain_raw = str(HostLinkConfig.ros_domain_id or "").strip()
@@ -130,6 +137,7 @@ class HostNetworkService:
             ),
             ros_info,
             resource_tree_getter,
+            material_gateway,
             fallback_discovery_range,
         )
         if managed_discovery:
@@ -200,6 +208,17 @@ class HostNetworkService:
         with self._resource_lock:
             self._resource_tree_getter = getter
 
+    def attach_material_gateway(self, gateway: Any) -> None:
+        """Attach the Host-selected embedded/external materials authority."""
+
+        with self._material_gateway_lock:
+            self._material_gateway = gateway
+
+    @property
+    def material_gateway(self) -> Any:
+        with self._material_gateway_lock:
+            return self._material_gateway
+
     def _resource_tree(self) -> Any:
         with self._resource_lock:
             getter = self._resource_tree_getter
@@ -234,6 +253,29 @@ class HostNetworkService:
             )
         return {"nodes": nodes}
 
+    def _material_create(
+        self, data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Validate a Slave create intent and proxy it to the Host authority."""
+
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialTreeCreate
+
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialTreeCreate.model_validate(mutation.payload)
+        with self._material_gateway_lock:
+            gateway = self._material_gateway
+        if gateway is None:
+            from unilabos.server.scheduler.integration import (
+                get_materials_gateway,
+            )
+
+            gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        result = gateway.create_tree(mutation, value)
+        return result.model_dump(mode="json", exclude_none=False)
+
     def _ros_info(
         self,
         _data: dict[str, Any],
@@ -262,6 +304,7 @@ def _register_process_cleanup() -> None:
 
 def setup_host_network_service(
     resource_tree_getter: Optional[ResourceTreeGetter] = None,
+    material_gateway: Any = None,
 ) -> Optional[HostNetworkService]:
     """Start the host listener once and optionally attach live HostNode state."""
 
@@ -272,9 +315,14 @@ def setup_host_network_service(
         if _host_service is not None:
             if resource_tree_getter is not None:
                 _host_service.attach_resource_tree(resource_tree_getter)
+            if material_gateway is not None:
+                _host_service.attach_material_gateway(material_gateway)
             return _host_service
         try:
-            _host_service = HostNetworkService.from_config(resource_tree_getter).start()
+            _host_service = HostNetworkService.from_config(
+                resource_tree_getter,
+                material_gateway,
+            ).start()
             _register_process_cleanup()
         except Exception as exc:  # noqa: BLE001 - ROS fallback remains available
             logger.error(

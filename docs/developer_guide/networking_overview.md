@@ -115,16 +115,17 @@ Host 运行 ROS2 或 HostLink backend 时会在 TCP `7302` 监听 HostLink。Sla
 - ROS2 模式在 `rclpy.init` 前接收并应用 Host 的 `ROS_DOMAIN_ID`、发现范围、
   静态对端和外部 Fast DDS Discovery Server 地址。
 
-在 `--backend ros2` 下，HostLink 只辅助组网，设备 Action、节点注册和资源同步仍
-走 ROS2。`--backend hostlink` 则完全不导入 ROS：Host 与 Slave 都使用 BasicRuntime
+在 `--backend ros2` 下，设备 Action 和节点注册仍走 ROS2；物料创建请求经 HostLink
+交给 Host 的 materials authority，避免 Slave 直连微后端或正式 Backend。
+`--backend hostlink` 则完全不导入 ROS：Host 与 Slave 都使用 BasicRuntime
 加载本地纯 Python 驱动。Slave 在 HELLO 中发布设备动作、状态字段和设备 UUID；驱动
 通过通用节点发布的状态通知会立即发送，心跳还会定期补发完整状态。Host 与 Slave 可以双向调用设备动作，
 动作带独立 ID，支持反馈和协作取消。通用节点还提供与 ROS 相同形状的
 `create_publisher(...).publish(...)` 和 `create_subscription(...)`：Basic 在本进程分发，
 HostLink 由 Host 按绝对 Topic 名称转发，消息会转换为 JSON 可传输的 Python 值。
-Slave 启动时会把本地设备物料树同步给 Host，
-后续 `update_resource` 和 `get_resource` 也由 Host 保存和查询，不要求启动 ROS service
-或 Web API。
+Slave 创建物料时只提交完整 PLR Resource，不提交模板 UUID 或实例 UUID；Host 负责按
+模板名解析 complete registry、分配 UUID，并把权威树回传。该链路不要求 Slave 启动
+ROS service 或直接访问 Web API。
 
 ```bash
 # 无 ROS Host
@@ -148,7 +149,8 @@ unilab -g slave.json --backend hostlink --is-slave \
 设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
 接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制
 终止。连接断开时设备在 `heartbeat_timeout` 后离线，客户端会指数退避重连，但不会
-自动重放动作。HostLink 的物料树保存在 Host 进程内，目前不会自动上传云端。
+自动重放动作。Host 根据配置把物料创建转交给内嵌微后端或外部 materials provider；
+正式 Backend provider 接入后沿用同一 Host 代理边界。
 
 当前 HostLink 是面向可信实验室局域网的明文 TCP 协议，尚未提供 TLS 或双方身份认证。
 部署时应通过防火墙限制 `7302` 的来源；跨不可信网络使用时应先接入 VPN/安全隧道。

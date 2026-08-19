@@ -102,7 +102,6 @@ class MaterialDataRead(MaterialDataWrite):
 
 class MaterialIdentityWrite(ServerObject):
     resource_id: NonEmptyStr
-    template_uuid: NonEmptyStr
     parent_material_uuid: Optional[NonEmptyStr] = None
     lot_uuid: Optional[NonEmptyStr] = None
     name: NonEmptyStr
@@ -125,6 +124,7 @@ class MaterialIdentityWrite(ServerObject):
 
 
 class MaterialIdentityRead(MaterialIdentityWrite):
+    template_uuid: NonEmptyStr
     material_uuid: NonEmptyStr
     created_at_ms: int = Field(ge=0)
     updated_at_ms: int = Field(ge=0)

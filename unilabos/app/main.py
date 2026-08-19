@@ -1368,6 +1368,7 @@ def main():
     # 获取通信客户端（仅支持WebSocket）
     if BasicConfig.is_host_mode:
         comm_client = None
+        materials_gateway = None
         if "websocket" in args_dict["app_bridges"]:
             comm_client = get_communication_client()
             args_dict["bridges"].append(comm_client)
@@ -1393,9 +1394,9 @@ def main():
             )
             from unilabos.server.clients.materials import LocalMaterialsClient
 
+            materials_gateway = LocalMaterialsClient(materials_service)
             template_report = sync_registry_resources(
-                lab_registry,
-                LocalMaterialsClient(materials_service),
+                lab_registry, materials_gateway
             )
             print_status(
                 f"Materials Provider 已启用: {server_database_paths.materials_db} "
@@ -1412,15 +1413,24 @@ def main():
             )
             from unilabos.server.clients.materials import HTTPMaterialsClient
 
+            materials_gateway = HTTPMaterialsClient(
+                HTTPConfig.material_microbackend_addr
+            )
             template_report = sync_registry_resources(
-                lab_registry,
-                HTTPMaterialsClient(HTTPConfig.material_microbackend_addr),
+                lab_registry, materials_gateway
             )
             print_status(
                 "外部 Materials Provider 模板同步完成 "
                 f"({template_report.resource_count} 个资源模板)",
                 "info",
             )
+
+        if materials_gateway is not None:
+            from unilabos.server.scheduler.integration import (
+                set_materials_gateway,
+            )
+
+            set_materials_gateway(materials_gateway)
 
         from unilabos.server.scheduler.integration import setup_job_execution_backend
 
@@ -1443,7 +1453,9 @@ def main():
             )
             from unilabos.config.config import HostLinkConfig
 
-            host_network = setup_host_network_service()
+            host_network = setup_host_network_service(
+                material_gateway=materials_gateway
+            )
             if host_network is not None:
                 print_status(
                     "ROS2 HostLink 组网微后端已启用: "

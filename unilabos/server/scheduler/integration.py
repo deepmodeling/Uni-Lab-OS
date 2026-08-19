@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 _backend: Optional[JobExecutionBackend] = None
 _materials: Optional[MaterialsService] = None
+_materials_gateway: Any = None
 _owns_materials = False
 _device_state_projection: Optional[TelemetryDeviceStateProjection] = None
 
@@ -194,6 +195,17 @@ def setup_materials_service(
     return _materials
 
 
+def set_materials_gateway(gateway: Any) -> None:
+    """Publish the Host-selected embedded/external materials authority."""
+
+    global _materials_gateway
+    _materials_gateway = gateway
+
+
+def get_materials_gateway() -> Any:
+    return _materials_gateway
+
+
 def setup_job_execution_backend(
     ws_client: Any = None,
     *,
@@ -246,7 +258,8 @@ def setup_job_execution_backend(
 def shutdown_edge_services() -> None:
     """关闭执行 bridge 和四库组合根。"""
 
-    global _backend, _materials, _owns_materials, _device_state_projection
+    global _backend, _materials, _materials_gateway, _owns_materials
+    global _device_state_projection
 
     if BasicConfig.backend == "ros2":
         from unilabos.server.scheduler.host_network import shutdown_network_services
@@ -260,6 +273,7 @@ def shutdown_edge_services() -> None:
 
     _backend = None
     _materials = None
+    _materials_gateway = None
     _owns_materials = False
     _device_state_projection = None
 
@@ -274,6 +288,7 @@ __all__ = [
     "get_edge_backend",
     "get_edge_scheduler",
     "get_materials_service",
+    "get_materials_gateway",
     "get_workflow_executor",
     "make_http_snapshot_sender",
     "make_http_sync_sender",
@@ -281,6 +296,7 @@ __all__ = [
     "reset_for_test",
     "setup_job_execution_backend",
     "setup_materials_service",
+    "set_materials_gateway",
     "shutdown_edge_services",
     "unwrap_cloud_response",
 ]

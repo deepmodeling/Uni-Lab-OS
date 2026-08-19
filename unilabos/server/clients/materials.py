@@ -113,6 +113,25 @@ class LocalMaterialsClient:
         return self.service.acknowledge_changes(through_sequence)
 
 
+class HostLinkMaterialsClient:
+    """Slave 侧 materials client；Host 代发到实际物料权威。"""
+
+    def __init__(self, client: Any):
+        self.client = client
+
+    def create_tree(
+        self, mutation: InventoryMutation, value: MaterialTreeCreate
+    ) -> MutationResult[MaterialTreeRead]:
+        from unilabos.hostlink.protocol import ActionType
+
+        bound = bind_payload(mutation, value)
+        response = self.client.request(
+            ActionType.MATERIAL_CREATE,
+            bound.model_dump(mode="json", exclude_none=False),
+        )
+        return MutationResult[MaterialTreeRead].model_validate(response)
+
+
 class MaterialsHTTPError(RuntimeError):
     def __init__(self, status_code: int, detail: str):
         super().__init__(f"materials API returned {status_code}: {detail}")
@@ -295,6 +314,7 @@ class HTTPMaterialsClient:
 
 __all__ = [
     "HTTPMaterialsClient",
+    "HostLinkMaterialsClient",
     "LocalMaterialsClient",
     "MaterialsHTTPError",
     "bind_payload",

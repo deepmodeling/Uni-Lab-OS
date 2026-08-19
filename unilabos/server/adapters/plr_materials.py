@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 from unilabos.resources.objects.resource import ResourceDict
 from unilabos.resources.resource_tracker import ResourceTreeSet
@@ -21,7 +21,6 @@ from unilabos.server.protocol.materials import (
     MaterialSubstance,
     MaterialTreeCreate,
     MaterialTreeRead,
-    ResourceTemplateRead,
     SiteCreate,
     SiteRead,
     SiteWrite,
@@ -35,10 +34,6 @@ class MaterialGateway(Protocol):
     def create_tree(
         self, mutation: InventoryMutation, value: MaterialTreeCreate
     ) -> MutationResult[MaterialTreeRead]: ...
-
-    def get_tree(self, root_material_uuid: str) -> MaterialTreeRead: ...
-
-    def list_templates(self) -> list[ResourceTemplateRead]: ...
 
 
 def _position_from_resource(resource: ResourceDict) -> MaterialPosition:
@@ -169,16 +164,11 @@ def _site_create_from_resource(
     )
 
 
-def resource_tree_to_create(
-    value: ResourceTreeSet,
-    *,
-    template_uuid_by_name: Optional[Mapping[str, str]] = None,
-) -> MaterialTreeCreate:
+def resource_tree_to_create(value: ResourceTreeSet) -> MaterialTreeCreate:
     """把一棵内部草稿转为不携带实例 UUID 的创建请求。"""
 
     if len(value.trees) != 1:
         raise ValueError("one create request must contain exactly one resource tree")
-    mapping = dict(template_uuid_by_name or {})
     instances = value.trees[0].get_all_nodes()
     client_refs = {
         instance.res_content.uuid: f"node-{ordinal}"
@@ -187,13 +177,6 @@ def resource_tree_to_create(
     nodes: list[MaterialNodeCreate] = []
     for instance in instances:
         resource = instance.res_content
-        template_uuid = resource.resource_template_uuid or mapping.get(
-            resource.template_name, ""
-        )
-        if not template_uuid:
-            raise ValueError(
-                f"资源 {resource.name} 缺少已登记的 resource_template_uuid"
-            )
         extra = copy.deepcopy(resource.extra)
         extra.pop(SUBSTANCE_METADATA_EXTRA, None)
         nodes.append(
@@ -202,7 +185,6 @@ def resource_tree_to_create(
                 parent_client_ref=client_refs.get(resource.uuid_parent),
                 identity=MaterialIdentityWrite(
                     resource_id=resource.id,
-                    template_uuid=template_uuid,
                     name=resource.name,
                     description=resource.description,
                     resource_type=resource.type,
@@ -237,11 +219,7 @@ def resource_tree_to_create(
     return MaterialTreeCreate(nodes=nodes)
 
 
-def plr_resources_to_create(
-    resources: Sequence[Any],
-    *,
-    template_uuid_by_name: Optional[Mapping[str, str]] = None,
-) -> MaterialTreeCreate:
+def plr_resources_to_create(resources: Sequence[Any]) -> MaterialTreeCreate:
     """从无 UUID 的 PLR 树生成创建请求，不修改调用方对象。"""
 
     def validate_new(resource: Any) -> None:
@@ -272,10 +250,7 @@ def plr_resources_to_create(
     tree = ResourceTreeSet.from_plr_resources(
         draft_resources, known_random_uuid=True
     )
-    return resource_tree_to_create(
-        tree,
-        template_uuid_by_name=template_uuid_by_name,
-    )
+    return resource_tree_to_create(tree)
 
 
 def material_tree_to_resource_tree(value: MaterialTreeRead) -> ResourceTreeSet:
@@ -441,17 +416,8 @@ def create_plr_materials(
     gateway: MaterialGateway,
     mutation: InventoryMutation,
     resources: Sequence[Any],
-    *,
-    template_uuid_by_name: Optional[Mapping[str, str]] = None,
 ) -> CreatedPLRMaterials:
-    authority_templates = {
-        template.name: template.template_uuid for template in gateway.list_templates()
-    }
-    authority_templates.update(template_uuid_by_name or {})
-    request = plr_resources_to_create(
-        resources,
-        template_uuid_by_name=authority_templates,
-    )
+    request = plr_resources_to_create(resources)
     result = gateway.create_tree(mutation, request)
     tree = material_tree_to_resource_tree(result.data)
     return CreatedPLRMaterials(

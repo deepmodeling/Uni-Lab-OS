@@ -213,6 +213,52 @@ def test_slave_microbackend_applies_host_ros_config_before_ros_init() -> None:
     assert same_domain == domain_id
 
 
+def test_slave_material_create_is_proxied_by_host_authority(
+    tmp_path, monkeypatch
+) -> None:
+    from unilabos.resources import materials
+    from unilabos.resources.container import RegularContainer
+    from unilabos.server.clients.materials import LocalMaterialsClient
+    from unilabos.server.services.materials import MaterialsService
+
+    material_service = MaterialsService(tmp_path / "materials.db")
+    service = setup_host_network_service(
+        material_gateway=LocalMaterialsClient(material_service)
+    )
+    assert service is not None
+    HostLinkConfig.host = "127.0.0.1"
+    HostLinkConfig.port = service.server.port
+    monkeypatch.setattr(BasicConfig, "is_host_mode", False)
+    client, _ = setup_slave_network_client(device_ids=["liquid-handler-1"])
+    assert client is not None and client.online
+
+    beaker = RegularContainer(
+        name="custom-beaker-1",
+        size_x=10,
+        size_y=10,
+        size_z=20,
+        max_volume=100,
+    )
+    beaker.unilabos_extra = {"unilabos_resource_class": "custom-beaker"}
+    try:
+        created = materials.create(beaker)
+
+        assert not getattr(beaker, "unilabos_uuid", "")
+        assert created.resources[0].unilabos_uuid
+        assert (
+            created.result.data.nodes[0].material.template_name
+            == "custom-beaker"
+        )
+        template = material_service.list_templates()[0]
+        assert template.name == "custom-beaker"
+        assert (
+            created.result.data.nodes[0].material.template_uuid
+            == template.template_uuid
+        )
+    finally:
+        material_service.close()
+
+
 def test_startup_device_ids_requires_business_device_identity() -> None:
     config = _TreeSet()
     config.trees[0].root.children.append(

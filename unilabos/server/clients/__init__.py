@@ -7,6 +7,7 @@ from unilabos.server.clients.history import (
 )
 from unilabos.server.clients.materials import (
     HTTPMaterialsClient,
+    HostLinkMaterialsClient,
     LocalMaterialsClient,
     MaterialsHTTPError,
     bind_payload,
@@ -25,6 +26,7 @@ from unilabos.server.clients.telemetry import (
 __all__ = [
     "HTTPHistoryClient",
     "HTTPMaterialsClient",
+    "HostLinkMaterialsClient",
     "HTTPRuntimeClient",
     "HTTPTelemetryClient",
     "HistoryHTTPError",

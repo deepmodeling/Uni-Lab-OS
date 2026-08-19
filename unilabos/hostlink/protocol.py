@@ -23,9 +23,9 @@ class ActionType:
 
     HELLO = "hello"
     PING = "ping"
-    # ROS2 组网控制面向微后端查询物料快照；写入仍只走物料服务，
-    # direct HostLink backend 不安装隐式 Resource Authority。
+    # Slave 只经 HostLink 提交物料请求；Host 再代理到配置的 materials authority。
     MATERIAL = "material"
+    MATERIAL_CREATE = "material.create"
     ROS_INFO = "ros_info"
     DEVICE_CALL = "device.call"
     DEVICE_STATE = "device.state"

@@ -46,7 +46,6 @@ from unilabos.server.protocol.materials import (
     ResourceTemplateWrite,
     SiteCreate,
     SiteRead,
-    SiteWrite,
 )
 from unilabos.server.repositories.materials import MaterialsRepository
 from unilabos.server.services.material_snapshot import (
@@ -777,20 +776,90 @@ class MaterialsService:
         def apply(timestamp: int) -> _Applied[MaterialTreeRead]:
             client_map = {node.client_ref: str(uuid4()) for node in value.nodes}
             templates: dict[str, ResourceTemplateRecord] = {}
+            resolved_templates: dict[str, ResourceTemplateRecord] = {}
+            affected: list[AggregateVersion] = []
+            sequences: list[int] = []
             node_sites: dict[str, list[SiteCreate]] = {}
             for node in value.nodes:
                 if node.identity.parent_material_uuid is not None:
                     raise MaterialValidationError(
                         "create tree parent must use parent_client_ref"
                     )
-                template = templates.get(node.identity.template_uuid)
+                template_key = node.identity.template_name.casefold()
+                template = templates.get(template_key)
                 if template is None:
-                    template = self.repository.get_template(node.identity.template_uuid)
+                    template = self.repository.get_template_by_name(
+                        node.identity.template_name
+                    )
                     if template is None:
-                        raise MaterialNotFoundError(
-                            f"template not found: {node.identity.template_uuid}"
+                        template_value = ResourceTemplateWrite(
+                            name=node.identity.template_name,
+                            display_name=node.identity.template_name,
+                            resource_type=node.identity.resource_type,
+                            class_name=node.identity.class_name,
+                            available_sites=[
+                                site.model_dump(
+                                    mode="json",
+                                    exclude={"occupied_client_ref"},
+                                )
+                                for site in node.sites
+                            ],
+                            definition={
+                                "source": "material_create",
+                                "resource_schema": node.identity.resource_schema,
+                                "model": node.identity.model,
+                                "config": node.identity.config,
+                            },
                         )
-                    templates[template.template_uuid] = template
+                        template = ResourceTemplateRecord(
+                            template_uuid=str(uuid4()),
+                            name=template_value.name,
+                            display_name=(
+                                template_value.display_name or template_value.name
+                            ),
+                            resource_type=template_value.resource_type,
+                            class_name=template_value.class_name,
+                            module_name=template_value.module_name,
+                            template_version=template_value.template_version,
+                            category=template_value.category,
+                            available_sites=template_value.available_sites,
+                            handles=template_value.handles,
+                            definition_json=template_value.definition,
+                            definition_hash=self._template_definition_hash(
+                                template_value
+                            ),
+                            status="active",
+                            created_at_ms=timestamp,
+                            updated_at_ms=timestamp,
+                        )
+                        self.repository.insert_template(template)
+                        template_state_hash = self._template_state_hash(template)
+                        affected.append(
+                            AggregateVersion(
+                                aggregate_type="resource_template",
+                                aggregate_uuid=template.template_uuid,
+                                version=1,
+                                state_hash=template_state_hash,
+                            )
+                        )
+                        sequences.append(
+                            self._ledger(
+                                mutation,
+                                aggregate_type="resource_template",
+                                aggregate_uuid=template.template_uuid,
+                                operation="create",
+                                previous_version=0,
+                                aggregate_version=1,
+                                state_hash=template_state_hash,
+                                delta={
+                                    "definition_hash": template.definition_hash,
+                                    "source": "material_create",
+                                },
+                                timestamp=timestamp,
+                            )
+                        )
+                    templates[template_key] = template
+                resolved_templates[node.client_ref] = template
                 self._validate_template_identity(template, node.identity)
                 explicit_sites = list(node.sites)
                 if not explicit_sites:
@@ -804,6 +873,7 @@ class MaterialsService:
 
             for node in value.nodes:
                 identity = node.identity
+                template = resolved_templates[node.client_ref]
                 material_uuid = client_map[node.client_ref]
                 parent_uuid = (
                     client_map[node.parent_client_ref]
@@ -813,7 +883,7 @@ class MaterialsService:
                 record = MaterialRecord(
                     material_uuid=material_uuid,
                     resource_id=identity.resource_id,
-                    template_uuid=identity.template_uuid,
+                    template_uuid=template.template_uuid,
                     parent_material_uuid=parent_uuid,
                     lot_uuid=identity.lot_uuid,
                     name=identity.name,
@@ -907,8 +977,6 @@ class MaterialsService:
                     self.repository.insert_site(record)
                     site_records.append(record)
 
-            affected: list[AggregateVersion] = []
-            sequences: list[int] = []
             for node in value.nodes:
                 material_uuid = client_map[node.client_ref]
                 aggregate = self.get_material(material_uuid)

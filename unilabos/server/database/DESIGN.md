@@ -143,7 +143,8 @@ Local 和 HTTP 两种调用方式下保持一致。
 | 快照 | `unilabos.server.services.material_snapshot` | 规范哈希、逐 section diff 和一次事务应用 |
 | PLR 边界 | `unilabos.server.adapters.plr_materials` | PLR 创建草稿、权威 UUID 回填、上传和下载 |
 | Registry 边界 | `unilabos.server.adapters.registry_materials` | Registry/lab_resources 定义登记和模板 UUID 映射 |
-| HTTP / Client | `unilabos.server.api.materials`、`unilabos.server.clients.materials` | `/api/v1/materials` 与同构 Local/HTTP client |
+| Helper | `unilabos.resources.materials` | `materials.create(plr_resource)`，按 Host/Slave 角色选择权威链路 |
+| HTTP / Client | `unilabos.server.api.materials`、`unilabos.server.clients.materials` | `/api/v1/materials` 与同构 Local/HTTP/HostLink client |
 
 所有写请求使用 `(command_uuid, effect_key)` 幂等。成功结果保存 ledger sequence
 范围；拒绝结果保存稳定错误码。Material 的 identity、position、data/substances
@@ -152,4 +153,11 @@ Local 和 HTTP 两种调用方式下保持一致。
 
 `ResourceTreeSet.from_plr_resources(..., known_random_uuid=True)` 只允许创建草稿
 生成临时 Resource/Site UUID。微后端 create 总是重新分配权威 UUID，并在
-`client_uuid_map` 返回映射；下载得到的权威树继续使用默认严格模式。
+`client_ref_map` 返回映射；下载得到的权威树继续使用默认严格模式。
+
+创建请求不接受 `template_uuid`。Helper 从完整 PLR Resource 中提取稳定的
+`template_name` 及 identity/position/data/substances/sites；materials authority 按
+`template_name` 对齐 complete registry。名称不存在时，authority 在同一事务内登记
+自定义模板并分配内部 `template_uuid`。该 UUID 仅用于数据库外键、版本和回执，调用方
+不负责提供。Slave 的创建请求固定经 HostLink 发给 Host，Host 再选择内嵌微后端、外部
+微后端或后续正式 Backend。

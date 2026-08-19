@@ -123,6 +123,10 @@ class HostLinkBackendRuntime:
             ActionType.TOPIC_UNSUBSCRIBE,
             self._handle_topic_unsubscribe,
         )
+        self.server.register_handler(
+            ActionType.MATERIAL_CREATE,
+            self._handle_material_create,
+        )
         self.server.start()
         set_hostlink_server(self.server)
         logger.info(
@@ -131,6 +135,24 @@ class HostLinkBackendRuntime:
             self.server.port,
             sorted(self.local.devices),
         )
+
+    @staticmethod
+    def _handle_material_create(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Proxy Slave creation through the Host-selected authority."""
+
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialTreeCreate
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialTreeCreate.model_validate(mutation.payload)
+        result = gateway.create_tree(mutation, value)
+        return result.model_dump(mode="json", exclude_none=False)
 
     def _start_slave(self) -> None:
         host = str(HostLinkConfig.host or "").strip()

@@ -353,6 +353,78 @@ def test_hostlink_backend_routes_basic_driver_actions_without_ros(
     finally:
         slave.stop()
         host.stop()
+
+
+def test_hostlink_backend_proxies_material_create_without_template_uuid(
+    tmp_path, monkeypatch
+) -> None:
+    from uuid import uuid4
+
+    from unilabos.server.clients.materials import (
+        HostLinkMaterialsClient,
+        LocalMaterialsClient,
+    )
+    from unilabos.server.protocol.common import InventoryMutation
+    from unilabos.server.protocol.materials import (
+        MaterialIdentityWrite,
+        MaterialNodeCreate,
+        MaterialTreeCreate,
+    )
+    from unilabos.server.scheduler.integration import set_materials_gateway
+    from unilabos.server.services.materials import MaterialsService
+
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 1.0)
+
+    material_service = MaterialsService(tmp_path / "materials.db")
+    set_materials_gateway(LocalMaterialsClient(material_service))
+    host = HostLinkBackendRuntime(BasicRuntime("hostlink"), is_slave=False)
+    host.start()
+    assert host.server is not None
+    client = HostLinkClient(
+        "127.0.0.1",
+        host.server.port,
+        heartbeat_interval=0.05,
+        request_timeout=1.0,
+    )
+    try:
+        assert client.connect_blocking(timeout=2)
+        request = MaterialTreeCreate(
+            nodes=[
+                MaterialNodeCreate(
+                    client_ref="root",
+                    identity=MaterialIdentityWrite(
+                        resource_id="custom-container-1",
+                        name="custom-container-1",
+                        resource_type="container",
+                        class_name="Container",
+                        template_name="custom-container",
+                    ),
+                )
+            ]
+        )
+        result = HostLinkMaterialsClient(client).create_tree(
+            InventoryMutation(
+                command_uuid=str(uuid4()),
+                effect_key="create_material_tree",
+                operation="create_material_tree",
+            ),
+            request,
+        )
+
+        assert result.data.root_material_uuid
+        assert result.data.nodes[0].material.template_uuid
+        assert material_service.list_templates()[0].name == "custom-container"
+    finally:
+        client.close()
+        host.stop()
+        set_materials_gateway(None)
+        material_service.close()
+
+
 def test_hostlink_awaits_device_tools_without_thread_fallback(
     monkeypatch,
 ) -> None:

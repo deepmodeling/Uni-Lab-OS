@@ -58,6 +58,10 @@ def test_plr_create_returns_server_uuid_and_all_substances(tmp_path) -> None:
             "node-0": authoritative_uuid
         }
         assert created.tree.root_nodes[0].res_content.uuid == authoritative_uuid
+        assert (
+            created.result.data.nodes[0].material.template_uuid
+            == "beaker-template"
+        )
         assert created.result.data.nodes[0].data.substances[1].physical_state == "solid"
         assert created.resources[0].tracker.substances == [
             ("water", 20.0, "ul"),
@@ -78,14 +82,13 @@ def test_plr_create_request_contains_refs_but_no_instance_uuids() -> None:
         model="carrier",
     )
 
-    request = plr_resources_to_create(
-        [carrier], template_uuid_by_name={"carrier": "carrier-template"}
-    )
+    request = plr_resources_to_create([carrier])
     payload = request.model_dump(mode="json")
 
     assert payload["nodes"][0]["client_ref"] == "node-0"
     assert "known_random_uuid" not in payload
     assert "material_uuid" not in payload["nodes"][0]["identity"]
+    assert "template_uuid" not in payload["nodes"][0]["identity"]
     assert "site_uuid" not in payload["nodes"][0]["sites"][0]
     assert "occupied_material_uuid" not in payload["nodes"][0]["sites"][0]
     assert not getattr(carrier, "unilabos_uuid", "")
@@ -104,6 +107,4 @@ def test_plr_create_rejects_an_existing_authoritative_resource() -> None:
     beaker.unilabos_extra = {"unilabos_resource_class": "beaker"}
 
     with pytest.raises(ValueError, match="已有 UUID"):
-        plr_resources_to_create(
-            [beaker], template_uuid_by_name={"beaker": "beaker-template"}
-        )
+        plr_resources_to_create([beaker])

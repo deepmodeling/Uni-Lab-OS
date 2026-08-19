@@ -60,7 +60,6 @@ def _template(
 
 def _node(
     ref: str,
-    template_uuid: str,
     template_name: str,
     *,
     parent: str | None = None,
@@ -70,7 +69,6 @@ def _node(
         parent_client_ref=parent,
         identity=MaterialIdentityWrite(
             resource_id=f"resource-{ref}",
-            template_uuid=template_uuid,
             name=ref,
             resource_type="container",
             class_name="Container",
@@ -96,10 +94,8 @@ def test_template_and_material_tree_roundtrip_is_authoritative(tmp_path) -> None
         _template(service, "tube-template", "tube")
         request = MaterialTreeCreate(
             nodes=[
-                _node("random-root", "deck-template", "deck"),
-                _node(
-                    "random-child", "tube-template", "tube", parent="random-root"
-                ),
+                _node("random-root", "deck"),
+                _node("random-child", "tube", parent="random-root"),
             ],
         )
         command_uuid = str(uuid4())
@@ -133,7 +129,7 @@ def test_position_update_checks_material_version(tmp_path) -> None:
         created = service.create_tree(
             _mutation("create_material_tree"),
             MaterialTreeCreate(
-                nodes=[_node("tube", "tube-template", "tube")]
+                nodes=[_node("tube", "tube")]
             ),
         )
         material = created.data.nodes[0]
@@ -182,15 +178,15 @@ def test_move_clears_source_and_sets_destination_atomically(tmp_path) -> None:
             _mutation("create_material_tree"),
             MaterialTreeCreate(
                 nodes=[
-                    _node("deck-1", "deck-template", "deck"),
-                    _node("tube", "tube-template", "tube", parent="deck-1"),
+                    _node("deck-1", "deck"),
+                    _node("tube", "tube", parent="deck-1"),
                 ]
             ),
         )
         second = service.create_tree(
             _mutation("create_material_tree"),
             MaterialTreeCreate(
-                nodes=[_node("deck-2", "deck-template", "deck")]
+                nodes=[_node("deck-2", "deck")]
             ),
         )
         child_uuid = first.data.client_ref_map["tube"]
@@ -232,7 +228,7 @@ def test_snapshot_diff_and_apply_increment_material_once(tmp_path) -> None:
         created = service.create_tree(
             _mutation("create_material_tree"),
             MaterialTreeCreate(
-                nodes=[_node("tube", "tube-template", "tube")]
+                nodes=[_node("tube", "tube")]
             ),
         )
         node = created.data.nodes[0]
@@ -293,8 +289,8 @@ def test_recursive_delete_and_change_feed_are_aggregate_based(tmp_path) -> None:
             _mutation("create_material_tree"),
             MaterialTreeCreate(
                 nodes=[
-                    _node("deck", "deck-template", "deck"),
-                    _node("tube", "tube-template", "tube", parent="deck"),
+                    _node("deck", "deck"),
+                    _node("tube", "tube", parent="deck"),
                 ]
             ),
         )
@@ -329,14 +325,10 @@ def test_snapshot_moves_between_sites_in_one_transaction(tmp_path) -> None:
             _mutation("create_material_tree"),
             MaterialTreeCreate(
                 nodes=[
-                    _node("root", "root-template", "root"),
-                    _node(
-                        "carrier-1", "carrier-template", "carrier", parent="root"
-                    ),
-                    _node(
-                        "carrier-2", "carrier-template", "carrier", parent="root"
-                    ),
-                    _node("tube", "tube-template", "tube", parent="carrier-1"),
+                    _node("root", "root"),
+                    _node("carrier-1", "carrier", parent="root"),
+                    _node("carrier-2", "carrier", parent="root"),
+                    _node("tube", "tube", parent="carrier-1"),
                 ]
             ),
         )

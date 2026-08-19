@@ -27,33 +27,43 @@ class LegacyHTTPClient(HTTPClient):
         super().__init__(*args, **kwargs)
 
     def resource_get(self, id: str, with_children: bool = False) -> dict[str, Any]:
-        response = self._session.get(
-            f"{self.remote_addr}/lab/material",
-            params={"id": id, "with_children": with_children},
-            timeout=30,
+        """兼容旧调用形状，实际读取 Host 选定的物料权威。"""
+
+        from unilabos.device_runtime.resource import AuthorityResourceService
+
+        tree_set = AuthorityResourceService().get_resource_by_id_sync(
+            id,
+            with_children,
         )
-        response.raise_for_status()
-        return response.json()
+        return {
+            "code": 0,
+            "data": [node for tree in tree_set.dump() for node in tree],
+        }
 
     def resource_tree_get(
         self, uuid_list: list[str], with_children: bool
     ) -> list[dict[str, Any]]:
-        response = self._session.post(
-            f"{self.remote_addr}/edge/material/query",
-            json={"uuids": uuid_list, "with_children": with_children},
-            timeout=30,
+        """兼容旧调用形状，实际读取 Host 选定的物料权威。"""
+
+        from unilabos.device_runtime.resource import AuthorityResourceService
+
+        tree_set = AuthorityResourceService().get_resources_sync(
+            uuid_list,
+            with_children,
         )
-        response.raise_for_status()
-        return self._extract_material_nodes(response.json())
+        return [node for tree in tree_set.dump() for node in tree]
 
     def material_bench_discard(self, uuids: list[str]) -> dict[str, Any]:
-        response = self._session.post(
-            f"{self.remote_addr}/edge/material/bench/discard",
-            json={"uuids": uuids},
-            timeout=30,
+        """兼容旧调用形状，实际写入 Host 选定的物料权威。"""
+
+        from unilabos.device_runtime.resource import AuthorityResourceService
+
+        deleted = AuthorityResourceService().delete_resources_sync(
+            "legacy",
+            "legacy",
+            uuids,
         )
-        response.raise_for_status()
-        return response.json()
+        return {"code": 0, "uuids": deleted}
 
     def upload_file_to_oss(
         self, file_path: str, scene: str = "models"
@@ -201,42 +211,6 @@ class LegacyHTTPClient(HTTPClient):
         if response.status_code not in [200, 201]:
             logger.error(f"上传社区设备包失败: {response.status_code}, {response.text}")
         return response
-
-    def request_startup_json(self) -> Optional[Dict[str, Any]]:
-        """
-        请求启动配置
-
-        Args:
-            startup_json: 启动配置JSON数据
-
-        Returns:
-            Response: API响应对象
-        """
-        response = self._session.get(
-            f"{self.remote_addr}/edge/material/download",
-            headers={"Authorization": f"Lab {self.auth}"},
-            timeout=(3, 30),
-        )
-        if response.status_code != 200:
-            logger.error(f"请求启动配置失败: {response.status_code}, {response.text}")
-        else:
-            try:
-                with open(
-                    os.path.join(BasicConfig.working_dir, "startup_config.json"),
-                    "w",
-                    encoding="utf-8",
-                ) as f:
-                    f.write(response.text)
-                target_dict = json.loads(response.text)
-                if "data" in target_dict:
-                    target_dict = target_dict["data"]
-                return target_dict
-            except json.JSONDecodeError as e:
-                logger.error(
-                    f"解析启动配置JSON失败: {str(e.args)}\n响应内容: {response.text}"
-                )
-                logger.error(f"响应内容: {response.text}")
-        return None
 
     def resolve_community_packages(
         self,

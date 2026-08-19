@@ -293,12 +293,29 @@ def test_slave_material_create_is_proxied_by_host_authority(
             )
         )
         assert downloaded.all_nodes_uuid == [authoritative.unilabos_uuid]
+        downloaded_by_id = asyncio.run(
+            resource_service.get_resource_by_id(
+                "liquid-handler-1",
+                "custom-beaker-1",
+                with_children=True,
+            )
+        )
+        assert downloaded_by_id.all_nodes_uuid == [authoritative.unilabos_uuid]
         assert [
             (item.name, item.quantity, item.quantity_unit)
             for item in material_service.get_material(
                 authoritative.unilabos_uuid
             ).data.substances
         ] == [("water", 20.0, "ul")]
+        deleted = asyncio.run(
+            resource_service.delete_resources(
+                "liquid-handler-1",
+                "device-uuid",
+                [authoritative.unilabos_uuid],
+            )
+        )
+        assert deleted == [authoritative.unilabos_uuid]
+        assert material_service.list_materials() == []
     finally:
         material_service.close()
 

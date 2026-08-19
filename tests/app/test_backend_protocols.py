@@ -18,6 +18,7 @@ from unilabos.app.main import parse_args
 from unilabos.app.web.client import HTTPClient
 from unilabos.app.ws_client import MessageProcessor, WebSocketClient
 from unilabos.config.config import BasicConfig, _update_config_from_module
+from unilabos.device_runtime.resource import AuthorityResourceService
 from unilabos.legacy_support import configure_legacy_support
 from unilabos.legacy_support.http import (
     LegacyHTTPClient,
@@ -161,11 +162,47 @@ def test_old_http_client_is_available_only_in_legacy_mode() -> None:
 def test_old_http_api_methods_live_only_on_legacy_client() -> None:
     assert not hasattr(HTTPClient, "workflow_import")
     assert not hasattr(HTTPClient, "resource_registry")
+    assert not hasattr(HTTPClient, "resource_get")
+    assert not hasattr(HTTPClient, "resource_tree_get")
+    assert not hasattr(HTTPClient, "material_bench_discard")
     assert hasattr(LegacyHTTPClient, "workflow_import")
     assert hasattr(LegacyHTTPClient, "resource_registry")
+    assert hasattr(LegacyHTTPClient, "resource_get")
+    assert hasattr(LegacyHTTPClient, "resource_tree_get")
+    assert hasattr(LegacyHTTPClient, "material_bench_discard")
 
 
-def test_legacy_material_requests_keep_old_backend_paths() -> None:
+def test_legacy_material_calls_delegate_to_new_authority(monkeypatch) -> None:
+    class _TreeSet:
+        @staticmethod
+        def dump():
+            return [[{"uuid": "material-1"}]]
+
+    by_id_calls = []
+    by_uuid_calls = []
+    delete_calls = []
+    monkeypatch.setattr(
+        AuthorityResourceService,
+        "get_resource_by_id_sync",
+        lambda _self, resource_id, with_children: (
+            by_id_calls.append((resource_id, with_children)) or _TreeSet()
+        ),
+    )
+    monkeypatch.setattr(
+        AuthorityResourceService,
+        "get_resources_sync",
+        lambda _self, uuids, with_children: (
+            by_uuid_calls.append((uuids, with_children)) or _TreeSet()
+        ),
+    )
+    monkeypatch.setattr(
+        AuthorityResourceService,
+        "delete_resources_sync",
+        lambda _self, device_id, device_uuid, uuids: (
+            delete_calls.append((device_id, device_uuid, uuids)) or list(uuids)
+        ),
+    )
+
     configure_legacy_support(True)
     client = LegacyHTTPClient(remote_addr="https://old.example/api/v1", auth="secret")
     session = _Session()
@@ -178,24 +215,15 @@ def test_legacy_material_requests_keep_old_backend_paths() -> None:
     assert client.resource_tree_get(["material-1"], True) == [
         {"uuid": "material-1"}
     ]
-    assert client.material_bench_discard(["material-1"])["code"] == 0
-    assert session.calls == [
-        (
-            "GET",
-            "https://old.example/api/v1/lab/material",
-            {"params": {"id": "material-1", "with_children": False}, "timeout": 30},
-        ),
-        (
-            "POST",
-            "https://old.example/api/v1/edge/material/query",
-            {"json": {"uuids": ["material-1"], "with_children": True}, "timeout": 30},
-        ),
-        (
-            "POST",
-            "https://old.example/api/v1/edge/material/bench/discard",
-            {"json": {"uuids": ["material-1"]}, "timeout": 30},
-        ),
-    ]
+    assert client.material_bench_discard(["material-1"]) == {
+        "code": 0,
+        "uuids": ["material-1"],
+    }
+    assert by_id_calls == [("material-1", False)]
+    assert by_uuid_calls == [(["material-1"], True)]
+    assert delete_calls == [("legacy", "legacy", ["material-1"])]
+    assert session.calls == []
+    assert not hasattr(client, "request_startup_json")
 
 
 def test_old_protocol_does_not_consume_control_messages() -> None:

@@ -21,6 +21,7 @@ from unilabos.server.protocol.common import (
     AggregatePrecondition,
     InventoryMutation,
 )
+from unilabos.server.protocol.materials import MaterialDelete
 
 
 class ResourceService(Protocol):
@@ -46,6 +47,39 @@ class ResourceService(Protocol):
         resources_uuid: list[str],
         with_children: bool,
     ) -> ResourceTreeSet: ...
+
+    def get_resources_sync(
+        self,
+        resources_uuid: Sequence[str],
+        with_children: bool = True,
+    ) -> ResourceTreeSet: ...
+
+    async def get_resource_by_id(
+        self,
+        device_id: str,
+        resource_id: str,
+        with_children: bool,
+    ) -> ResourceTreeSet: ...
+
+    def get_resource_by_id_sync(
+        self,
+        resource_id: str,
+        with_children: bool = True,
+    ) -> ResourceTreeSet: ...
+
+    async def delete_resources(
+        self,
+        device_id: str,
+        device_uuid: str,
+        resources_uuid: list[str],
+    ) -> list[str]: ...
+
+    def delete_resources_sync(
+        self,
+        device_id: str,
+        device_uuid: str,
+        resources_uuid: Sequence[str],
+    ) -> list[str]: ...
 
 
 GatewayProvider = Callable[[], MaterialGateway]
@@ -316,6 +350,78 @@ class AuthorityResourceService:
             self._get_sync,
             resources_uuid,
             with_children,
+        )
+
+    def get_resources_sync(
+        self,
+        resources_uuid: Sequence[str],
+        with_children: bool = True,
+    ) -> ResourceTreeSet:
+        """同步查询入口，供 ROS service callback 使用。"""
+
+        return self._get_sync(resources_uuid, with_children)
+
+    def get_resource_by_id_sync(
+        self,
+        resource_id: str,
+        with_children: bool = True,
+    ) -> ResourceTreeSet:
+        gateway = self._gateway()
+        aggregate = gateway.get_material_by_resource_id(str(resource_id))
+        return self._get_sync(
+            [aggregate.material.material_uuid],
+            with_children,
+        )
+
+    async def get_resource_by_id(
+        self,
+        device_id: str,
+        resource_id: str,
+        with_children: bool,
+    ) -> ResourceTreeSet:
+        del device_id
+        return await asyncio.to_thread(
+            self.get_resource_by_id_sync,
+            resource_id,
+            with_children,
+        )
+
+    def delete_resources_sync(
+        self,
+        device_id: str,
+        device_uuid: str,
+        resources_uuid: Sequence[str],
+    ) -> list[str]:
+        gateway = self._gateway()
+        deleted: list[str] = []
+        for raw_uuid in resources_uuid:
+            material_uuid = str(raw_uuid or "").strip()
+            if not material_uuid:
+                continue
+            mutation = self._mutation(
+                "delete_material",
+                device_id=device_id,
+                device_uuid=device_uuid,
+                root_material_uuid=material_uuid,
+            )
+            result = gateway.delete_material(
+                mutation,
+                MaterialDelete(material_uuid=material_uuid, recursive=True),
+            )
+            deleted.extend(result.data.deleted_material_uuids)
+        return deleted
+
+    async def delete_resources(
+        self,
+        device_id: str,
+        device_uuid: str,
+        resources_uuid: list[str],
+    ) -> list[str]:
+        return await asyncio.to_thread(
+            self.delete_resources_sync,
+            device_id,
+            device_uuid,
+            resources_uuid,
         )
 
 

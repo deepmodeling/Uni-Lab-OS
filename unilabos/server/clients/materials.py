@@ -146,6 +146,29 @@ class HostLinkMaterialsClient:
             raise ValueError("Host 返回了空物料树")
         return tree.nodes[0]
 
+    def get_material_by_resource_id(self, resource_id: str) -> MaterialAggregateRead:
+        from unilabos.hostlink.protocol import ActionType
+
+        response = self.client.request(
+            ActionType.MATERIAL_GET_BY_RESOURCE_ID,
+            {"resource_id": resource_id},
+        )
+        return MaterialAggregateRead.model_validate(response)
+
+    def delete_material(
+        self,
+        mutation: InventoryMutation,
+        value: MaterialDelete,
+    ) -> MutationResult[MaterialDeleteResult]:
+        from unilabos.hostlink.protocol import ActionType
+
+        bound = bind_payload(mutation, value)
+        response = self.client.request(
+            ActionType.MATERIAL_DELETE,
+            bound.model_dump(mode="json", exclude_none=False),
+        )
+        return MutationResult[MaterialDeleteResult].model_validate(response)
+
     def compare_snapshot(self, value: MaterialSnapshot) -> MaterialSnapshotDiff:
         from unilabos.hostlink.protocol import ActionType
 

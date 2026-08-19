@@ -1792,7 +1792,7 @@ class HostNode(BaseROS2DeviceNode):
             raise ValueError("设置内容物失败：未接收到物料")
         # 统一走 apply_substances：目标解析 + ug/ul 单位 + set_liquids 三元组
         apply_substances(resource, substance_names, amounts, slots=slots, is_solid=is_solid)
-        # 同步整棵树到云端（含被修改的子孔位）
+        # 同步整棵树到微后端权威（含被修改的子孔位）
         await self.update_resource([resource])
         dumped = ResourceTreeSet.from_plr_resources([resource]).dump()
         return {"resource": dumped[0] if dumped else []}
@@ -1827,11 +1827,11 @@ class HostNode(BaseROS2DeviceNode):
 
         与 apply_deduct_resource 对称（扣减→挂载到设备 / 废弃→从设备移除并销毁）：接收单个
         已存在物料（前端用节点选择器选择，或图 handle 传入，框架在 send_goal 已解析为 PLR
-        实例）与所属设备，先调用云端 POST /edge/material/bench/discard 执行销毁（实验室归属
-        由认证上下文确定），成功后再通知对应边缘设备本地移除该物料。物料被销毁后无图输出 handle。
+        实例）与所属设备，先由 MaterialsService 权威执行销毁，成功后再通知对应边缘设备
+        本地移除该物料。物料被销毁后无图输出 handle。
 
-        说明：物料无法从实例反查所属设备（host 仅维护 device→namespace/在线状态，云端查询
-        with_children 也不含父链/设备），故设备需显式指定，与 apply_deduct_resource 对称。
+        说明：物料无法从实例反查所属设备（host 仅维护 device→namespace/在线状态），
+        故设备需显式指定，与 apply_deduct_resource 对称。
 
         Args:
             resource[废弃物料]: 要废弃的单个台面物料（须带 unilabos_uuid）。

@@ -61,6 +61,14 @@ class HostNetworkService:
             ActionType.MATERIAL_GET_TREE, self._material_get_tree
         )
         self.server.register_handler(
+            ActionType.MATERIAL_GET_BY_RESOURCE_ID,
+            self._material_get_by_resource_id,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_DELETE,
+            self._material_delete,
+        )
+        self.server.register_handler(
             ActionType.MATERIAL_COMPARE_SNAPSHOT,
             self._material_compare_snapshot,
         )
@@ -249,6 +257,29 @@ class HostNetworkService:
             raise ValueError("material.tree.get requires root_material_uuid")
         return self._require_material_gateway().get_tree(
             root_material_uuid
+        ).model_dump(mode="json", exclude_none=False)
+
+    def _material_get_by_resource_id(
+        self, data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        resource_id = str(data.get("resource_id") or "").strip()
+        if not resource_id:
+            raise ValueError("material.resource-id.get requires resource_id")
+        return self._require_material_gateway().get_material_by_resource_id(
+            resource_id
+        ).model_dump(mode="json", exclude_none=False)
+
+    def _material_delete(
+        self, data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialDelete
+
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialDelete.model_validate(mutation.payload)
+        return self._require_material_gateway().delete_material(
+            mutation,
+            value,
         ).model_dump(mode="json", exclude_none=False)
 
     def _material_compare_snapshot(

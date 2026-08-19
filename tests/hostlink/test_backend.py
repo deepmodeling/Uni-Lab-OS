@@ -365,6 +365,7 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
     )
     from unilabos.server.protocol.common import InventoryMutation
     from unilabos.server.protocol.materials import (
+        MaterialDelete,
         MaterialIdentityWrite,
         MaterialNodeCreate,
         MaterialTreeCreate,
@@ -405,7 +406,8 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
                 )
             ]
         )
-        result = HostLinkMaterialsClient(client).create_tree(
+        gateway = HostLinkMaterialsClient(client)
+        result = gateway.create_tree(
             InventoryMutation(
                 command_uuid=str(uuid4()),
                 effect_key="create_material_tree",
@@ -417,6 +419,23 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
         assert result.data.root_material_uuid
         assert result.data.nodes[0].material.template_uuid
         assert material_service.list_templates()[0].name == "custom-container"
+        aggregate = gateway.get_material_by_resource_id("custom-container-1")
+        assert aggregate.material.material_uuid == result.data.root_material_uuid
+        deleted = gateway.delete_material(
+            InventoryMutation(
+                command_uuid=str(uuid4()),
+                effect_key="delete_material_tree",
+                operation="delete_material",
+            ),
+            MaterialDelete(
+                material_uuid=result.data.root_material_uuid,
+                recursive=True,
+            ),
+        )
+        assert deleted.data.deleted_material_uuids == [
+            result.data.root_material_uuid
+        ]
+        assert material_service.list_materials() == []
     finally:
         client.close()
         host.stop()

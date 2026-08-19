@@ -68,6 +68,20 @@ def test_resource_service_create_get_and_partial_snapshot_update(tmp_path) -> No
             )
         )
         assert downloaded.all_nodes_uuid == [parent_uuid]
+
+        downloaded_by_id = service.get_resource_by_id_sync(
+            "parent",
+            with_children=True,
+        )
+        assert downloaded_by_id.all_nodes_uuid == [parent_uuid, child_uuid]
+
+        deleted = service.delete_resources_sync(
+            "device-1",
+            "device-uuid",
+            [parent_uuid],
+        )
+        assert set(deleted) == {parent_uuid, child_uuid}
+        assert materials.list_materials() == []
     finally:
         materials.close()
 

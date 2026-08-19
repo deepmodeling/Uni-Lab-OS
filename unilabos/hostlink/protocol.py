@@ -26,6 +26,8 @@ class ActionType:
     # Slave 只经 HostLink 提交物料请求；Host 再代理到配置的 materials authority。
     MATERIAL_CREATE = "material.create"
     MATERIAL_GET_TREE = "material.tree.get"
+    MATERIAL_GET_BY_RESOURCE_ID = "material.resource-id.get"
+    MATERIAL_DELETE = "material.delete"
     MATERIAL_COMPARE_SNAPSHOT = "material.snapshot.compare"
     MATERIAL_APPLY_SNAPSHOT = "material.snapshot.apply"
     ROS_INFO = "ros_info"

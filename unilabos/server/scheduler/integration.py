@@ -19,7 +19,6 @@ from unilabos.server.scheduler.backend import (
 from unilabos.server.scheduler.coordinator import WorkflowBusinessCoordinator
 from unilabos.server.scheduler.telemetry_state import TelemetryDeviceStateProjection
 from unilabos.server.services.materials import MaterialsService
-from unilabos.utils.tracing import inject_trace_context
 
 logger = logging.getLogger(__name__)
 
@@ -29,32 +28,6 @@ _materials: Optional[MaterialsService] = None
 _materials_gateway: Any = None
 _owns_materials = False
 _device_state_projection: Optional[TelemetryDeviceStateProjection] = None
-
-
-class CloudBusinessError(RuntimeError):
-    """Cloud returned HTTP success but a non-zero ``common.Resp.code``."""
-
-    def __init__(self, code: int, message: str, info: Optional[list[str]] = None):
-        super().__init__(message)
-        self.code = code
-        self.info = info or []
-
-
-def unwrap_cloud_response(body: object) -> Any:
-    """Validate and unwrap the Go Cloud envelope without hiding business errors."""
-
-    from unilabos.server.scheduler.inventory.schemas import CloudResponse
-
-    envelope = CloudResponse.model_validate(body)
-    if envelope.code != 0:
-        message = (
-            envelope.error.msg
-            if envelope.error is not None
-            else f"Cloud business error {envelope.code}"
-        )
-        info = envelope.error.info if envelope.error is not None else []
-        raise CloudBusinessError(envelope.code, message, info)
-    return envelope.data
 
 
 def get_edge_scheduler() -> None:
@@ -88,88 +61,6 @@ def bind_workflow_executor(workflow_service: Any = None) -> None:
 
     del workflow_service
     raise RuntimeError("workflow execution is owned by the backend scheduler")
-
-
-def make_http_sync_sender() -> Any:
-    """保留旧 Cloud 同步调用形状；新 MaterialsService 不自动启动它。"""
-
-    from unilabos.app.web.client import http_client
-    from unilabos.server.scheduler.inventory.schemas import (
-        CloudInventoryEventBatch,
-        CloudSyncAck,
-    )
-
-    def send(events: Any) -> int:
-        if not events:
-            raise ValueError("inventory event batch cannot be empty")
-        batch = CloudInventoryEventBatch.model_validate(
-            {"edge_id": events[0].get("edge_id", ""), "events": events}
-        )
-        trace_headers: dict[str, Any] = {}
-        inject_trace_context(trace_headers)
-        response = http_client._session.post(
-            f"{http_client.remote_addr}/edge/sync/events",
-            json=batch.model_dump(mode="json", exclude_none=True),
-            headers=trace_headers,
-            timeout=30,
-        )
-        response.raise_for_status()
-        data = unwrap_cloud_response(response.json())
-        return CloudSyncAck.model_validate(data).acked_sequence
-
-    return send
-
-
-def make_http_snapshot_sender(edge_id: str) -> Any:
-    """保留旧 Cloud snapshot 调用形状，不参与四库 writer 装配。"""
-
-    from unilabos.app.web.client import http_client
-    from unilabos.server.scheduler.inventory.schemas import (
-        CloudInventorySnapshotRequest,
-    )
-
-    def send(snapshot: Any) -> None:
-        request = CloudInventorySnapshotRequest.from_edge_snapshot(edge_id, snapshot)
-        trace_headers: dict[str, Any] = {}
-        inject_trace_context(trace_headers)
-        response = http_client._session.post(
-            f"{http_client.remote_addr}/edge/sync/snapshot",
-            json=request.model_dump(mode="json", exclude_none=True),
-            headers=trace_headers,
-            timeout=30,
-        )
-        response.raise_for_status()
-        unwrap_cloud_response(response.json())
-
-    return send
-
-
-def report_http_inventory_command_result(response: object) -> None:
-    """旧 inventory command 的拒绝/结果回调；不打开旧库存数据库。"""
-
-    from unilabos.app.web.client import http_client
-    from unilabos.server.scheduler.inventory.schemas import (
-        CloudInventoryCommandResultRequest,
-        InventoryCommandResult,
-    )
-
-    local = InventoryCommandResult.model_validate(response)
-    request = CloudInventoryCommandResultRequest(
-        command_id=local.command_id,
-        status=local.status,
-        result=local.result,
-        error=local.error,
-    )
-    trace_headers: dict[str, Any] = {}
-    inject_trace_context(trace_headers)
-    cloud_response = http_client._session.post(
-        f"{http_client.remote_addr}/edge/inventory/command_result",
-        json=request.model_dump(mode="json", exclude_none=True),
-        headers=trace_headers,
-        timeout=15,
-    )
-    cloud_response.raise_for_status()
-    unwrap_cloud_response(cloud_response.json())
 
 
 def setup_materials_service(
@@ -308,7 +199,6 @@ def reset_for_test() -> None:
 
 
 __all__ = [
-    "CloudBusinessError",
     "bind_workflow_executor",
     "get_edge_backend",
     "get_business_coordinator",
@@ -316,13 +206,9 @@ __all__ = [
     "get_materials_service",
     "get_materials_gateway",
     "get_workflow_executor",
-    "make_http_snapshot_sender",
-    "make_http_sync_sender",
-    "report_http_inventory_command_result",
     "reset_for_test",
     "setup_job_execution_backend",
     "setup_materials_service",
     "set_materials_gateway",
     "shutdown_edge_services",
-    "unwrap_cloud_response",
 ]

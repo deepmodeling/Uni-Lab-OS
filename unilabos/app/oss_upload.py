@@ -1,14 +1,35 @@
 import argparse
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Protocol, Tuple, Union
 
 import requests
 
-from unilabos.app.web.client import http_client, HTTPClient
+from unilabos.config.config import BasicConfig, HTTPConfig
+from unilabos.legacy_support import require_legacy_support
 from unilabos.utils import logger
+
+
+class HTTPClient(Protocol):
+    remote_addr: str
+    auth: str
+
+
+@dataclass(frozen=True)
+class _UploadClient:
+    remote_addr: str
+    auth: str
+
+
+def _default_upload_client() -> _UploadClient:
+    require_legacy_support("legacy storage HTTP API")
+    return _UploadClient(
+        remote_addr=HTTPConfig.remote_addr.rstrip("/"),
+        auth=BasicConfig.auth_secret(),
+    )
 
 
 def _get_oss_token(
@@ -31,7 +52,7 @@ def _get_oss_token(
     """
     # 使用提供的client或默认的http_client
     if client is None:
-        client = http_client
+        client = _default_upload_client()
 
     # 构造scene参数: driver_name-exp_type
     sub_path = f"{driver_name}-{exp_type}"
@@ -54,7 +75,7 @@ def _get_oss_token(
                 expires_datetime = datetime.fromtimestamp(expires_timestamp)
                 expires_str = expires_datetime.strftime("%Y-%m-%d %H:%M:%S")
 
-                logger.info(f"[OSS] 获取预签名URL成功")
+                logger.info("[OSS] 获取预签名URL成功")
                 logger.info(f"[OSS]   - URL: {data.get('url', 'N/A')}")
                 logger.info(f"[OSS]   - Expires: {expires_str} (timestamp: {expires_timestamp})")
 
@@ -86,7 +107,7 @@ def _put_upload(file_path: str, upload_url: str) -> bool:
             response = requests.put(upload_url, data=f, timeout=300)
 
             if response.status_code == 200:
-                logger.info(f"[OSS] 文件上传成功")
+                logger.info("[OSS] 文件上传成功")
                 return True
 
         logger.error(f"[OSS] 上传失败: {response.status_code}")
@@ -152,7 +173,7 @@ def oss_upload(
             oss_path = token_data.get("path", "")
 
             if not upload_url:
-                logger.warning(f"[OSS] 无法获取上传URL，API未返回url字段")
+                logger.warning("[OSS] 无法获取上传URL，API未返回url字段")
                 retry_count += 1
                 time.sleep(1)
                 continue
@@ -190,8 +211,15 @@ if __name__ == "__main__":
     parser.add_argument("--ak", type=str, help="Access Key，如果提供则覆盖配置")
     parser.add_argument("--sk", type=str, help="Secret Key，如果提供则覆盖配置")
     parser.add_argument("--remote-addr", type=str, help="远程服务器地址（包含/api/v1），如果提供则覆盖配置")
+    parser.add_argument("--legacy", action="store_true", help="Enable old Backend HTTP API compatibility")
 
     args = parser.parse_args()
+
+    from unilabos.legacy_support import configure_legacy_support
+
+    configure_legacy_support(args.legacy)
+
+    http_client = _default_upload_client()
 
     # 检查文件是否存在
     if not os.path.exists(args.file):
@@ -205,10 +233,10 @@ if __name__ == "__main__":
 
         auth = base64.b64encode(f"{args.ak}:{args.sk}".encode("utf-8")).decode("utf-8")
         remote_addr = args.remote_addr if args.remote_addr else http_client.remote_addr
-        temp_client = HTTPClient(remote_addr=remote_addr, auth=auth)
+        temp_client = _UploadClient(remote_addr=remote_addr, auth=auth)
         logger.info(f"[配置] 使用自定义配置: remote_addr={remote_addr}")
     elif args.remote_addr:
-        temp_client = HTTPClient(remote_addr=args.remote_addr, auth=http_client.auth)
+        temp_client = _UploadClient(remote_addr=args.remote_addr, auth=http_client.auth)
         logger.info(f"[配置] 使用自定义remote_addr: {args.remote_addr}")
     else:
         logger.info(f"[配置] 使用默认配置: remote_addr={http_client.remote_addr}")
@@ -231,11 +259,11 @@ if __name__ == "__main__":
 
     # 输出结果
     if result["success"]:
-        logger.info(f"\n√ 文件上传成功！")
+        logger.info("\n√ 文件上传成功！")
         logger.info(f"原始路径: {result['original_path']}")
         logger.info(f"OSS路径: {result['oss_path']}")
         exit(0)
     else:
-        logger.error(f"\n× 文件上传失败！")
+        logger.error("\n× 文件上传失败！")
         logger.error(f"原始路径: {result['original_path']}")
         exit(1)

@@ -4,33 +4,12 @@
 
 from abc import ABC, abstractmethod
 from typing import Optional
-from unilabos.config.config import BasicConfig
+
+from unilabos.legacy_support import legacy_support_enabled
 from unilabos.utils import logger
 
-
-PROTOCOL_ALIASES = {
-    "control": "control",
-    "control.v1": "control",
-    "old": "old",
-    "legacy": "old",
-    "old-websocket": "old",
-    "websocket": "old",
-    "ws": "old",
-}
-
-
-def normalize_communication_protocol(protocol: str) -> str:
-    """规范化后端线协议名称；旧 ``websocket`` 配置继续映射到 ``old``。"""
-
-    value = str(protocol or "").strip().lower()
-    try:
-        return PROTOCOL_ALIASES[value]
-    except KeyError as exc:
-        supported = ", ".join(CommunicationClientFactory.get_supported_protocols())
-        raise ValueError(
-            f"Unsupported backend communication protocol {protocol!r}; "
-            f"expected one of: {supported}"
-        ) from exc
+APP_BRIDGES = ("websocket",)
+COMMUNICATION_PROTOCOL = "websocket"
 
 
 class BaseCommunicationClient(ABC):
@@ -134,49 +113,32 @@ class BaseCommunicationClient(ABC):
 
 
 class CommunicationClientFactory:
-    """
-    通信客户端工厂类
-
-    根据配置文件中的通信协议设置创建相应的客户端实例。
-    """
+    """创建固定 WebSocket 传输的后端客户端；--legacy 只改变线协议。"""
 
     _client_cache: Optional[BaseCommunicationClient] = None
 
     @classmethod
-    def create_client(cls, protocol: Optional[str] = None) -> BaseCommunicationClient:
+    def create_client(cls) -> BaseCommunicationClient:
         """
         创建通信客户端实例
 
-        Args:
-            protocol: 指定的协议类型，如果为None则使用配置文件中的设置
-
         Returns:
             通信客户端实例
-
-        Raises:
-            ValueError: 当协议类型不支持时
         """
-        if protocol is None:
-            protocol = BasicConfig.communication_protocol
-
-        normalized = normalize_communication_protocol(protocol)
-        if normalized == "control":
-            return cls._create_control_client()
-        return cls._create_old_protocol_client()
+        if legacy_support_enabled():
+            return cls._create_legacy_client()
+        return cls._create_control_client()
 
     @classmethod
-    def get_client(cls, protocol: Optional[str] = None) -> BaseCommunicationClient:
+    def get_client(cls) -> BaseCommunicationClient:
         """
         获取通信客户端实例（单例模式）
-
-        Args:
-            protocol: 指定的协议类型，如果为None则使用配置文件中的设置
 
         Returns:
             通信客户端实例
         """
         if cls._client_cache is None:
-            cls._client_cache = cls.create_client(protocol)
+            cls._client_cache = cls.create_client()
             logger.trace(f"[CommunicationFactory] Created {type(cls._client_cache).__name__} client")
 
         return cls._client_cache
@@ -190,19 +152,12 @@ class CommunicationClientFactory:
         return ControlWebSocketClient()
 
     @classmethod
-    def _create_old_protocol_client(cls) -> BaseCommunicationClient:
+    def _create_legacy_client(cls) -> BaseCommunicationClient:
         """创建旧后端完整 WebSocket payload 客户端。"""
 
-        try:
-            from unilabos.app.backend_protocol.old import OldBackendProtocolClient
+        from unilabos.legacy_support.websocket import LegacyWebSocketClient
 
-            return OldBackendProtocolClient()
-        except Exception as e:
-            logger.error(
-                "[CommunicationFactory] Failed to create old protocol client: "
-                f"{str(e)}"
-            )
-            raise
+        return LegacyWebSocketClient()
 
     @classmethod
     def reset_client(cls):
@@ -211,38 +166,25 @@ class CommunicationClientFactory:
             try:
                 cls._client_cache.stop()
             except Exception as e:
-                logger.warning(f"[CommunicationFactory] Error stopping old client: {str(e)}")
+                logger.warning(f"[CommunicationFactory] Error stopping client: {str(e)}")
 
         cls._client_cache = None
         logger.info("[CommunicationFactory] Client cache reset")
 
-    @classmethod
-    def get_supported_protocols(cls) -> list[str]:
-        """
-        获取支持的协议列表
-
-        Returns:
-            支持的协议列表
-        """
-        return ["control", "old"]
-
-
-def get_communication_client(protocol: Optional[str] = None) -> BaseCommunicationClient:
+def get_communication_client() -> BaseCommunicationClient:
     """
     获取通信客户端实例的便捷函数
-
-    Args:
-        protocol: 指定的协议类型，如果为None则使用配置文件中的设置
 
     Returns:
         通信客户端实例
     """
-    return CommunicationClientFactory.get_client(protocol)
+    return CommunicationClientFactory.get_client()
 
 
 __all__ = [
+    "APP_BRIDGES",
     "BaseCommunicationClient",
+    "COMMUNICATION_PROTOCOL",
     "CommunicationClientFactory",
     "get_communication_client",
-    "normalize_communication_protocol",
 ]

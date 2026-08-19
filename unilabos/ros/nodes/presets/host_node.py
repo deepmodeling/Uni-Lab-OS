@@ -56,7 +56,6 @@ from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNo
 from unilabos.ros.nodes.presets.controller_node import ControllerNode
 from unilabos.utils import logger
 from unilabos.utils.exception import DeviceClassInvalid
-from unilabos.utils.log import warning
 from unilabos.utils.type_check import serialize_result_info
 from unilabos.config.config import BasicConfig
 from unilabos.app.execution_adapter import execution_result_bridges
@@ -1350,8 +1349,6 @@ class HostNode(BaseROS2DeviceNode):
         """
         self.lab_logger().trace(f"[Host Node] Node info update request received: {request}")
         try:
-            from unilabos.app.web.client import http_client
-
             info = json.loads(request.command)
             if "SYNC_SLAVE_NODE_INFO" in info:
                 info = info["SYNC_SLAVE_NODE_INFO"]
@@ -1375,8 +1372,6 @@ class HostNode(BaseROS2DeviceNode):
                 devices_config = info.pop("devices_config")
                 registry_config = info.pop("registry_config")
                 if registry_config:
-                    http_client.resource_registry({"resources": registry_config})
-
                     # 存储 slave 的 registry_config,用于后续 SYNC_SLAVE_NODE_INFO 索引
                     for reg_name, reg_data in registry_config.items():
                         if isinstance(reg_data, dict) and "class" in reg_data:
@@ -1434,16 +1429,20 @@ class HostNode(BaseROS2DeviceNode):
             响应对象，包含查询到的资源
         """
         try:
-            from unilabos.app.web import http_client
-
             data = json.loads(request.command)
+            service = self._require_resource_service()
             if "uuid" in data and data["uuid"] is not None:
-                http_req = http_client.resource_tree_get([data["uuid"]], data["with_children"])
+                tree = service.get_resources_sync(
+                    [data["uuid"]], data["with_children"]
+                )
             elif "id" in data:
-                http_req = http_client.resource_get(data["id"], data["with_children"])
+                tree = service.get_resource_by_id_sync(
+                    data["id"], data["with_children"]
+                )
             else:
                 raise ValueError("没有使用正确的物料 id 或 uuid")
-            response.response = json.dumps(http_req["data"])
+            nodes = [node for group in tree.dump() for node in group]
+            response.response = json.dumps(nodes)
             return response
         except Exception as e:
             self.lab_logger().error(f"[Host Node-Resource] Error retrieving from bridge: {str(e)}")
@@ -1850,18 +1849,20 @@ class HostNode(BaseROS2DeviceNode):
             f"[discard_resource] 废弃物料 name={getattr(resource, 'name', '')} "
             f"barcode={barcode} uuid={res_uuid} device={edge_id}"
         )
-        from unilabos.app.web.client import http_client
-
-        res = http_client.material_bench_discard([res_uuid])
-        code = res.get("code") if isinstance(res, dict) else None
-        if code != 0:
-            raise ValueError(f"台面物料废弃失败：{res}")
-        # 云端销毁成功后，通知对应边缘设备本地移除（卸载父节点 + tracker 移除）
+        deleted = self._require_resource_service().delete_resources_sync(
+            edge_id,
+            self.resource_uuid,
+            [res_uuid],
+        )
+        if res_uuid not in deleted:
+            raise ValueError(f"微后端未确认物料废弃：{res_uuid}")
+        # 权威销毁成功后，通知对应边缘设备本地移除（卸载父节点 + tracker 移除）
         notified = self.notify_resource_tree_update(edge_id, "remove", [res_uuid])
         if notified is not True:
             self.lab_logger().warning(
-                f"[discard_resource] 云端已销毁 uuid={res_uuid}，但通知设备 {edge_id} 本地移除未成功"
-                f"（notified={notified}），边缘侧将于下次同步对齐"
+                f"[discard_resource] 微后端已销毁 uuid={res_uuid}，但通知设备 "
+                f"{edge_id} 本地移除未成功（notified={notified}），"
+                "边缘侧将于下次同步对齐"
             )
         return {"code": 0, "uuids": [res_uuid], "device_id": edge_id}
 

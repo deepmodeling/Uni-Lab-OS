@@ -13,8 +13,8 @@ __all__ = [
     "setup_web_pages",
     "setup_server",
     "start_server",
-    "http_client",
     "setup_api_routes",
+    "http_client",
 ]
 
 
@@ -27,14 +27,14 @@ def __getattr__(name: str) -> Any:
         from unilabos.app.web.server import setup_server, start_server
 
         value = {"setup_server": setup_server, "start_server": start_server}[name]
-    elif name == "http_client":
-        from unilabos.app.web.client import http_client
-
-        value = http_client
     elif name == "setup_api_routes":
         from unilabos.app.web.api import setup_api_routes
 
         value = setup_api_routes
+    elif name == "http_client":
+        from unilabos.legacy_support.http import get_legacy_http_client
+
+        return get_legacy_http_client()
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     globals()[name] = value

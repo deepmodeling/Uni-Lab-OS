@@ -10,12 +10,14 @@ from unilabos.utils import logger
 HOST_NODE_REGISTRY_NAME = "host_node"
 DEFAULT_HOST_NODE_NAME = HOST_NODE_REGISTRY_NAME
 _ROS_NODE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_REMOVED_CONFIG_FIELDS = {
+    "BasicConfig": frozenset({"app_bridges", "communication_protocol"}),
+}
 
 
 class BasicConfig:
     # 运行时 backend 名称由 unilabos.app.backend 统一规范化。
     backend: Literal["hostlink", "ros2"] = "ros2"
-    app_bridges: tuple[str, ...] = ("websocket", "fastapi")
     ak = ""
     sk = ""
     working_dir = ""
@@ -26,13 +28,10 @@ class BasicConfig:
     slave_no_host = False  # 是否跳过rclient.wait_for_service()
     # 可重命名的 HostNode 运行时实例；注册表类型仍固定为 host_node。
     host_node_name = "host_node"
-    upload_registry = False
     machine_name = "undefined"
     vis_2d_enable = False
     no_update_feedback = False
     enable_resource_load = True
-    # 后端线协议：control=WS 轻通知 + HTTP 正文；old=旧完整 WS payload。
-    communication_protocol: str = "control"
     startup_json_path = None  # 填写绝对路径
     disable_browser = False  # 只禁止浏览器自动打开，不停止管理端服务
     port = 8002  # 管理端 HTTP/Web API 与主微前端服务
@@ -147,6 +146,8 @@ def _update_config_from_module(module):
             if hasattr(module, name) and isinstance(getattr(module, name), type):
                 for attr in dir(getattr(module, name)):
                     if not attr.startswith("_"):
+                        if attr in _REMOVED_CONFIG_FIELDS.get(name, ()):
+                            continue
                         setattr(obj, attr, getattr(getattr(module, name), attr))
 
 

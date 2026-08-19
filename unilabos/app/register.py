@@ -20,62 +20,46 @@ def collect_devices_and_resources(
     return devices, resources
 
 
-def register_devices_and_resources(lab_registry, gather_only=False) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
-    """
-    注册设备和资源到服务器（仅支持HTTP）
-    """
+def register_devices_and_resources(
+    lab_registry: Any,
+    gather_only: bool = False,
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """收集注册表；legacy 模式可继续上传到原后端。"""
 
-    from unilabos.app.web.client import http_client
-
-    logger.info("[UniLab Register] 开始注册设备和资源...")
-
-    devices_to_register, resources_to_register = collect_devices_and_resources(
-        lab_registry
-    )
-
+    devices, resources = collect_devices_and_resources(lab_registry)
     if gather_only:
-        return devices_to_register, resources_to_register
+        return devices, resources
 
-    if devices_to_register:
-        try:
-            start_time = time.time()
-            response = http_client.resource_registry(
-                {"resources": list(devices_to_register.values())},
-                tag="device_registry",
-            )
-            cost_time = time.time() - start_time
-            res_data = response.json() if response.status_code == 200 else {}
-            skipped = res_data.get("data", {}).get("skipped", False)
-            if skipped:
-                logger.info(
-                    f"[UniLab Register] 设备注册跳过（内容未变化）"
-                    f" {len(devices_to_register)} 个 {cost_time:.3f}s"
-                )
-            elif response.status_code in [200, 201]:
-                logger.info(f"[UniLab Register] 成功注册 {len(devices_to_register)} 个设备 {cost_time:.3f}s")
-            else:
-                logger.error(f"[UniLab Register] 设备注册失败: {response.status_code}, {response.text} {cost_time:.3f}s")
-        except Exception as e:
-            logger.error(f"[UniLab Register] 设备注册异常: {e}")
+    from unilabos.legacy_support.http import get_legacy_http_client
 
-    if resources_to_register:
+    http_client = get_legacy_http_client()
+    for tag, values in (
+        ("device_registry", devices),
+        ("resource_registry", resources),
+    ):
+        if not values:
+            continue
+        started = time.time()
         try:
-            start_time = time.time()
             response = http_client.resource_registry(
-                {"resources": list(resources_to_register.values())},
-                tag="resource_registry",
+                {"resources": list(values.values())},
+                tag=tag,
             )
-            cost_time = time.time() - start_time
-            res_data = response.json() if response.status_code == 200 else {}
-            skipped = res_data.get("data", {}).get("skipped", False)
-            if skipped:
+            elapsed = time.time() - started
+            if response.status_code in {200, 201}:
                 logger.info(
-                    f"[UniLab Register] 资源注册跳过（内容未变化）"
-                    f" {len(resources_to_register)} 个 {cost_time:.3f}s"
+                    "[UniLab Register] %s 上传完成：%s 个，%.3fs",
+                    tag,
+                    len(values),
+                    elapsed,
                 )
-            elif response.status_code in [200, 201]:
-                logger.info(f"[UniLab Register] 成功注册 {len(resources_to_register)} 个资源 {cost_time:.3f}s")
             else:
-                logger.error(f"[UniLab Register] 资源注册失败: {response.status_code}, {response.text} {cost_time:.3f}s")
-        except Exception as e:
-            logger.error(f"[UniLab Register] 资源注册异常: {e}")
+                logger.error(
+                    "[UniLab Register] %s 上传失败：%s %s",
+                    tag,
+                    response.status_code,
+                    response.text,
+                )
+        except Exception as exc:
+            logger.error("[UniLab Register] %s 上传异常：%s", tag, exc)
+    return None

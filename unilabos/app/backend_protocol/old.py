@@ -1,10 +1,7 @@
-"""旧后端完整 WebSocket payload 协议的显式入口。"""
+"""旧导入路径；实现已迁入 unilabos.legacy_support.websocket。"""
 
-from unilabos.app.ws_client import WebSocketClient
+from unilabos.legacy_support.websocket import LegacyWebSocketClient
 
-
-class OldBackendProtocolClient(WebSocketClient):
-    """仅用于连接旧后端；保留其完整 WS 命令与状态上报语义。"""
-
+OldBackendProtocolClient = LegacyWebSocketClient
 
 __all__ = ["OldBackendProtocolClient"]

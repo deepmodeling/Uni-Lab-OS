@@ -62,8 +62,9 @@ def upload_workflow(
     Returns:
         Dict: API响应数据
     """
-    # 延迟导入，避免在配置文件加载之前初始化 http_client
-    from unilabos.app.web import http_client
+    from unilabos.legacy_support.http import get_legacy_http_client
+
+    http_client = get_legacy_http_client()
 
     if not os.path.exists(workflow_file):
         print_status(f"工作流文件不存在: {workflow_file}", "error")
@@ -109,8 +110,7 @@ def upload_workflow(
     print_status(f"  - 描述: {description[:50]}{'...' if len(description) > 50 else ''}", "info")
     print_status(f"  - 发布状态: {published}", "info")
 
-    # 调用 http_client 上传
-    result = http_client.workflow_import(
+    data = http_client.workflow_import(
         name=final_name,
         workflow_uuid=workflow_uuid_val,
         workflow_name=final_name,
@@ -120,16 +120,15 @@ def upload_workflow(
         published=published,
         description=description,
     )
-
-    if result.get("code") == 0:
-        data = result.get("data", {})
-        print_status(f"工作流上传成功！{data}", "success")
-        print_status(f"  - UUID: {data.get('uuid', 'N/A')}", "info")
-        print_status(f"  - 名称: {data.get('name', 'N/A')}", "info")
+    if str(data.get("code", 0)) == "0":
+        detail = data.get("data", {}) if isinstance(data, dict) else {}
+        print_status(f"工作流上传成功！{detail}", "success")
+        if isinstance(detail, dict):
+            print_status(f"  - UUID: {detail.get('uuid', 'N/A')}", "info")
+            print_status(f"  - 名称: {detail.get('name', 'N/A')}", "info")
     else:
-        print_status(f"工作流上传失败: {result.get('message', '未知错误')}", "error")
-
-    return result
+        print_status(f"工作流上传失败：{data}", "error")
+    return data
 
 
 __all__ = ["upload_workflow"]

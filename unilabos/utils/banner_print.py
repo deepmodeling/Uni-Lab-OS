@@ -124,11 +124,6 @@ def print_config(args_dict: Dict[str, Any]) -> None:
         config_info += f"{Colors.CYAN}• Backend:{Colors.RESET} "
         config_info += f"{Colors.WHITE}{args_dict['backend']}{Colors.RESET}\n"
 
-    # 桥接信息
-    if "app_bridges" in args_dict:
-        config_info += f"{Colors.CYAN}• Bridges:{Colors.RESET} "
-        config_info += f"{Colors.WHITE}{', '.join(args_dict['app_bridges'])}{Colors.RESET}\n"
-
     # 主机模式
     if "without_host" in args_dict:
         mode = "Slave" if args_dict["without_host"] else "Master"

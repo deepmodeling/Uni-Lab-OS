@@ -18,10 +18,11 @@ from unilabos.app.backend import (
     resolve_backend_selection,
     start_backend,
 )
-from unilabos.app.main import configure_server_databases, parse_args
+from unilabos.app.main import parse_args
 from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink import main_hostlink_run
+from unilabos.server.startup import resolve_database_paths
 
 
 def test_only_public_communication_backends_are_selectable() -> None:
@@ -53,32 +54,13 @@ def test_automancer_placeholder_is_not_selectable() -> None:
         normalize_backend_name("automancer")
 
 
-def test_backend_specific_bridge_defaults() -> None:
-    assert resolve_backend_selection("ros2").app_bridges == (
-        "websocket",
-        "fastapi",
-    )
-    assert resolve_backend_selection("hostlink").app_bridges == (
-        "websocket",
-        "fastapi",
-    )
-    assert resolve_backend_selection(
-        "hostlink",
-        is_slave=True,
-    ).app_bridges == ()
+def test_backend_selection_has_no_application_bridge_configuration() -> None:
+    assert resolve_backend_selection("ros2").name == "ros2"
+    assert resolve_backend_selection("hostlink", is_slave=True).name == "hostlink"
+    assert not hasattr(resolve_backend_selection("ros2"), "app_bridges")
 
 
 def test_backend_capability_validation() -> None:
-    assert resolve_backend_selection(
-        "hostlink",
-        ["websocket"],
-    ).app_bridges == ("websocket",)
-    with pytest.raises(BackendConfigurationError, match="Slave 不启动"):
-        resolve_backend_selection(
-            "hostlink",
-            ["websocket"],
-            is_slave=True,
-        )
     with pytest.raises(BackendConfigurationError, match="不支持 --visual"):
         resolve_backend_selection("hostlink", visual="rviz")
     assert resolve_backend_selection("hostlink", is_slave=True).name == "hostlink"
@@ -164,7 +146,7 @@ def test_server_database_cli_resolves_only_the_four_new_files(tmp_path) -> None:
         ]
     )
 
-    paths = configure_server_databases(vars(parsed), working_dir=tmp_path)
+    paths = resolve_database_paths(vars(parsed), working_dir=tmp_path)
 
     assert paths.runtime_db == (tmp_path / "control.db").resolve()
     assert {path.name for path in paths.as_mapping().values()} == {

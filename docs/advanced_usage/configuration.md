@@ -125,7 +125,7 @@ class ROSConfig:
 | HostNode 地址     | `--host-node-ip`    | **组网目标**：Slave 按部署指定 Host IP |
 | ROS2 domain       | `--ros-domain-id`   | **网络隔离**：由 Host 统一发布给 Slave |
 | `slave_no_host`   | `--slave_no_host`   | **运行模式**：从站特殊配置，按需使用 |
-| 旧 Backend 兼容  | `--legacy`          | **兼容模式**：启用旧 WS 和旧 HTTP API |
+| 旧 Backend 兼容  | `--legacy`          | **已废弃**：启用旧 WS/HTTP；2026-12-01 移除 |
 | 注册表上报        | `--upload_registry` | **旧 HTTP 操作**：仅与 `--legacy` 同时使用 |
 | `vis_2d_enable`   | `--2d_vis`          | **调试功能**：按需临时启用           |
 | `remote_addr`     | `--addr`            | **环境切换**：测试/生产环境快速切换  |

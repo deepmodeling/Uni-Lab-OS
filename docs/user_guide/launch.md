@@ -18,7 +18,7 @@ options:
   --backend {hostlink,ros2}
                         Communication backend: hostlink (distributed, no DDS) or
                         ros2 (default).
-  --legacy              兼容旧 Backend 的完整载荷 WebSocket 与旧 HTTP API
+  --legacy              兼容旧 Backend 的完整载荷 WebSocket 与旧 HTTP API；2026-12 移除
   --is_slave, --is-slave
                         Run the backend as slave node (without host privileges).
   --slave_no_host, --slave-no-host
@@ -26,7 +26,7 @@ options:
   --upload_registry     通过旧 Backend HTTP API 上报注册表（需要 --legacy）
   --config CONFIG       Configuration file path, supports .py format Python config files
   --port_management PORT_MANAGEMENT, --port-management PORT_MANAGEMENT, --port PORT_MANAGEMENT
-                        管理端 HTTP/Web API 与主微前端端口，默认 8002
+                        微后端 HTTP API 与前端导航页端口，默认 8002
   --disable_browser, --disable-browser
                         只禁止自动打开浏览器，管理端服务仍会启动
   --2d_vis              Enable 2D visualization when starting pylabrobot instance
@@ -169,7 +169,8 @@ unilab -g graph.json --backend ros2
 Host 的端云传输固定使用 WebSocket：正常模式只发送轻量变更通知，正文通过 HTTP
 拉取。Host 本地微后端 HTTP API 固定启动，不再作为可选 bridge。连接仍使用完整
 WebSocket payload 和 `/lab/*` 等旧 HTTP API 的旧 Backend 时，显式增加
-`--legacy`；配置文件不再保存协议或 bridge 选择。
+`--legacy`；配置文件不再保存协议或 bridge 选择。`--legacy` 已废弃，计划在
+2026-12-01 删除。
 
 ## 分布式组网
 
@@ -195,7 +196,7 @@ HostLink 可以加载 `std_msgs`、`geometry_msgs`、`unilabos_msgs` 等 ROS mes
 推荐由 Host 统一发布 ROS2 domain，Slave 只指定 Host IP：
 
 ```bash
-# Host：8002 是管理 Web/API 和主微前端端口，7302 是 HostLink TCP
+# Host：8002 是微后端 HTTP API 和前端导航页端口，7302 是 HostLink TCP
 unilab -g host.json --port-management 8002 \
   --hostlink-port 7302 --ros-domain-id 42
 
@@ -207,7 +208,7 @@ unilab -g slave.json --is-slave \
 主要组网参数：
 
 - `--host-node-ip`：Slave 指定 Host IP/主机名。
-- `--port-management` / `--port_management`：管理端 HTTP/Web API 和主微前端端口，默认 `8002`；`--port` 是兼容缩写。
+- `--port-management` / `--port_management`：微后端 HTTP API 和前端导航页端口，默认 `8002`；`--port` 是兼容缩写。
 - `--disable-browser` / `--disable_browser`：只禁止启动时自动打开浏览器，不会停止管理端口。
 - `--hostlink-port`：HostLink TCP 端口，默认 `7302`，与管理端口独立。
 - `--hostlink-bind` / `--hostlink-advertise-ip`：Host 监听地址与多网卡发布地址。
@@ -220,8 +221,9 @@ unilab -g slave.json --is-slave \
 `--host-node-ip`。当前该 backend 不启动 `8002` 管理端或微前端；`7302` 只供
 Host/Slave 进程通信。需要 Web/API 时仍使用 `ros2` backend。
 
-浏览器和主微前端访问管理端口（默认 `8002`），不会访问 HostLink 的 `7302`。
-即使使用 `--disable-browser`，前端仍可手动访问 `http://<节点 IP>:8002`。
+浏览器和外部微前端访问 HTTP API 端口（默认 `8002`），不会访问 HostLink 的
+`7302`。即使使用 `--disable-browser`，仍可手动访问 `http://<节点 IP>:8002/`
+选择 API 工具或已登记的 GitHub Pages 前端。
 
 ## 可视化选项
 

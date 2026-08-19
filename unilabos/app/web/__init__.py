@@ -10,27 +10,17 @@ from __future__ import annotations
 from typing import Any
 
 __all__ = [
-    "setup_web_pages",
     "setup_server",
     "start_server",
-    "setup_api_routes",
     "http_client",
 ]
 
 
 def __getattr__(name: str) -> Any:
-    if name == "setup_web_pages":
-        from unilabos.app.web.pages import setup_web_pages
-
-        value = setup_web_pages
-    elif name in {"setup_server", "start_server"}:
+    if name in {"setup_server", "start_server"}:
         from unilabos.app.web.server import setup_server, start_server
 
         value = {"setup_server": setup_server, "start_server": start_server}[name]
-    elif name == "setup_api_routes":
-        from unilabos.app.web.api import setup_api_routes
-
-        value = setup_api_routes
     elif name == "http_client":
         from unilabos.legacy_support.http import get_legacy_http_client
 

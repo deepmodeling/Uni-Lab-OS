@@ -7,27 +7,42 @@ Web服务器模块
 import webbrowser
 
 from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
 from unilabos.utils.tracing import install_http_tracing
-from unilabos.app.web.api import setup_api_routes
-from unilabos.app.web.pages import setup_web_pages
+
+AWESOME_FRONTENDS = (
+    {
+        "name": "OpenAPI Explorer",
+        "url": "/api/docs",
+        "description": "在浏览器中查看并调用当前微后端 API。",
+    },
+    {
+        "name": "ReDoc",
+        "url": "/api/redoc",
+        "description": "适合阅读完整 HTTP 契约的只读 API 文档。",
+    },
+    {
+        "name": "Uni-Lab OS Documentation",
+        "url": "https://deepmodeling.github.io/Uni-Lab-OS/",
+        "description": "GitHub Pages 上的官方接入、设备和部署文档。",
+    },
+)
 
 # 创建FastAPI应用
 app = FastAPI(
-    title="UniLab API",
-    description="UniLab API Service",
+    title="UniLab Microbackend API",
+    description="Backend-only API service for Uni-Lab frontends and schedulers.",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
 )
 install_http_tracing(app)
 
-# 创建页面路由
-pages = None
 edge_routes_mounted = False
 materials_routes_mounted = False
 server_routes_mounted = False
@@ -72,6 +87,46 @@ async def log_requests(request: Request, call_next) -> Response:
     return response
 
 
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def frontend_catalog() -> str:
+    """无内置前端；仅提供可连接当前微后端的入口导航。"""
+
+    cards = "".join(
+        (
+            '<a class="card" href="{url}" target="_blank" rel="noreferrer">'
+            '<strong>{name}</strong><span>{description}</span>'
+            '<code>{url}</code></a>'
+        ).format(**item)
+        for item in AWESOME_FRONTENDS
+    )
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UniLab Microbackend</title>
+  <style>
+    body {{ margin: 0; font: 16px/1.55 system-ui, sans-serif; color: #18212f; background: #f6f8fb; }}
+    main {{ max-width: 760px; margin: 10vh auto; padding: 0 24px; }}
+    h1 {{ margin-bottom: 8px; }}
+    p {{ color: #526173; }}
+    .grid {{ display: grid; gap: 14px; margin-top: 28px; }}
+    .card {{ display: grid; gap: 5px; padding: 18px; color: inherit; text-decoration: none;
+      background: white; border: 1px solid #dce3ec; border-radius: 10px; }}
+    .card:hover {{ border-color: #4c78ff; box-shadow: 0 5px 18px #25385816; }}
+    .card span {{ color: #526173; }}
+    code {{ color: #3157c8; overflow-wrap: anywhere; }}
+  </style>
+</head>
+<body><main>
+  <h1>UniLab Microbackend</h1>
+  <p>此进程只提供后端能力，不再内置状态页或工作流前端。请选择 API 工具，
+  或从 GitHub Pages 部署的社区前端连接当前地址。</p>
+  <section class="grid">{cards}</section>
+</main></body>
+</html>"""
+
+
 def setup_server() -> FastAPI:
     """
     设置服务器
@@ -79,14 +134,7 @@ def setup_server() -> FastAPI:
     Returns:
         FastAPI: 配置好的FastAPI应用实例
     """
-    global pages, edge_routes_mounted, materials_routes_mounted, server_routes_mounted
-
-    # 创建页面路由
-    if pages is None:
-        pages = app.router
-
-    # 设置API路由
-    setup_api_routes(app)
+    global edge_routes_mounted, materials_routes_mounted, server_routes_mounted
 
     # Scheduler 路由只暴露微后端执行观测面；本地不创建 Workflow/DAG 权威。
     if not edge_routes_mounted:
@@ -113,12 +161,18 @@ def setup_server() -> FastAPI:
         try:
             from unilabos.server.api import install_server_apis
             from unilabos.server.composition import get_server_services
+            from unilabos.server.scheduler.integration import get_materials_service
 
             services = get_server_services()
             if services is not None:
-                install_server_apis(app, services)
+                include_materials = get_materials_service() is not None
+                install_server_apis(
+                    app,
+                    services,
+                    include_materials=include_materials,
+                )
                 server_routes_mounted = True
-                materials_routes_mounted = True
+                materials_routes_mounted = include_materials
         except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
             error(f"[Web] 挂载微后端四库 API 失败: {exc}")
 
@@ -134,15 +188,6 @@ def setup_server() -> FastAPI:
                 materials_routes_mounted = True
         except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
             error(f"[Web] 挂载 Materials Provider 失败: {exc}")
-
-    # 设置页面路由
-    try:
-        setup_web_pages(pages)
-        # info("[Web] 已加载Web UI模块")
-    except ImportError as e:
-        info(f"[Web] 未找到Web页面模块: {str(e)}")
-    except Exception as e:
-        error(f"[Web] 加载Web页面模块时出错: {str(e)}")
 
     return app
 
@@ -172,7 +217,7 @@ def start_server(host: str = "0.0.0.0", port: int = 8002, open_browser: bool = T
     # 启动前打开浏览器
     if open_browser:
         # noinspection HttpUrlsUsage
-        url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/status"
+        url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/"
         info(f"[Web] 正在打开浏览器访问: {url}")
         try:
             webbrowser.open(url)

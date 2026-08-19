@@ -28,3 +28,17 @@ def test_install_server_apis_mounts_all_database_namespaces(tmp_path) -> None:
             assert client.get("/api/v1/history/events/missing").status_code == 404
     finally:
         services.close()
+
+
+def test_install_server_apis_can_exclude_local_materials_authority(tmp_path) -> None:
+    services = ServerServices.open(ServerDatabasePaths.resolve(tmp_path))
+    app = FastAPI()
+    install_server_apis(app, services, include_materials=False)
+    try:
+        paths = set(app.openapi()["paths"])
+        assert any(path.startswith("/api/v1/runtime/") for path in paths)
+        assert not any(path.startswith("/api/v1/materials/") for path in paths)
+        assert any(path.startswith("/api/v1/telemetry/") for path in paths)
+        assert any(path.startswith("/api/v1/history/") for path in paths)
+    finally:
+        services.close()

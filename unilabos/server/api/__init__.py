@@ -12,11 +12,21 @@ from unilabos.server.api.telemetry import (
 from unilabos.server.composition import ServerServices
 
 
-def install_server_apis(app: FastAPI, services: ServerServices) -> None:
-    """一次安装四个独立数据库的业务 API。"""
+def install_server_apis(
+    app: FastAPI,
+    services: ServerServices,
+    *,
+    include_materials: bool = True,
+) -> None:
+    """安装进程持有的数据库 API。
+
+    外部微后端作为物料权威时，本进程仍会打开四库组合供 runtime 等服务使用，
+    但不得暴露本地 materials writer，避免出现第二个可写物料中心。
+    """
 
     install_runtime_api(app, services.runtime)
-    install_materials_api(app, services.materials)
+    if include_materials:
+        install_materials_api(app, services.materials)
     install_telemetry_api(app, services.telemetry)
     install_history_api(app, services.history)
 

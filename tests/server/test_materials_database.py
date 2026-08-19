@@ -11,6 +11,8 @@ from unilabos.server.database.materials import MATERIALS_DATABASE
 from unilabos.server.database.schema import initialize_database
 from unilabos.server.models.materials import (
     InventoryReservationRecord,
+    MaterialDataRecord,
+    MaterialSubstanceRecord,
     ResourceTemplateRecord,
     SiteRecord,
 )
@@ -115,7 +117,7 @@ def test_resource_template_fields_are_one_model_and_one_row(tmp_path) -> None:
         connection.close()
 
 
-def test_material_pose_and_state_are_fields_of_material(tmp_path) -> None:
+def test_material_position_data_and_substances_are_separate_records(tmp_path) -> None:
     connection = _open(tmp_path)
     try:
         with connection:
@@ -123,26 +125,114 @@ def test_material_pose_and_state_are_fields_of_material(tmp_path) -> None:
             _insert_material(connection, "material", "tpl")
             connection.execute(
                 """
-                UPDATE material
-                SET pose_json='{"position":{"x":1}}',
-                    data_json='{"temperature":25}',
-                    liquids_json='[["water",100,"ul"]]',
-                    sites_initialized=1,state_status='ready',state_hash='hash',
+                UPDATE material_position
+                SET position_x=1,position_y=2,position_z=3,rotation_z=90,
+                    updated_at_ms=2,version=2
+                WHERE material_uuid='material'
+                """
+            )
+            connection.execute(
+                """
+                UPDATE material_data
+                SET data_json='{"temperature":25}',sites_initialized=1,
+                    state_status='ready',content_version=2,state_hash='hash',
                     source_event_uuid='event-1',observed_at_ms=2,
                     updated_at_ms=2,version=2
                 WHERE material_uuid='material'
                 """
             )
+            connection.executemany(
+                """
+                INSERT INTO material_substance(
+                    substance_uuid,material_uuid,ordinal,name,quantity,
+                    quantity_unit,physical_state,composition_json,
+                    content_version,observed_at_ms,updated_at_ms
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    (
+                        "water",
+                        "material",
+                        0,
+                        "water",
+                        100.0,
+                        "ul",
+                        "liquid",
+                        "[]",
+                        2,
+                        2,
+                        2,
+                    ),
+                    (
+                        "salt",
+                        "material",
+                        1,
+                        "NaCl",
+                        5.0,
+                        "ug",
+                        "solid",
+                        '[{"name":"NaCl","ratio":1}]',
+                        2,
+                        2,
+                        2,
+                    ),
+                ),
+            )
 
-        row = connection.execute(
+        position = connection.execute(
             """
-            SELECT json_extract(pose_json,'$.position.x'),
-                   json_extract(data_json,'$.temperature'),
-                   sites_initialized,source_event_uuid
-            FROM material WHERE material_uuid='material'
+            SELECT position_x,position_y,position_z,rotation_z
+            FROM material_position WHERE material_uuid='material'
             """
         ).fetchone()
-        assert tuple(row) == (1, 25, 1, "event-1")
+        data = connection.execute(
+            """
+            SELECT json_extract(data_json,'$.temperature'),sites_initialized,
+                   content_version,source_event_uuid
+            FROM material_data WHERE material_uuid='material'
+            """
+        ).fetchone()
+        substances = [
+            tuple(row)
+            for row in connection.execute(
+                """
+                SELECT name,quantity,quantity_unit,physical_state
+                FROM material_substance
+                WHERE material_uuid='material' ORDER BY ordinal
+                """
+            )
+        ]
+
+        assert tuple(position) == (1.0, 2.0, 3.0, 90.0)
+        assert tuple(data) == (25, 1, 2, "event-1")
+        assert substances == [
+            ("water", 100.0, "ul", "liquid"),
+            ("NaCl", 5.0, "ug", "solid"),
+        ]
+
+        current = MaterialDataRecord(
+            material_uuid="material",
+            data_json={"temperature": 25},
+            substances=[
+                MaterialSubstanceRecord(
+                    substance_uuid="water",
+                    material_uuid="material",
+                    ordinal=0,
+                    name="water",
+                    quantity=100,
+                    quantity_unit="ul",
+                    content_version=2,
+                    observed_at_ms=2,
+                    updated_at_ms=2,
+                )
+            ],
+            content_version=2,
+            updated_at_ms=2,
+        )
+        assert [
+            (item.name, item.quantity, item.quantity_unit)
+            for item in current.substances
+        ] == [("water", 100.0, "ul")]
     finally:
         connection.close()
 
@@ -347,5 +437,23 @@ def test_material_models_reject_ambiguous_shapes() -> None:
             items=[],
             status="active",
             created_at_ms=1,
+            updated_at_ms=1,
+        )
+
+    substance = MaterialSubstanceRecord(
+        substance_uuid="water",
+        material_uuid="other-material",
+        ordinal=0,
+        name="water",
+        quantity=1,
+        quantity_unit="ul",
+        content_version=1,
+        observed_at_ms=1,
+        updated_at_ms=1,
+    )
+    with pytest.raises(ValidationError, match="must match MaterialData owner"):
+        MaterialDataRecord(
+            material_uuid="material",
+            substances=[substance],
             updated_at_ms=1,
         )

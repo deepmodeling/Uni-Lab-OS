@@ -114,36 +114,15 @@ MATERIALS_TABLES = (
                 json_valid(model_json) AND json_type(model_json) = 'object'
             ),
             icon_uri TEXT NOT NULL DEFAULT '',
-            pose_json TEXT NOT NULL DEFAULT '{}' CHECK (
-                json_valid(pose_json) AND json_type(pose_json) = 'object'
-            ),
             config_json TEXT NOT NULL DEFAULT '{}' CHECK (
                 json_valid(config_json) AND json_type(config_json) = 'object'
             ),
-            data_json TEXT NOT NULL DEFAULT '{}' CHECK (
-                json_valid(data_json) AND json_type(data_json) = 'object'
-            ),
-            liquids_json TEXT CHECK (
-                liquids_json IS NULL OR (
-                    json_valid(liquids_json) AND json_type(liquids_json) = 'array'
-                )
-            ),
-            sites_initialized INTEGER NOT NULL DEFAULT 0
-                CHECK (sites_initialized IN (0,1)),
-            unknown_counter INTEGER CHECK (unknown_counter >= 0),
             extra_json TEXT NOT NULL DEFAULT '{}' CHECK (
                 json_valid(extra_json) AND json_type(extra_json) = 'object'
             ),
             meta_data_json TEXT NOT NULL DEFAULT '{}' CHECK (
                 json_valid(meta_data_json) AND json_type(meta_data_json) = 'object'
             ),
-            state_status TEXT NOT NULL DEFAULT 'created'
-                CHECK (TRIM(state_status) <> ''),
-            state_hash TEXT NOT NULL DEFAULT '',
-            source_event_uuid TEXT,
-            source_job_uuid TEXT,
-            source_command_uuid TEXT,
-            observed_at_ms INTEGER NOT NULL DEFAULT 0 CHECK (observed_at_ms >= 0),
             lifecycle_status TEXT NOT NULL CHECK (lifecycle_status IN (
                 'active','reserved','in_use','quarantined','consumed','retired'
             )),
@@ -189,6 +168,121 @@ MATERIALS_TABLES = (
                 SELECT RAISE(ABORT, 'material tree cycle')
                 WHERE NEW.parent_material_uuid IN descendants;
             END
+            """,
+        ),
+    ),
+    TableSpec(
+        "material_position",
+        """
+        CREATE TABLE IF NOT EXISTS material_position (
+            material_uuid TEXT PRIMARY KEY,
+            size_depth REAL NOT NULL DEFAULT 0 CHECK (size_depth >= 0),
+            size_width REAL NOT NULL DEFAULT 0 CHECK (size_width >= 0),
+            size_height REAL NOT NULL DEFAULT 0 CHECK (size_height >= 0),
+            scale_x REAL NOT NULL DEFAULT 0,
+            scale_y REAL NOT NULL DEFAULT 0,
+            scale_z REAL NOT NULL DEFAULT 0,
+            layout TEXT NOT NULL DEFAULT 'x-y' CHECK (
+                layout IN ('2d','x-y','z-y','x-z')
+            ),
+            position_x REAL,
+            position_y REAL,
+            position_z REAL,
+            position3d_x REAL NOT NULL DEFAULT 0,
+            position3d_y REAL NOT NULL DEFAULT 0,
+            position3d_z REAL NOT NULL DEFAULT 0,
+            rotation_x REAL NOT NULL DEFAULT 0,
+            rotation_y REAL NOT NULL DEFAULT 0,
+            rotation_z REAL NOT NULL DEFAULT 0,
+            cross_section_type TEXT NOT NULL DEFAULT 'rectangle' CHECK (
+                cross_section_type IN ('rectangle','circle','rounded_rectangle')
+            ),
+            extra_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(extra_json) AND json_type(extra_json) = 'object'
+            ),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+            CHECK (
+                (position_x IS NULL AND position_y IS NULL AND position_z IS NULL)
+                OR (position_x IS NOT NULL AND position_y IS NOT NULL
+                    AND position_z IS NOT NULL)
+            ),
+            FOREIGN KEY(material_uuid) REFERENCES material(material_uuid)
+                ON DELETE CASCADE
+        )
+        """,
+    ),
+    TableSpec(
+        "material_data",
+        """
+        CREATE TABLE IF NOT EXISTS material_data (
+            material_uuid TEXT PRIMARY KEY,
+            data_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(data_json) AND json_type(data_json) = 'object'
+            ),
+            sites_initialized INTEGER NOT NULL DEFAULT 0
+                CHECK (sites_initialized IN (0,1)),
+            unknown_counter INTEGER CHECK (unknown_counter >= 0),
+            state_status TEXT NOT NULL DEFAULT 'created'
+                CHECK (TRIM(state_status) <> ''),
+            content_version INTEGER NOT NULL DEFAULT 1 CHECK (content_version > 0),
+            state_hash TEXT NOT NULL DEFAULT '',
+            source_event_uuid TEXT,
+            source_job_uuid TEXT,
+            source_command_uuid TEXT,
+            observed_at_ms INTEGER NOT NULL DEFAULT 0 CHECK (observed_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+            FOREIGN KEY(material_uuid) REFERENCES material(material_uuid)
+                ON DELETE CASCADE
+        )
+        """,
+        (
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_material_initialize_children
+            AFTER INSERT ON material
+            BEGIN
+                INSERT INTO material_position(material_uuid, updated_at_ms)
+                VALUES (NEW.material_uuid, NEW.created_at_ms);
+                INSERT INTO material_data(material_uuid, updated_at_ms)
+                VALUES (NEW.material_uuid, NEW.created_at_ms);
+            END
+            """,
+        ),
+    ),
+    TableSpec(
+        "material_substance",
+        """
+        CREATE TABLE IF NOT EXISTS material_substance (
+            substance_uuid TEXT PRIMARY KEY CHECK (TRIM(substance_uuid) <> ''),
+            material_uuid TEXT NOT NULL,
+            ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+            name TEXT NOT NULL CHECK (TRIM(name) <> ''),
+            quantity REAL NOT NULL CHECK (quantity >= 0),
+            quantity_unit TEXT NOT NULL CHECK (TRIM(quantity_unit) <> ''),
+            physical_state TEXT NOT NULL DEFAULT 'liquid' CHECK (
+                physical_state IN ('liquid','solid','gas','unknown')
+            ),
+            composition_json TEXT NOT NULL DEFAULT '[]' CHECK (
+                json_valid(composition_json)
+                AND json_type(composition_json) = 'array'
+            ),
+            meta_data_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(meta_data_json) AND json_type(meta_data_json) = 'object'
+            ),
+            content_version INTEGER NOT NULL CHECK (content_version > 0),
+            observed_at_ms INTEGER NOT NULL CHECK (observed_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= observed_at_ms),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+            UNIQUE(material_uuid, ordinal),
+            FOREIGN KEY(material_uuid) REFERENCES material_data(material_uuid)
+                ON DELETE CASCADE
+        )
+        """,
+        (
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_substance_name
+            ON material_substance(LOWER(name), quantity_unit, material_uuid)
             """,
         ),
     ),

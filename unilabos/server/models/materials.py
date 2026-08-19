@@ -118,7 +118,7 @@ class InventoryLotRecord(ServerObject):
 
 
 class MaterialRecord(ServerObject):
-    """一行对应一个完整 ResourceDict 当前快照。"""
+    """Material 身份和低频静态字段；位置与动态内容使用独立模型。"""
 
     material_uuid: NonEmptyStr
     resource_id: NonEmptyStr
@@ -136,20 +136,9 @@ class MaterialRecord(ServerObject):
     resource_schema_json: JsonObject = Field(default_factory=dict)
     model_json: JsonObject = Field(default_factory=dict)
     icon_uri: str = ""
-    pose: JsonObject = Field(default_factory=dict)
     config_json: JsonObject = Field(default_factory=dict)
-    data_json: JsonObject = Field(default_factory=dict)
-    liquids: Optional[List[JsonValue]] = None
-    sites_initialized: bool = False
-    unknown_counter: Optional[int] = Field(default=None, ge=0)
     extra_json: JsonObject = Field(default_factory=dict)
     meta_data_json: JsonObject = Field(default_factory=dict)
-    state_status: NonEmptyStr = "created"
-    state_hash: str = ""
-    source_event_uuid: Optional[NonEmptyStr] = None
-    source_job_uuid: Optional[NonEmptyStr] = None
-    source_command_uuid: Optional[NonEmptyStr] = None
-    observed_at_ms: UnixMilliseconds = 0
     lifecycle_status: Literal[
         "active", "reserved", "in_use", "quarantined", "consumed", "retired"
     ]
@@ -164,6 +153,98 @@ class MaterialRecord(ServerObject):
             raise ValueError("material cannot be its own parent")
         if self.updated_at_ms < self.created_at_ms:
             raise ValueError("updated_at_ms cannot precede created_at_ms")
+        return self
+
+
+class MaterialPositionRecord(ServerObject):
+    """ResourceDictPosition 的独立 1:1 存储模型。"""
+
+    material_uuid: NonEmptyStr
+    size_depth: float = Field(default=0, ge=0)
+    size_width: float = Field(default=0, ge=0)
+    size_height: float = Field(default=0, ge=0)
+    scale_x: float = 0
+    scale_y: float = 0
+    scale_z: float = 0
+    layout: Literal["2d", "x-y", "z-y", "x-z"] = "x-y"
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+    position_z: Optional[float] = None
+    position3d_x: float = 0
+    position3d_y: float = 0
+    position3d_z: float = 0
+    rotation_x: float = 0
+    rotation_y: float = 0
+    rotation_z: float = 0
+    cross_section_type: Literal["rectangle", "circle", "rounded_rectangle"] = (
+        "rectangle"
+    )
+    extra_json: JsonObject = Field(default_factory=dict)
+    updated_at_ms: UnixMilliseconds
+    version: PositiveVersion = 1
+
+    @model_validator(mode="after")
+    def _validate_position(self) -> "MaterialPositionRecord":
+        values = (self.position_x, self.position_y, self.position_z)
+        if any(value is None for value in values) and any(
+            value is not None for value in values
+        ):
+            raise ValueError("position_x/y/z must be all null or all set")
+        return self
+
+
+class MaterialSubstanceRecord(ServerObject):
+    """MaterialData 下的一份 current substance。
+
+    ``name/quantity/quantity_unit`` 与 canonical ``LiquidStateEntry`` 三元组直接对应。
+    """
+
+    substance_uuid: NonEmptyStr
+    material_uuid: NonEmptyStr
+    ordinal: int = Field(ge=0)
+    name: NonEmptyStr
+    quantity: float = Field(ge=0)
+    quantity_unit: NonEmptyStr
+    physical_state: Literal["liquid", "solid", "gas", "unknown"] = "liquid"
+    composition: List[JsonValue] = Field(default_factory=list)
+    meta_data_json: JsonObject = Field(default_factory=dict)
+    content_version: PositiveVersion
+    observed_at_ms: UnixMilliseconds
+    updated_at_ms: UnixMilliseconds
+    version: PositiveVersion = 1
+
+    @model_validator(mode="after")
+    def _validate_timestamps(self) -> "MaterialSubstanceRecord":
+        if self.updated_at_ms < self.observed_at_ms:
+            raise ValueError("updated_at_ms cannot precede observed_at_ms")
+        return self
+
+
+class MaterialDataRecord(ServerObject):
+    """Material 的杂项动态 data 以及 hydration 后的 substances。"""
+
+    material_uuid: NonEmptyStr
+    data_json: JsonObject = Field(default_factory=dict)
+    substances: List[MaterialSubstanceRecord] = Field(default_factory=list)
+    sites_initialized: bool = False
+    unknown_counter: Optional[int] = Field(default=None, ge=0)
+    state_status: NonEmptyStr = "created"
+    content_version: PositiveVersion = 1
+    state_hash: str = ""
+    source_event_uuid: Optional[NonEmptyStr] = None
+    source_job_uuid: Optional[NonEmptyStr] = None
+    source_command_uuid: Optional[NonEmptyStr] = None
+    observed_at_ms: UnixMilliseconds = 0
+    updated_at_ms: UnixMilliseconds
+    version: PositiveVersion = 1
+
+    @model_validator(mode="after")
+    def _validate_substances(self) -> "MaterialDataRecord":
+        if any(item.material_uuid != self.material_uuid for item in self.substances):
+            raise ValueError("substance material_uuid must match MaterialData owner")
+        ordinals = [item.ordinal for item in self.substances]
+        if len(ordinals) != len(set(ordinals)):
+            raise ValueError("substance ordinals must be unique within MaterialData")
         return self
 
 
@@ -312,7 +393,10 @@ __all__ = [
     "InventoryLedgerRecord",
     "InventoryLotRecord",
     "InventoryReservationRecord",
+    "MaterialDataRecord",
     "MaterialRecord",
+    "MaterialPositionRecord",
+    "MaterialSubstanceRecord",
     "ResourceTemplateHandle",
     "ResourceTemplateRecord",
     "SiteRecord",

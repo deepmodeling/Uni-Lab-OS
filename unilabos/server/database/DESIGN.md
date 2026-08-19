@@ -7,11 +7,11 @@
 | 数据库 | 权威内容 | 表数（含 migration） |
 | --- | --- | ---: |
 | `runtime.db` | 后端命令、执行 job、endpoint 与可靠收发 | 8 |
-| `materials.db` | 资源模板、物料、Site、预留与库存账本 | 8 |
+| `materials.db` | 资源模板、物料、Site、预留与库存账本 | 11 |
 | `telemetry.db` | 设备最新状态和高频追加事件 | 4 |
 | `history.db` | 大 payload 和统一执行历史流 | 3 |
 
-四库合计 23 张表，其中 4 张是各库自己的 `schema_migration`。
+四库合计 26 张表，其中 4 张是各库自己的 `schema_migration`。
 
 ## 表目录
 
@@ -35,7 +35,10 @@
 | `schema_migration` | 数据库身份和 schema 版本 |
 | `resource_template` | 完整模板；`category`、`available_sites`、`handles` 都是模型字段 |
 | `inventory_lot` | 独立批次和数量聚合 |
-| `material` | 完整 ResourceDict 当前快照，包含 pose、data、liquids 和状态来源 |
+| `material` | Material 身份、树关系及低频静态配置 |
+| `material_position` | Material 的 1:1 `ResourceDictPosition` 几何和布局 |
+| `material_data` | Material 的 1:1 杂项动态 `data`、内容版本和状态来源 |
+| `material_substance` | `material_data` 的 1:N 当前内容物；每行是 `name/quantity/quantity_unit` 三元组 |
 | `site` | 完整 ResourceSite 当前快照，包含 category 提示和 occupant |
 | `inventory_reservation` | 每个 backend job 一行，items 是 JSON 数组字段 |
 | `inventory_command_effect` | materials command 的跨重启幂等状态 |
@@ -65,7 +68,14 @@
 - `ResourceTemplate.category` 是 `list[str]` 数据模型字段，SQLite 使用
   `category_json` 保存；前端用它识别，后端和 Edge 不做 Site 准入校验。
 - `available_sites` 和 `handles` 同样属于 ResourceTemplate，不建立模板子表。
-- pose、data、liquids 和当前 state 跟 Material 同步更新，直接保存在 `material`。
+- Material 是对象聚合原则的例外：位置结构稳定且有独立更新节奏，杂项 `data` 内容异构，
+  因此分别保存为 1:1 `material_position` 和 `material_data`。
+- `ResourceDict.liquids` 改以 `substances` 表达，保存在 `material_data` 下的 1:N
+  `material_substance`；每项 `(name, quantity, quantity_unit)` 对应现有
+  `(liquid_name, amount, unit)` 三元组。单位不在数据库枚举，当前 Edge 写入侧主要使用
+  `ul`（液体）和 `ug`（固体）。
+- 内容物变化历史统一进入 append-only `inventory_ledger`，不再重复建立
+  `substance_history`。
 - route/capability/availability 跟 endpoint snapshot 同步重建，直接保存在
   `executor_endpoint`。
 - material bindings、错误 gate 和 terminal decision 跟一次 job 同生命周期，直接保存在

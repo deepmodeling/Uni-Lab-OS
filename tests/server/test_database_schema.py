@@ -23,6 +23,9 @@ EXPECTED_TABLES = {
         "resource_template",
         "inventory_lot",
         "material",
+        "material_position",
+        "material_data",
+        "material_substance",
         "site",
         "inventory_reservation",
         "inventory_command_effect",
@@ -63,7 +66,7 @@ def test_database_v1_schema_is_complete_and_replay_safe(tmp_path, key: str) -> N
         connection.close()
 
 
-def test_object_children_are_columns_not_one_to_one_tables(tmp_path) -> None:
+def test_aggregate_fields_and_material_storage_exceptions(tmp_path) -> None:
     existing: set[str] = set()
     columns: dict[str, set[str]] = {}
     for spec in DATABASE_SPECS.values():
@@ -124,9 +127,21 @@ def test_object_children_are_columns_not_one_to_one_tables(tmp_path) -> None:
     assert {"category_json", "available_sites_json", "handles_json"} <= columns[
         "resource_template"
     ]
-    assert {"pose_json", "data_json", "liquids_json", "sites_initialized"} <= columns[
-        "material"
+    assert {"position_x", "position_y", "position_z", "rotation_x"} <= columns[
+        "material_position"
     ]
+    assert {"data_json", "sites_initialized", "content_version"} <= columns[
+        "material_data"
+    ]
+    assert {"name", "quantity", "quantity_unit", "physical_state"} <= columns[
+        "material_substance"
+    ]
+    assert {
+        "pose_json",
+        "data_json",
+        "liquids_json",
+        "sites_initialized",
+    }.isdisjoint(columns["material"])
     assert {"device_routes_json", "action_capabilities_json"} <= columns[
         "executor_endpoint"
     ]
@@ -136,8 +151,8 @@ def test_object_children_are_columns_not_one_to_one_tables(tmp_path) -> None:
 def test_total_table_count_stays_small() -> None:
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
         "runtime": 8,
-        "materials": 8,
+        "materials": 11,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 23
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 26

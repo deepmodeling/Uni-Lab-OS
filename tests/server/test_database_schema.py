@@ -29,7 +29,6 @@ EXPECTED_TABLES = {
     "materials": {
         "schema_migration",
         "resource_template",
-        "resource_template_category",
         "resource_handle_template",
         "inventory_lot",
         "material",
@@ -341,6 +340,7 @@ def test_legacy_scheduler_and_site_admission_tables_do_not_exist(tmp_path) -> No
         "material_instance",
         "resource_relation",
         "substance_content",
+        "resource_template_category",
         "resource_site_template",
         "resource_site_template_category_hint",
         "site_pose",

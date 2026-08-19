@@ -54,14 +54,6 @@ class ResourceTemplateRecord(ServerObject):
         return self
 
 
-class ResourceTemplateCategoryRecord(ServerObject):
-    """模板分类只用于检索和前端展示，不参与 Site 准入。"""
-
-    template_uuid: NonEmptyStr
-    category: NonEmptyStr
-    sort_order: int = Field(default=0, ge=0)
-
-
 class ResourceHandleTemplateRecord(ServerObject):
     """Registry resource handle 的规范列，不复用 action handle 语义。"""
 
@@ -470,7 +462,6 @@ __all__ = [
     "MaterialStateSourceEventRecord",
     "PoseRecord",
     "ResourceHandleTemplateRecord",
-    "ResourceTemplateCategoryRecord",
     "ResourceTemplateRecord",
     "SiteRecord",
 ]

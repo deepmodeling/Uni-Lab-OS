@@ -36,8 +36,7 @@ writer；业务代码不得通过 `ATTACH DATABASE` 或跨库外键制造隐式�
 | 表 | 职责 |
 | --- | --- |
 | `schema_migration` | 数据库身份和 schema 版本 |
-| `resource_template` | 资源模板规范定义；`available_sites` 保留在 `definition_json` |
-| `resource_template_category` | 模板 category；用于检索和前端提示 |
+| `resource_template` | 资源模板规范定义；category 与 `available_sites` 均保留在 `definition_json` |
 | `resource_handle_template` | Registry handle 定义、版本和软删除 |
 | `inventory_lot` | 批次、可用量、预留量和隔离状态 |
 | `material` | ResourceDict 静态字段和单父资源树 |
@@ -100,8 +99,9 @@ writer；业务代码不得通过 `ATTACH DATABASE` 或跨库外键制造隐式�
 
 - 与主记录严格 1:1、同步创建和更新、没有独立生命周期的字段不拆表。
   因此 Site 的 pose、category 提示和当前 occupant 都属于 `site`。
-- `available_sites` 是资源模板定义的一部分，保存在
-  `resource_template.definition_json`；实例化后才生成 `site` 行。
+- category 与 `available_sites` 都是资源模板定义的一部分，保存在
+  `resource_template.definition_json`；category 供前端识别，Site 实例化后才生成
+  `site` 行。
 - reservation items 随 backend job 整体申请和释放，作为
   `inventory_reservation.items_json` 的原子快照保存；变更历史写入 ledger。
 - 只有需要独立生命周期、独立幂等键、高频追加或关系索引的数据才拆表。

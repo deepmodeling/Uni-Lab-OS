@@ -90,29 +90,6 @@ MATERIALS_TABLES = (
         ),
     ),
     TableSpec(
-        "resource_template_category",
-        """
-        CREATE TABLE IF NOT EXISTS resource_template_category (
-            template_uuid TEXT NOT NULL,
-            category TEXT NOT NULL CHECK (TRIM(category) <> ''),
-            sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
-            PRIMARY KEY(template_uuid, category),
-            FOREIGN KEY(template_uuid) REFERENCES resource_template(template_uuid)
-                ON DELETE CASCADE
-        )
-        """,
-        (
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_resource_template_category_folded
-            ON resource_template_category(template_uuid, LOWER(category))
-            """,
-            """
-            CREATE INDEX IF NOT EXISTS idx_resource_template_category_lookup
-            ON resource_template_category(category, sort_order, template_uuid)
-            """,
-        ),
-    ),
-    TableSpec(
         "resource_handle_template",
         """
         CREATE TABLE IF NOT EXISTS resource_handle_template (

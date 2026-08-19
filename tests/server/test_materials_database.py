@@ -25,15 +25,17 @@ def _insert_template(
     connection: sqlite3.Connection,
     template_uuid: str,
     name: str,
+    *,
+    definition_json: str = "{}",
 ) -> None:
     connection.execute(
         """
         INSERT INTO resource_template(
             template_uuid,name,display_name,resource_type,template_version,
             definition_json,definition_hash,status,created_at_ms,updated_at_ms
-        ) VALUES (?,?,?,'resource','1.0.0','{}',?,'active',1,1)
+        ) VALUES (?,?,?,'resource','1.0.0',?,?,'active',1,1)
         """,
-        (template_uuid, name, name, f"hash-{template_uuid}"),
+        (template_uuid, name, name, definition_json, f"hash-{template_uuid}"),
     )
 
 
@@ -90,7 +92,6 @@ def test_materials_schema_covers_canonical_resource_boundaries(tmp_path) -> None
         assert set(MATERIALS_DATABASE.table_names) == {
             "schema_migration",
             "resource_template",
-            "resource_template_category",
             "resource_handle_template",
             "inventory_lot",
             "material",
@@ -123,6 +124,37 @@ def test_materials_schema_covers_canonical_resource_boundaries(tmp_path) -> None
         assert "source_event_uuid" in state_columns
         assert "joint_state_json" not in state_columns
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        connection.close()
+
+
+def test_template_keeps_category_and_available_sites_in_its_definition(
+    tmp_path,
+) -> None:
+    connection = _open_materials(tmp_path)
+    try:
+        with connection:
+            _insert_template(
+                connection,
+                "tpl",
+                "template",
+                definition_json=(
+                    '{"category":["plate"],"available_sites":'
+                    '[{"site_index":0,"label":"A1"}]}'
+                ),
+            )
+
+        assert tuple(
+            connection.execute(
+                """
+                SELECT
+                    json_extract(definition_json, '$.category[0]'),
+                    json_extract(definition_json, '$.available_sites[0].label')
+                FROM resource_template
+                WHERE template_uuid='tpl'
+                """
+            ).fetchone()
+        ) == ("plate", "A1")
     finally:
         connection.close()
 

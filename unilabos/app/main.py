@@ -237,22 +237,7 @@ def convert_argv_dashes_to_underscores(args: argparse.ArgumentParser):
 
 
 def configure_material_startup(args_dict: Dict[str, Any]) -> str:
-    """应用物料来源配置并解析嵌入式/独立 Provider 模式。"""
-
-    source = str(
-        args_dict.get("material_source")
-        or HTTPConfig.material_source
-        or "microbackend"
-    ).strip().lower()
-    source = {
-        "edge": "microbackend",
-        "local": "microbackend",
-        "cloud": "backend",
-        "remote": "backend",
-    }.get(source, source)
-    if source not in {"microbackend", "backend", "auto"}:
-        raise ValueError("material source must be microbackend, backend, or auto")
-    HTTPConfig.material_source = source
+    """解析进程内或独立部署的微后端物料中心。"""
 
     address_arg = args_dict.get("material_microbackend_addr")
     if address_arg is not None:
@@ -301,7 +286,6 @@ def should_start_embedded_material_service(
 ) -> bool:
     return (
         is_host_mode
-        and HTTPConfig.material_source in {"microbackend", "auto"}
         and args_dict.get("_material_service_mode") == "embedded"
     )
 
@@ -368,22 +352,16 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--material_source",
-        choices=["microbackend", "backend", "auto"],
-        default=None,
-        help="Host material source; default is the embedded microbackend.",
-    )
-    parser.add_argument(
         "--material_service_mode",
         choices=["embedded", "external"],
         default=None,
-        help="Run Inventory/Resource Provider in this process or use :8092.",
+        help="Run the Edge materials microbackend here or use an external one.",
     )
     parser.add_argument(
         "--material_microbackend_addr",
         type=str,
         default=None,
-        help="External material Provider API base.",
+        help="External Edge materials microbackend API base.",
     )
     parser.add_argument(
         "--server_database_root",
@@ -1236,10 +1214,7 @@ def main():
         community_namespaces=args_dict.get("_community_namespaces"),
         upload_registry=(
             BasicConfig.upload_registry
-            or (
-                BasicConfig.is_host_mode
-                and HTTPConfig.material_source in {"microbackend", "auto"}
-            )
+            or BasicConfig.is_host_mode
         ),
         check_mode=check_mode,
         complete_registry=complete_registry,
@@ -1371,13 +1346,6 @@ def main():
 
     args_dict["bridges"] = []
 
-    # 旧 HTTP bridge 只在正式 Backend 拥有物料写权威时挂载；启用本地
-    # FastAPI 不再隐式把 ResourceTree 写到远端。
-    if (
-        "fastapi" in args_dict["app_bridges"]
-        and HTTPConfig.material_source == "backend"
-    ):
-        args_dict["bridges"].append(http_client)
     # 根据线协议创建后端通信客户端（传输层均为 WebSocket）
     if BasicConfig.is_host_mode:
         comm_client = None
@@ -1412,13 +1380,12 @@ def main():
                 lab_registry, materials_gateway
             )
             print_status(
-                f"Materials Provider 已启用: {server_database_paths.materials_db} "
+                f"微后端物料中心已启用: {server_database_paths.materials_db} "
                 f"({template_report.resource_count} 个资源模板)",
                 "info",
             )
         elif (
             BasicConfig.is_host_mode
-            and HTTPConfig.material_source in {"microbackend", "auto"}
             and args_dict.get("_material_service_mode") == "external"
         ):
             from unilabos.server.adapters.registry_materials import (
@@ -1433,7 +1400,7 @@ def main():
                 lab_registry, materials_gateway
             )
             print_status(
-                "外部 Materials Provider 模板同步完成 "
+                "外部微后端物料中心模板同步完成 "
                 f"({template_report.resource_count} 个资源模板)",
                 "info",
             )

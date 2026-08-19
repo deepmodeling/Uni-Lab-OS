@@ -162,5 +162,12 @@ Local 和 HTTP 两种调用方式下保持一致。
 自定义模板并分配内部 `template_uuid`。该 UUID 仅用于数据库外键、版本和回执，调用方
 不负责提供。Slave 的创建、查询和 snapshot 更新固定经 HostLink 发给 Host，再由 Host
 代发到当前微后端 Materials Authority。Host 的运行时 ResourceTreeSet 只是工作副本，
-不能作为查询 fallback，也不能分配或接受实例 UUID。后续正式 Backend 接入仍由微后端
-负责同步，不允许设备或 Slave 绕过微后端。
+不能作为查询 fallback，也不能分配或接受实例 UUID。
+
+Edge 侧始终只有一个物料信息中心：微后端。设备、Host、Slave 和 Edge API 均不允许
+根据配置切换为直连正式 Backend。后续正式 Backend 接入时，创建等需要全局权威的写接口
+由微后端代为转发；微后端接收 Backend 返回的 UUID/版本后更新本地权威投影，再向调用方
+返回同一份回执。查询和 snapshot 比对仍先进入微后端。本版本不实现该 Backend 转发，
+当前创建由微后端本地完成。旧 `/resources/add|update|delete|list` ROS 服务和通用 HTTP
+client 的 Backend 物料写入方法已经删除；保留的 ROS 资源树内部消息也统一调用
+`ResourceService`，不能绕过微后端。

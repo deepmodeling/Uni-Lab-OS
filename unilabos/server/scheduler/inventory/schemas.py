@@ -483,7 +483,6 @@ class InventoryHealthResponse(WireModel):
     status: Literal["ok"]
     edge_id: str
     lab_id: str
-    material_source: Literal["microbackend", "backend", "auto"]
 
 
 class ResourceTemplateResponse(WireModel):

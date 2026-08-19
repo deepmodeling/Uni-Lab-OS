@@ -60,13 +60,7 @@ from unilabos.ros.msgs.message_converter import (
     convert_to_ros_msg_with_mapping,
     get_ros_type_by_msgname,
 )
-from unilabos_msgs.srv import (
-    ResourceAdd,
-    ResourceDelete,
-    ResourceUpdate,
-    ResourceList,
-    SerialCommand,
-)  # type: ignore
+from unilabos_msgs.srv import SerialCommand  # type: ignore
 from unilabos_msgs.msg import Resource  # type: ignore
 
 from unilabos.resources.resource_tracker import (
@@ -554,15 +548,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
         # 创建资源管理客户端
         self._resource_clients: Dict[str, Client] = {
-            "resource_add": self.create_client(ResourceAdd, "/resources/add", callback_group=self.callback_group),
             "resource_get": self.create_client(SerialCommand, "/resources/get", callback_group=self.callback_group),
-            "resource_delete": self.create_client(
-                ResourceDelete, "/resources/delete", callback_group=self.callback_group
-            ),
-            "resource_update": self.create_client(
-                ResourceUpdate, "/resources/update", callback_group=self.callback_group
-            ),
-            "resource_list": self.create_client(ResourceList, "/resources/list", callback_group=self.callback_group),
             "c2s_update_resource_tree": self.create_client(
                 SerialCommand, "/c2s_update_resource_tree", callback_group=self.callback_group
             ),

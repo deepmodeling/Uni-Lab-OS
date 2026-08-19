@@ -16,7 +16,6 @@ from unilabos.utils.tools import (
 )
 
 import requests
-from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils.log import info
 from unilabos.config.config import HTTPConfig, BasicConfig
 from unilabos.utils import logger
@@ -58,7 +57,6 @@ class HTTPClient:
         self,
         remote_addr: Optional[str] = None,
         auth: Optional[str] = None,
-        material_source: Optional[str] = None,
         material_microbackend_addr: Optional[str] = None,
     ) -> None:
         """
@@ -68,9 +66,7 @@ class HTTPClient:
             remote_addr: 远程服务器地址，如果不提供则从配置中获取
             auth: 授权信息
         """
-        self.initialized = False
         self.remote_addr = remote_addr or HTTPConfig.remote_addr
-        self._material_source_override = material_source
         self._material_microbackend_addr_override = material_microbackend_addr
         if auth is not None:
             self.auth = auth
@@ -101,28 +97,6 @@ class HTTPClient:
         if not configured:
             configured = f"http://127.0.0.1:{BasicConfig.port}"
         return self._api_base(str(configured))
-
-    def _material_sources(self) -> List[str]:
-        configured = (
-            self._material_source_override
-            if self._material_source_override is not None
-            else HTTPConfig.material_source
-        )
-        source = str(configured or "microbackend").strip().lower()
-        aliases = {
-            "edge": "microbackend",
-            "local": "microbackend",
-            "cloud": "backend",
-            "remote": "backend",
-        }
-        source = aliases.get(source, source)
-        if source == "auto":
-            return ["microbackend", "backend"]
-        if source not in {"microbackend", "backend"}:
-            raise ValueError(
-                "HTTPConfig.material_source must be microbackend, backend, or auto"
-            )
-        return [source]
 
     @staticmethod
     def _extract_material_nodes(payload: Any) -> List[Dict[str, Any]]:
@@ -163,42 +137,26 @@ class HTTPClient:
         except OSError as exc:
             logger.debug(f"写入物料查询诊断文件失败: {exc}")
 
-    def _query_material_source(
+    def _query_material_microbackend(
         self,
-        source: str,
         *,
         uuids: List[str],
         resource_id: Optional[str],
         with_children: bool,
     ) -> List[Dict[str, Any]]:
         timeout = int(HTTPConfig.material_query_timeout)
-        if source == "microbackend":
-            url = f"{self._material_microbackend_base()}/edge/material/query"
-            body: Dict[str, Any] = {
-                "uuids": uuids,
-                "with_children": with_children,
-            }
-            if resource_id:
-                body["id"] = resource_id
-            response = self._session.post(url, json=body, timeout=timeout)
-        elif uuids:
-            url = f"{self.remote_addr.rstrip('/')}/edge/material/query"
-            response = self._session.post(
-                url,
-                json={"uuids": uuids, "with_children": with_children},
-                timeout=timeout,
-            )
-        else:
-            url = f"{self.remote_addr.rstrip('/')}/lab/material"
-            response = self._session.get(
-                url,
-                params={"id": resource_id, "with_children": with_children},
-                timeout=timeout,
-            )
+        url = f"{self._material_microbackend_base()}/edge/material/query"
+        body: Dict[str, Any] = {
+            "uuids": uuids,
+            "with_children": with_children,
+        }
+        if resource_id:
+            body["id"] = resource_id
+        response = self._session.post(url, json=body, timeout=timeout)
 
         self._write_material_debug(
             "res_material_query.json",
-            f"source={source}\nurl={url}\n{response.status_code}\n{response.text}",
+            f"source=microbackend\nurl={url}\n{response.status_code}\n{response.text}",
         )
         if response.status_code != 200:
             raise requests.HTTPError(
@@ -214,12 +172,7 @@ class HTTPClient:
         resource_id: Optional[str] = None,
         with_children: bool = True,
     ) -> List[Dict[str, Any]]:
-        """Query the configured material component and preserve legacy shape.
-
-        ``microbackend`` uses local HTTP IPC, ``backend`` uses the formal
-        service, and ``auto`` tries them in that order.  Empty results in auto
-        mode fall through so an Edge cache can be introduced incrementally.
-        """
+        """只查询 Edge 微后端物料中心。"""
 
         if not BasicConfig.is_host_mode:
             logger.warning("Slave 禁止直连物料数据库；请通过 HostLink 向 HostNode 查询")
@@ -238,119 +191,17 @@ class HTTPClient:
             json.dumps(request_body, ensure_ascii=False, indent=4),
         )
 
-        sources = self._material_sources()
-        for index, source in enumerate(sources):
-            try:
-                nodes = self._query_material_source(
-                    source,
-                    uuids=uuid_list,
-                    resource_id=resource_id,
-                    with_children=with_children,
-                )
-                if nodes or index == len(sources) - 1:
-                    logger.trace(
-                        f"material_query source={source} 查询到 {len(nodes)} 个节点"
-                    )
-                    return nodes
-            except (requests.RequestException, TypeError, ValueError) as exc:
-                logger.warning(f"物料查询失败 source={source}: {exc}")
-                if index == len(sources) - 1:
-                    return []
-        return []
-
-    def resource_edge_add(self, resources: List[Dict[str, Any]]) -> requests.Response:
-        """
-        添加资源
-
-        Args:
-            resources: 要添加的资源列表
-            database_process_later: 后台处理资源
-        Returns:
-            Response: API响应对象
-        """
-        response = self._session.post(
-            f"{self.remote_addr}/edge/material/edge",
-            json={
-                "edges": resources,
-            },
-            headers={"Authorization": f"Lab {self.auth}"},
-            timeout=100,
-        )
-        if response.status_code == 200:
-            res = response.json()
-            if "code" in res and res["code"] != 0:
-                logger.error(f"添加物料关系失败: {response.text}")
-        if response.status_code != 200 and response.status_code != 201:
-            logger.error(f"添加物料关系失败: {response.status_code}, {response.text}")
-        return response
-
-    def resource_tree_add(
-        self, resources: ResourceTreeSet, mount_uuid: str, first_add: bool
-    ) -> Dict[str, str]:
-        """
-        添加资源
-
-        Args:
-            resources: 要添加的资源树集合（ResourceTreeSet）
-            mount_uuid: 要挂载的资源的uuid
-            first_add: 是否为首次添加资源，可以是host也可以是slave来的
-        Returns:
-            Dict[str, str]: 旧UUID到新UUID的映射关系 {old_uuid: new_uuid}
-        """
-        # dump() 只调用一次，复用给文件保存和 HTTP 请求
-        nodes_info = [x for xs in resources.dump() for x in xs]
-        old_uuids = {n.res_content.uuid: n for n in resources.all_nodes}
-        payload = {"nodes": nodes_info, "mount_uuid": mount_uuid}
-        body_bytes = _fast_dumps(payload)
-        with open(
-            os.path.join(BasicConfig.working_dir, "req_resource_tree_add.json"), "wb"
-        ) as f:
-            f.write(_fast_dumps_pretty(payload))
-        http_headers = {"Content-Type": "application/json"}
-        if not self.initialized or first_add:
-            self.initialized = True
-            info(f"首次添加资源，当前远程地址: {self.remote_addr}")
-            response = self._session.post(
-                f"{self.remote_addr}/edge/material",
-                data=body_bytes,
-                headers=http_headers,
-                timeout=60,
+        try:
+            nodes = self._query_material_microbackend(
+                uuids=uuid_list,
+                resource_id=resource_id,
+                with_children=with_children,
             )
-        else:
-            response = self._session.put(
-                f"{self.remote_addr}/edge/material",
-                data=body_bytes,
-                headers=http_headers,
-                timeout=10,
-            )
-
-        with open(
-            os.path.join(BasicConfig.working_dir, "res_resource_tree_add.json"),
-            "w",
-            encoding="utf-8",
-        ) as f:
-            f.write(f"{response.status_code}" + "\n" + response.text)
-        # 处理响应，构建UUID映射
-        uuid_mapping = {}
-        if response.status_code == 200:
-            res = response.json()
-            if "code" in res and res["code"] != 0:
-                logger.error(f"添加物料失败: {response.text}")
-            else:
-                data = res["data"]
-                for i in data:
-                    uuid_mapping[i["uuid"]] = i["cloud_uuid"]
-        else:
-            logger.error(f"添加物料失败: {response.text}")
-            logger.trace(f"添加物料失败: {nodes_info}")
-        for u, n in old_uuids.items():
-            if u in uuid_mapping:
-                n.res_content.uuid = uuid_mapping[u]
-                for c in n.children:
-                    c.res_content.parent_uuid = n.res_content.uuid
-            else:
-                logger.warning(f"资源UUID未更新: {u}")
-        return uuid_mapping
+            logger.trace(f"material_query 查询到 {len(nodes)} 个节点")
+            return nodes
+        except (requests.RequestException, TypeError, ValueError) as exc:
+            logger.warning(f"微后端物料查询失败: {exc}")
+            return []
 
     def resource_tree_get(
         self, uuid_list: List[str], with_children: bool
@@ -395,83 +246,28 @@ class HTTPClient:
             encoding="utf-8",
         ) as f:
             f.write(json.dumps(payload, ensure_ascii=False, indent=4))
-        source = self._material_sources()[0]
-        if source == "microbackend":
-            responses = [
-                self._session.delete(
-                    f"{self._material_microbackend_base()}/materials/"
-                    f"{quote(material_uuid, safe='')}",
-                    timeout=30,
+        responses = [
+            self._session.delete(
+                f"{self._material_microbackend_base()}/materials/"
+                f"{quote(material_uuid, safe='')}",
+                timeout=30,
+            )
+            for material_uuid in uuids
+        ]
+        for response in responses:
+            if response.status_code != 200:
+                logger.error(
+                    f"台面物料废弃失败: {response.status_code}, {response.text}"
                 )
-                for material_uuid in uuids
-            ]
-            for response in responses:
-                if response.status_code != 200:
-                    logger.error(
-                        f"台面物料废弃失败: {response.status_code}, {response.text}"
-                    )
-                    return {
-                        "code": response.status_code,
-                        "message": response.text,
-                    }
-                result = response.json()
-                if str(result.get("code", 0)) != "0":
-                    logger.error(f"台面物料废弃失败: {response.text}")
-                    return result
-            return {"code": 0}
-
-        response = self._session.post(
-            f"{self.remote_addr}/edge/material/bench/discard",
-            json=payload,
-            headers={"Authorization": f"Lab {self.auth}"},
-            timeout=30,
-        )
-        with open(
-            os.path.join(work_dir, "res_material_bench_discard.json"),
-            "w",
-            encoding="utf-8",
-        ) as f:
-            f.write(f"{response.status_code}" + "\n" + response.text)
-        if response.status_code != 200:
-            logger.error(f"台面物料废弃失败: {response.status_code}, {response.text}")
-            return {"code": response.status_code, "message": response.text}
-        res = response.json()
-        if "code" in res and res["code"] != 0:
-            logger.error(f"台面物料废弃失败: {response.text}")
-        return res
-
-    def resource_add(self, resources: List[Dict[str, Any]]) -> requests.Response:
-        """
-        添加资源
-
-        Args:
-            resources: 要添加的资源列表
-        Returns:
-            Response: API响应对象
-        """
-        if not self.initialized:
-            self.initialized = True
-            info(f"首次添加资源，当前远程地址: {self.remote_addr}")
-            response = self._session.post(
-                f"{self.remote_addr}/lab/material",
-                json={"nodes": resources},
-                headers={"Authorization": f"Lab {self.auth}"},
-                timeout=100,
-            )
-        else:
-            response = self._session.put(
-                f"{self.remote_addr}/lab/material",
-                json={"nodes": resources},
-                headers={"Authorization": f"Lab {self.auth}"},
-                timeout=100,
-            )
-        if response.status_code == 200:
-            res = response.json()
-            if "code" in res and res["code"] != 0:
-                logger.error(f"添加物料失败: {response.text}")
-        if response.status_code != 200:
-            logger.error(f"添加物料失败: {response.text}")
-        return response
+                return {
+                    "code": response.status_code,
+                    "message": response.text,
+                }
+            result = response.json()
+            if str(result.get("code", 0)) != "0":
+                logger.error(f"台面物料废弃失败: {response.text}")
+                return result
+        return {"code": 0}
 
     def resource_get(self, id: str, with_children: bool = False) -> Dict[str, Any]:
         """
@@ -488,61 +284,8 @@ class HTTPClient:
             resource_id=id,
             with_children=with_children,
         )
-        # ``/lab/material`` historically returned data directly as a list;
-        # retain that envelope for startup and third-party callers.
+        # ROS 查询服务仍使用固定的 data envelope。
         return {"code": 0, "data": nodes}
-
-    def resource_del(self, id: str) -> requests.Response:
-        """
-        删除资源
-
-        Args:
-            id: 要删除的资源ID
-
-        Returns:
-            Response: API响应对象
-        """
-        response = self._session.delete(
-            f"{self.remote_addr}/lab/resource/batch_delete/",
-            params={"id": id},
-            headers={"Authorization": f"Lab {self.auth}"},
-            timeout=20,
-        )
-        return response
-
-    def resource_update(self, resources: List[Dict[str, Any]]) -> requests.Response:
-        """
-        更新资源
-
-        Args:
-            resources: 要更新的资源列表
-
-        Returns:
-            Response: API响应对象
-        """
-        if not self.initialized:
-            self.initialized = True
-            info(f"首次添加资源，当前远程地址: {self.remote_addr}")
-            response = self._session.post(
-                f"{self.remote_addr}/lab/material",
-                json={"nodes": resources},
-                headers={"Authorization": f"Lab {self.auth}"},
-                timeout=100,
-            )
-        else:
-            response = self._session.put(
-                f"{self.remote_addr}/lab/material",
-                json={"nodes": resources},
-                headers={"Authorization": f"Lab {self.auth}"},
-                timeout=100,
-            )
-        if response.status_code == 200:
-            res = response.json()
-            if "code" in res and res["code"] != 0:
-                logger.error(f"添加物料失败: {response.text}")
-        if response.status_code != 200:
-            logger.error(f"添加物料失败: {response.text}")
-        return response.json()
 
     def upload_file_to_oss(
         self, file_path: str, scene: str = "models"

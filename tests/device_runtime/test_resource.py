@@ -7,6 +7,7 @@ from pylabrobot.resources import Coordinate
 from unilabos.device_runtime import resource as resource_module
 from unilabos.device_runtime.resource import AuthorityResourceService
 from unilabos.resources.container import RegularContainer
+from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.server.clients.materials import LocalMaterialsClient
 from unilabos.server.services.materials import MaterialsService
 
@@ -74,3 +75,22 @@ def test_resource_service_create_get_and_partial_snapshot_update(tmp_path) -> No
 def test_resource_service_has_no_implicit_runtime_store() -> None:
     assert not hasattr(resource_module, "ResourceStore")
     assert not hasattr(resource_module, "LocalResourceService")
+
+
+def test_resource_service_accepts_internal_create_draft(tmp_path) -> None:
+    materials = MaterialsService(tmp_path / "materials.db")
+    service = AuthorityResourceService(LocalMaterialsClient(materials))
+    draft = ResourceTreeSet.from_plr_resources(
+        [_container("draft")], known_random_uuid=True
+    )
+    draft_uuid = draft.all_nodes_uuid[0]
+    try:
+        created = asyncio.run(
+            service.create_resources("device-1", "device-uuid", draft)
+        )
+        assert created.tree.all_nodes_uuid != [draft_uuid]
+        assert created.result.data.client_ref_map == {
+            "node-0": created.tree.all_nodes_uuid[0]
+        }
+    finally:
+        materials.close()

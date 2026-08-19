@@ -5,8 +5,6 @@
 - ``create``：向 materials authority 申请创建物料树并取回权威 UUID；
 - ``apply_substances``：把液体或固体内容物写入物料或指定孔位；
 - ``resolve_site_spot``：把 Site/slot 标识解析为 PLR spot。
-
-``unilabos.resources.liquids`` 仅保留为历史兼容入口。
 """
 
 from __future__ import annotations

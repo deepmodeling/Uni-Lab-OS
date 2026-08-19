@@ -45,8 +45,6 @@ from unilabos.server.scheduler.inventory.sync import build_snapshot
 from unilabos.server.scheduler.inventory.material_compat import (
     build_legacy_material_nodes,
 )
-from unilabos.app.material_source import normalize_material_source
-from unilabos.config.config import HTTPConfig
 from unilabos.utils.tracing import install_http_tracing
 
 
@@ -59,7 +57,6 @@ def create_router(service: InventoryService) -> APIRouter:
             "status": "ok",
             "edge_id": service.edge_id,
             "lab_id": service.lab_id,
-            "material_source": normalize_material_source(HTTPConfig.material_source),
         }
 
     @router.post(

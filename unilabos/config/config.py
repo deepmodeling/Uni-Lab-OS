@@ -80,8 +80,7 @@ class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"
     # schedule 通道（WebSocket）地址；为空时从 remote_addr 派生：带端口则 +1，否则沿用原 netloc
     schedule_addr = ""
-    # Edge 物料来源与嵌入式/独立微后端地址。
-    material_source = "microbackend"
+    # Edge 只访问微后端物料中心；可选择进程内或独立部署的微后端。
     material_microbackend_addr = ""
     material_query_timeout = 10
 

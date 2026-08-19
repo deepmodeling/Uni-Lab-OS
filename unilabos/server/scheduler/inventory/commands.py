@@ -29,8 +29,6 @@ from unilabos.server.scheduler.inventory.schemas import (
 )
 from unilabos.server.scheduler.inventory.service import InventoryService
 from unilabos.server.scheduler.inventory.material_compat import build_legacy_material_nodes
-from unilabos.app.material_source import normalize_material_source
-from unilabos.config.config import HTTPConfig
 from unilabos.utils.tracing import add_event, set_error, span
 
 CommandHandler = Callable[[InventoryService, JsonObject], JsonObject]
@@ -269,15 +267,7 @@ def _handle_adjust(svc: InventoryService, cmd: JsonObject) -> JsonObject:
     )
 
 
-def _require_local_deduct_authority() -> None:
-    if normalize_material_source(HTTPConfig.material_source) == "backend":
-        raise CommandRejected(
-            "local inventory deduction is disabled while material_source=backend"
-        )
-
-
 def _handle_deduct(svc: InventoryService, cmd: JsonObject) -> JsonObject:
-    _require_local_deduct_authority()
     p = cmd.get("payload") or {}
     result = svc.deduct(
         lot_id=p.get("lot_id", ""),
@@ -304,7 +294,6 @@ def _handle_deduct(svc: InventoryService, cmd: JsonObject) -> JsonObject:
 
 
 def _handle_deduct_reagent(svc: InventoryService, cmd: JsonObject) -> JsonObject:
-    _require_local_deduct_authority()
     p = cmd.get("payload") or {}
     return svc.deduct(
         lot_id=p.get("lot_id", ""),

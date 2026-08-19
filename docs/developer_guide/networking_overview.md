@@ -150,8 +150,11 @@ unilab -g slave.json --backend hostlink --is-slave \
 设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
 接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制
 终止。连接断开时设备在 `heartbeat_timeout` 后离线，客户端会指数退避重连，但不会
-自动重放动作。Host 根据配置把物料创建转交给内嵌微后端或外部 materials provider；
-正式 Backend 接入后由微后端负责同步，设备侧仍只访问微后端权威边界。
+自动重放动作。Host 只连接进程内或独立部署的微后端物料中心，不存在切换为直连正式
+Backend 的物料来源配置。未来创建等全局写接口由微后端代为转发给正式 Backend，并在
+本地落下权威回执后返回；该转发本版本尚未接入，设备侧始终只访问微后端边界。
+未发布的旧 `/resources/add|update|delete|list` ROS 服务及其直连 Backend HTTP 写入接口
+已删除；ROS 内部资源树通知同样进入 `ResourceService`。
 
 当前 HostLink 是面向可信实验室局域网的明文 TCP 协议，尚未提供 TLS 或双方身份认证。
 部署时应通过防火墙限制 `7302` 的来源；跨不可信网络使用时应先接入 VPN/安全隧道。

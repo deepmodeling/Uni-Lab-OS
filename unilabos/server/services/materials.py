@@ -90,7 +90,12 @@ class _Applied(Generic[DataT]):
 
 
 class MaterialsService:
-    """聚合 CRUD、幂等命令和账本的唯一写入口。"""
+    """Edge 侧聚合 CRUD、幂等命令和账本的唯一物料写入口。
+
+    TODO(materials-backend-proxy): 正式 Backend 接入后，创建等全局写操作由本服务
+    转发给 Backend，再把带权威 UUID/版本的回执落入本地投影。本版本不接入该转发，
+    也不允许设备、Host 或 Slave 绕过本服务直连 Backend。
+    """
 
     def __init__(self, repository: MaterialsRepository | str | Path):
         self.repository = (

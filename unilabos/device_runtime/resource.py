@@ -14,6 +14,7 @@ from unilabos.server.adapters.plr_materials import (
     MaterialGateway,
     create_plr_materials,
     material_tree_to_resource_tree,
+    resource_tree_to_create,
     resource_tree_to_snapshot,
 )
 from unilabos.server.protocol.common import (
@@ -129,12 +130,22 @@ class AuthorityResourceService:
         device_uuid: str,
         resources: Any,
     ) -> CreatedPLRMaterials:
-        normalized = _normalize_plr_resources(resources)
         mutation = self._mutation(
             "create_material_tree",
             device_id=device_id,
             device_uuid=device_uuid,
         )
+        if isinstance(resources, ResourceTreeSet):
+            draft = ResourceTreeSet.load(resources.dump())
+            request = resource_tree_to_create(draft)
+            result = self._gateway().create_tree(mutation, request)
+            tree = material_tree_to_resource_tree(result.data)
+            return CreatedPLRMaterials(
+                result=result,
+                tree=tree,
+                resources=tree.to_plr_resources(),
+            )
+        normalized = _normalize_plr_resources(resources)
         return create_plr_materials(self._gateway(), mutation, normalized)
 
     async def create_resources(

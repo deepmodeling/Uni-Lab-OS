@@ -12,11 +12,12 @@ from unilabos.hostlink.backend import HostLinkBackendRuntime
 from unilabos.utils.decorator import subscribe, topic_config
 
 
+HOST_NODE_ID = "host_node"
 SUB_DEVICE_ID = "sub_reporter"
 
 
-class VirtualLanHub:
-    """订阅远端计数器，并在达到阈值后调用远端停止动作。"""
+class VirtualHostNode:
+    """Host 侧节点：可执行 action，并订阅远端设备后下发动作。"""
 
     def __init__(
         self,
@@ -25,7 +26,7 @@ class VirtualLanHub:
         terminate_after: int = 3,
         **_kwargs: Any,
     ) -> None:
-        self.device_id = device_id or "hub_node"
+        self.device_id = device_id or HOST_NODE_ID
         self._event_queue = event_queue
         self._terminate_after = int(terminate_after)
         self._node: Any = None
@@ -36,6 +37,17 @@ class VirtualLanHub:
     def post_init(self, node: Any) -> None:
         self._node = node
 
+    def accept_device_report(self, source_device: str) -> dict[str, Any]:
+        """供 Slave 设备反向调用，证明 HostNode action 正常执行。"""
+
+        result = {
+            "accepted": True,
+            "host_node_id": self.device_id,
+            "source_device": str(source_device),
+        }
+        self._event_queue.put(("host_action_executed", result))
+        return result
+
     @subscribe(device_id=SUB_DEVICE_ID, status_name="counter")
     def on_sub_counter(self, value: Any) -> None:
         counter = int(value)
@@ -43,7 +55,10 @@ class VirtualLanHub:
             return
         self._received_count += 1
         self._event_queue.put(
-            ("hub_counter", {"value": counter, "count": self._received_count})
+            (
+                "host_subscribed_counter",
+                {"value": counter, "count": self._received_count},
+            )
         )
         if self._received_count < self._terminate_after:
             return
@@ -62,7 +77,7 @@ class VirtualLanHub:
     def on_sub_state(self, state: Any) -> None:
         normalized = str(state)
         self._states.append(normalized)
-        self._event_queue.put(("hub_state", normalized))
+        self._event_queue.put(("host_subscribed_state", normalized))
 
     def _terminate_sub(self) -> None:
         try:
@@ -152,20 +167,47 @@ def run_virtual_lan_host(event_queue: Any, stop_event: Any) -> None:
         local = BasicRuntime("hostlink")
         local.add_driver(
             BasicDriverSpec(
-                device_id="hub_node",
-                driver_class=VirtualLanHub,
+                device_id=HOST_NODE_ID,
+                driver_class=VirtualHostNode,
                 config={
                     "event_queue": event_queue,
                     "terminate_after": 3,
                 },
-                registry_name="hub_node_demo",
+                registry_name="host_node",
+                action_names=("accept_device_report",),
             )
         )
         runtime = HostLinkBackendRuntime(local, is_slave=False)
         runtime.start()
         assert runtime.server is not None
-        event_queue.put(("host_ready", {"port": runtime.server.port}))
-        stop_event.wait(15.0)
+        event_queue.put(
+            (
+                "host_ready",
+                {
+                    "port": runtime.server.port,
+                    "host_node_id": HOST_NODE_ID,
+                },
+            )
+        )
+        device_announced = False
+        while not stop_event.wait(0.02):
+            if device_announced:
+                continue
+            remote = runtime.devices().get(SUB_DEVICE_ID)
+            if remote is None:
+                continue
+            descriptor = remote.get("device") or {}
+            event_queue.put(
+                (
+                    "device_online",
+                    {
+                        "device_id": SUB_DEVICE_ID,
+                        "location": remote.get("location"),
+                        "actions": list(descriptor.get("actions") or []),
+                    },
+                )
+            )
+            device_announced = True
     except Exception as exc:  # noqa: BLE001 - 子进程需把错误送回 pytest
         event_queue.put(("worker_error", f"host: {exc!r}"))
         raise
@@ -189,7 +231,7 @@ def run_virtual_lan_slave(
         HostLinkConfig.port = int(port)
         BasicConfig.machine_name = "virtual-lan-slave"
         local = BasicRuntime("hostlink")
-        local.add_driver(
+        reporter = local.add_driver(
             BasicDriverSpec(
                 device_id=SUB_DEVICE_ID,
                 driver_class=VirtualLanReporter,
@@ -202,6 +244,13 @@ def run_virtual_lan_slave(
         runtime = HostLinkBackendRuntime(local, is_slave=True)
         runtime.start()
         event_queue.put(("slave_ready", {"host": host, "port": port}))
+        host_result = reporter.call_device_action(
+            HOST_NODE_ID,
+            "accept_device_report",
+            {"source_device": SUB_DEVICE_ID},
+            timeout=5.0,
+        )
+        event_queue.put(("device_to_host_result", host_result))
         stop_event.wait(15.0)
     except Exception as exc:  # noqa: BLE001 - 子进程需把错误送回 pytest
         event_queue.put(("worker_error", f"slave: {exc!r}"))
@@ -211,4 +260,9 @@ def run_virtual_lan_slave(
             runtime.stop()
 
 
-__all__ = ["run_virtual_lan_host", "run_virtual_lan_slave"]
+__all__ = [
+    "HOST_NODE_ID",
+    "SUB_DEVICE_ID",
+    "run_virtual_lan_host",
+    "run_virtual_lan_slave",
+]

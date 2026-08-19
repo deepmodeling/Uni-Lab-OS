@@ -131,6 +131,42 @@ class HostLinkMaterialsClient:
         )
         return MutationResult[MaterialTreeRead].model_validate(response)
 
+    def get_tree(self, root_material_uuid: str) -> MaterialTreeRead:
+        from unilabos.hostlink.protocol import ActionType
+
+        response = self.client.request(
+            ActionType.MATERIAL_GET_TREE,
+            {"root_material_uuid": root_material_uuid},
+        )
+        return MaterialTreeRead.model_validate(response)
+
+    def get_material(self, material_uuid: str) -> MaterialAggregateRead:
+        tree = self.get_tree(material_uuid)
+        if not tree.nodes:
+            raise ValueError("Host 返回了空物料树")
+        return tree.nodes[0]
+
+    def compare_snapshot(self, value: MaterialSnapshot) -> MaterialSnapshotDiff:
+        from unilabos.hostlink.protocol import ActionType
+
+        response = self.client.request(
+            ActionType.MATERIAL_COMPARE_SNAPSHOT,
+            value.model_dump(mode="json", exclude_none=False),
+        )
+        return MaterialSnapshotDiff.model_validate(response)
+
+    def apply_snapshot(
+        self, mutation: InventoryMutation, value: MaterialSnapshot
+    ) -> MutationResult[MaterialTreeRead]:
+        from unilabos.hostlink.protocol import ActionType
+
+        bound = bind_payload(mutation, value)
+        response = self.client.request(
+            ActionType.MATERIAL_APPLY_SNAPSHOT,
+            bound.model_dump(mode="json", exclude_none=False),
+        )
+        return MutationResult[MaterialTreeRead].model_validate(response)
+
 
 class MaterialsHTTPError(RuntimeError):
     def __init__(self, status_code: int, detail: str):

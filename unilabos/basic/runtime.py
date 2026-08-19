@@ -29,6 +29,7 @@ from unilabos.device_runtime.driver_creator import (
     uses_pylabrobot_creator,
 )
 from unilabos.device_runtime.node import BackendCapabilityError, DeviceNode
+from unilabos.device_runtime.resource import ResourceService
 from unilabos.device_runtime.service import LocalServiceBus
 from unilabos.device_runtime.topic import LocalTopicBus, message_to_value
 from unilabos.registry.decorators import get_topic_config
@@ -788,6 +789,7 @@ class BasicRuntime:
         self.devices: dict[str, BasicDeviceNode] = {}
         self.topic_bus = LocalTopicBus()
         self.service_bus = LocalServiceBus()
+        self._resource_service: ResourceService | None = None
         self._stopped = threading.Event()
 
     def add_driver(self, spec: BasicDriverSpec) -> BasicDeviceNode:
@@ -816,8 +818,15 @@ class BasicRuntime:
         node.set_action_router(self)
         node.set_topic_bus(self.topic_bus)
         node.set_service_bus(self.service_bus)
+        if self._resource_service is not None:
+            node.set_resource_service(self._resource_service)
         self.devices[spec.device_id] = node
         return node
+
+    def set_resource_service(self, service: ResourceService) -> None:
+        self._resource_service = service
+        for node in self.devices.values():
+            node.set_resource_service(service)
 
     @staticmethod
     def _normalize_device_id(device_id: str) -> str:

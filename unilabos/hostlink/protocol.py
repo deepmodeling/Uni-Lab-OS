@@ -24,8 +24,10 @@ class ActionType:
     HELLO = "hello"
     PING = "ping"
     # Slave 只经 HostLink 提交物料请求；Host 再代理到配置的 materials authority。
-    MATERIAL = "material"
     MATERIAL_CREATE = "material.create"
+    MATERIAL_GET_TREE = "material.tree.get"
+    MATERIAL_COMPARE_SNAPSHOT = "material.snapshot.compare"
+    MATERIAL_APPLY_SNAPSHOT = "material.snapshot.apply"
     ROS_INFO = "ros_info"
     DEVICE_CALL = "device.call"
     DEVICE_STATE = "device.state"

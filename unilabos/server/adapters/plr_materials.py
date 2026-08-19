@@ -18,6 +18,7 @@ from unilabos.server.protocol.materials import (
     MaterialNodeCreate,
     MaterialPosition,
     MaterialSnapshot,
+    MaterialSnapshotDiff,
     MaterialSubstance,
     MaterialTreeCreate,
     MaterialTreeRead,
@@ -33,6 +34,16 @@ SUBSTANCE_METADATA_EXTRA = "unilabos_substance_metadata"
 class MaterialGateway(Protocol):
     def create_tree(
         self, mutation: InventoryMutation, value: MaterialTreeCreate
+    ) -> MutationResult[MaterialTreeRead]: ...
+
+    def get_material(self, material_uuid: str) -> MaterialAggregateRead: ...
+
+    def get_tree(self, root_material_uuid: str) -> MaterialTreeRead: ...
+
+    def compare_snapshot(self, value: MaterialSnapshot) -> MaterialSnapshotDiff: ...
+
+    def apply_snapshot(
+        self, mutation: InventoryMutation, value: MaterialSnapshot
     ) -> MutationResult[MaterialTreeRead]: ...
 
 
@@ -329,18 +340,35 @@ def material_tree_to_plr_resources(value: MaterialTreeRead) -> list[Any]:
 
 
 def resource_tree_to_snapshot(
-    value: ResourceTreeSet, base: MaterialTreeRead
+    value: ResourceTreeSet,
+    base: MaterialTreeRead,
+    *,
+    allow_partial: bool = False,
 ) -> MaterialSnapshot:
-    """用运行时 ResourceTreeSet 覆盖下载基线，保留服务端版本和 Substance 元数据。"""
+    """用运行时 ResourceTreeSet 覆盖下载基线。
+
+    ``allow_partial`` 用于设备仅上报孔位或子树的场景；未上报的权威节点保持
+    不变。无论是否局部更新，运行时都不能夹带权威树之外的 UUID。
+    """
 
     runtime = {item.res_content.uuid: item.res_content for item in value.all_nodes}
-    if runtime.keys() != {
+    authoritative_uuids = {
         node.material.material_uuid for node in base.nodes
-    }:
+    }
+    if not runtime.keys() <= authoritative_uuids:
+        raise ValueError("runtime tree contains material UUIDs outside downloaded tree")
+    if not allow_partial and runtime.keys() != authoritative_uuids:
         raise ValueError("runtime tree does not match downloaded material UUID set")
     nodes: list[MaterialAggregateRead] = []
     for node in base.nodes:
-        resource = runtime[node.material.material_uuid]
+        resource = runtime.get(node.material.material_uuid)
+        if resource is None:
+            nodes.append(node.model_copy(deep=True))
+            continue
+        parent_material_uuid = resource.uuid_parent
+        if parent_material_uuid not in authoritative_uuids:
+            # 设备/Deck 挂载关系不属于 materials.db 的物料父子关系。
+            parent_material_uuid = node.material.parent_material_uuid
         identity = MaterialIdentityRead.model_validate(
             {
                 **node.material.model_dump(mode="json"),
@@ -359,7 +387,7 @@ def resource_tree_to_snapshot(
                     if key != SUBSTANCE_METADATA_EXTRA
                 },
                 "meta_data": resource.meta_data,
-                "parent_material_uuid": resource.uuid_parent,
+                "parent_material_uuid": parent_material_uuid,
             }
         )
         substances = _substances_from_resource(resource)

@@ -144,6 +144,7 @@ Local 和 HTTP 两种调用方式下保持一致。
 | PLR 边界 | `unilabos.server.adapters.plr_materials` | PLR 创建草稿、权威 UUID 回填、上传和下载 |
 | Registry 边界 | `unilabos.server.adapters.registry_materials` | Registry/lab_resources 定义登记和模板 UUID 映射 |
 | Helper | `unilabos.resources.materials` | `materials.create(plr_resource)`，按 Host/Slave 角色选择权威链路 |
+| 设备运行时 | `unilabos.device_runtime.resource` | `ResourceService` 把 create/get/update 统一路由到微后端；update 使用局部 snapshot 和版本前置条件 |
 | HTTP / Client | `unilabos.server.api.materials`、`unilabos.server.clients.materials` | `/api/v1/materials` 与同构 Local/HTTP/HostLink client |
 
 所有写请求使用 `(command_uuid, effect_key)` 幂等。成功结果保存 ledger sequence
@@ -159,5 +160,7 @@ Local 和 HTTP 两种调用方式下保持一致。
 `template_name` 及 identity/position/data/substances/sites；materials authority 按
 `template_name` 对齐 complete registry。名称不存在时，authority 在同一事务内登记
 自定义模板并分配内部 `template_uuid`。该 UUID 仅用于数据库外键、版本和回执，调用方
-不负责提供。Slave 的创建请求固定经 HostLink 发给 Host，Host 再选择内嵌微后端、外部
-微后端或后续正式 Backend。
+不负责提供。Slave 的创建、查询和 snapshot 更新固定经 HostLink 发给 Host，再由 Host
+代发到当前微后端 Materials Authority。Host 的运行时 ResourceTreeSet 只是工作副本，
+不能作为查询 fallback，也不能分配或接受实例 UUID。后续正式 Backend 接入仍由微后端
+负责同步，不允许设备或 Slave 绕过微后端。

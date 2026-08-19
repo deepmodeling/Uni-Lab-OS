@@ -15,7 +15,6 @@ from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime import (
     ActionCancelled,
     ActionContext,
-    BackendCapabilityError,
 )
 from unilabos.hostlink.backend import HostLinkBackendRuntime
 from unilabos.hostlink.client import HostLinkClient
@@ -896,14 +895,55 @@ def test_hostlink_routes_action_feedback_and_cancel_between_slaves(
         host.stop()
 
 
-def test_hostlink_transport_does_not_install_implicit_resource_authority() -> None:
+def test_hostlink_runtime_uses_microbackend_resource_authority(
+    tmp_path, monkeypatch
+) -> None:
+    from unilabos.resources.container import RegularContainer
+    from unilabos.server.clients.materials import LocalMaterialsClient
+    from unilabos.server.scheduler.integration import set_materials_gateway
+    from unilabos.server.services.materials import MaterialsService
+
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    material_service = MaterialsService(tmp_path / "materials.db")
+    set_materials_gateway(LocalMaterialsClient(material_service))
     runtime = _counter_runtime("resource-device", resource_uuid="device-uuid")
     backend = HostLinkBackendRuntime(runtime, is_slave=False)
     node = runtime.devices["resource-device"]
+    backend.start()
+    beaker = RegularContainer(
+        name="runtime-beaker",
+        size_x=10,
+        size_y=10,
+        size_z=20,
+        max_volume=100,
+    )
+    beaker.unilabos_extra = {
+        "unilabos_resource_class": "runtime-beaker"
+    }
+    try:
+        created = asyncio.run(node.create_material(beaker))
+        material = created.resources[0]
+        material_uuid = material.unilabos_uuid
 
-    with pytest.raises(BackendCapabilityError, match="Resource Authority"):
-        asyncio.run(node.update_resource([]))
-    assert not hasattr(ActionType, "RESOURCE_UPDATE")
-    assert not hasattr(ActionType, "RESOURCE_GET")
+        downloaded = asyncio.run(node.get_resource([material_uuid]))
+        assert downloaded.all_nodes_uuid == [material_uuid]
 
-    backend.stop()
+        material.tracker.set_liquids([("water", 12.0, "ul")])
+        asyncio.run(node.update_resource(material))
+        substances = material_service.get_material(
+            material_uuid
+        ).data.substances
+        assert [
+            (item.name, item.quantity, item.quantity_unit)
+            for item in substances
+        ] == [("water", 12.0, "ul")]
+
+        assert not hasattr(ActionType, "RESOURCE_UPDATE")
+        assert not hasattr(ActionType, "RESOURCE_GET")
+        assert not hasattr(ActionType, "MATERIAL")
+    finally:
+        backend.stop()
+        set_materials_gateway(None)
+        material_service.close()

@@ -1,9 +1,8 @@
 """Edge microbackend ownership of Host/Slave networking.
 
 The microbackend owns the HostLink listener, slave connection lifecycle, ROS
-network configuration distribution and material-query dispatch.  ROS HostNode
-only attaches its live resource tree after construction; it never binds the
-HostLink port or builds the network policy itself.
+network configuration distribution and Materials Authority request dispatch.
+ROS HostNode never serves a second material snapshot.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 import atexit
 import os
 import threading
-from typing import Any, Callable, Iterable, Optional, Tuple
+from typing import Any, Iterable, Optional, Tuple
 
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink.client import (
@@ -20,7 +19,6 @@ from unilabos.hostlink.client import (
     set_hostlink_client,
 )
 from unilabos.hostlink.protocol import ActionType, PROTOCOL_VERSION
-from unilabos.hostlink.resolver import LocalResourceResolver
 from unilabos.hostlink.ros_assist import (
     FastDDSDiscoveryServer,
     RosNetworkInfo,
@@ -35,7 +33,6 @@ from unilabos.hostlink.ros_assist import (
 from unilabos.hostlink.server import HostLinkServer, set_hostlink_server
 from unilabos.utils import logger
 
-ResourceTreeGetter = Callable[[], Any]
 SERVICE_OWNER = "edge-microbackend"
 
 
@@ -46,24 +43,30 @@ class HostNetworkService:
         self,
         server: HostLinkServer,
         ros_info: RosNetworkInfo,
-        resource_tree_getter: Optional[ResourceTreeGetter] = None,
         material_gateway: Any = None,
         fallback_discovery_range: str = "",
     ) -> None:
         self.server = server
         self.ros_info = ros_info
-        self._resource_tree_getter = resource_tree_getter
-        self._resource_lock = threading.Lock()
         self._material_gateway = material_gateway
         self._material_gateway_lock = threading.Lock()
-        self._resolver = LocalResourceResolver(self._resource_tree)
         self._discovery_server: Optional[FastDDSDiscoveryServer] = None
         self._fallback_discovery_range = fallback_discovery_range
 
         self._refresh_hello_payload()
-        self.server.register_handler(ActionType.MATERIAL, self._material)
         self.server.register_handler(
             ActionType.MATERIAL_CREATE, self._material_create
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_GET_TREE, self._material_get_tree
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_COMPARE_SNAPSHOT,
+            self._material_compare_snapshot,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_APPLY_SNAPSHOT,
+            self._material_apply_snapshot,
         )
         self.server.register_handler(ActionType.ROS_INFO, self._ros_info)
 
@@ -82,7 +85,6 @@ class HostNetworkService:
     @classmethod
     def from_config(
         cls,
-        resource_tree_getter: Optional[ResourceTreeGetter] = None,
         material_gateway: Any = None,
     ) -> "HostNetworkService":
         host_ip = HostLinkConfig.advertise_ip or detect_local_ip() or "127.0.0.1"
@@ -136,7 +138,6 @@ class HostNetworkService:
                 heartbeat_timeout=HostLinkConfig.heartbeat_timeout,
             ),
             ros_info,
-            resource_tree_getter,
             material_gateway,
             fallback_discovery_range,
         )
@@ -202,12 +203,6 @@ class HostNetworkService:
             self._discovery_server = None
         set_hostlink_server(None)
 
-    def attach_resource_tree(self, getter: ResourceTreeGetter) -> None:
-        """Attach HostNode runtime state without transferring network ownership."""
-
-        with self._resource_lock:
-            self._resource_tree_getter = getter
-
     def attach_material_gateway(self, gateway: Any) -> None:
         """Attach the Host-selected embedded/external materials authority."""
 
@@ -219,39 +214,18 @@ class HostNetworkService:
         with self._material_gateway_lock:
             return self._material_gateway
 
-    def _resource_tree(self) -> Any:
-        with self._resource_lock:
-            getter = self._resource_tree_getter
-        return getter() if getter is not None else None
-
-    def _material(self, data: dict[str, Any], _peer: dict[str, Any]) -> dict[str, Any]:
-        """Serve the host material component, then its attached runtime tree."""
-
-        from unilabos.app.web.client import http_client
-
-        resource_uuid = data.get("uuid") or None
-        resource_id = data.get("id") or None
-        with_children = bool(data.get("with_children", True))
-        try:
-            nodes = http_client.material_query(
-                uuids=[resource_uuid] if resource_uuid else None,
-                resource_id=resource_id,
-                with_children=with_children,
+    def _require_material_gateway(self) -> Any:
+        with self._material_gateway_lock:
+            gateway = self._material_gateway
+        if gateway is None:
+            from unilabos.server.scheduler.integration import (
+                get_materials_gateway,
             )
-        except Exception as exc:  # noqa: BLE001 - runtime tree is compatibility fallback
-            logger.warning(
-                "[EdgeMicrobackend] material HTTP source failed; "
-                "falling back to HostNode runtime tree: %s",
-                exc,
-            )
-            nodes = []
-        if not nodes:
-            nodes = self._resolver.resolve(
-                uuid=resource_uuid,
-                res_id=resource_id,
-                with_children=with_children,
-            )
-        return {"nodes": nodes}
+
+            gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        return gateway
 
     def _material_create(
         self, data: dict[str, Any], _peer: dict[str, Any]
@@ -263,18 +237,41 @@ class HostNetworkService:
 
         mutation = InventoryMutation.model_validate(data)
         value = MaterialTreeCreate.model_validate(mutation.payload)
-        with self._material_gateway_lock:
-            gateway = self._material_gateway
-        if gateway is None:
-            from unilabos.server.scheduler.integration import (
-                get_materials_gateway,
-            )
-
-            gateway = get_materials_gateway()
-        if gateway is None:
-            raise RuntimeError("Host 尚未配置 materials authority")
+        gateway = self._require_material_gateway()
         result = gateway.create_tree(mutation, value)
         return result.model_dump(mode="json", exclude_none=False)
+
+    def _material_get_tree(
+        self, data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        root_material_uuid = str(data.get("root_material_uuid") or "").strip()
+        if not root_material_uuid:
+            raise ValueError("material.tree.get requires root_material_uuid")
+        return self._require_material_gateway().get_tree(
+            root_material_uuid
+        ).model_dump(mode="json", exclude_none=False)
+
+    def _material_compare_snapshot(
+        self, data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.materials import MaterialSnapshot
+
+        snapshot = MaterialSnapshot.model_validate(data)
+        return self._require_material_gateway().compare_snapshot(
+            snapshot
+        ).model_dump(mode="json", exclude_none=False)
+
+    def _material_apply_snapshot(
+        self, data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialSnapshot
+
+        mutation = InventoryMutation.model_validate(data)
+        snapshot = MaterialSnapshot.model_validate(mutation.payload)
+        return self._require_material_gateway().apply_snapshot(
+            mutation, snapshot
+        ).model_dump(mode="json", exclude_none=False)
 
     def _ros_info(
         self,
@@ -303,24 +300,20 @@ def _register_process_cleanup() -> None:
 
 
 def setup_host_network_service(
-    resource_tree_getter: Optional[ResourceTreeGetter] = None,
     material_gateway: Any = None,
 ) -> Optional[HostNetworkService]:
-    """Start the host listener once and optionally attach live HostNode state."""
+    """启动 Host listener，并只挂载微后端 Materials Authority。"""
 
     global _host_service
     if not HostLinkConfig.enable:
         return None
     with _host_service_lock:
         if _host_service is not None:
-            if resource_tree_getter is not None:
-                _host_service.attach_resource_tree(resource_tree_getter)
             if material_gateway is not None:
                 _host_service.attach_material_gateway(material_gateway)
             return _host_service
         try:
             _host_service = HostNetworkService.from_config(
-                resource_tree_getter,
                 material_gateway,
             ).start()
             _register_process_cleanup()

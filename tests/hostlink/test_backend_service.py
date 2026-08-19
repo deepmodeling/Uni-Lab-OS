@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import socket
 import threading
@@ -129,26 +130,40 @@ def isolated_network(monkeypatch):
     shutdown_network_services()
 
 
-def test_host_microbackend_owns_listener_material_and_ros(monkeypatch) -> None:
+def test_host_microbackend_owns_listener_material_and_ros(
+    tmp_path, monkeypatch
+) -> None:
     from fastapi.testclient import TestClient
 
+    from unilabos.resources import materials
+    from unilabos.resources.container import RegularContainer
     from unilabos.server.scheduler.api import create_app
-    from unilabos.app.web.client import http_client
+    from unilabos.server.clients.materials import (
+        HostLinkMaterialsClient,
+        LocalMaterialsClient,
+    )
+    from unilabos.server.services.materials import MaterialsService
 
-    material_calls: list[dict[str, object]] = []
-
-    def empty_material_source(**kwargs):
-        material_calls.append(kwargs)
-        return []
-
-    monkeypatch.setattr(http_client, "material_query", empty_material_source)
     monkeypatch.setattr(BasicConfig, "host_node_name", "west_lab")
-    tree = _TreeSet("west_lab")
-    service = setup_host_network_service(lambda: tree)
+    material_service = MaterialsService(tmp_path / "materials.db")
+    gateway = LocalMaterialsClient(material_service)
+    beaker = RegularContainer(
+        name="authority-beaker",
+        size_x=10,
+        size_y=10,
+        size_z=20,
+        max_volume=100,
+    )
+    beaker.unilabos_extra = {
+        "unilabos_resource_class": "authority-beaker"
+    }
+    created = materials.create(beaker, gateway=gateway)
+    material_uuid = created.result.data.root_material_uuid
+    service = setup_host_network_service(material_gateway=gateway)
     assert service is not None
     assert get_host_network_service() is service
     assert get_hostlink_server() is service.server
-    assert setup_host_network_service(lambda: tree) is service
+    assert setup_host_network_service(material_gateway=gateway) is service
 
     client = HostLinkClient(
         "127.0.0.1",
@@ -164,14 +179,10 @@ def test_host_microbackend_owns_listener_material_and_ros(monkeypatch) -> None:
         assert client.hello_info["host_node_id"] == "west_lab"
         assert client.hello_ros_info().domain_id == 73
 
-        nodes = client.get_resource(res_id="west_lab", with_children=True)
-        assert [node["id"] for node in nodes] == ["west_lab", "plate_1"]
-        assert material_calls == [
-            {
-                "uuids": None,
-                "resource_id": "west_lab",
-                "with_children": True,
-            }
+        tree = HostLinkMaterialsClient(client).get_tree(material_uuid)
+        assert tree.root_material_uuid == material_uuid
+        assert [node.material.resource_id for node in tree.nodes] == [
+            "authority-beaker"
         ]
 
         ros_response = client.request(ActionType.ROS_INFO)
@@ -187,10 +198,11 @@ def test_host_microbackend_owns_listener_material_and_ros(monkeypatch) -> None:
         assert status["peers"][0]["node_id"] == "slave-a"
     finally:
         client.close()
+        material_service.close()
 
 
 def test_slave_microbackend_applies_host_ros_config_before_ros_init() -> None:
-    service = setup_host_network_service(lambda: _TreeSet())
+    service = setup_host_network_service()
     assert service is not None
     HostLinkConfig.host = "127.0.0.1"
     HostLinkConfig.port = service.server.port
@@ -216,7 +228,7 @@ def test_slave_microbackend_applies_host_ros_config_before_ros_init() -> None:
 def test_slave_material_create_is_proxied_by_host_authority(
     tmp_path, monkeypatch
 ) -> None:
-    from unilabos.resources import materials
+    from unilabos.device_runtime.resource import AuthorityResourceService
     from unilabos.resources.container import RegularContainer
     from unilabos.server.clients.materials import LocalMaterialsClient
     from unilabos.server.services.materials import MaterialsService
@@ -241,10 +253,18 @@ def test_slave_material_create_is_proxied_by_host_authority(
     )
     beaker.unilabos_extra = {"unilabos_resource_class": "custom-beaker"}
     try:
-        created = materials.create(beaker)
+        resource_service = AuthorityResourceService()
+        created = asyncio.run(
+            resource_service.create_resources(
+                "liquid-handler-1",
+                "device-uuid",
+                beaker,
+            )
+        )
 
         assert not getattr(beaker, "unilabos_uuid", "")
-        assert created.resources[0].unilabos_uuid
+        authoritative = created.resources[0]
+        assert authoritative.unilabos_uuid
         assert (
             created.result.data.nodes[0].material.template_name
             == "custom-beaker"
@@ -255,6 +275,30 @@ def test_slave_material_create_is_proxied_by_host_authority(
             created.result.data.nodes[0].material.template_uuid
             == template.template_uuid
         )
+
+        authoritative.tracker.set_liquids([("water", 20.0, "ul")])
+        updated = asyncio.run(
+            resource_service.update_resources(
+                "liquid-handler-1",
+                "device-uuid",
+                authoritative,
+            )
+        )
+        assert updated.all_nodes_uuid == [authoritative.unilabos_uuid]
+        downloaded = asyncio.run(
+            resource_service.get_resources(
+                "liquid-handler-1",
+                [authoritative.unilabos_uuid],
+                with_children=True,
+            )
+        )
+        assert downloaded.all_nodes_uuid == [authoritative.unilabos_uuid]
+        assert [
+            (item.name, item.quantity, item.quantity_unit)
+            for item in material_service.get_material(
+                authoritative.unilabos_uuid
+            ).data.substances
+        ] == [("water", 20.0, "ul")]
     finally:
         material_service.close()
 
@@ -292,7 +336,7 @@ def test_normal_slave_waits_until_delayed_host_is_ready() -> None:
     time.sleep(0.2)
     assert thread.is_alive()
 
-    service = setup_host_network_service(lambda: _TreeSet())
+    service = setup_host_network_service()
     assert service is not None
     thread.join(timeout=4)
     assert not thread.is_alive()
@@ -348,7 +392,7 @@ def test_required_host_wait_can_be_stopped_cleanly() -> None:
 
 
 def test_microbackend_shutdown_releases_hostlink_port() -> None:
-    service = setup_host_network_service(lambda: _TreeSet())
+    service = setup_host_network_service()
     assert service is not None
     port = service.server.port
 
@@ -384,7 +428,7 @@ def test_managed_discovery_lifecycle_belongs_to_microbackend(monkeypatch) -> Non
     monkeypatch.setattr(HostLinkConfig, "ros_discovery_server", "")
     monkeypatch.setattr(HostLinkConfig, "ros_discovery_port", 0)
 
-    service = setup_host_network_service(lambda: _TreeSet())
+    service = setup_host_network_service()
     assert service is not None
     endpoint = f"127.0.0.1:{link_port}"
     assert starts == [("127.0.0.1", link_port)]

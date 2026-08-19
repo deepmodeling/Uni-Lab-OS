@@ -184,7 +184,7 @@ def apply_substances(
     return targets
 
 
-def _default_gateway() -> MaterialGateway:
+def resolve_materials_gateway() -> MaterialGateway:
     """按进程角色选择链路；Slave 永远经 HostLink，不直连 HTTP。"""
 
     from unilabos.config.config import BasicConfig, HTTPConfig
@@ -239,7 +239,9 @@ def create(
         effect_key="create_material_tree",
         operation="create_material_tree",
     )
-    return create_plr_materials(gateway or _default_gateway(), request, resources)
+    return create_plr_materials(
+        gateway or resolve_materials_gateway(), request, resources
+    )
 
 
 __all__ = [
@@ -249,6 +251,7 @@ __all__ = [
     "apply_substances",
     "create",
     "resolve_site_spot",
+    "resolve_materials_gateway",
     "resolve_substance_targets",
     "set_substance_on_target",
 ]

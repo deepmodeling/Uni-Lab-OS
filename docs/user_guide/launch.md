@@ -144,7 +144,7 @@ Uni-Lab 对外提供两个通信 backend。名称、能力和实现入口由
 
 | Backend | 定位 | 默认 App bridges | Host/Slave | 可视化 |
 |---|---|---|---|---|
-| **hostlink** | 本地 Python 驱动通过 HostLink TCP 组网，不启动 rclpy/DDS；可加载 ROS message 包并以 JSON 传输；支持设备发现、双向动作调用、Topic、状态和物料树同步 | 无 | 支持 | 不支持 |
+| **hostlink** | 本地 Python 驱动通过 HostLink TCP 组网，不启动 rclpy/DDS；可加载 ROS message 包并以 JSON 传输；支持设备发现、双向动作调用、Topic、状态，以及经 Host 代理微后端的权威物料 CRUD | 无 | 支持 | 不支持 |
 | **ros2**（默认） | 完整 ROS 2 分布式运行时 | `websocket fastapi` | 支持 | 支持 |
 
 典型启动命令：

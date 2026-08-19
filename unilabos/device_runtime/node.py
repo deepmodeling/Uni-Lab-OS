@@ -17,6 +17,7 @@ from unilabos.device_runtime.primitives import (
 
 if TYPE_CHECKING:
     from unilabos.device_runtime.action import DeviceActionRouter
+    from unilabos.device_runtime.resource import ResourceService
     from unilabos.device_runtime.service import ServiceBus
     from unilabos.device_runtime.topic import (
         TopicBus,
@@ -230,11 +231,29 @@ class DeviceNode(ABC):
         if callback in callbacks:
             callbacks.remove(callback)
 
+    def _require_resource_service(self) -> "ResourceService":
+        service = self.__dict__.get("_device_resource_service")
+        if service is None:
+            raise BackendCapabilityError(
+                f"backend '{self.backend_name}' 尚未接入微后端 Materials Authority"
+            )
+        return service
+
+    def set_resource_service(self, service: "ResourceService") -> None:
+        self.__dict__["_device_resource_service"] = service
+
+    async def create_material(self, resources: Any) -> Any:
+        return await self._require_resource_service().create_resources(
+            self.device_id,
+            self.resource_uuid,
+            resources,
+        )
+
     async def update_resource(self, resources: Any) -> Any:
-        del resources
-        raise BackendCapabilityError(
-            f"backend '{self.backend_name}' 尚未接入 Resource Authority，"
-            "不能执行设备物料更新"
+        return await self._require_resource_service().update_resources(
+            self.device_id,
+            self.resource_uuid,
+            resources,
         )
 
     async def get_resource(
@@ -242,10 +261,10 @@ class DeviceNode(ABC):
         resources_uuid: list[str],
         with_children: bool = True,
     ) -> Any:
-        del resources_uuid, with_children
-        raise BackendCapabilityError(
-            f"backend '{self.backend_name}' 尚未接入 Resource Authority，"
-            "不能执行设备物料查询"
+        return await self._require_resource_service().get_resources(
+            self.device_id,
+            resources_uuid,
+            with_children,
         )
 
     def set_service_bus(self, bus: "ServiceBus") -> None:

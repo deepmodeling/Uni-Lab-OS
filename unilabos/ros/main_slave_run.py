@@ -97,7 +97,6 @@ def main(
         bridges,
         discovery_interval,
     )
-    _attach_hostlink_resource_tree(host_node)
 
     if visual != "disable":
         from unilabos.ros.nodes.presets.joint_republisher import JointRepublisher
@@ -128,14 +127,6 @@ def main(
 
     while True:
         time.sleep(1)
-
-
-def _attach_hostlink_resource_tree(host_node: HostNode) -> None:
-    """把 ROS HostNode 实时资源树挂到微后端，不转移网络所有权。"""
-
-    from unilabos.server.scheduler.host_network import setup_host_network_service
-
-    setup_host_network_service(lambda: host_node.resources_config)
 
 
 def slave(

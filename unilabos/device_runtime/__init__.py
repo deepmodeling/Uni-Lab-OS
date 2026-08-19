@@ -20,6 +20,10 @@ from unilabos.device_runtime.primitives import (
     DeviceTimer,
     SetParametersResult,
 )
+from unilabos.device_runtime.resource import (
+    AuthorityResourceService,
+    ResourceService,
+)
 from unilabos.device_runtime.service import (
     DeviceService,
     DeviceServiceClient,
@@ -38,6 +42,7 @@ __all__ = [
     "ActionCancelled",
     "ActionContext",
     "BackendCapabilityError",
+    "AuthorityResourceService",
     "DeviceNode",
     "DeviceClock",
     "DeviceParameter",
@@ -50,6 +55,7 @@ __all__ = [
     "DeviceActionRouter",
     "LocalServiceBus",
     "LocalTopicBus",
+    "ResourceService",
     "schedule_async_func",
     "ServiceBus",
     "SetParametersResult",

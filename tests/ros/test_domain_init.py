@@ -48,13 +48,8 @@ def test_ros_host_starts_microbackend_network_before_rclpy(monkeypatch) -> None:
 
     events = []
 
-    def setup_network(resource_tree_getter=None):
-        events.append(
-            (
-                "hostlink",
-                resource_tree_getter() if resource_tree_getter else None,
-            )
-        )
+    def setup_network(material_gateway=None):
+        events.append(("hostlink", material_gateway))
         return object()
 
     class HostNode:
@@ -103,7 +98,7 @@ def test_ros_host_starts_microbackend_network_before_rclpy(monkeypatch) -> None:
         main_slave_run.main(object(), object())
 
     assert events[:2] == [("hostlink", None), ("rclpy", None)]
-    assert ("hostlink", "live-resource-tree") in events
+    assert events.count(("hostlink", None)) == 1
 
 
 def test_ros_slave_gets_hostlink_policy_before_rclpy(monkeypatch) -> None:

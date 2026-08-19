@@ -488,9 +488,13 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         self.device_id = device_id
         self.registry_name = registry_name
         self.uuid = device_uuid
+        self.resource_uuid = device_uuid
         self.publish_high_frequency = False
         self.callback_group = ReentrantCallbackGroup()
         self.resource_tracker = resource_tracker
+        from unilabos.device_runtime.resource import AuthorityResourceService
+
+        self.set_resource_service(AuthorityResourceService())
 
         # 初始化ROS节点
         self.node_name = f'{device_id.split("/")[-1]}'
@@ -863,25 +867,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         return rclpy.get_global_executor().create_task(coroutine)
 
     async def update_resource(self, resources: List["ResourcePLR"]):
-        r = SerialCommand.Request()
-        tree_set = ResourceTreeSet.from_plr_resources(resources)
-        # host_node 的根物料无父 uuid 是预期状态（归属 host_node 自身、不物理挂载），不告警/不回填；
-        # 其它设备的无父根物料才自动以当前设备为根。
-        is_host = self.device_id == "host_node"
-        for tree in tree_set.trees:
-            root_node = tree.root_node
-            if not root_node.res_content.uuid_parent and not is_host:
-                logger.warning(f"更新无父节点物料{root_node}，自动以当前设备作为根节点")
-                root_node.res_content.parent_uuid = self.uuid
-        r.command = json.dumps({"data": {"data": tree_set.dump()}, "action": "update"})
-        response: SerialCommand_Response = await self._resource_clients["c2s_update_resource_tree"].call_async(r)  # type: ignore
-        try:
-            uuid_maps = json.loads(response.response)
-            self.resource_tracker.loop_update_uuid(resources, uuid_maps)
-        except Exception as e:
-            self.lab_logger().error(f"更新资源uuid失败: {e}")
-            self.lab_logger().error(traceback.format_exc())
-        self.lab_logger().trace(f"资源更新结果: {response}")
+        return await DeviceNode.update_resource(self, resources)
 
     async def get_resource(self, resources_uuid: List[str], with_children: bool = True) -> ResourceTreeSet:
         """
@@ -894,18 +880,11 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         Returns:
             ResourceTreeSet: 资源树集合
         """
-        response: SerialCommand.Response = await self._resource_clients["c2s_update_resource_tree"].call_async(
-            SerialCommand.Request(
-                command=json.dumps(
-                    {
-                        "data": {"data": resources_uuid, "with_children": with_children},
-                        "action": "get",
-                    }
-                )
-            )
-        )  # type: ignore
-        raw_nodes = json.loads(response.response)
-        tree_set = ResourceTreeSet.from_raw_dict_list(raw_nodes)
+        tree_set = await DeviceNode.get_resource(
+            self,
+            resources_uuid,
+            with_children,
+        )
         self.lab_logger().trace(f"获取资源结果: {len(tree_set.trees)} 个资源树 {tree_set.root_nodes}")
         return tree_set
 

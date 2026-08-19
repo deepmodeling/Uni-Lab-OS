@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
+from unilabos.device_runtime.resource import AuthorityResourceService
 from unilabos.device_runtime.service import normalize_service_name
 from unilabos.device_runtime.topic import (
     TopicEvent,
@@ -76,6 +77,15 @@ class HostLinkBackendRuntime:
                     self.client.configure_device_descriptors(self.local.descriptors())
                 self._connect_slave()
             else:
+                from unilabos.server.scheduler.integration import (
+                    get_materials_gateway,
+                )
+
+                self.local.set_resource_service(
+                    AuthorityResourceService(
+                        gateway_provider=get_materials_gateway
+                    )
+                )
                 self.local.start()
                 self._start_host()
         except Exception:
@@ -127,6 +137,18 @@ class HostLinkBackendRuntime:
             ActionType.MATERIAL_CREATE,
             self._handle_material_create,
         )
+        self.server.register_handler(
+            ActionType.MATERIAL_GET_TREE,
+            self._handle_material_get_tree,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_COMPARE_SNAPSHOT,
+            self._handle_material_compare_snapshot,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_APPLY_SNAPSHOT,
+            self._handle_material_apply_snapshot,
+        )
         self.server.start()
         set_hostlink_server(self.server)
         logger.info(
@@ -154,6 +176,54 @@ class HostLinkBackendRuntime:
         result = gateway.create_tree(mutation, value)
         return result.model_dump(mode="json", exclude_none=False)
 
+    @staticmethod
+    def _handle_material_get_tree(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        root_material_uuid = str(data.get("root_material_uuid") or "").strip()
+        if not root_material_uuid:
+            raise ValueError("material.tree.get requires root_material_uuid")
+        return gateway.get_tree(root_material_uuid).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_compare_snapshot(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.materials import MaterialSnapshot
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        snapshot = MaterialSnapshot.model_validate(data)
+        return gateway.compare_snapshot(snapshot).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_apply_snapshot(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialSnapshot
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        snapshot = MaterialSnapshot.model_validate(mutation.payload)
+        return gateway.apply_snapshot(mutation, snapshot).model_dump(
+            mode="json", exclude_none=False
+        )
+
     def _start_slave(self) -> None:
         host = str(HostLinkConfig.host or "").strip()
         if not host:
@@ -170,6 +240,11 @@ class HostLinkBackendRuntime:
             device_descriptors=self.local.descriptors(),
             heartbeat_payload_provider=self._heartbeat_payload,
             on_status_change=self._on_client_status_change,
+        )
+        from unilabos.server.clients.materials import HostLinkMaterialsClient
+
+        self.local.set_resource_service(
+            AuthorityResourceService(HostLinkMaterialsClient(self.client))
         )
         self.client.register_handler(ActionType.DEVICE_CALL, self._handle_device_call)
         self.client.register_handler(

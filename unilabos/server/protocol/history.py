@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import Literal, Optional
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_serializer, field_validator, model_validator
 
 from unilabos.server.database.history import INLINE_PAYLOAD_LIMIT_BYTES
+from unilabos.server.models.history import PayloadObjectRecord
 from unilabos.server.models.base import (
     JsonObject,
     NonEmptyStr,
@@ -28,6 +31,21 @@ HistoryEventType = Literal[
 ]
 
 
+def _decode_base64_bytes(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    try:
+        return base64.b64decode(value.encode("ascii"), validate=True)
+    except (UnicodeEncodeError, binascii.Error) as exc:
+        raise ValueError("inline_payload must be valid Base64") from exc
+
+
+def _encode_base64_bytes(value: Optional[bytes]) -> Optional[str]:
+    if value is None:
+        return None
+    return base64.b64encode(value).decode("ascii")
+
+
 class InlinePayloadWrite(ServerObject):
     """由微后端直接保存在 ``history.db`` 的小 payload。"""
 
@@ -40,6 +58,17 @@ class InlinePayloadWrite(ServerObject):
     inline_payload: bytes
     created_at_ms: Optional[UnixMilliseconds] = None
     expires_at_ms: Optional[UnixMilliseconds] = None
+
+    @field_validator("inline_payload", mode="before")
+    @classmethod
+    def _decode_inline_payload(cls, value: object) -> object:
+        return _decode_base64_bytes(value)
+
+    @field_serializer("inline_payload", when_used="json")
+    def _encode_inline_payload(self, value: bytes) -> str:
+        encoded = _encode_base64_bytes(value)
+        assert encoded is not None
+        return encoded
 
     @model_validator(mode="after")
     def _validate_inline_payload(self) -> "InlinePayloadWrite":
@@ -83,6 +112,19 @@ class ExternalPayloadWrite(ServerObject):
 
 
 PayloadWrite = InlinePayloadWrite | ExternalPayloadWrite
+
+
+class PayloadObjectRead(PayloadObjectRecord):
+    """payload 只读协议；inline bytes 在线上固定使用 Base64。"""
+
+    @field_validator("inline_payload", mode="before")
+    @classmethod
+    def _decode_inline_payload(cls, value: object) -> object:
+        return _decode_base64_bytes(value)
+
+    @field_serializer("inline_payload", when_used="json")
+    def _encode_inline_payload(self, value: Optional[bytes]) -> Optional[str]:
+        return _encode_base64_bytes(value)
 
 
 class HistoryEventAppend(ServerObject):
@@ -182,5 +224,6 @@ __all__ = [
     "HistoryEventType",
     "InlinePayloadWrite",
     "ManualResultReplacement",
+    "PayloadObjectRead",
     "PayloadWrite",
 ]

@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from unilabos.hostlink.protocol import (
     ActionType,
+    exception_error_info,
     LineReader,
     LinkError,
     PROTOCOL_VERSION,
@@ -246,6 +247,8 @@ class HostLinkClient:
             require_online=require_online,
         )
         wait_timeout = self.request_timeout if timeout is None else float(timeout)
+        if wait_timeout < 0:
+            wait_timeout = None
         try:
             try:
                 response = pending.wait(wait_timeout)
@@ -271,6 +274,8 @@ class HostLinkClient:
             require_online=require_online,
         )
         wait_timeout = self.request_timeout if timeout is None else float(timeout)
+        if wait_timeout < 0:
+            wait_timeout = None
         try:
             try:
                 response = await pending.wait_async(wait_timeout)
@@ -316,7 +321,10 @@ class HostLinkClient:
     @staticmethod
     def _response_data(response: Dict[str, Any]) -> Any:
         if not response.get("ok"):
-            raise RemoteError(str(response.get("error") or "remote error"))
+            raise RemoteError(
+                str(response.get("error") or "remote error"),
+                response.get("error_info"),
+            )
         return response.get("data")
 
     def _run(self) -> None:
@@ -437,7 +445,12 @@ class HostLinkClient:
                     response = new_response(request_id, True, handler(data))
                 except Exception as exc:  # noqa: BLE001 - RPC 请求必须返回明确错误
                     logger.warning(f"[HostLink] incoming {action} failed: {exc}")
-                    response = new_response(request_id, False, error=str(exc))
+                    response = new_response(
+                        request_id,
+                        False,
+                        error=str(exc),
+                        error_info=exception_error_info(exc),
+                    )
         try:
             with self._write_lock:
                 send_message(sock, response)

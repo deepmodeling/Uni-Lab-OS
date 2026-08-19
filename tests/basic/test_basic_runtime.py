@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import time
 
 import pytest
 import yaml
@@ -13,6 +14,9 @@ from unilabos.basic.runtime import (
     instantiate_driver,
 )
 from unilabos.device_runtime import BackendCapabilityError
+from unilabos.device_runtime.action import ActionContext
+from unilabos.registry.decorators import topic_config
+from unilabos.registry.placeholder_type import ResourceSlot
 from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
 
 
@@ -136,6 +140,43 @@ class ServiceDriver:
         client = self.node.create_client(AddService, "/devices/provider/add")
         response = await client.call_async(AddService.Request(left, right))
         return response.total
+
+
+class DecoratedRuntimeDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+        self.node = None
+        self.progress = 0
+        self.status_reads = 0
+
+    def post_init(self, node) -> None:
+        self.node = node
+
+    @property
+    @topic_config(period=0.02, name="renamed_status")
+    def status(self) -> int:
+        self.status_reads += 1
+        return self.status_reads
+
+    def mapped_action(self, driver_value: int) -> dict[str, int]:
+        return {"value": driver_value * 2}
+
+    def nested_action(self, driver_values: list[int]) -> list[int]:
+        return [value * 2 for value in driver_values]
+
+    def feedback_action(self, duration: float) -> int:
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            self.progress += 1
+            time.sleep(0.005)
+        return self.progress
+
+    def resource_action(self, resource: ResourceSlot) -> str:
+        return resource.name
+
+    async def concurrent_action(self, duration: float) -> float:
+        await self.node.sleep(duration)
+        return duration
 
 
 def test_driver_instantiation_supports_config_and_flat_styles() -> None:
@@ -350,6 +391,141 @@ def test_basic_runtime_exposes_action_metadata() -> None:
         "result": {"total": "total"},
         "schema": {"type": "object"},
     }
+
+
+def _decorated_runtime() -> BasicRuntime:
+    runtime = BasicRuntime("hostlink")
+    runtime.add_driver(
+        BasicDriverSpec(
+            "decorated",
+            DecoratedRuntimeDriver,
+            {},
+            action_names=(
+                "mapped_action",
+                "nested_action",
+                "feedback_action",
+                "concurrent_action",
+                "resource_action",
+            ),
+            action_value_mappings={
+                "mapped_action": {
+                    "type": "MappedAction",
+                    "goal": {"wire_value": "driver_value"},
+                    "result": {"value": "value"},
+                },
+                "nested_action": {
+                    "type": "NestedAction",
+                    "goal": {"items[].wire_value": "driver_values[]"},
+                },
+                "feedback_action": {
+                    "type": "FeedbackAction",
+                    "goal": {"duration": "duration"},
+                    "feedback": {"progress": "progress"},
+                    "feedback_interval": 0.01,
+                },
+                "concurrent_action": {
+                    "type": "ConcurrentAction",
+                    "always_free": True,
+                },
+                "resource_action": {
+                    "type": "ResourceAction",
+                    "goal": {"resource": "resource"},
+                },
+            },
+            status_names=("status",),
+        )
+    )
+    return runtime
+
+
+def test_basic_runtime_applies_action_goal_mapping_and_feedback_config() -> None:
+    runtime = _decorated_runtime()
+    runtime.start()
+    feedback: list[dict[str, int]] = []
+    try:
+        assert runtime.call_action(
+            "decorated",
+            "mapped_action",
+            wire_value=7,
+        ) == {"value": 14}
+        assert runtime.call_action(
+            "decorated",
+            "nested_action",
+            items=[{"wire_value": 2}, {"wire_value": 5}],
+        ) == [4, 10]
+        context = ActionContext(
+            feedback_callback=lambda _action_id, data: feedback.append(data)
+        )
+        assert runtime.call_action(
+            "decorated",
+            "feedback_action",
+            action_context=context,
+            duration=0.05,
+        ) > 0
+        assert feedback
+        assert feedback[-1]["progress"] > 0
+    finally:
+        runtime.stop()
+
+
+def test_basic_runtime_resolves_resource_slot_before_driver_call() -> None:
+    from pylabrobot.resources import Resource
+
+    runtime = _decorated_runtime()
+    resource = Resource("plate", size_x=1, size_y=1, size_z=1)
+    resource.unilabos_uuid = "resource-uuid"
+    runtime.devices["decorated"].resource_tracker.add_resource(resource)
+    runtime.start()
+    try:
+        assert runtime.call_action(
+            "decorated",
+            "resource_action",
+            resource={"uuid": "resource-uuid"},
+        ) == "plate"
+    finally:
+        runtime.stop()
+
+
+def test_basic_runtime_honors_topic_config_period_and_name() -> None:
+    runtime = _decorated_runtime()
+    received: list[int] = []
+    runtime.topic_bus.subscribe(
+        "/devices/decorated/renamed_status",
+        received.append,
+    )
+    runtime.start()
+    try:
+        deadline = time.monotonic() + 0.5
+        while len(received) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert len(received) >= 2
+        assert runtime.descriptors()[0]["status_fields"] == ["renamed_status"]
+        assert set(runtime.snapshot_states()["decorated"]) == {"renamed_status"}
+    finally:
+        runtime.stop()
+
+
+def test_basic_runtime_does_not_queue_scheduler_dispatched_actions() -> None:
+    runtime = _decorated_runtime()
+    runtime.start()
+    try:
+        async def run_both() -> tuple[list[float], float]:
+            started = time.monotonic()
+            values = await asyncio.gather(
+                runtime.call_action_async(
+                    "decorated", "concurrent_action", duration=0.05
+                ),
+                runtime.call_action_async(
+                    "decorated", "concurrent_action", duration=0.05
+                ),
+            )
+            return values, time.monotonic() - started
+
+        values, elapsed = asyncio.run(run_both())
+        assert values == [0.05, 0.05]
+        assert elapsed < 0.09
+    finally:
+        runtime.stop()
 
 
 def test_basic_runtime_reports_direct_ros_node_calls_clearly() -> None:

@@ -1057,6 +1057,11 @@ class HostLinkBackendRuntime:
                 result.setdefault(device_id, remote)
         return result
 
+    def request_stop(self) -> None:
+        """Ask the backend entrypoint to leave its wait loop and clean up."""
+
+        self.local.request_stop()
+
     def stop(self) -> None:
         self.local.topic_bus.remove_outbound_listener(self._on_local_topic)
         self.local.topic_bus.remove_subscription_listener(

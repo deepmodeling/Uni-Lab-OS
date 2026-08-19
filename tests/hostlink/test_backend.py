@@ -346,8 +346,10 @@ def test_hostlink_backend_routes_basic_driver_actions_without_ros(
         )
         assert host.devices()["slave-counter"]["location"] == "remote"
         assert host.devices()["host-local"]["location"] == "local"
-        with pytest.raises(RemoteError, match="没有动作"):
+        with pytest.raises(RemoteError, match="没有动作") as exc_info:
             host.server.call_device("slave-counter", "missing")
+        assert exc_info.value.error_info["exception_type"] == "AttributeError"
+        assert "AttributeError" in exc_info.value.error_info["exception_mro"]
     finally:
         slave.stop()
         host.stop()

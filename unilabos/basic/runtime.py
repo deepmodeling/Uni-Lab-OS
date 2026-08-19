@@ -3,11 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
 import threading
+import types
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Type
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Dict,
+    Iterable,
+    Optional,
+    Type,
+    Union,
+    get_args,
+    get_origin,
+)
 
 from unilabos.device_runtime.action import ActionContext
 from unilabos.device_runtime.driver_creator import (
@@ -17,9 +31,118 @@ from unilabos.device_runtime.driver_creator import (
 from unilabos.device_runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.device_runtime.service import LocalServiceBus
 from unilabos.device_runtime.topic import LocalTopicBus, message_to_value
+from unilabos.registry.decorators import get_topic_config
 from unilabos.resources.plr_additional_res_reg import register
-from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
+from unilabos.resources.resource_tracker import (
+    DeviceNodeResourceTracker,
+    PARAM_SAMPLE_UUIDS,
+    ResourceTreeSet,
+)
 from unilabos.utils.decorator import get_all_subscriptions
+
+
+_MISSING = object()
+
+
+def _read_path(value: Any, path: str) -> Any:
+    """Read a ROS-style dotted/array path from a JSON-compatible value."""
+
+    parts = str(path or "").split(".")
+
+    def read(current: Any, index: int) -> Any:
+        if index >= len(parts):
+            return current
+        part = parts[index]
+        is_array = part.endswith("[]")
+        name = part[:-2] if is_array else part
+        if isinstance(current, dict):
+            child = current.get(name, _MISSING)
+        else:
+            child = getattr(current, name, _MISSING)
+        if child is _MISSING:
+            return _MISSING
+        if is_array:
+            if not isinstance(child, (list, tuple)):
+                return _MISSING
+            if index == len(parts) - 1:
+                return list(child)
+            values = [read(item, index + 1) for item in child]
+            return _MISSING if any(item is _MISSING for item in values) else values
+        return read(child, index + 1)
+
+    return read(value, 0)
+
+
+def _write_path(target: Dict[str, Any], path: str, value: Any) -> None:
+    """Write one mapped value to a dotted result/feedback path."""
+
+    parts = str(path or "").split(".")
+    if not parts or not parts[0]:
+        return
+    current: Any = target
+    for index, part in enumerate(parts):
+        is_array = part.endswith("[]")
+        name = part[:-2] if is_array else part
+        last = index == len(parts) - 1
+        if is_array:
+            values = list(value) if isinstance(value, (list, tuple)) else []
+            if last:
+                current[name] = values
+                return
+            remaining = ".".join(parts[index + 1 :])
+            items: list[Dict[str, Any]] = []
+            for item_value in values:
+                item: Dict[str, Any] = {}
+                _write_path(item, remaining, item_value)
+                items.append(item)
+            current[name] = items
+            return
+        if last:
+            current[name] = value
+            return
+        current = current.setdefault(name, {})
+
+
+@dataclass(frozen=True)
+class _StatusBinding:
+    source_name: str
+    publish_name: str
+    period: float
+    print_publish: bool
+    qos: int
+    configured: bool
+
+
+def _resource_slot_shape(annotation: Any) -> Optional[str]:
+    """Return ``single``/``list`` for ResourceSlot-compatible annotations."""
+
+    if annotation is inspect.Parameter.empty:
+        return None
+    if isinstance(annotation, str):
+        normalized = annotation.replace(" ", "").replace("typing.", "")
+        if "ResourceSlot" not in normalized:
+            return None
+        if normalized.startswith(("list[", "List[")):
+            return "list"
+        return "single"
+
+    origin = get_origin(annotation)
+    if origin is list:
+        arguments = get_args(annotation)
+        if arguments and _resource_slot_shape(arguments[0]) == "single":
+            return "list"
+        return None
+    if origin in (Union, types.UnionType):
+        shapes = {
+            shape
+            for item in get_args(annotation)
+            if item is not type(None) and (shape := _resource_slot_shape(item))
+        }
+        return shapes.pop() if len(shapes) == 1 else None
+
+    name = str(getattr(annotation, "__qualname__", "") or "")
+    module = str(getattr(annotation, "__module__", "") or "")
+    return "single" if name == "ResourceSlot" and module else None
 
 
 def instantiate_driver(
@@ -117,9 +240,9 @@ class BasicDeviceNode(DeviceNode):
         )
         self._loop_ready = threading.Event()
         self._started = False
-        self._action_lock: asyncio.Lock | None = None
         self._status_lock = threading.Lock()
         self._decorated_subscriptions: list[Any] = []
+        self._status_bindings = self._build_status_bindings()
         self.resource_tracker = resource_tracker or DeviceNodeResourceTracker()
 
     _ROS2_RUNTIME_ATTRIBUTES = frozenset(
@@ -147,7 +270,6 @@ class BasicDeviceNode(DeviceNode):
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
-        self._action_lock = asyncio.Lock()
         self._loop_ready.set()
         self._loop.run_forever()
 
@@ -195,6 +317,7 @@ class BasicDeviceNode(DeviceNode):
             initialize = getattr(self.driver, "initialize", None)
             if callable(initialize):
                 self._call(initialize, _wait_timeout=30)
+            self._setup_status_publishers()
         except AttributeError as exc:
             self.stop()
             self._raise_backend_attribute_error(exc)
@@ -214,6 +337,8 @@ class BasicDeviceNode(DeviceNode):
                 topic = f"/devices/{target_device}/{status_name}"
             if not topic:
                 raise ValueError("@subscribe 缺少 topic")
+            if not str(topic).startswith("/"):
+                raise ValueError(f"@subscribe topic 必须是绝对路径：{topic!r}")
             self._decorated_subscriptions.append(
                 self.create_subscription(
                     config.get("msg_type"),
@@ -224,13 +349,92 @@ class BasicDeviceNode(DeviceNode):
                 )
             )
 
+    @staticmethod
+    def _topic_config_for(driver_class: type, source_name: str) -> Dict[str, Any]:
+        try:
+            member = inspect.getattr_static(driver_class, source_name)
+        except AttributeError:
+            return {}
+        if isinstance(member, property):
+            return get_topic_config(member.fget) if member.fget is not None else {}
+        return get_topic_config(member)
+
+    def _build_status_bindings(self) -> tuple[_StatusBinding, ...]:
+        driver_class = type(self.driver)
+        bindings: list[_StatusBinding] = []
+        for status_name in self.status_names:
+            source_name = status_name
+            try:
+                exact = inspect.getattr_static(driver_class, status_name)
+            except AttributeError:
+                exact = _MISSING
+            getter_name = f"get_{status_name}"
+            if not isinstance(exact, property) and hasattr(self.driver, getter_name):
+                source_name = getter_name
+
+            config = self._topic_config_for(driver_class, source_name)
+            publish_name = str(config.get("name") or status_name)
+            period = float(
+                config["period"] if config.get("period") is not None else 5.0
+            )
+            if period <= 0:
+                raise ValueError(
+                    f"设备 {self.device_id!r} 状态 {status_name!r} 的发布周期必须大于 0"
+                )
+            bindings.append(
+                _StatusBinding(
+                    source_name=source_name,
+                    publish_name=publish_name,
+                    period=period,
+                    print_publish=bool(config.get("print_publish", False)),
+                    qos=int(config["qos"] if config.get("qos") is not None else 10),
+                    configured=bool(config),
+                )
+            )
+        return tuple(bindings)
+
+    def _read_driver_value(self, source_name: str) -> Any:
+        value = getattr(self.driver, source_name)
+        return self._call(value) if callable(value) else value
+
+    async def _read_driver_value_async(self, source_name: str) -> Any:
+        value = getattr(self.driver, source_name)
+        if callable(value):
+            value = value()
+        return await value if inspect.isawaitable(value) else value
+
+    async def _publish_status_binding(self, binding: _StatusBinding) -> None:
+        try:
+            value = await self._read_driver_value_async(binding.source_name)
+            self.emit_status(binding.publish_name, value)
+            if binding.print_publish:
+                self._logger.info(
+                    "状态发布：%s.%s = %r",
+                    self.device_id,
+                    binding.publish_name,
+                    value,
+                )
+        except Exception:  # noqa: BLE001 - one status must not stop other timers
+            self._logger.exception(
+                "状态发布失败：%s.%s",
+                self.device_id,
+                binding.publish_name,
+            )
+
+    def _setup_status_publishers(self) -> None:
+        for binding in self._status_bindings:
+            self.create_timer(
+                binding.period,
+                lambda current=binding: self._publish_status_binding(current),
+            )
+
     def _resolve_action(
         self,
         action_name: str,
         *,
         action_context: Optional[ActionContext] = None,
         **kwargs: Any,
-    ) -> tuple[Callable[..., Any], ActionContext, Dict[str, Any]]:
+    ) -> tuple[Callable[..., Any], ActionContext, Dict[str, Any], Dict[str, Any]]:
         if not self._started:
             raise RuntimeError(f"Basic 设备 {self.device_id!r} 尚未启动")
         action_name = str(action_name or "").strip()
@@ -246,34 +450,191 @@ class BasicDeviceNode(DeviceNode):
             raise AttributeError(
                 f"Basic 设备 {self.device_id!r} 没有动作 {action_name!r}"
             )
-        context = action_context or ActionContext()
         signature = inspect.signature(action)
+        mapping = self.action_value_mappings.get(action_name, {})
+        if not isinstance(mapping, dict):
+            mapping = {}
+        kwargs = self._map_action_arguments(signature, mapping, kwargs)
+        kwargs = self._resolve_action_resources(signature, kwargs)
+        context = action_context or ActionContext()
         if "action_context" in signature.parameters:
             kwargs.setdefault("action_context", context)
-        return action, context, kwargs
+        return action, context, kwargs, mapping
+
+    @staticmethod
+    def _map_action_arguments(
+        signature: inspect.Signature,
+        mapping: Dict[str, Any],
+        arguments: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Apply ``@action(goal={wire_field: driver_parameter})`` without ROS."""
+
+        goal_mapping = mapping.get("goal")
+        if not isinstance(goal_mapping, dict) or not goal_mapping:
+            return dict(arguments)
+        accepts_kwargs = any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        mapped = dict(arguments)
+        for wire_name, parameter_name in goal_mapping.items():
+            if not isinstance(parameter_name, str):
+                continue
+            target_name = parameter_name.removesuffix("[]")
+            if target_name not in signature.parameters and not accepts_kwargs:
+                # 兼容旧注册表中仅作为描述信息保存、与驱动签名不一致的映射。
+                continue
+            value = _read_path(arguments, str(wire_name))
+            if value is _MISSING:
+                continue
+            source_name = str(wire_name)
+            source_root = source_name.split(".", 1)[0].removesuffix("[]")
+            if source_root != target_name:
+                mapped.pop(source_root, None)
+            mapped[target_name] = value
+        return mapped
+
+    def _resolve_resource_slot(self, value: Any) -> Any:
+        """Resolve one ResourceSlot from this device's authoritative snapshot."""
+
+        from pylabrobot.resources import Resource
+
+        if isinstance(value, Resource):
+            return value
+
+        if isinstance(value, list):
+            if not value:
+                raise ValueError("ResourceSlot 扁平资源树不能为空")
+            if not all(isinstance(item, dict) for item in value):
+                raise TypeError("ResourceSlot 扁平资源树必须由对象节点组成")
+            tree_set = ResourceTreeSet.from_raw_dict_list(value)
+            if len(tree_set.trees) != 1:
+                raise ValueError(
+                    "单个 ResourceSlot 必须恰好包含一棵资源树，"
+                    f"实际为 {len(tree_set.trees)} 棵"
+                )
+            resource = tree_set.to_plr_resources()[0]
+            matches = self.resource_tracker.figure_resource(resource, try_mode=True)
+            if len(matches) > 1:
+                raise ValueError(f"ResourceSlot 匹配到多个本地资源：{matches}")
+            return matches[0] if matches else resource
+
+        if not isinstance(value, dict):
+            raise TypeError(
+                "ResourceSlot 必须是资源实例、{uuid/id/name} 引用或扁平资源树"
+            )
+        if not any(value.get(key) for key in ("uuid", "id", "name")):
+            raise ValueError("ResourceSlot 引用缺少 uuid、id 或 name")
+        matches = self.resource_tracker.figure_resource(value, try_mode=True)
+        if not matches:
+            identity = value.get("uuid") or value.get("id") or value.get("name")
+            raise ValueError(
+                f"设备 {self.device_id!r} 的本地资源快照中找不到 {identity!r}；"
+                "应由微后端下发完整资源树，或把资源挂到该设备图中"
+            )
+        if len(matches) > 1:
+            raise ValueError(f"ResourceSlot 匹配到多个本地资源：{matches}")
+        return matches[0]
+
+    def _resolve_action_resources(
+        self,
+        signature: inspect.Signature,
+        arguments: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Give HostLink drivers the same ResourceSlot input shape as ROS2."""
+
+        resolved = dict(arguments)
+        for name, parameter in signature.parameters.items():
+            if name not in resolved:
+                continue
+            shape = _resource_slot_shape(parameter.annotation)
+            if shape == "single":
+                resolved[name] = self._resolve_resource_slot(resolved[name])
+            elif shape == "list":
+                values = resolved[name]
+                if not isinstance(values, list):
+                    raise TypeError(f"ResourceSlot 列表参数 {name!r} 必须是列表")
+                resolved[name] = [
+                    self._resolve_resource_slot(value) for value in values
+                ]
+
+        sample_uuids = resolved.get(PARAM_SAMPLE_UUIDS)
+        if isinstance(sample_uuids, dict):
+            resolved[PARAM_SAMPLE_UUIDS] = {
+                sample_uuid: self.resource_tracker.uuid_to_resources.get(
+                    str(resource_uuid), resource_uuid
+                )
+                for sample_uuid, resource_uuid in sample_uuids.items()
+            }
+        return resolved
+
+    async def _feedback_values(self, mapping: Dict[str, Any]) -> Dict[str, Any]:
+        feedback_mapping = mapping.get("feedback")
+        if not isinstance(feedback_mapping, dict):
+            return {}
+        values: Dict[str, Any] = {}
+        for wire_name, source_name in feedback_mapping.items():
+            if not isinstance(source_name, str):
+                continue
+            attr_name = source_name.removesuffix("[]")
+            getter_name = f"get_{attr_name}"
+            try:
+                if hasattr(self.driver, getter_name):
+                    value = await self._read_driver_value_async(getter_name)
+                else:
+                    value = await self._read_driver_value_async(attr_name)
+            except Exception:  # noqa: BLE001 - feedback is best effort
+                self._logger.exception(
+                    "动作反馈读取失败：%s.%s",
+                    self.device_id,
+                    attr_name,
+                )
+                continue
+            _write_path(values, str(wire_name), message_to_value(value))
+        return values
+
+    async def _poll_action_feedback(
+        self,
+        context: ActionContext,
+        mapping: Dict[str, Any],
+    ) -> None:
+        interval = float(mapping.get("feedback_interval", 1.0) or 1.0)
+        if interval <= 0:
+            raise ValueError("feedback_interval 必须大于 0")
+        while True:
+            await asyncio.sleep(interval)
+            context.raise_if_cancelled()
+            context.publish_feedback(await self._feedback_values(mapping))
 
     async def _execute_action(
         self,
         action: Callable[..., Any],
         context: ActionContext,
         kwargs: Dict[str, Any],
+        mapping: Dict[str, Any],
     ) -> Any:
-        lock = self._action_lock
-        if lock is None:
-            raise RuntimeError(f"Basic 设备 {self.device_id!r} 事件循环尚未就绪")
+        feedback_task: Optional[asyncio.Task[Any]] = None
+        if mapping.get("feedback") and context.feedback_callback is not None:
+            feedback_task = asyncio.create_task(
+                self._poll_action_feedback(context, mapping)
+            )
         try:
-            async with lock:
-                context.raise_if_cancelled()
-                if inspect.iscoroutinefunction(action):
-                    result = await action(**kwargs)
-                else:
-                    result = await asyncio.to_thread(action, **kwargs)
-                    if inspect.isawaitable(result):
-                        result = await result
-                context.raise_if_cancelled()
-                return result
+            context.raise_if_cancelled()
+            if inspect.iscoroutinefunction(action):
+                result = await action(**kwargs)
+            else:
+                result = await asyncio.to_thread(action, **kwargs)
+                if inspect.isawaitable(result):
+                    result = await result
+            context.raise_if_cancelled()
+            return result
         except AttributeError as exc:
             self._raise_backend_attribute_error(exc)
+        finally:
+            if feedback_task is not None:
+                feedback_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await feedback_task
 
     def call_action(
         self,
@@ -284,13 +645,13 @@ class BasicDeviceNode(DeviceNode):
     ) -> Any:
         """Run an action synchronously while using the device event loop."""
 
-        action, context, call_kwargs = self._resolve_action(
+        action, context, call_kwargs, mapping = self._resolve_action(
             action_name,
             action_context=action_context,
             **kwargs,
         )
         future = asyncio.run_coroutine_threadsafe(
-            self._execute_action(action, context, call_kwargs),
+            self._execute_action(action, context, call_kwargs, mapping),
             self._loop,
         )
         return future.result()
@@ -304,16 +665,18 @@ class BasicDeviceNode(DeviceNode):
     ) -> Any:
         """Await an action on this device's own Python event loop."""
 
-        action, context, call_kwargs = self._resolve_action(
+        action, context, call_kwargs, mapping = self._resolve_action(
             action_name,
             action_context=action_context,
             **kwargs,
         )
         try:
             if asyncio.get_running_loop() is self._loop:
-                return await self._execute_action(action, context, call_kwargs)
+                return await self._execute_action(
+                    action, context, call_kwargs, mapping
+                )
             future = asyncio.run_coroutine_threadsafe(
-                self._execute_action(action, context, call_kwargs),
+                self._execute_action(action, context, call_kwargs, mapping),
                 self._loop,
             )
             return await asyncio.wrap_future(future)
@@ -327,19 +690,18 @@ class BasicDeviceNode(DeviceNode):
         result: Dict[str, Any] = {}
         errors: Dict[str, str] = {}
         with self._status_lock:
-            for name in self.status_names:
+            for binding in self._status_bindings:
                 try:
-                    getter = getattr(self.driver, f"get_{name}", None)
-                    if callable(getter):
-                        value = self._call(getter)
-                    else:
-                        value = getattr(self.driver, name)
-                        if callable(value):
-                            value = self._call(value)
-                    result[name] = value
-                    self.emit_status(name, value)
+                    result[binding.publish_name] = self._read_driver_value(
+                        binding.source_name
+                    )
+                    if not binding.configured:
+                        self.emit_status(
+                            binding.publish_name,
+                            result[binding.publish_name],
+                        )
                 except Exception as exc:  # noqa: BLE001 - 状态快照需部分成功
-                    errors[name] = str(exc)
+                    errors[binding.publish_name] = str(exc)
         if errors:
             result["_errors"] = errors
         return result
@@ -350,10 +712,25 @@ class BasicDeviceNode(DeviceNode):
             "registry_name": self.registry_name,
             "display_name": self.display_name,
             "actions": list(self.action_names),
-            "status_fields": list(self.status_names),
+            "status_fields": [
+                binding.publish_name for binding in self._status_bindings
+            ],
         }
         if self.action_value_mappings:
             descriptor["action_value_mappings"] = self.action_value_mappings
+        system_parameters: Dict[str, list[str]] = {}
+        for action_name in self.action_names:
+            method = getattr(self.driver, action_name.removeprefix("auto-"), None)
+            if not callable(method):
+                continue
+            try:
+                parameters = inspect.signature(method).parameters
+            except (TypeError, ValueError):
+                continue
+            if PARAM_SAMPLE_UUIDS in parameters:
+                system_parameters[action_name] = [PARAM_SAMPLE_UUIDS]
+        if system_parameters:
+            descriptor["system_parameters"] = system_parameters
         services = self.service_names()
         if services:
             descriptor["services"] = services
@@ -369,6 +746,10 @@ class BasicDeviceNode(DeviceNode):
         self._decorated_subscriptions.clear()
         for timer in tuple(self.__dict__.get("_device_timers", [])):
             self.destroy_timer(timer)
+        # 让 timer cancellation 在关闭 event loop 前真正落地，避免遗留 pending Task。
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self._loop).result(
+            timeout=2
+        )
         for service in tuple(self.__dict__.get("_device_services", [])):
             self.destroy_service(service)
         cleanup = getattr(self.driver, "cleanup", None)
@@ -562,6 +943,11 @@ class BasicRuntime:
 
     def wait(self, timeout: Optional[float] = None) -> bool:
         return self._stopped.wait(timeout)
+
+    def request_stop(self) -> None:
+        """Wake the backend owner so it can run its normal shutdown path."""
+
+        self._stopped.set()
 
     def stop(self) -> None:
         for node in reversed(tuple(self.devices.values())):

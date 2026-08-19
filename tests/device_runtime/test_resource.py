@@ -8,7 +8,7 @@ from unilabos.device_runtime import resource as resource_module
 from unilabos.device_runtime.resource import AuthorityResourceService
 from unilabos.resources.container import RegularContainer
 from unilabos.resources.resource_tracker import ResourceTreeSet
-from unilabos.server.clients.materials import LocalMaterialsClient
+from unilabos.client.materials import LocalMaterialsClient
 from unilabos.server.services.materials import MaterialsService
 
 

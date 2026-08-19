@@ -11,7 +11,7 @@ from unilabos.server.api.telemetry import (
     create_telemetry_router,
     install_telemetry_api,
 )
-from unilabos.server.clients.telemetry import (
+from unilabos.client.telemetry import (
     HTTPTelemetryClient,
     LocalTelemetryClient,
     TelemetryHTTPError,

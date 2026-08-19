@@ -189,7 +189,7 @@ def resolve_materials_gateway() -> MaterialGateway:
 
     if not BasicConfig.is_host_mode:
         from unilabos.hostlink.client import get_hostlink_client
-        from unilabos.server.clients.materials import HostLinkMaterialsClient
+        from unilabos.client.materials import HostLinkMaterialsClient
 
         client = get_hostlink_client()
         if client is None:
@@ -203,11 +203,11 @@ def resolve_materials_gateway() -> MaterialGateway:
         return gateway
 
     if HTTPConfig.material_microbackend_addr:
-        from unilabos.server.clients.materials import HTTPMaterialsClient
+        from unilabos.client.materials import HTTPMaterialsClient
 
         return HTTPMaterialsClient(HTTPConfig.material_microbackend_addr)
 
-    from unilabos.server.clients.materials import LocalMaterialsClient
+    from unilabos.client.materials import LocalMaterialsClient
     from unilabos.server.composition import get_server_services
 
     services = get_server_services()

@@ -282,7 +282,7 @@ class HostLinkBackendRuntime:
             heartbeat_payload_provider=self._heartbeat_payload,
             on_status_change=self._on_client_status_change,
         )
-        from unilabos.server.clients.materials import HostLinkMaterialsClient
+        from unilabos.client.materials import HostLinkMaterialsClient
 
         self.local.set_resource_service(
             AuthorityResourceService(HostLinkMaterialsClient(self.client))

@@ -145,7 +145,7 @@ Local 和 HTTP 两种调用方式下保持一致。
 | Registry 边界 | `unilabos.server.adapters.registry_materials` | Registry/lab_resources 定义登记和模板 UUID 映射 |
 | Helper | `unilabos.resources.materials` | `materials.create(plr_resource)`，按 Host/Slave 角色选择权威链路 |
 | 设备运行时 | `unilabos.device_runtime.resource` | `ResourceService` 把 create/get/update 统一路由到微后端；update 使用局部 snapshot 和版本前置条件 |
-| HTTP / Client | `unilabos.server.api.materials`、`unilabos.server.clients.materials` | `/api/v1/materials` 与同构 Local/HTTP/HostLink client |
+| HTTP / Client | `unilabos.server.api.materials`、`unilabos.client.materials` | `/api/v1/materials` 与同构 Local/HTTP/HostLink client |
 
 所有写请求使用 `(command_uuid, effect_key)` 幂等。成功结果保存 ledger sequence
 范围；拒绝结果保存稳定错误码。Material 的 identity、position、data/substances

@@ -10,7 +10,7 @@ from unilabos.server.adapters.plr_materials import (
     create_plr_materials,
     plr_resources_to_create,
 )
-from unilabos.server.clients.materials import LocalMaterialsClient
+from unilabos.client.materials import LocalMaterialsClient
 from unilabos.server.protocol.common import InventoryMutation
 from unilabos.server.protocol.materials import ResourceTemplateWrite
 from unilabos.server.services.materials import MaterialsService

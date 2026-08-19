@@ -15,7 +15,7 @@ from unilabos.server.api.runtime import (
     create_runtime_router,
     install_runtime_api,
 )
-from unilabos.server.clients.runtime import (
+from unilabos.client.runtime import (
     HTTPRuntimeClient,
     LocalRuntimeClient,
     RuntimeHTTPError,

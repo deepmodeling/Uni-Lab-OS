@@ -1,6 +1,6 @@
 """旧 Backend HTTP 兼容层使用的通用传输基类。
 
-物料通信统一由 :mod:`unilabos.server.clients.materials` 提供；这里不再暴露
+物料通信统一由 :mod:`unilabos.client.materials` 提供；这里不再暴露
 任何物料 CRUD，避免形成第二套协议和绕过 MaterialsService 权威。
 """
 

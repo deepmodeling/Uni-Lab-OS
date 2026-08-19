@@ -359,7 +359,7 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
 ) -> None:
     from uuid import uuid4
 
-    from unilabos.server.clients.materials import (
+    from unilabos.client.materials import (
         HostLinkMaterialsClient,
         LocalMaterialsClient,
     )
@@ -918,7 +918,7 @@ def test_hostlink_runtime_uses_microbackend_resource_authority(
     tmp_path, monkeypatch
 ) -> None:
     from unilabos.resources.container import RegularContainer
-    from unilabos.server.clients.materials import LocalMaterialsClient
+    from unilabos.client.materials import LocalMaterialsClient
     from unilabos.server.scheduler.integration import set_materials_gateway
     from unilabos.server.services.materials import MaterialsService
 

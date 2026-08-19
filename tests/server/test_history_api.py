@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from unilabos.server.api.history import install_history_api
-from unilabos.server.clients.history import (
+from unilabos.client.history import (
     HTTPHistoryClient,
     HistoryHTTPError,
     LocalHistoryClient,
@@ -63,7 +63,7 @@ def _bind_http_client(monkeypatch, app: FastAPI) -> TestClient:
             )
         return _URLResponse(response.content)
 
-    monkeypatch.setattr("unilabos.server.clients.history.urlopen", urlopen)
+    monkeypatch.setattr("unilabos.client.history.urlopen", urlopen)
     return test_client
 
 

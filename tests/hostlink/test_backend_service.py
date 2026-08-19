@@ -138,7 +138,7 @@ def test_host_microbackend_owns_listener_material_and_ros(
     from unilabos.resources import materials
     from unilabos.resources.container import RegularContainer
     from unilabos.server.scheduler.api import create_app
-    from unilabos.server.clients.materials import (
+    from unilabos.client.materials import (
         HostLinkMaterialsClient,
         LocalMaterialsClient,
     )
@@ -230,7 +230,7 @@ def test_slave_material_create_is_proxied_by_host_authority(
 ) -> None:
     from unilabos.device_runtime.resource import AuthorityResourceService
     from unilabos.resources.container import RegularContainer
-    from unilabos.server.clients.materials import LocalMaterialsClient
+    from unilabos.client.materials import LocalMaterialsClient
     from unilabos.server.services.materials import MaterialsService
 
     material_service = MaterialsService(tmp_path / "materials.db")

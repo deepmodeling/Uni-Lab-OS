@@ -4,7 +4,7 @@ import sys
 
 from unilabos.client import SessionManager, print_error, print_output
 from unilabos.config.config import BasicConfig
-from unilabos.server.clients.materials import HTTPMaterialsClient
+from unilabos.client.materials import HTTPMaterialsClient
 
 
 def cmd_material_list(args, session_manager: SessionManager):

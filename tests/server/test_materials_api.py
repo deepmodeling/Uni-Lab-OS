@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from unilabos.server.api.materials import install_materials_api
-from unilabos.server.clients.materials import LocalMaterialsClient, bind_payload
+from unilabos.client.materials import LocalMaterialsClient, bind_payload
 from unilabos.server.protocol.common import InventoryMutation
 from unilabos.server.protocol.materials import ResourceTemplateWrite
 from unilabos.server.protocol.materials import (

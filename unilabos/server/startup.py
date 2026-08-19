@@ -57,7 +57,7 @@ def setup_host_server_stack(
     """装配 Host 唯一的微后端权威及其控制链路。"""
 
     from unilabos.server.adapters.registry_materials import sync_registry_resources
-    from unilabos.server.clients.materials import (
+    from unilabos.client.materials import (
         HTTPMaterialsClient,
         LocalMaterialsClient,
     )

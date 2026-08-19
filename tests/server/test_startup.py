@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.server.clients.materials import LocalMaterialsClient
+from unilabos.client.materials import LocalMaterialsClient
 from unilabos.server.scheduler.integration import (
     get_materials_gateway,
     get_materials_service,
@@ -87,7 +87,7 @@ def test_host_stack_uses_external_materials_as_the_only_authority(
     external_service = MaterialsService(tmp_path / "external-materials.db")
     external_client = LocalMaterialsClient(external_service)
     monkeypatch.setattr(
-        "unilabos.server.clients.materials.HTTPMaterialsClient",
+        "unilabos.client.materials.HTTPMaterialsClient",
         lambda _address: external_client,
     )
     try:

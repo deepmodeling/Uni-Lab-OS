@@ -1,7 +1,7 @@
 """Registry 生成定义与微后端模板模型的映射测试。"""
 
 from unilabos.server.adapters.registry_materials import register_resource_definitions
-from unilabos.server.clients.materials import LocalMaterialsClient
+from unilabos.client.materials import LocalMaterialsClient
 from unilabos.server.services.materials import MaterialsService
 
 
@@ -44,4 +44,3 @@ def test_registry_definition_is_registered_once_with_promoted_fields(tmp_path) -
         assert "handles" not in template.definition
     finally:
         service.close()
-

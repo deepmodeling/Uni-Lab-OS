@@ -113,3 +113,26 @@
 - 人工干预使用 replacement result；原结果和替换结果都追加到 `history_event`，通过
   `supersedes_event_uuid` 关联，不覆盖原始历史。
 - Site category 仅供前端画布识别，不参与 materials writer 的占用准入。
+
+## materials authority 实现入口
+
+`materials.db` 已经通过下列分层接入运行时，不再要求调用方直接拼 SQL：
+
+| 层 | 入口 | 职责 |
+| --- | --- | --- |
+| 通信协议 | `unilabos.server.protocol.materials` | `materials.v1` DTO、写命令信封、版本前置条件和结果 |
+| 持久化 | `unilabos.server.repositories.materials` | 表行 CRUD、`BEGIN IMMEDIATE` 单 writer、ledger/outbox |
+| 聚合服务 | `unilabos.server.services.materials` | 模板、Material Tree、Position/Data/Substance、Site move 和软删除 |
+| 快照 | `unilabos.server.services.material_snapshot` | 规范哈希、逐 section diff 和一次事务应用 |
+| PLR 边界 | `unilabos.server.adapters.plr_materials` | PLR 创建草稿、权威 UUID 回填、上传和下载 |
+| Registry 边界 | `unilabos.server.adapters.registry_materials` | Registry/lab_resources 定义登记和模板 UUID 映射 |
+| HTTP / Client | `unilabos.server.api.materials`、`unilabos.server.clients.materials` | `/api/v1/materials` 与同构 Local/HTTP client |
+
+所有写请求使用 `(command_uuid, effect_key)` 幂等。成功结果保存 ledger sequence
+范围；拒绝结果保存稳定错误码。Material 的 identity、position、data/substances
+任一 section 变化时，Material 聚合版本只增加一次；Site 使用自己的版本。Snapshot
+不隐式创建或删除聚合，结构变化必须使用显式 create/delete。
+
+`ResourceTreeSet.from_plr_resources(..., known_random_uuid=True)` 只允许创建草稿
+生成临时 Resource/Site UUID。微后端 create 总是重新分配权威 UUID，并在
+`client_uuid_map` 返回映射；下载得到的权威树继续使用默认严格模式。

@@ -5,6 +5,21 @@ from unilabos.utils.log import logger
 from unilabos.utils.tools import normalize_json as _normalize_device
 
 
+def collect_devices_and_resources(
+    lab_registry: Any,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """纯读取 Registry，供正式后端与微后端共享同一份模板输入。"""
+
+    devices = {
+        item["id"]: _normalize_device(item)
+        for item in lab_registry.obtain_registry_device_info()
+    }
+    resources = {
+        item["id"]: item for item in lab_registry.obtain_registry_resource_info()
+    }
+    return devices, resources
+
+
 def register_devices_and_resources(lab_registry, gather_only=False) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
     """
     注册设备和资源到服务器（仅支持HTTP）
@@ -14,15 +29,9 @@ def register_devices_and_resources(lab_registry, gather_only=False) -> Optional[
 
     logger.info("[UniLab Register] 开始注册设备和资源...")
 
-    devices_to_register = {}
-    for device_info in lab_registry.obtain_registry_device_info():
-        devices_to_register[device_info["id"]] = _normalize_device(device_info)
-        logger.trace(f"[UniLab Register] 收集设备: {device_info['id']}")
-
-    resources_to_register = {}
-    for resource_info in lab_registry.obtain_registry_resource_info():
-        resources_to_register[resource_info["id"]] = resource_info
-        logger.trace(f"[UniLab Register] 收集资源: {resource_info['id']}")
+    devices_to_register, resources_to_register = collect_devices_and_resources(
+        lab_registry
+    )
 
     if gather_only:
         return devices_to_register, resources_to_register

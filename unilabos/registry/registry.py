@@ -1408,8 +1408,37 @@ class Registry:
             """Import class, create instance, dump tree. Returns (rid, config_info)."""
             try:
                 res_class = import_class(module_str)
-                if callable(res_class) and not isinstance(res_class, type):
+                if isinstance(res_class, type):
+                    signature = inspect.signature(res_class)
+                    required = [
+                        parameter
+                        for name, parameter in signature.parameters.items()
+                        if name != "name"
+                        and parameter.kind
+                        in (
+                            inspect.Parameter.POSITIONAL_ONLY,
+                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                            inspect.Parameter.KEYWORD_ONLY,
+                        )
+                        and parameter.default is inspect.Parameter.empty
+                    ]
+                    if required:
+                        return resource_id, []
+                    name_parameter = signature.parameters.get("name")
+                    if (
+                        name_parameter is not None
+                        and name_parameter.kind is not inspect.Parameter.POSITIONAL_ONLY
+                    ):
+                        res_instance = res_class(name=res_class.__name__)
+                    elif name_parameter is not None:
+                        res_instance = res_class(res_class.__name__)
+                    else:
+                        res_instance = res_class()
+                elif callable(res_class):
                     res_instance = res_class(res_class.__name__)
+                else:
+                    return resource_id, []
+                if res_instance is not None:
                     tree_set = ResourceTreeSet.from_plr_resources(
                         [res_instance], known_random_uuid=True, old_size=True
                     )

@@ -380,7 +380,19 @@ class HostLinkClient:
                     payload = self.heartbeat_payload_provider()
                 except Exception:  # noqa: BLE001 - 状态采集不能中断重连
                     logger.exception("[HostLink] heartbeat payload collection failed")
-            self.request(ActionType.PING, data=payload, timeout=self.request_timeout)
+            response = self.request(
+                ActionType.PING,
+                data=payload,
+                timeout=self.request_timeout,
+            )
+            if isinstance(response, dict) and isinstance(
+                response.get("devices"), list
+            ):
+                self.hello_info["devices"] = [
+                    dict(item)
+                    for item in response["devices"]
+                    if isinstance(item, dict)
+                ]
 
     def _read_loop(self, sock: socket.socket) -> None:
         reader = LineReader(sock)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any, Callable, Protocol, Sequence
 from uuid import uuid4
 
@@ -21,7 +22,29 @@ from unilabos.server.protocol.common import (
     AggregatePrecondition,
     InventoryMutation,
 )
-from unilabos.server.protocol.materials import MaterialDelete
+from unilabos.server.protocol.materials import (
+    MaterialAggregateRead,
+    MaterialDelete,
+    MaterialMove,
+    SiteRead,
+)
+
+
+@dataclass
+class MaterialSyncRequest:
+    command: str = ""
+
+
+@dataclass
+class MaterialSyncResponse:
+    response: str = ""
+
+
+class MaterialSyncService:
+    """HostLink/Basic 使用的无 ROS 本地物料同步消息类型。"""
+
+    Request = MaterialSyncRequest
+    Response = MaterialSyncResponse
 
 
 class ResourceService(Protocol):
@@ -47,6 +70,15 @@ class ResourceService(Protocol):
         resources_uuid: list[str],
         with_children: bool,
     ) -> ResourceTreeSet: ...
+
+    async def move_resources(
+        self,
+        device_id: str,
+        device_uuid: str,
+        resources_uuid: Sequence[str],
+        target_resources_uuid: Sequence[str],
+        sites: Sequence[Any | None],
+    ) -> list[MaterialAggregateRead]: ...
 
     def get_resources_sync(
         self,
@@ -317,6 +349,161 @@ class AuthorityResourceService:
             resources,
         )
 
+    @staticmethod
+    def _destination_site(
+        target: MaterialAggregateRead,
+        selector: Any | None,
+    ) -> SiteRead | None:
+        if selector is None or str(selector).strip() == "":
+            return None
+        normalized = str(selector).strip()
+        matches = [
+            site
+            for site in target.sites
+            if normalized
+            in {
+                site.site_uuid,
+                site.label,
+                str(site.site_index),
+            }
+        ]
+        if not matches:
+            raise ValueError(
+                f"目标物料 {target.material.material_uuid} 不存在 Site {selector!r}"
+            )
+        if len(matches) > 1:
+            raise ValueError(
+                f"目标物料 {target.material.material_uuid} 的 Site {selector!r} 不唯一"
+            )
+        return matches[0]
+
+    @staticmethod
+    def _move_preconditions(
+        material: MaterialAggregateRead,
+        source_site: SiteRead | None,
+        destination_site: SiteRead | None,
+    ) -> list[AggregatePrecondition]:
+        conditions = [
+            AggregatePrecondition(
+                aggregate_type="material",
+                aggregate_uuid=material.material.material_uuid,
+                expected_version=material.material.version,
+                expected_state_hash=material.state_hash,
+            )
+        ]
+        seen_sites: set[str] = set()
+        for site in (source_site, destination_site):
+            if site is None or site.site_uuid in seen_sites:
+                continue
+            seen_sites.add(site.site_uuid)
+            conditions.append(
+                AggregatePrecondition(
+                    aggregate_type="site",
+                    aggregate_uuid=site.site_uuid,
+                    expected_version=site.version,
+                )
+            )
+        return conditions
+
+    def move_resources_sync(
+        self,
+        device_id: str,
+        device_uuid: str,
+        resources_uuid: Sequence[str],
+        target_resources_uuid: Sequence[str],
+        sites: Sequence[Any | None],
+    ) -> list[MaterialAggregateRead]:
+        material_uuids = [str(value or "").strip() for value in resources_uuid]
+        target_uuids = [
+            str(value or "").strip() for value in target_resources_uuid
+        ]
+        site_selectors = list(sites)
+        if not material_uuids:
+            raise ValueError("物料转移至少需要一个来源物料")
+        if not (
+            len(material_uuids) == len(target_uuids) == len(site_selectors)
+        ):
+            raise ValueError("来源物料、目标物料和 Site 数量必须一致")
+        if any(not value for value in material_uuids):
+            raise ValueError("来源物料 UUID 不能为空")
+        if any(not value for value in target_uuids):
+            raise ValueError("目标物料 UUID 不能为空")
+
+        gateway = self._gateway()
+        aggregate_cache: dict[str, MaterialAggregateRead] = {}
+        root_cache: dict[str, str] = {}
+        moved: list[MaterialAggregateRead] = []
+        for material_uuid, target_uuid, selector in zip(
+            material_uuids,
+            target_uuids,
+            site_selectors,
+        ):
+            material = gateway.get_material(material_uuid)
+            target = gateway.get_material(target_uuid)
+            destination_site = self._destination_site(target, selector)
+            source_root_uuid = self._root_material_uuid(
+                gateway,
+                material_uuid,
+                aggregate_cache,
+                root_cache,
+            )
+            source_tree = gateway.get_tree(source_root_uuid)
+            source_site = next(
+                (
+                    site
+                    for node in source_tree.nodes
+                    for site in node.sites
+                    if site.occupied_material_uuid == material_uuid
+                ),
+                None,
+            )
+            mutation = self._mutation(
+                "move_material",
+                device_id=device_id,
+                device_uuid=device_uuid,
+                root_material_uuid=material_uuid,
+                preconditions=self._move_preconditions(
+                    material,
+                    source_site,
+                    destination_site,
+                ),
+            )
+            result = gateway.move_material(
+                mutation,
+                MaterialMove(
+                    material_uuid=material_uuid,
+                    destination_site_uuid=(
+                        destination_site.site_uuid
+                        if destination_site is not None
+                        else None
+                    ),
+                    parent_material_uuid=(
+                        None if destination_site is not None else target_uuid
+                    ),
+                ),
+            )
+            moved.append(result.data)
+            aggregate_cache[material_uuid] = result.data
+            root_cache.clear()
+        return moved
+
+    async def move_resources(
+        self,
+        device_id: str,
+        device_uuid: str,
+        resources_uuid: Sequence[str],
+        target_resources_uuid: Sequence[str],
+        sites: Sequence[Any | None],
+    ) -> list[MaterialAggregateRead]:
+        return await asyncio.to_thread(
+            self.move_resources_sync,
+            device_id,
+            device_uuid,
+            resources_uuid,
+            target_resources_uuid,
+            sites,
+        )
+
     def _get_sync(
         self,
         resources_uuid: Sequence[str],
@@ -425,4 +612,10 @@ class AuthorityResourceService:
         )
 
 
-__all__ = ["AuthorityResourceService", "ResourceService"]
+__all__ = [
+    "AuthorityResourceService",
+    "MaterialSyncRequest",
+    "MaterialSyncResponse",
+    "MaterialSyncService",
+    "ResourceService",
+]

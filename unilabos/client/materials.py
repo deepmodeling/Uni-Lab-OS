@@ -119,6 +119,26 @@ class HostLinkMaterialsClient:
     def __init__(self, client: Any):
         self.client = client
 
+    def list_templates(self) -> list[ResourceTemplateRead]:
+        from unilabos.hostlink.protocol import ActionType
+
+        response = self.client.request(ActionType.MATERIAL_TEMPLATE_LIST, {})
+        return [ResourceTemplateRead.model_validate(item) for item in response]
+
+    def create_template(
+        self,
+        mutation: InventoryMutation,
+        value: ResourceTemplateWrite,
+    ) -> MutationResult[ResourceTemplateRead]:
+        from unilabos.hostlink.protocol import ActionType
+
+        bound = bind_payload(mutation, value)
+        response = self.client.request(
+            ActionType.MATERIAL_TEMPLATE_CREATE,
+            bound.model_dump(mode="json", exclude_none=False),
+        )
+        return MutationResult[ResourceTemplateRead].model_validate(response)
+
     def create_tree(
         self, mutation: InventoryMutation, value: MaterialTreeCreate
     ) -> MutationResult[MaterialTreeRead]:
@@ -154,6 +174,35 @@ class HostLinkMaterialsClient:
             {"resource_id": resource_id},
         )
         return MaterialAggregateRead.model_validate(response)
+
+    def put_data(
+        self,
+        mutation: InventoryMutation,
+        material_uuid: str,
+        value: MaterialDataWrite,
+    ) -> MutationResult[MaterialAggregateRead]:
+        from unilabos.hostlink.protocol import ActionType
+
+        bound = bind_payload(mutation, value).model_dump(
+            mode="json", exclude_none=False
+        )
+        bound["material_uuid"] = material_uuid
+        response = self.client.request(ActionType.MATERIAL_DATA_PUT, bound)
+        return MutationResult[MaterialAggregateRead].model_validate(response)
+
+    def move_material(
+        self,
+        mutation: InventoryMutation,
+        value: MaterialMove,
+    ) -> MutationResult[MaterialAggregateRead]:
+        from unilabos.hostlink.protocol import ActionType
+
+        bound = bind_payload(mutation, value)
+        response = self.client.request(
+            ActionType.MATERIAL_MOVE,
+            bound.model_dump(mode="json", exclude_none=False),
+        )
+        return MutationResult[MaterialAggregateRead].model_validate(response)
 
     def delete_material(
         self,

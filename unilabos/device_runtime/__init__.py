@@ -1,6 +1,11 @@
 """Backend-neutral contracts shared by device drivers and runtime adapters."""
 
 from unilabos.device_runtime.async_utils import schedule_async_func
+from unilabos.device_runtime.definition import (
+    DeviceDefinition,
+    iter_device_configs,
+    resolve_device_definition,
+)
 from unilabos.device_runtime.action import (
     ActionCancelled,
     ActionContext,
@@ -44,6 +49,7 @@ __all__ = [
     "BackendCapabilityError",
     "AuthorityResourceService",
     "DeviceNode",
+    "DeviceDefinition",
     "DeviceClock",
     "DeviceParameter",
     "DeviceParameterValue",
@@ -55,7 +61,9 @@ __all__ = [
     "DeviceActionRouter",
     "LocalServiceBus",
     "LocalTopicBus",
+    "iter_device_configs",
     "ResourceService",
+    "resolve_device_definition",
     "schedule_async_func",
     "ServiceBus",
     "SetParametersResult",

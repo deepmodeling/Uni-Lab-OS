@@ -7488,7 +7488,7 @@ liquid_handler.laiyu:
       properties:
         channel_num:
           default: 1
-          type: string
+          type: integer
         deck:
           type: object
         host:
@@ -7497,9 +7497,12 @@ liquid_handler.laiyu:
         port:
           default: 9999
           type: integer
+        simulate_rviz:
+          default: false
+          type: boolean
         simulator:
           default: true
-          type: string
+          type: boolean
         timeout:
           default: 10.0
           type: number

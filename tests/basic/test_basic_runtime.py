@@ -203,10 +203,7 @@ def test_liquid_handlers_declare_public_backends_and_action_metadata() -> None:
         assert first_action["schema"]["type"] == "object"
 
 
-def test_basic_runtime_constructs_and_sets_up_pylabrobot_style_driver(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr("unilabos.basic.runtime.register", lambda: None)
+def test_basic_runtime_constructs_and_sets_up_pylabrobot_style_driver() -> None:
     tracker = DeviceNodeResourceTracker()
     driver = instantiate_driver(
         LiquidHandlerAbstract,

@@ -65,6 +65,10 @@ class HostNetworkService:
             self._material_get_by_resource_id,
         )
         self.server.register_handler(
+            ActionType.MATERIAL_MOVE,
+            self._material_move,
+        )
+        self.server.register_handler(
             ActionType.MATERIAL_DELETE,
             self._material_delete,
         )
@@ -267,6 +271,19 @@ class HostNetworkService:
             raise ValueError("material.resource-id.get requires resource_id")
         return self._require_material_gateway().get_material_by_resource_id(
             resource_id
+        ).model_dump(mode="json", exclude_none=False)
+
+    def _material_move(
+        self, data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialMove
+
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialMove.model_validate(mutation.payload)
+        return self._require_material_gateway().move_material(
+            mutation,
+            value,
         ).model_dump(mode="json", exclude_none=False)
 
     def _material_delete(

@@ -25,18 +25,17 @@ from typing import (
 
 from unilabos.device_runtime.action import ActionContext
 from unilabos.device_runtime.driver_creator import (
-    PyLabRobotCreator,
-    uses_pylabrobot_creator,
+    select_driver_creator,
 )
 from unilabos.device_runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.device_runtime.resource import ResourceService
 from unilabos.device_runtime.service import LocalServiceBus
 from unilabos.device_runtime.topic import LocalTopicBus, message_to_value
 from unilabos.registry.decorators import get_topic_config
-from unilabos.resources.plr_additional_res_reg import register
 from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
     PARAM_SAMPLE_UUIDS,
+    ResourceDictInstance,
     ResourceTreeSet,
 )
 from unilabos.utils.decorator import get_all_subscriptions
@@ -161,17 +160,6 @@ def instantiate_driver(
     """
 
     config = dict(config or {})
-    if device_config is not None and uses_pylabrobot_creator(driver_class):
-        register()
-        creator = PyLabRobotCreator(
-            driver_class,
-            children=list(device_config.children),
-            resource_tracker=resource_tracker or DeviceNodeResourceTracker(),
-        )
-        driver = creator.create_instance(config)
-        if driver is None:
-            raise RuntimeError(f"Basic 设备 {device_id!r} 的驱动实例创建失败")
-        return driver
     signature = inspect.signature(driver_class.__init__)
     parameters = {
         name: parameter
@@ -193,7 +181,15 @@ def instantiate_driver(
         kwargs.setdefault("device_id", device_id)
     elif "id" in parameters:
         kwargs.setdefault("id", device_id)
-    return driver_class(**kwargs)
+    selection = select_driver_creator(
+        driver_class,
+        children=list(device_config.children) if device_config is not None else [],
+        resource_tracker=resource_tracker or DeviceNodeResourceTracker(),
+    )
+    driver = selection.creator.create_instance(kwargs)
+    if driver is None:
+        raise RuntimeError(f"Basic 设备 {device_id!r} 的驱动实例创建失败")
+    return driver
 
 
 class BasicDeviceNode(DeviceNode):
@@ -216,6 +212,7 @@ class BasicDeviceNode(DeviceNode):
         self.driver = driver
         self.device_id = device_id
         self.backend_name = str(backend_name or "basic")
+        self.namespace = self.get_namespace()
         self.resource_uuid = str(resource_uuid or "")
         self.registry_name = str(registry_name or "")
         self.display_name = str(display_name or registry_name or device_id)
@@ -269,6 +266,43 @@ class BasicDeviceNode(DeviceNode):
             ) from exc
         raise exc
 
+    def create_device(self, device_id: str, config: Any) -> dict[str, Any]:
+        """使用与启动阶段相同的工厂动态创建普通设备或子设备。"""
+
+        runtime = self.__dict__.get("_basic_runtime")
+        if runtime is None:
+            return {"success": False, "error": "Basic runtime is unavailable"}
+        try:
+            if isinstance(config, ResourceDictInstance):
+                device_config = config
+            else:
+                payload = dict(config or {})
+                payload.setdefault("id", device_id)
+                payload.setdefault("type", "device")
+                device_config = ResourceDictInstance.get_resource_instance_from_dict(
+                    payload
+                )
+            node = runtime.add_device_from_config(device_id, device_config)
+            return {
+                "success": True,
+                "device_id": node.device_id,
+                "registry_name": node.registry_name,
+            }
+        except Exception as exc:  # noqa: BLE001 - service boundary returns detail
+            self._logger.exception("动态创建设备失败：%s", device_id)
+            return {"success": False, "error": str(exc)}
+
+    def destroy_device(self, device_id: str) -> dict[str, Any]:
+        runtime = self.__dict__.get("_basic_runtime")
+        if runtime is None:
+            return {"success": False, "error": "Basic runtime is unavailable"}
+        removed = runtime.remove_device(device_id)
+        return {
+            "success": removed,
+            "device_id": str(device_id),
+            **({} if removed else {"error": f"device {device_id!r} not found"}),
+        }
+
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
         self._loop_ready.set()
@@ -309,6 +343,8 @@ class BasicDeviceNode(DeviceNode):
             raise RuntimeError(f"Basic 设备 {self.device_id!r} 事件循环启动超时")
         self._started = True
         try:
+            if self.__dict__.get("_device_service_bus") is not None:
+                self.setup_material_sync_service()
             if hasattr(self.driver, "post_init"):
                 self.driver.post_init(self)
             self._setup_decorated_subscriptions()
@@ -790,7 +826,36 @@ class BasicRuntime:
         self.topic_bus = LocalTopicBus()
         self.service_bus = LocalServiceBus()
         self._resource_service: ResourceService | None = None
+        self._device_change_listeners: list[
+            Callable[[str, BasicDeviceNode], None]
+        ] = []
+        self._started = False
         self._stopped = threading.Event()
+
+    def add_device_change_listener(
+        self,
+        callback: Callable[[str, BasicDeviceNode], None],
+    ) -> None:
+        if callback not in self._device_change_listeners:
+            self._device_change_listeners.append(callback)
+
+    def remove_device_change_listener(
+        self,
+        callback: Callable[[str, BasicDeviceNode], None],
+    ) -> None:
+        with contextlib.suppress(ValueError):
+            self._device_change_listeners.remove(callback)
+
+    def _notify_device_change(self, event: str, node: BasicDeviceNode) -> None:
+        for callback in tuple(self._device_change_listeners):
+            try:
+                callback(event, node)
+            except Exception:  # noqa: BLE001 - 一个监听器不能破坏设备生命周期
+                logging.getLogger(__name__).exception(
+                    "Basic 设备变更监听失败：event=%s device=%s",
+                    event,
+                    node.device_id,
+                )
 
     def add_driver(self, spec: BasicDriverSpec) -> BasicDeviceNode:
         if spec.device_id in self.devices:
@@ -818,10 +883,56 @@ class BasicRuntime:
         node.set_action_router(self)
         node.set_topic_bus(self.topic_bus)
         node.set_service_bus(self.service_bus)
+        node.children = list(spec.device_config.children) if spec.device_config else []
+        node.__dict__["_basic_runtime"] = self
         if self._resource_service is not None:
             node.set_resource_service(self._resource_service)
         self.devices[spec.device_id] = node
+        self._notify_device_change("added", node)
+        try:
+            if self._started:
+                node.start()
+        except Exception:
+            self.devices.pop(spec.device_id, None)
+            self._notify_device_change("removed", node)
+            raise
         return node
+
+    def add_device_from_config(
+        self,
+        device_id: str,
+        device_config: ResourceDictInstance,
+    ) -> BasicDeviceNode:
+        from unilabos.device_runtime.definition import resolve_device_definition
+
+        definition = resolve_device_definition(
+            device_id,
+            device_config,
+            backend_name=self.backend_name,
+        )
+        return self.add_driver(
+            BasicDriverSpec(
+                device_id=device_id,
+                driver_class=definition.driver_class,
+                config=definition.runtime_config,
+                registry_name=definition.registry_name,
+                display_name=definition.display_name,
+                action_names=tuple(definition.action_value_mappings),
+                action_value_mappings=definition.action_value_mappings,
+                status_names=tuple(definition.status_types),
+                resource_uuid=definition.resource_uuid,
+                device_config=device_config,
+            )
+        )
+
+    def remove_device(self, device_id: str) -> bool:
+        normalized = self._normalize_device_id(device_id)
+        node = self.devices.pop(normalized, None)
+        if node is None:
+            return False
+        node.stop()
+        self._notify_device_change("removed", node)
+        return True
 
     def set_resource_service(self, service: ResourceService) -> None:
         self._resource_service = service
@@ -900,6 +1011,7 @@ class BasicRuntime:
             for node in self.devices.values():
                 node.start()
                 started.append(node)
+            self._started = True
         except Exception:
             for node in reversed(started):
                 node.stop()
@@ -959,6 +1071,7 @@ class BasicRuntime:
         self._stopped.set()
 
     def stop(self) -> None:
+        self._started = False
         for node in reversed(tuple(self.devices.values())):
             node.stop()
         self.topic_bus.close()

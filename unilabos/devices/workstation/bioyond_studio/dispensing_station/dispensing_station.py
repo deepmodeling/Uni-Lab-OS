@@ -9,7 +9,6 @@ import pint
 
 from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import BioyondException
 from unilabos.devices.workstation.bioyond_studio.station import BioyondWorkstation
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
 import json
 import sys
 from pathlib import Path

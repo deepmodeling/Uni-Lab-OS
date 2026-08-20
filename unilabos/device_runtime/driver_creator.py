@@ -11,6 +11,7 @@ import asyncio
 import inspect
 import traceback
 from abc import abstractmethod
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 from unilabos.device_runtime.async_utils import schedule_async_func
@@ -354,10 +355,71 @@ def uses_pylabrobot_creator(driver_class: Type[Any]) -> bool:
     }
 
 
+def is_workstation_driver(driver_class: Type[Any]) -> bool:
+    from unilabos.devices.workstation.workstation_base import WorkstationBase
+
+    return issubclass(driver_class, WorkstationBase)
+
+
+@dataclass(frozen=True)
+class DriverCreatorSelection(Generic[T]):
+    creator: DeviceClassCreator[T]
+    kind: str
+
+    @property
+    def is_workstation(self) -> bool:
+        return self.kind == "workstation"
+
+
+def select_driver_creator(
+    driver_class: Type[T],
+    children: List[ResourceDictInstance],
+    resource_tracker: DeviceNodeResourceTracker,
+    *,
+    task_scheduler: Optional[TaskScheduler] = None,
+) -> DriverCreatorSelection[T]:
+    """为两种 backend 选择同一个驱动构造器。"""
+
+    if uses_pylabrobot_creator(driver_class):
+        from unilabos.resources.plr_additional_res_reg import register
+
+        register()
+        return DriverCreatorSelection(
+            PyLabRobotCreator(
+                driver_class,
+                children=children,
+                resource_tracker=resource_tracker,
+                task_scheduler=task_scheduler,
+            ),
+            "pylabrobot",
+        )
+    if is_workstation_driver(driver_class):
+        return DriverCreatorSelection(
+            WorkstationNodeCreator(
+                driver_class,
+                children=children,
+                resource_tracker=resource_tracker,
+                task_scheduler=task_scheduler,
+            ),
+            "workstation",
+        )
+    return DriverCreatorSelection(
+        DeviceClassCreator(
+            driver_class,
+            children=children,
+            resource_tracker=resource_tracker,
+        ),
+        "device",
+    )
+
+
 __all__ = [
     "ClassCreator",
     "DeviceClassCreator",
+    "DriverCreatorSelection",
     "PyLabRobotCreator",
     "WorkstationNodeCreator",
+    "is_workstation_driver",
+    "select_driver_creator",
     "uses_pylabrobot_creator",
 ]

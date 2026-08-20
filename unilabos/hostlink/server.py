@@ -555,6 +555,21 @@ class HostLinkServer:
                     states = peer.setdefault("states", {})
                     if isinstance(data.get("states"), dict):
                         states.update(data["states"])
+                    if action == ActionType.PING and isinstance(
+                        data.get("devices"), list
+                    ):
+                        devices: Dict[str, Dict[str, Any]] = {}
+                        for item in data["devices"]:
+                            if not isinstance(item, dict):
+                                continue
+                            device_id = str(item.get("id") or "").strip()
+                            if device_id:
+                                devices[device_id] = {
+                                    **item,
+                                    "id": device_id,
+                                }
+                        peer["devices"] = devices
+                        peer["device_ids"] = sorted(devices)
                     device_id = str(data.get("device_id") or "").strip()
                     state = data.get("state")
                     if device_id and isinstance(state, dict):
@@ -625,7 +640,11 @@ class HostLinkServer:
         _data: Dict[str, Any],
         _peer: Dict[str, Any],
     ) -> Dict[str, Any]:
-        return {"pong": True, "server_time": time.time()}
+        return {
+            "pong": True,
+            "server_time": time.time(),
+            "devices": list(self.hello_payload.get("devices") or []),
+        }
 
     def _handle_ros_info(
         self,

@@ -354,6 +354,72 @@ def test_hostlink_backend_routes_basic_driver_actions_without_ros(
         host.stop()
 
 
+def test_dynamic_subdevices_refresh_hostlink_routes(monkeypatch) -> None:
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 0.5)
+    monkeypatch.setattr(BasicConfig, "machine_name", "dynamic-slave")
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    host = HostLinkBackendRuntime(_counter_runtime("host-owner"), is_slave=False)
+    slave = HostLinkBackendRuntime(
+        _counter_runtime("slave-owner"),
+        is_slave=True,
+    )
+    host.start()
+    assert host.server is not None
+    HostLinkConfig.port = host.server.port
+    try:
+        slave.start()
+        slave.local.add_driver(
+            BasicDriverSpec(
+                "slave-child",
+                CounterDriver,
+                {"initial": 2},
+                action_names=("increment",),
+                status_names=("count",),
+            )
+        )
+        assert _wait_until(lambda: "slave-child" in host.devices())
+        assert host.call_action("slave-child", "increment", amount=3) == 5
+
+        host.local.add_driver(
+            BasicDriverSpec(
+                "host-child",
+                CounterDriver,
+                {"initial": 4},
+                action_names=("increment",),
+                status_names=("count",),
+            )
+        )
+        assert _wait_until(
+            lambda: any(
+                item.get("id") == "host-child"
+                for item in (slave.client.hello_info.get("devices") or [])
+            )
+        )
+        assert (
+            slave.local.call_action(
+                "slave-owner",
+                "call_peer",
+                target_device="host-child",
+                amount=2,
+            )
+            == 6
+        )
+
+        assert slave.local.remove_device("slave-child") is True
+        assert _wait_until(lambda: "slave-child" not in host.devices())
+    finally:
+        slave.stop()
+        host.stop()
+
+
 def test_hostlink_backend_proxies_material_create_without_template_uuid(
     tmp_path, monkeypatch
 ) -> None:
@@ -917,7 +983,7 @@ def test_hostlink_routes_action_feedback_and_cancel_between_slaves(
 def test_hostlink_runtime_uses_microbackend_resource_authority(
     tmp_path, monkeypatch
 ) -> None:
-    from unilabos.resources.container import RegularContainer
+    from unilabos.resources.presets.container import RegularContainer
     from unilabos.client.materials import LocalMaterialsClient
     from unilabos.server.scheduler.integration import set_materials_gateway
     from unilabos.server.services.materials import MaterialsService

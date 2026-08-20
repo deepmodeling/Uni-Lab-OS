@@ -10,6 +10,7 @@ def test_web_root_is_a_backend_frontend_catalog() -> None:
         response = client.get("/")
         assert response.status_code == 200
         assert "UniLab Microbackend" in response.text
+        assert "https://xuwznln.github.io/OpenLab-site/" in response.text
         assert "/api/docs" in response.text
         assert "https://deepmodeling.github.io/Uni-Lab-OS/" in response.text
 

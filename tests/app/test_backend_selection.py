@@ -4,7 +4,7 @@ import subprocess
 import sys
 import threading
 import time
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 
@@ -239,8 +239,6 @@ def test_hostlink_entrypoint_does_not_import_ros_runtime() -> None:
         "from unilabos.config.config import BasicConfig; "
         "BasicConfig.backend = 'hostlink'; "
         "import unilabos.hostlink.main_hostlink_run; "
-        "from unilabos.app.web.utils.ros_utils import update_ros_node_info; "
-        "update_ros_node_info(); "
         "assert 'rclpy' not in sys.modules; "
         "assert not any(name.startswith('unilabos.ros') for name in sys.modules)"
     )
@@ -251,39 +249,3 @@ def test_hostlink_entrypoint_does_not_import_ros_runtime() -> None:
         timeout=20,
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_ros_host_info_keeps_real_action_client_details(monkeypatch) -> None:
-    from unilabos.app.web.utils import host_utils
-
-    action_client = object()
-    adapter = SimpleNamespace(
-        device_id="host_node",
-        devices_names={"device-1": "/devices"},
-        _online_devices={"/devices/device-1"},
-        device_machine_names={"device-1": "ros-host"},
-        _subscribed_topics={"/devices/device-1/status"},
-        _action_clients={"/devices/device-1/run": action_client},
-        _action_value_mappings={},
-        device_status={},
-        device_status_timestamps={},
-    )
-    action_utils = ModuleType("unilabos.app.web.utils.action_utils")
-    action_utils.get_action_info = lambda client, full_name: {
-        "client": client,
-        "action_path": full_name,
-    }
-    monkeypatch.setitem(
-        sys.modules,
-        "unilabos.app.web.utils.action_utils",
-        action_utils,
-    )
-    monkeypatch.setattr(host_utils, "get_execution_adapter", lambda _timeout: adapter)
-    monkeypatch.setattr(BasicConfig, "is_host_mode", True)
-
-    info = host_utils.get_host_node_info()
-
-    assert info["action_clients"]["/devices/device-1/run"] == {
-        "client": action_client,
-        "action_path": "/devices/device-1/run",
-    }

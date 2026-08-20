@@ -15,7 +15,15 @@ from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
 from unilabos.utils.tracing import install_http_tracing
 
-AWESOME_FRONTENDS = (
+RECOMMENDED_FRONTENDS = (
+    {
+        "name": "OpenLab",
+        "url": "https://xuwznln.github.io/OpenLab-site/",
+        "description": "面向 Uni-Lab OS 微后端的社区实验室前端。",
+    },
+)
+
+DEVELOPER_LINKS = (
     {
         "name": "OpenAPI Explorer",
         "url": "/api/docs",
@@ -91,13 +99,21 @@ async def log_requests(request: Request, call_next) -> Response:
 async def frontend_catalog() -> str:
     """无内置前端；仅提供可连接当前微后端的入口导航。"""
 
-    cards = "".join(
+    frontend_cards = "".join(
         (
             '<a class="card" href="{url}" target="_blank" rel="noreferrer">'
             '<strong>{name}</strong><span>{description}</span>'
             '<code>{url}</code></a>'
         ).format(**item)
-        for item in AWESOME_FRONTENDS
+        for item in RECOMMENDED_FRONTENDS
+    )
+    developer_cards = "".join(
+        (
+            '<a class="card" href="{url}" target="_blank" rel="noreferrer">'
+            '<strong>{name}</strong><span>{description}</span>'
+            '<code>{url}</code></a>'
+        ).format(**item)
+        for item in DEVELOPER_LINKS
     )
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -109,6 +125,7 @@ async def frontend_catalog() -> str:
     body {{ margin: 0; font: 16px/1.55 system-ui, sans-serif; color: #18212f; background: #f6f8fb; }}
     main {{ max-width: 760px; margin: 10vh auto; padding: 0 24px; }}
     h1 {{ margin-bottom: 8px; }}
+    h2 {{ margin: 30px 0 10px; font-size: 18px; }}
     p {{ color: #526173; }}
     .grid {{ display: grid; gap: 14px; margin-top: 28px; }}
     .card {{ display: grid; gap: 5px; padding: 18px; color: inherit; text-decoration: none;
@@ -122,7 +139,10 @@ async def frontend_catalog() -> str:
   <h1>UniLab Microbackend</h1>
   <p>此进程只提供后端能力，不再内置状态页或工作流前端。请选择 API 工具，
   或从 GitHub Pages 部署的社区前端连接当前地址。</p>
-  <section class="grid">{cards}</section>
+  <h2>推荐前端</h2>
+  <section class="grid">{frontend_cards}</section>
+  <h2>开发与接入</h2>
+  <section class="grid">{developer_cards}</section>
 </main></body>
 </html>"""
 

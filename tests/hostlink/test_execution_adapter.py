@@ -14,7 +14,6 @@ from unilabos.app.execution_adapter import (
     set_execution_adapter,
 )
 from unilabos.server.scheduler.backend import JobExecutionBackend
-from unilabos.app.web.utils.host_utils import get_host_node_info
 from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
 from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.action import ActionContext
@@ -446,18 +445,3 @@ def test_websocket_reports_hostlink_devices_and_action_locks(execution_stack) ->
             "machine_name": BasicConfig.machine_name,
         }
     ]
-
-
-def test_hostlink_adapter_exposes_backend_neutral_status_page_shape(
-    execution_stack,
-    monkeypatch,
-) -> None:
-    adapter, _microbackend, _driver, _bridge = execution_stack
-    monkeypatch.setattr(BasicConfig, "is_host_mode", True)
-
-    info = get_host_node_info()
-
-    assert info["available"] is True
-    assert info["host_node_id"] == adapter.device_id
-    assert info["devices"]["device-1"]["is_online"] is True
-    assert "/devices/device-1/mapped" in info["action_clients"]

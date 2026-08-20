@@ -124,6 +124,7 @@ class MaterialRecord(ServerObject):
     resource_id: NonEmptyStr
     template_uuid: NonEmptyStr
     parent_material_uuid: Optional[NonEmptyStr] = None
+    ordinal: int = Field(default=0, ge=0)
     lot_uuid: Optional[NonEmptyStr] = None
     name: NonEmptyStr
     description: str = ""
@@ -254,6 +255,7 @@ class SiteRecord(ServerObject):
     site_uuid: NonEmptyStr
     schema_version: Literal[1] = 1
     owner_material_uuid: NonEmptyStr
+    ordinal: int = Field(default=0, ge=0)
     template_name: NonEmptyStr
     site_index: Union[int, NonEmptyStr]
     label: NonEmptyStr

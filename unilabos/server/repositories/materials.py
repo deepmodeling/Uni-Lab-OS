@@ -255,7 +255,7 @@ class MaterialsRepository:
         elif parent_material_uuid is not None:
             rows = self.connection.execute(
                 "SELECT * FROM material WHERE parent_material_uuid=? "
-                "AND deleted_at_ms IS NULL ORDER BY material_uuid",
+                "AND deleted_at_ms IS NULL ORDER BY ordinal,material_uuid",
                 (parent_material_uuid,),
             )
         else:
@@ -269,18 +269,19 @@ class MaterialsRepository:
         rows = self.connection.execute(
             """
             WITH RECURSIVE tree(material_uuid,depth,path) AS (
-                SELECT material_uuid,0,'/' || material_uuid || '/'
+                SELECT material_uuid,0,
+                       printf('/%010d:%s/',ordinal,material_uuid)
                 FROM material
                 WHERE material_uuid=? AND deleted_at_ms IS NULL
                 UNION ALL
                 SELECT child.material_uuid,tree.depth+1,
-                       tree.path || child.material_uuid || '/'
+                       tree.path || printf('%010d:%s/',child.ordinal,child.material_uuid)
                 FROM material child JOIN tree
                     ON child.parent_material_uuid=tree.material_uuid
                 WHERE child.deleted_at_ms IS NULL
             )
             SELECT material.* FROM material JOIN tree USING(material_uuid)
-            ORDER BY tree.depth,tree.path
+            ORDER BY tree.path
             """,
             (root_material_uuid,),
         )
@@ -311,7 +312,7 @@ class MaterialsRepository:
         sql = "SELECT * FROM site WHERE owner_material_uuid=?"
         if not include_deleted:
             sql += " AND deleted_at_ms IS NULL"
-        sql += " ORDER BY CASE WHEN typeof(site_index)='integer' THEN site_index END,label"
+        sql += " ORDER BY ordinal,site_uuid"
         return [
             self._site(row)
             for row in self.connection.execute(sql, (owner_material_uuid,))
@@ -348,7 +349,7 @@ class MaterialsRepository:
         values = record.model_dump(mode="json")
         columns = (
             "material_uuid", "resource_id", "template_uuid", "parent_material_uuid",
-            "lot_uuid", "name", "description", "resource_type", "class_name",
+            "ordinal", "lot_uuid", "name", "description", "resource_type", "class_name",
             "machine_name", "barcode", "barcode_symbology", "template_name",
             "resource_schema_json", "model_json", "icon_uri", "config_json",
             "extra_json", "meta_data_json", "lifecycle_status", "created_at_ms",
@@ -371,7 +372,7 @@ class MaterialsRepository:
     def update_material(self, record: MaterialRecord) -> None:
         values = record.model_dump(mode="json")
         assignments = (
-            "resource_id=?", "template_uuid=?", "parent_material_uuid=?", "lot_uuid=?",
+            "resource_id=?", "template_uuid=?", "parent_material_uuid=?", "ordinal=?", "lot_uuid=?",
             "name=?", "description=?", "resource_type=?", "class_name=?",
             "machine_name=?", "barcode=?", "barcode_symbology=?", "template_name=?",
             "resource_schema_json=?", "model_json=?", "icon_uri=?", "config_json=?",
@@ -380,7 +381,7 @@ class MaterialsRepository:
         )
         params = (
             values["resource_id"], values["template_uuid"],
-            values["parent_material_uuid"], values["lot_uuid"], values["name"],
+            values["parent_material_uuid"], values["ordinal"], values["lot_uuid"], values["name"],
             values["description"], values["resource_type"], values["class_name"],
             values["machine_name"], values["barcode"], values["barcode_symbology"],
             values["template_name"], canonical_json(values["resource_schema_json"]),
@@ -458,7 +459,7 @@ class MaterialsRepository:
     def insert_site(self, record: SiteRecord) -> None:
         values = record.model_dump(mode="json")
         columns = (
-            "site_uuid", "schema_version", "owner_material_uuid", "template_name",
+            "site_uuid", "schema_version", "owner_material_uuid", "ordinal", "template_name",
             "site_index", "label", "visible", "occupied_material_uuid", "pose_json",
             "allowed_resource_categories_json", "parent_link", "description",
             "meta_data_json", "extra_json", "changed_by_job_uuid",
@@ -490,7 +491,7 @@ class MaterialsRepository:
         values = record.model_dump(mode="json")
         cursor = self.connection.execute(
             """
-            UPDATE site SET schema_version=?,owner_material_uuid=?,template_name=?,
+            UPDATE site SET schema_version=?,owner_material_uuid=?,ordinal=?,template_name=?,
                 site_index=?,label=?,visible=?,occupied_material_uuid=?,pose_json=?,
                 allowed_resource_categories_json=?,parent_link=?,description=?,
                 meta_data_json=?,extra_json=?,changed_by_job_uuid=?,
@@ -500,7 +501,7 @@ class MaterialsRepository:
             """,
             (
                 values["schema_version"], values["owner_material_uuid"],
-                values["template_name"], values["site_index"], values["label"],
+                values["ordinal"], values["template_name"], values["site_index"], values["label"],
                 values["visible"], values["occupied_material_uuid"],
                 canonical_json(values["pose"]),
                 canonical_json(values["allowed_resource_categories"]),

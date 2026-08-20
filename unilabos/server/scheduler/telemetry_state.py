@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from unilabos.server.protocol.telemetry import (
     DeviceStateSnapshot,
+    TelemetryEventQuery,
     TelemetryEventWrite,
 )
 from unilabos.server.services.telemetry import TelemetryService
@@ -79,6 +80,100 @@ class TelemetryDeviceStateProjection:
                 for name, value in state.properties.items()
             }
         return result
+
+    @staticmethod
+    def _value_type(value: Any) -> str:
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, int):
+            return "int"
+        if isinstance(value, float):
+            return "float"
+        return "str"
+
+    def latest_for(self, device_id: str) -> dict[str, dict[str, Any]]:
+        current = self.service.get_device_state(self.endpoint_uuid, device_id)
+        if current is None:
+            return {}
+        return {
+            name: {
+                "value": value,
+                "value_type": self._value_type(value),
+                "updated_at": current.observed_at_ms,
+            }
+            for name, value in current.properties.items()
+        }
+
+    def _property_events(
+        self,
+        *,
+        device_id: str | None = None,
+        prop: str | None = None,
+        since_ms: int = 0,
+        limit: int = 1000,
+    ) -> list[Any]:
+        return self.service.query_events(
+            TelemetryEventQuery(
+                endpoint_uuid=self.endpoint_uuid,
+                device_uuid=device_id,
+                event_type="property_sample",
+                event_key=prop,
+                observed_from_ms=max(0, int(since_ms)),
+                order="desc",
+                limit=max(1, min(int(limit), 1000)),
+            )
+        )
+
+    def _history_row(self, event: Any) -> dict[str, Any]:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        value = payload.get("value")
+        return {
+            "id": event.sequence,
+            "device_id": event.device_uuid or "",
+            "property": event.event_key or "",
+            "value": value,
+            "value_type": self._value_type(value),
+            "recorded_at": event.observed_at_ms,
+        }
+
+    def history(
+        self,
+        device_id: str,
+        prop: str,
+        since_ms: int = 0,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Project telemetry.v1 property samples into the legacy read shape."""
+
+        return [
+            self._history_row(event)
+            for event in self._property_events(
+                device_id=device_id,
+                prop=prop,
+                since_ms=since_ms,
+                limit=limit,
+            )
+        ]
+
+    def history_all(self, since_ms: int = 0, limit: int = 500) -> list[dict[str, Any]]:
+        return [
+            self._history_row(event)
+            for event in self._property_events(since_ms=since_ms, limit=limit)
+        ]
+
+    def stats(self) -> dict[str, int]:
+        states = self.service.list_device_states(self.endpoint_uuid)
+        return {
+            "devices": len(states),
+            "properties": sum(len(item.properties) for item in states),
+            "history_rows": self.service.count_events(
+                TelemetryEventQuery(
+                    endpoint_uuid=self.endpoint_uuid,
+                    event_type="property_sample",
+                    limit=1,
+                )
+            ),
+        }
 
 
 __all__ = ["TelemetryDeviceStateProjection"]

@@ -287,13 +287,15 @@ class TelemetryRepository:
         )
         return record.model_copy(update={"sequence": int(cursor.lastrowid)})
 
-    def query_events(self, query: TelemetryEventQuery) -> list[TelemetryEventRecord]:
+    @staticmethod
+    def _event_filters(query: TelemetryEventQuery) -> tuple[list[str], list[Any]]:
         clauses = ["sequence>?"]
         params: list[Any] = [query.after_sequence]
         for column, value in (
             ("endpoint_uuid", query.endpoint_uuid),
             ("device_uuid", query.device_uuid),
             ("event_type", query.event_type),
+            ("event_key", query.event_key),
             ("source_epoch", query.source_epoch),
             ("source_generation", query.source_generation),
         ):
@@ -306,14 +308,27 @@ class TelemetryRepository:
         if query.observed_to_ms is not None:
             clauses.append("observed_at_ms<=?")
             params.append(query.observed_to_ms)
+        return clauses, params
+
+    def query_events(self, query: TelemetryEventQuery) -> list[TelemetryEventRecord]:
+        clauses, params = self._event_filters(query)
         params.append(query.limit)
+        order = "ASC" if query.order == "asc" else "DESC"
         rows = self.connection.execute(
             "SELECT * FROM telemetry_event WHERE "
             + " AND ".join(clauses)
-            + " ORDER BY sequence LIMIT ?",
+            + f" ORDER BY sequence {order} LIMIT ?",
             params,
         )
         return [self._event(row) for row in rows]
+
+    def count_events(self, query: TelemetryEventQuery) -> int:
+        clauses, params = self._event_filters(query)
+        row = self.connection.execute(
+            "SELECT COUNT(*) FROM telemetry_event WHERE " + " AND ".join(clauses),
+            params,
+        ).fetchone()
+        return int(row[0])
 
 
 __all__ = ["TelemetryRepository"]

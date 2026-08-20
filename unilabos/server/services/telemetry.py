@@ -262,6 +262,16 @@ class TelemetryService:
         resolved = query or TelemetryEventQuery.model_validate(filters)
         return self.repository.query_events(resolved)
 
+    def count_events(
+        self, query: Optional[TelemetryEventQuery] = None, **filters: object
+    ) -> int:
+        if query is not None and filters:
+            raise TelemetryValidationError(
+                "pass a TelemetryEventQuery or keyword filters, not both"
+            )
+        resolved = query or TelemetryEventQuery.model_validate(filters)
+        return self.repository.count_events(resolved)
+
 
 __all__ = [
     "StaleTelemetryError",

@@ -81,10 +81,12 @@ class TelemetryEventQuery(ServerObject):
     event_type: Optional[Literal["state", "property_sample", "connection", "alarm"]] = (
         None
     )
+    event_key: Optional[NonEmptyStr] = None
     source_epoch: Optional[NonEmptyStr] = None
     source_generation: Optional[int] = Field(default=None, ge=0)
     observed_from_ms: Optional[int] = Field(default=None, ge=0)
     observed_to_ms: Optional[int] = Field(default=None, ge=0)
+    order: Literal["asc", "desc"] = "asc"
     limit: int = Field(default=100, ge=1, le=1000)
 
     @model_validator(mode="after")

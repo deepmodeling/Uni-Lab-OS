@@ -126,6 +126,7 @@ class MaterialIdentityWrite(ServerObject):
 class MaterialIdentityRead(MaterialIdentityWrite):
     template_uuid: NonEmptyStr
     material_uuid: NonEmptyStr
+    ordinal: int = Field(default=0, ge=0)
     created_at_ms: int = Field(ge=0)
     updated_at_ms: int = Field(ge=0)
     deleted_at_ms: Optional[int] = Field(default=None, ge=0)
@@ -168,6 +169,7 @@ class SiteCreate(ServerObject):
 class SiteRead(SiteWrite):
     site_uuid: NonEmptyStr
     owner_material_uuid: NonEmptyStr
+    ordinal: int = Field(default=0, ge=0)
     changed_by_job_uuid: Optional[NonEmptyStr] = None
     changed_by_command_uuid: Optional[NonEmptyStr] = None
     changed_at_ms: int = Field(ge=0)
@@ -182,6 +184,7 @@ class MaterialNodeCreate(ServerObject):
 
     client_ref: NonEmptyStr
     parent_client_ref: Optional[NonEmptyStr] = None
+    ordinal: Optional[int] = Field(default=None, ge=0)
     identity: MaterialIdentityWrite
     position: MaterialPosition = Field(default_factory=MaterialPosition)
     data: MaterialDataWrite = Field(default_factory=MaterialDataWrite)

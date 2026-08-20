@@ -713,18 +713,21 @@ class MaterialsService:
             raise MaterialValidationError(
                 f"template is not active: {template.template_uuid}"
             )
-        if identity.template_name != template.name:
+        if identity.template_name.casefold() != template.name.casefold():
             raise MaterialValidationError(
                 f"template_name {identity.template_name!r} does not match "
                 f"registered template {template.name!r}"
             )
         if identity.resource_type != template.resource_type:
             raise MaterialValidationError(
-                f"resource_type {identity.resource_type!r} does not match template"
+                f"resource_type {identity.resource_type!r} does not match "
+                f"template {template.name!r} resource_type "
+                f"{template.resource_type!r}"
             )
         if template.class_name and identity.class_name != template.class_name:
             raise MaterialValidationError(
-                f"class_name {identity.class_name!r} does not match template"
+                f"class_name {identity.class_name!r} does not match template "
+                f"{template.name!r} class_name {template.class_name!r}"
             )
 
     @staticmethod
@@ -780,6 +783,26 @@ class MaterialsService:
 
         def apply(timestamp: int) -> _Applied[MaterialTreeRead]:
             client_map = {node.client_ref: str(uuid4()) for node in value.nodes}
+            node_ordinals: dict[str, int] = {}
+            used_ordinals: dict[str | None, set[int]] = {}
+            next_ordinals: dict[str | None, int] = {}
+            for node in value.nodes:
+                parent_ref = node.parent_client_ref
+                ordinal = (
+                    node.ordinal
+                    if node.ordinal is not None
+                    else next_ordinals.get(parent_ref, 0)
+                )
+                used = used_ordinals.setdefault(parent_ref, set())
+                if ordinal in used:
+                    raise MaterialValidationError(
+                        f"duplicate child ordinal {ordinal} under {parent_ref!r}"
+                    )
+                used.add(ordinal)
+                next_ordinals[parent_ref] = max(
+                    next_ordinals.get(parent_ref, 0), ordinal + 1
+                )
+                node_ordinals[node.client_ref] = ordinal
             templates: dict[str, ResourceTemplateRecord] = {}
             resolved_templates: dict[str, ResourceTemplateRecord] = {}
             affected: list[AggregateVersion] = []
@@ -890,6 +913,7 @@ class MaterialsService:
                     resource_id=identity.resource_id,
                     template_uuid=template.template_uuid,
                     parent_material_uuid=parent_uuid,
+                    ordinal=node_ordinals[node.client_ref],
                     lot_uuid=identity.lot_uuid,
                     name=identity.name,
                     description=identity.description,
@@ -954,7 +978,7 @@ class MaterialsService:
             site_records: list[SiteRecord] = []
             for node in value.nodes:
                 owner_uuid = client_map[node.client_ref]
-                for site in node_sites[node.client_ref]:
+                for ordinal, site in enumerate(node_sites[node.client_ref]):
                     occupant = site.occupied_client_ref
                     if occupant is not None:
                         occupant = client_map[occupant]
@@ -962,6 +986,7 @@ class MaterialsService:
                         site_uuid=str(uuid4()),
                         schema_version=site.schema_version,
                         owner_material_uuid=owner_uuid,
+                        ordinal=ordinal,
                         template_name=site.template_name,
                         site_index=site.site_index,
                         label=site.label,
@@ -1815,6 +1840,7 @@ class MaterialsService:
                     site_uuid=site_uuid,
                     schema_version=desired.schema_version,
                     owner_material_uuid=current_record.owner_material_uuid,
+                    ordinal=current_record.ordinal,
                     template_name=desired.template_name,
                     site_index=desired.site_index,
                     label=desired.label,

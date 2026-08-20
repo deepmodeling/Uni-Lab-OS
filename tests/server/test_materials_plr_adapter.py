@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from unilabos.resources.container import RegularContainer
-from unilabos.resources.itemized_carrier import ItemizedCarrier
+from unilabos.resources.presets.container import RegularContainer
+from unilabos.resources.presets.itemized_carrier import ItemizedCarrier
 from unilabos.server.adapters.plr_materials import (
     create_plr_materials,
     plr_resources_to_create,

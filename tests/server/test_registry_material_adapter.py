@@ -38,6 +38,7 @@ def test_registry_definition_is_registered_once_with_promoted_fields(tmp_path) -
 
         assert second == first
         assert template.resource_type == "container"
+        assert template.class_name == "RegularContainer"
         assert template.category == ["container"]
         assert template.available_sites[0]["label"] == "slot"
         assert "category" not in template.definition

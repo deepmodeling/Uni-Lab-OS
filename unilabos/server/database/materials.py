@@ -97,6 +97,7 @@ MATERIALS_TABLES = (
             resource_id TEXT NOT NULL UNIQUE CHECK (TRIM(resource_id) <> ''),
             template_uuid TEXT NOT NULL,
             parent_material_uuid TEXT,
+            ordinal INTEGER NOT NULL DEFAULT 0 CHECK (ordinal >= 0),
             lot_uuid TEXT,
             name TEXT NOT NULL CHECK (TRIM(name) <> ''),
             description TEXT NOT NULL DEFAULT '',
@@ -147,7 +148,7 @@ MATERIALS_TABLES = (
             """,
             """
             CREATE INDEX IF NOT EXISTS idx_material_parent
-            ON material(parent_material_uuid, material_uuid)
+            ON material(parent_material_uuid, ordinal, material_uuid)
             """,
             """
             CREATE INDEX IF NOT EXISTS idx_material_template_status
@@ -293,6 +294,7 @@ MATERIALS_TABLES = (
             site_uuid TEXT PRIMARY KEY CHECK (TRIM(site_uuid) <> ''),
             schema_version INTEGER NOT NULL DEFAULT 1 CHECK (schema_version = 1),
             owner_material_uuid TEXT NOT NULL,
+            ordinal INTEGER NOT NULL DEFAULT 0 CHECK (ordinal >= 0),
             template_name TEXT NOT NULL CHECK (TRIM(template_name) <> ''),
             site_index NOT NULL CHECK (
                 typeof(site_index) = 'integer'

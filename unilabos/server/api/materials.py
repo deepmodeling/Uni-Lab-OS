@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from pydantic import Field
 
+from unilabos.config.config import BasicConfig
 from unilabos.server.models.base import ServerObject
 from unilabos.server.protocol.common import InventoryMutation
 from unilabos.server.protocol.materials import (
@@ -25,6 +26,11 @@ from unilabos.server.services.materials import (
     MaterialsService,
     RejectedMutationError,
 )
+from unilabos.server.protocol.virtual_environment import (
+    VirtualEnvironmentId,
+    VirtualEnvironmentResetRequest,
+)
+from unilabos.server.services.virtual_environment import VirtualEnvironmentService
 
 
 class LedgerAcknowledge(ServerObject):
@@ -53,6 +59,27 @@ def _call(function, *args, **kwargs):
 
 def create_materials_router(service: MaterialsService) -> APIRouter:
     router = APIRouter(prefix="/api/v1/materials", tags=["materials-v1"])
+    virtual_environments = VirtualEnvironmentService(service)
+
+    @router.get("/virtual-environments")
+    async def list_virtual_environments():
+        return virtual_environments.catalog(reset_allowed=BasicConfig.test_mode)
+
+    @router.post("/virtual-environments/{preset_id}/reset")
+    async def reset_virtual_environment(
+        preset_id: VirtualEnvironmentId,
+        value: VirtualEnvironmentResetRequest,
+    ):
+        if not BasicConfig.test_mode:
+            raise HTTPException(
+                status_code=403,
+                detail="virtual material reset requires UniLabOS --test_mode",
+            )
+        return _call(
+            virtual_environments.reset,
+            preset_id,
+            request_uuid=str(value.request_uuid),
+        )
 
     @router.put("/templates/{template_uuid}")
     async def put_template(template_uuid: str, mutation: InventoryMutation):

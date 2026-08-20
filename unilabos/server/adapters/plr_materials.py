@@ -15,6 +15,7 @@ from unilabos.server.protocol.materials import (
     MaterialDataWrite,
     MaterialIdentityRead,
     MaterialIdentityWrite,
+    MaterialMove,
     MaterialNodeCreate,
     MaterialPosition,
     MaterialSnapshot,
@@ -43,6 +44,10 @@ class MaterialGateway(Protocol):
     def get_material_by_resource_id(
         self, resource_id: str
     ) -> MaterialAggregateRead: ...
+
+    def move_material(
+        self, mutation: InventoryMutation, value: MaterialMove
+    ) -> MutationResult[MaterialAggregateRead]: ...
 
     def delete_material(self, mutation: InventoryMutation, value: Any) -> Any: ...
 
@@ -191,17 +196,29 @@ def resource_tree_to_create(value: ResourceTreeSet) -> MaterialTreeCreate:
         instance.res_content.uuid: f"node-{ordinal}"
         for ordinal, instance in enumerate(instances)
     }
+    resource_ids: dict[str, str] = {}
+    next_ordinal: dict[str | None, int] = {}
     nodes: list[MaterialNodeCreate] = []
     for instance in instances:
         resource = instance.res_content
+        parent_key = resource.uuid_parent
+        ordinal = next_ordinal.get(parent_key, 0)
+        next_ordinal[parent_key] = ordinal + 1
+        escaped_id = resource.id.replace("%", "%25").replace("/", "%2F")
+        resource_ids[resource.uuid] = (
+            f"{resource_ids[parent_key]}/{escaped_id}"
+            if parent_key in resource_ids
+            else escaped_id
+        )
         extra = copy.deepcopy(resource.extra)
         extra.pop(SUBSTANCE_METADATA_EXTRA, None)
         nodes.append(
             MaterialNodeCreate(
                 client_ref=client_refs[resource.uuid],
                 parent_client_ref=client_refs.get(resource.uuid_parent),
+                ordinal=ordinal,
                 identity=MaterialIdentityWrite(
-                    resource_id=resource.id,
+                    resource_id=resource_ids[resource.uuid],
                     name=resource.name,
                     description=resource.description,
                     resource_type=resource.type,
@@ -333,7 +350,7 @@ def material_tree_to_resource_tree(value: MaterialTreeRead) -> ResourceTreeSet:
                 "substances": [
                     (item.name, item.quantity, item.quantity_unit)
                     for item in node.data.substances
-                ],
+                ] or None,
                 "liquid_history": None,
                 "unknown_counter": node.data.unknown_counter,
             }

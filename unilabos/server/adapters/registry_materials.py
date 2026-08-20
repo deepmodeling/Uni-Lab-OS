@@ -77,6 +77,28 @@ def _resource_type(definition: Mapping[str, Any]) -> str:
     return "resource"
 
 
+def _class_name(definition: Mapping[str, Any]) -> str | None:
+    components = [
+        item
+        for item in _array(definition.get("config_info"))
+        if isinstance(item, Mapping)
+    ]
+    if components:
+        serialized_type = _mapping(components[0].get("config")).get("type")
+        if serialized_type:
+            return str(serialized_type)
+
+    declared_type = _mapping(definition.get("class")).get("type")
+    if declared_type and declared_type not in {
+        "pylabrobot",
+        "python",
+        "ros2",
+        "hostlink",
+    }:
+        return str(declared_type)
+    return None
+
+
 def _handles(definition: Mapping[str, Any]) -> list[ResourceTemplateHandle]:
     result: list[ResourceTemplateHandle] = []
     for ordinal, raw in enumerate(_array(definition.get("handles"))):
@@ -141,7 +163,7 @@ def registry_definition_to_template(
             definition.get("display_name") or definition.get("displayname") or name
         ),
         resource_type=_resource_type(definition),
-        class_name=str(class_definition.get("type") or "") or None,
+        class_name=_class_name(definition),
         module_name=str(class_definition.get("module") or "") or None,
         template_version=str(definition.get("version") or "registry-v1"),
         category=category,

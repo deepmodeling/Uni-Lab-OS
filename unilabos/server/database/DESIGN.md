@@ -76,6 +76,10 @@
 - `available_sites` 和 `handles` 同样属于 ResourceTemplate，不建立模板子表。
 - Material 是对象聚合原则的例外：位置结构稳定且有独立更新节奏，杂项 `data` 内容异构，
   因此分别保存为 1:1 `material_position` 和 `material_data`。
+- `material.ordinal` 保存同一父节点下的 PLR child 顺序，`site.ordinal` 保存载架声明的
+  Site 顺序；`site_index` 是业务索引，不能用标签排序替代序列化顺序。
+- PLR child 的 `resource_id` 使用根资源内的转义路径形成全局稳定键；展示名仍保存在
+  `name`，实例身份由微后端分配的 `material_uuid` 决定。
 - `ResourceDict.liquids` 改以 `substances` 表达，保存在 `material_data` 下的 1:N
   `material_substance`；每项 `(name, quantity, quantity_unit)` 对应现有
   `(liquid_name, amount, unit)` 三元组。单位不在数据库枚举，当前 Edge 写入侧主要使用

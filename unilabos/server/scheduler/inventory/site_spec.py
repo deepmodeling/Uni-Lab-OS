@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from unilabos.resources.site_definition import normalize_available_sites
+from unilabos.resources.objects.site import normalize_available_sites
 
 
 def _load(value: Any, fallback: Any) -> Any:

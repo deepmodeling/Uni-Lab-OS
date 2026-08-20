@@ -286,7 +286,7 @@
           "enforced_by": "ReusableTipStateStore + add_liquid_with_reusable_tip"
         },
         {
-          "condition": "S09允许加工 == true（工艺 5、7、8、9、10、6 每一步）",
+          "condition": "S09允许加工 == true（工艺 5、7、8、6 每一步）",
           "status": "enforced",
           "enforced_by": "TaskExecutionCoordinator + add_liquid_with_reusable_tip"
         },
@@ -298,17 +298,12 @@
       ],
       "completion": [
         {
-          "condition": "工艺 5、7、8、9、10、6 分别返回对应的 S09工艺完成值；工艺 7 从本次液体工位取液，工艺 9、10 使用 PLC 固定的烧杯工位",
+          "condition": "工艺 5、7、8、6 分别返回对应的 S09工艺完成值；工艺 7 从本次液体工位取液，工艺 8 向烧杯加液",
           "status": "enforced",
           "enforced_by": "add_liquid_with_reusable_tip"
         },
         {
           "condition": "实际 TIP 盒和本次液体工位传感器满足预期，液体瓶账面余量已扣减，TIP 复用状态已更新",
-          "status": "enforced",
-          "enforced_by": "add_liquid_with_reusable_tip"
-        },
-        {
-          "condition": "工艺 9 使用 density_volume，PLC 返回的负数净质量取绝对值后除以换算为 mL 的体积，返回 g/mL 密度；density_volume 不计入液体瓶余量",
           "status": "enforced",
           "enforced_by": "add_liquid_with_reusable_tip"
         }

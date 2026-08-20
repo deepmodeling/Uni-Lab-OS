@@ -216,7 +216,7 @@ def collect_snapshot_variables(
     variables = list(snapshot_config.common_variables)
     variables.extend(snapshot_config.action_variables.get(method_name, []))
 
-    if method_name == "add_liquid_with_reusable_tip":
+    if method_name == "measure_density":
         try:
             density_count = int(params.get("density_measurement_count", 1))
         except (TypeError, ValueError):

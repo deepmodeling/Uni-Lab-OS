@@ -36,6 +36,7 @@ from .sensors import (
 )
 
 DEFAULT_POWDER_PARAMS_PATH = Path(__file__).resolve().parent / "s07_powder_params.json"
+DOSE_POSITION_RANGE = range(0, 11)
 
 
 @device(
@@ -365,8 +366,11 @@ class SZLabS07SolidAdditionDevice:
                 "powder_count": len(addition_results),
                 "powder_results": addition_results,
             }
-        if coarse_position not in POSITION_RANGE or fine_position not in POSITION_RANGE:
-            return {"success": False, "message": "coarse_position/fine_position 必须在 1-10 范围内"}
+        if coarse_position not in DOSE_POSITION_RANGE or fine_position not in DOSE_POSITION_RANGE:
+            return {
+                "success": False,
+                "message": "coarse_position/fine_position 必须在 0-10 范围内（0 表示跳过该罐位）",
+            }
         coarse_params, fine_params = self._load_powder_params_from_json(params_json, recipe_name)
         try:
             self._write_plc_variable(NODE_COARSE_POSITION, int(coarse_position))

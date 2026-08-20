@@ -231,6 +231,7 @@ _STATION_METHOD_RESOLVERS: dict[tuple[str, str], Callable[[dict[str, Any]], list
         "szlab_mixer_pipetting_station",
         "add_liquid_with_reusable_tip",
     ): _resolve_reusable_pipetting_sensors,
+    ("szlab_mixer_pipetting_station", "measure_density"): _resolve_pipetting_sensors,
 }
 
 

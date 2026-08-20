@@ -21,6 +21,7 @@ async function importTypeScriptModule(path) {
 
 const {
   buildSampleProcessRows,
+  compareSampleIds,
   buildExecutionTimingSummaries,
   buildTaskActionProgress,
   compactTaskProgressLabel,
@@ -32,6 +33,12 @@ const {
   taskWallDurationMs,
 } = await importTypeScriptModule(
   new URL('../src/taskOrchestration.ts', import.meta.url),
+);
+
+assert.deepEqual(
+  ['Sample AA', 'Sample B', 'Sample Z', 'Sample A', 'Sample AB'].sort(compareSampleIds),
+  ['Sample A', 'Sample B', 'Sample Z', 'Sample AA', 'Sample AB'],
+  '样品应优先按 A-Z，再按 AA-AZ 的顺序排列',
 );
 
 assert.equal(elapsedDurationMs(1_000, 4_750, 9_000), 3_750);

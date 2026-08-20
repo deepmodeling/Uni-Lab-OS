@@ -20,6 +20,7 @@ from fastapi import HTTPException
 import scripts.run_workflow_local as run_workflow_local
 import scripts.workflow_ui as workflow_ui
 import scripts.opc_simulator_profiles as opc_simulator_profiles
+from scripts.run_history_store import RunHistoryStore
 from scripts.run_workflow_local import (
     WorkflowLogger,
     WorkflowNode,
@@ -741,6 +742,7 @@ def test_s09_debug_preset_uses_debug_file_name():
         )
     }
     assert "run_process" not in preset.actions
+    assert "measure_density" in preset.actions
     assert "go_to_safe_position" not in preset.actions
     assert "add_liquid" in preset.actions
     assert "add_liquid_to_beaker" in preset.actions
@@ -833,6 +835,7 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         == "szlab_mixer_pipetting_station"
     )
     assert "run_process" not in preset.actions
+    assert "measure_density" in preset.actions
     assert "add_liquid" in preset.actions
     assert "run_liquid_workflow" in preset.actions
     assert "get_pipetting_status" in preset.actions
@@ -849,6 +852,7 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "release_station",
         "add_liquid",
         "add_liquid_with_reusable_tip",
+        "measure_density",
         "add_liquid_to_beaker",
         "run_liquid_workflow",
         "set_liquid_bottle_remaining_volume",
@@ -866,17 +870,15 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "liquid_station_index",
         "solvent_batch_id",
         "volume",
-        "density_volume",
-        "density_measurement_count",
         "volume_unit",
         "skip_level_check",
     ]
-    reusable_snapshot = collect_snapshot_variables(
-        "add_liquid_with_reusable_tip",
+    density_snapshot = collect_snapshot_variables(
+        "measure_density",
         {"density_measurement_count": 5},
         runtime_config,
     )
-    assert reusable_snapshot[-10:] == [
+    assert density_snapshot[-10:] == [
         *[f"S09抽液天平读数[{index}]" for index in range(5)],
         *[f"S09放液天平读数[{index}]" for index in range(5)],
     ]
@@ -1004,7 +1006,7 @@ def test_szlab_action_parameters_have_frontend_help_options_and_units():
     assert "S06" not in reusable_volume["description"]
     density_count = next(
         param
-        for param in preset.actions["add_liquid_with_reusable_tip"].params
+        for param in preset.actions["measure_density"].params
         if param["name"] == "density_measurement_count"
     )
     assert density_count["label"] == "测密度次数"
@@ -1666,10 +1668,18 @@ def test_workflow_ui_main_uses_build_parser_and_preserves_cli_options(
     ]
 
 
-def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):
+def test_workflow_run_manager_reuses_devices_and_persists_direct_runs(
+    tmp_path,
+    monkeypatch,
+):
     preset = load_preset("ai4c")
     runtime_config = _load_preset_runtime_config(preset)
-    manager = WorkflowRunManager(preset, runtime_config)
+    history_store = RunHistoryStore(tmp_path, session_id="direct-workflows")
+    manager = WorkflowRunManager(
+        preset,
+        runtime_config,
+        run_history_store=history_store,
+    )
     created_devices = [{"AI4C_plc": object(), "AI4C_robot_arm": object()}]
     create_calls = []
     disconnect_calls = []
@@ -1724,6 +1734,13 @@ def test_workflow_run_manager_reuses_devices_between_runs(monkeypatch):
     assert disconnect_calls == []
     assert manager._records["run-1"].status == "completed"
     assert manager._records["run-2"].status == "completed"
+    assert (tmp_path / "history.db").exists()
+    actions = history_store.station_ledger("direct-workflows")["stations"][0][
+        "actions"
+    ]
+    assert len(actions) == 2
+    assert {action["instance_id"] for action in actions} == {"run-1", "run-2"}
+    assert {action["status"] for action in actions} == {"completed"}
 
 
 def test_workflow_manager_shutdown_waits_for_coordinator_before_devices(
@@ -2654,6 +2671,43 @@ def test_task_execution_tick_delegates_and_returns_cycle_statistics(monkeypatch)
         "completed": 0,
         "failed": 0,
     }
+
+
+def test_task_execution_timings_endpoint_persists_entries(monkeypatch):
+    captured = {}
+
+    def fake_append(self, *, workflow_path, entries):
+        captured["workflow_path"] = workflow_path
+        captured["entries"] = entries
+        return len(entries)
+
+    monkeypatch.setattr(
+        WorkflowRunManager,
+        "append_task_execution_timings",
+        fake_append,
+    )
+    app = create_app("szlab_robot_action_workflow")
+    endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/task-execution/timings"
+    )
+    entries = [
+        {
+            "cycle_id": 4,
+            "step": "execution_tick",
+            "phase": "finish",
+            "timestamp_ms": 12_345,
+            "duration_ms": 25,
+        }
+    ]
+
+    response = asyncio.run(
+        endpoint({"task_workspace_path": "task-flow.json", "entries": entries})
+    )
+
+    assert response == {"success": True, "written": 1}
+    assert captured == {"workflow_path": "task-flow.json", "entries": entries}
 
 
 def test_temporary_s072_triggers_follow_successful_place_and_pick_records():

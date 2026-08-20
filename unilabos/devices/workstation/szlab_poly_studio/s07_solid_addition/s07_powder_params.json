@@ -10,6 +10,38 @@
     "fine_params": {
       "opening": [1100, 1050, 1000, 950, 900],
       "feed_speed": [0.05, 0.01, 0.001, 0.0001, 0.00001],
+      "rotation_speed": [200, 100, 50, 50, 10],
+      "stop_amount": [500, 300, 120, 60, 20],
+      "shake_max_speed": 900
+    }
+  },
+  "NLM": {
+    "coarse_params": {
+      "opening": [1000, 950, 900, 900, 900],
+      "feed_speed": [0.1, 0.01, 0.001, 0.0001, 0.00001],
+      "rotation_speed": [200, 150, 100, 50, 10],
+      "stop_amount": [6000, 5500, 5000, 4000, 3000],
+      "shake_max_speed": 900
+    },
+    "fine_params": {
+      "opening": [950, 900, 880, 850, 800],
+      "feed_speed": [0.05, 0.01, 0.001, 0.001, 0.001],
+      "rotation_speed": [100, 80, 80, 70, 55],
+      "stop_amount": [1000, 600, 120, 50, 30],
+      "shake_max_speed": 800
+    }
+  },
+  "HAdMA": {
+    "coarse_params": {
+      "opening": [1000, 950, 900, 900, 900],
+      "feed_speed": [0.1, 0.01, 0.001, 0.0001, 0.00001],
+      "rotation_speed": [200, 150, 100, 50, 10],
+      "stop_amount": [6000, 5500, 5000, 4000, 3000],
+      "shake_max_speed": 900
+    },
+    "fine_params": {
+      "opening": [1100, 1050, 1000, 950, 900],
+      "feed_speed": [0.05, 0.01, 0.001, 0.0001, 0.00001],
       "rotation_speed": [200, 100, 2, 50, 10],
       "stop_amount": [500, 300, 120, 60, 20],
       "shake_max_speed": 900
@@ -40,9 +72,9 @@
       "shake_max_speed": 900
     },
     "fine_params": {
-      "opening": [900, 850, 820, 790, 760],
+      "opening": [900, 880, 850, 820, 790],
       "feed_speed": [0.01, 0.008, 0.002, 0.0008, 0.00008],
-      "rotation_speed": [200, 100, 80, 50, 10],
+      "rotation_speed": [230, 100, 80, 50, 20],
       "stop_amount": [500, 300, 120, 60, 20],
       "shake_max_speed": 900
     }

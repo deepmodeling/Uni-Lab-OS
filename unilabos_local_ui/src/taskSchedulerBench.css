@@ -268,7 +268,8 @@
 }
 
 .scheduler-bench__middle {
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(240px, 1fr) minmax(140px, 32vh);
+  overflow: hidden;
 }
 
 .scheduler-bench__right {
@@ -300,6 +301,7 @@
 
 .scheduler-bench__panel-head {
   display: flex;
+  flex: 0 0 auto;
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
@@ -617,6 +619,7 @@
 /* ── Queue ── */
 .scheduler-bench__queue-actions {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
@@ -642,9 +645,12 @@
 .scheduler-bench table { width: 100%; border-collapse: collapse; }
 
 .scheduler-bench__queue-wrap {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
-  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .scheduler-bench__queue {
@@ -742,6 +748,15 @@
 
 /* ── Progress ── */
 .scheduler-bench__progress .scheduler-bench__panel-head { padding: 10px 16px; }
+
+.scheduler-bench__progress-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
 
 .scheduler-bench__progress-row {
   display: grid;

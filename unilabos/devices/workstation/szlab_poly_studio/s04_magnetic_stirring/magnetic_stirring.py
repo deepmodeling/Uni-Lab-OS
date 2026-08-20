@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 from unilabos.registry.decorators import action, device, not_action, topic_config
@@ -27,6 +28,8 @@ DEFAULT_OPCUA_URL = os.environ.get(
     "UNILABOS_SZLAB_MIXER_OPCUA_URL",
     "opc.tcp://192.168.1.10:4840/",
 )
+
+S04_DONE_TIMEOUT_GRACE_SECONDS = 30.0
 
 
 @device(
@@ -135,11 +138,14 @@ class SzlabMixerMagneticStirrerDevice:
         return self._wait_variable_true(variable)
 
     @not_action
-    def _wait_done(self, position: int) -> bool:
+    def _wait_done(self, position: int, *, timeout: float) -> bool:
         variable = s04_done_var(position)
         waiter = getattr(self._plc_gateway, "wait_new_cycle_done", None) if self._plc_gateway is not None else None
         if callable(waiter):
-            return waiter(variable, interval=1.0)
+            try:
+                return waiter(variable, interval=1.0, timeout=timeout)
+            except TypeError:
+                return waiter(variable, interval=1.0)
         wait_equal = getattr(self._plc_gateway, "wait_equal", None) if self._plc_gateway is not None else None
         wait_variable_equal = (
             getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
@@ -148,10 +154,17 @@ class SzlabMixerMagneticStirrerDevice:
             if not self._wait_variable_equal(variable, False):
                 return False
             return self._wait_variable_true(variable)
+        reader = self._plc_gateway if self._plc_gateway is not None else self._client
+        started_at = time.monotonic()
         if self._read_bool(variable):
-            if not self._wait_variable_equal(variable, False):
+            if not wait_variable_equal(
+                reader, variable, False, interval=1.0, timeout=timeout
+            ):
                 return False
-        return self._wait_variable_true(variable)
+        remaining = max(0.0, timeout - (time.monotonic() - started_at))
+        return wait_variable_equal(
+            reader, variable, True, interval=1.0, timeout=remaining
+        )
 
     @not_action
     def _wait_idle_status(self, position: int) -> bool:
@@ -248,7 +261,10 @@ class SzlabMixerMagneticStirrerDevice:
         done = False
         wait_error: Exception | None = None
         try:
-            done = self._wait_done(position)
+            done = self._wait_done(
+                position,
+                timeout=float(duration) + S04_DONE_TIMEOUT_GRACE_SECONDS,
+            )
         except Exception as exc:
             wait_error = exc
         finally:
@@ -257,9 +273,6 @@ class SzlabMixerMagneticStirrerDevice:
         if wait_error is not None:
             self._status = "Error"
             raise wait_error
-        if not done:
-            self._status = "Error"
-            return {"success": False, "message": f"{station} 加工完成等待失败", "data": {"station": station}}
         if not reset_result.get("success", False):
             return reset_result
 
@@ -277,7 +290,11 @@ class SzlabMixerMagneticStirrerDevice:
         self._last_mode = mode
         return {
             "success": True,
-            "message": f"{station} 磁搅加工完成，工艺 {S04_PROCESS_MODES[mode]}",
+            "message": (
+                f"{station} 磁搅已达到规定时间，按正常完成处理"
+                if not done
+                else f"{station} 磁搅加工完成，工艺 {S04_PROCESS_MODES[mode]}"
+            ),
             "data": {
                 "station": station,
                 "position": position,
@@ -289,6 +306,7 @@ class SzlabMixerMagneticStirrerDevice:
                 "duration_ms": duration_ms,
                 "safe_temperature": int(safe_temperature),
                 "done_variable": s04_done_var(position),
+                "done_signal_received": done,
                 "reset": reset_result.get("data", {}),
             },
         }

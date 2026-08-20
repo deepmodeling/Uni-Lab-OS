@@ -15,6 +15,19 @@ const TASK_TEST_MEMORY_PREFIX = 'unilabos.taskTestMemory.v2';
 const LEGACY_TASK_TEST_MEMORY_PREFIX = 'unilabos.taskTestMemory.v1';
 const DEFAULT_SAMPLE_COUNT = 3;
 
+export function generateSampleIds(sampleCount: number): string[] {
+  return Array.from({ length: normalizeSampleCount(sampleCount) }, (_, index) => {
+    let value = index + 1;
+    let suffix = '';
+    while (value > 0) {
+      value -= 1;
+      suffix = String.fromCharCode(65 + (value % 26)) + suffix;
+      value = Math.floor(value / 26);
+    }
+    return `Sample ${suffix}`;
+  });
+}
+
 export function createEmptyTaskTestMemory(): TaskTestMemory {
   return {
     version: 2,
@@ -200,7 +213,7 @@ function structuredCloneValue<T>(value: T): T {
 
 function normalizeSampleCount(value: unknown) {
   const numeric = Number(value);
-  return Math.min(5, Math.max(1, Math.round(numeric) || DEFAULT_SAMPLE_COUNT));
+  return Math.min(999, Math.max(1, Math.round(numeric) || DEFAULT_SAMPLE_COUNT));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

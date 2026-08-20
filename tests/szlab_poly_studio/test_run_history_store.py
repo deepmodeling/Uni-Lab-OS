@@ -40,6 +40,56 @@ def _start_action(
     )
 
 
+def test_initialize_eagerly_creates_database_and_directories(tmp_path):
+    store = RunHistoryStore(tmp_path, session_id="run-initialize")
+
+    paths = store.initialize()
+
+    assert (tmp_path / "history.db").is_file()
+    assert (tmp_path / "exports").is_dir()
+    assert (tmp_path / "artifacts").is_dir()
+    assert (tmp_path / "backups").is_dir()
+    assert paths["database_path"] == str((tmp_path / "history.db").resolve())
+
+
+def test_scheduler_timings_are_persisted_in_history_database(tmp_path):
+    store = RunHistoryStore(tmp_path, session_id="run-timing")
+
+    written = store.append_scheduler_timings(
+        workflow_path="task-flow.json",
+        entries=[
+            {
+                "cycle_id": 7,
+                "step": "opc_poll",
+                "phase": "finish",
+                "timestamp_ms": 12_345,
+                "duration_ms": 7344,
+            },
+            {
+                "generation_id": 3,
+                "step": "controller_run",
+                "phase": "skipped",
+                "reason": "in_flight",
+                "timestamp_ms": 12_346,
+            },
+        ],
+    )
+
+    assert written == 2
+    connection = sqlite3.connect(tmp_path / "history.db")
+    rows = connection.execute(
+        """
+        SELECT workflow_path, cycle_id, generation_id, step, phase,
+               timestamp, duration_ms, reason
+        FROM scheduler_timings ORDER BY id
+        """
+    ).fetchall()
+    assert rows == [
+        ("task-flow.json", "7", "", "opc_poll", "finish", 12_345, 7344, ""),
+        ("task-flow.json", "", "3", "controller_run", "skipped", 12_346, None, "in_flight"),
+    ]
+
+
 def test_timing_ledger_records_sample_device_station_and_robot_idle(tmp_path):
     clock = MutableClock(10_000)
     store = RunHistoryStore(tmp_path, session_id="run-a", clock=clock)

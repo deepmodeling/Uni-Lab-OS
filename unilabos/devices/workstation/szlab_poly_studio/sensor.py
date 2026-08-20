@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import codecs
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import re
@@ -124,8 +125,10 @@ class SensorBase:
         expected: Any,
         *,
         interval: float = 1.0,
+        timeout: float | None = None,
     ) -> bool:
         started_at = time.time()
+        monotonic_started_at = time.monotonic()
         start_recorder = getattr(reader, "_record_opc_wait_start", None)
         if callable(start_recorder):
             start_recorder(variable_name, expected, interval=interval)
@@ -134,12 +137,16 @@ class SensorBase:
         last_value = None
         error = None
         try:
-            while True:
+            while (
+                timeout is None
+                or time.monotonic() - monotonic_started_at < timeout
+            ):
                 last_value = reader.read_variable(variable_name, use_cache=False)
                 if last_value == expected:
                     success = True
                     return True
                 time.sleep(interval)
+            return False
         except Exception as exc:
             error = str(exc)
             raise
@@ -163,12 +170,14 @@ class SensorBase:
         variable_name: str,
         *,
         interval: float = 1.0,
+        timeout: float | None = None,
     ) -> bool:
         return cls.wait_variable_equal(
             reader,
             variable_name,
             True,
             interval=interval,
+            timeout=timeout,
         )
 
     @staticmethod
@@ -188,36 +197,51 @@ class SensorBase:
         start_recorded = False
         success = False
         error = None
+        variable_names = tuple(conditions)
         try:
-            while True:
-                last_values = {
-                    variable_name: reader.read_variable(variable_name, use_cache=False)
-                    for variable_name in conditions
-                }
-                if not start_recorded:
-                    start_recorder = getattr(reader, "_record_opc_sensor_wait_start", None)
-                    if callable(start_recorder):
-                        start_recorder(
-                            conditions,
-                            last_values,
-                            interval=interval,
-                            context=context,
+            # 同一轮的所有传感器同时发起读取，避免逐个读取导致检查延迟累加。
+            # 线程池在整个等待周期内复用，防止每轮轮询反复创建线程。
+            with ThreadPoolExecutor(
+                max_workers=len(variable_names),
+                thread_name_prefix="sensor-check",
+            ) as executor:
+                while True:
+                    futures = {
+                        variable_name: executor.submit(
+                            reader.read_variable,
+                            variable_name,
+                            use_cache=False,
                         )
-                    start_recorded = True
-                elif previous_values is not None and last_values != previous_values:
-                    change_recorder = getattr(reader, "_record_opc_sensor_wait_change", None)
-                    if callable(change_recorder):
-                        change_recorder(
-                            conditions,
-                            previous_values,
-                            last_values,
-                            context=context,
-                        )
-                previous_values = dict(last_values)
-                if all(last_values[name] == expected for name, expected in conditions.items()):
-                    success = True
-                    return True, last_values
-                time.sleep(interval)
+                        for variable_name in variable_names
+                    }
+                    last_values = {
+                        variable_name: futures[variable_name].result()
+                        for variable_name in variable_names
+                    }
+                    if not start_recorded:
+                        start_recorder = getattr(reader, "_record_opc_sensor_wait_start", None)
+                        if callable(start_recorder):
+                            start_recorder(
+                                conditions,
+                                last_values,
+                                interval=interval,
+                                context=context,
+                            )
+                        start_recorded = True
+                    elif previous_values is not None and last_values != previous_values:
+                        change_recorder = getattr(reader, "_record_opc_sensor_wait_change", None)
+                        if callable(change_recorder):
+                            change_recorder(
+                                conditions,
+                                previous_values,
+                                last_values,
+                                context=context,
+                            )
+                    previous_values = dict(last_values)
+                    if all(last_values[name] == expected for name, expected in conditions.items()):
+                        success = True
+                        return True, last_values
+                    time.sleep(interval)
         except Exception as exc:
             error = str(exc)
             raise
@@ -315,12 +339,14 @@ def wait_variable_equal(
     expected: Any,
     *,
     interval: float = 1.0,
+    timeout: float | None = None,
 ) -> bool:
     return SensorBase.wait_variable_equal(
         reader,
         variable_name,
         expected,
         interval=interval,
+        timeout=timeout,
     )
 
 
@@ -329,11 +355,13 @@ def wait_variable_true(
     variable_name: str,
     *,
     interval: float = 1.0,
+    timeout: float | None = None,
 ) -> bool:
     return SensorBase.wait_variable_true(
         reader,
         variable_name,
         interval=interval,
+        timeout=timeout,
     )
 
 

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "workspace": {
+    "workflow_path": "szlab_robot_action_workflow.json",
+    "templates": [],
+    "task_instances": [],
+    "events": [],
+    "scheduled_template_ids": [],
+    "scheduler_paused": true,
+    "dynamic_resource_leases": [],
+    "pause_reason": null,
+    "schedule_entries": [],
+    "opc_snapshots": [],
+    "plc_registrations": []
+  }
+}

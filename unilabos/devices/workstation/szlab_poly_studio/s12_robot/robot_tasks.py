@@ -153,11 +153,11 @@ def s09_sensor(product_type: int, position: int) -> str:
     if product_type == 2:
         position = numbered_position(position, min_value=1, max_value=5, label="S09 液体试剂瓶位置")
         return S09Sensors.STATION[position]
-    if product_type == 3:
+    if product_type in {3, 4}:
         if position != 1:
             raise ValueError("S09 烧杯位置必须是 1")
         return S09Sensors.STATION[position]
-    raise ValueError("S09取放料产品必须是 1(TIP盒)、2(液体试剂瓶) 或 3(烧杯)")
+    raise ValueError("S09取放料产品必须是 1(TIP盒)、2(液体试剂瓶)、3(烧杯) 或 4(测密度烧杯)")
 
 
 def s10_sensor(position: int) -> str:

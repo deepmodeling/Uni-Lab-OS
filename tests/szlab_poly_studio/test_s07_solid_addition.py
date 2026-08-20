@@ -182,6 +182,31 @@ def test_s07_dose_powder_writes_positions_weight_and_powder_params():
     assert "balance_read_errors" not in result
 
 
+def test_s07_dose_powder_accepts_zero_to_skip_a_dosing_position():
+    plc = FakeS07Plc()
+    device = make_s07_device(plc)
+
+    result = device.dose_powder(
+        coarse_position=0,
+        fine_position=5,
+        target_weight=12.5,
+    )
+
+    assert result["success"] is True
+    assert (sensors.NODE_COARSE_POSITION, 0) in plc.writes
+    assert (sensors.NODE_FINE_POSITION, 5) in plc.writes
+    assert (sensors.NODE_PROCESS_SELECT, sensors.PROCESS_DOSE_POWDER) in plc.writes
+
+
+def test_s07_dose_powder_rejects_positions_outside_zero_to_ten():
+    device = make_s07_device()
+
+    result = device.dose_powder(coarse_position=-1, fine_position=11, target_weight=12.5)
+
+    assert result["success"] is False
+    assert "0-10" in result["message"]
+
+
 def test_s07_dose_powder_runs_each_powder_addition_in_order():
     plc = FakeS07Plc()
     device = make_s07_device(plc)

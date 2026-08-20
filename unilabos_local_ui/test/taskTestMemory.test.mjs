@@ -21,6 +21,7 @@ async function importTypeScriptModule(path) {
 
 const {
   createEmptyTaskTestMemory,
+  generateSampleIds,
   loadTaskTestMemory,
   rememberedParametersForSamples,
   rememberedSampleTemplateCount,
@@ -31,6 +32,15 @@ const {
   withTaskSampleCount,
 } = await importTypeScriptModule(new URL('../src/taskTestMemory.ts', import.meta.url));
 
+assert.deepEqual(generateSampleIds(5), [
+  'Sample A', 'Sample B', 'Sample C', 'Sample D', 'Sample E',
+]);
+assert.equal(generateSampleIds(50).length, 50);
+assert.deepEqual(generateSampleIds(28).slice(24), [
+  'Sample Y', 'Sample Z', 'Sample AA', 'Sample AB',
+]);
+assert.equal(generateSampleIds(1_000).length, 999);
+
 const values = new Map();
 const storage = {
   getItem: (key) => values.get(key) ?? null,
@@ -39,7 +49,7 @@ const storage = {
 
 let memory = createEmptyTaskTestMemory();
 assert.equal(memory.sampleCount, 3);
-memory = withTaskSampleCount(memory, 5.8);
+memory = withTaskSampleCount(memory, 999.8);
 memory = withRememberedSampleTemplateParameters(memory, 'Sample A', 's07-template', {
   's07-node': {
     powder_count: 2,
@@ -55,7 +65,7 @@ memory = withRememberedSampleTemplateParameters(memory, 'Sample B', 's07-templat
 saveTaskTestMemory(storage, 'demo.json', memory);
 
 const restored = loadTaskTestMemory(storage, 'demo.json');
-assert.equal(restored.sampleCount, 5, '样品数应持久化并限制在前端允许范围内');
+assert.equal(restored.sampleCount, 999, '样品数应持久化并限制在前端允许范围内');
 assert.deepEqual(
   restored.sampleTemplateParameters,
   memory.sampleTemplateParameters,
@@ -89,7 +99,7 @@ assert.deepEqual(
 
 const cleared = withoutRememberedTemplateParameters(restored);
 assert.deepEqual(cleared.sampleTemplateParameters, {});
-assert.equal(cleared.sampleCount, 5, '清除入参记忆不应重置样品数');
+assert.equal(cleared.sampleCount, 999, '清除入参记忆不应重置样品数');
 
 values.set('unilabos.taskTestMemory.v1.legacy.json', JSON.stringify({
   version: 1,

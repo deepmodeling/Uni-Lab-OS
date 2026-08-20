@@ -1,0 +1,402 @@
+{
+  "version": 45,
+  "workspace": {
+    "workflow_path": "szlab_main_process_workflow_fix.json",
+    "templates": [
+      {
+        "id": "task_i_fdc7353bd7524293bb5ee1381283dd08",
+        "name": "S03 取容器 等 2 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w01_pick_beaker_s03",
+          "w01_place_beaker_s072"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_j_1cb3bc5707d642918ab4f35699e2fa40",
+        "name": "S07 注粉",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w01_dose_powder_s07"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_k_8f5b260f21d44ff583bce9878d914c52",
+        "name": "S072 取料 等 2 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w02_pick_beaker_s072",
+          "w02_place_beaker_s06"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_l_ab0b6de114d549aea48621228f280e3f",
+        "name": "S06 泵加液完整流程：烧杯检测 → 液位确认 → 写入工艺参数 → 等待加工完成",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w02_add_solvent_s06"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_m_361bf34f745f4ba0bec1b2c1f48bcb4c",
+        "name": "S06 取料 等 2 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w03_pick_beaker_s06",
+          "w03_place_beaker_s09"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_n_7bf676494b5041b1b05ef581a2b6ca66",
+        "name": "按 S09 溶剂批次和液体工位复用 TIP 执行加液",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w03_add_liquid_s09"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_o_d7f9836b3a9f45a88b3c2bcf0af60597",
+        "name": "S09 取料 等 2 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w04_pick_beaker_s09",
+          "w04_place_beaker_s04"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_p_7dbc597033bb4221b7c5d4081b4741d4",
+        "name": "执行 S04 磁搅加工",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w04_run_stirring_s04"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_q_58508c519dbe4d889d5f1025f9a79238",
+        "name": "S04 取料 等 2 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w06_pick_beaker_s04",
+          "w05_place_beaker_s09_for_density"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_r_de4963b6910549da9775348d08059ae7",
+        "name": "执行 S09 独立密度测量并自动管理一次性 TIP",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w05_measure_density_s09"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_s_cd0d5b6362ca4f8892f6ceef2ecb3b27",
+        "name": "S03 取容器 等 2 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w05_pick_sample_vial_s03",
+          "w05_place_sample_vial_s08"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_t_4f8e003b2e49498da63fb876b0a23886",
+        "name": "S08 开/关盖",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w05_open_sample_vial_s08"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_u_18720eca33ac46998986977b5f0fa029",
+        "name": "S09 取料 等 2 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w06_pick_beaker_s09_after_density",
+          "w06_place_beaker_s05"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_v_6561908c05954b2f8eca13ef5de62301",
+        "name": "执行烧杯姿势拍照检测",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w06_take_photo_s05"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_w_c84c6b26169a47fdbe4262a5520a9aee",
+        "name": "S05 取料 等 3 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w07_pick_beaker_s05",
+          "w07_pour_beaker_s08",
+          "w07_place_beaker_s11"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_x_df3109e6c8c84d94b7f14fa3d915b395",
+        "name": "S08 开/关盖",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w07_close_sample_vial_s08"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      },
+      {
+        "id": "task_y_624ffcf83a7546d8bfb6a77e15c1cd48",
+        "name": "S08 取瓶 等 2 步",
+        "workflow_path": "szlab_main_process_workflow_fix.json",
+        "node_ids": [
+          "w07_pick_sample_vial_s08",
+          "w07_place_sample_vial_s11"
+        ],
+        "resources": [],
+        "input_triggers": [],
+        "output_triggers": []
+      }
+    ],
+    "task_instances": [],
+    "events": [
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "2c11b45964404dc79ea85b1cc81ab101",
+        "timestamp": 1786954077657,
+        "idempotency_key": "szlab_main_process_workflow_fix.json/scheduled-templates/19",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_1_f5c963b66aab4bcebbd14bebcf39ccd2",
+            "task_2_5f8069bec6e84fe9aaa89e85433b6671",
+            "task_1_6984a5ebf3f14e2baf6a3f630bd6c48b",
+            "task_2_57014034e57244968eba48299e27482d",
+            "task_3_c43cbe2a3ffe4be58a3d9be7ffec47be",
+            "task_4_953cdafeab424a3d900690854ee8759e",
+            "task_5_a35d7410efe34e45974062e73dcc68eb",
+            "task_6_f00755660f2041c4b52b681b56706e02",
+            "task_7_39dcb04ed245459da17c73e17237aab1",
+            "task_8_a43d072041bd4cb582dd4ae558739589",
+            "task_9_e272623252f74fbe951b32b5bacba2c8",
+            "task_a_334c46e571324b3291a2dc82dc3c65f0",
+            "task_b_bdcfce44b6d0430489d1a51f41aba9ab",
+            "task_c_a1ebd7a027c840d88cc1e50653d68893",
+            "task_d_7739c66af0494fa0b488510e524eb1d3",
+            "task_e_82a95af1afe74907b8e1ab8a08cc7224",
+            "task_f_d4381d7435e544d397ebc65659866383",
+            "task_g_f5dd9e37d1d245589098491c0cea68b8",
+            "task_h_76a197836e044252bfebe6d93dc42885"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "5faec0adfc1b4aeaa03e3fc5b5f1a194",
+        "timestamp": 1786954087373,
+        "idempotency_key": "szlab_main_process_workflow_fix.json/scheduled-templates/20",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": []
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "2b2aebc1c1354d0882ad712b6679e1b2",
+        "timestamp": 1786954088853,
+        "idempotency_key": "szlab_main_process_workflow_fix.json/scheduled-templates/21",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_1_f5c963b66aab4bcebbd14bebcf39ccd2",
+            "task_2_5f8069bec6e84fe9aaa89e85433b6671",
+            "task_1_6984a5ebf3f14e2baf6a3f630bd6c48b",
+            "task_2_57014034e57244968eba48299e27482d",
+            "task_3_c43cbe2a3ffe4be58a3d9be7ffec47be",
+            "task_4_953cdafeab424a3d900690854ee8759e",
+            "task_5_a35d7410efe34e45974062e73dcc68eb",
+            "task_6_f00755660f2041c4b52b681b56706e02",
+            "task_7_39dcb04ed245459da17c73e17237aab1",
+            "task_8_a43d072041bd4cb582dd4ae558739589",
+            "task_9_e272623252f74fbe951b32b5bacba2c8",
+            "task_a_334c46e571324b3291a2dc82dc3c65f0",
+            "task_b_bdcfce44b6d0430489d1a51f41aba9ab",
+            "task_c_a1ebd7a027c840d88cc1e50653d68893",
+            "task_d_7739c66af0494fa0b488510e524eb1d3",
+            "task_e_82a95af1afe74907b8e1ab8a08cc7224",
+            "task_f_d4381d7435e544d397ebc65659866383",
+            "task_g_f5dd9e37d1d245589098491c0cea68b8",
+            "task_h_76a197836e044252bfebe6d93dc42885"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "d7cd7532acb941e7b7ffa69d3a2cdbe5",
+        "timestamp": 1786954093646,
+        "idempotency_key": "szlab_main_process_workflow_fix.json/scheduled-templates/22",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": []
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "8e031b1eb4a94df0abca8a7ea0ba50c3",
+        "timestamp": 1786954116641,
+        "idempotency_key": "szlab_main_process_workflow_fix.json/scheduled-templates/23",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_1_f5c963b66aab4bcebbd14bebcf39ccd2",
+            "task_2_5f8069bec6e84fe9aaa89e85433b6671",
+            "task_1_6984a5ebf3f14e2baf6a3f630bd6c48b",
+            "task_2_57014034e57244968eba48299e27482d",
+            "task_3_c43cbe2a3ffe4be58a3d9be7ffec47be",
+            "task_4_953cdafeab424a3d900690854ee8759e",
+            "task_5_a35d7410efe34e45974062e73dcc68eb",
+            "task_6_f00755660f2041c4b52b681b56706e02",
+            "task_7_39dcb04ed245459da17c73e17237aab1",
+            "task_8_a43d072041bd4cb582dd4ae558739589",
+            "task_9_e272623252f74fbe951b32b5bacba2c8",
+            "task_a_334c46e571324b3291a2dc82dc3c65f0",
+            "task_b_bdcfce44b6d0430489d1a51f41aba9ab",
+            "task_c_a1ebd7a027c840d88cc1e50653d68893",
+            "task_d_7739c66af0494fa0b488510e524eb1d3",
+            "task_e_82a95af1afe74907b8e1ab8a08cc7224",
+            "task_f_d4381d7435e544d397ebc65659866383",
+            "task_g_f5dd9e37d1d245589098491c0cea68b8",
+            "task_h_76a197836e044252bfebe6d93dc42885"
+          ]
+        }
+      },
+      {
+        "kind": "templates_deleted",
+        "id": "8d9baed810234148ba9d0e7ef357a159",
+        "timestamp": 1786954135667,
+        "idempotency_key": "templates/delete/25/task_1_f5c963b66aab4bcebbd14bebcf39ccd2,task_2_5f8069bec6e84fe9aaa89e85433b6671,task_1_6984a5ebf3f14e2baf6a3f630bd6c48b,task_2_57014034e57244968eba48299e27482d,task_3_c43cbe2a3ffe4be58a3d9be7ffec47be,task_4_953cdafeab424a3d900690854ee8759e,task_5_a35d7410efe34e45974062e73dcc68eb,task_6_f00755660f2041c4b52b681b56706e02,task_7_39dcb04ed245459da17c73e17237aab1,task_8_a43d072041bd4cb582dd4ae558739589,task_9_e272623252f74fbe951b32b5bacba2c8,task_a_334c46e571324b3291a2dc82dc3c65f0,task_b_bdcfce44b6d0430489d1a51f41aba9ab,task_c_a1ebd7a027c840d88cc1e50653d68893,task_d_7739c66af0494fa0b488510e524eb1d3,task_e_82a95af1afe74907b8e1ab8a08cc7224,task_f_d4381d7435e544d397ebc65659866383,task_g_f5dd9e37d1d245589098491c0cea68b8,task_h_76a197836e044252bfebe6d93dc42885",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "deleted_template_ids": [
+            "task_1_f5c963b66aab4bcebbd14bebcf39ccd2",
+            "task_2_5f8069bec6e84fe9aaa89e85433b6671",
+            "task_1_6984a5ebf3f14e2baf6a3f630bd6c48b",
+            "task_2_57014034e57244968eba48299e27482d",
+            "task_3_c43cbe2a3ffe4be58a3d9be7ffec47be",
+            "task_4_953cdafeab424a3d900690854ee8759e",
+            "task_5_a35d7410efe34e45974062e73dcc68eb",
+            "task_6_f00755660f2041c4b52b681b56706e02",
+            "task_7_39dcb04ed245459da17c73e17237aab1",
+            "task_8_a43d072041bd4cb582dd4ae558739589",
+            "task_9_e272623252f74fbe951b32b5bacba2c8",
+            "task_a_334c46e571324b3291a2dc82dc3c65f0",
+            "task_b_bdcfce44b6d0430489d1a51f41aba9ab",
+            "task_c_a1ebd7a027c840d88cc1e50653d68893",
+            "task_d_7739c66af0494fa0b488510e524eb1d3",
+            "task_e_82a95af1afe74907b8e1ab8a08cc7224",
+            "task_f_d4381d7435e544d397ebc65659866383",
+            "task_g_f5dd9e37d1d245589098491c0cea68b8",
+            "task_h_76a197836e044252bfebe6d93dc42885"
+          ],
+          "deleted_instance_ids": []
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "94a9aabe70934f3a8487f1d66db9350d",
+        "timestamp": 1786954214257,
+        "idempotency_key": "szlab_main_process_workflow_fix.json/scheduled-templates/43",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": [
+            "task_i_fdc7353bd7524293bb5ee1381283dd08",
+            "task_j_1cb3bc5707d642918ab4f35699e2fa40",
+            "task_k_8f5b260f21d44ff583bce9878d914c52",
+            "task_l_ab0b6de114d549aea48621228f280e3f",
+            "task_m_361bf34f745f4ba0bec1b2c1f48bcb4c",
+            "task_n_7bf676494b5041b1b05ef581a2b6ca66",
+            "task_o_d7f9836b3a9f45a88b3c2bcf0af60597",
+            "task_p_7dbc597033bb4221b7c5d4081b4741d4",
+            "task_q_58508c519dbe4d889d5f1025f9a79238",
+            "task_r_de4963b6910549da9775348d08059ae7",
+            "task_s_cd0d5b6362ca4f8892f6ceef2ecb3b27",
+            "task_t_4f8e003b2e49498da63fb876b0a23886",
+            "task_u_18720eca33ac46998986977b5f0fa029",
+            "task_v_6561908c05954b2f8eca13ef5de62301",
+            "task_w_c84c6b26169a47fdbe4262a5520a9aee",
+            "task_x_df3109e6c8c84d94b7f14fa3d915b395",
+            "task_y_624ffcf83a7546d8bfb6a77e15c1cd48"
+          ]
+        }
+      },
+      {
+        "kind": "scheduled_templates_updated",
+        "id": "564f9ca0d4814eccaf5892b74330b030",
+        "timestamp": 1786954215013,
+        "idempotency_key": "szlab_main_process_workflow_fix.json/scheduled-templates/44",
+        "instance_id": null,
+        "template_id": null,
+        "payload": {
+          "template_ids": []
+        }
+      }
+    ],
+    "scheduled_template_ids": [],
+    "scheduler_paused": true,
+    "dynamic_resource_leases": [],
+    "pause_reason": null,
+    "schedule_entries": [],
+    "opc_snapshots": [],
+    "plc_registrations": []
+  }
+}

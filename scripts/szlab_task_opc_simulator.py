@@ -1045,7 +1045,7 @@ def create_opc_adapter(config: SimulatorConfig) -> OpcAdapter:
         / "devices"
         / "workstation"
         / "szlab_poly_studio"
-        / "szlab_plc_0702.csv"
+        / "szlab_plc_0721.csv"
     )
     return SZLabOpcAdapter(
         SZLabPolyPLCDevice(

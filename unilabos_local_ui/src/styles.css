@@ -1702,6 +1702,7 @@ code {
   width: 100%;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .demo-card {
@@ -5962,14 +5963,17 @@ code {
 
 /* Task 排程联调台：以原型的三栏密度和浅色工业控制台视觉为准。 */
 .task-debug-bench {
+  flex: 1 1 0;
   grid-template-columns: 240px minmax(420px, 1fr) minmax(360px, 0.88fr);
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) minmax(140px, 32vh);
   gap: 14px;
+  height: auto;
+  min-height: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .task-debug-bench .task-column {
@@ -5987,8 +5991,13 @@ code {
 }
 
 .task-debug-bench .task-queue-column {
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   grid-column: 2;
   grid-row: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .task-debug-bench .task-log-column {
@@ -6152,8 +6161,13 @@ code {
 
 .task-debug-bench .task-queue-list {
   display: block;
-  overflow: auto;
+  height: 100%;
+  min-height: 0;
+  overscroll-behavior: contain;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 0;
+  scrollbar-gutter: stable;
 }
 
 .task-debug-bench .task-queue-table-head {
@@ -6306,6 +6320,10 @@ code {
   border: 1px solid #d9e2e8;
   border-radius: 10px;
   background: #fff;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   padding: 0;
 }
 
@@ -6315,7 +6333,20 @@ code {
 }
 
 .task-debug-bench .task-sample-strip .task-sample-schedule {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overscroll-behavior: contain;
+  overflow-x: auto;
+  overflow-y: auto;
   padding: 8px 12px;
+  scrollbar-gutter: stable;
+}
+
+.task-debug-bench .task-sample-strip .task-sample-row {
+  flex: 0 0 auto;
+  width: 100%;
 }
 
 @media (max-width: 1180px) {

@@ -855,7 +855,7 @@ assert.match(
   /taskExecutionControllerRef\.current\?\.pause\(\)[\s\S]*?taskApiRef\.current\.plan\([\s\S]*?true/,
   '暂停必须中止当前前端请求并等待排程服务暂停',
 );
-assert.match(
+assert.doesNotMatch(
   mainSource,
   /workspace !== 'tasks'[\s\S]*?handleTaskSchedulerPause/,
   '离开 Task workspace 时必须自动暂停执行循环',
@@ -1800,6 +1800,31 @@ assert.deepEqual(inactiveEvents.slice(0, 4), [
   'apply:9',
 ], 'inactive 必须先应用最新 workspace，再以其版本 await pause 并应用刷新结果');
 
+const idleGapEvents = [];
+const idleGapController = createTaskExecutionController({
+  runCycle: async () => ({ active: false, workspace: stillRunningWorkspace, tick: null }),
+  applyWorkspace: (workspace) => idleGapEvents.push(`apply:${workspace.version}`),
+  pauseScheduler: async () => {
+    idleGapEvents.push('pause');
+    return pausedWorkspace;
+  },
+  onStatus: (status) => idleGapEvents.push(`status:${status.phase}`),
+  onError: (message) => idleGapEvents.push(`error:${message}`),
+});
+idleGapController.start();
+assert.equal(await idleGapController.run({
+  workflowPath: '/tmp/demo.json',
+  workflow: cycleWorkflow,
+  expectedVersion: 8,
+}), true);
+assert.equal(idleGapController.isRunning(), true, '存在未完成实例时，短暂无在途动作不得自动暂停');
+assert.equal(idleGapEvents.includes('pause'), false, '动作间空档不得调用暂停接口');
+assert.deepEqual(idleGapEvents.slice(0, 3), [
+  'status:dispatching',
+  `apply:${stillRunningWorkspace.version}`,
+  'status:idle',
+]);
+
 const drainEvents = [];
 let harvestCount = 0;
 const drainController = createTaskExecutionController({
@@ -1867,8 +1892,17 @@ assert.equal(drainEvents.at(-1), 'status:completed:0');
 const ordinaryErrorEvents = [];
 const ordinaryError = new Error('设备动作认领失败');
 let ordinaryErrorDiagnostic = '';
+let ordinaryErrorAttempts = 0;
 const errorController = createTaskExecutionController({
-  runCycle: async () => { throw ordinaryError; },
+  runCycle: async () => {
+    ordinaryErrorAttempts += 1;
+    if (ordinaryErrorAttempts === 1) throw ordinaryError;
+    return {
+      active: true,
+      workspace: stillRunningWorkspace,
+      tick: { active: 1, in_flight: 1, claimed: 0, completed: 0, failed: 0 },
+    };
+  },
   runHarvestCycle: async () => ({
     active: false,
     workspace: pausedWorkspace,
@@ -1894,17 +1928,18 @@ assert.equal(await errorController.run({
 }), false);
 assert.deepEqual(
   ordinaryErrorEvents,
-  ['status:dispatching', 'pause:12', 'status:failed', 'error:设备动作认领失败'],
-  '普通错误应保留原始诊断、停止后续循环，并尽力暂停而不覆盖原错误',
+  ['status:dispatching', 'status:failed', 'error:设备动作认领失败'],
+  '普通轮询错误应保留原始诊断，但不得暂停服务端调度',
 );
-assert.equal(ordinaryErrorDiagnostic, '设备动作认领失败', '暂停返回的 workspace 不得清除原始错误诊断');
-assert.equal(errorController.isRunning(), true, '普通错误暂停后必须强制探测一次 harvest-only');
+assert.equal(ordinaryErrorDiagnostic, '设备动作认领失败');
+assert.equal(errorController.isRunning(), true, '普通错误后必须保留执行循环以便自动重试');
 await errorController.run({
   workflowPath: '/tmp/demo.json',
   workflow: cycleWorkflow,
   expectedVersion: 13,
 });
-assert.equal(errorController.isRunning(), false);
+assert.equal(errorController.isRunning(), true);
+assert.equal(ordinaryErrorEvents.includes('pause:12'), false, '普通轮询异常不得暂停服务端调度');
 
 let raceBackendInFlight = 0;
 let raceHarvestCalls = 0;
@@ -3385,8 +3420,8 @@ assert.match(
 );
 assert.match(
   taskWorkspaceSource,
-  /step=\{1\}[\s\S]*?setTaskSampleCount\(Math\.min\(5, Math\.max\(1, Math\.round\(Number\(event\.target\.value\)\) \|\| 1\)\)\)/,
-  '样品数输入应按整数取整并钳制到 1 至 5',
+  /step=\{1\}[\s\S]*?max=\{999\}[\s\S]*?updateTaskSampleCount\(Number\(event\.target\.value\)\)/,
+  '样品数输入应按整数取整并钳制到 1 至 999',
 );
 const taskTemplates = [
   { id: 'template-a', name: '模板 A', nodeIds: ['a'], resources: ['robot'], gates: [] },

@@ -87,6 +87,7 @@ import {
 import { TASK_EXECUTION_POLL_INTERVAL_MS } from './taskPolling';
 import {
   createEmptyTaskTestMemory,
+  generateSampleIds,
   loadTaskTestMemory,
   rememberedParametersForSamples,
   rememberedSampleTemplateCount,
@@ -186,7 +187,7 @@ const CANVAS_S07_POWDER_PARAMETERS = new Set([
   'coarse_position', 'fine_position', 'target_weight', 'recipe_name', 'params_json', 'powder_count', 'powder_additions',
 ]);
 const CANVAS_S09_LIQUID_PARAMETERS = new Set([
-  'liquid_station_index', 'solvent_batch_id', 'volume', 'liquid_count', 'liquid_additions', 'measure_density',
+  'liquid_station_index', 'solvent_batch_id', 'volume', 'liquid_count', 'liquid_additions',
   'initialize_tip_inventory', 'initial_used_tip_count',
 ]);
 
@@ -636,8 +637,6 @@ const LIVE_SENSOR_GATE_BITS: Record<string, Array<[number, number]>> = {
   s08: [[3, 14], [3, 15]],
   s09: [[4, 7]],
 };
-const SAMPLE_NAMES = ['Sample A', 'Sample B', 'Sample C', 'Sample D', 'Sample E'];
-
 function orderSelectedNodesByPlan(
   selectedNodes: Node<ActionNodeData>[],
   plannedNodes: Node<ActionNodeData>[],
@@ -1039,7 +1038,6 @@ function App() {
       onStatus: setTaskExecutionStatus,
       onError: setTaskServiceError,
       onDrainingChange: setIsTaskExecutionDraining,
-      getLatestVersion: () => taskWorkspaceVersionRef.current,
     });
   }
   const resetTaskWorkspace = useCallback(() => {
@@ -2051,7 +2049,7 @@ function App() {
       setMessage('请先将 Task Template 拖入 Resource Schedule。');
       return;
     }
-    const samples = SAMPLE_NAMES.slice(0, taskSampleCount);
+    const samples = generateSampleIds(taskSampleCount);
     const selectedTemplateIds = new Set(templateIds);
     const actionNodeCatalog = nodes.map((node) => ({
       id: node.id,
@@ -2945,12 +2943,6 @@ function App() {
 
   useEffect(() => () => taskExecutionControllerRef.current?.pause(), []);
 
-  useEffect(() => {
-    if (workspace !== 'tasks' && (isSchedulerRunning || isTaskExecutionDraining)) {
-      void handleTaskSchedulerPause();
-    }
-  }, [handleTaskSchedulerPause, isSchedulerRunning, isTaskExecutionDraining, workspace]);
-
   const exportPseudoFlow = () => {
     try {
       const flow = createPseudoFlowJson(workflowName, nodes, edges);
@@ -2974,8 +2966,18 @@ function App() {
     if (!file) return;
 
     try {
+      // 服务重启后 preset 目录可能仍在异步加载；导入前主动刷新，避免用空的
+      // 或旧的动作目录误报“当前 preset 不包含动作”。
+      const presetResponse = await fetch('/api/preset', { cache: 'no-store' });
+      if (!presetResponse.ok) {
+        throw new Error(`读取当前 preset 失败（HTTP ${presetResponse.status}）`);
+      }
+      const presetPayload = await presetResponse.json() as PresetPayload;
+      const importActions = presetPayload.actions || [];
+      actionsRef.current = importActions;
+      setActions(importActions);
       const parsed = JSON.parse(await file.text());
-      const imported = createImportedDraft(parsed, actions, { autoLayout: true }) as {
+      const imported = createImportedDraft(parsed, importActions, { autoLayout: true }) as {
         name: string;
         nodes: Node<ActionNodeData>[];
         edges: Edge[];
@@ -3927,7 +3929,7 @@ function App() {
                   <input
                     type="number"
                     min={1}
-                    max={5}
+                    max={999}
                     step={1}
                     value={taskSampleCount}
                     onChange={(event) => updateTaskSampleCount(Number(event.target.value))}
@@ -4602,7 +4604,7 @@ function App() {
                       ] as const).map(([field, label, type]) => <label key={field}>
                         <span className="param-label">{label}</span>
                         <input
-                          min={type === 'number' ? (field === 'target_weight' ? 0 : 1) : undefined}
+                          min={type === 'number' ? 0 : undefined}
                           max={type === 'number' && field !== 'target_weight' ? 10 : undefined}
                           onChange={(event) => updateAdditions(additions.map((item, index) => index === additionIndex
                             ? { ...item, [field]: event.currentTarget.value }
@@ -4641,7 +4643,7 @@ function App() {
                         while (next.length < count) next.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
                         updateAdditions(next);
                       }} step={1} type="number" value={additions.length} />
-                      <small>测密度前需要依次加入的液体数量。</small>
+                      <small>本次加液动作需要依次加入的液体数量。</small>
                     </label>
                     {additions.map((addition, additionIndex) => <fieldset key={additionIndex}>
                       <legend>液体 {additionIndex + 1}</legend>

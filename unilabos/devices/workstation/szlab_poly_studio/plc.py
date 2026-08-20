@@ -594,29 +594,30 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def _read_variable_once(self, node_name: str) -> Any:
         node = self.use_node(node_name)
-        with self._opc_io_lock:
-            value, error = node.read()
-            if error:
-                sensor_bit = self._parse_sensor_bit_name(node_name)
-                if sensor_bit is not None:
-                    if node_name not in self._sensor_read_warning_names:
-                        self._sensor_read_warning_names.add(node_name)
-                        logger.warning(
-                            f"读取 PLC 传感器标量失败，回退到数组读取: "
-                            f"variable={node_name}, error={error}"
-                        )
-                    return self._read_sensor_array(sensor_bit[0])[sensor_bit[1]]
-                if node_name in self._direct_node_id_map:
-                    direct_node_id = self._direct_node_id_map[node_name]
-                    detail = getattr(node, "_last_read_error", None) or (
-                        f"OPC read 失败（{type(node).__name__}，未记录底层异常）"
+        # OPC UA 客户端会按请求 ID 匹配并发响应；读取不再使用设备级全局锁，
+        # 以便传感器条件的一轮检查可以真正同时发出多个读取请求。
+        value, error = node.read()
+        if error:
+            sensor_bit = self._parse_sensor_bit_name(node_name)
+            if sensor_bit is not None:
+                if node_name not in self._sensor_read_warning_names:
+                    self._sensor_read_warning_names.add(node_name)
+                    logger.warning(
+                        f"读取 PLC 传感器标量失败，回退到数组读取: "
+                        f"variable={node_name}, error={error}"
                     )
-                    raise RuntimeError(
-                        f"读取 PLC 变量失败: {node_name}: NodeId={direct_node_id}: {detail} "
-                        f"(endpoint={self.url})"
-                    )
-                raise RuntimeError(f"读取 PLC 变量失败: {node_name}")
-            return value
+                return self._read_sensor_array(sensor_bit[0])[sensor_bit[1]]
+            if node_name in self._direct_node_id_map:
+                direct_node_id = self._direct_node_id_map[node_name]
+                detail = getattr(node, "_last_read_error", None) or (
+                    f"OPC read 失败（{type(node).__name__}，未记录底层异常）"
+                )
+                raise RuntimeError(
+                    f"读取 PLC 变量失败: {node_name}: NodeId={direct_node_id}: {detail} "
+                    f"(endpoint={self.url})"
+                )
+            raise RuntimeError(f"读取 PLC 变量失败: {node_name}")
+        return value
 
     @not_action
     def _parse_sensor_bit_name(self, variable_name: str) -> Optional[tuple[int, int]]:
@@ -626,8 +627,7 @@ class SZLabPolyPLCDevice(BaseClient):
     def _read_sensor_array(self, group_index: int) -> List[bool]:
         variable_name = SensorBase.array(group_index)
         node = self.use_node(variable_name)
-        with self._opc_io_lock:
-            value, error = node.read()
+        value, error = node.read()
         if error:
             raise RuntimeError(f"读取 PLC 传感器数组失败: {variable_name}")
         if not isinstance(value, (list, tuple)):
@@ -816,8 +816,11 @@ class SZLabPolyPLCDevice(BaseClient):
         node_name: str,
         expected: Any,
         interval: float = 0.2,
+        timeout: float | None = None,
     ) -> bool:
-        return self.wait_variable_equal(node_name, expected, interval=interval)
+        return self.wait_variable_equal(
+            node_name, expected, interval=interval, timeout=timeout
+        )
 
     @not_action
     def wait_variable_equal(
@@ -825,16 +828,22 @@ class SZLabPolyPLCDevice(BaseClient):
         node_name: str,
         expected: Any,
         interval: float = 1.0,
+        timeout: float | None = None,
     ) -> bool:
-        return wait_variable_equal(self, node_name, expected, interval=interval)
+        return wait_variable_equal(
+            self, node_name, expected, interval=interval, timeout=timeout
+        )
 
     @not_action
     def wait_variable_true(
         self,
         node_name: str,
         interval: float = 1.0,
+        timeout: float | None = None,
     ) -> bool:
-        return wait_variable_true(self, node_name, interval=interval)
+        return wait_variable_true(
+            self, node_name, interval=interval, timeout=timeout
+        )
 
     @not_action
     def wait_sensor_conditions(
@@ -1125,11 +1134,20 @@ class SZLabPolyPLCDevice(BaseClient):
         self,
         node_name: str,
         interval: float = 0.2,
+        timeout: float | None = None,
     ) -> bool:
+        started_at = time.monotonic()
         if bool(self.read(node_name)):
-            if not self.wait_equal(node_name, False, interval=interval):
+            if not self.wait_equal(
+                node_name, False, interval=interval, timeout=timeout
+            ):
                 return False
-        return self.wait_equal(node_name, True, interval=interval)
+        remaining = None
+        if timeout is not None:
+            remaining = max(0.0, timeout - (time.monotonic() - started_at))
+        return self.wait_equal(
+            node_name, True, interval=interval, timeout=remaining
+        )
 
     @not_action
     def get_opc_variable_metadata(self, node_name: str) -> tuple[str, str | None]:

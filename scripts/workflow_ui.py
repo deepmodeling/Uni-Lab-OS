@@ -8,6 +8,7 @@ import csv
 import errno
 import io
 import json
+import logging
 import os
 import re
 import tempfile
@@ -111,6 +112,7 @@ OPC_SIMULATOR_PROFILE_SPEC_PATH = (
     REPO_ROOT / "docs" / "developer_guide" / "opc_simulator_profile_v2.md"
 )
 GENERATED_GRAPH_SENTINEL = "__generated__"
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -326,8 +328,8 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
     },
     "skip_level_check": {"label": "跳过液位检查", "description": "仅调试使用；开启后不执行前置液位检查。"},
     "beaker_true_means_present": {"label": "烧杯信号极性", "description": "开启表示传感器 True 代表烧杯在位。"},
-    "coarse_position": {"label": "粗注粉粉罐位", "description": "参与粗注粉的 S07 粉罐位置，范围 1–10。"},
-    "fine_position": {"label": "精注粉粉罐位", "description": "参与精注粉的 S07 粉罐位置，范围 1–10。"},
+    "coarse_position": {"label": "粗注粉粉罐位", "description": "参与粗注粉的 S07 粉罐位置，范围 1–10；选择 0 时跳过粗注粉。"},
+    "fine_position": {"label": "精注粉粉罐位", "description": "参与精注粉的 S07 粉罐位置，范围 1–10；选择 0 时跳过精注粉。"},
     "target_weight": {"label": "目标注粉重量", "description": "S07 本次注粉的目标重量。", "unit": "g（待 PLC 确认）"},
     "params_json": {"label": "配方文件", "description": "粗/精注粉参数 JSON 路径；留空使用设备默认文件。"},
     "recipe_name": {"label": "加粉策略", "description": "从默认注粉参数 JSON 中选择的策略名称，例如 default、salt 或 salt2。"},
@@ -388,7 +390,7 @@ _PARAM_HELP_BY_NAME: dict[str, dict[str, Any]] = {
         ],
     },
     "liquid_steps": {"label": "移液步骤", "description": "S09 批量移液步骤数组；每项包含取 TIP、吸液和放液参数。"},
-    "liquid_count": {"label": "液体种类数", "description": "最终测密度前需要依次加入的液体数量。"},
+    "liquid_count": {"label": "液体种类数", "description": "本次加液动作需要依次加入的液体数量。"},
     "liquid_additions": {"label": "各液体参数", "description": "每种液体的工位、溶剂标识和独立加液体积。"},
     "initialize_tip_inventory": {"label": "执行前初始化 TIP 库存", "description": "会覆盖当前 TIP 使用和绑定记录；仅在确认盒1状态后启用。"},
     "initial_used_tip_count": {"label": "初始化时已使用 TIP 数量", "description": "初始化后从 TIP 1 开始标记为不可用的数量。"},
@@ -402,7 +404,7 @@ _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
         "label": "加液体积",
         "description": "S09 从所选加液体工位吸取并排入烧杯的体积；实际单位由“体积单位”决定。",
     },
-    ("add_liquid_with_reusable_tip", "density_measurement_count"): {
+    ("measure_density", "density_measurement_count"): {
         "label": "测密度次数",
         "description": "PLC 连续测密度次数，范围 1-10；每次结果写入对应的抽液/放液天平读数数组。",
     },
@@ -437,11 +439,12 @@ _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
     **{
         (method, "product_type"): {
             "label": "S09 产品类型",
-            "description": "1=TIP盒，2=液体试剂瓶，3=烧杯。",
+            "description": "1=TIP盒，2=液体试剂瓶，3=烧杯，4=测密度烧杯。",
             "options": [
                 {"value": 1, "label": "TIP 盒"},
                 {"value": 2, "label": "液体试剂瓶"},
                 {"value": 3, "label": "烧杯"},
+                {"value": 4, "label": "测密度烧杯"},
             ],
         }
         for method in ("submit_place_to_s09", "submit_pick_from_s09")
@@ -1036,7 +1039,7 @@ class WorkflowRunManager:
             )
         except Exception:
             # 持久化失败不得影响 Action 执行
-            pass
+            _LOGGER.exception("Task Action 日志持久化失败")
         normalized_level = str(level).lower()
         if normalized_level in {"warning", "error", "critical"} or any(
             keyword in message for keyword in ("报警", "告警")
@@ -1083,7 +1086,7 @@ class WorkflowRunManager:
             )
         except Exception:
             # 台账不得改变原有动作执行路径
-            pass
+            _LOGGER.exception("Task Action 开始记录持久化失败")
 
         def writer(message: str, *, level: str = "info", detail: dict[str, Any] | None = None) -> None:
             self._append_task_action_log(
@@ -1149,6 +1152,18 @@ class WorkflowRunManager:
             workflow_path,
             after_seq=after_seq,
             instance_id=instance_id,
+        )
+
+    def append_task_execution_timings(
+        self,
+        *,
+        workflow_path: str,
+        entries: list[dict[str, Any]],
+    ) -> int:
+        """持久化前端排程循环的分段耗时。"""
+        return self._run_history_store.append_scheduler_timings(
+            workflow_path=workflow_path,
+            entries=entries,
         )
 
     def list_run_history(self, *, limit: int = 50) -> dict[str, Any]:
@@ -1920,6 +1935,28 @@ class WorkflowRunManager:
                 record.node_statuses[node.uuid] = "running"
                 method_name = node_method(node)
                 device_name = route_node_device(node, self._runtime_config)
+                execution_id = f"workflow:{run_id}:{node_index}:{node.uuid}"
+                history_context = {
+                    "workflow_path": task_workspace_path,
+                    "instance_id": run_id,
+                    "sample_id": str(payload.get("sample_id") or ""),
+                    "node_id": node.uuid,
+                    "execution_id": execution_id,
+                }
+                try:
+                    self._run_history_store.record_action_start(
+                        workflow_path=history_context["workflow_path"],
+                        instance_id=history_context["instance_id"],
+                        sample_id=history_context["sample_id"],
+                        node_id=history_context["node_id"],
+                        execution_id=history_context["execution_id"],
+                        device_id=device_name,
+                        action_name=method_name,
+                        params=node.param,
+                    )
+                except Exception:
+                    # 持久化失败不得影响普通 Workflow 的设备动作。
+                    _LOGGER.exception("Workflow 节点开始记录持久化失败")
                 if timing_recorder is not None:
                     timing_recorder.start_step(
                         index=node_index,
@@ -1945,6 +1982,16 @@ class WorkflowRunManager:
                     record.append_log(message, node_id=node_id, level=level, detail=detail)
                     if timing_recorder is not None:
                         timing_recorder.observe_log(message, detail)
+                    try:
+                        self._run_history_store.append_event(
+                            **history_context,
+                            level=level,
+                            message=message,
+                            detail=detail,
+                        )
+                    except Exception:
+                        # 持久化失败不得中断节点日志或设备动作。
+                        _LOGGER.exception("Workflow 节点日志持久化失败")
 
                 logger = WorkflowLogger(writer=append_node_log)
                 device = devices.get(device_name)
@@ -1992,6 +2039,30 @@ class WorkflowRunManager:
                 except Exception as exc:
                     if timing_recorder is not None:
                         timing_recorder.finish_step(error=str(exc))
+                    try:
+                        error_detail = {
+                            "type": type(exc).__name__,
+                            "message": str(exc),
+                            "traceback": traceback.format_exc(),
+                        }
+                        self._run_history_store.record_action_finish(
+                            execution_id=execution_id,
+                            status="failed",
+                            error=error_detail,
+                        )
+                        self._run_history_store.record_incident(
+                            category="action_error",
+                            code="workflow_action_failed",
+                            severity="error",
+                            message=str(exc),
+                            **history_context,
+                            device_id=device_name,
+                            action_name=method_name,
+                            phase="普通 Workflow 执行",
+                            detail=error_detail,
+                        )
+                    except Exception:
+                        pass
                     record.node_statuses[node.uuid] = "failed"
                     record.append_log(
                         f"节点执行失败: {exc}", node_id=node.uuid, level="error"
@@ -2004,6 +2075,14 @@ class WorkflowRunManager:
                             record.clear_live_status(node.uuid, "s07_balance")
                 if timing_recorder is not None:
                     timing_recorder.finish_step(result=node_results)
+                try:
+                    self._run_history_store.record_action_finish(
+                        execution_id=execution_id,
+                        status="completed",
+                        result=node_results,
+                    )
+                except Exception:
+                    pass
                 record.node_statuses[node.uuid] = "success"
                 record.append_log(f"节点执行完成 {node.uuid}", node_id=node.uuid)
                 if record.cancel_requested:
@@ -2824,6 +2903,30 @@ def create_app(
                 "failed": 0,
             }
 
+    @app.post("/api/task-execution/timings", response_class=JSONResponse)
+    async def append_task_execution_timings(
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        workflow_path = str(payload.get("task_workspace_path") or "").strip()
+        entries = payload.get("entries")
+        if not workflow_path:
+            return {"success": False, "message": "缺少当前 workflow 路径", "written": 0}
+        if not isinstance(entries, list) or not entries or len(entries) > 200:
+            return {
+                "success": False,
+                "message": "entries 必须是包含 1-200 项的数组",
+                "written": 0,
+            }
+        try:
+            written = await asyncio.to_thread(
+                manager.append_task_execution_timings,
+                workflow_path=workflow_path,
+                entries=entries,
+            )
+            return {"success": True, "written": written}
+        except Exception as exc:
+            return {"success": False, "message": str(exc), "written": 0}
+
     @app.get("/api/task-execution/logs", response_class=JSONResponse)
     async def get_task_execution_logs(
         task_workspace_path: str = "",
@@ -3301,6 +3404,10 @@ def start_ui(
 ) -> None:
     import uvicorn
 
+    run_history_store = RunHistoryStore()
+    history_paths = run_history_store.initialize()
+    print(f"运行历史数据库已初始化: {history_paths['database_path']}")
+
     url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/"
     if open_browser:
         webbrowser.open(url)
@@ -3309,6 +3416,7 @@ def start_ui(
             preset_name=preset_name,
             runtime_config=runtime_config,
             timing_enabled=timing_enabled,
+            run_history_store=run_history_store,
         ),
         host=host,
         port=port,

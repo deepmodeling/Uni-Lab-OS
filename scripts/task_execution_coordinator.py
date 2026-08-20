@@ -30,6 +30,7 @@ from unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.sensors i
     NODE_ALLOW_PROCESS as S07_ALLOW_PROCESS_VAR,
     NODE_HOME as S07_HOME_VAR,
 )
+from unilabos.devices.workstation.szlab_poly_studio.sensor import S08Sensors
 from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensors import (
     S09_ALLOW_PROCESS_VAR,
     S09_PROCESS_DONE_VAR,
@@ -165,12 +166,38 @@ _S072_OCCUPIED_REQUIRED_NODE_IDS = frozenset(
 _S072_PICK_NODE_IDS = frozenset(
     {"w02_pick_beaker_s072"}
 )
-_S09_INBOUND_START_NODE_IDS = frozenset({"w03_pick_beaker_s06"})
-_S09_PLACE_NODE_IDS = frozenset({"w03_place_beaker_s09"})
+_S09_INBOUND_START_NODE_IDS = frozenset({
+    "w03_pick_beaker_s06",
+    "w06_pick_beaker_s04",
+})
+_S09_PLACE_NODE_IDS = frozenset({
+    "w03_place_beaker_s09",
+    "w05_place_beaker_s09_for_density",
+})
 _S09_OCCUPIED_REQUIRED_NODE_IDS = frozenset(
-    {"w03_add_liquid_s09", "w04_pick_beaker_s09"}
+    {
+        "w03_add_liquid_s09",
+        "w04_pick_beaker_s09",
+        "w05_measure_density_s09",
+        "w06_pick_beaker_s09_after_density",
+    }
 )
-_S09_PICK_NODE_IDS = frozenset({"w04_pick_beaker_s09"})
+_S09_PICK_NODE_IDS = frozenset({
+    "w04_pick_beaker_s09",
+    "w06_pick_beaker_s09_after_density",
+})
+_S08_INBOUND_START_NODE_IDS = frozenset({"w05_pick_sample_vial_s03"})
+_S08_PLACE_NODE_IDS = frozenset({"w05_place_sample_vial_s08"})
+_S08_OCCUPIED_REQUIRED_NODE_IDS = frozenset(
+    {
+        "w05_open_sample_vial_s08",
+        "w07_pick_beaker_s05",
+        "w07_pour_beaker_s08",
+        "w07_close_sample_vial_s08",
+        "w07_pick_sample_vial_s08",
+    }
+)
+_S08_PICK_NODE_IDS = frozenset({"w07_pick_sample_vial_s08"})
 _S04_POSITION_SOURCE_NODE_ID = "w04_place_beaker_s04"
 _S04_POSITION_DEPENDENT_NODE_IDS = frozenset({
     "w04_run_stirring_s04",
@@ -184,6 +211,27 @@ class _TemporaryStationState:
 
     has_material: bool
     inbound_instance_id: str | None = None
+    occupied_sample_id: str | None = None
+
+
+def _recorded_action_position(result: Any) -> int | None:
+    """从直接或批量动作结果中提取实际执行位置。"""
+    if isinstance(result, dict):
+        if result.get("position") is not None:
+            return int(result["position"])
+        nested_result = _recorded_action_position(result.get("result"))
+        if nested_result is not None:
+            return nested_result
+        params = result.get("param")
+        if isinstance(params, dict) and params.get("position") is not None:
+            return int(params["position"])
+        return None
+    if isinstance(result, list):
+        for item in reversed(result):
+            position = _recorded_action_position(item)
+            if position is not None:
+                return position
+    return None
 
 
 def _resolve_sample_s04_position(
@@ -218,9 +266,8 @@ def _resolve_sample_s04_position(
                     and record.get("node_id") == _S04_POSITION_SOURCE_NODE_ID
                     and record.get("status") == "succeeded"
                 ):
-                    result = record.get("result")
-                    if isinstance(result, dict) and result.get("position") is not None:
-                        recorded_position = int(result["position"])
+                    recorded_position = _recorded_action_position(record.get("result"))
+                    if recorded_position is not None:
                         break
 
         payload = peer.get("payload")
@@ -277,7 +324,7 @@ def _temporary_station_state(
     pick_node_ids: frozenset[str],
 ) -> _TemporaryStationState:
     """用放/取成功记录恢复临时状态，避免进程重启后丢失。"""
-    transitions: list[tuple[int, int, bool]] = []
+    transitions: list[tuple[int, int, bool, str | None]] = []
     templates = {
         str(template.get("id")): template
         for template in workspace.get("templates", [])
@@ -300,12 +347,17 @@ def _temporary_station_state(
             succeeded_node_ids.add(node_id)
             if node_id in place_node_ids:
                 transitions.append(
-                    (int(record.get("finished_at") or 0), sequence, True)
+                    (
+                        int(record.get("finished_at") or 0),
+                        sequence,
+                        True,
+                        str(instance.get("sample_id") or "") or None,
+                    )
                 )
                 sequence += 1
             elif node_id in pick_node_ids:
                 transitions.append(
-                    (int(record.get("finished_at") or 0), sequence, False)
+                    (int(record.get("finished_at") or 0), sequence, False, None)
                 )
                 sequence += 1
 
@@ -317,18 +369,16 @@ def _temporary_station_state(
         has_inbound_place = any(
             str(node_id) in place_node_ids for node_id in node_ids
         )
-        inbound_started = any(
-            node_id in succeeded_node_ids
-            for node_id in inbound_start_node_ids
+        inbound_started_count = len(
+            succeeded_node_ids.intersection(inbound_start_node_ids)
         )
-        inbound_finished = any(
-            node_id in succeeded_node_ids for node_id in place_node_ids
+        inbound_finished_count = len(
+            succeeded_node_ids.intersection(place_node_ids)
         )
         if (
             has_inbound_start
             and has_inbound_place
-            and inbound_started
-            and not inbound_finished
+            and inbound_started_count > inbound_finished_count
         ):
             inbound_instance_id = str(instance.get("id") or "") or None
 
@@ -337,6 +387,9 @@ def _temporary_station_state(
     return _TemporaryStationState(
         has_material=has_material,
         inbound_instance_id=inbound_instance_id,
+        occupied_sample_id=(
+            transitions[-1][3] if transitions and has_material else None
+        ),
     )
 
 
@@ -424,15 +477,50 @@ def _temporary_s09_trigger_satisfied(
     )
 
 
+def _temporary_s08_state(workspace: dict[str, Any]) -> _TemporaryStationState:
+    """从动作记录恢复 S08 样品瓶工位的预占、占用及所属样品。"""
+    return _temporary_station_state(
+        workspace,
+        inbound_start_node_ids=_S08_INBOUND_START_NODE_IDS,
+        place_node_ids=_S08_PLACE_NODE_IDS,
+        pick_node_ids=_S08_PICK_NODE_IDS,
+    )
+
+
+def _temporary_s08_trigger_satisfied(
+    workspace: dict[str, Any],
+    *,
+    instance_id: str,
+    sample_id: str,
+    node_id: str,
+) -> bool:
+    """保证 S08 从进瓶到取瓶期间只服务同一个样品。"""
+    state = _temporary_s08_state(workspace)
+    if node_id in _S08_INBOUND_START_NODE_IDS:
+        return not state.has_material and state.inbound_instance_id is None
+    if node_id in _S08_PLACE_NODE_IDS:
+        return not state.has_material and state.inbound_instance_id in {
+            None,
+            instance_id,
+        }
+    if node_id in _S08_OCCUPIED_REQUIRED_NODE_IDS:
+        return (
+            state.has_material
+            and state.occupied_sample_id is not None
+            and state.occupied_sample_id == sample_id
+        )
+    return True
+
+
 _ATOMIC_START_ACTIVE_CONFLICTS: dict[str, frozenset[str]] = {
     "w01_pick_beaker_s03": frozenset({"w01_dose_powder_s07"}),
     "w02_pick_beaker_s072": frozenset({"w02_add_solvent_s06"}),
     "w03_pick_beaker_s06": frozenset(
         {"w02_add_solvent_s06", "w03_add_liquid_s09"}
     ),
-    "w04_pick_beaker_s09": frozenset(
-        {"w03_add_liquid_s09", "w04_run_stirring_s04"}
-    ),
+    # S04 的 1-6 号位独立提供有料与准备信号。其他位置正在磁搅时，
+    # 仍应允许向空闲且就绪的位置搬运，因此这里只与 S09 自身加工冲突。
+    "w04_pick_beaker_s09": frozenset({"w03_add_liquid_s09"}),
 }
 
 
@@ -533,6 +621,7 @@ def _atomic_start_signal_conditions(
         return {
             product_slot_sensor(product_type, position, used=False): True,
             product_slot_sensor(1, position, used=False): False,
+            S08Sensors.CAP_STATION[1]: False,
         }
     return {}
 
@@ -583,6 +672,13 @@ def _atomic_task_start_trigger_satisfied(
             for name, expected in conditions.items()
         ):
             return False
+        # S06 加液完成后，不先把烧杯搬入 S09 占住单工位。只有确认
+        # S04 至少存在一个无料且就绪的磁搅位，才启动 S06 -> S09 搬运。
+        if (
+            node.uuid == "w03_pick_beaker_s06"
+            and _find_free_s04_position(devices) is None
+        ):
+            return False
         return _s09_remaining_volume_satisfied(node, plc)
     except Exception:
         return False
@@ -596,6 +692,7 @@ class _InFlightAction:
     node_id: str
     execution_id: str
     device_name: str
+    concurrency_key: str
     result_summary: Any = None
     outcome_prepared: bool = False
     error: dict[str, str] | None = None
@@ -789,7 +886,7 @@ class TaskExecutionCoordinator:
                 return stats
 
             devices = self._device_provider()
-            busy_device_names = self._busy_device_names()
+            busy_concurrency_keys = self._busy_concurrency_keys()
             continuation_device_owners = _continuation_device_owners(
                 workspace,
                 templates=templates,
@@ -926,6 +1023,21 @@ class TaskExecutionCoordinator:
                         node_id=node_id,
                     )
                     continue
+                if not _temporary_s08_trigger_satisfied(
+                    trigger_workspace,
+                    instance_id=instance_id,
+                    sample_id=str(instance.get("sample_id") or ""),
+                    node_id=node_id,
+                ):
+                    _append_diagnostic(
+                        stats,
+                        instance=instance,
+                        code="s08_sample_vial_state_wait",
+                        message="等待 S08 样品瓶工位空闲或由当前样品占用",
+                        node=node,
+                        node_id=node_id,
+                    )
+                    continue
                 if (
                     cursor == 0
                     and node is not None
@@ -1004,7 +1116,8 @@ class TaskExecutionCoordinator:
                     )
                     break
 
-                if node.device_name in busy_device_names:
+                concurrency_key = _action_concurrency_key(node)
+                if concurrency_key in busy_concurrency_keys:
                     _append_diagnostic(
                         stats,
                         instance=instance,
@@ -1035,7 +1148,7 @@ class TaskExecutionCoordinator:
                     continue
                 current_response = claimed_response
                 stats["claimed"] = int(stats["claimed"]) + 1
-                busy_device_names.add(node.device_name)
+                busy_concurrency_keys.add(concurrency_key)
                 try:
                     future = self._executor.submit(
                         self._invoke_node_runner,
@@ -1085,6 +1198,7 @@ class TaskExecutionCoordinator:
                     node_id=node_id,
                     execution_id=execution_id,
                     device_name=node.device_name,
+                    concurrency_key=concurrency_key,
                 )
 
             self._update_activity_stats(stats, workflow_path=workflow_path)
@@ -1294,12 +1408,23 @@ class TaskExecutionCoordinator:
             for action in self._in_flight.values()
         )
 
-    def _busy_device_names(self) -> set[str]:
+    def _busy_concurrency_keys(self) -> set[str]:
         return {
-            action.device_name
+            action.concurrency_key
             for action in self._in_flight.values()
-            if action.device_name
+            if action.concurrency_key
         }
+
+
+def _action_concurrency_key(node: WorkflowNode) -> str:
+    """S04 各磁搅位独立互斥，其他动作仍按整台设备互斥。"""
+    try:
+        method_name = node_method(node)
+    except ValueError:
+        method_name = ""
+    if method_name == "run_stirring" and node.param.get("position") is not None:
+        return f"{node.device_name}:position:{int(node.param['position'])}"
+    return node.device_name
 
 
 def _workspace_from_response(response: dict[str, Any]) -> dict[str, Any]:

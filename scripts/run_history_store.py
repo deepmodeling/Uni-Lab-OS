@@ -299,6 +299,17 @@ class RunHistoryStore:
         self._connection: sqlite3.Connection | None = None
         self._lock = threading.RLock()
 
+    def initialize(self) -> dict[str, str]:
+        """立即初始化持久化目录和数据库，并返回实际使用的路径。"""
+        self._connect()
+        return {
+            "history_dir": str(self.history_dir.resolve()),
+            "database_path": str(self.database_path.resolve()),
+            "exports_dir": str(self.exports_dir.resolve()),
+            "artifacts_dir": str(self.artifacts_dir.resolve()),
+            "backups_dir": str(self.backups_dir.resolve()),
+        }
+
     def _connect(self) -> sqlite3.Connection:
         with self._lock:
             if self._connection is not None:
@@ -444,6 +455,21 @@ class RunHistoryStore:
                 detail_json TEXT NOT NULL DEFAULT '{}'
             );
 
+            CREATE TABLE IF NOT EXISTS scheduler_timings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                workflow_path TEXT NOT NULL DEFAULT '',
+                cycle_id TEXT NOT NULL DEFAULT '',
+                generation_id TEXT NOT NULL DEFAULT '',
+                step TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                duration_ms INTEGER,
+                reason TEXT NOT NULL DEFAULT '',
+                detail_json TEXT NOT NULL DEFAULT '{}',
+                received_at INTEGER NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_action_records_time
                 ON action_records (started_at DESC);
             CREATE INDEX IF NOT EXISTS idx_action_records_run_station
@@ -456,8 +482,66 @@ class RunHistoryStore:
                 ON scheduler_incidents (first_seen_at DESC);
             CREATE INDEX IF NOT EXISTS idx_scheduler_incidents_run_status
                 ON scheduler_incidents (run_id, status, workflow_path);
+            CREATE INDEX IF NOT EXISTS idx_scheduler_timings_run_time
+                ON scheduler_timings (run_id, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_scheduler_timings_cycle
+                ON scheduler_timings (run_id, workflow_path, cycle_id, timestamp);
             """
         )
+
+    def append_scheduler_timings(
+        self,
+        *,
+        workflow_path: str,
+        entries: Iterable[dict[str, Any]],
+    ) -> int:
+        """批量持久化浏览器排程循环耗时；无效条目直接拒绝。"""
+        normalized: list[tuple[Any, ...]] = []
+        received_at = int(self._clock())
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise TypeError("scheduler timing 条目必须是对象")
+            step = str(entry.get("step") or "").strip()
+            phase = str(entry.get("phase") or "").strip()
+            if not step or phase not in {"start", "finish", "error", "skipped"}:
+                raise ValueError("scheduler timing 缺少有效 step/phase")
+            timestamp = int(entry.get("timestamp_ms") or received_at)
+            duration = entry.get("duration_ms")
+            duration_ms = None if duration is None else max(0, int(duration))
+            normalized.append(
+                (
+                    self.session_id,
+                    workflow_path,
+                    str(entry.get("cycle_id") or ""),
+                    str(entry.get("generation_id") or ""),
+                    step,
+                    phase,
+                    timestamp,
+                    duration_ms,
+                    str(entry.get("reason") or ""),
+                    _json_dumps(entry.get("detail") or {}),
+                    received_at,
+                )
+            )
+        if not normalized:
+            return 0
+        with self._lock:
+            connection = self._connect()
+            connection.executemany(
+                """
+                INSERT INTO scheduler_timings (
+                    run_id, workflow_path, cycle_id, generation_id, step, phase,
+                    timestamp, duration_ms, reason, detail_json, received_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                normalized,
+            )
+            connection.execute(
+                "UPDATE run_sessions SET updated_at = ? WHERE run_id = ?",
+                (received_at, self.session_id),
+            )
+            connection.commit()
+        return len(normalized)
 
     def record_action_start(
         self,

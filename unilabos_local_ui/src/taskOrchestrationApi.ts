@@ -452,6 +452,71 @@ type BackendResult = {
   failed?: number;
 };
 
+let nextTaskExecutionTimingId = 0;
+const taskExecutionTimingBuffers = new Map<number, Record<string, unknown>[]>();
+
+function persistTaskExecutionTimings(
+  workflowPath: string,
+  entries: Record<string, unknown>[],
+) {
+  if (entries.length === 0 || typeof globalThis.fetch !== 'function') return;
+  void globalThis.fetch('/api/task-execution/timings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ task_workspace_path: workflowPath, entries }),
+    keepalive: true,
+  }).catch((error) => {
+    console.warn('[task-execution-timing] 持久化失败', error);
+  });
+}
+
+function taskExecutionTimingLog(
+  cycleId: number,
+  workflowPath: string,
+  step: string,
+  phase: 'start' | 'finish' | 'error' | 'skipped',
+  startedAt?: number,
+) {
+  const now = Date.now();
+  const entry = {
+    cycle_id: cycleId,
+    workflow_path: workflowPath,
+    step,
+    phase,
+    timestamp: new Date(now).toISOString(),
+    timestamp_ms: now,
+    ...(startedAt === undefined ? {} : { duration_ms: now - startedAt }),
+  };
+  console.info('[task-execution-timing]', entry);
+  const entries = taskExecutionTimingBuffers.get(cycleId) ?? [];
+  entries.push(entry);
+  taskExecutionTimingBuffers.set(cycleId, entries);
+  if (step === 'cycle' || step === 'harvest_cycle') {
+    if (phase === 'finish' || phase === 'error') {
+      taskExecutionTimingBuffers.delete(cycleId);
+      persistTaskExecutionTimings(workflowPath, entries);
+    }
+  }
+}
+
+async function timedTaskExecutionStep<T>(
+  cycleId: number,
+  workflowPath: string,
+  step: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  taskExecutionTimingLog(cycleId, workflowPath, step, 'start');
+  try {
+    const result = await operation();
+    taskExecutionTimingLog(cycleId, workflowPath, step, 'finish', startedAt);
+    return result;
+  } catch (error) {
+    taskExecutionTimingLog(cycleId, workflowPath, step, 'error', startedAt);
+    throw error;
+  }
+}
+
 async function requestExecutionBackend(
   fetcher: FetchLike,
   path: '/api/task-opc/poll' | '/api/task-execution/tick',
@@ -492,7 +557,7 @@ async function requestExecutionBackend(
   }
 }
 
-export async function runTaskExecutionCycle({
+async function runTaskExecutionCycleInternal({
   fetcher,
   taskClient,
   workflowPath,
@@ -500,7 +565,7 @@ export async function runTaskExecutionCycle({
   expectedVersion,
   signal,
   isCurrent,
-}: TaskExecutionCycleOptions): Promise<TaskExecutionCycleResult> {
+}: TaskExecutionCycleOptions, cycleId: number): Promise<TaskExecutionCycleResult> {
   if (!workflow || typeof workflow !== 'object') {
     throw new Error('缺少当前 workflow JSON');
   }
@@ -511,7 +576,10 @@ export async function runTaskExecutionCycle({
   };
   const payload = { task_workspace_path: workflowPath, workflow };
   assertCurrent();
-  let workspaceSnapshot = await taskClient.getWorkspace(workflowPath);
+  let workspaceSnapshot = await timedTaskExecutionStep(
+    cycleId, workflowPath, 'get_workspace_initial',
+    () => taskClient.getWorkspace(workflowPath),
+  );
   assertCurrent();
   if (
     workspaceSnapshot.workspace.scheduler_paused
@@ -523,17 +591,23 @@ export async function runTaskExecutionCycle({
       tick: null,
     };
   }
-  const poll = await requestExecutionBackend(
-    fetcher,
-    '/api/task-opc/poll',
-    payload,
-    'Task OPC 采样失败',
-    signal,
+  const poll = await timedTaskExecutionStep(
+    cycleId, workflowPath, 'opc_poll',
+    () => requestExecutionBackend(
+      fetcher,
+      '/api/task-opc/poll',
+      payload,
+      'Task OPC 采样失败',
+      signal,
+    ),
   );
   assertCurrent();
   if (!poll.active) {
     assertCurrent();
-    const workspace = await taskClient.getWorkspace(workflowPath);
+    const workspace = await timedTaskExecutionStep(
+      cycleId, workflowPath, 'get_workspace_inactive',
+      () => taskClient.getWorkspace(workflowPath),
+    );
     assertCurrent();
     return {
       active: false,
@@ -543,13 +617,19 @@ export async function runTaskExecutionCycle({
   }
 
   try {
-    await taskClient.advance(workflowPath, expectedVersion);
+    await timedTaskExecutionStep(
+      cycleId, workflowPath, 'advance',
+      () => taskClient.advance(workflowPath, expectedVersion),
+    );
   } catch (error) {
     if (!(error instanceof TaskOrchestrationBusinessError) || error.status !== 409) {
       throw error;
     }
     assertCurrent();
-    workspaceSnapshot = await taskClient.getWorkspace(workflowPath);
+    workspaceSnapshot = await timedTaskExecutionStep(
+      cycleId, workflowPath, 'get_workspace_after_conflict',
+      () => taskClient.getWorkspace(workflowPath),
+    );
     assertCurrent();
     if (
       workspaceSnapshot.workspace.scheduler_paused
@@ -561,18 +641,27 @@ export async function runTaskExecutionCycle({
         tick: null,
       };
     }
-    await taskClient.advance(workflowPath, workspaceSnapshot.version);
+    await timedTaskExecutionStep(
+      cycleId, workflowPath, 'advance_after_conflict',
+      () => taskClient.advance(workflowPath, workspaceSnapshot.version),
+    );
   }
   assertCurrent();
-  const tick = await requestExecutionBackend(
-    fetcher,
-    '/api/task-execution/tick',
-    payload,
-    'Task action tick 失败',
-    signal,
+  const tick = await timedTaskExecutionStep(
+    cycleId, workflowPath, 'execution_tick',
+    () => requestExecutionBackend(
+      fetcher,
+      '/api/task-execution/tick',
+      payload,
+      'Task action tick 失败',
+      signal,
+    ),
   );
   assertCurrent();
-  const workspace = await taskClient.getWorkspace(workflowPath);
+  const workspace = await timedTaskExecutionStep(
+    cycleId, workflowPath, 'get_workspace_final',
+    () => taskClient.getWorkspace(workflowPath),
+  );
   assertCurrent();
   return {
     active: true,
@@ -587,6 +676,18 @@ export async function runTaskExecutionCycle({
   };
 }
 
+export async function runTaskExecutionCycle(
+  options: TaskExecutionCycleOptions,
+): Promise<TaskExecutionCycleResult> {
+  const cycleId = ++nextTaskExecutionTimingId;
+  return timedTaskExecutionStep(
+    cycleId,
+    options.workflowPath,
+    'cycle',
+    () => runTaskExecutionCycleInternal(options, cycleId),
+  );
+}
+
 type TaskExecutionHarvestClient = {
   getWorkspace: (workflowPath: string) => Promise<ApiWorkspaceResponse>;
 };
@@ -599,28 +700,34 @@ type TaskExecutionHarvestOptions = {
   isCurrent?: () => boolean;
 };
 
-export async function runTaskExecutionHarvestCycle({
+async function runTaskExecutionHarvestCycleInternal({
   fetcher,
   taskClient,
   workflowPath,
   signal,
   isCurrent,
-}: TaskExecutionHarvestOptions): Promise<TaskExecutionCycleResult> {
+}: TaskExecutionHarvestOptions, cycleId: number): Promise<TaskExecutionCycleResult> {
   const assertCurrent = () => {
     if (signal?.aborted || isCurrent?.() === false) {
       throw new TaskExecutionCycleCancelledError();
     }
   };
   assertCurrent();
-  const tick = await requestExecutionBackend(
-    fetcher,
-    '/api/task-execution/tick',
-    { task_workspace_path: workflowPath, harvest_only: true },
-    'Task action tick 失败',
-    signal,
+  const tick = await timedTaskExecutionStep(
+    cycleId, workflowPath, 'harvest_execution_tick',
+    () => requestExecutionBackend(
+      fetcher,
+      '/api/task-execution/tick',
+      { task_workspace_path: workflowPath, harvest_only: true },
+      'Task action tick 失败',
+      signal,
+    ),
   );
   assertCurrent();
-  const workspace = await taskClient.getWorkspace(workflowPath);
+  const workspace = await timedTaskExecutionStep(
+    cycleId, workflowPath, 'harvest_get_workspace',
+    () => taskClient.getWorkspace(workflowPath),
+  );
   assertCurrent();
   const stats = {
     active: Number(tick.active || 0),
@@ -630,6 +737,18 @@ export async function runTaskExecutionHarvestCycle({
     failed: Number(tick.failed || 0),
   };
   return { active: stats.in_flight > 0, workspace, tick: stats };
+}
+
+export async function runTaskExecutionHarvestCycle(
+  options: TaskExecutionHarvestOptions,
+): Promise<TaskExecutionCycleResult> {
+  const cycleId = ++nextTaskExecutionTimingId;
+  return timedTaskExecutionStep(
+    cycleId,
+    options.workflowPath,
+    'harvest_cycle',
+    () => runTaskExecutionHarvestCycleInternal(options, cycleId),
+  );
 }
 
 type TaskSchedulerPlanClient = {
@@ -694,7 +813,6 @@ type TaskExecutionControllerOptions = {
   onStatus: (status: TaskExecutionStatus) => void;
   onError: (message: string) => void;
   onDrainingChange?: (draining: boolean) => void;
-  getLatestVersion?: () => number | null;
 };
 
 export function createTaskExecutionController({
@@ -705,7 +823,6 @@ export function createTaskExecutionController({
   onStatus,
   onError,
   onDrainingChange,
-  getLatestVersion,
 }: TaskExecutionControllerOptions) {
   type Generation = {
     id: number;
@@ -756,6 +873,13 @@ export function createTaskExecutionController({
     onStatus(createTaskExecutionStatus(lastTick, workspace, phase));
     return true;
   };
+  const hasUnfinishedInstances = (workspace: ApiWorkspaceResponse) => (
+    workspace.workspace.task_instances.some((instance) => (
+      instance.status === 'waiting'
+      || instance.status === 'pending'
+      || instance.status === 'running'
+    ))
+  );
 
   const controller = {
     start() {
@@ -794,6 +918,22 @@ export function createTaskExecutionController({
     async run(options: Omit<TaskExecutionControllerCycleOptions, 'signal' | 'isCurrent'>) {
       const generation = currentGeneration;
       if (!generation?.running || generation.inFlight || generation.mode === 'transition') {
+        const timestampMs = Date.now();
+        const skippedTiming = {
+          generation_id: generation?.id ?? null,
+          workflow_path: options.workflowPath,
+          step: 'controller_run',
+          phase: 'skipped',
+          reason: !generation?.running
+            ? 'not_running'
+            : generation.inFlight
+              ? 'in_flight'
+              : 'transition',
+          timestamp: new Date(timestampMs).toISOString(),
+          timestamp_ms: timestampMs,
+        };
+        console.info('[task-execution-timing]', skippedTiming);
+        persistTaskExecutionTimings(options.workflowPath, [skippedTiming]);
         return false;
       }
       generation.abortController = new AbortController();
@@ -823,7 +963,18 @@ export function createTaskExecutionController({
           if (fatalError) onError(fatalError);
           return true;
         }
-        if (!result.active) {
+        fatalError = null;
+        if (
+          !result.active
+          && (
+            result.workspace.workspace.scheduler_paused
+            || Boolean(result.workspace.workspace.pause_reason)
+          )
+        ) {
+          finishPausedTransition(generation, result.workspace);
+          return true;
+        }
+        if (!result.active && !hasUnfinishedInstances(result.workspace)) {
           const pausedWorkspace = await pauseScheduler(
             options.workflowPath,
             result.workspace.version,
@@ -844,17 +995,9 @@ export function createTaskExecutionController({
           onError(message);
           return false;
         }
-        const latestVersion = getLatestVersion?.() ?? options.expectedVersion;
-        try {
-          const pausedWorkspace = await pauseScheduler(options.workflowPath, latestVersion);
-          if (isCurrent(generation)) {
-            finishPausedTransition(generation, pausedWorkspace, 'failed');
-          }
-        } catch {
-          stopGeneration(generation);
-          onDrainingChange?.(false);
-          onStatus(createTaskExecutionStatus(lastTick, lastWorkspace, 'failed'));
-        }
+        // 普通轮询/网络异常不应改变服务端调度状态；保留当前 generation，
+        // 由下一次定时周期自动重试。明确的动作失败由服务端 pause_reason 负责暂停。
+        onStatus(createTaskExecutionStatus(lastTick, lastWorkspace, 'failed'));
         onError(message);
         return false;
       } finally {

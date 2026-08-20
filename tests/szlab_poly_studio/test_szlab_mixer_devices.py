@@ -463,7 +463,7 @@ def test_szlab_robot_device_is_ast_scannable_from_own_package():
     ]
     place_s09_handles = actions["submit_place_to_s09"]["action_args"]["handles"]
     assert [handle["label"] for handle in place_s09_handles] == ["S09取放料产品", "S09取放料编号"]
-    assert place_s09_handles[0]["description"] == "S09取放料产品：1=TIP盒，2=液体试剂瓶，3=烧杯"
+    assert place_s09_handles[0]["description"] == "S09取放料产品：1=TIP盒，2=液体试剂瓶，3=烧杯，4=测密度烧杯"
     assert place_s09_handles[1]["description"] == "S09取放料编号：TIP盒 1-2，液体试剂瓶 1-5，烧杯 1"
 
 
@@ -726,7 +726,7 @@ def test_szlab_magnetic_stirrer_waits_for_new_done_cycle_when_done_is_stale_true
     ]
 
 
-def test_szlab_magnetic_stirrer_handles_done_wait_failure():
+def test_szlab_magnetic_stirrer_treats_done_wait_timeout_as_success():
     class FakePlcGateway:
         def __init__(self):
             self.reads = []
@@ -758,14 +758,49 @@ def test_szlab_magnetic_stirrer_handles_done_wait_failure():
 
     result = device.run_stirring(position=1, mode=3)
 
-    assert result["success"] is False
-    assert result["message"] == "S041 加工完成等待失败"
+    assert result["success"] is True
+    assert result["message"] == "S041 磁搅已达到规定时间，按正常完成处理"
+    assert result["data"]["done_signal_received"] is False
     assert ("S041磁搅工艺选择", 0) in gateway.writes
     assert ("磁搅速度设置_上位机[0]", 0) in gateway.writes
     assert ("磁搅温度设置_上位机[0]", 0) in gateway.writes
     assert ("磁搅时间设置_上位机[0]", 0) in gateway.writes
     assert ("磁搅安全温度设置_上位机[0]", 0) in gateway.writes
     assert ("S041参数写入完成", False) in gateway.writes
+
+
+def test_szlab_magnetic_stirrer_bounds_done_wait_by_duration_plus_grace():
+    class FakePlcGateway:
+        def __init__(self):
+            self.done_waits = []
+            self.writes = []
+
+        def wait_variable_true(self, name, interval=1.0):
+            return True
+
+        def wait_equal(self, name, expected, interval=1.0):
+            return True
+
+        def wait_new_cycle_done(self, name, interval=1.0, timeout=None):
+            self.done_waits.append((name, interval, timeout))
+            return False
+
+        def write_variable(self, name, value):
+            self.writes.append((name, value))
+
+    gateway = FakePlcGateway()
+    device = SzlabMixerMagneticStirrerDevice(
+        url="opc.tcp://127.0.0.1:0/",
+        use_plc_gateway=True,
+    )
+    device.set_plc_gateway(gateway)
+
+    result = device.run_stirring(position=1, duration=600)
+
+    assert result["success"] is True
+    assert result["data"]["done_signal_received"] is False
+    assert gateway.done_waits[0][1:] == (1.0, 630.0)
+    assert any(value is False for _name, value in gateway.writes)
 
 
 def test_szlab_magnetic_stirrer_uses_plc_wait_helper_when_available():
@@ -1614,6 +1649,34 @@ def test_sensor_condition_wait_logs_start_change_and_finish():
     assert all(event["detail"]["wait_kind"] == "sensor_conditions" for event in events)
 
 
+def test_sensor_condition_wait_reads_all_conditions_concurrently():
+    condition_count = 3
+    reads_started = threading.Barrier(condition_count)
+    reads_finished: list[str] = []
+    reads_lock = threading.Lock()
+
+    class ConcurrentReader:
+        def read_variable(self, name, use_cache=False):
+            del use_cache
+            reads_started.wait(timeout=1.0)
+            with reads_lock:
+                reads_finished.append(name)
+            return True
+
+    conditions = {f"sensor_{index}": True for index in range(condition_count)}
+
+    success, values = wait_sensor_conditions(
+        ConcurrentReader(),
+        conditions,
+        interval=0.0,
+        context="并发传感器检查",
+    )
+
+    assert success is True
+    assert values == {name: True for name in conditions}
+    assert set(reads_finished) == set(conditions)
+
+
 def test_sensor_condition_wait_has_no_timeout_metadata():
     plc = object.__new__(SZLabPolyPLCDevice)
     plc.set_opc_wait_event_writer(None)
@@ -2203,6 +2266,32 @@ def test_szlab_robot_s09_beaker_place_directly_submits_robot_task():
     assert ("S09工艺选择", 4) not in gateway.writes
     assert ("S09原点信号_4", True, 1.0) not in gateway.wait_equal_calls
     assert ("任务号", 19) in gateway.writes
+
+
+def test_szlab_robot_s09_density_beaker_reuses_pick_place_tasks_with_product_type_4():
+    place_gateway = FakeRobotPlcGateway()
+    device = SzlabMixerRobotDevice()
+    device.set_plc_gateway(place_gateway)
+
+    place_result = device.submit_place_to_s09(product_type=4, position=1)
+
+    assert place_result["success"] is True
+    assert place_result["s09_safe_position"] == 4
+    assert place_result["sensor_check_skipped_reason"] == "S09 烧杯位暂无独立物料传感器"
+    assert ("S09取放料产品", 4) in place_gateway.writes
+    assert ("S09取放料编号", 1) in place_gateway.writes
+    assert ("任务号", 19) in place_gateway.writes
+
+    pick_gateway = FakeRobotPlcGateway()
+    device.set_plc_gateway(pick_gateway)
+
+    pick_result = device.submit_pick_from_s09(product_type=4, position=1)
+
+    assert pick_result["success"] is True
+    assert pick_result["s09_safe_position"] == 4
+    assert ("S09取放料产品", 4) in pick_gateway.writes
+    assert ("S09取放料编号", 1) in pick_gateway.writes
+    assert ("任务号", 20) in pick_gateway.writes
 
 
 def test_szlab_robot_waits_for_home_signal_before_pc_to_plc_write():

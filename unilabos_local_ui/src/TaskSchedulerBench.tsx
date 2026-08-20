@@ -80,7 +80,7 @@ const S07_POWDER_PARAMETERS = new Set([
   'coarse_position', 'fine_position', 'target_weight', 'recipe_name', 'params_json', 'powder_count', 'powder_additions',
 ]);
 const S09_LIQUID_PARAMETERS = new Set([
-  'liquid_station_index', 'solvent_batch_id', 'volume', 'liquid_count', 'liquid_additions', 'measure_density',
+  'liquid_station_index', 'solvent_batch_id', 'volume', 'liquid_count', 'liquid_additions',
   'initialize_tip_inventory', 'initial_used_tip_count',
 ]);
 
@@ -377,7 +377,7 @@ export function TaskSchedulerBench(props: Props) {
           <PanelHead title="本次测试配置" sub="定义要生成的测试队列" badge="草稿已保存" />
           <div className="scheduler-bench__section">
             <label>样品数</label>
-            <div className="scheduler-bench__sample-input"><input min="1" max="5" type="number" value={props.sampleCount} onChange={(event) => props.onSampleCountChange(Number(event.target.value))} /><button className="scheduler-btn scheduler-btn--primary" onClick={props.onGenerate} type="button">生成队列</button></div>
+            <div className="scheduler-bench__sample-input"><input min="1" max="999" type="number" value={props.sampleCount} onChange={(event) => props.onSampleCountChange(Number(event.target.value))} /><button className="scheduler-btn scheduler-btn--primary" onClick={props.onGenerate} type="button">生成队列</button></div>
             <div className="scheduler-bench__parameter-memory">
               <span>
                 {props.rememberedParameterCount
@@ -492,7 +492,8 @@ export function TaskSchedulerBench(props: Props) {
           </section>
           <section className="scheduler-bench__panel scheduler-bench__progress">
             <PanelHead title="样品进度缩略图" badge="仅显示" />
-            {sampleProcessRows.map((row) => {
+            <div className="scheduler-bench__progress-body">
+              {sampleProcessRows.map((row) => {
               const rowStatus = sampleProcessRowStatus(row.blocks);
               const timing = timingSummaries.samples.get(row.sample);
               return (
@@ -562,7 +563,11 @@ export function TaskSchedulerBench(props: Props) {
                   </small>
                 </div>
               );
-            })}
+              })}
+              {!sampleProcessRows.length && (
+                <p className="scheduler-bench__empty">生成队列后显示各样品的工艺进度。</p>
+              )}
+            </div>
           </section>
         </section>
 
@@ -664,7 +669,7 @@ export function TaskSchedulerBench(props: Props) {
                             <span>{label}</span>
                             <input
                               disabled={!parametersEditable}
-                              min={type === 'number' ? (field === 'target_weight' ? 0 : 1) : undefined}
+                              min={type === 'number' ? 0 : undefined}
                               max={type === 'number' && field !== 'target_weight' ? 10 : undefined}
                               onChange={(event) => {
                                 const next = additions.map((item, index) => index === additionIndex
@@ -685,7 +690,7 @@ export function TaskSchedulerBench(props: Props) {
                     const additions = liquidAdditionsFromValues(values);
                     return <div className="scheduler-bench__powder-additions">
                       <label>
-                        <span>液体种类数 · 测密度前需要依次加入的液体数量</span>
+                        <span>液体种类数 · 本次加液动作需要依次加入的液体数量</span>
                         <input disabled={!parametersEditable} min={1} onChange={(event) => {
                           const count = Math.max(1, Math.floor(Number(event.target.value) || 1));
                           const next = additions.slice(0, count);

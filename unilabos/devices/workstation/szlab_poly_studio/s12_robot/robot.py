@@ -721,7 +721,7 @@ class SzlabMixerRobotDevice(
                 label="S09取放料产品",
                 data_key="product_type",
                 data_source=DataSource.HANDLE,
-                description="S09取放料产品：1=TIP盒，2=液体试剂瓶，3=烧杯",
+                description="S09取放料产品：1=TIP盒，2=液体试剂瓶，3=烧杯，4=测密度烧杯",
             ),
             ActionInputHandle(
                 key="position",
@@ -749,7 +749,7 @@ class SzlabMixerRobotDevice(
                 label="S09取放料产品",
                 data_key="product_type",
                 data_source=DataSource.HANDLE,
-                description="S09取放料产品：1=TIP盒，2=液体试剂瓶，3=烧杯",
+                description="S09取放料产品：1=TIP盒，2=液体试剂瓶，3=烧杯，4=测密度烧杯",
             ),
             ActionInputHandle(
                 key="position",

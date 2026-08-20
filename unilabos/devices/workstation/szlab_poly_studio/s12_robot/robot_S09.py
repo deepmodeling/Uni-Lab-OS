@@ -16,13 +16,13 @@ class SzlabRobotS09Mixin:
             return 1
         if product_type == 2:
             return 2 if position <= 3 else 3
-        if product_type == 3:
+        if product_type in {3, 4}:
             return 4
-        raise ValueError("S09取放料产品必须是 1(TIP盒)、2(液体试剂瓶) 或 3(烧杯)")
+        raise ValueError("S09取放料产品必须是 1(TIP盒)、2(液体试剂瓶)、3(烧杯) 或 4(测密度烧杯)")
 
     def _run_s09_place(self, product_type: int, position: int) -> dict[str, Any]:
         safe_position = self._s09_safe_position(product_type, position)
-        sensor = None if int(product_type) == 3 else s09_sensor(product_type, position)
+        sensor = None if int(product_type) in {3, 4} else s09_sensor(product_type, position)
 
         return self._submit_robot_task(
             task="place",
@@ -47,7 +47,7 @@ class SzlabRobotS09Mixin:
 
     def _run_s09_pick(self, product_type: int, position: int) -> dict[str, Any]:
         safe_position = self._s09_safe_position(product_type, position)
-        sensor = None if int(product_type) == 3 else s09_sensor(product_type, position)
+        sensor = None if int(product_type) in {3, 4} else s09_sensor(product_type, position)
 
         return self._submit_robot_task(
             task="pick",

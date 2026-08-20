@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from unilabos.app.execution_adapter import execution_result_bridges
 from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
-from unilabos.hostlink.backend import HostLinkBackendRuntime, to_wire_value
+from unilabos.hostlink.backend import HostLinkBackend, to_wire_value
 from unilabos.hostlink.protocol import RemoteError
 from unilabos.resources.resource_tracker import PARAM_SAMPLE_UUIDS
 from unilabos.utils import logger
@@ -42,7 +42,7 @@ class HostLinkExecutionAdapter:
 
     def __init__(
         self,
-        runtime: HostLinkBackendRuntime,
+        runtime: HostLinkBackend,
         devices_config: Any,
         resources_config: Any,
         *,

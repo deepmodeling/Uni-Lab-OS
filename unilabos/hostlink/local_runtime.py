@@ -1,4 +1,4 @@
-"""HostLink 内部使用的单进程 Python 驱动执行引擎。"""
+"""HostLink backend 的单进程 Python 驱动执行引擎。"""
 
 from __future__ import annotations
 
@@ -156,7 +156,7 @@ def instantiate_driver(
     """使用 ``config`` 对象或展开参数实例化驱动。
 
     新驱动通常接收 ``device_id`` 和 ``config``，旧驱动则把配置项直接声明为构造参数。
-    Basic 运行时不导入 ROS 设备包装器，同时兼容这两种形式。
+    HostLink 运行时不导入 ROS 设备包装器，同时兼容这两种形式。
     """
 
     config = dict(config or {})
@@ -188,11 +188,11 @@ def instantiate_driver(
     )
     driver = selection.creator.create_instance(kwargs)
     if driver is None:
-        raise RuntimeError(f"Basic 设备 {device_id!r} 的驱动实例创建失败")
+        raise RuntimeError(f"HostLink 设备 {device_id!r} 的驱动实例创建失败")
     return driver
 
 
-class BasicDeviceNode(DeviceNode):
+class HostLinkDeviceNode(DeviceNode):
     """向驱动提供异步辅助能力的轻量节点适配器。"""
 
     def __init__(
@@ -200,7 +200,6 @@ class BasicDeviceNode(DeviceNode):
         driver: Any,
         device_id: str,
         *,
-        backend_name: str = "basic",
         resource_uuid: str = "",
         registry_name: str = "",
         display_name: str = "",
@@ -211,7 +210,7 @@ class BasicDeviceNode(DeviceNode):
     ) -> None:
         self.driver = driver
         self.device_id = device_id
-        self.backend_name = str(backend_name or "basic")
+        self.backend_name = "hostlink"
         self.namespace = self.get_namespace()
         self.resource_uuid = str(resource_uuid or "")
         self.registry_name = str(registry_name or "")
@@ -229,11 +228,11 @@ class BasicDeviceNode(DeviceNode):
         self.status_names = tuple(
             sorted({str(name).strip() for name in status_names if str(name).strip()})
         )
-        self._logger = logging.getLogger(f"unilabos.basic.{device_id}")
+        self._logger = logging.getLogger(f"unilabos.hostlink.{device_id}")
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(
             target=self._run_loop,
-            name=f"basic-driver-{device_id}",
+            name=f"hostlink-driver-{device_id}",
             daemon=True,
         )
         self._loop_ready = threading.Event()
@@ -269,9 +268,9 @@ class BasicDeviceNode(DeviceNode):
     def create_device(self, device_id: str, config: Any) -> dict[str, Any]:
         """使用与启动阶段相同的工厂动态创建普通设备或子设备。"""
 
-        runtime = self.__dict__.get("_basic_runtime")
+        runtime = self.__dict__.get("_hostlink_runtime")
         if runtime is None:
-            return {"success": False, "error": "Basic runtime is unavailable"}
+            return {"success": False, "error": "HostLink runtime is unavailable"}
         try:
             if isinstance(config, ResourceDictInstance):
                 device_config = config
@@ -293,9 +292,9 @@ class BasicDeviceNode(DeviceNode):
             return {"success": False, "error": str(exc)}
 
     def destroy_device(self, device_id: str) -> dict[str, Any]:
-        runtime = self.__dict__.get("_basic_runtime")
+        runtime = self.__dict__.get("_hostlink_runtime")
         if runtime is None:
-            return {"success": False, "error": "Basic runtime is unavailable"}
+            return {"success": False, "error": "HostLink runtime is unavailable"}
         removed = runtime.remove_device(device_id)
         return {
             "success": removed,
@@ -340,7 +339,7 @@ class BasicDeviceNode(DeviceNode):
             return
         self._loop_thread.start()
         if not self._loop_ready.wait(timeout=5):
-            raise RuntimeError(f"Basic 设备 {self.device_id!r} 事件循环启动超时")
+            raise RuntimeError(f"HostLink 设备 {self.device_id!r} 事件循环启动超时")
         self._started = True
         try:
             if self.__dict__.get("_device_service_bus") is not None:
@@ -361,7 +360,7 @@ class BasicDeviceNode(DeviceNode):
         except Exception:
             self.stop()
             raise
-        self._logger.info("Basic 设备已就绪：%s", self.device_id)
+        self._logger.info("HostLink 设备已就绪：%s", self.device_id)
 
     def _setup_decorated_subscriptions(self) -> None:
         for _method_name, method, config in get_all_subscriptions(self.driver):
@@ -473,19 +472,19 @@ class BasicDeviceNode(DeviceNode):
         **kwargs: Any,
     ) -> tuple[Callable[..., Any], ActionContext, Dict[str, Any], Dict[str, Any]]:
         if not self._started:
-            raise RuntimeError(f"Basic 设备 {self.device_id!r} 尚未启动")
+            raise RuntimeError(f"HostLink 设备 {self.device_id!r} 尚未启动")
         action_name = str(action_name or "").strip()
         if action_name.startswith("_") or (
             self.action_names and action_name not in self.action_names
         ):
             raise AttributeError(
-                f"Basic 设备 {self.device_id!r} 没有动作 {action_name!r}"
+                f"HostLink 设备 {self.device_id!r} 没有动作 {action_name!r}"
             )
         method_name = action_name.removeprefix("auto-")
         action = getattr(self.driver, method_name, None)
         if not callable(action):
             raise AttributeError(
-                f"Basic 设备 {self.device_id!r} 没有动作 {action_name!r}"
+                f"HostLink 设备 {self.device_id!r} 没有动作 {action_name!r}"
             )
         signature = inspect.signature(action)
         mapping = self.action_value_mappings.get(action_name, {})
@@ -796,7 +795,7 @@ class BasicDeviceNode(DeviceNode):
             try:
                 self._call(cleanup, _wait_timeout=10)
             except Exception:
-                self._logger.exception("Basic 设备清理失败：%s", self.device_id)
+                self._logger.exception("HostLink 设备清理失败：%s", self.device_id)
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._loop_thread.join(timeout=5)
         self._loop.close()
@@ -804,7 +803,7 @@ class BasicDeviceNode(DeviceNode):
 
 
 @dataclass(frozen=True)
-class BasicDriverSpec:
+class HostLinkDriverSpec:
     device_id: str
     driver_class: Type[Any]
     config: Dict[str, Any]
@@ -817,49 +816,49 @@ class BasicDriverSpec:
     device_config: Any = None
 
 
-class BasicRuntime:
-    """管理一个 Basic backend 进程内的全部驱动实例。"""
+class HostLinkLocalRuntime:
+    """管理一个 HostLink backend 进程内的全部本地驱动实例。"""
 
-    def __init__(self, backend_name: str = "basic") -> None:
-        self.backend_name = str(backend_name or "basic")
-        self.devices: dict[str, BasicDeviceNode] = {}
+    def __init__(self) -> None:
+        self.backend_name = "hostlink"
+        self.devices: dict[str, HostLinkDeviceNode] = {}
         self.topic_bus = LocalTopicBus()
         self.service_bus = LocalServiceBus()
         self._resource_service: ResourceService | None = None
         self._device_change_listeners: list[
-            Callable[[str, BasicDeviceNode], None]
+            Callable[[str, HostLinkDeviceNode], None]
         ] = []
         self._started = False
         self._stopped = threading.Event()
 
     def add_device_change_listener(
         self,
-        callback: Callable[[str, BasicDeviceNode], None],
+        callback: Callable[[str, HostLinkDeviceNode], None],
     ) -> None:
         if callback not in self._device_change_listeners:
             self._device_change_listeners.append(callback)
 
     def remove_device_change_listener(
         self,
-        callback: Callable[[str, BasicDeviceNode], None],
+        callback: Callable[[str, HostLinkDeviceNode], None],
     ) -> None:
         with contextlib.suppress(ValueError):
             self._device_change_listeners.remove(callback)
 
-    def _notify_device_change(self, event: str, node: BasicDeviceNode) -> None:
+    def _notify_device_change(self, event: str, node: HostLinkDeviceNode) -> None:
         for callback in tuple(self._device_change_listeners):
             try:
                 callback(event, node)
             except Exception:  # noqa: BLE001 - 一个监听器不能破坏设备生命周期
                 logging.getLogger(__name__).exception(
-                    "Basic 设备变更监听失败：event=%s device=%s",
+                    "HostLink 设备变更监听失败：event=%s device=%s",
                     event,
                     node.device_id,
                 )
 
-    def add_driver(self, spec: BasicDriverSpec) -> BasicDeviceNode:
+    def add_driver(self, spec: HostLinkDriverSpec) -> HostLinkDeviceNode:
         if spec.device_id in self.devices:
-            raise ValueError(f"Basic 设备 ID 重复：{spec.device_id}")
+            raise ValueError(f"HostLink 设备 ID 重复：{spec.device_id}")
         resource_tracker = DeviceNodeResourceTracker()
         driver = instantiate_driver(
             spec.driver_class,
@@ -868,10 +867,9 @@ class BasicRuntime:
             device_config=spec.device_config,
             resource_tracker=resource_tracker,
         )
-        node = BasicDeviceNode(
+        node = HostLinkDeviceNode(
             driver,
             spec.device_id,
-            backend_name=self.backend_name,
             resource_uuid=spec.resource_uuid,
             registry_name=spec.registry_name,
             display_name=spec.display_name,
@@ -884,7 +882,7 @@ class BasicRuntime:
         node.set_topic_bus(self.topic_bus)
         node.set_service_bus(self.service_bus)
         node.children = list(spec.device_config.children) if spec.device_config else []
-        node.__dict__["_basic_runtime"] = self
+        node.__dict__["_hostlink_runtime"] = self
         if self._resource_service is not None:
             node.set_resource_service(self._resource_service)
         self.devices[spec.device_id] = node
@@ -902,16 +900,16 @@ class BasicRuntime:
         self,
         device_id: str,
         device_config: ResourceDictInstance,
-    ) -> BasicDeviceNode:
+    ) -> HostLinkDeviceNode:
         from unilabos.device_runtime.definition import resolve_device_definition
 
         definition = resolve_device_definition(
             device_id,
             device_config,
-            backend_name=self.backend_name,
+            backend_name="hostlink",
         )
         return self.add_driver(
-            BasicDriverSpec(
+            HostLinkDriverSpec(
                 device_id=device_id,
                 driver_class=definition.driver_class,
                 config=definition.runtime_config,
@@ -1006,7 +1004,7 @@ class BasicRuntime:
 
     def start(self) -> None:
         self._stopped.clear()
-        started: list[BasicDeviceNode] = []
+        started: list[HostLinkDeviceNode] = []
         try:
             for node in self.devices.values():
                 node.start()
@@ -1028,7 +1026,7 @@ class BasicRuntime:
         try:
             node = self.devices[device_id]
         except KeyError as exc:
-            raise KeyError(f"未知 Basic 设备：{device_id}") from exc
+            raise KeyError(f"未知 HostLink 设备：{device_id}") from exc
         return node.call_action(
             action_name,
             action_context=action_context,
@@ -1046,7 +1044,7 @@ class BasicRuntime:
         try:
             node = self.devices[device_id]
         except KeyError as exc:
-            raise KeyError(f"未知 Basic 设备：{device_id}") from exc
+            raise KeyError(f"未知 HostLink 设备：{device_id}") from exc
         return await node.call_action_async(
             action_name,
             action_context=action_context,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.resource_tracker import ResourceTreeSet
 
@@ -69,10 +69,10 @@ class _MoveResourceService:
         return ResourceTreeSet.load(self.tree.dump())
 
 
-def test_basic_runtime_moves_material_through_common_authority_and_service() -> None:
-    runtime = BasicRuntime("hostlink")
-    source = runtime.add_driver(BasicDriverSpec("source", _Driver, {}))
-    target = runtime.add_driver(BasicDriverSpec("target", _Driver, {}))
+def test_hostlink_runtime_moves_material_through_common_authority_and_service() -> None:
+    runtime = HostLinkLocalRuntime()
+    source = runtime.add_driver(HostLinkDriverSpec("source", _Driver, {}))
+    target = runtime.add_driver(HostLinkDriverSpec("target", _Driver, {}))
     material = _container("tube", "material-1")
     mount = _container("deck", "mount-1")
     source.resource_tracker.add_resource(material)

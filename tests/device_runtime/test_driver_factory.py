@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from unilabos.basic.main_basic_run import build_runtime
-from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.hostlink.main_hostlink_run import build_runtime
+from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.device_runtime.definition import iter_device_configs
 from unilabos.device_runtime.driver_creator import select_driver_creator
 from unilabos.devices.workstation.workstation_base import WorkstationBase
@@ -63,15 +63,12 @@ def test_hostlink_does_not_instantiate_ros_host_node() -> None:
     host_node = _node("host_node")
     host_node.res_content.klass = "host_node"
 
-    runtime = build_runtime(
-        SimpleNamespace(root_nodes=[host_node]),
-        backend_name="hostlink",
-    )
+    runtime = build_runtime(SimpleNamespace(root_nodes=[host_node]))
 
     assert runtime.devices == {}
 
 
-def test_basic_runtime_uses_same_factory_for_dynamic_subdevice(monkeypatch) -> None:
+def test_hostlink_runtime_uses_same_factory_for_dynamic_subdevice(monkeypatch) -> None:
     from unilabos.device_runtime import definition as definition_module
 
     dynamic_config = ResourceDictInstance.get_resource_instance_from_dict(
@@ -97,8 +94,8 @@ def test_basic_runtime_uses_same_factory_for_dynamic_subdevice(monkeypatch) -> N
         )
 
     monkeypatch.setattr(definition_module, "resolve_device_definition", resolve)
-    runtime = BasicRuntime("hostlink")
-    owner = runtime.add_driver(BasicDriverSpec("owner", _PlainDriver, {}))
+    runtime = HostLinkLocalRuntime()
+    owner = runtime.add_driver(HostLinkDriverSpec("owner", _PlainDriver, {}))
     runtime.start()
     try:
         created = owner.create_device("dynamic", dynamic_config)

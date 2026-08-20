@@ -117,11 +117,12 @@ Host 运行 ROS2 或 HostLink backend 时会在 TCP `7302` 监听 HostLink。Sla
 
 在 `--backend ros2` 下，设备 Action 和节点注册仍走 ROS2；物料 create/get/update
 请求经 HostLink 交给 Host，再由 Host 代发到微后端 Materials Authority。
-`--backend hostlink` 则完全不导入 ROS：Host 与 Slave 都使用 BasicRuntime
+`--backend hostlink` 则完全不导入 ROS：Host 与 Slave 都使用 `HostLinkLocalRuntime`
 加载本地纯 Python 驱动。Slave 在 HELLO 中发布设备动作、状态字段和设备 UUID；驱动
 通过通用节点发布的状态通知会立即发送，心跳还会定期补发完整状态。Host 与 Slave 可以双向调用设备动作，
 动作带独立 ID，支持反馈和协作取消。通用节点还提供与 ROS 相同形状的
-`create_publisher(...).publish(...)` 和 `create_subscription(...)`：Basic 在本进程分发，
+`create_publisher(...).publish(...)` 和 `create_subscription(...)`：HostLink 本地运行时
+在本进程分发，
 HostLink 由 Host 按绝对 Topic 名称转发，消息会转换为 JSON 可传输的 Python 值。
 Slave 创建物料时只提交完整 PLR Resource，不提交模板 UUID 或实例 UUID；微后端负责按
 模板名解析 complete registry、分配 UUID，并把权威树经 Host 回传。查询直接下载权威树；

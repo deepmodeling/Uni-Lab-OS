@@ -6,9 +6,9 @@ import threading
 import time
 from typing import Any
 
-from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.hostlink.backend import HostLinkBackendRuntime
+from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.utils.decorator import subscribe, topic_config
 
 
@@ -158,15 +158,15 @@ def _configure_hostlink() -> None:
 def run_virtual_lan_host(event_queue: Any, stop_event: Any) -> None:
     """Start the virtual Hub in its own Host process."""
 
-    runtime: HostLinkBackendRuntime | None = None
+    runtime: HostLinkBackend | None = None
     try:
         _configure_hostlink()
         HostLinkConfig.bind = "0.0.0.0"
         HostLinkConfig.port = 0
         BasicConfig.machine_name = "virtual-lan-host"
-        local = BasicRuntime("hostlink")
+        local = HostLinkLocalRuntime()
         local.add_driver(
-            BasicDriverSpec(
+            HostLinkDriverSpec(
                 device_id=HOST_NODE_ID,
                 driver_class=VirtualHostNode,
                 config={
@@ -177,7 +177,7 @@ def run_virtual_lan_host(event_queue: Any, stop_event: Any) -> None:
                 action_names=("accept_device_report",),
             )
         )
-        runtime = HostLinkBackendRuntime(local, is_slave=False)
+        runtime = HostLinkBackend(local, is_slave=False)
         runtime.start()
         assert runtime.server is not None
         event_queue.put(
@@ -224,15 +224,15 @@ def run_virtual_lan_slave(
 ) -> None:
     """Start the virtual Reporter in a separate Slave process."""
 
-    runtime: HostLinkBackendRuntime | None = None
+    runtime: HostLinkBackend | None = None
     try:
         _configure_hostlink()
         HostLinkConfig.host = str(host)
         HostLinkConfig.port = int(port)
         BasicConfig.machine_name = "virtual-lan-slave"
-        local = BasicRuntime("hostlink")
+        local = HostLinkLocalRuntime()
         reporter = local.add_driver(
-            BasicDriverSpec(
+            HostLinkDriverSpec(
                 device_id=SUB_DEVICE_ID,
                 driver_class=VirtualLanReporter,
                 config={"event_queue": event_queue, "count_rate": 100.0},
@@ -241,7 +241,7 @@ def run_virtual_lan_slave(
                 status_names=("counter", "state"),
             )
         )
-        runtime = HostLinkBackendRuntime(local, is_slave=True)
+        runtime = HostLinkBackend(local, is_slave=True)
         runtime.start()
         event_queue.put(("slave_ready", {"host": host, "port": port}))
         host_result = reporter.call_device_action(

@@ -19,7 +19,7 @@ from unilabos.app.backend import (
     start_backend,
 )
 from unilabos.app.cli.parser import build_parser
-from unilabos.basic.runtime import BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink import main_hostlink_run
 from unilabos.server.startup import resolve_database_paths
@@ -183,9 +183,9 @@ def test_start_backend_imports_only_selected_profile(monkeypatch) -> None:
     assert received[0][2] == []
 
 
-def test_hostlink_still_builds_its_internal_basic_runtime() -> None:
-    runtime = main_hostlink_run.build_runtime(None, backend_name="hostlink")
-    assert isinstance(runtime, BasicRuntime)
+def test_hostlink_builds_its_local_driver_runtime() -> None:
+    runtime = main_hostlink_run.build_runtime(None)
+    assert isinstance(runtime, HostLinkLocalRuntime)
     assert runtime.backend_name == "hostlink"
 
 

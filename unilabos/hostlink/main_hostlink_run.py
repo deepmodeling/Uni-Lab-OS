@@ -4,16 +4,24 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from unilabos.basic.main_basic_run import build_runtime
 from unilabos.app.execution_adapter import (
     clear_execution_adapter,
     set_execution_adapter,
 )
-from unilabos.hostlink.backend import HostLinkBackendRuntime
+from unilabos.device_runtime.definition import (
+    iter_device_configs,
+    resolve_device_definition,
+)
+from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
+from unilabos.hostlink.local_runtime import (
+    HostLinkDriverSpec,
+    HostLinkLocalRuntime,
+)
+from unilabos.utils import logger
 
 
-_runtime: Optional[HostLinkBackendRuntime] = None
+_runtime: Optional[HostLinkBackend] = None
 _execution_adapter: Optional[HostLinkExecutionAdapter] = None
 
 
@@ -21,12 +29,47 @@ def validate_environment() -> None:
     """HostLink backend only depends on the Python driver runtime."""
 
 
-def get_runtime() -> Optional[HostLinkBackendRuntime]:
+def get_runtime() -> Optional[HostLinkBackend]:
     return _runtime
 
 
 def get_execution_adapter() -> Optional[HostLinkExecutionAdapter]:
     return _execution_adapter
+
+
+def build_runtime(devices_config: Any) -> HostLinkLocalRuntime:
+    """从设备图构造 HostLink 本地驱动运行时。"""
+
+    runtime = HostLinkLocalRuntime()
+    if devices_config is None:
+        return runtime
+
+    for device_id, node in iter_device_configs(devices_config):
+        if node.res_content.klass == "host_node":
+            logger.debug(
+                "[HostLink] 跳过图中的 host_node；Host 生命周期由微后端管理"
+            )
+            continue
+        definition = resolve_device_definition(
+            device_id,
+            node,
+            backend_name="hostlink",
+        )
+        runtime.add_driver(
+            HostLinkDriverSpec(
+                device_id=device_id,
+                driver_class=definition.driver_class,
+                config=definition.runtime_config,
+                registry_name=definition.registry_name,
+                display_name=definition.display_name,
+                resource_uuid=definition.resource_uuid,
+                action_names=tuple(definition.action_value_mappings),
+                action_value_mappings=definition.action_value_mappings,
+                status_names=tuple(definition.status_types),
+                device_config=node,
+            )
+        )
+    return runtime
 
 
 def _run(
@@ -37,8 +80,8 @@ def _run(
     bridges: Optional[list[Any]] = None,
 ) -> None:
     global _execution_adapter, _runtime
-    runtime = HostLinkBackendRuntime(
-        build_runtime(devices_config, backend_name="hostlink"),
+    runtime = HostLinkBackend(
+        build_runtime(devices_config),
         is_slave=is_slave,
     )
     _runtime = runtime

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.device_runtime import LocalTopicBus, TopicEvent
 from unilabos.utils.decorator import subscribe
 
@@ -67,10 +67,10 @@ def _wait_until(predicate, timeout: float = 1.0) -> bool:
     return bool(predicate())
 
 
-def test_basic_runtime_supports_ros_shaped_publish_and_subscribe() -> None:
-    runtime = BasicRuntime()
+def test_hostlink_runtime_supports_ros_shaped_publish_and_subscribe() -> None:
+    runtime = HostLinkLocalRuntime()
     source = runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="source",
             driver_class=SourceDriver,
             config={},
@@ -78,14 +78,14 @@ def test_basic_runtime_supports_ros_shaped_publish_and_subscribe() -> None:
         )
     )
     sink = runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="sink",
             driver_class=SinkDriver,
             config={},
         )
     )
     decorated_sink = runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="decorated-sink",
             driver_class=DecoratedSinkDriver,
             config={},

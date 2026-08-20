@@ -8,7 +8,7 @@
 ``ros2``
     完整 ROS 2 运行时。
 
-``BasicRuntime`` 是 HostLink 内部使用的本地执行引擎，不是可部署 backend；Dora
+HostLink 的本地驱动执行器也位于 ``unilabos.hostlink``，不是第三种 backend；Dora
 代码保留用于实验，也不进入公开选择。CLI、运行时、测试和文档共享本模块中的
 公开 backend 清单，并确保可选 backend 只在被选中时导入。
 """
@@ -78,8 +78,8 @@ DEFAULT_PYTHON_DRIVER_BACKENDS = ("hostlink", "ros2")
 
 _REMOVED_BACKENDS: dict[str, str] = {
     "automancer": "automancer 从未实现，现已移除",
-    "basic": "basic 是 HostLink 的内部本地执行引擎，请使用 backend 'hostlink'",
-    "simple": "simple/basic 不再是公开 backend，请使用 backend 'hostlink'",
+    "basic": "basic backend 已移除，请使用 backend 'hostlink'",
+    "simple": "simple/basic backend 已移除，请使用 backend 'hostlink'",
     "dora": "dora 是实验运行时，不是公开 backend",
     "ros": "ros 旧别名已移除，请使用 backend 'ros2'",
 }

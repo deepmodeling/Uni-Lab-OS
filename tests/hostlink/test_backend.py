@@ -10,13 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime import (
     ActionCancelled,
     ActionContext,
 )
-from unilabos.hostlink.backend import HostLinkBackendRuntime
+from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.hostlink.client import HostLinkClient
 from unilabos.hostlink.protocol import ActionType, RemoteError
 from unilabos.hostlink.server import HostLinkServer
@@ -199,10 +199,10 @@ def _counter_runtime(
     device_id: str,
     initial: int = 0,
     resource_uuid: str = "",
-) -> BasicRuntime:
-    runtime = BasicRuntime()
+) -> HostLinkLocalRuntime:
+    runtime = HostLinkLocalRuntime()
     runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id=device_id,
             driver_class=CounterDriver,
             config={"initial": initial},
@@ -233,10 +233,10 @@ def _counter_runtime(
     return runtime
 
 
-def _feedback_runtime(device_id: str) -> BasicRuntime:
-    runtime = BasicRuntime(backend_name="hostlink")
+def _feedback_runtime(device_id: str) -> HostLinkLocalRuntime:
+    runtime = HostLinkLocalRuntime()
     runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id=device_id,
             driver_class=FeedbackDriver,
             config={},
@@ -310,8 +310,8 @@ def test_hostlink_backend_routes_basic_driver_actions_without_ros(
     monkeypatch.setattr(BasicConfig, "machine_name", "slave-test")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host = HostLinkBackendRuntime(_counter_runtime("host-local"), is_slave=False)
-    slave = HostLinkBackendRuntime(
+    host = HostLinkBackend(_counter_runtime("host-local"), is_slave=False)
+    slave = HostLinkBackend(
         _counter_runtime("slave-counter", initial=1),
         is_slave=True,
     )
@@ -366,8 +366,8 @@ def test_dynamic_subdevices_refresh_hostlink_routes(monkeypatch) -> None:
     monkeypatch.setattr(BasicConfig, "machine_name", "dynamic-slave")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host = HostLinkBackendRuntime(_counter_runtime("host-owner"), is_slave=False)
-    slave = HostLinkBackendRuntime(
+    host = HostLinkBackend(_counter_runtime("host-owner"), is_slave=False)
+    slave = HostLinkBackend(
         _counter_runtime("slave-owner"),
         is_slave=True,
     )
@@ -377,7 +377,7 @@ def test_dynamic_subdevices_refresh_hostlink_routes(monkeypatch) -> None:
     try:
         slave.start()
         slave.local.add_driver(
-            BasicDriverSpec(
+            HostLinkDriverSpec(
                 "slave-child",
                 CounterDriver,
                 {"initial": 2},
@@ -389,7 +389,7 @@ def test_dynamic_subdevices_refresh_hostlink_routes(monkeypatch) -> None:
         assert host.call_action("slave-child", "increment", amount=3) == 5
 
         host.local.add_driver(
-            BasicDriverSpec(
+            HostLinkDriverSpec(
                 "host-child",
                 CounterDriver,
                 {"initial": 4},
@@ -447,7 +447,7 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
 
     material_service = MaterialsService(tmp_path / "materials.db")
     set_materials_gateway(LocalMaterialsClient(material_service))
-    host = HostLinkBackendRuntime(BasicRuntime("hostlink"), is_slave=False)
+    host = HostLinkBackend(HostLinkLocalRuntime(), is_slave=False)
     host.start()
     assert host.server is not None
     client = HostLinkClient(
@@ -523,8 +523,8 @@ def test_hostlink_awaits_device_tools_without_thread_fallback(
     monkeypatch.setattr(BasicConfig, "machine_name", "async-slave")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host = HostLinkBackendRuntime(_counter_runtime("host-target"), is_slave=False)
-    slave = HostLinkBackendRuntime(
+    host = HostLinkBackend(_counter_runtime("host-target"), is_slave=False)
+    slave = HostLinkBackend(
         _counter_runtime("slave-target", initial=1),
         is_slave=True,
     )
@@ -583,32 +583,32 @@ def test_hostlink_routes_ros_shaped_services_in_both_directions(
     monkeypatch.setattr(BasicConfig, "machine_name", "service-slave")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host_local = BasicRuntime("hostlink")
+    host_local = HostLinkLocalRuntime()
     host_local.add_driver(
-        BasicDriverSpec("host-service", ServiceDriver, {"provide": True})
+        HostLinkDriverSpec("host-service", ServiceDriver, {"provide": True})
     )
     host_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             "host-caller",
             ServiceDriver,
             {},
             action_names=("call_service",),
         )
     )
-    slave_local = BasicRuntime("hostlink")
+    slave_local = HostLinkLocalRuntime()
     slave_local.add_driver(
-        BasicDriverSpec("slave-service", ServiceDriver, {"provide": True})
+        HostLinkDriverSpec("slave-service", ServiceDriver, {"provide": True})
     )
     slave_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             "slave-caller",
             ServiceDriver,
             {},
             action_names=("call_service",),
         )
     )
-    host = HostLinkBackendRuntime(host_local, is_slave=False)
-    slave = HostLinkBackendRuntime(slave_local, is_slave=True)
+    host = HostLinkBackend(host_local, is_slave=False)
+    slave = HostLinkBackend(slave_local, is_slave=True)
     host.start()
     assert host.server is not None
     HostLinkConfig.port = host.server.port
@@ -656,9 +656,9 @@ def test_hostlink_routes_topics_in_both_directions(monkeypatch) -> None:
     monkeypatch.setattr(BasicConfig, "machine_name", "topic-slave")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host_local = BasicRuntime("hostlink")
+    host_local = HostLinkLocalRuntime()
     host_source = host_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="host-source",
             driver_class=TopicDriver,
             config={"publish": True},
@@ -666,15 +666,15 @@ def test_hostlink_routes_topics_in_both_directions(monkeypatch) -> None:
         )
     )
     host_sink = host_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="host-sink",
             driver_class=TopicDriver,
             config={"subscribe_to": "slave-source"},
         )
     )
-    slave_local = BasicRuntime("hostlink")
+    slave_local = HostLinkLocalRuntime()
     slave_source = slave_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="slave-source",
             driver_class=TopicDriver,
             config={"publish": True},
@@ -682,14 +682,14 @@ def test_hostlink_routes_topics_in_both_directions(monkeypatch) -> None:
         )
     )
     slave_sink = slave_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="slave-sink",
             driver_class=TopicDriver,
             config={"subscribe_to": "host-source"},
         )
     )
-    host = HostLinkBackendRuntime(host_local, is_slave=False)
-    slave = HostLinkBackendRuntime(slave_local, is_slave=True)
+    host = HostLinkBackend(host_local, is_slave=False)
+    slave = HostLinkBackend(slave_local, is_slave=True)
     host.start()
     assert host.server is not None
     HostLinkConfig.port = host.server.port
@@ -741,26 +741,26 @@ def test_hostlink_transports_ros_messages_as_json(monkeypatch) -> None:
     monkeypatch.setattr(BasicConfig, "machine_name", "ros-json-slave")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host_local = BasicRuntime("hostlink")
+    host_local = HostLinkLocalRuntime()
     source = host_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="ros-source",
             driver_class=RosJsonDriver,
             config={"publish": True},
             action_names=("send",),
         )
     )
-    slave_local = BasicRuntime("hostlink")
+    slave_local = HostLinkLocalRuntime()
     sink = slave_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="ros-sink",
             driver_class=RosJsonDriver,
             config={"subscribe_to": "ros-source"},
             action_names=("echo",),
         )
     )
-    host = HostLinkBackendRuntime(host_local, is_slave=False)
-    slave = HostLinkBackendRuntime(slave_local, is_slave=True)
+    host = HostLinkBackend(host_local, is_slave=False)
+    slave = HostLinkBackend(slave_local, is_slave=True)
     host.start()
     assert host.server is not None
     HostLinkConfig.port = host.server.port
@@ -818,8 +818,8 @@ def test_hostlink_action_feedback_and_cancel(monkeypatch) -> None:
     monkeypatch.setattr(BasicConfig, "machine_name", "feedback-slave")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host = HostLinkBackendRuntime(BasicRuntime("hostlink"), is_slave=False)
-    slave = HostLinkBackendRuntime(
+    host = HostLinkBackend(HostLinkLocalRuntime(), is_slave=False)
+    slave = HostLinkBackend(
         _feedback_runtime("feedback-device"),
         is_slave=True,
     )
@@ -869,8 +869,8 @@ def test_cancelling_async_call_forwards_to_remote_action(monkeypatch) -> None:
     monkeypatch.setattr(BasicConfig, "machine_name", "async-cancel-slave")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host = HostLinkBackendRuntime(BasicRuntime("hostlink"), is_slave=False)
-    slave = HostLinkBackendRuntime(
+    host = HostLinkBackend(HostLinkLocalRuntime(), is_slave=False)
+    slave = HostLinkBackend(
         _feedback_runtime("feedback-device"),
         is_slave=True,
     )
@@ -927,12 +927,12 @@ def test_hostlink_routes_action_feedback_and_cancel_between_slaves(
     monkeypatch.setattr(HostLinkConfig, "request_timeout", 2.0)
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host = HostLinkBackendRuntime(BasicRuntime("hostlink"), is_slave=False)
-    caller = HostLinkBackendRuntime(
+    host = HostLinkBackend(HostLinkLocalRuntime(), is_slave=False)
+    caller = HostLinkBackend(
         _counter_runtime("slave-caller"),
         is_slave=True,
     )
-    target = HostLinkBackendRuntime(
+    target = HostLinkBackend(
         _feedback_runtime("slave-target"),
         is_slave=True,
     )
@@ -994,7 +994,7 @@ def test_hostlink_runtime_uses_microbackend_resource_authority(
     material_service = MaterialsService(tmp_path / "materials.db")
     set_materials_gateway(LocalMaterialsClient(material_service))
     runtime = _counter_runtime("resource-device", resource_uuid="device-uuid")
-    backend = HostLinkBackendRuntime(runtime, is_slave=False)
+    backend = HostLinkBackend(runtime, is_slave=False)
     node = runtime.devices["resource-device"]
     backend.start()
     beaker = RegularContainer(

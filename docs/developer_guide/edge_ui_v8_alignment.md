@@ -9,7 +9,8 @@
 - 默认部署：完整 Host API 使用 `:8002`；独立 Scheduler Provider 使用 `:8092`
 
 本次以归档为接口真相，将 Scheduler、Inventory 与 Resource Provider 收进
-UniLabOS。`BasicRuntime` 仍只是 HostLink 的内部执行器，不增加新的公开后端。
+UniLabOS。设备运行时只提供 `hostlink` 和 `ros2` 两个公开 backend；HostLink 的本地
+驱动执行器归属 `unilabos.hostlink`。
 
 ## 已在 UniLabOS 对齐
 

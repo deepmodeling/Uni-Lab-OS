@@ -14,10 +14,10 @@ from unilabos.app.execution_adapter import (
     set_execution_adapter,
 )
 from unilabos.server.scheduler.backend import JobExecutionBackend
-from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.action import ActionContext
-from unilabos.hostlink.backend import HostLinkBackendRuntime
+from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
 from unilabos.legacy_support.websocket import LegacyWebSocketClient, QueueItem
 from unilabos.registry.action_policy import normalize_error_policy
@@ -80,9 +80,9 @@ class RecordingBridge:
         return True
 
 
-def _runtime() -> tuple[HostLinkBackendRuntime, AdapterDriver]:
-    local = BasicRuntime("hostlink")
-    spec = BasicDriverSpec(
+def _runtime() -> tuple[HostLinkBackend, AdapterDriver]:
+    local = HostLinkLocalRuntime()
+    spec = HostLinkDriverSpec(
         device_id="device-1",
         driver_class=AdapterDriver,
         config={},
@@ -126,7 +126,7 @@ def _runtime() -> tuple[HostLinkBackendRuntime, AdapterDriver]:
         },
     )
     node = local.add_driver(spec)
-    runtime = HostLinkBackendRuntime(local, is_slave=False)
+    runtime = HostLinkBackend(local, is_slave=False)
     local.start()
     return runtime, node.driver
 

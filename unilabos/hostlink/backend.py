@@ -1,4 +1,4 @@
-"""由 Basic 驱动运行时与 HostLink 组成的无 ROS 分布式 backend。"""
+"""由本地驱动运行时与 HostLink 组成的无 ROS 分布式 backend。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
-from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
 from unilabos.device_runtime.resource import AuthorityResourceService
@@ -18,6 +17,7 @@ from unilabos.device_runtime.topic import (
     normalize_topic,
 )
 from unilabos.hostlink.client import HostLinkClient, set_hostlink_client
+from unilabos.hostlink.local_runtime import HostLinkLocalRuntime
 from unilabos.hostlink.protocol import ActionType, LinkError
 from unilabos.hostlink.server import HostLinkServer, set_hostlink_server
 from unilabos.utils import logger
@@ -29,12 +29,12 @@ def to_wire_value(value: Any) -> Any:
     return message_to_value(value)
 
 
-class HostLinkBackendRuntime:
+class HostLinkBackend:
     """Run local Python drivers and expose Slave devices to one Host."""
 
     def __init__(
         self,
-        local: BasicRuntime,
+        local: HostLinkLocalRuntime,
         *,
         is_slave: bool,
     ) -> None:
@@ -1350,4 +1350,4 @@ class HostLinkBackendRuntime:
         self._started = False
 
 
-__all__ = ["HostLinkBackendRuntime", "to_wire_value"]
+__all__ = ["HostLinkBackend", "to_wire_value"]

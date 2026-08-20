@@ -136,7 +136,7 @@ class VirtualHeatingPlatform:
             self._provision_materials()
         except LinkError as exc:
             # Demo Slave may intentionally start while the public Host is down.
-            # HostLinkBackendRuntime calls on_hostlink_connected after reconnect.
+            # HostLinkBackend calls on_hostlink_connected after reconnect.
             logger.info("[HeatingDemo] 物料初始化等待 HostLink 重连：%s", exc)
         return True
 

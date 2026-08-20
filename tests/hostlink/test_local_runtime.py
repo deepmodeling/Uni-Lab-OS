@@ -7,10 +7,10 @@ import time
 import pytest
 import yaml
 
-from unilabos.basic.runtime import (
-    BasicDeviceNode,
-    BasicDriverSpec,
-    BasicRuntime,
+from unilabos.hostlink.local_runtime import (
+    HostLinkDeviceNode,
+    HostLinkDriverSpec,
+    HostLinkLocalRuntime,
     instantiate_driver,
 )
 from unilabos.device_runtime import BackendCapabilityError
@@ -203,7 +203,7 @@ def test_liquid_handlers_declare_public_backends_and_action_metadata() -> None:
         assert first_action["schema"]["type"] == "object"
 
 
-def test_basic_runtime_constructs_and_sets_up_pylabrobot_style_driver() -> None:
+def test_hostlink_runtime_constructs_and_sets_up_pylabrobot_style_driver() -> None:
     tracker = DeviceNodeResourceTracker()
     driver = instantiate_driver(
         LiquidHandlerAbstract,
@@ -212,10 +212,9 @@ def test_basic_runtime_constructs_and_sets_up_pylabrobot_style_driver() -> None:
         device_config=DeviceConfig(),
         resource_tracker=tracker,
     )
-    node = BasicDeviceNode(
+    node = HostLinkDeviceNode(
         driver,
         "liquid-handler",
-        backend_name="hostlink",
         resource_tracker=tracker,
     )
     node.start()
@@ -228,9 +227,9 @@ def test_basic_runtime_constructs_and_sets_up_pylabrobot_style_driver() -> None:
         node.stop()
 
 
-def test_basic_device_lifecycle_and_direct_action() -> None:
+def test_hostlink_device_lifecycle_and_direct_action() -> None:
     driver = AsyncDriver("dev-1", {})
-    node = BasicDeviceNode(driver, "dev-1")
+    node = HostLinkDeviceNode(driver, "dev-1")
     node.start()
     try:
         assert driver.node is node
@@ -241,9 +240,9 @@ def test_basic_device_lifecycle_and_direct_action() -> None:
     assert driver.cleaned is True
 
 
-def test_basic_runtime_owns_and_routes_devices() -> None:
-    runtime = BasicRuntime()
-    runtime.add_driver(BasicDriverSpec("dev-1", AsyncDriver, {"answer": 42}))
+def test_hostlink_runtime_owns_and_routes_devices() -> None:
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("dev-1", AsyncDriver, {"answer": 42}))
     runtime.start()
     try:
         assert runtime.call_action("dev-1", "add", left=10, right=5) == 15
@@ -252,10 +251,10 @@ def test_basic_runtime_owns_and_routes_devices() -> None:
     assert runtime.wait(timeout=0) is True
 
 
-def test_basic_runtime_routes_cross_device_actions() -> None:
-    runtime = BasicRuntime()
-    runtime.add_driver(BasicDriverSpec("caller", AsyncDriver, {}))
-    runtime.add_driver(BasicDriverSpec("target", AsyncDriver, {}))
+def test_hostlink_runtime_routes_cross_device_actions() -> None:
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("caller", AsyncDriver, {}))
+    runtime.add_driver(HostLinkDriverSpec("target", AsyncDriver, {}))
     runtime.start()
     try:
         assert (
@@ -272,10 +271,10 @@ def test_basic_runtime_routes_cross_device_actions() -> None:
         runtime.stop()
 
 
-def test_basic_runtime_awaits_cross_device_actions_natively() -> None:
-    runtime = BasicRuntime()
-    runtime.add_driver(BasicDriverSpec("caller", AsyncDriver, {}))
-    runtime.add_driver(BasicDriverSpec("target", AsyncDriver, {}))
+def test_hostlink_runtime_awaits_cross_device_actions_natively() -> None:
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("caller", AsyncDriver, {}))
+    runtime.add_driver(HostLinkDriverSpec("target", AsyncDriver, {}))
     runtime.start()
     try:
         result = asyncio.run(
@@ -292,10 +291,10 @@ def test_basic_runtime_awaits_cross_device_actions_natively() -> None:
         runtime.stop()
 
 
-def test_basic_runtime_exposes_registered_actions_and_status() -> None:
-    runtime = BasicRuntime()
+def test_hostlink_runtime_exposes_registered_actions_and_status() -> None:
+    runtime = HostLinkLocalRuntime()
     runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             "dev-1",
             AsyncDriver,
             {},
@@ -322,9 +321,9 @@ def test_basic_runtime_exposes_registered_actions_and_status() -> None:
         runtime.stop()
 
 
-def test_basic_runtime_supports_ros_shaped_timer_clock_and_parameters() -> None:
+def test_hostlink_runtime_supports_ros_shaped_timer_clock_and_parameters() -> None:
     driver = AsyncDriver("dev-1", {})
-    node = BasicDeviceNode(driver, "dev-1")
+    node = HostLinkDeviceNode(driver, "dev-1")
     fired = []
     node.start()
     try:
@@ -344,11 +343,11 @@ def test_basic_runtime_supports_ros_shaped_timer_clock_and_parameters() -> None:
         node.stop()
 
 
-def test_basic_runtime_routes_ros_shaped_services_between_devices() -> None:
-    runtime = BasicRuntime()
-    runtime.add_driver(BasicDriverSpec("provider", ServiceDriver, {"provider": True}))
+def test_hostlink_runtime_routes_ros_shaped_services_between_devices() -> None:
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("provider", ServiceDriver, {"provider": True}))
     runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             "caller",
             ServiceDriver,
             {},
@@ -363,10 +362,10 @@ def test_basic_runtime_routes_ros_shaped_services_between_devices() -> None:
         runtime.stop()
 
 
-def test_basic_runtime_exposes_action_metadata() -> None:
-    runtime = BasicRuntime()
+def test_hostlink_runtime_exposes_action_metadata() -> None:
+    runtime = HostLinkLocalRuntime()
     runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             "dev-1",
             AsyncDriver,
             {},
@@ -390,10 +389,10 @@ def test_basic_runtime_exposes_action_metadata() -> None:
     }
 
 
-def _decorated_runtime() -> BasicRuntime:
-    runtime = BasicRuntime("hostlink")
+def _decorated_runtime() -> HostLinkLocalRuntime:
+    runtime = HostLinkLocalRuntime()
     runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             "decorated",
             DecoratedRuntimeDriver,
             {},
@@ -435,7 +434,7 @@ def _decorated_runtime() -> BasicRuntime:
     return runtime
 
 
-def test_basic_runtime_applies_action_goal_mapping_and_feedback_config() -> None:
+def test_hostlink_runtime_applies_action_goal_mapping_and_feedback_config() -> None:
     runtime = _decorated_runtime()
     runtime.start()
     feedback: list[dict[str, int]] = []
@@ -465,7 +464,7 @@ def test_basic_runtime_applies_action_goal_mapping_and_feedback_config() -> None
         runtime.stop()
 
 
-def test_basic_runtime_resolves_resource_slot_before_driver_call() -> None:
+def test_hostlink_runtime_resolves_resource_slot_before_driver_call() -> None:
     from pylabrobot.resources import Resource
 
     runtime = _decorated_runtime()
@@ -483,7 +482,7 @@ def test_basic_runtime_resolves_resource_slot_before_driver_call() -> None:
         runtime.stop()
 
 
-def test_basic_runtime_honors_topic_config_period_and_name() -> None:
+def test_hostlink_runtime_honors_topic_config_period_and_name() -> None:
     runtime = _decorated_runtime()
     received: list[int] = []
     runtime.topic_bus.subscribe(
@@ -502,7 +501,7 @@ def test_basic_runtime_honors_topic_config_period_and_name() -> None:
         runtime.stop()
 
 
-def test_basic_runtime_does_not_queue_scheduler_dispatched_actions() -> None:
+def test_hostlink_runtime_does_not_queue_scheduler_dispatched_actions() -> None:
     runtime = _decorated_runtime()
     runtime.start()
     try:
@@ -525,10 +524,10 @@ def test_basic_runtime_does_not_queue_scheduler_dispatched_actions() -> None:
         runtime.stop()
 
 
-def test_basic_runtime_reports_direct_ros_node_calls_clearly() -> None:
-    runtime = BasicRuntime("hostlink")
+def test_hostlink_runtime_reports_direct_ros_node_calls_clearly() -> None:
+    runtime = HostLinkLocalRuntime()
     runtime.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             "ros-guard",
             RosGuardConditionDriver,
             {},

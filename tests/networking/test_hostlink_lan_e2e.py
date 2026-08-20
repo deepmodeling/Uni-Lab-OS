@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 
-from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.hostlink.backend import HostLinkBackendRuntime
+from unilabos.hostlink.backend import HostLinkBackend
 
 from tests.networking.hostlink_lan_virtual_devices import (
     HOST_NODE_ID,
@@ -246,9 +246,9 @@ def test_readme_lan_demo_actual_drivers_close_the_hostlink_loop(
     monkeypatch.setattr(BasicConfig, "machine_name", "readme-lan-demo")
     monkeypatch.setattr(BasicConfig, "slave_no_host", False)
 
-    host_local = BasicRuntime("hostlink")
+    host_local = HostLinkLocalRuntime()
     hub = host_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="hub_node",
             driver_class=HubNodeDemo,
             config={"sub_device": "sub_reporter", "terminate_after": 3},
@@ -256,9 +256,9 @@ def test_readme_lan_demo_actual_drivers_close_the_hostlink_loop(
             status_names=("received_count", "terminations", "last_action"),
         )
     )
-    slave_local = BasicRuntime("hostlink")
+    slave_local = HostLinkLocalRuntime()
     reporter = slave_local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="sub_reporter",
             driver_class=StatusReporterDemo,
             config={
@@ -271,8 +271,8 @@ def test_readme_lan_demo_actual_drivers_close_the_hostlink_loop(
             status_names=("counter", "heartbeat", "state"),
         )
     )
-    host = HostLinkBackendRuntime(host_local, is_slave=False)
-    slave = HostLinkBackendRuntime(slave_local, is_slave=True)
+    host = HostLinkBackend(host_local, is_slave=False)
+    slave = HostLinkBackend(slave_local, is_slave=True)
     host.start()
     assert host.server is not None
     HostLinkConfig.port = host.server.port

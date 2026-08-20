@@ -7,7 +7,7 @@ function names for embedders, but delegate every operation to
 ``unilabos.server.scheduler.host_network``.
 
 The direct ``hostlink`` backend does not use this facade; its
-``HostLinkBackendRuntime`` owns the transport that executes Python drivers.
+``HostLinkBackend`` owns the transport that executes Python drivers.
 """
 
 from __future__ import annotations

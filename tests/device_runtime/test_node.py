@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from unilabos.basic.runtime import BasicDeviceNode, BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkDeviceNode, HostLinkLocalRuntime
 from unilabos.device_runtime import (
     ActionCancelled,
     ActionContext,
@@ -19,8 +19,8 @@ class Driver:
     pass
 
 
-def test_basic_node_implements_backend_neutral_contract() -> None:
-    node = BasicDeviceNode(Driver(), "device-1", backend_name="hostlink")
+def test_hostlink_node_implements_backend_neutral_contract() -> None:
+    node = HostLinkDeviceNode(Driver(), "device-1")
 
     assert isinstance(node, DeviceNode)
     assert node.backend_name == "hostlink"
@@ -28,7 +28,7 @@ def test_basic_node_implements_backend_neutral_contract() -> None:
 
 
 def test_status_listeners_receive_backend_neutral_updates() -> None:
-    node = BasicDeviceNode(Driver(), "device-1")
+    node = HostLinkDeviceNode(Driver(), "device-1")
     received = []
     node.add_status_listener(
         lambda device_id, name, value: received.append((device_id, name, value))
@@ -58,19 +58,19 @@ def test_action_context_carries_feedback_and_cancellation() -> None:
 
 
 def test_missing_resource_transport_fails_explicitly() -> None:
-    node = BasicDeviceNode(Driver(), "device-1", backend_name="hostlink")
+    node = HostLinkDeviceNode(Driver(), "device-1")
 
     with pytest.raises(BackendCapabilityError, match="hostlink"):
         asyncio.run(node.update_resource([]))
 
 
 def test_runtime_propagates_selected_backend_to_nodes() -> None:
-    runtime = BasicRuntime(backend_name="hostlink")
+    runtime = HostLinkLocalRuntime()
     assert runtime.backend_name == "hostlink"
 
 
 def test_run_async_func_uses_current_backend_and_executes_once() -> None:
-    node = BasicDeviceNode(Driver(), "device-1", backend_name="hostlink")
+    node = HostLinkDeviceNode(Driver(), "device-1")
     calls = []
     traced = []
 
@@ -94,7 +94,7 @@ def test_run_async_func_uses_current_backend_and_executes_once() -> None:
 
 
 def test_run_async_func_propagates_error_to_future_and_trace_callback() -> None:
-    node = BasicDeviceNode(Driver(), "device-1", backend_name="hostlink")
+    node = HostLinkDeviceNode(Driver(), "device-1")
     traced = []
 
     async def operation() -> None:

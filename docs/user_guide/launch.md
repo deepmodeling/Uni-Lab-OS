@@ -160,8 +160,8 @@ unilab -g slave.json --backend hostlink --is-slave \
 unilab -g graph.json --backend ros2
 ```
 
-`BasicRuntime` 仍作为 HostLink 内部的本地 Python 驱动执行引擎，但不能通过
-`--backend basic` 独立选择。Dora 代码仅保留作实验，不属于公开部署 backend。
+HostLink 的本地 Python 驱动执行器已归入 `unilabos.hostlink`，不存在可通过
+`--backend basic` 选择的独立 backend。Dora 代码仅保留作实验，不属于公开部署 backend。
 旧名称 `simple`、`ros` 以及 `basic`、`dora` 都不会被 CLI 接受。
 
 ## 端云通信与 `--legacy`

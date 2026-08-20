@@ -279,7 +279,7 @@ Material 必有的公共字段；前端必须容忍它缺失。代码中没有
 
 ### 6.1 设备描述和 Action Schema
 
-HostLink/Basic 描述符由 `BasicDeviceNode.describe()` 产生：
+HostLink 描述符由 `HostLinkDeviceNode.describe()` 产生：
 
 ```json
 {

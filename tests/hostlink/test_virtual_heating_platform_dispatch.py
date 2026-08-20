@@ -4,11 +4,11 @@ import threading
 import time
 import uuid
 
-from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
+from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig
 from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
-from unilabos.hostlink.backend import HostLinkBackendRuntime
+from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
 from unilabos.legacy_support.websocket import QueueItem
 from unilabos.server.scheduler.backend import JobExecutionBackend
@@ -65,9 +65,9 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
     material_service = MaterialsService(tmp_path / "materials.db")
     set_materials_gateway(LocalMaterialsClient(material_service))
     device_state = DeviceStateStore(str(tmp_path / "device-state.db"))
-    local = BasicRuntime("hostlink")
+    local = HostLinkLocalRuntime()
     physical_node = local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="physical-heater",
             driver_class=PhysicalHeater,
             config={},
@@ -75,7 +75,7 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
         )
     )
     local.add_driver(
-        BasicDriverSpec(
+        HostLinkDriverSpec(
             device_id="virtual-heater",
             driver_class=VirtualHeatingPlatform,
             config={"update_interval_s": 0.05},
@@ -93,7 +93,7 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
             ),
         )
     )
-    runtime = HostLinkBackendRuntime(local, is_slave=False)
+    runtime = HostLinkBackend(local, is_slave=False)
     recording = RecordingBridge()
     backend = JobExecutionBackend(
         device_state_store=device_state,

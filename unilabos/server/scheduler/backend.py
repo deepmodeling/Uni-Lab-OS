@@ -14,8 +14,8 @@
   调度器不感知 HostNode/DeviceActionManager。
 - 对执行适配器：实现 bridge 形状（``publish_job_status`` / ``publish_device_status``），
   注册进 adapter bridges 即可接收执行回报与设备属性更新；与
-  ws_client.WebSocketClient 同款接口，两条链路可并存。
-- 设备锁队列直接复用 ws_client.DeviceActionManager（其不依赖 WS 连接）。
+  legacy_support.websocket.LegacyWebSocketClient 同款接口，两条链路可并存。
+- 设备锁队列直接复用 legacy_support.websocket.DeviceActionManager（其不依赖 WS 连接）。
 - 设备状态归本微后端管：属性更新经 worker 串行写入独立的
   DeviceStateStore（SQLite WAL，与物料/工作流库分开），并向监控总线
   device 通道发 device_property 事件。
@@ -34,14 +34,14 @@ import uuid
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
-from unilabos.server.scheduler.dispatch import DispatchPayload
-from unilabos.app.ws_client import (
+from unilabos.legacy_support.websocket import (
     DeviceActionManager,
     JobInfo,
     JobStatus,
     QueueItem,
     format_job_log,
 )
+from unilabos.server.scheduler.dispatch import DispatchPayload
 from unilabos.registry.action_policy import (
     SUCCESS_TYPE_OPERATOR_INTERVENTION,
     resolve_error_options_by_names,

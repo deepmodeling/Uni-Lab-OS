@@ -291,13 +291,12 @@ def cleanup_for_restart() -> bool:
     # Step 4: Reset communication client singleton
     print_status("[Restart] Step 4: Resetting singletons...", "info")
     try:
-        from unilabos.app import communication
+        from unilabos.server.backend.session import BackendSessionFactory
 
-        if hasattr(communication, "_communication_client"):
-            communication._communication_client = None
-            print_status("[Restart] Communication client singleton reset", "info")
+        BackendSessionFactory.reset_client()
+        print_status("[Restart] Backend session singleton reset", "info")
     except Exception as e:
-        print_status(f"[Restart] Error resetting communication singleton: {e}", "warning")
+        print_status(f"[Restart] Error resetting backend session singleton: {e}", "warning")
 
     # Step 5: Wait for threads to finish
     print_status("[Restart] Step 5: Waiting for threads to finish...", "info")

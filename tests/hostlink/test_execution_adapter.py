@@ -15,12 +15,12 @@ from unilabos.app.execution_adapter import (
 )
 from unilabos.server.scheduler.backend import JobExecutionBackend
 from unilabos.app.web.utils.host_utils import get_host_node_info
-from unilabos.app.ws_client import QueueItem, WebSocketClient
 from unilabos.basic.runtime import BasicDriverSpec, BasicRuntime
 from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.action import ActionContext
 from unilabos.hostlink.backend import HostLinkBackendRuntime
 from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
+from unilabos.legacy_support.websocket import LegacyWebSocketClient, QueueItem
 from unilabos.registry.action_policy import normalize_error_policy
 
 
@@ -413,7 +413,7 @@ def test_hostlink_injects_declared_system_sample_parameter(execution_stack) -> N
 
 def test_websocket_reports_hostlink_devices_and_action_locks(execution_stack) -> None:
     _adapter, _microbackend, _driver, _bridge = execution_stack
-    client = WebSocketClient()
+    client = LegacyWebSocketClient()
     messages: list[dict[str, Any]] = []
     client.is_disabled = False
     client.is_connected = lambda: True  # type: ignore[method-assign]

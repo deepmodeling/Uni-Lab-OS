@@ -175,34 +175,16 @@ class BackendSessionFactory:
         logger.info("[BackendSession] Client cache reset")
 
 
-def get_communication_client() -> BaseBackendClient:
-    """
-    获取通信客户端实例的便捷函数
-
-    Returns:
-        通信客户端实例
-    """
-    return BackendSessionFactory.get_client()
-
-
 def get_backend_client() -> BaseBackendClient:
     """返回当前 Backend 会话客户端。"""
 
     return BackendSessionFactory.get_client()
 
 
-# 应用层旧名称暂时保留为导入别名；它不代表旧 Backend 线协议。
-BaseCommunicationClient = BaseBackendClient
-CommunicationClientFactory = BackendSessionFactory
-
-
 __all__ = [
     "APP_BRIDGES",
     "BackendSessionFactory",
     "BaseBackendClient",
-    "BaseCommunicationClient",
     "COMMUNICATION_PROTOCOL",
-    "CommunicationClientFactory",
     "get_backend_client",
-    "get_communication_client",
 ]

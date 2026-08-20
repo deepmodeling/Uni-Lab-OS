@@ -6,7 +6,7 @@ from queue import Queue
 
 import pytest
 
-from unilabos.app.ws_client import (
+from unilabos.legacy_support.websocket import (
     DeviceActionManager,
     JobInfo,
     JobStatus,
@@ -642,7 +642,7 @@ def test_operator_intervention_replaces_effective_result_but_keeps_raw_failure()
 
 
 def test_websocket_release_requires_scheduler_update(monkeypatch):
-    import unilabos.app.ws_client as ws_module
+    import unilabos.legacy_support.websocket as ws_module
 
     host = FakeHostDecisionNode()
     decision_id = _begin_pending(host)

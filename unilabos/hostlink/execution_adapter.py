@@ -27,7 +27,7 @@ from unilabos.utils import logger
 from unilabos.utils.type_check import serialize_result_info
 
 if TYPE_CHECKING:
-    from unilabos.app.ws_client import QueueItem
+    from unilabos.legacy_support.websocket import QueueItem
 
 
 @dataclass
@@ -297,7 +297,12 @@ class HostLinkExecutionAdapter:
         if item.device_id not in self.devices_names:
             raise KeyError(f"未知 HostLink 设备：{item.device_id}")
 
-        if BasicConfig.test_mode:
+        local_node = self.runtime.local.devices.get(item.device_id)
+        run_simulator = bool(
+            local_node is not None
+            and getattr(local_node.driver, "run_in_test_mode", False) is True
+        )
+        if BasicConfig.test_mode and not run_simulator:
             result = self._build_test_mode_return(
                 item.device_id,
                 item.action_name,

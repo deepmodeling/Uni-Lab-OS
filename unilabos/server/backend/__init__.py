@@ -4,7 +4,6 @@ from unilabos.server.backend.http import BackendHTTPClient, BackendHTTPError
 from unilabos.server.backend.session import (
     BackendSessionFactory,
     BaseBackendClient,
-    BaseCommunicationClient,
     get_backend_client,
 )
 from unilabos.server.backend.websocket import BackendWebSocketClient
@@ -15,6 +14,5 @@ __all__ = [
     "BackendSessionFactory",
     "BackendWebSocketClient",
     "BaseBackendClient",
-    "BaseCommunicationClient",
     "get_backend_client",
 ]

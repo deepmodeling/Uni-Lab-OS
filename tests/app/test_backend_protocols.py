@@ -6,16 +6,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from unilabos.app.communication import (
+from unilabos.server.backend.session import (
     APP_BRIDGES,
+    BackendSessionFactory,
     COMMUNICATION_PROTOCOL,
-    CommunicationClientFactory,
 )
 from unilabos.app.cli.parser import build_parser
 from unilabos.app.cli.router import run_package_command
 from unilabos.app.main import main as app_main
 from unilabos.app.web.client import HTTPClient
-from unilabos.app.ws_client import MessageProcessor, WebSocketClient
 from unilabos.config.config import BasicConfig, _update_config_from_module
 from unilabos.device_runtime.resource import AuthorityResourceService
 from unilabos.legacy_support import configure_legacy_support
@@ -24,7 +23,7 @@ from unilabos.legacy_support.http import (
     get_legacy_http_client,
     reset_legacy_http_client,
 )
-from unilabos.legacy_support.websocket import LegacyWebSocketClient
+from unilabos.legacy_support.websocket import LegacyWebSocketClient, MessageProcessor
 from unilabos.server.backend.websocket import BackendWebSocketClient
 
 
@@ -90,11 +89,11 @@ class _Session:
 
 @pytest.fixture(autouse=True)
 def _reset_legacy_mode():
-    CommunicationClientFactory.reset_client()
+    BackendSessionFactory.reset_client()
     reset_legacy_http_client()
     configure_legacy_support(False)
     yield
-    CommunicationClientFactory.reset_client()
+    BackendSessionFactory.reset_client()
     reset_legacy_http_client()
     configure_legacy_support(False)
 
@@ -116,12 +115,11 @@ def test_removed_transport_fields_are_not_loaded_from_config() -> None:
 
 
 def test_factory_selects_legacy_payload_only_from_global_switch() -> None:
-    control = CommunicationClientFactory.create_client()
+    control = BackendSessionFactory.create_client()
     configure_legacy_support(True)
-    legacy = CommunicationClientFactory.create_client()
+    legacy = BackendSessionFactory.create_client()
     assert isinstance(control, BackendWebSocketClient)
     assert isinstance(legacy, LegacyWebSocketClient)
-    assert isinstance(legacy, WebSocketClient)
 
 
 def test_cli_exposes_only_legacy_compatibility_switch() -> None:

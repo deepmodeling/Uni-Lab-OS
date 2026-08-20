@@ -416,7 +416,7 @@ class MessageProcessor:
         """设置队列处理器引用"""
         self.queue_processor = queue_processor
 
-    def set_websocket_client(self, websocket_client: "WebSocketClient"):
+    def set_websocket_client(self, websocket_client: "LegacyWebSocketClient"):
         """设置WebSocket客户端引用"""
         self.websocket_client = websocket_client
 
@@ -1238,7 +1238,7 @@ class QueueProcessor:
 
         logger.trace("[QueueProcessor] Initialized")
 
-    def set_websocket_client(self, websocket_client: "WebSocketClient"):
+    def set_websocket_client(self, websocket_client: "LegacyWebSocketClient"):
         """设置WebSocket客户端引用"""
         self.websocket_client = websocket_client
 
@@ -1372,7 +1372,7 @@ class QueueProcessor:
             self.websocket_client.publish_action_lock(device_id, action_name, free=True)
 
 
-class WebSocketClient(BaseBackendClient):
+class LegacyWebSocketClient(BaseBackendClient):
     """
     重构后的WebSocket客户端 v2
 
@@ -1877,7 +1877,3 @@ class WebSocketClient(BaseBackendClient):
         self.report_all_action_locks()
         self.message_processor.send_message(message)
         logger.info(f"[WebSocketClient] Host node ready signal published with {len(devices)} devices")
-
-
-# 语义化名称供 --legacy 工厂使用；旧名称继续保留给第三方扩展。
-LegacyWebSocketClient = WebSocketClient

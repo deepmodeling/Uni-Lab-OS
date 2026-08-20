@@ -31,7 +31,7 @@ from unilabos.registry.placeholder_type import (
     PLACEHOLDER_DEDUCT_REAGENT,
 )
 from unilabos.registry.registry import lab_registry
-from unilabos.resources.container import RegularContainer
+from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.graphio import initialize_resource
 from unilabos.resources.materials import apply_substances
 from unilabos.resources.objects.resource import ResourceDictType
@@ -61,7 +61,7 @@ from unilabos.config.config import BasicConfig
 from unilabos.app.execution_adapter import execution_result_bridges
 
 if TYPE_CHECKING:
-    from unilabos.app.ws_client import QueueItem
+    from unilabos.legacy_support.websocket import QueueItem
 
 
 @dataclass
@@ -1484,9 +1484,9 @@ class HostNode(BaseROS2DeviceNode):
             send_timestamp = time.time()
 
             # 发送ping
-            from unilabos.app.communication import get_communication_client
+            from unilabos.server.backend.session import get_backend_client
 
-            comm_client = get_communication_client()
+            comm_client = get_backend_client()
             comm_client.send_ping(ping_id, send_timestamp)
 
             # 等待pong响应

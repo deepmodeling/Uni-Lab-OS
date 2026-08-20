@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import unilabos.app.ws_client as ws_module
+import unilabos.legacy_support.websocket as ws_module
 from unilabos.server.scheduler.api import create_scheduler_router
 from unilabos.server.scheduler.backend import JobExecutionBackend
 from unilabos.server.scheduler.inventory.service import InventoryService
@@ -20,7 +20,7 @@ from unilabos.server.scheduler.service import EdgeScheduler
 from unilabos.server.scheduler.status_incidents import StatusIncidentManager
 from unilabos.app.web.event_bus import monitor_bus as host_monitor_bus
 from unilabos.server.workflow.api import install_workflow_api
-from unilabos.app.ws_client import DeviceActionManager, MessageProcessor
+from unilabos.legacy_support.websocket import DeviceActionManager, MessageProcessor
 from unilabos.server.workflow.models import WorkflowNodeWrite
 from unilabos.server.workflow.service import WorkflowService
 from unilabos.server.workflow.store import WorkflowStore

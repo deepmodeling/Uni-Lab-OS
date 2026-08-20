@@ -1,12 +1,12 @@
-"""后端控制命令只能经 ws_client 进入执行微后端。"""
+"""后端控制命令只能经 legacy WebSocket 实现进入执行微后端。"""
 
 from __future__ import annotations
 
 import asyncio
 from queue import Queue
 
-from unilabos.app import ws_client as ws_module
-from unilabos.app.ws_client import DeviceActionManager, MessageProcessor
+import unilabos.legacy_support.websocket as ws_module
+from unilabos.legacy_support.websocket import DeviceActionManager, MessageProcessor
 
 
 class _Microbackend:

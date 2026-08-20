@@ -14,19 +14,3 @@ OTDeck:
     path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/opentrons_liquid_handler/macro_device.xacro
     type: device
   version: 1.0.0
-hplc_station:
-  category:
-  - deck
-  class:
-    module: unilabos.devices.resource_container.container:DeckContainer
-    type: python
-  description: hplc_station deck
-  displayname: hplc_station
-  handles: []
-  icon: ''
-  init_param_schema: {}
-  model:
-    mesh: hplc_station
-    path: https://leap-lab.oss-cn-zhangjiakou.aliyuncs.com/uni-lab/devices/hplc_station/macro_device.xacro
-    type: device
-  version: 1.0.0

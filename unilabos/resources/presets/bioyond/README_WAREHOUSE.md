@@ -168,7 +168,7 @@ def bioyond_warehouse_5x3x1(name: str, row_offset: int = 0) -> WareHouse:
 **2️⃣ 更新 Deck 配置** - [`decks.py`](decks.py)
 
 ```python
-from unilabos.resources.bioyond.YB_warehouses import (
+from unilabos.resources.presets.bioyond.YB_warehouses import (
     bioyond_warehouse_5x3x1,  # 新增导入
 )
 
@@ -370,7 +370,7 @@ def bioyond_warehouse_3x4x1(name: str) -> WareHouse:
 
 ```python
 # 1. 导入函数
-from unilabos.resources.bioyond.YB_warehouses import (
+from unilabos.resources.presets.bioyond.YB_warehouses import (
     bioyond_warehouse_3x4x1,  # 新增
 )
 

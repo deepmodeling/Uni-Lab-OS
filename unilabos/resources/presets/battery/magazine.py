@@ -5,7 +5,7 @@ from pylabrobot.resources.coordinate import Coordinate
 from pylabrobot.resources import Resource, ResourceStack, ItemizedResource
 from pylabrobot.resources.carrier import create_homogeneous_resources
 
-from unilabos.resources.battery.electrode_sheet import (
+from unilabos.resources.presets.battery.electrode_sheet import (
     PositiveCan, PositiveElectrode,
     NegativeCan, NegativeElectrode,
     SpringWasher, FlatWasher,

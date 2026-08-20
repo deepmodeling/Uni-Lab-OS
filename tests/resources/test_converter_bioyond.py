@@ -3,11 +3,17 @@ import json
 import os
 from pathlib import Path
 
-from pylabrobot.resources import Resource as ResourcePLR
-from unilabos.resources.graphio import resource_bioyond_to_plr
+from unilabos.resources.graphio import (
+    resource_bioyond_to_plr,
+    resource_plr_to_bioyond,
+)
 from unilabos.registry.registry import lab_registry
 
-from unilabos.resources.bioyond.decks import BIOYOND_PolymerReactionStation_Deck
+from unilabos.resources.presets.bioyond.bottle_carriers import (
+    BIOYOND_PolymerStation_1BottleCarrier,
+    BIOYOND_PolymerStation_6StockCarrier,
+)
+from unilabos.resources.presets.bioyond.decks import BIOYOND_PolymerReactionStation_Deck
 
 lab_registry.setup()
 
@@ -72,3 +78,38 @@ def test_bioyond_to_plr(materials_fixture, request, tmp_path) -> list[dict]:
     print([resource.serialize_all_state() for resource in output])
     with (tmp_path / "test.json").open("w", encoding="utf-8") as f:
         json.dump(deck.serialize(), f, indent=4)
+
+
+def test_plr_to_bioyond_reads_occupants_from_resource_holders():
+    carrier = BIOYOND_PolymerStation_6StockCarrier("carrier")
+    outbound_mapping = {
+        "BIOYOND_PolymerStation_6StockCarrier": ("样品板", "carrier-type"),
+        "BIOYOND_PolymerStation_Liquid_Vial": ("10%分装小瓶", "liquid-type"),
+        "BIOYOND_PolymerStation_Solid_Vial": ("90%分装小瓶", "solid-type"),
+    }
+
+    result = resource_plr_to_bioyond([carrier], type_mapping=outbound_mapping)
+
+    assert len(result) == 1
+    assert [(item["x"], item["y"], item["z"]) for item in result[0]["details"]] == [
+        (1, 1, 1),
+        (2, 1, 1),
+        (1, 2, 1),
+        (2, 2, 1),
+        (1, 3, 1),
+        (2, 3, 1),
+    ]
+
+
+def test_plr_to_bioyond_single_site_carrier_uses_holder_resource():
+    carrier = BIOYOND_PolymerStation_1BottleCarrier("carrier")
+    carrier[0].resource.tracker.liquids = [("water", 5)]
+    outbound_mapping = {
+        "BIOYOND_PolymerStation_1BottleCarrier": ("试剂瓶", "carrier-type"),
+    }
+
+    result = resource_plr_to_bioyond([carrier], type_mapping=outbound_mapping)
+
+    assert result[0]["typeId"] == "carrier-type"
+    assert result[0]["name"] == "water"
+    assert result[0]["quantity"] == 5

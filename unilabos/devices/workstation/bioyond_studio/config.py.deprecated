@@ -4,7 +4,7 @@ Bioyond工作站配置文件
 包含API配置、工作流映射、物料类型映射、仓库库位映射等所有配置信息
 """
 
-from unilabos.resources.bioyond.decks import BIOYOND_PolymerReactionStation_Deck
+from unilabos.resources.presets.bioyond.decks import BIOYOND_PolymerReactionStation_Deck
 
 # ============================================================================
 # 基础配置

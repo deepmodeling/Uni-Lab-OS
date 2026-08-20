@@ -11,8 +11,8 @@ from pylabrobot.resources import ResourceHolder
 from unilabos_msgs.msg import Resource
 
 from unilabos.config.config import BasicConfig
-from unilabos.resources.container import RegularContainer
-from unilabos.resources.itemized_carrier import ItemizedCarrier, BottleCarrier
+from unilabos.resources.presets.container import RegularContainer
+from unilabos.resources.presets.itemized_carrier import BottleCarrier, ItemizedCarrier
 from unilabos.resources.objects.joint_state import ResourceJointState
 from unilabos.resources.objects.pose import (
     ResourceDictPosition,
@@ -998,7 +998,12 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
 
         # 处理子物料（detail）
         if material.get("detail") and len(material["detail"]) > 0:
-            for bottle in reversed(plr_material.children):
+            existing_resources = (
+                plr_material.get_resources()
+                if isinstance(plr_material, ItemizedCarrier)
+                else list(plr_material.children)
+            )
+            for bottle in reversed(existing_resources):
                 plr_material.unassign_child_resource(bottle)
             child_ids = []
 
@@ -1055,7 +1060,13 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
         else:
             # 只对有 capacity 属性的容器（液体容器）处理液体追踪
             if hasattr(plr_material, 'capacity'):
-                bottle = plr_material[0] if plr_material.capacity > 0 else plr_material
+                first_item = plr_material[0] if plr_material.capacity > 0 else plr_material
+                bottle = (
+                    first_item.resource
+                    if isinstance(first_item, ResourceHolder)
+                    and first_item.resource is not None
+                    else first_item
+                )
                 bottle.tracker.liquids = [
                     (material["name"], float(material.get("quantity", 0)) if material.get("quantity") else 0)
                 ]
@@ -1129,43 +1140,43 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                         # - Bioyond的y(1=01,2=02,3=03)对应warehouse的行(row, y方向)，从下到上
                         # vertical-col-major 中: row=0 对应底部，row=n-1 对应顶部
                         # Bioyond y=1(01) 对应底部 → row=0, y=2(02) 对应中间 → row=1
-                        # 索引计算: idx = row * num_cols + col
                         col_idx = x - 1  # Bioyond的x(A,B) → col索引(0,1)
                         row_idx = y - 1  # Bioyond的y(01,02,03) → row索引(0,1,2)
                         layer_idx = z - 1
 
-                        idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + row_idx * warehouse.num_items_y + col_idx
-                        logger.debug(f"🔍 竖向warehouse {wh_name}: Bioyond(x={x},y={y},z={z}) → warehouse(col={col_idx},row={row_idx},layer={layer_idx}) → idx={idx}, capacity={warehouse.capacity}")
-
                     # 普通横向warehouse的处理
                     else:
-                        # 多行warehouse: 根据 layout 使用不同的索引计算
                         row_idx = x - 1  # x表示行: 转为0-based
                         col_idx = y - 1  # y表示列: 转为0-based
                         layer_idx = z - 1  # 转为0-based
 
-                        # 检查 warehouse 的排序方式属性
-                        ordering_layout = getattr(warehouse, 'ordering_layout', 'col-major')
-                        logger.debug(f"🔍 Warehouse {wh_name} layout检测: hasattr={hasattr(warehouse, 'ordering_layout')}, ordering_layout值='{ordering_layout}', warehouse类型={type(warehouse).__name__}")
-
-                        if ordering_layout == "row-major":
-                            # 行优先: A01,A02,A03,A04, B01,B02,B03,B04 (所有Bioyond堆栈)
-                            # 索引计算: idx = (row) * num_cols + (col) + (layer) * (rows * cols)
-                            idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + row_idx * warehouse.num_items_x + col_idx
-                            logger.debug(f"行优先warehouse {wh_name}: x={x}(行),y={y}(列) → row={row_idx},col={col_idx} → idx={idx}")
-                        else:
-                            # 列优先 (后备): A01,B01,C01,D01, A02,B02,C02,D02
-                            # 索引计算: idx = (col) * num_rows + (row) + (layer) * (rows * cols)
-                            idx = layer_idx * (warehouse.num_items_x * warehouse.num_items_y) + col_idx * warehouse.num_items_y + row_idx
-                            logger.debug(f"列优先warehouse {wh_name}: x={x}(行),y={y}(列) → row={row_idx},col={col_idx} → idx={idx}")
-
-                    if 0 <= idx < warehouse.capacity:
-                        if warehouse[idx] is None or isinstance(warehouse[idx], ResourceHolder):
-                            # 物料尺寸已在放入warehouse前根据需要进行了交换
-                            warehouse[idx] = plr_material
-                            logger.debug(f"✅ 物料 {unique_name} 放置到 {wh_name}[{idx}] (Bioyond坐标: x={loc.get('x')}, y={loc.get('y')})")
-                    else:
-                        logger.warning(f"❌ 物料 {unique_name} 的索引 {idx} 超出仓库 {wh_name} 容量 {warehouse.capacity}")
+                    try:
+                        holder = warehouse.get_site_by_layer_position(
+                            row=row_idx,
+                            col=col_idx,
+                            layer=layer_idx,
+                        )
+                    except ValueError as exc:
+                        logger.warning(
+                            f"❌ 物料 {unique_name} 的位置不属于仓库 {wh_name}: {exc}"
+                        )
+                        continue
+                    if holder.resource is not None:
+                        logger.warning(
+                            f"❌ 仓库 {wh_name} 的位置 row={row_idx}, col={col_idx}, "
+                            f"layer={layer_idx} 已被 {holder.resource.name} 占用"
+                        )
+                        continue
+                    site_label = next(
+                        label
+                        for label, site_holder in warehouse._ordering.items()
+                        if site_holder is holder
+                    )
+                    warehouse[site_label] = plr_material
+                    logger.debug(
+                        f"✅ 物料 {unique_name} 放置到 {wh_name}[{site_label}] "
+                        f"(Bioyond坐标: x={loc.get('x')}, y={loc.get('y')}, z={loc.get('z')})"
+                    )
                 else:
                     if wh_name:
                         logger.warning(f"❌ 物料 {unique_name} 的warehouse '{wh_name}' 在deck中不存在。可用warehouses: {list(deck.warehouses.keys()) if hasattr(deck, 'warehouses') else '无'}")
@@ -1220,47 +1231,10 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                 logger.info(f"[PLR→Bioyond] 载架 '{resource.name}' (model: {resource.model}) 自带试剂瓶，不添加 details")
             else:
                 # 处理其他载架类型的子物料
-                for bottle in resource.children:
+                for bottle in resource.get_resources():
                     if isinstance(resource, ItemizedCarrier):
-                        # ⭐ 优化：直接使用 get_child_identifier 获取真实的子物料坐标
-                        # 这个方法会遍历 resource.children 找到 bottle 对象的实际位置
+                        # holder 保存槽位，物料坐标由载架的唯一 Site 映射返回。
                         site = resource.get_child_identifier(bottle)
-
-                        # 🔧 如果 get_child_identifier 失败或返回无效坐标 (0,0)
-                        # 这通常发生在子物料名称使用纯数字后缀时（如 "BTDA_0", "BTDA_4"）
-                        if not site or (site.get("x") == 0 and site.get("y") == 0):
-                            # 方法1: 尝试从名称中提取标识符并解析
-                            bottle_identifier = None
-                            if "_" in bottle.name:
-                                bottle_identifier = bottle.name.split("_")[-1]
-
-                            # 只有非纯数字标识符才尝试解析（如 "A1", "B2"）
-                            if bottle_identifier and not bottle_identifier.isdigit():
-                                try:
-                                    x_idx, y_idx, z_idx = resource._parse_identifier_to_indices(bottle_identifier, 0)
-                                    site = {"x": x_idx, "y": y_idx, "z": z_idx, "identifier": bottle_identifier}
-                                    logger.debug(f"  🔧 [坐标修正-方法1] 从名称 {bottle.name} 解析标识符 {bottle_identifier} → ({x_idx}, {y_idx})")
-                                except Exception as e:
-                                    logger.warning(f"  ⚠️ [坐标解析] 标识符 {bottle_identifier} 解析失败: {e}")
-
-                            # 方法2: 如果方法1失败，使用线性索引反推坐标
-                            if not site or (site.get("x") == 0 and site.get("y") == 0):
-                                # 找到bottle在children中的索引位置
-                                try:
-                                    # 遍历所有槽位找到bottle的实际位置
-                                    for idx in range(resource.num_items_x * resource.num_items_y):
-                                        if resource[idx] is bottle:
-                                            # 根据载架布局计算行列坐标
-                                            # ItemizedCarrier 默认是列优先布局 (A1,B1,C1,D1, A2,B2,C2,D2...)
-                                            col_idx = idx // resource.num_items_y  # 列索引 (0-based)
-                                            row_idx = idx % resource.num_items_y   # 行索引 (0-based)
-                                            site = {"x": col_idx, "y": row_idx, "z": 0, "identifier": str(idx)}
-                                            logger.debug(f"  🔧 [坐标修正-方法2] {bottle.name} 在索引 {idx} → 列={col_idx}, 行={row_idx}")
-                                            break
-                                except Exception as e:
-                                    logger.error(f"  ❌ [坐标计算失败] {bottle.name}: {e}")
-                                    # 最后的兜底：使用 (0,0)
-                                    site = {"x": 0, "y": 0, "z": 0, "identifier": ""}
                     else:
                         site = {"x": bottle.location.x - 1, "y": bottle.location.y - 1, "identifier": ""}
 
@@ -1302,14 +1276,24 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                         "quantity": sum(qty for _, qty, *_ in bottle.tracker.liquids) if hasattr(bottle, "tracker") else 0,
                         "x": bioyond_x,
                         "y": bioyond_y,
-                        "z": 1,
+                        "z": site.get("z", 0) + 1,
                         "unit": "微升",
                         "Parameters": "{}"  # API 实际要求的字段（必需）
                     }
                     material["details"].append(detail_item)
         else:
             # 单个瓶子(非载架)类型的资源
-            bottle = resource[0] if hasattr(resource, "capacity") and resource.capacity > 0 else resource
+            first_item = (
+                resource[0]
+                if hasattr(resource, "capacity") and resource.capacity > 0
+                else resource
+            )
+            bottle = (
+                first_item.resource
+                if isinstance(first_item, ResourceHolder)
+                and first_item.resource is not None
+                else first_item
+            )
 
             # 根据 resource.model 从 type_mapping 获取正确的 typeId
             type_info = type_mapping.get(resource.model)
@@ -1424,9 +1408,14 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
             else:
                 logger.warning(f"⚠️ [PLR→Bioyond] 未找到库位 {update_site} 的配置")
 
-        elif resource.parent is not None and isinstance(resource.parent, ItemizedCarrier):
+        elif (
+            resource.parent is not None
+            and isinstance(resource.parent, ResourceHolder)
+            and isinstance(resource.parent.parent, ItemizedCarrier)
+        ):
             # 情况2: 使用当前 parent 位置
-            site_in_parent = resource.parent.get_child_identifier(resource)
+            carrier_parent = resource.parent.parent
+            site_in_parent = carrier_parent.get_child_identifier(resource)
 
             # ⚠️ 坐标系转换说明:
             # get_child_identifier 返回: x_idx=列索引, y_idx=行索引 (0-based)
@@ -1437,16 +1426,16 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
 
             material["locations"] = [
                 {
-                    "id": warehouse_mapping[resource.parent.name]["site_uuids"][site_in_parent["identifier"]],
-                    "whid": warehouse_mapping[resource.parent.name]["uuid"],
-                    "whName": resource.parent.name,
+                    "id": warehouse_mapping[carrier_parent.name]["site_uuids"][site_in_parent["identifier"]],
+                    "whid": warehouse_mapping[carrier_parent.name]["uuid"],
+                    "whName": carrier_parent.name,
                     "x": bioyond_x,
                     "y": bioyond_y,
-                    "z": 1,
+                    "z": site_in_parent["z"] + 1,
                     "quantity": 0
                 }
             ]
-            logger.debug(f"🔄 [PLR→Bioyond] 坐标转换: {resource.name} 在 {resource.parent.name}[{site_in_parent['identifier']}] → UniLab(列={site_in_parent['x']},行={site_in_parent['y']}) → Bioyond(x={bioyond_x},y={bioyond_y})")
+            logger.debug(f"🔄 [PLR→Bioyond] 坐标转换: {resource.name} 在 {carrier_parent.name}[{site_in_parent['identifier']}] → UniLab(列={site_in_parent['x']},行={site_in_parent['y']},层={site_in_parent['z']}) → Bioyond(x={bioyond_x},y={bioyond_y},z={site_in_parent['z'] + 1})")
 
         bioyond_materials.append(material)
     return bioyond_materials

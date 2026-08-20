@@ -3,7 +3,7 @@ BIOYOND_PolymerStation_Flask:
   - bottles
   - flasks
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Flask
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_Flask
     type: pylabrobot
   description: 聚合站-烧杯容器
   displayname: BIOYOND_PolymerStation_Flask
@@ -15,7 +15,7 @@ BIOYOND_PolymerStation_Liquid_Vial:
   category:
   - bottles
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Liquid_Vial
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_Liquid_Vial
     type: pylabrobot
   displayname: BIOYOND_PolymerStation_Liquid_Vial
   handles: []
@@ -26,7 +26,7 @@ BIOYOND_PolymerStation_Measurement_Vial:
   category:
   - bottles
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Measurement_Vial
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_Measurement_Vial
     type: pylabrobot
   description: 聚合站-测量小瓶（测密度）
   displayname: BIOYOND_PolymerStation_Measurement_Vial
@@ -39,7 +39,7 @@ BIOYOND_PolymerStation_Reactor:
   - bottles
   - reactors
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Reactor
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_Reactor
     type: pylabrobot
   displayname: BIOYOND_PolymerStation_Reactor
   handles: []
@@ -50,7 +50,7 @@ BIOYOND_PolymerStation_Reagent_Bottle:
   category:
   - bottles
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Reagent_Bottle
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_Reagent_Bottle
     type: pylabrobot
   displayname: BIOYOND_PolymerStation_Reagent_Bottle
   handles: []
@@ -61,7 +61,7 @@ BIOYOND_PolymerStation_Solid_Stock:
   category:
   - bottles
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Solid_Stock
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_Solid_Stock
     type: pylabrobot
   displayname: BIOYOND_PolymerStation_Solid_Stock
   handles: []
@@ -72,7 +72,7 @@ BIOYOND_PolymerStation_Solid_Vial:
   category:
   - bottles
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Solid_Vial
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_Solid_Vial
     type: pylabrobot
   displayname: BIOYOND_PolymerStation_Solid_Vial
   handles: []
@@ -83,7 +83,7 @@ BIOYOND_PolymerStation_Solution_Beaker:
   category:
   - bottles
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_Solution_Beaker
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_Solution_Beaker
     type: pylabrobot
   displayname: BIOYOND_PolymerStation_Solution_Beaker
   handles: []
@@ -95,7 +95,7 @@ BIOYOND_PolymerStation_TipBox:
   - bottles
   - tip_boxes
   class:
-    module: unilabos.resources.bioyond.bottles:BIOYOND_PolymerStation_TipBox
+    module: unilabos.resources.presets.bioyond.bottles:BIOYOND_PolymerStation_TipBox
     type: pylabrobot
   displayname: BIOYOND_PolymerStation_TipBox
   handles: []

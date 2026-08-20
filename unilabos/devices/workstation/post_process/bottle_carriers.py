@@ -1,6 +1,6 @@
 from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d
 
-from unilabos.resources.itemized_carrier import BottleCarrier
+from unilabos.resources.presets.itemized_carrier import BottleCarrier
 from unilabos.devices.workstation.post_process.bottles import POST_PROCESS_PolymerStation_Reagent_Bottle
 
 # 命名约定：试剂瓶-Bottle，烧杯-Beaker，烧瓶-Flask,小瓶-Vial

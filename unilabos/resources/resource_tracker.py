@@ -5,39 +5,26 @@ from pydantic import BaseModel, Field, ValidationError
 from typing import List, Tuple, Any, Dict, Mapping, Optional, cast, TYPE_CHECKING, Union
 
 from unilabos.resources.objects.resource import (
-    EXTRA_CLASS,
     EXTRA_RESOURCE_CLASS,
     EXTRA_RESOURCE_JOINT_STATE,
     EXTRA_RESOURCE_META_DATA,
     EXTRA_RESOURCE_POSE,
-    EXTRA_SAMPLE_UUID,
     EXTRA_SITES,
-    EXTRA_UNILABOS_SAMPLE_UUID,
     FRONTEND_POSE_EXTRA,
-    PLR_CONFIG_ROOT_KEYS,
-    RESOURCE_ROOT_FIELDS,
     ResourceDict,
     ResourceDictType,
     assemble_tracker_state,
 )
-from unilabos.resources.objects.site import ResourceSite, ResourceSiteType
-from unilabos.resources.objects.sample import LabSample, SampleUUIDsType
+from unilabos.resources.objects.site import ResourceSite
 from unilabos.resources.objects.state import TRACKER_STATE_KEYS
 from unilabos.resources.plr_additional_res_reg import register
 from unilabos.resources.objects.pose import (
-    ResourceDictPosition,
     ResourceDictPositionObject,
-    ResourceDictPositionObjectType,
-    ResourceDictPositionScale,
-    ResourceDictPositionScaleType,
-    ResourceDictPositionSize,
     ResourceDictPositionSizeType,
-    ResourceDictPositionType,
 )
 from unilabos.utils.log import logger
 
 if TYPE_CHECKING:
-    from unilabos.devices.workstation.workstation_base import WorkstationBase
     from pylabrobot.resources import Resource as PLRResource
 
 
@@ -105,10 +92,15 @@ def get_plr_template_name(
         raise ValueError(
             f"资源 {resource.name} 的 extra.{EXTRA_RESOURCE_CLASS} 与序列化 template_name 冲突"
         )
+    explicit_template_name = extra_template_name or serialized_template_name
+    if explicit_template_name:
+        return str(explicit_template_name)
+    if getattr(resource, "parent", None) is not None:
+        # PLR 子项的 model 经常继承载具/容器型号（例如 TipSpot.model=Container），
+        # 它不是子项模板身份。组件模板统一按具体 class 命名，避免与根模板撞名。
+        return resource.__class__.__name__
     return str(
-        extra_template_name
-        or serialized_template_name
-        or serialized.get("model")
+        serialized.get("model")
         or getattr(resource, "model", None)
         or serialized.get("type")
         or resource.__class__.__name__
@@ -176,12 +168,12 @@ def _seed_random_plr_sites(resource: "PLRResource", owner_uuid: str) -> None:
     site_setter = getattr(resource, "set_resource_sites", None)
     child_locations = getattr(resource, "child_locations", None)
     child_size = getattr(resource, "child_size", None)
-    occupants = getattr(resource, "sites", None)
+    native_sites = getattr(resource, "sites", None)
     if (
         not callable(site_setter)
         or not isinstance(child_locations, dict)
         or not isinstance(child_size, dict)
-        or not isinstance(occupants, list)
+        or not isinstance(native_sites, (list, dict))
     ):
         return
 
@@ -192,11 +184,21 @@ def _seed_random_plr_sites(resource: "PLRResource", owner_uuid: str) -> None:
     if isinstance(invisible_slots, str):
         invisible_slots = [invisible_slots]
     draft_sites: List[ResourceSite] = []
+    site_values = (
+        list(native_sites.values())
+        if isinstance(native_sites, dict)
+        else list(native_sites)
+    )
     for ordinal, (site_index, location) in enumerate(child_locations.items()):
         label = str(site_index)
-        occupant = occupants[ordinal] if ordinal < len(occupants) else None
+        native_site = site_values[ordinal] if ordinal < len(site_values) else None
+        occupant = (
+            native_site.resource
+            if isinstance(native_site, ResourceHolder)
+            else native_site
+        )
         occupied_material_uuid = None
-        if occupant is not None and not isinstance(occupant, ResourceHolder):
+        if occupant is not None:
             occupied_material_uuid = getattr(occupant, "unilabos_uuid", "") or None
             if occupied_material_uuid is None:
                 occupied_material_uuid = str(uuid.uuid4())
@@ -1057,8 +1059,6 @@ class ResourceTreeSet(object):
                             "size_x",
                             "size_y",
                             "size_z",
-                            "cross_section_type",
-                            "bottom_type",
                         ]
                         if not old_size
                         else [
@@ -1069,8 +1069,6 @@ class ResourceTreeSet(object):
                             "parent_name",
                             "location",
                             "rotation",
-                            "cross_section_type",
-                            "bottom_type",
                         ]
                     )
                 },
@@ -2110,11 +2108,9 @@ class DeviceNodeResourceTracker(object):
         """
         # 从 resources 列表中移除
         resource_id = id(resource)
-        removed = False
         for i, r in enumerate(self.resources):
             if id(r) == resource_id:
                 self.resources.pop(i)
-                removed = True
                 break
 
         # 递归清除uuid映射
@@ -2283,7 +2279,7 @@ class DeviceNodeResourceTracker(object):
                 )
             )
         if issubclass(type(resource), target_resource_cls_type):
-            if type(resource) == dict:
+            if isinstance(resource, dict):
                 # 对于字典类型，直接检查 identifier_key
                 if identifier_key in resource:
                     if resource[identifier_key] == compare_value:
@@ -2345,7 +2341,7 @@ if __name__ == "__main__":
 
     # 2. 将 PLR 资源转换为 ResourceTreeSet
     resource_tree_set = ResourceTreeSet.from_plr_resources([original_plate])
-    print(f"\n2. 转换为 ResourceTreeSet:")
+    print("\n2. 转换为 ResourceTreeSet:")
     print(f"   - 树的数量: {len(resource_tree_set.trees)}")
     print(f"   - 根节点: {resource_tree_set.root_nodes[0].res_content.name}")
     print(f"   - 所有节点数量: {len(resource_tree_set.all_nodes)}")
@@ -2359,7 +2355,7 @@ if __name__ == "__main__":
         print(f"   - 第一个子节点: {converted_plate.children[0].name}")
 
     # 4. 验证 unilabos_uuid 属性
-    print(f"\n4. 验证 unilabos_uuid 设置:")
+    print("\n4. 验证 unilabos_uuid 设置:")
     if hasattr(converted_plate, "unilabos_uuid"):
         print(f"   - 根节点 UUID: {getattr(converted_plate, 'unilabos_uuid')}")
         if converted_plate.children and hasattr(
@@ -2372,7 +2368,7 @@ if __name__ == "__main__":
         print("   - 警告: unilabos_uuid 未设置")
 
     # 5. 验证 UUID 保持不变
-    print(f"\n5. 验证 UUID 在往返过程中保持不变:")
+    print("\n5. 验证 UUID 在往返过程中保持不变:")
     original_uuid = getattr(original_plate, "unilabos_uuid")
     converted_uuid = getattr(converted_plate, "unilabos_uuid")
     print(f"   - 原始 UUID: {original_uuid}")
@@ -2382,7 +2378,7 @@ if __name__ == "__main__":
     # 6. 再次往返转换，验证稳定性
     resource_tree_set_2 = ResourceTreeSet.from_plr_resources([converted_plate])
     plr_resources_2 = resource_tree_set_2.to_plr_resources()
-    print(f"\n6. 第二次往返转换:")
+    print("\n6. 第二次往返转换:")
     print(f"   - 资源名称: {plr_resources_2[0].name}")
     print(f"   - 子节点数量: {len(plr_resources_2[0].children)}")
     print(

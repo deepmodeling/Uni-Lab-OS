@@ -7,9 +7,10 @@ from pylabrobot.resources import Coordinate, Resource, Rotation
 from pylabrobot.resources.barcode import Barcode
 from pylabrobot import serializer as plr_serializer
 
-from unilabos.resources.container import RegularContainer
+from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.objects.joint_state import ResourceJointState
-from unilabos.resources.resource_pose import (
+from unilabos.resources.objects.resource import RESOURCE_ROOT_FIELDS
+from unilabos.resources.objects.pose import (
     ResourceDictPosition,
     ResourceDictPositionObject,
     ResourceDictPositionSize,
@@ -19,7 +20,6 @@ from unilabos.resources.resource_tracker import (
     EXTRA_RESOURCE_JOINT_STATE,
     EXTRA_RESOURCE_META_DATA,
     EXTRA_RESOURCE_POSE,
-    RESOURCE_ROOT_FIELDS,
     TRACKER_STATE_KEYS,
     ResourceDict,
     ResourceDictInstance,

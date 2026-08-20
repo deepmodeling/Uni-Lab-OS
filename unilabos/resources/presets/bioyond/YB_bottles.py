@@ -1,4 +1,4 @@
-from unilabos.resources.itemized_carrier import Bottle, BottleCarrier
+from unilabos.resources.presets.itemized_carrier import Bottle
 # 工厂函数
 """加样头（大）"""
 def YB_jia_yang_tou_da(
@@ -51,7 +51,7 @@ def YB_ye_100ml_Bottle(
         height=height,
         max_volume=max_volume,
         barcode=barcode,
-        model="YB_100ml_yeti",
+        model="YB_ye_100ml_Bottle",
     )
 
 """高粘液"""

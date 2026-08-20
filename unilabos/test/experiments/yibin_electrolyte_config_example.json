@@ -13,7 +13,7 @@
                 "deck": {
                     "data": {
                         "_resource_child_name": "YB_Bioyond_Deck",
-                        "_resource_type": "unilabos.resources.bioyond.decks:BIOYOND_YB_Deck"
+                        "_resource_type": "unilabos.resources.presets.bioyond.decks:BIOYOND_YB_Deck"
                     }
                 },
                 "protocol_type": [],

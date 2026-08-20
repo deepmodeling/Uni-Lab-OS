@@ -59,7 +59,7 @@ UniLabOS 资源系统采用**三层架构**，实现从前端UI到底层硬件�
 │  - 前端通过此层获取可用资源列表                        │
 │  - 文件: YB_bottle.yaml, YB_bottle_carriers.yaml    │
 ├─────────────────────────────────────────────────────┤
-│  第2层: Python 实现 (resources/bioyond)              │
+│  第2层: Python 实现 (resources/presets/bioyond)      │
 │  - 定义资源的具体属性和行为                           │
 │  - 创建资源实例的工厂函数                             │
 │  - 文件: YB_bottles.py, YB_bottle_carriers.py       │
@@ -81,7 +81,7 @@ YB_5ml_fenyeping:
   - yb3              # 系统分类
   - YB_bottle        # 资源类型
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_5ml_fenyeping  # Python 函数路径
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_5ml_fenyeping  # Python 函数路径
     type: pylabrobot  # 框架类型
   description: YB_5ml_fenyeping  # 前端显示名称
   handles: []
@@ -103,7 +103,7 @@ YB_5ml_fenyepingban:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_5ml_fenyepingban
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_5ml_fenyepingban
     type: pylabrobot
   description: YB_5ml_fenyepingban  # 5ml分液瓶板
 ```
@@ -153,16 +153,16 @@ def YB_5ml_fenyeping(
 | `YB_bottle.yaml` | 瓶子注册表 | `unilabos/registry/resources/bioyond/` |
 | `YB_bottle_carriers.yaml` | 载架注册表 | `unilabos/registry/resources/bioyond/` |
 | `deck.yaml` | Deck注册表 | `unilabos/registry/resources/bioyond/` |
-| `YB_bottles.py` | 瓶子实现 | `unilabos/resources/bioyond/` |
-| `YB_bottle_carriers.py` | 载架实现 | `unilabos/resources/bioyond/` |
-| `YB_warehouses.py` | 仓库实现 | `unilabos/resources/bioyond/` |
-| `decks.py` | Deck布局 | `unilabos/resources/bioyond/` |
+| `YB_bottles.py` | 瓶子实现 | `unilabos/resources/presets/bioyond/` |
+| `YB_bottle_carriers.py` | 载架实现 | `unilabos/resources/presets/bioyond/` |
+| `YB_warehouses.py` | 仓库实现 | `unilabos/resources/presets/bioyond/` |
+| `decks.py` | Deck布局 | `unilabos/resources/presets/bioyond/` |
 | `station.py` | 物料同步 | `unilabos/devices/workstation/bioyond_studio/` |
 | `config.py` | UUID映射 | `unilabos/devices/workstation/bioyond_studio/` |
 
 ### 仓库相关文档
 
-- [README_WAREHOUSE.md](../../resources/bioyond/README_WAREHOUSE.md) - 仓库系统开发指南
+- [README_WAREHOUSE.md](../../../resources/presets/bioyond/README_WAREHOUSE.md) - 仓库系统开发指南
 
 ---
 

@@ -9,11 +9,11 @@ import pytest
 from pydantic import ValidationError
 from pylabrobot.resources import Carrier, Coordinate, Resource, ResourceHolder
 
-from unilabos.resources.itemized_carrier import ItemizedCarrier
+from unilabos.resources.presets.itemized_carrier import ItemizedCarrier
 from unilabos.resources.objects.pose import ResourceDictPositionObject
 from unilabos.resources.objects.resource import ResourceDict
 from unilabos.resources.objects.site import ResourceSite
-from unilabos.resources.site_definition import normalize_available_sites
+from unilabos.resources.objects.site import normalize_available_sites
 from unilabos.resources.resource_tracker import (
     EXTRA_RESOURCE_CLASS,
     EXTRA_RESOURCE_META_DATA,
@@ -520,8 +520,8 @@ def test_itemized_carrier_uses_native_sites_and_injected_extra_metadata():
     set_plr_template_name(carrier, "StrictCarrier")
     assert carrier.unilabos_extra[EXTRA_RESOURCE_CLASS] == "StrictCarrier"
 
-    with pytest.raises(ValueError, match="canonical ResourceSite 快照"):
-        carrier.serialize()
+    # 与 PRCXI9300Deck 一致：PLR payload 不承载 canonical Site。
+    assert "sites" not in carrier.serialize()
 
     backend_sites = [
         ResourceSite(
@@ -549,11 +549,14 @@ def test_itemized_carrier_uses_native_sites_and_injected_extra_metadata():
     apply_plr_site_metadata(carrier, {carrier.name: backend_sites})
 
     serialized = carrier.serialize()
-    assert serialized["sites"] == [site.model_dump() for site in backend_sites]
-    assert set(serialized["sites"][0]) == set(ResourceSite.model_fields)
+    assert "sites" not in serialized
 
     extracted = extract_plr_sites(carrier, serialized)
     assert extracted is not None
+    assert [site.model_dump() for site in extracted] == [
+        site.model_dump() for site in backend_sites
+    ]
+    assert set(extracted[0].model_dump()) == set(ResourceSite.model_fields)
     injected_site = extracted[0].model_copy(
         deep=True,
         update={
@@ -567,7 +570,8 @@ def test_itemized_carrier_uses_native_sites_and_injected_extra_metadata():
     apply_plr_site_metadata(carrier, {carrier.name: [injected_site, extracted[1]]})
 
     assert carrier.unilabos_extra[EXTRA_SITES]["A1"]["uuid"] == injected_site.uuid
-    assert carrier.serialize()["sites"][0]["uuid"] == injected_site.uuid
+    assert carrier.resource_sites is not None
+    assert carrier.resource_sites[0].uuid == injected_site.uuid
     restored = extract_plr_sites(carrier, carrier.serialize())
     assert restored is not None
     assert restored[0].allowed_resource_categories == ["plate"]
@@ -586,9 +590,7 @@ def test_known_random_uuid_seeds_itemized_carrier_draft_sites():
         model="StrictCarrier",
     )
 
-    tree = ResourceTreeSet.from_plr_resources(
-        [carrier], known_random_uuid=True
-    )
+    tree = ResourceTreeSet.from_plr_resources([carrier], known_random_uuid=True)
 
     sites = tree.root_nodes[0].res_content.sites
     assert sites is not None
@@ -649,11 +651,43 @@ def test_itemized_carrier_deserialization_uses_canonical_shape():
         size_z=20,
         sites=native,
     )
-    assert carrier.serialize()["sites"] == native
+    assert "sites" not in carrier.serialize()
+    extracted = extract_plr_sites(carrier, carrier.serialize())
+    assert extracted is not None
+    assert [restored.model_dump() for restored in extracted] == native
 
-    restored = Resource.deserialize(carrier.serialize(), allow_marshal=True)
-    assert isinstance(restored, ItemizedCarrier)
-    assert restored.serialize()["sites"] == native
+
+def test_itemized_carrier_resource_tree_roundtrip_preserves_sites():
+    owner_uuid = str(uuid4())
+    site = ResourceSite(
+        uuid=str(uuid4()),
+        template_name="StrictCarrier",
+        material_uuid=owner_uuid,
+        index=0,
+        label="A1",
+        pose={
+            "position": {"x": 1, "y": 2, "z": 3},
+            "position3d": {"x": 1, "y": 2, "z": 3},
+            "size": {"width": 4, "height": 5, "depth": 6},
+        },
+    )
+    carrier = ItemizedCarrier(
+        name="carrier",
+        size_x=100,
+        size_y=100,
+        size_z=20,
+        sites=[site],
+    )
+    carrier.unilabos_uuid = owner_uuid
+    set_plr_template_name(carrier, "StrictCarrier")
+
+    tree = ResourceTreeSet.from_plr_resources([carrier])
+    restored_tree = ResourceTreeSet.load(tree.dump())
+    restored_carrier = restored_tree.to_plr_resources()[0]
+
+    assert "sites" not in restored_carrier.serialize()
+    restored_sites = extract_plr_sites(restored_carrier, restored_carrier.serialize())
+    assert restored_sites == [site]
 
 
 def test_itemized_carrier_site_boundary_has_only_canonical_fields():
@@ -682,9 +716,7 @@ def test_itemized_carrier_site_boundary_has_only_canonical_fields():
     assert native["occupied_material_uuid"] == site.occupied_material_uuid
     assert site.pose.position.model_dump() == {"x": 101.0, "y": 102.0, "z": 0.0}
     with pytest.raises(ValidationError, match="occupied_by 已停用"):
-        ResourceSite.model_validate(
-            {**native, "occupied_by": "plate-1"}
-        )
+        ResourceSite.model_validate({**native, "occupied_by": "plate-1"})
 
 
 def test_resource_models_are_reusable_and_nested_xyz_is_required():

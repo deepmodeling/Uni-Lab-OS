@@ -37,7 +37,14 @@ from unilabos.resources.objects.state import (
     LiquidStateEntry,
     TRACKER_STATE_KEYS,
 )
-from unilabos.resources.objects.site import ResourceSite, ResourceSiteType
+from unilabos.resources.objects.site import (
+    ResourceSite,
+    ResourceSiteType,
+    SiteDefinition,
+    SiteDefinitionInput,
+    normalize_available_sites,
+    validate_instantiated_sites,
+)
 
 __all__ = [
     "LiquidHistoryEntry",
@@ -69,7 +76,11 @@ __all__ = [
     "ResourceObject",
     "ResourceSite",
     "ResourceSiteType",
+    "SiteDefinition",
+    "SiteDefinitionInput",
     "SampleUUIDsType",
     "TRACKER_STATE_KEYS",
     "assemble_tracker_state",
+    "normalize_available_sites",
+    "validate_instantiated_sites",
 ]

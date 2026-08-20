@@ -6,7 +6,7 @@ from pylabrobot.resources import Coordinate
 
 from unilabos.device_runtime import resource as resource_module
 from unilabos.device_runtime.resource import AuthorityResourceService
-from unilabos.resources.container import RegularContainer
+from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.server.services.materials import MaterialsService

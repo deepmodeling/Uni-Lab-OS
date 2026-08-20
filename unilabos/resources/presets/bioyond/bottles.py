@@ -1,4 +1,4 @@
-from unilabos.resources.itemized_carrier import Bottle
+from unilabos.resources.presets.itemized_carrier import Bottle
 
 
 def BIOYOND_PolymerStation_Solid_Stock(
@@ -128,51 +128,46 @@ def BIOYOND_PolymerStation_TipBox(
     Returns:
         TipBoxCarrier: 包含24个枪头孔位的枪头盒
     """
-    from pylabrobot.resources import Container, Coordinate
+    from pylabrobot.resources import Tip, TipRack, TipSpot, create_ordered_items_2d
 
-    # 创建枪头盒容器
-    tip_box = Container(
+    def make_tip() -> Tip:
+        return Tip(
+            has_filter=False,
+            total_tip_length=size_z - 10.0,
+            maximal_volume=1000.0,
+            fitting_depth=8.0,
+        )
+
+    # 枪头盒必须使用 PLR 的 TipRack/TipSpot 语义，不能把普通 Container
+    # 伪装成 tip_spot，否则模板身份和 tip state 都无法正确往返。
+    tip_spots = create_ordered_items_2d(
+        TipSpot,
+        num_items_x=6,
+        num_items_y=4,
+        dx=14.38,
+        dy=11.24,
+        dz=0.0,
+        item_dx=9.0,
+        item_dy=9.0,
+        size_x=8.0,
+        size_y=8.0,
+        size_z=size_z - 10.0,
+        make_tip=make_tip,
+    )
+    tip_box = TipRack(
         name=name,
         size_x=size_x,
         size_y=size_y,
         size_z=size_z,
+        ordered_items=tip_spots,
         category="tip_rack",
         model="BIOYOND_PolymerStation_TipBox_4x6",
+        with_tips=False,
     )
 
     # 设置自定义属性
     tip_box.barcode = barcode
-    tip_box.tip_count = 24  # 4行×6列
-    tip_box.num_items_x = 6  # 6列
-    tip_box.num_items_y = 4  # 4行
-
-    # 创建24个枪头孔位 (4行×6列)
-    # 假设孔位间距为 9mm
-    tip_spacing_x = 9.0  # 列间距
-    tip_spacing_y = 9.0  # 行间距
-    start_x = 14.38  # 第一个孔位的x偏移
-    start_y = 11.24  # 第一个孔位的y偏移
-
-    for row in range(4):  # A, B, C, D
-        for col in range(6):  # 1-6
-            spot_name = f"{chr(65 + row)}{col + 1}"  # A1, A2, ..., D6
-            x = start_x + col * tip_spacing_x
-            y = start_y + row * tip_spacing_y
-
-            # 创建枪头孔位容器
-            tip_spot = Container(
-                name=spot_name,
-                size_x=8.0,  # 单个枪头孔位大小
-                size_y=8.0,
-                size_z=size_z - 10.0,  # 略低于盒子高度
-                category="tip_spot",
-            )
-
-            # 添加到枪头盒
-            tip_box.assign_child_resource(
-                tip_spot,
-                location=Coordinate(x=x, y=y, z=0)
-            )
+    tip_box.tip_count = 24
 
     return tip_box
 

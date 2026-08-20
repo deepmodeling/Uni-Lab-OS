@@ -7,7 +7,7 @@ from unilabos.resources.graphio import resource_bioyond_to_plr
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.registry.registry import lab_registry
 
-from unilabos.resources.bioyond.decks import BIOYOND_PolymerReactionStation_Deck
+from unilabos.resources.presets.bioyond.decks import BIOYOND_PolymerReactionStation_Deck
 
 lab_registry.setup()
 

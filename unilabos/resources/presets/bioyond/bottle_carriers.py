@@ -1,7 +1,7 @@
 from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d
 
-from unilabos.resources.itemized_carrier import BottleCarrier
-from unilabos.resources.bioyond.bottles import (
+from unilabos.resources.presets.itemized_carrier import BottleCarrier
+from unilabos.resources.presets.bioyond.bottles import (
     BIOYOND_PolymerStation_Solid_Stock,
     BIOYOND_PolymerStation_Solid_Vial,
     BIOYOND_PolymerStation_Liquid_Vial,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping, Optional
 
 from unilabos.resources.resource_tracker import ResourceDictInstance, ResourceTreeSet
-from unilabos.resources.site_definition import (
+from unilabos.resources.objects.site import (
     normalize_available_sites,
     validate_instantiated_sites,
 )

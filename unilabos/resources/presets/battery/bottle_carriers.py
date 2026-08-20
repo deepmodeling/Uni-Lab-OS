@@ -1,7 +1,7 @@
 from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d
 
-from unilabos.resources.itemized_carrier import Bottle, BottleCarrier
-from unilabos.resources.bioyond.YB_bottles import (
+from unilabos.resources.presets.itemized_carrier import Bottle, BottleCarrier
+from unilabos.resources.presets.bioyond.YB_bottles import (
     YB_pei_ye_xiao_Bottle,
 )
 # 命名约定：试剂瓶-Bottle，烧杯-Beaker，烧瓶-Flask，小瓶-Vial

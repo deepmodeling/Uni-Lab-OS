@@ -40,7 +40,7 @@ def test_class_init_built_via_real_creator():
     """resolve_init_kwargs output flows through the real DeviceClassCreator."""
     from unilabos.registry.initializer import resolve_init_kwargs
     from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
-    from unilabos.ros.utils.driver_creator import DeviceClassCreator
+    from unilabos.device_runtime.driver_creator import DeviceClassCreator
     from tests.registry.fixtures.initializer_drivers import SharedDevice
 
     resolved = resolve_init_kwargs(ENTRY, node=NODE, config=CONFIG)

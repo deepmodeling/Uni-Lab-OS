@@ -2,7 +2,7 @@ BIOYOND_PolymerPreparationStation_Deck:
   category:
   - deck
   class:
-    module: unilabos.resources.bioyond.decks:BIOYOND_PolymerPreparationStation_Deck
+    module: unilabos.resources.presets.bioyond.decks:BIOYOND_PolymerPreparationStation_Deck
     type: pylabrobot
   description: BIOYOND PolymerPreparationStation Deck
   displayname: BIOYOND_PolymerPreparationStation_Deck
@@ -14,7 +14,7 @@ BIOYOND_PolymerReactionStation_Deck:
   category:
   - deck
   class:
-    module: unilabos.resources.bioyond.decks:BIOYOND_PolymerReactionStation_Deck
+    module: unilabos.resources.presets.bioyond.decks:BIOYOND_PolymerReactionStation_Deck
     type: pylabrobot
   description: BIOYOND PolymerReactionStation Deck
   displayname: BIOYOND_PolymerReactionStation_Deck
@@ -26,7 +26,7 @@ BIOYOND_YB_Deck:
   category:
   - deck
   class:
-    module: unilabos.resources.bioyond.decks:YB_Deck
+    module: unilabos.resources.presets.bioyond.decks:YB_Deck
     type: pylabrobot
   description: BIOYOND ElectrolyteFormulationStation Deck
   displayname: BIOYOND_YB_Deck

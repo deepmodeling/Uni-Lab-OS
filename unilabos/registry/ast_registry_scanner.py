@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from unilabos.registry.backend_metadata import normalize_supported_backends
 from unilabos.registry.utils import resolve_registry_displayname
-from unilabos.resources.site_definition import normalize_available_sites
+from unilabos.resources.objects.site import normalize_available_sites
 
 
 # ---------------------------------------------------------------------------
@@ -483,10 +483,7 @@ def _parse_file(
 
 _STATIC_MODEL_CALLS = frozenset(
     {
-        "unilabos.resources.site_definition:SiteDefinition",
-        "unilabos.resources.resource_pose:ResourceDictPosition",
-        "unilabos.resources.resource_pose:ResourceDictPositionObject",
-        "unilabos.resources.resource_pose:ResourceDictPositionSize",
+        "unilabos.resources.objects.site:SiteDefinition",
         "unilabos.resources.objects.pose:ResourceDictPosition",
         "unilabos.resources.objects.pose:ResourceDictPositionObject",
         "unilabos.resources.objects.pose:ResourceDictPositionSize",

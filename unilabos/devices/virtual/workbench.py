@@ -43,7 +43,7 @@ from unilabos.resources.objects.pose import (
     ResourceDictPositionObject,
     ResourceDictPositionSize,
 )
-from unilabos.resources.site_definition import SiteDefinition
+from unilabos.resources.objects.site import SiteDefinition
 
 # ============ TypedDict 返回类型定义 ============
 

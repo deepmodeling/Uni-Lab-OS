@@ -32,6 +32,16 @@ def _add(target: Any, *option_strings: str, **kwargs: Any) -> None:
 
 def _register_runtime_arguments(parser: argparse.ArgumentParser) -> None:
     group = parser.add_argument_group("runtime")
+    _add(
+        group,
+        "--demo_mode",
+        action="store_true",
+        default=False,
+        help=(
+            "Run the three-site heating demo as an offline-tolerant HostLink "
+            "slave; defaults to bj.wznln.com:38005 and retries forever."
+        ),
+    )
     _add(group, "-g", "--graph", help="Physical setup graph file path.")
     _add(
         group,

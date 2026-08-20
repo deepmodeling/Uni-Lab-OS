@@ -53,7 +53,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from unilabos.registry.backend_metadata import normalize_supported_backends
-from unilabos.resources.site_definition import (
+from unilabos.resources.objects.site import (
     SiteDefinitionInput,
     normalize_available_sites,
 )

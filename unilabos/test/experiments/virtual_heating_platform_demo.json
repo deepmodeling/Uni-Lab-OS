@@ -1,0 +1,84 @@
+{
+  "nodes": [
+    {
+      "id": "virtual-heater",
+      "uuid": "8c340a91-f905-41b0-83b3-5b8774724f01",
+      "name": "三工位虚拟加热平台",
+      "type": "device",
+      "class": "virtual_heating_platform",
+      "template_name": "virtual_heating_platform",
+      "pose": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 }
+      },
+      "config": {
+        "update_interval_s": 0.25
+      },
+      "data": {},
+      "extra": {},
+      "sites_initialized": true,
+      "sites": [
+        {
+          "schema_version": 1,
+          "uuid": "8c340a91-f905-41b0-83b3-5b8774724f11",
+          "template_name": "virtual_heating_platform",
+          "material_uuid": "8c340a91-f905-41b0-83b3-5b8774724f01",
+          "index": 1,
+          "label": "site_1",
+          "visible": true,
+          "occupied_material_uuid": null,
+          "pose": {
+            "position": { "x": 130.0, "y": 100.0, "z": 0.0 },
+            "position3d": { "x": 130.0, "y": 100.0, "z": 0.0 },
+            "size": { "width": 100.0, "height": 100.0, "depth": 20.0 }
+          },
+          "allowed_resource_categories": ["heating_sample"],
+          "parent_link": "site_1",
+          "description": "虚拟加热平台工位 1",
+          "meta_data": { "site_id": 1, "role": "heating" },
+          "extra": {}
+        },
+        {
+          "schema_version": 1,
+          "uuid": "8c340a91-f905-41b0-83b3-5b8774724f12",
+          "template_name": "virtual_heating_platform",
+          "material_uuid": "8c340a91-f905-41b0-83b3-5b8774724f01",
+          "index": 2,
+          "label": "site_2",
+          "visible": true,
+          "occupied_material_uuid": null,
+          "pose": {
+            "position": { "x": 260.0, "y": 100.0, "z": 0.0 },
+            "position3d": { "x": 260.0, "y": 100.0, "z": 0.0 },
+            "size": { "width": 100.0, "height": 100.0, "depth": 20.0 }
+          },
+          "allowed_resource_categories": ["heating_sample"],
+          "parent_link": "site_2",
+          "description": "虚拟加热平台工位 2",
+          "meta_data": { "site_id": 2, "role": "heating" },
+          "extra": {}
+        },
+        {
+          "schema_version": 1,
+          "uuid": "8c340a91-f905-41b0-83b3-5b8774724f13",
+          "template_name": "virtual_heating_platform",
+          "material_uuid": "8c340a91-f905-41b0-83b3-5b8774724f01",
+          "index": 3,
+          "label": "site_3",
+          "visible": true,
+          "occupied_material_uuid": null,
+          "pose": {
+            "position": { "x": 390.0, "y": 100.0, "z": 0.0 },
+            "position3d": { "x": 390.0, "y": 100.0, "z": 0.0 },
+            "size": { "width": 100.0, "height": 100.0, "depth": 20.0 }
+          },
+          "allowed_resource_categories": ["heating_sample"],
+          "parent_link": "site_3",
+          "description": "虚拟加热平台工位 3",
+          "meta_data": { "site_id": 3, "role": "heating" },
+          "extra": {}
+        }
+      ]
+    }
+  ],
+  "links": []
+}

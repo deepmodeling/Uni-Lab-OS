@@ -37,6 +37,7 @@ class BasicConfig:
     port = 8002  # 管理端 HTTP/Web API 与主微前端服务
     check_mode = False  # CI 检查模式，用于验证 registry 导入和文件一致性
     test_mode = False  # 测试模式，所有动作不实际执行，返回模拟结果
+    demo_mode = False  # 三工位加热演示：远程 HostLink Slave + 断线持续重连
     extra_resource = False  # 是否加载lab_开头的额外资源
     # 'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
     log_level: Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"

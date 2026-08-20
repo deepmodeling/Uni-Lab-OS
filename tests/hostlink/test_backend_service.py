@@ -136,7 +136,7 @@ def test_host_microbackend_owns_listener_material_and_ros(
     from fastapi.testclient import TestClient
 
     from unilabos.resources import materials
-    from unilabos.resources.container import RegularContainer
+    from unilabos.resources.presets.container import RegularContainer
     from unilabos.server.scheduler.api import create_app
     from unilabos.client.materials import (
         HostLinkMaterialsClient,
@@ -229,7 +229,7 @@ def test_slave_material_create_is_proxied_by_host_authority(
     tmp_path, monkeypatch
 ) -> None:
     from unilabos.device_runtime.resource import AuthorityResourceService
-    from unilabos.resources.container import RegularContainer
+    from unilabos.resources.presets.container import RegularContainer
     from unilabos.client.materials import LocalMaterialsClient
     from unilabos.server.services.materials import MaterialsService
 

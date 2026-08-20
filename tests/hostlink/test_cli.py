@@ -3,6 +3,12 @@ import pytest
 from unilabos.app.cli.parser import build_parser
 from unilabos.config.config import HostLinkConfig
 from unilabos.hostlink.startup import apply_hostlink_cli
+from unilabos.hostlink.startup import (
+    HEATING_DEMO_GRAPH,
+    HEATING_DEMO_HOST,
+    HEATING_DEMO_PORT,
+    configure_heating_demo_args,
+)
 
 
 @pytest.mark.parametrize(
@@ -26,6 +32,41 @@ def test_disable_browser_can_be_combined_with_management_port() -> None:
 
     assert args.port_management == 8100
     assert args.disable_browser is True
+
+
+def test_heating_demo_mode_is_one_command_offline_tolerant_slave() -> None:
+    args = vars(build_parser().parse_args(["--demo-mode"]))
+
+    configure_heating_demo_args(args)
+
+    assert args["backend"] == "hostlink"
+    assert args["is_slave"] is True
+    assert args["slave_no_host"] is True
+    assert args["test_mode"] is True
+    assert args["graph"] == str(HEATING_DEMO_GRAPH)
+    assert args["host_node_ip"] == HEATING_DEMO_HOST
+    assert args["hostlink_port"] == HEATING_DEMO_PORT
+
+
+def test_heating_demo_mode_preserves_explicit_target_and_graph(tmp_path) -> None:
+    graph = tmp_path / "custom.json"
+    args = vars(
+        build_parser().parse_args(
+            [
+                "--demo-mode",
+                "--graph",
+                str(graph),
+                "--host-node-ip",
+                "demo.example:39000",
+            ]
+        )
+    )
+
+    configure_heating_demo_args(args)
+
+    assert args["graph"] == str(graph)
+    assert args["host_node_ip"] == "demo.example:39000"
+    assert args["hostlink_port"] is None
 
 
 def test_networking_cli_accepts_host_and_domain_aliases() -> None:

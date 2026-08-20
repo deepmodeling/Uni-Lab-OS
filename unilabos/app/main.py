@@ -172,6 +172,10 @@ def main():
     args = parser.parse_args()
     args_dict = vars(args)
 
+    from unilabos.hostlink.startup import configure_heating_demo_args
+
+    configure_heating_demo_args(args_dict)
+
     from unilabos.legacy_support import configure_legacy_support
 
     configure_legacy_support(bool(args_dict["legacy"]))
@@ -270,6 +274,13 @@ def main():
         if os.path.exists(candidate):
             config_path = candidate
             print_status(f"发现本地配置文件: {config_path}", "info")
+        elif args_dict.get("demo_mode", False):
+            config_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "config",
+                "example_config.py",
+            )
+            print_status("演示模式使用内置默认配置，不创建 local_config.py", "info")
         else:
             print_status("未指定config路径，可通过 --config 传入 local_config.py 文件路径", "info")
             print_status(f"您是否为第一次使用？并将当前路径 {working_dir} 作为工作目录？ (Y/n)", "info")
@@ -354,6 +365,7 @@ def main():
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
     BasicConfig.no_update_feedback = args_dict.get("no_update_feedback", False)
     BasicConfig.test_mode = args_dict.get("test_mode", False)
+    BasicConfig.demo_mode = args_dict.get("demo_mode", False)
     if BasicConfig.test_mode:
         print_status("启用测试模式：所有动作将模拟执行，不调用真实硬件", "warning")
     BasicConfig.extra_resource = args_dict.get("extra_resource", False)

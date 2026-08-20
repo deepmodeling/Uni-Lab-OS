@@ -60,7 +60,7 @@ from unilabos.registry.utils import (
 )
 from unilabos.resources.graphio import resource_plr_to_ulab, tree_to_list
 from unilabos.resources.resource_tracker import ResourceTreeSet, RETURN_UNILABOS_SAMPLES
-from unilabos.resources.site_definition import normalize_available_sites
+from unilabos.resources.objects.site import normalize_available_sites
 from unilabos.ros.msgs.message_converter import (
     msg_converter_manager,
     ros_action_result_mapping,

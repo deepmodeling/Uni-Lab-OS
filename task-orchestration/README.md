@@ -37,13 +37,26 @@ npm --prefix unilabos_local_ui run dev
 Vite 就绪后打开 `http://127.0.0.1:5174/`。Vite 将 `/api` 代理到
 `workflow_ui` 的 `8014` 端口，将 `/task-api` 代理到 Task API 的 `8091` 端口。
 
+### 复用 245 个 Task
+
+仓库根目录的 `szlab_robot_action_workflow.json` 是经过验证的 27 Action 主流程；
+`task-orchestration/szlab_robot_action_workflow.json.task-workspace.json` 是与它同名的
+默认 Task workspace，包含 17 个模板、245 个等待中的 Task，以及各实例已保存的参数。
+workspace 中不包含提交者的执行日志、OPC 会话或资源占用状态。
+
+合并提交并启动上述三个服务后，在画布导入仓库根目录的
+`szlab_robot_action_workflow.json`。页面应直接显示 245 个 Task；首次派发前保持暂停，
+点击一次“重置并复用”以按当前时间重建样品起始间隔，然后重新连接 Task OPC。不要导入
+名字不同的副本，否则前端会切换到另一个 Task workspace。
+
 ### 网页操作顺序
 
 1. 在流程画布点击“切换 Task 模板编辑”，拖拽框选节点后右键“设为 Task 模板”。
    系统不会按 SZLab 工位或工艺自动切分；新模板的 `resources`、输入条件和输出条件
    默认均为空，创建模板无需先连接 OPC。
-2. 仓库 sidecar 已将 S07、S06 两个示例模板预排到 Resource Schedule。自建模板仍需
-   拖入“待排模板”；生成器只使用该区域中的模板，未拖入的模板不会进入 OPC 配置。
+2. 仓库默认 workspace 已将 17 个模板预排到 Resource Schedule，并预置 245 个可复用
+   Task。自建模板仍需拖入“待排模板”；生成器只使用该区域中的模板，未拖入的模板不会
+   进入 OPC 配置。
    Resource Schedule 中由节点汇总的设备信息只用于展示，不表示设备占用或互斥。
 3. 点击“生成 OPC 模拟配置”。在“变量目录”中逐项核对真实 OPC 变量名，并确认：
    `direction` 是 `pc_to_plc` 或 `plc_to_pc`，`data_type` 是 `bool`、`int`、
@@ -60,8 +73,8 @@ Vite 就绪后打开 `http://127.0.0.1:5174/`。Vite 将 `/api` 代理到
    `allow_unsafe_url: true`。独立 CLI 使用非默认 URL 时同样必须显式传
    `--allow-unsafe-url`；该外部进程不受网页状态/停止按钮管理。
 7. 在“Task OPC 连接”填写与 profile 相同的 URL，点击“连接 OPC”，确认已连接且注册
-   变量数大于 0。静态 sidecar 不预置样品实例；设置样品数并点击“生成样品任务”，
-   再点击“运行调度”。
+   变量数大于 0。直接复用默认的 245 个 Task 时先点击“重置并复用”，再开始派发；需要
+   新建其他批次时，设置样品数并点击“生成样品任务”。
 8. 在 Task Queue/执行状态查看任务进度，在 Recent logs 查看模拟器触发、写入和恢复
    日志。调度周期按 `poll → advance → tick` 运行；“暂停派发”不会取消已下发动作，
    而会继续收割在途动作。

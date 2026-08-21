@@ -781,7 +781,7 @@ export function TaskSchedulerBench(props: Props) {
                 <p className="scheduler-bench__empty">
                   该 Task 未找到可编辑的 Action 节点。
                   {props.actionNodes.length === 0
-                    ? '请先在流程设计画布导入 Flow JSON（如 szlab_robot_action_workflow_flow.json）。'
+                    ? '请先在流程设计画布导入 Flow JSON（如 szlab_robot_action_workflow.json）。'
                     : `模板节点（${editingTemplate.nodeIds.join('、')}）与当前画布节点 ID 不一致；请重新导入对应 Flow JSON 或检查画布是否为空。`}
                 </p>
               )}

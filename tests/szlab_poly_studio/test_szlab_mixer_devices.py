@@ -27,7 +27,12 @@ from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.magnet
 from unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.photoshotting import SzlabMixerPhotoShottingDevice
 from unilabos.devices.workstation.szlab_poly_studio.sensor import S07Sensors
 from unilabos.devices.workstation.szlab_poly_studio.s07_solid_addition.s07 import SZLabS07SolidAdditionDevice
-from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import SzlabMixerRobotDevice
+from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import (
+    GRIPPER_ORIGIN_VARIABLE,
+    GRIPPER_POSITION_VARIABLES,
+    GRIPPER_STATUS_VARIABLE,
+    SzlabMixerRobotDevice,
+)
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S04 import S04_SENSOR_BY_POSITION
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import ROBOT_ACTION_SPECS
 from scripts.run_workflow_local import clear_pc_to_plc_variables, create_local_devices, load_runtime_config
@@ -1508,6 +1513,105 @@ class FakeRobotPlcGateway:
             for name in conditions
         }
         return all(values[name] == expected for name, expected in conditions.items()), values
+
+
+class FakeGripperRobotPlcGateway(FakeRobotPlcGateway):
+    def __init__(self, *, gripper_before, gripper_after, **kwargs):
+        super().__init__(**kwargs)
+        self.gripper_before = dict(gripper_before)
+        self.gripper_after = dict(gripper_after)
+
+    def read_variable(self, name, use_cache=False):
+        if name in {GRIPPER_ORIGIN_VARIABLE, GRIPPER_STATUS_VARIABLE, *GRIPPER_POSITION_VARIABLES.values()}:
+            self.reads.append((name, use_cache))
+            task_completed = any(
+                event[0] == "wait" and event[1] == "Robot_任务完成"
+                for event in self.events
+            )
+            values = self.gripper_after if task_completed else self.gripper_before
+            return values.get(name, False)
+        return super().read_variable(name, use_cache=use_cache)
+
+
+@pytest.mark.parametrize(
+    ("task", "station", "data", "expected"),
+    [
+        ("pick", "S01", {"product_type": 1}, "tip_box"),
+        ("pick", "S01", {"product_type": 6}, "solid_powder"),
+        ("pick", "S02", {}, "tip_box"),
+        ("pick", "S03", {"product_type": 1}, "beaker"),
+        ("pick", "S03", {"product_type": 2}, "sample_vial_250ml"),
+        ("pick", "S03", {"product_type": 3}, "sample_vial_500ml"),
+        ("pick", "S04", {}, "beaker"),
+        ("pick", "S05", {}, "beaker"),
+        ("pick", "S06", {}, "beaker"),
+        ("pick", "S071", {}, "solid_powder"),
+        ("pick", "S072", {"product_type": 1}, "solid_powder"),
+        ("pick", "S072", {"product_type": 2}, "beaker"),
+        ("pick", "S08", {"product_type": 1}, "sample_vial_250ml"),
+        ("pick", "S08", {"product_type": 2}, "sample_vial_500ml"),
+        ("pick", "S08", {"product_type": 3}, "liquid_reagent_100ml"),
+        ("pour", "S08", {"product_type": 1}, "beaker"),
+        ("pick", "S09", {"product_type": 1}, "tip_box"),
+        ("pick", "S09", {"product_type": 2}, "liquid_reagent_100ml"),
+        ("pick", "S09", {"product_type": 4}, "beaker"),
+        ("pick", "S10", {}, "liquid_reagent_100ml"),
+        ("pick", "S11", {"product_type": 3}, "sample_vial_500ml"),
+    ],
+)
+def test_szlab_robot_gripper_position_mapping(task, station, data, expected):
+    robot = SzlabMixerRobotDevice(enable_gripper_check=True)
+
+    assert robot._gripper_position_variable(task, station, data) == GRIPPER_POSITION_VARIABLES[expected]
+
+
+@pytest.mark.parametrize(
+    ("method", "station_sensor", "station_value", "before_position", "after_position"),
+    [
+        ("submit_pick_from_s04", "传感器状态_上位机[2].NO[10]", True, GRIPPER_ORIGIN_VARIABLE, "beaker"),
+        ("submit_place_to_s04", "传感器状态_上位机[2].NO[10]", False, "beaker", GRIPPER_ORIGIN_VARIABLE),
+    ],
+)
+def test_szlab_robot_gripper_check_wraps_pick_and_place(
+    method,
+    station_sensor,
+    station_value,
+    before_position,
+    after_position,
+):
+    before_variable = GRIPPER_POSITION_VARIABLES.get(before_position, before_position)
+    after_variable = GRIPPER_POSITION_VARIABLES.get(after_position, after_position)
+    gateway = FakeGripperRobotPlcGateway(
+        sensor_values={station_sensor: station_value, "S041准备信号": True},
+        gripper_before={GRIPPER_STATUS_VARIABLE: 1, before_variable: True},
+        gripper_after={GRIPPER_STATUS_VARIABLE: 1, after_variable: True},
+    )
+    robot = SzlabMixerRobotDevice(enable_gripper_check=True)
+    robot.set_plc_gateway(gateway)
+
+    result = getattr(robot, method)(position=1)
+
+    assert result["success"] is True
+    assert result["gripper_precheck"]["values"][before_variable] is True
+    assert result["gripper_postcheck"]["values"][after_variable] is True
+    assert result["gripper_postcheck"]["values"][GRIPPER_STATUS_VARIABLE] == 1
+
+
+def test_szlab_robot_gripper_drop_rejects_action_before_writing():
+    gateway = FakeGripperRobotPlcGateway(
+        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        gripper_before={GRIPPER_STATUS_VARIABLE: 3, GRIPPER_ORIGIN_VARIABLE: True},
+        gripper_after={},
+    )
+    robot = SzlabMixerRobotDevice(enable_gripper_check=True)
+    robot.set_plc_gateway(gateway)
+
+    result = robot.submit_pick_from_s04(position=1)
+
+    assert result["success"] is False
+    assert result["status"] == "rejected"
+    assert "掉落" in result["message"]
+    assert gateway.writes == []
 
 
 def test_szlab_robot_s04_sensor_mapping_matches_plc_csv_positions():

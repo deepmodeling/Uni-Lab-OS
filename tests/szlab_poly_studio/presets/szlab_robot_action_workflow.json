@@ -32,7 +32,7 @@
   "default_config": {
     "graph": "__generated__",
     "url": "opc.tcp://192.168.1.10:4840",
-    "csv": "szlab_plc_0721.csv",
+    "csv": "szlab_plc_0810.csv",
     "task_sample_start_interval_seconds": 1,
     "no_subscription": true,
     "show_csv": false,
@@ -212,7 +212,8 @@
         },
         "config": {
           "plc_device_id": "szlab_poly_plc",
-          "busy_variable_name": "机器人Busy信号"
+          "busy_variable_name": "机器人Busy信号",
+          "enable_gripper_check": true
         },
         "data": {}
       },

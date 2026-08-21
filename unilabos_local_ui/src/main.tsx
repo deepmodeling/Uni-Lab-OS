@@ -443,6 +443,12 @@ function taskApiErrorMessage(error: unknown) {
     return 'Task API 未找到该接口，请重启 task-orchestration 服务（8091）后再试';
   }
   if (error instanceof TaskOrchestrationBusinessError && error.status === 409) {
+    if (
+      error.message.includes('resetting task progress')
+      || error.message.includes('active actions')
+    ) {
+      return '请先暂停派发并等待当前动作完成，再重置进度';
+    }
     if (error.message.includes('pause scheduler')) {
       return '请先点击「暂停派发」后再清空队列';
     }
@@ -2169,6 +2175,34 @@ function App() {
     taskWorkspacePath,
   ]);
 
+  const resetTaskQueueProgress = useCallback(() => {
+    if (!taskInstancesRef.current.length) return;
+    if (isSchedulerRunning || isTaskExecutionDraining || hasActiveServerExecution) {
+      showCanvasToast('请先暂停派发并等待当前动作完成');
+      return;
+    }
+    if (!window.confirm(
+      `将当前 ${taskInstancesRef.current.length} 个 Task 全部恢复为未派发状态；Task、样品顺序和参数保持不变。是否继续？`,
+    )) {
+      return;
+    }
+    taskExecutionControllerRef.current?.pause();
+    setTaskExecutionWorkflow(null);
+    setTaskExecutionStatus(createTaskExecutionStatus());
+    setSelectedTaskInstanceId(null);
+    void mutateTaskWorkspace((version) => taskApiRef.current.resetInstancesProgress(
+      taskWorkspacePath,
+      version,
+    ));
+  }, [
+    hasActiveServerExecution,
+    isSchedulerRunning,
+    isTaskExecutionDraining,
+    mutateTaskWorkspace,
+    showCanvasToast,
+    taskWorkspacePath,
+  ]);
+
   const downloadTaskTemplates = useCallback((templateIds: string[]) => {
     const selectedIds = new Set(templateIds);
     const templates = taskTemplatesRef.current.filter((template) => selectedIds.has(template.id));
@@ -3564,6 +3598,16 @@ function App() {
           isTransitioning={isSchedulerTransitioning}
           onAdvance={advanceTaskSchedule}
           onClear={clearTaskQueue}
+          onResetProgress={resetTaskQueueProgress}
+          resetProgressDisabled={
+            !taskInstances.length
+            || isTaskWorkspaceLoading
+            || isSchedulerRunning
+            || isSchedulerTransitioning
+            || isTaskExecutionDraining
+            || hasActiveServerExecution
+            || taskMutationInFlightCount > 0
+          }
           onClearTemplates={clearTaskTemplates}
           onDeleteSelectedTemplates={() => deleteTaskTemplates(scheduledTemplateIds, 'selected')}
           onDeleteTemplate={(templateId) => deleteTaskTemplates([templateId], 'single')}

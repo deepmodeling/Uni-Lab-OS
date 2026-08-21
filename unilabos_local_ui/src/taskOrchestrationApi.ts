@@ -380,6 +380,12 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
         expected_version: expectedVersion,
       }))
     ),
+    resetInstancesProgress: (workflowPath: string, expectedVersion: number) => (
+      request('/instances:reset-progress', body({
+        workflow_path: workflowPath,
+        expected_version: expectedVersion,
+      }))
+    ),
     moveInstance: (workflowPath: string, expectedVersion: number, instanceId: string, order: number) => (
       request(`/instances/${encodeURIComponent(instanceId)}:move`, body({
         workflow_path: workflowPath,

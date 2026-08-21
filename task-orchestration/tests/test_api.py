@@ -1125,6 +1125,199 @@ def test_clear_instances_rejects_active_scheduler(tmp_path):
     assert rejected.json()["detail"]["code"] == "scheduler_active"
 
 
+def test_reset_instances_progress_keeps_queue_order_and_parameters(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    workspace = {
+        "workflow_path": "demo.json",
+        "templates": [_template("prepare"), _template("measure")],
+        "task_instances": [
+            {
+                "id": "sample-a-prepare",
+                "template_id": "prepare",
+                "status": "completed",
+                "sample_id": "Sample A",
+                "order": 0,
+                "payload": {
+                    "node_parameters": {
+                        "prepare-node": {"target_weight": 2.5}
+                    }
+                },
+                "not_before": 1_000,
+                "started_at": 1_100,
+                "finished_at": 1_200,
+                "execution_state": {
+                    "cursor": 1,
+                    "records": [
+                        {
+                            "node_id": "prepare-node",
+                            "attempt": 1,
+                            "execution_id": "old-completed-execution",
+                            "status": "succeeded",
+                            "started_at": 1_100,
+                            "finished_at": 1_200,
+                            "result": {"success": True},
+                        }
+                    ],
+                },
+            },
+            {
+                "id": "sample-a-measure",
+                "template_id": "measure",
+                "status": "failed",
+                "sample_id": "Sample A",
+                "order": 1,
+                "payload": {
+                    "node_parameters": {
+                        "measure-node": {"repeat_count": 3}
+                    }
+                },
+                "not_before": 3_000,
+                "started_at": 1_300,
+                "finished_at": 1_400,
+                "execution_state": {
+                    "cursor": 0,
+                    "records": [
+                        {
+                            "node_id": "measure-node",
+                            "attempt": 1,
+                            "execution_id": "old-failed-execution",
+                            "status": "failed",
+                            "started_at": 1_300,
+                            "finished_at": 1_400,
+                            "error": {"code": "test_failure"},
+                        }
+                    ],
+                },
+            },
+        ],
+        "events": [
+            {
+                "kind": "completed",
+                "timestamp": 1_200,
+                "instance_id": "sample-a-prepare",
+                "template_id": "prepare",
+                "payload": {},
+            }
+        ],
+        "scheduled_template_ids": ["prepare", "measure"],
+        "scheduler_paused": True,
+        "plc_registrations": [],
+    }
+    saved = client.put(
+        "/workspaces",
+        json={"expected_version": 0, "workspace": workspace},
+    )
+    assert saved.status_code == 200
+
+    reset = client.post(
+        "/instances:reset-progress",
+        json={"workflow_path": "demo.json", "expected_version": 1},
+    )
+
+    assert reset.status_code == 200
+    body = reset.json()["workspace"]
+    instances = sorted(body["task_instances"], key=lambda item: item["order"])
+    assert len(instances) == 2
+    assert {item["id"] for item in instances}.isdisjoint(
+        {"sample-a-prepare", "sample-a-measure"}
+    )
+    assert [item["template_id"] for item in instances] == ["prepare", "measure"]
+    assert [item["sample_id"] for item in instances] == ["Sample A", "Sample A"]
+    assert [item["payload"] for item in instances] == [
+        workspace["task_instances"][0]["payload"],
+        workspace["task_instances"][1]["payload"],
+    ]
+    assert instances[1]["not_before"] - instances[0]["not_before"] == 2_000
+    assert all(item["status"] == "waiting" for item in instances)
+    assert all(item["started_at"] is None for item in instances)
+    assert all(item["finished_at"] is None for item in instances)
+    assert all(
+        item["execution_state"]
+        == {
+            "cursor": 0,
+            "records": [],
+            "active_execution_id": None,
+            "active_node_id": None,
+        }
+        for item in instances
+    )
+    assert body["scheduled_template_ids"] == ["prepare", "measure"]
+    assert body["scheduler_paused"] is True
+    assert body["schedule_entries"] == []
+    assert body["events"][-1]["kind"] == "instances_progress_reset"
+    assert body["events"][-1]["payload"] == {"reset_instance_count": 2}
+    assert all(item.get("instance_id") is None for item in body["events"])
+
+
+def test_reset_instances_progress_requires_paused_idle_workspace(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    assert client.post(
+        "/templates",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 0,
+            "template": _template("prepare"),
+        },
+    ).status_code == 200
+    generated = client.post(
+        "/instances:generate",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 1,
+            "template_ids": ["prepare"],
+            "sample_ids": ["sample-a"],
+        },
+    )
+    assert generated.status_code == 200
+
+    active_scheduler = client.post(
+        "/instances:reset-progress",
+        json={"workflow_path": "demo.json", "expected_version": 2},
+    )
+    assert active_scheduler.status_code == 409
+    assert active_scheduler.json()["detail"]["code"] == "scheduler_active"
+
+    paused = client.post(
+        "/schedule:plan",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 2,
+            "paused": True,
+        },
+    )
+    assert paused.status_code == 200
+    paused_workspace = paused.json()["workspace"]
+    instance = paused_workspace["task_instances"][0]
+    instance["status"] = "running"
+    instance["started_at"] = 2_000
+    instance["execution_state"] = {
+        "cursor": 0,
+        "records": [
+            {
+                "node_id": "prepare-node",
+                "attempt": 1,
+                "execution_id": "active-execution",
+                "status": "running",
+                "started_at": 2_000,
+            }
+        ],
+        "active_execution_id": "active-execution",
+        "active_node_id": "prepare-node",
+    }
+    with_active_action = client.put(
+        "/workspaces",
+        json={"expected_version": 3, "workspace": paused_workspace},
+    )
+    assert with_active_action.status_code == 200
+
+    rejected = client.post(
+        "/instances:reset-progress",
+        json={"workflow_path": "demo.json", "expected_version": 4},
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"]["code"] == "actions_in_flight"
+
+
 def test_scheduled_templates_endpoint_persists_requested_order_without_admin_token(tmp_path):
     client = _client_with_workflow(tmp_path)
     for version, template_id in enumerate(("first", "second")):

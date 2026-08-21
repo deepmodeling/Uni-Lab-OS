@@ -16,6 +16,7 @@ from ..models import (
     PlcRegistrationRequest,
     OpcPushRequest,
     ScheduleRequest,
+    ResetInstancesProgressRequest,
     ScheduledTemplatesUpdateRequest,
     TemplateCreateRequest,
     TemplateUpdateRequest,
@@ -191,6 +192,18 @@ def create_router(store: WorkspaceStore, service: WorkspaceService | None = None
                 request.workflow_path,
                 request.expected_version,
             ))
+        except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
+            raise mutation_error(exc) from exc
+
+    @router.post("/instances:reset-progress")
+    def reset_instances_progress(request: ResetInstancesProgressRequest) -> dict:
+        try:
+            return public_workspace_response(
+                workspace_service.reset_instances_progress(
+                    request.workflow_path,
+                    request.expected_version,
+                )
+            )
         except (VersionConflictError, WorkspaceServiceError, SidecarCorruptionError, WorkflowPathError) as exc:
             raise mutation_error(exc) from exc
 

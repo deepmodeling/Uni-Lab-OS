@@ -317,7 +317,7 @@ class WorkspaceEvent(StrictModel):
         "opc_snapshot", "output", "scheduled", "completed", "template_deleted",
         "templates_deleted",
         "scheduled_templates_updated", "instances_cleared",
-        "instance_parameters_updated",
+        "instances_progress_reset", "instance_parameters_updated",
     ]
     id: str = Field(default_factory=lambda: uuid4().hex)
     timestamp: int = Field(default=0, ge=0)
@@ -571,6 +571,11 @@ class GenerateInstancesRequest(StrictModel):
 
 
 class ClearInstancesRequest(StrictModel):
+    workflow_path: str
+    expected_version: int = Field(ge=0)
+
+
+class ResetInstancesProgressRequest(StrictModel):
     workflow_path: str
     expected_version: int = Field(ge=0)
 

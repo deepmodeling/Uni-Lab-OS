@@ -110,6 +110,7 @@ import {
   formatElapsedDurationMs,
   formatTaskActionTimingTitle,
   isTaskWaitingStatus,
+  orderSelectedTemplateIds,
   renameTaskTemplate,
   resolveTaskTemplateNameDraft,
   resolveTemplateNodes,
@@ -2044,12 +2045,14 @@ function App() {
   }, [persistTaskTestMemory, showCanvasToast]);
 
   const createTaskInstances = useCallback(() => {
-    const templateIds = scheduledTemplateIdsRef.current;
+    const templateIds = orderSelectedTemplateIds(
+      taskTemplatesRef.current,
+      scheduledTemplateIdsRef.current,
+    );
     if (!templateIds.length) {
       setMessage('请先将 Task Template 拖入 Resource Schedule。');
       return;
     }
-    const samples = generateSampleIds(taskSampleCount);
     const selectedTemplateIds = new Set(templateIds);
     const actionNodeCatalog = nodes.map((node) => ({
       id: node.id,
@@ -2075,19 +2078,25 @@ function App() {
           ),
         ]),
     );
-    void mutateTaskWorkspace((version) => taskApiRef.current.generateInstances(
-      taskWorkspacePath,
-      version,
-      templateIds,
-      samples,
-      taskSampleStartIntervalSeconds,
-      rememberedParametersForSamples(
-        taskTestMemoryRef.current,
-        samples,
+    void mutateTaskWorkspace((version) => {
+      const samples = generateSampleIds(
+        taskSampleCount,
+        taskInstancesRef.current.map((item) => item.sample),
+      );
+      return taskApiRef.current.generateInstances(
+        taskWorkspacePath,
+        version,
         templateIds,
-        parameterSchema,
-      ),
-    ));
+        samples,
+        taskSampleStartIntervalSeconds,
+        rememberedParametersForSamples(
+          taskTestMemoryRef.current,
+          samples,
+          templateIds,
+          parameterSchema,
+        ),
+      );
+    });
   }, [
     mutateTaskWorkspace,
     nodes,

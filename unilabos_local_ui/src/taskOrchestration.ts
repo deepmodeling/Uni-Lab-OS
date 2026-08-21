@@ -548,6 +548,14 @@ export function updateScheduledTemplateDraft(
     : current;
 }
 
+export function orderSelectedTemplateIds(
+  templates: Array<Pick<TaskTemplateModel, 'id'>>,
+  selectedTemplateIds: readonly string[],
+) {
+  const selected = new Set(selectedTemplateIds);
+  return templates.filter((template) => selected.has(template.id)).map((template) => template.id);
+}
+
 /** output_triggers 只描述完成后的输出动作，不门控 Task 完成；waiting 仅含输入阶段的 waiting/pending。 */
 export function isTaskWaitingStatus(status: string) {
   return status === 'waiting' || status === 'pending';

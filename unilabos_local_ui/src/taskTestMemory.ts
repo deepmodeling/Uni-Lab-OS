@@ -15,9 +15,21 @@ const TASK_TEST_MEMORY_PREFIX = 'unilabos.taskTestMemory.v2';
 const LEGACY_TASK_TEST_MEMORY_PREFIX = 'unilabos.taskTestMemory.v1';
 const DEFAULT_SAMPLE_COUNT = 3;
 
-export function generateSampleIds(sampleCount: number): string[] {
+export function generateSampleIds(
+  sampleCount: number,
+  existingSampleIds: readonly string[] = [],
+): string[] {
+  const startOrdinal = existingSampleIds.reduce((maximum, sampleId) => {
+    const match = /^Sample\s+([A-Z]+)$/i.exec(sampleId.trim());
+    if (!match) return maximum;
+    const ordinal = [...match[1].toUpperCase()].reduce(
+      (value, character) => value * 26 + character.charCodeAt(0) - 64,
+      0,
+    );
+    return Math.max(maximum, ordinal);
+  }, 0) + 1;
   return Array.from({ length: normalizeSampleCount(sampleCount) }, (_, index) => {
-    let value = index + 1;
+    let value = startOrdinal + index;
     let suffix = '';
     while (value > 0) {
       value -= 1;

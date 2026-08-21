@@ -31,6 +31,9 @@ const {
   withoutRememberedTemplateParameters,
   withTaskSampleCount,
 } = await importTypeScriptModule(new URL('../src/taskTestMemory.ts', import.meta.url));
+const { orderSelectedTemplateIds } = await importTypeScriptModule(
+  new URL('../src/taskOrchestration.ts', import.meta.url),
+);
 
 assert.deepEqual(generateSampleIds(5), [
   'Sample A', 'Sample B', 'Sample C', 'Sample D', 'Sample E',
@@ -40,6 +43,26 @@ assert.deepEqual(generateSampleIds(28).slice(24), [
   'Sample Y', 'Sample Z', 'Sample AA', 'Sample AB',
 ]);
 assert.equal(generateSampleIds(1_000).length, 999);
+assert.deepEqual(generateSampleIds(1, ['Sample A']), ['Sample B']);
+assert.deepEqual(
+  generateSampleIds(2, ['Sample A', 'Sample B']),
+  ['Sample C', 'Sample D'],
+);
+assert.deepEqual(generateSampleIds(2, ['Sample Z']), ['Sample AA', 'Sample AB']);
+assert.deepEqual(
+  generateSampleIds(1, ['自定义样品', 'Sample C']),
+  ['Sample D'],
+  '非标准样品名不应影响 Sample 字母序号',
+);
+assert.deepEqual(generateSampleIds(1, []), ['Sample A'], '清空队列后应从 Sample A 重新开始');
+assert.deepEqual(
+  orderSelectedTemplateIds(
+    [{ id: 's03' }, { id: 's07' }, { id: 's09' }],
+    ['s09', 's03', 's07'],
+  ),
+  ['s03', 's07', 's09'],
+  '生成队列必须按左侧模板显示顺序，而不是按勾选先后顺序',
+);
 
 const values = new Map();
 const storage = {

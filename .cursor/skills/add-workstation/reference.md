@@ -5,9 +5,73 @@ Agent 在需要实现这些功能时按需阅读。
 
 ---
 
-## 1. 外部系统集成模式
+## 1. 外部系统工作站通用守则
 
-### 1.1 RPC 客户端
+外部系统工作站的难点通常不在类模板，而在事实来源、现场 API、注册表可见性和物料同步边界。开始实现前先按下面规则定边界。
+
+### 1.1 先确定事实来源
+
+建议按优先级取证：
+
+1. 当前仓库源码与当前运行环境中的 Uni-Lab-OS 源码。
+2. 当前项目的后端 OpenAPI/schema、供应商 API 文档、示例配置。
+3. 当前部署的只读现场 API 结果，例如设备列表、仓库/库位、物料列表、订单报告。
+4. 其他工作站源码、旧文档、历史日志、HAR/浏览器观察，只作为模式参考。
+
+前端 route 和后端 route 可能完全不同。运行时代码使用后端 API，不要把前端/HAR route 当成工作站 API。
+
+### 1.2 区分基类能力和工站差异
+
+先查当前基类已经提供什么，再决定 thin wrapper、override 或重写。
+
+通常由 Uni-Lab-OS 工作站框架提供：
+
+- `deck` 反序列化并传入 `__init__(..., deck=None, **kwargs)`。
+- `post_init(ros_node)` 阶段拿到 ROS 节点和子设备。
+- `self._ros_node.sub_devices` / `self._children` 等子设备访问入口（以当前源码为准）。
+- `ResourceSynchronizer` 这样的同步抽象和 `update_resource` 上传资源树机制。
+- `WorkstationHTTPService` 这类回调分发框架（若当前版本提供）。
+
+通常必须按每个工站适配：
+
+- API endpoint、认证方式、请求/响应 envelope、状态码含义。
+- workflow/order 创建参数、用户可读编号与内部 ID 的关系、报告轮询逻辑。
+- 设备 operation 名称、下拉枚举、范围参数、错误恢复选项。
+- 物料类型、仓库/库位映射、坐标方向、空位和虚拟暂存策略。
+- 人工确认节点的展示表、审批默认值、assignee、失败语义。
+- 资源树粒度：是否真的需要 wells/tips/子孔，还是只保存外部明细元数据。
+
+不要假设参考工作站里的方法都是基类能力。继承方法或 helper 行为若要暴露给流程图，通常需要在当前 `@device` 类上写薄 wrapper，让 AST 扫描和前端注册表都能看到。
+
+### 1.3 注册表、动作 schema 与人工确认
+
+- 工作流动作必须在被装饰的 `@device` 类上 AST/import 可见。
+- 资源/Deck 类也要 import-visible；图文件的 `_resource_type` 应指向可导入的 decorated 类。class 形式资源必须在运行时被 import，不能只依赖 AST 扫描。
+- `Args:` docstring、参数名、`Field(title/description)`、handle key、默认值和 required 语义要一致。显示名和必填标记等 UI 约定以当前仓库文档为准。
+- `NodeType.MANUAL_CONFIRM` 用于人工门禁。handle 传入值应视为只读展示/依赖数据；审批结果用 goal params 承载并给安全默认值。确认失败时抛异常，避免仅返回 `{"success": False}` 后被当成普通动作完成。
+
+### 1.4 现场 API 测试不可省
+
+供应商系统可能出现“HTTP 200 但业务失败”或“同一设备数但 operation 为空”。写 wrapper 时要解析业务 envelope（如 `code`/`message`/`data`），并在错误中带上 endpoint、设备、operation 和原始关键信息。
+
+快照只能帮助设计 wrapper 和 schema；执行前仍要用当前部署的现场 API 验证。写接口需要真实测试环境和明确批准；只读探测也要记录 host、时间、返回 envelope 和样本 ID。
+
+### 1.5 物料与资源同步先做往返测试
+
+PLR 资源类至少要通过两种构造路径：
+
+- 注册/同步时的 `cls(name=...)` 或工厂式创建。
+- 反序列化时的 `cls(**serialized_dict)`。
+
+优先使用容错构造器、`**kwargs`、`kwargs.setdefault(...)`，并为 itemized 资源提供 `ordered_items` 或 `ordering`。如果 Deck 已带有反序列化出的 `children`，不要再次初始化默认子物料，避免重复或陈旧资源。
+
+需要默认 children/layout 的资源可实现 `setup()`，工作站 Deck 自动放置 WareHouse 是典型例子。`setup` 必须默认为 `False`，只有首次创建默认布局时显式打开；若图文件传入 `config.setup=true`，也只是构造参数，只有对应资源类的 `__init__` 显式处理时才会生效。默认保持 `False` 可避免反序列化已有 `children` 时重复创建或覆盖持久化状态。
+
+---
+
+## 2. 外部系统集成模式
+
+### 2.1 RPC 客户端
 
 与外部 LIMS/MES 系统通信的标准模式。继承 `BaseRequest`，所有接口统一用 POST。
 
@@ -41,7 +105,7 @@ class MySystemRPC(BaseRequest):
 
 参考：`unilabos/devices/workstation/bioyond_studio/bioyond_rpc.py`（`BioyondV1RPC`）
 
-### 1.2 HTTP 回调服务
+### 2.2 HTTP 回调服务
 
 接收外部系统报送的标准模式。使用 `WorkstationHTTPService`，在 `post_init` 中启动。
 
@@ -96,7 +160,7 @@ def process_order_finish_report(self, report_request, used_materials) -> Dict[st
 
 参考：`unilabos/devices/workstation/workstation_http_service.py`
 
-### 1.3 连接监控
+### 2.3 连接监控
 
 独立线程周期性检测外部系统连接状态，状态变化时发布 ROS 事件。
 
@@ -128,11 +192,11 @@ class ConnectionMonitor:
 
 ---
 
-## 2. Config 结构模式
+## 3. Config 结构模式
 
 工作站的 `config` 在图文件中定义，传入 `__init__`。以下是常见字段模式：
 
-### 2.1 外部系统连接
+### 3.1 外部系统连接
 
 ```json
 {
@@ -141,7 +205,7 @@ class ConnectionMonitor:
 }
 ```
 
-### 2.2 HTTP 回调服务
+### 3.2 HTTP 回调服务
 
 ```json
 {
@@ -152,7 +216,7 @@ class ConnectionMonitor:
 }
 ```
 
-### 2.3 物料类型映射
+### 3.3 物料类型映射
 
 将 PLR 资源类名映射到外部系统的物料类型（名称 + UUID）。用于双向物料转换。
 
@@ -165,7 +229,7 @@ class ConnectionMonitor:
 }
 ```
 
-### 2.4 仓库映射
+### 3.4 仓库映射
 
 将仓库名映射到外部系统的仓库 UUID 和库位 UUID。用于入库/出库操作。
 
@@ -183,7 +247,7 @@ class ConnectionMonitor:
 }
 ```
 
-### 2.5 工作流映射
+### 3.5 工作流映射
 
 将内部工作流名映射到外部系统的工作流 ID。
 
@@ -195,7 +259,7 @@ class ConnectionMonitor:
 }
 ```
 
-### 2.6 物料默认参数
+### 3.6 物料默认参数
 
 ```json
 {
@@ -212,9 +276,9 @@ class ConnectionMonitor:
 
 ---
 
-## 3. 资源同步机制
+## 4. 资源同步机制
 
-### 3.1 ResourceSynchronizer
+### 4.1 ResourceSynchronizer
 
 抽象基类，用于与外部物料系统双向同步。定义在 `workstation_base.py`。
 
@@ -246,7 +310,7 @@ class MyResourceSynchronizer(ResourceSynchronizer):
         return True
 ```
 
-### 3.2 update_resource — 上传资源树到云端
+### 4.2 update_resource — 上传资源树到云端
 
 将 PLR Deck 序列化后通过 ROS 服务上传。典型使用场景：
 
@@ -268,7 +332,7 @@ ROS2DeviceNode.run_async_func(
 
 ---
 
-## 4. 工作流序列管理
+## 5. 工作流序列管理
 
 工作站通过 `workflow_sequence` 属性管理任务队列（JSON 字符串形式）。
 
@@ -301,7 +365,7 @@ class MyWorkstation(WorkstationBase):
 
 ---
 
-## 5. 站间物料转移
+## 6. 站间物料转移
 
 工作站之间转移物料的模式。通过 ROS ActionClient 调用目标站的动作。
 
@@ -332,7 +396,7 @@ async def transfer_materials_to_another_station(
 
 ---
 
-## 6. post_init 完整模式
+## 7. post_init 完整模式
 
 `post_init` 是工作站初始化的关键阶段，此时 ROS 节点和子设备已就绪。
 

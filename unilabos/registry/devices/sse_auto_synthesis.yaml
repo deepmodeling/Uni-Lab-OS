@@ -1,0 +1,559 @@
+sse_auto_synthesis:
+  category:
+  - sse_auto_synthesis
+  class:
+    action_value_mappings:
+      auto-get_ball_bead:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 get_ball_bead 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: get_ball_bead参数
+          type: object
+        type: UniLabJsonCommand
+      auto-get_furnace_status:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 get_furnace_status 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: get_furnace_status参数
+          type: object
+        type: UniLabJsonCommand
+      auto-loading_material:
+        feedback: {}
+        goal:
+          materials: materials
+        goal_default:
+          materials: []
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 loading_material 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                materials:
+                  description: 确保人工料架区有物料、自动料架区无物料
+                  items:
+                    properties:
+                      auto_rack:
+                        type: integer
+                      manual_rack:
+                        type: integer
+                      material:
+                        type: string
+                      weight:
+                        type: number
+                    required:
+                    - material
+                    - weight
+                    - manual_rack
+                    - auto_rack
+                    type: object
+                  type: array
+              required:
+              - materials
+              type: object
+            result: {}
+          required:
+          - goal
+          title: loading_material参数
+          type: object
+        type: UniLabJsonCommand
+      auto-set_ball_bead:
+        feedback: {}
+        goal:
+          n_ball_bead: n_ball_bead
+        goal_default:
+          n_ball_bead: 100
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 set_ball_bead 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                n_ball_bead:
+                  description: 球珠数量
+                  type: integer
+              required:
+              - n_ball_bead
+              type: object
+            result: {}
+          required:
+          - goal
+          title: set_ball_bead参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start_material:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 start_material 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start_material参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start_milling:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 start_milling 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start_milling参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start_recipt:
+        feedback: {}
+        goal: {}
+        goal_default:
+          out: ''
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 start_recipt 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                out:
+                  description: 输出文件路径
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start_recipt参数
+          type: object
+        type: UniLabJsonCommand
+      auto-start_sintering:
+        feedback: {}
+        goal: {}
+        goal_default: {}
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 start_sintering 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties: {}
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: start_sintering参数
+          type: object
+        type: UniLabJsonCommand
+      auto-unload_sintering:
+        feedback: {}
+        goal:
+          furnace: furnace
+        goal_default:
+          furnace: []
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 unload_sintering 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                furnace:
+                  description: 下坩埚炉号列表（1-4）
+                  items:
+                    type: integer
+                  type: array
+              required:
+              - furnace
+              type: object
+            result: {}
+          required:
+          - goal
+          title: unload_sintering参数
+          type: object
+        type: UniLabJsonCommand
+      auto-unloading_material:
+        feedback: {}
+        goal:
+          materials: materials
+        goal_default:
+          materials: []
+        handles: {}
+        result: {}
+        schema:
+          description: 发送 unloading_material 命令到设备 TCP 端口
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                materials:
+                  description: 确保人工料架区无物料
+                  items:
+                    properties:
+                      auto_rack:
+                        type: integer
+                      manual_rack:
+                        type: integer
+                    required:
+                    - manual_rack
+                    - auto_rack
+                    type: object
+                  type: array
+              required:
+              - materials
+              type: object
+            result: {}
+          required:
+          - goal
+          title: unloading_material参数
+          type: object
+        type: UniLabJsonCommand
+      auto-update_params:
+        feedback: {}
+        goal: {}
+        goal_default:
+          A:
+            Recipe_1:
+              Materials: []
+              n_ball_bead: 100
+            Recipe_2:
+              Materials: []
+              n_ball_bead: 100
+          B:
+            Status: true
+            furnace_01:
+              begin_temp1: 25
+              end_temp1: 480
+              end_temp2: 480
+              open_door_temp: 50
+              status: true
+              time_temp1: 180
+              time_temp2: 360
+            furnace_02:
+              begin_temp1: 25
+              end_temp1: 490
+              end_temp2: 490
+              open_door_temp: 50
+              status: true
+              time_temp1: 180
+              time_temp2: 360
+            furnace_03:
+              begin_temp1: 25
+              end_temp1: 500
+              end_temp2: 500
+              open_door_temp: 50
+              status: true
+              time_temp1: 180
+              time_temp2: 360
+            furnace_04:
+              begin_temp1: 25
+              end_temp1: 510
+              end_temp2: 510
+              open_door_temp: 50
+              status: true
+              time_temp1: 180
+              time_temp2: 360
+          out: ''
+        handles: {}
+        result: {}
+        schema:
+          description: 生成 SSE auto synthesis 设备的 params.json，默认通过 TCP 发送（使用设备图 IP/Port），并支持写文件/预览
+          properties:
+            feedback: {}
+            goal:
+              properties:
+                A:
+                  description: 配方
+                  properties:
+                    Recipe_1:
+                      description: 配方1
+                      properties:
+                        Materials:
+                          default: []
+                          items:
+                            properties:
+                              Material:
+                                type: string
+                              Precision (g):
+                                type: number
+                              Quality (g):
+                                type: number
+                            required:
+                            - Material
+                            - Quality (g)
+                            - Precision (g)
+                            type: object
+                          type: array
+                        n_ball_bead:
+                          default: 100
+                          description: 球珠数量
+                          type: integer
+                      type: object
+                    Recipe_2:
+                      description: 配方2
+                      properties:
+                        Materials:
+                          default: []
+                          items:
+                            properties:
+                              Material:
+                                type: string
+                              Precision (g):
+                                type: number
+                              Quality (g):
+                                type: number
+                            required:
+                            - Material
+                            - Quality (g)
+                            - Precision (g)
+                            type: object
+                          type: array
+                        n_ball_bead:
+                          default: 100
+                          description: 球珠数量
+                          type: integer
+                      type: object
+                  type: object
+                B:
+                  description: 烧结（open_door_temp固定为50）
+                  properties:
+                    Status:
+                      default: true
+                      description: 是否需要烧结
+                      type: boolean
+                    furnace_01:
+                      description: 炉子1参数输入
+                      properties:
+                        begin_temp1:
+                          default: 25
+                          type: number
+                        end_temp1:
+                          default: 480
+                          type: number
+                        end_temp2:
+                          default: 480
+                          type: number
+                        status:
+                          default: true
+                          description: 是否启用furnace_01
+                          type: boolean
+                        time_temp1:
+                          default: 180
+                          type: integer
+                        time_temp2:
+                          default: 360
+                          type: integer
+                        添加温度段:
+                          default: []
+                          description: 添加目标温度end_temp和加热时间time_temp
+                          items:
+                            properties:
+                              end_temp:
+                                type: number
+                              time_temp:
+                                type: integer
+                            required:
+                            - time_temp
+                            - end_temp
+                            type: object
+                          type: array
+                      type: object
+                    furnace_02:
+                      description: 炉子2参数输入
+                      properties:
+                        begin_temp1:
+                          default: 25
+                          type: number
+                        end_temp1:
+                          default: 490
+                          type: number
+                        end_temp2:
+                          default: 490
+                          type: number
+                        status:
+                          default: true
+                          description: 是否启用furnace_02
+                          type: boolean
+                        time_temp1:
+                          default: 180
+                          type: integer
+                        time_temp2:
+                          default: 360
+                          type: integer
+                        添加温度段:
+                          default: []
+                          description: 添加目标温度end_temp和加热时间time_temp
+                          items:
+                            properties:
+                              end_temp:
+                                type: number
+                              time_temp:
+                                type: integer
+                            required:
+                            - time_temp
+                            - end_temp
+                            type: object
+                          type: array
+                      type: object
+                    furnace_03:
+                      description: 炉子3参数输入
+                      properties:
+                        begin_temp1:
+                          default: 25
+                          type: number
+                        end_temp1:
+                          default: 500
+                          type: number
+                        end_temp2:
+                          default: 500
+                          type: number
+                        status:
+                          default: false
+                          description: 是否启用furnace_03
+                          type: boolean
+                        time_temp1:
+                          default: 180
+                          type: integer
+                        time_temp2:
+                          default: 360
+                          type: integer
+                        添加温度段:
+                          default: []
+                          description: 添加目标温度end_temp和加热时间time_temp
+                          items:
+                            properties:
+                              end_temp:
+                                type: number
+                              time_temp:
+                                type: integer
+                            required:
+                            - time_temp
+                            - end_temp
+                            type: object
+                          type: array
+                      type: object
+                    furnace_04:
+                      description: 炉子4参数输入
+                      properties:
+                        begin_temp1:
+                          default: 25
+                          type: number
+                        end_temp1:
+                          default: 510
+                          type: number
+                        end_temp2:
+                          default: 510
+                          type: number
+                        status:
+                          default: false
+                          description: 是否启用furnace_04
+                          type: boolean
+                        time_temp1:
+                          default: 180
+                          type: integer
+                        time_temp2:
+                          default: 360
+                          type: integer
+                        添加温度段:
+                          default: []
+                          description: 添加目标温度end_temp和加热时间time_temp
+                          items:
+                            properties:
+                              end_temp:
+                                type: number
+                              time_temp:
+                                type: integer
+                            required:
+                            - time_temp
+                            - end_temp
+                            type: object
+                          type: array
+                      type: object
+                  type: object
+                out:
+                  description: 输出文件路径（为空则写到脚本同目录）
+                  type: string
+              required: []
+              type: object
+            result: {}
+          required:
+          - goal
+          title: update_params参数
+          type: object
+        type: UniLabJsonCommand
+    module: unilabos.devices.workstation.sse_auto_synthesis:SSEAutoSynthesisStation
+    status_types: {}
+    type: python
+  config_info: []
+  description: SSE auto synthesis 设备参数生成器，将配方与流程打包为 params.json，并支持写入文件或通过 JSON 命令管道发送
+  handles: []
+  icon: ''
+  init_param_schema:
+    config:
+      properties:
+        ip:
+          description: TCP 发送目标 IP（来自设备图）
+          type: string
+        port:
+          description: TCP 发送目标端口（来自设备图）
+          maximum: 65535
+          minimum: 1
+          type: integer
+      required: []
+      type: object
+    data:
+      properties: {}
+      required: []
+      type: object
+  version: 1.0.0

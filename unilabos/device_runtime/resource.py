@@ -119,6 +119,26 @@ class ResourceService(Protocol):
 GatewayProvider = Callable[[], MaterialGateway]
 
 
+async def _run_blocking(
+    function: Callable[..., Any],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """在线程型 rclpy coroutine callback 中回退为同步调用。
+
+    rclpy 的 executor 会逐步执行 ``async def`` service callback，但并不创建
+    asyncio event loop；这时 ``asyncio.to_thread`` 会在真正访问 Materials
+    Authority 前抛出 ``no running event loop``。HostLink/普通 asyncio 路径仍
+    在线程池执行阻塞 writer，只有 rclpy 无 loop 路径在 callback 线程内直调。
+    """
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return function(*args, **kwargs)
+    return await asyncio.to_thread(function, *args, **kwargs)
+
+
 @dataclass
 class _ObservedMaterialRoot:
     root: Any
@@ -171,9 +191,7 @@ class MaterialSnapshotObserver:
     def suppress_authority_projection(self) -> Iterator[None]:
         """权威快照投影回 PLR 时禁止产生反向 snapshot。"""
 
-        token = self._suppression_depth.set(
-            self._suppression_depth.get() + 1
-        )
+        token = self._suppression_depth.set(self._suppression_depth.get() + 1)
         try:
             yield
         finally:
@@ -183,9 +201,7 @@ class MaterialSnapshotObserver:
     def _can_observe(resource: Any) -> bool:
         return bool(
             str(getattr(resource, "unilabos_uuid", "") or "").strip()
-            and callable(
-                getattr(resource, "register_state_update_callback", None)
-            )
+            and callable(getattr(resource, "register_state_update_callback", None))
             and callable(
                 getattr(resource, "register_did_assign_resource_callback", None)
             )
@@ -268,9 +284,7 @@ class MaterialSnapshotObserver:
                 )
             if entry is None:
                 continue
-            deregister = getattr(
-                entry[0], "deregister_state_update_callback", None
-            )
+            deregister = getattr(entry[0], "deregister_state_update_callback", None)
             if callable(deregister):
                 try:
                     deregister(entry[1])
@@ -342,9 +356,7 @@ class MaterialSnapshotObserver:
                 # 先在设备执行线程冻结整棵 PLR 树，避免后台 I/O 时继续读取
                 # 一半旧、一半新的 child state。
                 runtime_tree = ResourceTreeSet.from_plr_resources([root])
-                snapshot_method = getattr(
-                    self._service, "snapshot_resource_tree", None
-                )
+                snapshot_method = getattr(self._service, "snapshot_resource_tree", None)
                 if callable(snapshot_method):
                     await snapshot_method(
                         self._device_id(),
@@ -401,9 +413,7 @@ def _runtime_gateway() -> MaterialGateway:
 
 def _normalize_plr_resources(resources: Any) -> list[Any]:
     normalized = (
-        list(resources)
-        if isinstance(resources, (list, tuple))
-        else [resources]
+        list(resources) if isinstance(resources, (list, tuple)) else [resources]
     )
     if not normalized or normalized == [None]:
         raise ValueError("物料操作至少需要一个 PLR resource")
@@ -495,7 +505,7 @@ class AuthorityResourceService:
         device_uuid: str,
         resources: Any,
     ) -> CreatedPLRMaterials:
-        return await asyncio.to_thread(
+        return await _run_blocking(
             self._create_sync,
             device_id,
             device_uuid,
@@ -586,10 +596,7 @@ class AuthorityResourceService:
         for root_uuid, changed_resources in by_root.items():
             base = gateway.get_tree(root_uuid)
             partial = ResourceTreeSet.from_raw_dict_list(
-                [
-                    resource.model_dump(by_alias=True)
-                    for resource in changed_resources
-                ]
+                [resource.model_dump(by_alias=True) for resource in changed_resources]
             )
             snapshot = resource_tree_to_snapshot(
                 partial,
@@ -608,9 +615,7 @@ class AuthorityResourceService:
                 current = gateway.apply_snapshot(mutation, snapshot).data
             else:
                 current = base
-            authoritative.trees.extend(
-                material_tree_to_resource_tree(current).trees
-            )
+            authoritative.trees.extend(material_tree_to_resource_tree(current).trees)
         return authoritative
 
     async def update_resources(
@@ -619,7 +624,7 @@ class AuthorityResourceService:
         device_uuid: str,
         resources: Any,
     ) -> ResourceTreeSet:
-        return await asyncio.to_thread(
+        return await _run_blocking(
             self._update_sync,
             device_id,
             device_uuid,
@@ -634,7 +639,7 @@ class AuthorityResourceService:
     ) -> ResourceTreeSet:
         """严格提交完整根树；缺少任一权威 child 都拒绝，不做局部合并。"""
 
-        return await asyncio.to_thread(
+        return await _run_blocking(
             self._update_sync,
             device_id,
             device_uuid,
@@ -655,9 +660,7 @@ class AuthorityResourceService:
             if not material_uuid or material_uuid in seen:
                 continue
             seen.add(material_uuid)
-            tree_set = material_tree_to_resource_tree(
-                gateway.get_tree(material_uuid)
-            )
+            tree_set = material_tree_to_resource_tree(gateway.get_tree(material_uuid))
             if not with_children:
                 for tree in tree_set.trees:
                     tree.root_node.children = []
@@ -671,7 +674,7 @@ class AuthorityResourceService:
         with_children: bool,
     ) -> ResourceTreeSet:
         del device_id
-        return await asyncio.to_thread(
+        return await _run_blocking(
             self._get_sync,
             resources_uuid,
             with_children,
@@ -705,7 +708,7 @@ class AuthorityResourceService:
         with_children: bool,
     ) -> ResourceTreeSet:
         del device_id
-        return await asyncio.to_thread(
+        return await _run_blocking(
             self.get_resource_by_id_sync,
             resource_id,
             with_children,
@@ -742,7 +745,7 @@ class AuthorityResourceService:
         device_uuid: str,
         resources_uuid: list[str],
     ) -> list[str]:
-        return await asyncio.to_thread(
+        return await _run_blocking(
             self.delete_resources_sync,
             device_id,
             device_uuid,

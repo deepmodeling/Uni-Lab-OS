@@ -25,9 +25,7 @@ def _container(name: str) -> RegularContainer:
         size_z=20,
         max_volume=100,
     )
-    resource.unilabos_extra = {
-        "unilabos_resource_class": "authority-container"
-    }
+    resource.unilabos_extra = {"unilabos_resource_class": "authority-container"}
     return resource
 
 
@@ -47,9 +45,7 @@ def test_resource_service_create_get_and_partial_snapshot_update(tmp_path) -> No
         parent_uuid = authoritative_parent.unilabos_uuid
         child_uuid = authoritative_child.unilabos_uuid
 
-        authoritative_child.tracker.set_liquids(
-            [("NaCl", 250.0, "ug")]
-        )
+        authoritative_child.tracker.set_liquids([("NaCl", 250.0, "ug")])
         updated = asyncio.run(
             service.update_resources(
                 "device-1",
@@ -96,6 +92,31 @@ def test_resource_service_has_no_implicit_runtime_store() -> None:
     assert not hasattr(resource_module, "LocalResourceService")
 
 
+def test_resource_service_runs_inside_rclpy_coroutine_without_asyncio_loop(
+    tmp_path,
+) -> None:
+    """rclpy executor 驱动 coroutine callback 时没有 asyncio running loop。"""
+
+    materials = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
+    service = AuthorityResourceService(LocalMaterialsClient(materials))
+    coroutine = service.create_resources(
+        "ros-host",
+        "ros-host-uuid",
+        _container("reported-by-slave"),
+    )
+    try:
+        with pytest.raises(StopIteration) as completed:
+            coroutine.send(None)
+        created = completed.value.value
+        assert created.tree.root_nodes[0].res_content.id == "reported-by-slave"
+        assert materials.list_materials()[0].material.resource_id == (
+            "reported-by-slave"
+        )
+    finally:
+        coroutine.close()
+        materials.repository.close()
+
+
 def test_resource_service_accepts_internal_create_draft(tmp_path) -> None:
     materials = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     service = AuthorityResourceService(LocalMaterialsClient(materials))
@@ -129,9 +150,7 @@ def test_snapshot_observer_diffs_the_complete_root_with_all_descendants(
     draft_root.assign_child_resource(draft_right, Coordinate(4, 5, 6))
 
     async def run() -> None:
-        created = await service.create_resources(
-            "device-1", "device-uuid", draft_root
-        )
+        created = await service.create_resources("device-1", "device-uuid", draft_root)
         root = created.resources[0]
         left, right = root.children
         deep = left.children[0]
@@ -178,8 +197,7 @@ def test_snapshot_observer_diffs_the_complete_root_with_all_descendants(
 
         # 权威回灌期间的 PLR state 变化不允许反向形成 snapshot 回声。
         before_versions = {
-            node.material.material_uuid: node.material.version
-            for node in rotated.nodes
+            node.material.material_uuid: node.material.version for node in rotated.nodes
         }
         with observer.suppress_authority_projection():
             right.tracker.set_liquids([("authority", 1.0, "ul")])
@@ -204,9 +222,7 @@ def test_strict_snapshot_rejects_a_child_only_partial_tree(tmp_path) -> None:
     parent.assign_child_resource(_container("child"), Coordinate.zero())
 
     async def run() -> None:
-        created = await service.create_resources(
-            "device-1", "device-uuid", parent
-        )
+        created = await service.create_resources("device-1", "device-uuid", parent)
         with pytest.raises(
             ValueError,
             match="does not match downloaded material UUID set",

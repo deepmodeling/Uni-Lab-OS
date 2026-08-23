@@ -26,7 +26,7 @@ jobs:
       # 原生崩溃(0xC0000005 访问违例)时打印 Python 调用栈，便于定位是哪个设备模块 import 崩溃
       PYTHONFAULTHANDLER: "1"
       UNILABOS_README_EXAMPLES_ROOT: ${{ github.workspace }}/readme-examples
-      LAN_DEMO_REF: 311428b04ddab49df3a85ad83622ef42e9e18f9c
+      LAN_DEMO_REF: d8c9d54c9bd7d76fc56315ecfb5b608ace0844e9
       WORKSTATION_DEMO_REF: 248aeb3ac8c78506d23486eeb70b5b5bbbfac55b
       ROS_DISTRO: ${{ matrix.ros_distro }}
       ROS_CHANNEL: robostack-${{ matrix.ros_distro }}
@@ -83,7 +83,8 @@ jobs:
       - name: Build unilabos_msgs for ${{ matrix.ros_distro }}/cp312
         run: |
           call conda activate check-env
-          colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF
+          if /I "%ROS_DISTRO%"=="humble" python -m pip install empy==3.3.4
+          colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE="%CONDA_PREFIX%\python.exe"
           call install\unilabos_msgs\setup.bat
           python -c "import os; from unilabos_msgs.msg import Resource; print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp312: OK')"
 

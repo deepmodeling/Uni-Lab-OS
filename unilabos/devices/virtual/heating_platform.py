@@ -11,7 +11,12 @@ The driver deliberately exercises the same boundaries as a physical driver:
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import json
+import os
+from pathlib import Path
+import threading
 import time
 from threading import RLock
 from typing import Any
@@ -129,6 +134,61 @@ class VirtualHeatingPlatform:
             }
             for index in range(1, 4)
         }
+
+    @not_action
+    def post_init(self, node: Any) -> None:
+        """保存 HostLink/ROS2 共用节点，用于跨设备场景动作。"""
+
+        self._device_node = node
+        proof_file = os.environ.get("UNILABOS_HEATING_SCENARIO_PROOF_FILE")
+        if proof_file:
+            threading.Thread(
+                target=self._write_scenario_proof,
+                args=(Path(proof_file),),
+                name="heating-scenario-proof",
+                daemon=True,
+            ).start()
+
+    @not_action
+    def _write_scenario_proof(self, proof_file: Path) -> None:
+        """为双 backend CI 依次执行三类场景并写出可机读终态。"""
+
+        delay = float(os.environ.get("UNILABOS_HEATING_SCENARIO_START_DELAY", "1"))
+        duration = float(os.environ.get("UNILABOS_HEATING_SCENARIO_DURATION", "0.1"))
+        time.sleep(max(0.0, delay))
+        try:
+            results = {
+                scenario_id: self.run_scenario(
+                    scenario_id,
+                    target,
+                    duration,
+                    ActionContext(action_id=f"scenario-proof:{scenario_id}"),
+                )
+                for scenario_id, target in (
+                    ("single_sequential", 70.0),
+                    ("parallel_three_site", 80.0),
+                    ("cross_device_transfer", 90.0),
+                )
+            }
+            proof = {
+                "success": True,
+                "backend": self._device_node.backend_name,
+                "scenarios": results,
+            }
+        except Exception as exc:  # pragma: no cover - smoke 进程会回显日志
+            logger.exception("三场景 smoke 执行失败")
+            proof = {
+                "success": False,
+                "backend": self._device_node.backend_name,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        proof_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary = proof_file.with_suffix(proof_file.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(proof, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(proof_file)
 
     @not_action
     def initialize(self) -> bool:
@@ -313,7 +373,9 @@ class VirtualHeatingPlatform:
                                     meta_data={
                                         "demo": "openlab-heating",
                                         "site_id": index,
-                                        "display_color": SAMPLE_DISPLAY_COLORS[index - 1],
+                                        "display_color": SAMPLE_DISPLAY_COLORS[
+                                            index - 1
+                                        ],
                                     },
                                 ),
                                 data=MaterialDataWrite(
@@ -375,6 +437,273 @@ class VirtualHeatingPlatform:
                     serialized = material.data.data.get("serialized_state", {})
                     if isinstance(serialized, dict):
                         state["state"] = str(serialized.get("state", state["state"]))
+                else:
+                    state.update(
+                        {
+                            "material_uuid": "",
+                            "material_name": "",
+                            "temperature_c": AMBIENT_TEMPERATURE_C,
+                            "target_temperature_c": AMBIENT_TEMPERATURE_C,
+                            "progress": 0.0,
+                            "state": "idle",
+                        }
+                    )
+
+    @action(
+        description="重置演示物料库到单工位、三工位或转位场景的确定初态",
+        goal_default={"preset": "all_sites"},
+    )
+    def reset_scenario(
+        self,
+        preset: str,
+        action_context: ActionContext,
+    ) -> dict[str, Any]:
+        """通过 materials.v1 幂等恢复场景初态，不删除模板或历史账本。"""
+
+        if preset not in {"single_site", "all_sites", "transfer"}:
+            raise ValueError("preset must be single_site, all_sites or transfer")
+        if not self._platform_uuid:
+            self._provision_materials()
+        gateway = self._gateway()
+        platform = gateway.get_material(self._platform_uuid)
+        sites = sorted(platform.sites, key=lambda item: int(item.site_index))
+        samples = [
+            gateway.get_material_by_resource_id(f"{self.device_id}-sample-{index}")
+            for index in range(1, 4)
+        ]
+        desired_site_by_material = {
+            sample.material.material_uuid: (
+                sites[index - 1].site_uuid
+                if preset == "all_sites" or index == 1
+                else None
+            )
+            for index, sample in enumerate(samples, start=1)
+        }
+        occupied_site_by_material = {
+            site.occupied_material_uuid: site
+            for site in sites
+            if site.occupied_material_uuid
+        }
+
+        # 先卸载不在目标位置的样品，再装载，避免临时占位冲突。
+        for sample in samples:
+            material_uuid = sample.material.material_uuid
+            current = occupied_site_by_material.get(material_uuid)
+            desired = desired_site_by_material[material_uuid]
+            if current is not None and current.site_uuid != desired:
+                gateway.move_material(
+                    self._mutation(
+                        "move_material",
+                        f"scenario-reset-unmount:{preset}:{material_uuid}:{uuid4().hex}",
+                        job_uuid=action_context.action_id,
+                    ),
+                    MaterialMove(material_uuid=material_uuid),
+                )
+
+        platform = gateway.get_material(self._platform_uuid)
+        sites = sorted(platform.sites, key=lambda item: int(item.site_index))
+        site_by_uuid = {site.site_uuid: site for site in sites}
+        for sample in samples:
+            material_uuid = sample.material.material_uuid
+            desired = desired_site_by_material[material_uuid]
+            if desired is None:
+                continue
+            destination = site_by_uuid[desired]
+            if destination.occupied_material_uuid != material_uuid:
+                gateway.move_material(
+                    self._mutation(
+                        "move_material",
+                        f"scenario-reset-mount:{preset}:{material_uuid}:{uuid4().hex}",
+                        job_uuid=action_context.action_id,
+                    ),
+                    MaterialMove(
+                        material_uuid=material_uuid,
+                        destination_site_uuid=desired,
+                    ),
+                )
+
+        assignments: list[dict[str, Any]] = []
+        for index, sample in enumerate(samples, start=1):
+            current = gateway.get_material(sample.material.material_uuid)
+            data = deepcopy(current.data.data)
+            data.update(
+                {
+                    "temperature_c": AMBIENT_TEMPERATURE_C,
+                    "target_temperature_c": AMBIENT_TEMPERATURE_C,
+                    "temperature_observed_at_ms": int(time.time() * 1000),
+                    "temperature_source": {
+                        "device_id": self.device_id,
+                        "property": f"site_{index}_temperature_c",
+                    },
+                    "serialized_state": {
+                        "site_id": (
+                            index
+                            if desired_site_by_material[current.material.material_uuid]
+                            else None
+                        ),
+                        "temperature_c": AMBIENT_TEMPERATURE_C,
+                        "target_temperature_c": AMBIENT_TEMPERATURE_C,
+                        "progress": 0.0,
+                        "state": "idle",
+                    },
+                }
+            )
+            gateway.put_data(
+                self._mutation(
+                    "put_data",
+                    f"scenario-reset-data:{preset}:{current.material.material_uuid}:{uuid4().hex}",
+                    job_uuid=action_context.action_id,
+                ),
+                current.material.material_uuid,
+                MaterialDataWrite(
+                    data=data,
+                    substances=current.data.substances,
+                    sites_initialized=current.data.sites_initialized,
+                    unknown_counter=current.data.unknown_counter,
+                    state_status="ready",
+                    source_event_uuid=current.data.source_event_uuid,
+                    source_job_uuid=action_context.action_id,
+                    observed_at_ms=int(time.time() * 1000),
+                ),
+            )
+            assignments.append(
+                {
+                    "material_uuid": current.material.material_uuid,
+                    "resource_id": current.material.resource_id,
+                    "site_uuid": desired_site_by_material[
+                        current.material.material_uuid
+                    ],
+                }
+            )
+        self._refresh_material_state()
+        return {
+            "success": True,
+            "preset": preset,
+            "assignments": assignments,
+        }
+
+    @action(
+        description="把样品从一个加热工位权威转位到另一个空工位",
+        goal_default={"source_site_id": 1, "target_site_id": 3},
+    )
+    def transfer_site(
+        self,
+        source_site_id: int,
+        target_site_id: int,
+        action_context: ActionContext,
+    ) -> dict[str, Any]:
+        if source_site_id not in self._sites or target_site_id not in self._sites:
+            raise ValueError("site id must be 1, 2 or 3")
+        if source_site_id == target_site_id:
+            raise ValueError("source and target sites must differ")
+        self._refresh_material_state()
+        material_uuid = str(self._sites[source_site_id]["material_uuid"])
+        if not material_uuid:
+            raise RuntimeError(f"site {source_site_id} has no material")
+        if self._sites[target_site_id]["material_uuid"]:
+            raise RuntimeError(f"site {target_site_id} is occupied")
+        result = self._gateway().move_material(
+            self._mutation(
+                "move_material",
+                f"scenario-transfer:{source_site_id}:{target_site_id}:{uuid4().hex}",
+                job_uuid=action_context.action_id,
+            ),
+            MaterialMove(
+                material_uuid=material_uuid,
+                destination_site_uuid=str(self._sites[target_site_id]["site_uuid"]),
+            ),
+        )
+        self._refresh_material_state()
+        return {
+            "success": True,
+            "material_uuid": material_uuid,
+            "source_site_id": source_site_id,
+            "target_site_id": target_site_id,
+            "position_version": result.data.position_version,
+        }
+
+    @action(
+        description="执行可重复的顺序、三工位并行或跨设备转位加热演示",
+        goal_default={
+            "scenario_id": "single_sequential",
+            "target_temperature_c": 80.0,
+            "duration_seconds": 0.8,
+        },
+        feedback_interval=0.25,
+    )
+    def run_scenario(
+        self,
+        scenario_id: str,
+        target_temperature_c: float,
+        duration_seconds: float,
+        action_context: ActionContext,
+    ) -> dict[str, Any]:
+        """以同一动作输入供 HostLink/ROS2 运行三个端到端场景。"""
+
+        if scenario_id not in {
+            "single_sequential",
+            "parallel_three_site",
+            "cross_device_transfer",
+        }:
+            raise ValueError("unknown heating scenario")
+        target = float(target_temperature_c)
+        duration = float(duration_seconds)
+        if not -20.0 <= target <= 250.0:
+            raise ValueError("target_temperature_c must be between -20 and 250")
+        if not 0.05 <= duration <= 3600.0:
+            raise ValueError("duration_seconds must be between 0.05 and 3600")
+        if scenario_id == "single_sequential":
+            reset = self.reset_scenario("single_site", action_context)
+            midpoint = round((AMBIENT_TEMPERATURE_C + target) / 2.0, 3)
+            first = self.heat_site(1, midpoint, duration, action_context)
+            second = self.heat_site(1, target, duration, action_context)
+            steps: list[Any] = [reset, first, second]
+        elif scenario_id == "parallel_three_site":
+            reset = self.reset_scenario("all_sites", action_context)
+            targets = [
+                max(-20.0, min(250.0, target + offset)) for offset in (-10.0, 0.0, 10.0)
+            ]
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = [
+                    executor.submit(
+                        self.heat_site,
+                        site_id,
+                        site_target,
+                        duration,
+                        action_context,
+                    )
+                    for site_id, site_target in enumerate(targets, start=1)
+                ]
+                parallel = [future.result() for future in futures]
+            steps = [reset, *parallel]
+        else:
+            reset = self.reset_scenario("transfer", action_context)
+            first_target = round((AMBIENT_TEMPERATURE_C + target) / 2.0, 3)
+            peer = self._device_node.call_device_action(
+                "virtual-workbench",
+                "call_peer",
+                {
+                    "target_device": self.device_id,
+                    "function_name": "heat_site",
+                    "function_args": json.dumps(
+                        {
+                            "site_id": 1,
+                            "target_temperature_c": first_target,
+                            "duration_seconds": duration,
+                        }
+                    ),
+                },
+                timeout=max(15.0, duration + 10.0),
+            )
+            moved = self.transfer_site(1, 3, action_context)
+            continued = self.heat_site(3, target, duration, action_context)
+            steps = [reset, peer, moved, continued]
+        return {
+            "success": True,
+            "scenario_id": scenario_id,
+            "steps": steps,
+            "final_state": self.serialize(),
+        }
 
     @not_action
     def _write_material_temperature(

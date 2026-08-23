@@ -78,6 +78,26 @@
           "extra": {}
         }
       ]
+    },
+    {
+      "id": "virtual-workbench",
+      "uuid": "8c340a91-f905-41b0-83b3-5b8774724f02",
+      "name": "跨设备编排工作台",
+      "type": "device",
+      "class": "virtual_workbench",
+      "template_name": "virtual_workbench",
+      "pose": {
+        "position": { "x": 560.0, "y": 0.0, "z": 0.0 }
+      },
+      "config": {
+        "arm_operation_time": 0.0,
+        "heating_time": 0.1,
+        "num_heating_stations": 3
+      },
+      "data": {},
+      "extra": {},
+      "sites_initialized": true,
+      "sites": []
     }
   ],
   "links": []

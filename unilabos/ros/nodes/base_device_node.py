@@ -75,6 +75,7 @@ from unilabos.resources.resource_tracker import (
     JSON_UNILABOS_PARAM,
 )
 from unilabos.device_runtime.driver_creator import (
+    normalize_driver_init_kwargs,
     select_driver_creator,
 )
 from rclpy.task import Task, Future
@@ -2786,11 +2787,18 @@ class ROS2DeviceNode:
         self.driver_is_workstation = creator_selection.is_workstation
         self._driver_creator = creator_selection.creator
 
+        normalized_driver_params = normalize_driver_init_kwargs(
+            driver_class,
+            device_id,
+            driver_params,
+        )
         if driver_is_ros:
-            driver_params["device_id"] = device_id
-            driver_params["registry_name"] = device_config.res_content.klass
-            driver_params["resource_tracker"] = self.resource_tracker
-        self._driver_instance = self._driver_creator.create_instance(driver_params)
+            normalized_driver_params["device_id"] = device_id
+            normalized_driver_params["registry_name"] = device_config.res_content.klass
+            normalized_driver_params["resource_tracker"] = self.resource_tracker
+        self._driver_instance = self._driver_creator.create_instance(
+            normalized_driver_params
+        )
         if self._driver_instance is None:
             logger.critical(f"设备实例创建失败 {driver_class}, params: {driver_params}")
             raise DeviceInitError("错误: 设备实例创建失败")

@@ -13,6 +13,7 @@ from unilabos.hostlink.local_runtime import (
     HostLinkLocalRuntime,
     instantiate_driver,
 )
+from unilabos.device_runtime.driver_creator import normalize_driver_init_kwargs
 from unilabos.device_runtime import BackendCapabilityError
 from unilabos.device_runtime.action import ActionContext
 from unilabos.registry.decorators import topic_config
@@ -187,6 +188,25 @@ def test_driver_instantiation_supports_config_and_flat_styles() -> None:
     flat_driver = instantiate_driver(FlatDriver, "flat-1", {"port": "B"})
     assert flat_driver.device_id == "flat-1"
     assert flat_driver.port == "B"
+
+
+def test_backends_share_logical_id_and_config_constructor_payload() -> None:
+    assert normalize_driver_init_kwargs(
+        ConfigDriver,
+        "virtual-workbench",
+        {"port": "demo"},
+    ) == {
+        "device_id": "virtual-workbench",
+        "config": {"port": "demo"},
+    }
+    assert normalize_driver_init_kwargs(
+        FlatDriver,
+        "virtual-heater",
+        {"port": "edge"},
+    ) == {
+        "device_id": "virtual-heater",
+        "port": "edge",
+    }
 
 
 def test_liquid_handlers_declare_public_backends_and_action_metadata() -> None:

@@ -26,6 +26,7 @@ from typing import (
 from unilabos.device_runtime.action import ActionContext
 from unilabos.device_runtime.driver_creator import (
     is_workstation_driver,
+    normalize_driver_init_kwargs,
     select_driver_creator,
 )
 from unilabos.device_runtime.node import BackendCapabilityError, DeviceNode
@@ -179,28 +180,7 @@ def instantiate_driver(
     HostLink 运行时不导入 ROS 设备包装器，同时兼容这两种形式。
     """
 
-    config = dict(config or {})
-    signature = inspect.signature(driver_class.__init__)
-    parameters = {
-        name: parameter
-        for name, parameter in signature.parameters.items()
-        if name != "self"
-    }
-    accepts_kwargs = any(
-        parameter.kind is inspect.Parameter.VAR_KEYWORD
-        for parameter in parameters.values()
-    )
-
-    kwargs: Dict[str, Any]
-    if "config" in parameters:
-        kwargs = {"config": config}
-    else:
-        kwargs = dict(config)
-
-    if "device_id" in parameters or accepts_kwargs:
-        kwargs.setdefault("device_id", device_id)
-    elif "id" in parameters:
-        kwargs.setdefault("id", device_id)
+    kwargs = normalize_driver_init_kwargs(driver_class, device_id, config)
     selection = select_driver_creator(
         driver_class,
         children=list(device_config.children) if device_config is not None else [],

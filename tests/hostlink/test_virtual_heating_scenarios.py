@@ -35,6 +35,27 @@ def _occupied_site_ids(service: MaterialsService, device_id: str) -> dict[int, s
     }
 
 
+def test_virtual_demo_runs_initialize_from_ros_post_init(monkeypatch) -> None:
+    initialized: list[str] = []
+
+    class RosNode:
+        backend_name = "ros2"
+
+    heater = VirtualHeatingPlatform(device_id="virtual-heater")
+    workbench = VirtualWorkbench(device_id="virtual-workbench")
+    monkeypatch.setattr(heater, "initialize", lambda: initialized.append("heater"))
+    monkeypatch.setattr(
+        workbench,
+        "initialize",
+        lambda: initialized.append("workbench"),
+    )
+
+    heater.post_init(RosNode())
+    workbench.post_init(RosNode())
+
+    assert initialized == ["heater", "workbench"]
+
+
 def test_all_heating_scenarios_reset_and_reach_expected_material_state(
     tmp_path,
     monkeypatch,

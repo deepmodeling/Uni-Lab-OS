@@ -270,6 +270,8 @@ class VirtualWorkbench:
     def post_init(self, node: DeviceNode):
         """绑定 HostLink/ROS2 共用的设备节点契约。"""
         self._device_node = node
+        if node.backend_name == "ros2":
+            self.initialize()
 
     @not_action
     def initialize(self) -> bool:

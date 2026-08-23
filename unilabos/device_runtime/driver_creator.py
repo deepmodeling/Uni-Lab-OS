@@ -28,6 +28,33 @@ T = TypeVar("T")
 TaskScheduler = Callable[[Any], Any]
 
 
+def normalize_driver_init_kwargs(
+    driver_class: Type[Any],
+    device_id: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the same logical-ID/config constructor payload for every backend."""
+
+    raw_config = dict(config or {})
+    parameters = {
+        name: parameter
+        for name, parameter in inspect.signature(
+            driver_class.__init__
+        ).parameters.items()
+        if name != "self"
+    }
+    accepts_kwargs = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    kwargs = {"config": raw_config} if "config" in parameters else raw_config
+    if "device_id" in parameters or accepts_kwargs:
+        kwargs.setdefault("device_id", device_id)
+    elif "id" in parameters:
+        kwargs.setdefault("id", device_id)
+    return kwargs
+
+
 class ClassCreator(Generic[T]):
     @abstractmethod
     def create_instance(self, *args: Any, **kwargs: Any) -> T:
@@ -420,6 +447,7 @@ __all__ = [
     "PyLabRobotCreator",
     "WorkstationNodeCreator",
     "is_workstation_driver",
+    "normalize_driver_init_kwargs",
     "select_driver_creator",
     "uses_pylabrobot_creator",
 ]

@@ -142,6 +142,8 @@ class VirtualHeatingPlatform:
         """保存 HostLink/ROS2 共用节点，用于跨设备场景动作。"""
 
         self._device_node = node
+        if node.backend_name == "ros2":
+            self.initialize()
 
     @not_action
     def _start_scenario_proof(self) -> None:

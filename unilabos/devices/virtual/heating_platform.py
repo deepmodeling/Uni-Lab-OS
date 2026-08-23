@@ -363,7 +363,8 @@ class VirtualHeatingPlatform:
         if len(sites) != 3:
             raise RuntimeError("virtual heating platform requires exactly three sites")
 
-        for index, site in enumerate(sites, start=1):
+        samples: list[Any] = []
+        for index in range(1, 4):
             sample_resource_id = f"{self.device_id}-sample-{index}"
             sample = self._material_by_resource_id(sample_resource_id)
             if sample is None:
@@ -413,11 +414,37 @@ class VirtualHeatingPlatform:
                     ),
                 )
                 sample = created.data.nodes[0]
+            samples.append(sample)
+
+        # A previous demo may have left sample 1 on Site 3. Restore the
+        # canonical all-sites layout in two phases so a stale Site snapshot or
+        # a sample permutation cannot create a transient occupancy conflict.
+        occupied_site_by_material = {
+            site.occupied_material_uuid: site
+            for site in sites
+            if site.occupied_material_uuid
+        }
+        for index, sample in enumerate(samples, start=1):
+            current = occupied_site_by_material.get(sample.material.material_uuid)
+            if current is not None and int(current.site_index) != index:
+                gateway.move_material(
+                    self._mutation(
+                        "move_material",
+                        f"unmount-misplaced-sample:{index}:{uuid4().hex}",
+                    ),
+                    MaterialMove(material_uuid=sample.material.material_uuid),
+                )
+
+        platform = gateway.get_material(self._platform_uuid)
+        sites = sorted(platform.sites, key=lambda item: int(item.site_index))
+        for index, (sample, site) in enumerate(zip(samples, sites), start=1):
             if site.occupied_material_uuid != sample.material.material_uuid:
                 if site.occupied_material_uuid is not None:
                     raise RuntimeError(f"heating site {index} is already occupied")
                 gateway.move_material(
-                    self._mutation("move_material", f"place-sample:{index}"),
+                    self._mutation(
+                        "move_material", f"place-sample:{index}:{uuid4().hex}"
+                    ),
                     MaterialMove(
                         material_uuid=sample.material.material_uuid,
                         destination_site_uuid=site.site_uuid,

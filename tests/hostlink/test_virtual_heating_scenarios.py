@@ -135,6 +135,13 @@ def test_all_heating_scenarios_reset_and_reach_expected_material_state(
             "property": "site_3_temperature_c",
         }
         assert heater.driver.serialize()["sites"][2]["material_uuid"] == occupied[3]
+
+        # A process restart provisions the canonical three-site layout even
+        # when the transfer scenario persisted sample 1 on Site 3.
+        heater.driver._provision_materials()
+        reprovisioned = _occupied_site_ids(service, "virtual-heater")
+        assert all(reprovisioned.values())
+        assert reprovisioned[1] == sample_1.material.material_uuid
     finally:
         runtime.stop()
         set_materials_gateway(None)

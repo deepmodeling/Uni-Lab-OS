@@ -7,9 +7,9 @@ import sqlite3
 import pytest
 from pydantic import ValidationError
 
-from unilabos.server.database.runtime import RUNTIME_DATABASE
+from unilabos.server.database.tables.runtime import RUNTIME_DATABASE
 from unilabos.server.database.schema import initialize_database
-from unilabos.server.models.runtime import (
+from unilabos.server.database.tables.runtime import (
     DeviceActionCapability,
     DeviceRoute,
     ExecutionJobRecord,

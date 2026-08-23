@@ -23,6 +23,8 @@ from unilabos.server.protocol.materials import (
     MaterialSubstance,
     MaterialTreeCreate,
     MaterialTreeRead,
+    MaterialTransfer,
+    MaterialTransferResult,
     SiteCreate,
     SiteRead,
     SiteWrite,
@@ -48,6 +50,10 @@ class MaterialGateway(Protocol):
     def move_material(
         self, mutation: InventoryMutation, value: MaterialMove
     ) -> MutationResult[MaterialAggregateRead]: ...
+
+    def transfer_material(
+        self, mutation: InventoryMutation, value: MaterialTransfer
+    ) -> MutationResult[MaterialTransferResult]: ...
 
     def delete_material(self, mutation: InventoryMutation, value: Any) -> Any: ...
 

@@ -7,6 +7,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 from unilabos.server.database import ServerDatabasePaths
+from unilabos.server.database.repositories import (
+    HistoryRepository,
+    MaterialsRepository,
+    RuntimeRepository,
+    TelemetryRepository,
+)
 from unilabos.server.services.history import HistoryService
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.runtime import RuntimeService
@@ -30,17 +36,21 @@ class ServerServices:
 
         opened: list[object] = []
         try:
-            runtime = RuntimeService(paths.runtime_db)
-            opened.append(runtime)
-            materials = MaterialsService(paths.materials_db)
-            opened.append(materials)
-            telemetry = TelemetryService(paths.telemetry_db)
-            opened.append(telemetry)
-            history = HistoryService(paths.history_db)
-            opened.append(history)
+            runtime_repository = RuntimeRepository(paths.runtime_db)
+            opened.append(runtime_repository)
+            materials_repository = MaterialsRepository(paths.materials_db)
+            opened.append(materials_repository)
+            telemetry_repository = TelemetryRepository(paths.telemetry_db)
+            opened.append(telemetry_repository)
+            history_repository = HistoryRepository(paths.history_db)
+            opened.append(history_repository)
+            runtime = RuntimeService(runtime_repository)
+            materials = MaterialsService(materials_repository)
+            telemetry = TelemetryService(telemetry_repository)
+            history = HistoryService(history_repository)
         except BaseException:
-            for service in reversed(opened):
-                service.close()  # type: ignore[attr-defined]
+            for repository in reversed(opened):
+                repository.close()  # type: ignore[attr-defined]
             raise
         return cls(
             paths=paths,
@@ -53,13 +63,13 @@ class ServerServices:
     def close(self) -> None:
         """按与打开相反的顺序释放四个 SQLite connection。"""
 
-        for service in (
-            self.history,
-            self.telemetry,
-            self.materials,
-            self.runtime,
+        for repository in (
+            self.history.repository,
+            self.telemetry.repository,
+            self.materials.repository,
+            self.runtime.repository,
         ):
-            service.close()
+            repository.close()
 
 
 _lock = threading.RLock()

@@ -1,4 +1,4 @@
-"""大 payload 与统一追加历史流的 ``history.db`` v1 schema。"""
+"""``history.db`` 的不可变 v1 SQLite migration snapshot。"""
 
 from unilabos.server.database.schema import (
     SCHEMA_MIGRATION_TABLE,

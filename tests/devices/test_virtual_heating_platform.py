@@ -4,6 +4,7 @@ import inspect
 import json
 from pathlib import Path
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.action import ActionContext
@@ -54,7 +55,7 @@ def test_virtual_heating_platform_is_registry_discoverable_and_demo_graph_is_str
 def test_virtual_heating_platform_creates_places_and_heats_real_materials(
     tmp_path, monkeypatch
 ) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     monkeypatch.setattr(BasicConfig, "is_host_mode", True)
     set_materials_gateway(LocalMaterialsClient(service))
     try:
@@ -106,13 +107,13 @@ def test_virtual_heating_platform_creates_places_and_heats_real_materials(
         assert serialized["sites"][1]["temperature_c"] == 72.5
     finally:
         set_materials_gateway(None)
-        service.close()
+        service.repository.close()
 
 
 def test_material_temperature_is_latest_passive_device_projection(
     tmp_path, monkeypatch
 ) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     monkeypatch.setattr(BasicConfig, "is_host_mode", True)
     set_materials_gateway(LocalMaterialsClient(service))
     try:
@@ -134,4 +135,4 @@ def test_material_temperature_is_latest_passive_device_projection(
         assert platform.site_1_temperature_c == 27.0
     finally:
         set_materials_gateway(None)
-        service.close()
+        service.repository.close()

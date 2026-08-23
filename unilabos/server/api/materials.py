@@ -6,9 +6,13 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query
 from pydantic import Field
 
 from unilabos.config.config import BasicConfig
-from unilabos.server.models.base import ServerObject
+from unilabos.server.database.tables.base import ServerObject
 from unilabos.server.protocol.common import InventoryMutation
 from unilabos.server.protocol.materials import (
+    InventoryLotInbound,
+    InventoryReservationCreate,
+    InventoryReservationTransition,
+    InventoryTaskReservationCreate,
     MaterialDataWrite,
     MaterialDelete,
     MaterialMove,
@@ -16,6 +20,7 @@ from unilabos.server.protocol.materials import (
     MaterialPosition,
     MaterialSnapshot,
     MaterialTreeCreate,
+    MaterialTransfer,
     ResourceTemplateWrite,
 )
 from unilabos.server.services.materials import (
@@ -23,7 +28,9 @@ from unilabos.server.services.materials import (
     MaterialNoChangeError,
     MaterialNotFoundError,
     MaterialValidationError,
+    MaterialTransferSyncError,
     MaterialsService,
+    InsufficientInventoryError,
     RejectedMutationError,
 )
 from unilabos.server.protocol.virtual_environment import (
@@ -49,12 +56,18 @@ def _call(function, *args, **kwargs):
         return function(*args, **kwargs)
     except MaterialNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except (MaterialConflictError, MaterialNoChangeError) as exc:
+    except (
+        MaterialConflictError,
+        MaterialNoChangeError,
+        InsufficientInventoryError,
+    ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RejectedMutationError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
     except MaterialValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except MaterialTransferSyncError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def create_materials_router(service: MaterialsService) -> APIRouter:
@@ -113,6 +126,109 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             raise HTTPException(status_code=422, detail="template UUID path mismatch")
         mutation = mutation.model_copy(update={"payload": expected})
         return _call(service.delete_template, mutation, template_uuid)
+
+    @router.post("/lots/inbound")
+    async def inbound_inventory_lot(mutation: InventoryMutation):
+        return _call(
+            service.inbound_inventory_lot,
+            mutation,
+            _payload(mutation, InventoryLotInbound),
+        )
+
+    @router.get("/lots")
+    async def list_inventory_lots(
+        template_uuid: str | None = Query(default=None),
+        unit: str | None = Query(default=None),
+        include_quarantined: bool = Query(default=False),
+    ):
+        return _call(
+            service.list_inventory_lots,
+            template_uuid=template_uuid,
+            unit=unit,
+            include_quarantined=include_quarantined,
+        )
+
+    @router.get("/lots/{lot_uuid}")
+    async def get_inventory_lot(lot_uuid: str):
+        return _call(service.get_inventory_lot, lot_uuid)
+
+    @router.post("/reservations")
+    async def reserve_inventory(mutation: InventoryMutation):
+        return _call(
+            service.reserve_inventory,
+            mutation,
+            _payload(mutation, InventoryReservationCreate),
+        )
+
+    @router.post("/reservations/batch")
+    async def reserve_task_inventory(mutation: InventoryMutation):
+        return _call(
+            service.reserve_task_inventory,
+            mutation,
+            _payload(mutation, InventoryTaskReservationCreate),
+        )
+
+    @router.get("/reservations")
+    async def list_inventory_reservations(
+        task_uuid: str | None = Query(default=None),
+        status: str | None = Query(default=None),
+    ):
+        return _call(
+            service.list_inventory_reservations,
+            task_uuid=task_uuid,
+            status=status,
+        )
+
+    @router.get("/reservations/by-job/{job_uuid}")
+    async def get_inventory_reservation_by_job(job_uuid: str):
+        return _call(service.get_inventory_reservation_by_job, job_uuid)
+
+    @router.get("/reservations/{reservation_uuid}")
+    async def get_inventory_reservation(reservation_uuid: str):
+        return _call(service.get_inventory_reservation, reservation_uuid)
+
+    def reservation_transition(
+        reservation_uuid: str,
+        mutation: InventoryMutation,
+        method,
+    ):
+        value = _payload(mutation, InventoryReservationTransition)
+        if value.reservation_uuid != reservation_uuid:
+            raise HTTPException(
+                status_code=422,
+                detail="inventory reservation UUID path mismatch",
+            )
+        return _call(method, mutation, value)
+
+    @router.post("/reservations/{reservation_uuid}/consume")
+    async def consume_inventory_reservation(
+        reservation_uuid: str, mutation: InventoryMutation
+    ):
+        return reservation_transition(
+            reservation_uuid,
+            mutation,
+            service.consume_inventory_reservation,
+        )
+
+    @router.post("/reservations/{reservation_uuid}/release")
+    async def release_inventory_reservation(
+        reservation_uuid: str, mutation: InventoryMutation
+    ):
+        return reservation_transition(
+            reservation_uuid,
+            mutation,
+            service.release_inventory_reservation,
+        )
+
+    @router.post("/reservations/{reservation_uuid}/quarantine")
+    async def quarantine_inventory_reservation(
+        reservation_uuid: str, mutation: InventoryMutation
+    ):
+        return reservation_transition(
+            reservation_uuid,
+            mutation,
+            service.quarantine_inventory_reservation,
+        )
 
     @router.post("/trees")
     async def create_tree(mutation: InventoryMutation):
@@ -178,6 +294,14 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             service.move_material,
             mutation,
             _payload(mutation, MaterialMove),
+        )
+
+    @router.post("/transfer")
+    async def transfer_material(mutation: InventoryMutation):
+        return _call(
+            service.transfer_material,
+            mutation,
+            _payload(mutation, MaterialTransfer),
         )
 
     @router.post("/snapshots/compare")

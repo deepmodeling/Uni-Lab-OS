@@ -15,7 +15,7 @@ from unilabos.server.database import (
     validate_distinct_database_paths,
 )
 from unilabos.server.composition import ServerServices
-from unilabos.server.repositories import (
+from unilabos.server.database.repositories import (
     HistoryRepository,
     MaterialsRepository,
     RuntimeRepository,

@@ -1,21 +1,29 @@
-"""``runtime.db`` 的控制聚合与内嵌数据模型。"""
+"""``runtime.db`` 的 SQLModel 表记录与内嵌值对象。"""
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Annotated, ClassVar, List, Literal, Optional
 
-from pydantic import Field, model_validator
+from pydantic import model_validator
+from sqlalchemy import Column, LargeBinary, Text
+from sqlmodel import Field
 
-from unilabos.server.models.base import (
+from unilabos.server.database.tables.base import (
     JsonObject,
     NonEmptyStr,
     PositiveVersion,
     ServerObject,
+    TableObject,
     UnixMilliseconds,
+    json_text_column,
+)
+from unilabos.server.database.migrations.v1.runtime import (
+    RUNTIME_DATABASE,
+    RUNTIME_TABLES,
 )
 
 
-Transport = Literal["hostlink", "ros2"]
+Transport = Annotated[Literal["hostlink", "ros2"], Field(sa_type=Text)]
 
 
 class DeviceRoute(ServerObject):
@@ -66,13 +74,17 @@ class MaterialBinding(ServerObject):
     snapshot_hash: NonEmptyStr
 
 
-class BackendSessionRecord(ServerObject):
-    session_uuid: NonEmptyStr
+class BackendSessionRecord(TableObject, table=True):
+    __tablename__: ClassVar[str] = "backend_session"
+
+    session_uuid: NonEmptyStr = Field(primary_key=True)
     edge_uuid: NonEmptyStr
     backend_uri: NonEmptyStr
     authority_epoch: NonEmptyStr
     connection_epoch: NonEmptyStr
-    state: Literal["connecting", "active", "reconciling", "disconnected"]
+    state: Literal["connecting", "active", "reconciling", "disconnected"] = Field(
+        sa_type=Text
+    )
     command_cursor: int = Field(default=0, ge=0)
     event_send_cursor: int = Field(default=0, ge=0)
     event_ack_sequence: int = Field(default=0, ge=0)
@@ -90,8 +102,10 @@ class BackendSessionRecord(ServerObject):
         return self
 
 
-class ExecutorEndpointRecord(ServerObject):
-    endpoint_uuid: NonEmptyStr
+class ExecutorEndpointRecord(TableObject, table=True):
+    __tablename__: ClassVar[str] = "executor_endpoint"
+
+    endpoint_uuid: NonEmptyStr = Field(primary_key=True)
     transport: Transport
     host_uuid: NonEmptyStr
     instance_name: NonEmptyStr
@@ -99,10 +113,19 @@ class ExecutorEndpointRecord(ServerObject):
     adapter_epoch: Optional[NonEmptyStr] = None
     adapter_event_cursor: int = Field(default=0, ge=0)
     reconciliation_generation: int = Field(default=0, ge=0)
-    state: Literal["online", "offline", "reconciling"]
-    device_routes: List[DeviceRoute] = Field(default_factory=list)
-    action_capabilities: List[DeviceActionCapability] = Field(default_factory=list)
-    config: JsonObject = Field(default_factory=dict)
+    state: Literal["online", "offline", "reconciling"] = Field(sa_type=Text)
+    device_routes: List[DeviceRoute] = Field(
+        default_factory=list,
+        sa_column=json_text_column("device_routes_json", default_json="[]"),
+    )
+    action_capabilities: List[DeviceActionCapability] = Field(
+        default_factory=list,
+        sa_column=json_text_column("action_capabilities_json", default_json="[]"),
+    )
+    config: JsonObject = Field(
+        default_factory=dict,
+        sa_column=json_text_column("config_json", default_json="{}"),
+    )
     snapshot_hash: str = ""
     registered_at_ms: UnixMilliseconds
     last_seen_at_ms: UnixMilliseconds
@@ -110,8 +133,10 @@ class ExecutorEndpointRecord(ServerObject):
     version: PositiveVersion = 1
 
 
-class CommandInboxRecord(ServerObject):
-    command_uuid: NonEmptyStr
+class CommandInboxRecord(TableObject, table=True):
+    __tablename__: ClassVar[str] = "command_inbox"
+
+    command_uuid: NonEmptyStr = Field(primary_key=True)
     session_uuid: NonEmptyStr
     backend_sequence: int = Field(ge=1)
     command_type: Literal[
@@ -121,14 +146,19 @@ class CommandInboxRecord(ServerObject):
         "replace_result",
         "inventory_apply",
         "reconcile",
-    ]
+    ] = Field(sa_type=Text)
     job_uuid: Optional[NonEmptyStr] = None
     payload_uuid: Optional[NonEmptyStr] = None
     payload_sha256: NonEmptyStr
     command_fingerprint: NonEmptyStr
-    summary: JsonObject = Field(default_factory=dict)
+    summary: JsonObject = Field(
+        default_factory=dict,
+        sa_column=json_text_column("summary_json", default_json="{}"),
+    )
     traceparent: Optional[str] = None
-    status: Literal["received", "applying", "applied", "rejected"]
+    status: Literal["received", "applying", "applied", "rejected"] = Field(
+        sa_type=Text
+    )
     received_at_ms: UnixMilliseconds
     applied_at_ms: Optional[UnixMilliseconds] = None
     error_code: Optional[str] = None
@@ -151,8 +181,10 @@ class CommandInboxRecord(ServerObject):
         return self
 
 
-class ExecutionJobRecord(ServerObject):
-    job_uuid: NonEmptyStr
+class ExecutionJobRecord(TableObject, table=True):
+    __tablename__: ClassVar[str] = "execution_job"
+
+    job_uuid: NonEmptyStr = Field(primary_key=True)
     task_uuid: NonEmptyStr
     node_uuid: NonEmptyStr
     attempt_group_uuid: NonEmptyStr
@@ -164,8 +196,12 @@ class ExecutionJobRecord(ServerObject):
     action_payload_uuid: NonEmptyStr
     route_uuid: Optional[NonEmptyStr] = None
     endpoint_uuid: Optional[NonEmptyStr] = None
-    transport: Optional[Transport] = None
-    material_bindings: List[MaterialBinding] = Field(default_factory=list)
+    # SQLModel 0.0.x 无法从 Optional[Annotated[Literal, Field]] 推断列类型。
+    transport: Optional[Transport] = Field(default=None, sa_type=Text)
+    material_bindings: List[MaterialBinding] = Field(
+        default_factory=list,
+        sa_column=json_text_column("material_bindings_json", default_json="[]"),
+    )
     scheduler_revision: int = Field(ge=0)
     scheduler_status_version: int = Field(default=0, ge=0)
     status: Literal[
@@ -180,8 +216,20 @@ class ExecutionJobRecord(ServerObject):
         "canceled",
         "execution_unknown",
         "rejected",
-    ]
+    ] = Field(sa_type=Text)
     feedback_sequence: int = Field(default=0, ge=0)
+    job_access_token_ciphertext: Optional[bytes] = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        sa_column=Column(LargeBinary, nullable=True),
+    )
+    token_key_id: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        sa_column=Column(Text, nullable=True),
+    )
     result_uuid: Optional[NonEmptyStr] = None
     error_code: Optional[str] = None
     error_summary: Optional[str] = None
@@ -192,13 +240,16 @@ class ExecutionJobRecord(ServerObject):
         "released_failed",
         "result_replaced",
         "canceled",
-    ] = "none"
+    ] = Field(default="none", sa_type=Text)
     terminal_error_uuid: Optional[NonEmptyStr] = None
     terminal_required_scheduler_revision: Optional[int] = Field(default=None, ge=0)
     terminal_confirmed_scheduler_revision: Optional[int] = Field(default=None, ge=0)
     terminal_request_event_uuid: Optional[NonEmptyStr] = None
     terminal_decision_command_uuid: Optional[NonEmptyStr] = None
-    terminal_decision: JsonObject = Field(default_factory=dict)
+    terminal_decision: JsonObject = Field(
+        default_factory=dict,
+        sa_column=json_text_column("terminal_decision_json", default_json="{}"),
+    )
     terminal_opened_at_ms: Optional[UnixMilliseconds] = None
     terminal_resolved_at_ms: Optional[UnixMilliseconds] = None
     accepted_at_ms: UnixMilliseconds
@@ -237,8 +288,10 @@ class ExecutionJobRecord(ServerObject):
         return self
 
 
-class AdapterCommandOutboxRecord(ServerObject):
-    sequence: Optional[int] = Field(default=None, ge=1)
+class AdapterCommandOutboxRecord(TableObject, table=True):
+    __tablename__: ClassVar[str] = "adapter_command_outbox"
+
+    sequence: Optional[int] = Field(default=None, ge=1, primary_key=True)
     adapter_command_uuid: NonEmptyStr
     job_uuid: Optional[NonEmptyStr] = None
     endpoint_uuid: NonEmptyStr
@@ -247,9 +300,11 @@ class AdapterCommandOutboxRecord(ServerObject):
     target_adapter_epoch: Optional[NonEmptyStr] = None
     command_type: Literal[
         "execute", "cancel", "release_failed", "replace_result", "reconcile_state"
-    ]
+    ] = Field(sa_type=Text)
     payload_uuid: Optional[NonEmptyStr] = None
-    status: Literal["pending", "sent", "acknowledged", "failed"]
+    status: Literal["pending", "sent", "acknowledged", "failed"] = Field(
+        sa_type=Text
+    )
     delivery_attempt_count: int = Field(default=0, ge=0)
     created_at_ms: UnixMilliseconds
     available_at_ms: UnixMilliseconds = 0
@@ -259,8 +314,10 @@ class AdapterCommandOutboxRecord(ServerObject):
     last_error: Optional[str] = None
 
 
-class AdapterEventInboxRecord(ServerObject):
-    adapter_event_uuid: NonEmptyStr
+class AdapterEventInboxRecord(TableObject, table=True):
+    __tablename__: ClassVar[str] = "adapter_event_inbox"
+
+    adapter_event_uuid: NonEmptyStr = Field(primary_key=True)
     endpoint_uuid: NonEmptyStr
     adapter_epoch: NonEmptyStr
     job_uuid: Optional[NonEmptyStr] = None
@@ -278,35 +335,55 @@ class AdapterEventInboxRecord(ServerObject):
         "endpoint_snapshot",
         "endpoint_offline",
         "command_ack",
-    ]
+    ] = Field(sa_type=Text)
     payload_uuid: Optional[NonEmptyStr] = None
     payload_sha256: NonEmptyStr
-    status: Literal["received", "processing", "processed", "rejected"]
+    status: Literal["received", "processing", "processed", "rejected"] = Field(
+        sa_type=Text
+    )
     occurred_at_ms: Optional[UnixMilliseconds] = None
     received_at_ms: UnixMilliseconds
     processed_at_ms: Optional[UnixMilliseconds] = None
     error_message: Optional[str] = None
 
 
-class BackendEventOutboxRecord(ServerObject):
-    sequence: Optional[int] = Field(default=None, ge=1)
+class BackendEventOutboxRecord(TableObject, table=True):
+    __tablename__: ClassVar[str] = "backend_event_outbox"
+
+    sequence: Optional[int] = Field(default=None, ge=1, primary_key=True)
     event_uuid: NonEmptyStr
     event_type: NonEmptyStr
     aggregate_type: NonEmptyStr
     aggregate_uuid: NonEmptyStr
     aggregate_version: PositiveVersion
     job_uuid: Optional[NonEmptyStr] = None
-    summary: JsonObject = Field(default_factory=dict)
+    summary: JsonObject = Field(
+        default_factory=dict,
+        sa_column=json_text_column("summary_json", default_json="{}"),
+    )
     detail_payload_uuid: Optional[NonEmptyStr] = None
     traceparent: Optional[str] = None
     tracestate: Optional[str] = None
-    status: Literal["pending", "sent", "acknowledged", "dead_letter"]
+    status: Literal["pending", "sent", "acknowledged", "dead_letter"] = Field(
+        sa_type=Text
+    )
     created_at_ms: UnixMilliseconds
     available_at_ms: UnixMilliseconds
     last_sent_at_ms: Optional[UnixMilliseconds] = None
     acked_at_ms: Optional[UnixMilliseconds] = None
     delivery_attempt_count: int = Field(default=0, ge=0)
     last_error: Optional[str] = None
+
+
+RUNTIME_TABLE_MODELS = (
+    BackendSessionRecord,
+    ExecutorEndpointRecord,
+    CommandInboxRecord,
+    ExecutionJobRecord,
+    AdapterCommandOutboxRecord,
+    AdapterEventInboxRecord,
+    BackendEventOutboxRecord,
+)
 
 
 __all__ = [
@@ -320,5 +397,8 @@ __all__ = [
     "ExecutionJobRecord",
     "ExecutorEndpointRecord",
     "MaterialBinding",
+    "RUNTIME_DATABASE",
+    "RUNTIME_TABLE_MODELS",
+    "RUNTIME_TABLES",
     "Transport",
 ]

@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from unilabos.server.database.repositories.history import HistoryRepository
 from unilabos.server.api.history import install_history_api
 from unilabos.client.history import (
     HTTPHistoryClient,
@@ -70,7 +71,7 @@ def _bind_http_client(monkeypatch, app: FastAPI) -> TestClient:
 def test_http_client_exposes_payload_event_query_and_replacement(
     tmp_path, monkeypatch
 ) -> None:
-    service = HistoryService(tmp_path / "history.db")
+    service = HistoryService(HistoryRepository(tmp_path / "history.db"))
     app = FastAPI()
     install_history_api(app, service)
     transport = _bind_http_client(monkeypatch, app)
@@ -127,11 +128,11 @@ def test_http_client_exposes_payload_event_query_and_replacement(
                 client.get_event("missing")
             assert exc_info.value.status_code == 404
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
-    service = HistoryService(tmp_path / "history.db")
+    service = HistoryService(HistoryRepository(tmp_path / "history.db"))
     app = FastAPI()
     install_history_api(app, service)
     try:
@@ -177,11 +178,11 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
             )
             assert conflict.status_code == 409
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_local_client_exposes_external_payload_and_append_query(tmp_path) -> None:
-    service = HistoryService(tmp_path / "history.db")
+    service = HistoryService(HistoryRepository(tmp_path / "history.db"))
     client = LocalHistoryClient(service)
     try:
         payload = client.store_payload(
@@ -211,11 +212,11 @@ def test_local_client_exposes_external_payload_and_append_query(tmp_path) -> Non
         assert client.get_event(event.event_uuid) == event
         assert client.query_events(HistoryEventQuery(job_uuid="job-1")) == [event]
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_history_router_has_no_destructive_crud_methods(tmp_path) -> None:
-    service = HistoryService(tmp_path / "history.db")
+    service = HistoryService(HistoryRepository(tmp_path / "history.db"))
     app = FastAPI()
     install_history_api(app, service)
     try:
@@ -224,4 +225,4 @@ def test_history_router_has_no_destructive_crud_methods(tmp_path) -> None:
         }
         assert methods == {"get", "post"}
     finally:
-        service.close()
+        service.repository.close()

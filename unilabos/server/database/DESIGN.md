@@ -19,6 +19,21 @@
 
 四库合计 26 张表，其中 4 张是各库自己的 `schema_migration`。
 
+## 持久化代码收敛
+
+- `database/tables/` 是持久化行模型和 SQLAlchemy metadata 的唯一来源；模型使用
+  SQLModel，同时承担 Pydantic 构造校验和 SQLite 字段映射，不再保留平行的
+  `server/models/`。
+- `database/migrations/v1/` 是已经发布的不可变建库快照。生产建库仍执行该目录的
+  SQL，以保留 CHECK、partial index、trigger、外键和 schema checksum；后续结构变化
+  新增 migration，不改写 v1，也不直接用 `metadata.create_all()` 覆盖已有库。
+- `database/repositories/` 只负责连接、事务、行映射、CRUD 和批量 SQL，不再声明
+  第二套数据模型。幂等、游标推进和状态机规则属于 `services/`。
+- `protocol/` 只保留线上请求、响应和跨表聚合 DTO。协议形状与单表行完全相同时直接
+  复用表模型，不再继承或复制一遍字段。
+- CI 以真实 migration 创建四个 SQLite 文件，并逐表核对 SQLModel metadata 的表名、
+  字段顺序和复合主键，防止表模型与落库结构漂移。
+
 ## 表目录
 
 ### `runtime.db`
@@ -92,6 +107,13 @@
   `execution_job`；审计历史另写 `history_event`。
 - reservation items 随 backend job 整体申请和释放，保存在一行
   `inventory_reservation.items_json`。
+- Scheduler 在 Task 准入时用一个事务 all-or-nothing 预留全部 Job 需求：实体物料
+  `active -> reserved`，数量库存 `available -> reserved`。动作取得物料 UUID 锁后、
+  调用驱动前才 consume：实体物料 `reserved -> in_use`，lot 同时扣减 total/reserved。
+  Task 终态释放尚未开始的 active reservation；已经 consume 的失败/取消不返还数量，
+  实体物料进入 `quarantined`。这组事实统一进入 `inventory_ledger`。
+- `inventory_lot` 是 Scheduler 可用量权威；`material_substance` 是容器当前内容物快照，
+  由 PLR 原子 observer 更新。Scheduler consume 不同时改 substance，避免双重扣减。
 - latest 与 append-only history 读写模式不同，因此设备状态保留
   `device_state_latest` + `telemetry_event` 两张表；不同事件类型不再各建一张表。
 
@@ -127,7 +149,7 @@ Local client 与 HTTP client。公共安装入口是
 | 数据库 | HTTP 前缀 | 写入语义 |
 | --- | --- | --- |
 | `runtime.db` | `/api/v1/runtime` | session/endpoint upsert、命令和 job 状态机、gate 与可靠 outbox |
-| `materials.db` | `/api/v1/materials` | 模板和物料聚合 CRUD、move、snapshot 与 ledger ACK |
+| `materials.db` | `/api/v1/materials` | 模板/物料聚合 CRUD、transfer/snapshot、lot 入库、Task/Job reservation 转换与 ledger ACK |
 | `telemetry.db` | `/api/v1/telemetry` | event ingest 推进 cursor/latest，另提供只读查询 |
 | `history.db` | `/api/v1/history` | payload 保存、event 追加和人工 replacement chain |
 
@@ -142,7 +164,7 @@ Local 和 HTTP 两种调用方式下保持一致。
 | 层 | 入口 | 职责 |
 | --- | --- | --- |
 | 通信协议 | `unilabos.server.protocol.materials` | `materials.v1` DTO、写命令信封、版本前置条件和结果 |
-| 持久化 | `unilabos.server.repositories.materials` | 表行 CRUD、`BEGIN IMMEDIATE` 单 writer、ledger/outbox |
+| 持久化 | `unilabos.server.database.repositories.materials` | 表行 CRUD、`BEGIN IMMEDIATE` 单 writer、ledger/outbox |
 | 聚合服务 | `unilabos.server.services.materials` | 模板、Material Tree、Position/Data/Substance、Site move 和软删除 |
 | 快照 | `unilabos.server.services.material_snapshot` | 规范哈希、逐 section diff 和一次事务应用 |
 | PLR 边界 | `unilabos.server.adapters.plr_materials` | PLR 创建草稿、权威 UUID 回填、上传和下载 |

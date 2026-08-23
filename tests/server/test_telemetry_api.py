@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from unilabos.server.database.repositories.telemetry import TelemetryRepository
 from unilabos.server.api.telemetry import (
     create_telemetry_router,
     install_telemetry_api,
@@ -56,7 +57,7 @@ def _state(sequence: int) -> DeviceStateSnapshot:
 
 
 def test_router_install_exposes_ingest_and_all_read_surfaces(tmp_path) -> None:
-    service = TelemetryService(tmp_path / "telemetry.db")
+    service = TelemetryService(TelemetryRepository(tmp_path / "telemetry.db"))
     app = FastAPI()
     install_telemetry_api(app, service)
     request = TelemetryIngestRequest(event=_event(1), device_state=_state(1))
@@ -88,11 +89,11 @@ def test_router_install_exposes_ingest_and_all_read_surfaces(tmp_path) -> None:
             assert [item["device_uuid"] for item in states.json()] == ["device"]
             assert [item["event_uuid"] for item in events.json()] == ["event-1"]
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_router_maps_replay_conflict_validation_and_not_found(tmp_path) -> None:
-    service = TelemetryService(tmp_path / "telemetry.db")
+    service = TelemetryService(TelemetryRepository(tmp_path / "telemetry.db"))
     app = FastAPI()
     app.include_router(create_telemetry_router(service))
     request = TelemetryIngestRequest(event=_event(2), device_state=_state(2))
@@ -137,11 +138,11 @@ def test_router_maps_replay_conflict_validation_and_not_found(tmp_path) -> None:
                 == 404
             )
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_local_client_exposes_the_same_command_and_reads(tmp_path) -> None:
-    service = TelemetryService(tmp_path / "telemetry.db")
+    service = TelemetryService(TelemetryRepository(tmp_path / "telemetry.db"))
     client = LocalTelemetryClient(service)
     try:
         accepted = client.ingest_event(_event(1), device_state=_state(1))
@@ -154,11 +155,11 @@ def test_local_client_exposes_the_same_command_and_reads(tmp_path) -> None:
             accepted.event
         ]
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_http_client_exports_typed_contract_and_builds_paths(tmp_path) -> None:
-    service = TelemetryService(tmp_path / "telemetry.db")
+    service = TelemetryService(TelemetryRepository(tmp_path / "telemetry.db"))
     accepted = service.ingest_event(_event(1), device_state=_state(1))
     client = HTTPTelemetryClient("http://backend.example/api/v1")
     calls: list[tuple[str, str, Any]] = []
@@ -190,7 +191,7 @@ def test_http_client_exports_typed_contract_and_builds_paths(tmp_path) -> None:
         assert calls[0][:2] == ("POST", "/events")
         assert "endpoint_uuid=endpoint" in calls[2][1]
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_telemetry_http_error_keeps_status_and_detail() -> None:

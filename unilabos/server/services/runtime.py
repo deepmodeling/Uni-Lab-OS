@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from pathlib import Path
 from typing import Any, Optional
 
-from unilabos.server.models.runtime import (
+from unilabos.server.database.repositories.runtime import RuntimeRepository
+from unilabos.server.database.tables.runtime import (
     AdapterCommandOutboxRecord,
     BackendEventOutboxRecord,
     BackendSessionRecord,
@@ -35,7 +35,6 @@ from unilabos.server.protocol.runtime import (
     ExecutionJobFeedback,
     ExecutionJobTransition,
 )
-from unilabos.server.repositories.runtime import RuntimeRepository
 
 
 class RuntimeServiceError(RuntimeError):
@@ -57,15 +56,10 @@ class RuntimeValidationError(RuntimeServiceError):
 class RuntimeService:
     """Session、endpoint、命令、job 和可靠 outbox 的唯一写入口。"""
 
-    def __init__(self, repository: RuntimeRepository | str | Path):
-        self.repository = (
-            repository
-            if isinstance(repository, RuntimeRepository)
-            else RuntimeRepository(repository)
-        )
-
-    def close(self) -> None:
-        self.repository.close()
+    def __init__(self, repository: RuntimeRepository):
+        if not isinstance(repository, RuntimeRepository):
+            raise TypeError("repository must be a RuntimeRepository")
+        self.repository = repository
 
     @staticmethod
     def _now_ms(observed_at_ms: int = 0) -> int:

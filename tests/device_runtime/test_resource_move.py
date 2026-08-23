@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.device_runtime.resource import AuthorityResourceService
 from unilabos.server.protocol.common import InventoryMutation
@@ -68,7 +69,7 @@ def _node(
 
 
 def test_authority_resource_service_moves_by_site_label(tmp_path) -> None:
-    materials = MaterialsService(tmp_path / "materials.db")
+    materials = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     service = AuthorityResourceService(LocalMaterialsClient(materials))
     try:
         _template(materials, "deck-template", "deck", with_site=True)
@@ -115,4 +116,4 @@ def test_authority_resource_service_moves_by_site_label(tmp_path) -> None:
             == material_uuid
         )
     finally:
-        materials.close()
+        materials.repository.close()

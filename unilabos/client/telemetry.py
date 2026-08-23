@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-from unilabos.server.models.telemetry import (
+from unilabos.server.database.tables.telemetry import (
     DeviceStateLatestRecord,
     TelemetryEventRecord,
     TelemetrySourceCursorRecord,

@@ -7,12 +7,15 @@ import sqlite3
 import pytest
 from pydantic import ValidationError
 
-from unilabos.server.database.history import (
+from unilabos.server.database.tables.history import (
     HISTORY_DATABASE,
     INLINE_PAYLOAD_LIMIT_BYTES,
 )
 from unilabos.server.database.schema import initialize_database
-from unilabos.server.models.history import HistoryEventRecord, PayloadObjectRecord
+from unilabos.server.database.tables.history import (
+    HistoryEventRecord,
+    PayloadObjectRecord,
+)
 
 
 def _open(tmp_path) -> sqlite3.Connection:

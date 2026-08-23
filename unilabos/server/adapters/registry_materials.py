@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID, uuid5
 
-from unilabos.server.models.materials import ResourceTemplateHandle
+from unilabos.server.database.tables.materials import ResourceTemplateHandle
 from unilabos.server.protocol.common import InventoryMutation, canonical_hash
 from unilabos.server.protocol.materials import (
     ResourceTemplateRead,

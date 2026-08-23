@@ -4,6 +4,7 @@ import asyncio
 
 from pylabrobot.resources import Coordinate
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.device_runtime import resource as resource_module
 from unilabos.device_runtime.resource import AuthorityResourceService
 from unilabos.resources.presets.container import RegularContainer
@@ -27,7 +28,7 @@ def _container(name: str) -> RegularContainer:
 
 
 def test_resource_service_create_get_and_partial_snapshot_update(tmp_path) -> None:
-    materials = MaterialsService(tmp_path / "materials.db")
+    materials = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     service = AuthorityResourceService(LocalMaterialsClient(materials))
     parent = _container("parent")
     child = _container("child")
@@ -83,7 +84,7 @@ def test_resource_service_create_get_and_partial_snapshot_update(tmp_path) -> No
         assert set(deleted) == {parent_uuid, child_uuid}
         assert materials.list_materials() == []
     finally:
-        materials.close()
+        materials.repository.close()
 
 
 def test_resource_service_has_no_implicit_runtime_store() -> None:
@@ -92,7 +93,7 @@ def test_resource_service_has_no_implicit_runtime_store() -> None:
 
 
 def test_resource_service_accepts_internal_create_draft(tmp_path) -> None:
-    materials = MaterialsService(tmp_path / "materials.db")
+    materials = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     service = AuthorityResourceService(LocalMaterialsClient(materials))
     draft = ResourceTreeSet.from_plr_resources(
         [_container("draft")], known_random_uuid=True
@@ -107,4 +108,4 @@ def test_resource_service_accepts_internal_create_draft(tmp_path) -> None:
             "node-0": created.tree.all_nodes_uuid[0]
         }
     finally:
-        materials.close()
+        materials.repository.close()

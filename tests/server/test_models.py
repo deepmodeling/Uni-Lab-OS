@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from unilabos.server.models.materials import MaterialRecord
-from unilabos.server.models.runtime import DeviceActionCapability
-from unilabos.server.models.telemetry import TelemetryEventRecord
+from unilabos.server.database.tables.materials import MaterialRecord
+from unilabos.server.database.tables.runtime import DeviceActionCapability
+from unilabos.server.database.tables.telemetry import TelemetryEventRecord
 
 
 def test_server_records_forbid_unknown_fields() -> None:

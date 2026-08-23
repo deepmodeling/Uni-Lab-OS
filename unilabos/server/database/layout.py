@@ -7,10 +7,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from unilabos.server.database.history import HISTORY_DATABASE
-from unilabos.server.database.materials import MATERIALS_DATABASE
-from unilabos.server.database.runtime import RUNTIME_DATABASE
-from unilabos.server.database.telemetry import TELEMETRY_DATABASE
+from unilabos.server.database.tables import (
+    HISTORY_DATABASE,
+    MATERIALS_DATABASE,
+    RUNTIME_DATABASE,
+    TELEMETRY_DATABASE,
+)
 
 
 class DatabaseLayoutConflict(ValueError):

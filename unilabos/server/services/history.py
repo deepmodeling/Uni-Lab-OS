@@ -6,10 +6,13 @@ import hashlib
 import sqlite3
 import time
 import uuid
-from pathlib import Path
 from typing import Optional
 
-from unilabos.server.models.history import HistoryEventRecord, PayloadObjectRecord
+from unilabos.server.database.repositories.history import HistoryRepository
+from unilabos.server.database.tables.history import (
+    HistoryEventRecord,
+    PayloadObjectRecord,
+)
 from unilabos.server.protocol.history import (
     ExternalPayloadWrite,
     HistoryEventAppend,
@@ -18,7 +21,6 @@ from unilabos.server.protocol.history import (
     ManualResultReplacement,
     PayloadWrite,
 )
-from unilabos.server.repositories.history import HistoryRepository
 
 
 class HistoryServiceError(RuntimeError):
@@ -40,23 +42,10 @@ class HistoryValidationError(HistoryServiceError):
 class HistoryService:
     """新 ``history.db`` 的唯一业务入口，不依赖旧 workflow store。"""
 
-    def __init__(self, repository: HistoryRepository | str | Path):
-        if isinstance(repository, HistoryRepository):
-            self.repository = repository
-            self._owns_repository = False
-        else:
-            self.repository = HistoryRepository(repository)
-            self._owns_repository = True
-
-    def close(self) -> None:
-        if self._owns_repository:
-            self.repository.close()
-
-    def __enter__(self) -> "HistoryService":
-        return self
-
-    def __exit__(self, *_: object) -> None:
-        self.close()
+    def __init__(self, repository: HistoryRepository):
+        if not isinstance(repository, HistoryRepository):
+            raise TypeError("repository must be a HistoryRepository")
+        self.repository = repository
 
     @staticmethod
     def _now_ms() -> int:

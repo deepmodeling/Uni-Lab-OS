@@ -902,7 +902,7 @@ def test_standard_plr_carrier_site_roundtrip_preserves_identity_and_metadata():
     )
     apply_plr_site_metadata(carrier, {carrier.name: [backend_site]})
 
-    tree = ResourceTreeSet.from_plr_resources([carrier], known_newly_created=True)
+    tree = ResourceTreeSet.from_plr_resources([carrier])
     site = tree.root_nodes[0].res_content.sites[0]
     assert site.template_name == "carrier-model"
     assert site.index == 7

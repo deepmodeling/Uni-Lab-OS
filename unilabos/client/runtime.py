@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from unilabos.server.models.runtime import (
+from unilabos.server.database.tables.runtime import (
     AdapterCommandOutboxRecord,
     BackendEventOutboxRecord,
     BackendSessionRecord,

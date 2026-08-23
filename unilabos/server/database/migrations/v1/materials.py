@@ -1,4 +1,4 @@
-"""对象聚合优先的 ``materials.db`` v1 schema。"""
+"""``materials.db`` 的不可变 v1 SQLite migration snapshot。"""
 
 from unilabos.server.database.schema import (
     SCHEMA_MIGRATION_TABLE,

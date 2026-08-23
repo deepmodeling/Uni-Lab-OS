@@ -12,6 +12,7 @@ from unilabos.server.composition import (
     shutdown_server_services,
 )
 from unilabos.server.database import ServerDatabasePaths
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.scheduler.backend import (
     JobExecutionBackend,
     make_device_materials_need_lock_resolver,
@@ -26,8 +27,8 @@ logger = logging.getLogger(__name__)
 _backend: Optional[JobExecutionBackend] = None
 _coordinator: Optional[WorkflowBusinessCoordinator] = None
 _materials: Optional[MaterialsService] = None
+_standalone_materials_repository: Optional[MaterialsRepository] = None
 _materials_gateway: Any = None
-_owns_materials = False
 _device_state_projection: Optional[TelemetryDeviceStateProjection] = None
 
 
@@ -72,19 +73,18 @@ def setup_materials_service(
 ) -> MaterialsService:
     """装配新的 materials writer；不构造旧 InventoryStore。"""
 
-    global _materials, _owns_materials
+    global _materials, _standalone_materials_repository
     if _materials is not None:
         return _materials
 
     paths = database_paths or BasicConfig.server_database_paths
     if paths is not None:
         _materials = configure_server_services(paths).materials
-        _owns_materials = False
     else:
         if database_path is None or not str(database_path).strip():
             raise ValueError("database_paths or database_path is required")
-        _materials = MaterialsService(database_path)
-        _owns_materials = True
+        _standalone_materials_repository = MaterialsRepository(database_path)
+        _materials = MaterialsService(_standalone_materials_repository)
 
     message_processor = getattr(ws_client, "message_processor", None)
     if message_processor is not None:
@@ -177,7 +177,8 @@ def setup_job_execution_backend(
 def shutdown_edge_services() -> None:
     """关闭执行 bridge 和四库组合根。"""
 
-    global _backend, _coordinator, _materials, _materials_gateway, _owns_materials
+    global _backend, _coordinator, _materials, _materials_gateway
+    global _standalone_materials_repository
     global _device_state_projection
 
     if BasicConfig.backend == "ros2":
@@ -186,15 +187,15 @@ def shutdown_edge_services() -> None:
         shutdown_network_services()
     if _backend is not None:
         _backend.stop()
-    if _owns_materials and _materials is not None:
-        _materials.close()
+    if _standalone_materials_repository is not None:
+        _standalone_materials_repository.close()
     shutdown_server_services()
 
     _backend = None
     _coordinator = None
     _materials = None
+    _standalone_materials_repository = None
     _materials_gateway = None
-    _owns_materials = False
     _device_state_projection = None
 
 

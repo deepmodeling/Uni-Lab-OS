@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from unilabos.config.config import BasicConfig
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.api.materials import install_materials_api
 from unilabos.server.services.materials import MaterialsService
 
@@ -28,7 +29,7 @@ def _reset_body(request_uuid: str) -> dict[str, str]:
 def test_virtual_environment_catalog_is_readable_but_reset_is_protected(
     tmp_path,
 ) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     previous = BasicConfig.test_mode
     BasicConfig.test_mode = False
     try:
@@ -50,11 +51,11 @@ def test_virtual_environment_catalog_is_readable_but_reset_is_protected(
             assert service.list_materials() == []
     finally:
         BasicConfig.test_mode = previous
-        service.close()
+        service.repository.close()
 
 
 def test_reset_replaces_material_library_and_is_idempotent(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     previous = BasicConfig.test_mode
     BasicConfig.test_mode = True
     try:
@@ -103,4 +104,4 @@ def test_reset_replaces_material_library_and_is_idempotent(tmp_path) -> None:
             assert catalog["current"]["preset_id"] == "biology"
     finally:
         BasicConfig.test_mode = previous
-        service.close()
+        service.repository.close()

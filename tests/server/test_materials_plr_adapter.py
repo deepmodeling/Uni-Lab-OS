@@ -6,6 +6,7 @@ import pytest
 
 from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.presets.itemized_carrier import ItemizedCarrier
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.adapters.plr_materials import (
     create_plr_materials,
     plr_resources_to_create,
@@ -23,7 +24,7 @@ def _mutation(operation: str) -> InventoryMutation:
 
 
 def test_plr_create_returns_server_uuid_and_all_substances(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     client = LocalMaterialsClient(service)
     client.put_template(
         _mutation("put_template"),
@@ -69,7 +70,7 @@ def test_plr_create_returns_server_uuid_and_all_substances(tmp_path) -> None:
         ]
         assert created.resources[0].unilabos_uuid == authoritative_uuid
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_plr_create_request_contains_refs_but_no_instance_uuids() -> None:

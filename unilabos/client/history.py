@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from unilabos.server.models.history import HistoryEventRecord
+from unilabos.server.database.tables.history import HistoryEventRecord
 from unilabos.server.protocol.history import (
     HistoryEventAppend,
     HistoryEventQuery,

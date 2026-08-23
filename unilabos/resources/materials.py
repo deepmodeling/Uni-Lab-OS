@@ -3,12 +3,14 @@
 这里集中放置 PLR 物料的高层操作：
 
 - ``create``：向 materials authority 申请创建物料树并取回权威 UUID；
+- ``transfer``：先由 authority 切换挂载关系，再同步来源与目标设备快照；
 - ``apply_substances``：把液体或固体内容物写入物料或指定孔位；
 - ``resolve_site_spot``：把 Site/slot 标识解析为 PLR spot。
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, List, Optional, Sequence
 from uuid import uuid4
 
@@ -20,12 +22,127 @@ from unilabos.server.adapters.plr_materials import (
     create_plr_materials,
 )
 from unilabos.server.protocol.common import InventoryMutation
+from unilabos.server.protocol.materials import (
+    MaterialTransfer,
+    MaterialTransferItem,
+)
 from unilabos.utils.log import trace
 
 
 LIQUID_UNIT = "ul"
 SOLID_UNIT = "ug"
 SELF_SLOT = -1
+
+
+def material_uuid(value: Any, role: str = "") -> str:
+    """读取已经由 materials authority 分配的物料 UUID。"""
+
+    if isinstance(value, dict):
+        result = value.get("uuid") or value.get("unilabos_uuid")
+        if not result and isinstance(value.get("data"), dict):
+            result = value["data"].get("unilabos_uuid")
+    else:
+        result = getattr(value, "unilabos_uuid", None)
+    normalized = str(result or "").strip()
+    if not normalized:
+        prefix = f"{role}物料 " if role else "物料 "
+        raise ValueError(f"{prefix}{value!r} 缺少微后端 UUID")
+    return normalized
+
+
+async def transfer(
+    plr_resources: Any | Sequence[Any],
+    target_device_id: str,
+    target_resources: Any | Sequence[Any],
+    sites: Sequence[Any | None],
+    *,
+    source_device_id: str,
+    source_device_uuid: str = "",
+    mutation: InventoryMutation | None = None,
+    gateway: MaterialGateway | None = None,
+) -> dict[str, Any]:
+    """通过微后端权威完成一次设备间物料转移。
+
+    本函数只提交意图；位置持久化以及来源 unload、目标 load 的顺序全部由
+    ``MaterialsService.transfer_material`` 负责。
+    """
+
+    resources = (
+        list(plr_resources)
+        if isinstance(plr_resources, (list, tuple))
+        else [plr_resources]
+    )
+    targets = (
+        list(target_resources)
+        if isinstance(target_resources, (list, tuple))
+        else [target_resources]
+    )
+    material_uuids = [material_uuid(value, "来源") for value in resources]
+    target_uuids = [material_uuid(value, "目标") for value in targets]
+    site_selectors = list(sites)
+    if not material_uuids:
+        raise ValueError("物料转移至少需要一个来源物料")
+    if not (
+        len(material_uuids) == len(target_uuids) == len(site_selectors)
+    ):
+        raise ValueError("来源物料、目标物料和 Site 数量必须一致")
+
+    def normalize_device_id(value: str, role: str) -> str:
+        normalized = str(value or "").strip()
+        if normalized.startswith("/devices/"):
+            normalized = normalized[len("/devices/") :]
+        normalized = normalized.strip("/")
+        if not normalized:
+            raise ValueError(f"{role}设备 ID 不能为空")
+        return normalized
+
+    normalized_source = normalize_device_id(source_device_id, "来源")
+    normalized_target = normalize_device_id(target_device_id, "目标")
+    request = MaterialTransfer(
+        source_device_id=normalized_source,
+        target_device_id=normalized_target,
+        items=[
+            MaterialTransferItem(
+                material_uuid=material_id,
+                target_material_uuid=target_id,
+                target_site=(
+                    None
+                    if site is None or str(site).strip() == ""
+                    else site
+                ),
+            )
+            for material_id, target_id, site in zip(
+                material_uuids,
+                target_uuids,
+                site_selectors,
+            )
+        ],
+    )
+    command_uuid = str(uuid4())
+    transfer_mutation = mutation or InventoryMutation(
+        command_uuid=command_uuid,
+        effect_key=f"transfer_material:{command_uuid}",
+        operation="transfer_material",
+        actor_type="device",
+        actor_uuid=str(source_device_uuid or normalized_source),
+    )
+    result = await asyncio.to_thread(
+        (gateway or resolve_materials_gateway()).transfer_material,
+        transfer_mutation,
+        request,
+    )
+    return {
+        "success": True,
+        "command_uuid": result.command_uuid,
+        "replayed": result.replayed,
+        "material_uuids": result.data.material_uuids,
+        "target_device_id": normalized_target,
+        "target_resources_uuid": result.data.target_material_uuids,
+        "moves": [
+            value.model_dump(mode="json", exclude_none=False)
+            for value in result.data.materials
+        ],
+    }
 
 
 def set_substance_on_target(
@@ -193,7 +310,7 @@ def resolve_materials_gateway() -> MaterialGateway:
 
         client = get_hostlink_client()
         if client is None:
-            raise RuntimeError("Slave 尚未连接 HostLink，无法创建物料")
+            raise RuntimeError("Slave 尚未连接 HostLink，无法访问物料权威")
         return HostLinkMaterialsClient(client)
 
     from unilabos.server.scheduler.integration import get_materials_gateway
@@ -248,8 +365,10 @@ __all__ = [
     "SOLID_UNIT",
     "apply_substances",
     "create",
+    "material_uuid",
     "resolve_site_spot",
     "resolve_materials_gateway",
     "resolve_substance_targets",
     "set_substance_on_target",
+    "transfer",
 ]

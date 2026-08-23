@@ -177,7 +177,7 @@ def test_plr_container_tracker_state_survives_resource_tree_roundtrip(monkeypatc
         EXTRA_RESOURCE_META_DATA: {"vendor": {"lot": "A-1"}},
     }
 
-    tree = ResourceTreeSet.from_plr_resources([container], known_newly_created=True)
+    tree = ResourceTreeSet.from_plr_resources([container])
     root = tree.root_nodes[0].res_content
     original_state = container.serialize_state()
 
@@ -238,7 +238,7 @@ def test_plr_container_tracker_state_survives_resource_tree_roundtrip(monkeypatc
     assert "position" not in restored.unilabos_extra[EXTRA_RESOURCE_POSE]
 
     roundtripped = ResourceTreeSet.from_plr_resources(
-        [restored], known_newly_created=True
+        [restored]
     ).root_nodes[0].res_content
     assert not hasattr(roundtripped, "position")
     assert roundtripped.pose.position.model_dump() == {"x": 40.0, "y": 50.0, "z": 60.0}
@@ -293,7 +293,7 @@ def test_plr_resource_without_location_preserves_unknown_pose_position(monkeypat
     container.unilabos_extra = {EXTRA_RESOURCE_CLASS: "BeakerTemplate"}
     assert container.location is None
 
-    tree = ResourceTreeSet.from_plr_resources([container], known_newly_created=True)
+    tree = ResourceTreeSet.from_plr_resources([container])
     assert tree.root_nodes[0].res_content.pose.position is None
     assert tree.root_nodes[0].get_plr_nested_dict()["location"] is None
 
@@ -312,7 +312,7 @@ def test_plr_resource_without_location_preserves_unknown_pose_position(monkeypat
     assert restored.location is None
 
     roundtripped = ResourceTreeSet.from_plr_resources(
-        [restored], known_newly_created=True
+        [restored]
     ).root_nodes[0].res_content
     assert roundtripped.pose.position is None
 
@@ -327,7 +327,7 @@ def test_joint_state_uses_plr_runtime_sidecar_without_entering_serialize(monkeyp
     )
     container.unilabos_uuid = str(uuid4())
     container.unilabos_extra = {EXTRA_RESOURCE_CLASS: "BeakerTemplate"}
-    tree = ResourceTreeSet.from_plr_resources([container], known_newly_created=True)
+    tree = ResourceTreeSet.from_plr_resources([container])
     root = tree.root_nodes[0].res_content
     root.joint_state = ResourceJointState(
         name=["joint_1", "joint_2"],
@@ -349,7 +349,7 @@ def test_joint_state_uses_plr_runtime_sidecar_without_entering_serialize(monkeyp
     }
 
     roundtripped = ResourceTreeSet.from_plr_resources(
-        [restored], known_newly_created=True
+        [restored]
     ).root_nodes[0].res_content
     assert roundtripped.joint_state is not None
     assert roundtripped.joint_state.position == [1.25, -0.5]
@@ -410,7 +410,7 @@ def test_resource_tree_set_missing_metadata_sidecar_allows_legacy_promotion(
         )
 
     tree_resource = ResourceTreeSet.from_plr_resources(
-        [container], known_newly_created=True
+        [container]
     ).root_nodes[0].res_content
     assert tree_resource.meta_data == legacy_meta_data
     assert "meta_data" not in tree_resource.config

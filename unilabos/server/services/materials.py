@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Callable, Generic, Optional, TypeVar
 from uuid import uuid4
 
-from unilabos.server.models.materials import (
+from unilabos.server.database.repositories.materials import MaterialsRepository
+from unilabos.server.database.tables.materials import (
     InventoryCommandEffectRecord,
     InventoryLedgerRecord,
+    InventoryLotRecord,
+    InventoryReservationRecord,
     MaterialDataRecord,
     MaterialPositionRecord,
     MaterialRecord,
@@ -28,11 +31,21 @@ from unilabos.server.protocol.common import (
     canonical_hash,
 )
 from unilabos.server.protocol.materials import (
+    InventoryAllocation,
+    InventoryLotInbound,
+    InventoryLotRead,
+    InventoryRequirement,
+    InventoryReservationCreate,
+    InventoryReservationRead,
+    InventoryReservationTransition,
+    InventoryTaskReservationCreate,
+    InventoryTaskReservationRead,
     MaterialAggregateRead,
     MaterialDataRead,
     MaterialDataWrite,
     MaterialDelete,
     MaterialDeleteResult,
+    MaterialDeviceSync,
     MaterialIdentityRead,
     MaterialMove,
     MaterialPatch,
@@ -42,12 +55,13 @@ from unilabos.server.protocol.materials import (
     MaterialSubstance,
     MaterialTreeCreate,
     MaterialTreeRead,
+    MaterialTransfer,
+    MaterialTransferResult,
     ResourceTemplateRead,
     ResourceTemplateWrite,
     SiteCreate,
     SiteRead,
 )
-from unilabos.server.repositories.materials import MaterialsRepository
 from unilabos.server.services.material_snapshot import (
     compare_material_snapshot,
     material_sections,
@@ -79,7 +93,20 @@ class RejectedMutationError(MaterialsServiceError):
     code = "rejected"
 
 
+class MaterialTransferSyncError(MaterialsServiceError):
+    """权威位置已提交，但设备本地投影尚未完成收敛。"""
+
+    code = "transfer_sync_failed"
+
+
+class InsufficientInventoryError(MaterialsServiceError):
+    """库存无法在一个事务内满足调度器冻结的完整需求集合。"""
+
+    code = "insufficient_inventory"
+
+
 DataT = TypeVar("DataT")
+ResourceSyncDispatcher = Callable[[MaterialDeviceSync], Any]
 
 
 @dataclass
@@ -97,15 +124,25 @@ class MaterialsService:
     也不允许设备、Host 或 Slave 绕过本服务直连 Backend。
     """
 
-    def __init__(self, repository: MaterialsRepository | str | Path):
-        self.repository = (
-            repository
-            if isinstance(repository, MaterialsRepository)
-            else MaterialsRepository(repository)
-        )
+    def __init__(
+        self,
+        repository: MaterialsRepository,
+        *,
+        resource_sync_dispatcher: ResourceSyncDispatcher | None = None,
+    ):
+        if not isinstance(repository, MaterialsRepository):
+            raise TypeError("repository must be a MaterialsRepository")
+        self.repository = repository
+        self._resource_sync_dispatcher = resource_sync_dispatcher
+        self._transfer_lock = threading.RLock()
 
-    def close(self) -> None:
-        self.repository.close()
+    def set_resource_sync_dispatcher(
+        self,
+        dispatcher: ResourceSyncDispatcher | None,
+    ) -> None:
+        """绑定当前 backend 的设备 resource-service 传输适配器。"""
+
+        self._resource_sync_dispatcher = dispatcher
 
     @staticmethod
     def _now_ms(mutation: Optional[InventoryMutation] = None) -> int:
@@ -170,6 +207,7 @@ class MaterialsService:
                             MaterialConflictError.code: MaterialConflictError,
                             MaterialValidationError.code: MaterialValidationError,
                             MaterialNoChangeError.code: MaterialNoChangeError,
+                            InsufficientInventoryError.code: InsufficientInventoryError,
                         }
                         error_type = error_types.get(
                             existing.error_code or "", RejectedMutationError
@@ -310,6 +348,18 @@ class MaterialsService:
             if record is None:
                 raise MaterialNotFoundError(f"site not found: {aggregate_uuid}")
             return record.version, self._site_state_hash(record)
+        if aggregate_type == "lot":
+            record = self.repository.get_lot(aggregate_uuid)
+            if record is None:
+                raise MaterialNotFoundError(f"inventory lot not found: {aggregate_uuid}")
+            return record.version, self._lot_state_hash(record)
+        if aggregate_type == "reservation":
+            record = self.repository.get_reservation(aggregate_uuid)
+            if record is None:
+                raise MaterialNotFoundError(
+                    f"inventory reservation not found: {aggregate_uuid}"
+                )
+            return record.version, self._reservation_state_hash(record)
         raise MaterialValidationError(
             f"precondition for {aggregate_type!r} is not implemented by material service"
         )
@@ -345,6 +395,753 @@ class MaterialsService:
                 occurred_at_ms=timestamp,
                 available_at_ms=timestamp,
             )
+        )
+
+    # -- Scheduler inventory ---------------------------------------------
+
+    @staticmethod
+    def _lot_state_hash(record: InventoryLotRecord) -> str:
+        return canonical_hash(
+            record.model_dump(
+                mode="json",
+                exclude={"created_at_ms", "updated_at_ms", "version"},
+            )
+        )
+
+    @staticmethod
+    def _reservation_state_hash(record: InventoryReservationRecord) -> str:
+        return canonical_hash(
+            record.model_dump(
+                mode="json",
+                exclude={"created_at_ms", "updated_at_ms", "version"},
+            )
+        )
+
+    @staticmethod
+    def _lot_read(record: InventoryLotRecord) -> InventoryLotRead:
+        return InventoryLotRead.model_validate(record.model_dump(mode="json"))
+
+    @staticmethod
+    def _reservation_read(
+        record: InventoryReservationRecord,
+    ) -> InventoryReservationRead:
+        return InventoryReservationRead.model_validate(record.model_dump(mode="json"))
+
+    def get_inventory_lot(self, lot_uuid: str) -> InventoryLotRead:
+        record = self.repository.get_lot(lot_uuid)
+        if record is None:
+            raise MaterialNotFoundError(f"inventory lot not found: {lot_uuid}")
+        return self._lot_read(record)
+
+    def list_inventory_lots(
+        self,
+        *,
+        template_uuid: Optional[str] = None,
+        unit: Optional[str] = None,
+        include_quarantined: bool = False,
+    ) -> list[InventoryLotRead]:
+        return [
+            self._lot_read(item)
+            for item in self.repository.list_lots(
+                template_uuid=template_uuid,
+                unit=unit,
+                include_quarantined=include_quarantined,
+            )
+        ]
+
+    def inbound_inventory_lot(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryLotInbound,
+    ) -> MutationResult[InventoryLotRead]:
+        if mutation.operation != "inbound_inventory_lot":
+            raise MaterialValidationError("inventory lot mutation operation is invalid")
+
+        def apply(timestamp: int) -> _Applied[InventoryLotRead]:
+            if self.repository.get_template(value.template_uuid) is None:
+                raise MaterialNotFoundError(
+                    f"template not found: {value.template_uuid}"
+                )
+            lot_uuid = value.lot_uuid or str(uuid4())
+            current = self.repository.get_lot(lot_uuid)
+            if current is None:
+                updated = InventoryLotRecord(
+                    lot_uuid=lot_uuid,
+                    template_uuid=value.template_uuid,
+                    batch_no=value.batch_no,
+                    unit=value.unit,
+                    quantity_total=value.quantity,
+                    quantity_available=value.quantity,
+                    quantity_reserved=0,
+                    expiry_at_ms=value.expiry_at_ms,
+                    created_at_ms=timestamp,
+                    updated_at_ms=timestamp,
+                )
+                self.repository.insert_lot(updated)
+                previous_version = 0
+            else:
+                if (
+                    current.template_uuid != value.template_uuid
+                    or current.unit != value.unit
+                    or current.batch_no != value.batch_no
+                    or current.expiry_at_ms != value.expiry_at_ms
+                ):
+                    raise MaterialConflictError(
+                        "existing lot identity differs from inbound request"
+                    )
+                if current.quarantined:
+                    raise MaterialConflictError("cannot add stock to a quarantined lot")
+                previous_version = current.version
+                updated = current.model_copy(
+                    update={
+                        "quantity_total": current.quantity_total + value.quantity,
+                        "quantity_available": current.quantity_available + value.quantity,
+                        "updated_at_ms": timestamp,
+                        "version": current.version + 1,
+                    }
+                )
+                self.repository.update_lot(updated)
+            state_hash = self._lot_state_hash(updated)
+            sequence = self._ledger(
+                mutation,
+                aggregate_type="lot",
+                aggregate_uuid=lot_uuid,
+                operation="inventory.lot.inbound",
+                previous_version=previous_version,
+                aggregate_version=updated.version,
+                state_hash=state_hash,
+                delta={
+                    "quantity": value.quantity,
+                    "unit": value.unit,
+                    "quantity_total": updated.quantity_total,
+                    "quantity_available": updated.quantity_available,
+                },
+                timestamp=timestamp,
+            )
+            return _Applied(
+                data=self._lot_read(updated),
+                affected=[AggregateVersion(
+                    aggregate_type="lot",
+                    aggregate_uuid=lot_uuid,
+                    version=updated.version,
+                    state_hash=state_hash,
+                )],
+                sequences=[sequence],
+            )
+
+        return self._run_mutation(
+            mutation,
+            value,
+            MutationResult[InventoryLotRead],
+            apply,
+        )
+
+    def get_inventory_reservation(
+        self, reservation_uuid: str
+    ) -> InventoryReservationRead:
+        record = self.repository.get_reservation(reservation_uuid)
+        if record is None:
+            raise MaterialNotFoundError(
+                f"inventory reservation not found: {reservation_uuid}"
+            )
+        return self._reservation_read(record)
+
+    def get_inventory_reservation_by_job(
+        self, job_uuid: str
+    ) -> InventoryReservationRead:
+        record = self.repository.get_reservation_by_job(job_uuid)
+        if record is None:
+            raise MaterialNotFoundError(
+                f"inventory reservation not found for job: {job_uuid}"
+            )
+        return self._reservation_read(record)
+
+    def list_inventory_reservations(
+        self,
+        *,
+        task_uuid: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> list[InventoryReservationRead]:
+        return [
+            self._reservation_read(item)
+            for item in self.repository.list_reservations(
+                task_uuid=task_uuid,
+                status=status,
+            )
+        ]
+
+    def reserve_inventory(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryReservationCreate,
+    ) -> MutationResult[InventoryReservationRead]:
+        """为一个调度 Job 原子预留全部物料实例和试剂数量。"""
+
+        if mutation.operation != "reserve_inventory":
+            raise MaterialValidationError("inventory reservation operation is invalid")
+        if mutation.job_uuid not in {None, value.job_uuid}:
+            raise MaterialValidationError("mutation job_uuid differs from reservation job")
+        request_hash = canonical_hash(value.model_dump(mode="json", exclude_none=False))
+
+        def apply(timestamp: int) -> _Applied[InventoryReservationRead]:
+            if self.repository.get_reservation_by_job(value.job_uuid) is not None:
+                raise MaterialConflictError(
+                    f"job already has an inventory reservation: {value.job_uuid}"
+                )
+            reservation_uuid = value.reservation_uuid or str(uuid4())
+            if self.repository.get_reservation(reservation_uuid) is not None:
+                raise MaterialConflictError(
+                    f"inventory reservation already exists: {reservation_uuid}"
+                )
+
+            allocations: list[InventoryAllocation] = []
+            selected_materials: set[str] = set()
+            material_updates: list[tuple[MaterialRecord, MaterialRecord]] = []
+            lot_reserved: dict[str, float] = {}
+
+            for requirement in value.requirements:
+                if requirement.kind == "material":
+                    material = self._select_inventory_material(
+                        requirement,
+                        selected_materials=selected_materials,
+                    )
+                    selected_materials.add(material.material_uuid)
+                    updated = material.model_copy(
+                        update={
+                            "lifecycle_status": "reserved",
+                            "updated_at_ms": timestamp,
+                            "version": material.version + 1,
+                        }
+                    )
+                    material_updates.append((material, updated))
+                    allocations.append(
+                        InventoryAllocation(
+                            key=requirement.key,
+                            kind="material",
+                            material_uuid=material.material_uuid,
+                            template_uuid=material.template_uuid,
+                        )
+                    )
+                    continue
+
+                remaining = float(requirement.quantity or 0)
+                candidates = self._candidate_inventory_lots(requirement, timestamp)
+                for lot in candidates:
+                    already = lot_reserved.get(lot.lot_uuid, 0.0)
+                    available = lot.quantity_available - already
+                    take = min(available, remaining)
+                    if take <= 1e-9:
+                        continue
+                    lot_reserved[lot.lot_uuid] = already + take
+                    allocations.append(
+                        InventoryAllocation(
+                            key=requirement.key,
+                            kind="reagent",
+                            template_uuid=lot.template_uuid,
+                            lot_uuid=lot.lot_uuid,
+                            quantity=take,
+                            unit=lot.unit,
+                        )
+                    )
+                    remaining -= take
+                    if remaining <= 1e-9:
+                        break
+                if remaining > 1e-9:
+                    raise InsufficientInventoryError(
+                        f"requirement {requirement.key!r} is short by {remaining:g} "
+                        f"{requirement.unit}"
+                    )
+
+            affected: list[AggregateVersion] = []
+            sequences: list[int] = []
+            for current, updated in material_updates:
+                self.repository.update_material(updated)
+                state_hash = self.get_material(updated.material_uuid).state_hash
+                sequences.append(self._ledger(
+                    mutation,
+                    aggregate_type="material",
+                    aggregate_uuid=updated.material_uuid,
+                    operation="inventory.material.reserved",
+                    previous_version=current.version,
+                    aggregate_version=updated.version,
+                    state_hash=state_hash,
+                    delta={"lifecycle_status": "reserved", "job_uuid": value.job_uuid},
+                    timestamp=timestamp,
+                ))
+                affected.append(AggregateVersion(
+                    aggregate_type="material",
+                    aggregate_uuid=updated.material_uuid,
+                    version=updated.version,
+                    state_hash=state_hash,
+                ))
+
+            for lot_uuid, quantity in sorted(lot_reserved.items()):
+                current = self.repository.get_lot(lot_uuid)
+                if current is None:
+                    raise MaterialNotFoundError(f"inventory lot not found: {lot_uuid}")
+                updated = self._advance_lot(
+                    current,
+                    available_delta=-quantity,
+                    reserved_delta=quantity,
+                    timestamp=timestamp,
+                )
+                self.repository.update_lot(updated)
+                state_hash = self._lot_state_hash(updated)
+                sequences.append(self._ledger(
+                    mutation,
+                    aggregate_type="lot",
+                    aggregate_uuid=lot_uuid,
+                    operation="inventory.lot.reserved",
+                    previous_version=current.version,
+                    aggregate_version=updated.version,
+                    state_hash=state_hash,
+                    delta={
+                        "quantity": quantity,
+                        "unit": updated.unit,
+                        "job_uuid": value.job_uuid,
+                    },
+                    timestamp=timestamp,
+                ))
+                affected.append(AggregateVersion(
+                    aggregate_type="lot",
+                    aggregate_uuid=lot_uuid,
+                    version=updated.version,
+                    state_hash=state_hash,
+                ))
+
+            reservation = InventoryReservationRecord(
+                reservation_uuid=reservation_uuid,
+                task_uuid=value.task_uuid,
+                node_uuid=value.node_uuid,
+                job_uuid=value.job_uuid,
+                scheduler_revision=value.scheduler_revision,
+                request_hash=request_hash,
+                items=[item.model_dump(mode="json") for item in allocations],
+                status="active",
+                expires_at_ms=value.expires_at_ms,
+                created_at_ms=timestamp,
+                updated_at_ms=timestamp,
+            )
+            self.repository.insert_reservation(reservation)
+            state_hash = self._reservation_state_hash(reservation)
+            sequences.append(self._ledger(
+                mutation,
+                aggregate_type="reservation",
+                aggregate_uuid=reservation_uuid,
+                operation="inventory.reservation.created",
+                previous_version=0,
+                aggregate_version=1,
+                state_hash=state_hash,
+                delta={
+                    "task_uuid": value.task_uuid,
+                    "node_uuid": value.node_uuid,
+                    "job_uuid": value.job_uuid,
+                    "items": reservation.items,
+                },
+                timestamp=timestamp,
+            ))
+            affected.append(AggregateVersion(
+                aggregate_type="reservation",
+                aggregate_uuid=reservation_uuid,
+                version=1,
+                state_hash=state_hash,
+            ))
+            return _Applied(
+                data=self._reservation_read(reservation),
+                affected=affected,
+                sequences=sequences,
+            )
+
+        return self._run_mutation(
+            mutation,
+            value,
+            MutationResult[InventoryReservationRead],
+            apply,
+        )
+
+    def consume_inventory_reservation(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryReservationTransition,
+    ) -> MutationResult[InventoryReservationRead]:
+        return self._transition_inventory_reservation(
+            mutation,
+            value,
+            target_status="consumed",
+        )
+
+    def reserve_task_inventory(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryTaskReservationCreate,
+    ) -> MutationResult[InventoryTaskReservationRead]:
+        """整张任务 all-or-nothing 预留，语义对齐 durable scheduler。"""
+
+        if mutation.operation != "reserve_task_inventory":
+            raise MaterialValidationError("task inventory reservation operation is invalid")
+        if mutation.job_uuid is not None:
+            raise MaterialValidationError("task reservation mutation cannot bind one job")
+
+        def apply(_timestamp: int) -> _Applied[InventoryTaskReservationRead]:
+            reservations: list[InventoryReservationRead] = []
+            affected: list[AggregateVersion] = []
+            sequences: list[int] = []
+            for request in value.reservations:
+                child_mutation = InventoryMutation(
+                    command_uuid=mutation.command_uuid,
+                    effect_key=f"{mutation.effect_key}:{request.job_uuid}",
+                    operation="reserve_inventory",
+                    actor_type=mutation.actor_type,
+                    actor_uuid=mutation.actor_uuid,
+                    job_uuid=request.job_uuid,
+                    observed_at_ms=mutation.observed_at_ms,
+                )
+                child = self.reserve_inventory(child_mutation, request)
+                reservations.append(child.data)
+                affected.extend(child.affected)
+                sequences.extend(
+                    range(
+                        child.ledger_sequence_start,
+                        child.ledger_sequence_end + 1,
+                    )
+                )
+            return _Applied(
+                data=InventoryTaskReservationRead(
+                    task_uuid=value.task_uuid,
+                    scheduler_revision=value.scheduler_revision,
+                    reservations=reservations,
+                ),
+                affected=affected,
+                sequences=sequences,
+            )
+
+        return self._run_mutation(
+            mutation,
+            value,
+            MutationResult[InventoryTaskReservationRead],
+            apply,
+        )
+
+    def release_inventory_reservation(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryReservationTransition,
+    ) -> MutationResult[InventoryReservationRead]:
+        return self._transition_inventory_reservation(
+            mutation,
+            value,
+            target_status="released",
+        )
+
+    def quarantine_inventory_reservation(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryReservationTransition,
+    ) -> MutationResult[InventoryReservationRead]:
+        return self._transition_inventory_reservation(
+            mutation,
+            value,
+            target_status="quarantined",
+        )
+
+    def _select_inventory_material(
+        self,
+        requirement: InventoryRequirement,
+        *,
+        selected_materials: set[str],
+    ) -> MaterialRecord:
+        if requirement.material_uuid is not None:
+            candidates = [self.repository.get_material(requirement.material_uuid)]
+        elif requirement.site_uuid is not None:
+            site = self.repository.get_site(requirement.site_uuid)
+            if site is None:
+                raise MaterialNotFoundError(
+                    f"warehouse Site not found: {requirement.site_uuid}"
+                )
+            candidates = [
+                self.repository.get_material(site.occupied_material_uuid)
+                if site.occupied_material_uuid is not None
+                else None
+            ]
+        else:
+            candidates = sorted(
+                self.repository.list_materials(),
+                key=lambda item: (item.created_at_ms, item.material_uuid),
+            )
+        for material in candidates:
+            if material is None or material.material_uuid in selected_materials:
+                continue
+            if material.lifecycle_status != "active":
+                continue
+            if (
+                requirement.template_uuid is not None
+                and material.template_uuid != requirement.template_uuid
+            ):
+                continue
+            if (
+                requirement.parent_material_uuid is not None
+                and material.parent_material_uuid
+                != requirement.parent_material_uuid
+            ):
+                continue
+            return material
+        identity = requirement.material_uuid or requirement.template_uuid
+        raise InsufficientInventoryError(
+            f"no active material instance satisfies requirement {requirement.key!r} "
+            f"({identity})"
+        )
+
+    def _candidate_inventory_lots(
+        self,
+        requirement: InventoryRequirement,
+        timestamp: int,
+    ) -> list[InventoryLotRecord]:
+        if requirement.lot_uuid is not None:
+            lot = self.repository.get_lot(requirement.lot_uuid)
+            if lot is None:
+                raise MaterialNotFoundError(
+                    f"inventory lot not found: {requirement.lot_uuid}"
+                )
+            candidates = [lot]
+        else:
+            candidates = self.repository.list_lots(
+                template_uuid=requirement.template_uuid,
+                unit=requirement.unit,
+                available_only=True,
+            )
+        result: list[InventoryLotRecord] = []
+        for lot in candidates:
+            if lot.quarantined or lot.quantity_available <= 1e-9:
+                continue
+            if requirement.template_uuid is not None and (
+                lot.template_uuid != requirement.template_uuid
+            ):
+                continue
+            if lot.unit != requirement.unit:
+                continue
+            if lot.expiry_at_ms is not None and lot.expiry_at_ms <= timestamp:
+                continue
+            result.append(lot)
+        return result
+
+    @staticmethod
+    def _advance_lot(
+        current: InventoryLotRecord,
+        *,
+        total_delta: float = 0,
+        available_delta: float = 0,
+        reserved_delta: float = 0,
+        timestamp: int,
+    ) -> InventoryLotRecord:
+        def normalized(value: float) -> float:
+            return 0.0 if abs(value) <= 1e-9 else value
+
+        total = normalized(current.quantity_total + total_delta)
+        available = normalized(current.quantity_available + available_delta)
+        reserved = normalized(current.quantity_reserved + reserved_delta)
+        if min(total, available, reserved) < 0 or available + reserved > total + 1e-9:
+            raise MaterialConflictError(
+                f"inventory lot invariant failed for {current.lot_uuid}"
+            )
+        return current.model_copy(
+            update={
+                "quantity_total": total,
+                "quantity_available": available,
+                "quantity_reserved": reserved,
+                "updated_at_ms": timestamp,
+                "version": current.version + 1,
+            }
+        )
+
+    def _transition_inventory_reservation(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryReservationTransition,
+        *,
+        target_status: str,
+    ) -> MutationResult[InventoryReservationRead]:
+        expected_operation = {
+            "consumed": "consume_inventory_reservation",
+            "released": "release_inventory_reservation",
+            "quarantined": "quarantine_inventory_reservation",
+        }[target_status]
+        if mutation.operation != expected_operation:
+            raise MaterialValidationError(
+                "inventory reservation transition operation is invalid"
+            )
+
+        def apply(timestamp: int) -> _Applied[InventoryReservationRead]:
+            current = self.repository.get_reservation(value.reservation_uuid)
+            if current is None:
+                raise MaterialNotFoundError(
+                    f"inventory reservation not found: {value.reservation_uuid}"
+                )
+            if target_status in {"consumed", "released"} and current.status != "active":
+                raise MaterialConflictError(
+                    f"reservation {current.reservation_uuid} is {current.status}, "
+                    f"cannot become {target_status}"
+                )
+            if target_status == "quarantined" and current.status not in {
+                "active",
+                "consumed",
+            }:
+                raise MaterialConflictError(
+                    f"reservation {current.reservation_uuid} is {current.status}, "
+                    "cannot be quarantined"
+                )
+
+            allocations = [
+                InventoryAllocation.model_validate(item) for item in current.items
+            ]
+            lot_quantities: dict[str, float] = {}
+            material_uuids: set[str] = set()
+            for item in allocations:
+                if item.kind == "reagent" and item.lot_uuid is not None:
+                    lot_quantities[item.lot_uuid] = (
+                        lot_quantities.get(item.lot_uuid, 0.0)
+                        + float(item.quantity or 0)
+                    )
+                elif item.kind == "material" and item.material_uuid is not None:
+                    material_uuids.add(item.material_uuid)
+
+            affected: list[AggregateVersion] = []
+            sequences: list[int] = []
+            if current.status == "active":
+                for lot_uuid, quantity in sorted(lot_quantities.items()):
+                    lot = self.repository.get_lot(lot_uuid)
+                    if lot is None:
+                        raise MaterialNotFoundError(
+                            f"inventory lot not found: {lot_uuid}"
+                        )
+                    if target_status == "released":
+                        updated_lot = self._advance_lot(
+                            lot,
+                            available_delta=quantity,
+                            reserved_delta=-quantity,
+                            timestamp=timestamp,
+                        )
+                    else:
+                        # 动作开始即实际扣减；失败隔离不能把可能已使用的数量加回。
+                        updated_lot = self._advance_lot(
+                            lot,
+                            total_delta=-quantity,
+                            reserved_delta=-quantity,
+                            timestamp=timestamp,
+                        )
+                    self.repository.update_lot(updated_lot)
+                    lot_hash = self._lot_state_hash(updated_lot)
+                    sequences.append(self._ledger(
+                        mutation,
+                        aggregate_type="lot",
+                        aggregate_uuid=lot_uuid,
+                        operation=f"inventory.lot.{target_status}",
+                        previous_version=lot.version,
+                        aggregate_version=updated_lot.version,
+                        state_hash=lot_hash,
+                        delta={
+                            "quantity": quantity,
+                            "unit": lot.unit,
+                            "reason": value.reason,
+                        },
+                        timestamp=timestamp,
+                    ))
+                    affected.append(AggregateVersion(
+                        aggregate_type="lot",
+                        aggregate_uuid=lot_uuid,
+                        version=updated_lot.version,
+                        state_hash=lot_hash,
+                    ))
+
+            for material_uuid in sorted(material_uuids):
+                material = self.repository.get_material(material_uuid)
+                if material is None:
+                    raise MaterialNotFoundError(
+                        f"material not found: {material_uuid}"
+                    )
+                desired = {
+                    "consumed": "in_use",
+                    "released": "active",
+                    "quarantined": "quarantined",
+                }[target_status]
+                if material.lifecycle_status == desired:
+                    continue
+                allowed = (
+                    {"reserved"}
+                    if current.status == "active"
+                    else {"in_use", "reserved"}
+                )
+                if material.lifecycle_status not in allowed:
+                    raise MaterialConflictError(
+                        f"material {material_uuid} is {material.lifecycle_status}, "
+                        f"cannot become {desired}"
+                    )
+                updated_material = material.model_copy(
+                    update={
+                        "lifecycle_status": desired,
+                        "updated_at_ms": timestamp,
+                        "version": material.version + 1,
+                    }
+                )
+                self.repository.update_material(updated_material)
+                material_hash = self.get_material(material_uuid).state_hash
+                sequences.append(self._ledger(
+                    mutation,
+                    aggregate_type="material",
+                    aggregate_uuid=material_uuid,
+                    operation=f"inventory.material.{desired}",
+                    previous_version=material.version,
+                    aggregate_version=updated_material.version,
+                    state_hash=material_hash,
+                    delta={
+                        "lifecycle_status": desired,
+                        "reason": value.reason,
+                    },
+                    timestamp=timestamp,
+                ))
+                affected.append(AggregateVersion(
+                    aggregate_type="material",
+                    aggregate_uuid=material_uuid,
+                    version=updated_material.version,
+                    state_hash=material_hash,
+                ))
+
+            updated = current.model_copy(
+                update={
+                    "status": target_status,
+                    "updated_at_ms": timestamp,
+                    "version": current.version + 1,
+                }
+            )
+            self.repository.update_reservation(updated)
+            reservation_hash = self._reservation_state_hash(updated)
+            sequences.append(self._ledger(
+                mutation,
+                aggregate_type="reservation",
+                aggregate_uuid=updated.reservation_uuid,
+                operation=f"inventory.reservation.{target_status}",
+                previous_version=current.version,
+                aggregate_version=updated.version,
+                state_hash=reservation_hash,
+                delta={"status": target_status, "reason": value.reason},
+                timestamp=timestamp,
+            ))
+            affected.append(AggregateVersion(
+                aggregate_type="reservation",
+                aggregate_uuid=updated.reservation_uuid,
+                version=updated.version,
+                state_hash=reservation_hash,
+            ))
+            return _Applied(
+                data=self._reservation_read(updated),
+                affected=affected,
+                sequences=sequences,
+            )
+
+        return self._run_mutation(
+            mutation,
+            value,
+            MutationResult[InventoryReservationRead],
+            apply,
         )
 
     # -- Template CRUD ----------------------------------------------------
@@ -1333,6 +2130,166 @@ class MaterialsService:
             mutation, value, MutationResult[MaterialAggregateRead], apply
         )
 
+    def _apply_material_move(
+        self,
+        mutation: InventoryMutation,
+        value: MaterialMove,
+        timestamp: int,
+    ) -> _Applied[MaterialAggregateRead]:
+        material = self.repository.get_material(value.material_uuid)
+        if material is None:
+            raise MaterialNotFoundError(
+                f"material not found: {value.material_uuid}"
+            )
+        source = self.repository.occupied_site(value.material_uuid)
+        destination = (
+            self.repository.get_site(value.destination_site_uuid)
+            if value.destination_site_uuid is not None
+            else None
+        )
+        if value.destination_site_uuid is not None and destination is None:
+            raise MaterialNotFoundError(
+                f"site not found: {value.destination_site_uuid}"
+            )
+        parent_uuid = (
+            destination.owner_material_uuid
+            if destination is not None
+            else value.parent_material_uuid
+        )
+        if destination is not None and destination.occupied_material_uuid not in (
+            None,
+            value.material_uuid,
+        ):
+            raise MaterialConflictError("destination site is occupied")
+        if (
+            source is not None
+            and destination is not None
+            and source.site_uuid == destination.site_uuid
+            and material.parent_material_uuid == parent_uuid
+        ):
+            raise MaterialNoChangeError("material is already at destination")
+        if (
+            source is None
+            and destination is None
+            and material.parent_material_uuid == parent_uuid
+        ):
+            raise MaterialNoChangeError("material is already at destination")
+
+        affected: list[AggregateVersion] = []
+        sequences: list[int] = []
+        if source is not None and (
+            destination is None or source.site_uuid != destination.site_uuid
+        ):
+            updated_source = SiteRecord.model_validate(
+                {
+                    **source.model_dump(mode="json"),
+                    "occupied_material_uuid": None,
+                    "changed_by_job_uuid": mutation.job_uuid,
+                    "changed_by_command_uuid": mutation.command_uuid,
+                    "changed_at_ms": timestamp,
+                    "updated_at_ms": timestamp,
+                    "version": source.version + 1,
+                }
+            )
+            self.repository.update_site(updated_source)
+            state_hash = self._site_state_hash(updated_source)
+            affected.append(
+                AggregateVersion(
+                    aggregate_type="site",
+                    aggregate_uuid=source.site_uuid,
+                    version=updated_source.version,
+                    state_hash=state_hash,
+                )
+            )
+            sequences.append(
+                self._ledger(
+                    mutation,
+                    aggregate_type="site",
+                    aggregate_uuid=source.site_uuid,
+                    operation="vacate",
+                    previous_version=source.version,
+                    aggregate_version=updated_source.version,
+                    state_hash=state_hash,
+                    delta={"occupied_material_uuid": None},
+                    timestamp=timestamp,
+                )
+            )
+
+        updated_material = MaterialRecord.model_validate(
+            {
+                **material.model_dump(mode="json"),
+                "parent_material_uuid": parent_uuid,
+                "updated_at_ms": timestamp,
+                "version": material.version + 1,
+            }
+        )
+        self.repository.update_material(updated_material)
+
+        if destination is not None and (
+            source is None or source.site_uuid != destination.site_uuid
+        ):
+            updated_destination = SiteRecord.model_validate(
+                {
+                    **destination.model_dump(mode="json"),
+                    "occupied_material_uuid": value.material_uuid,
+                    "changed_by_job_uuid": mutation.job_uuid,
+                    "changed_by_command_uuid": mutation.command_uuid,
+                    "changed_at_ms": timestamp,
+                    "updated_at_ms": timestamp,
+                    "version": destination.version + 1,
+                }
+            )
+            self.repository.update_site(updated_destination)
+            state_hash = self._site_state_hash(updated_destination)
+            affected.append(
+                AggregateVersion(
+                    aggregate_type="site",
+                    aggregate_uuid=destination.site_uuid,
+                    version=updated_destination.version,
+                    state_hash=state_hash,
+                )
+            )
+            sequences.append(
+                self._ledger(
+                    mutation,
+                    aggregate_type="site",
+                    aggregate_uuid=destination.site_uuid,
+                    operation="occupy",
+                    previous_version=destination.version,
+                    aggregate_version=updated_destination.version,
+                    state_hash=state_hash,
+                    delta={"occupied_material_uuid": value.material_uuid},
+                    timestamp=timestamp,
+                )
+            )
+
+        aggregate = self.get_material(value.material_uuid)
+        affected.append(
+            AggregateVersion(
+                aggregate_type="material",
+                aggregate_uuid=value.material_uuid,
+                version=updated_material.version,
+                state_hash=aggregate.state_hash,
+            )
+        )
+        sequences.append(
+            self._ledger(
+                mutation,
+                aggregate_type="material",
+                aggregate_uuid=value.material_uuid,
+                operation="move",
+                previous_version=material.version,
+                aggregate_version=updated_material.version,
+                state_hash=aggregate.state_hash,
+                delta={
+                    "parent_material_uuid": parent_uuid,
+                    "destination_site_uuid": value.destination_site_uuid,
+                },
+                timestamp=timestamp,
+            )
+        )
+        return _Applied(aggregate, affected, sequences)
+
     def move_material(
         self, mutation: InventoryMutation, value: MaterialMove
     ) -> MutationResult[MaterialAggregateRead]:
@@ -1340,157 +2297,205 @@ class MaterialsService:
             raise MaterialValidationError("material move operation is invalid")
 
         def apply(timestamp: int) -> _Applied[MaterialAggregateRead]:
-            material = self.repository.get_material(value.material_uuid)
-            if material is None:
-                raise MaterialNotFoundError(
-                    f"material not found: {value.material_uuid}"
-                )
-            source = self.repository.occupied_site(value.material_uuid)
-            destination = (
-                self.repository.get_site(value.destination_site_uuid)
-                if value.destination_site_uuid is not None
-                else None
+            return self._apply_material_move(mutation, value, timestamp)
+
+        with self._transfer_lock:
+            return self._run_mutation(
+                mutation, value, MutationResult[MaterialAggregateRead], apply
             )
-            if value.destination_site_uuid is not None and destination is None:
-                raise MaterialNotFoundError(
-                    f"site not found: {value.destination_site_uuid}"
-                )
-            parent_uuid = (
-                destination.owner_material_uuid
-                if destination is not None
-                else value.parent_material_uuid
+
+    @staticmethod
+    def _transfer_destination_site(
+        target: MaterialAggregateRead,
+        selector: Any | None,
+    ) -> SiteRead | None:
+        if selector is None or str(selector).strip() == "":
+            return None
+        normalized = str(selector).strip()
+        matches = [
+            site
+            for site in target.sites
+            if normalized
+            in {
+                site.site_uuid,
+                site.label,
+                str(site.site_index),
+            }
+        ]
+        if not matches:
+            raise MaterialValidationError(
+                f"target material {target.material.material_uuid} "
+                f"has no Site {selector!r}"
             )
-            if destination is not None and destination.occupied_material_uuid not in (
-                None,
-                value.material_uuid,
-            ):
-                raise MaterialConflictError("destination site is occupied")
-            if (
-                source is not None
-                and destination is not None
-                and source.site_uuid == destination.site_uuid
-                and material.parent_material_uuid == parent_uuid
-            ):
-                raise MaterialNoChangeError("material is already at destination")
+        if len(matches) > 1:
+            raise MaterialValidationError(
+                f"target material {target.material.material_uuid} "
+                f"has ambiguous Site {selector!r}"
+            )
+        return matches[0]
+
+    def _transfer_result_is_current(self, value: MaterialTransferResult) -> None:
+        """拒绝重放已被后续位置变更覆盖的设备同步命令。"""
+
+        for material_uuid, target_uuid, site_uuid in zip(
+            value.material_uuids,
+            value.target_material_uuids,
+            value.destination_site_uuids,
+        ):
+            material = self.repository.get_material(material_uuid)
+            if material is None or material.parent_material_uuid != target_uuid:
+                raise MaterialConflictError(
+                    f"material transfer {material_uuid} was superseded"
+                )
+            occupied_site = self.repository.occupied_site(material_uuid)
+            occupied_site_uuid = (
+                occupied_site.site_uuid if occupied_site is not None else None
+            )
+            if occupied_site_uuid != site_uuid:
+                raise MaterialConflictError(
+                    f"material transfer {material_uuid} Site was superseded"
+                )
+
+    @staticmethod
+    def _dispatch_device_sync(
+        dispatcher: ResourceSyncDispatcher,
+        command: MaterialDeviceSync,
+    ) -> None:
+        try:
+            response = dispatcher(command)
+        except MaterialTransferSyncError:
+            raise
+        except Exception as exc:
+            raise MaterialTransferSyncError(
+                f"device {command.device_id!r} {command.action} failed: {exc}"
+            ) from exc
+        if response is False:
+            raise MaterialTransferSyncError(
+                f"device {command.device_id!r} rejected {command.action}"
+            )
+        if isinstance(response, dict) and response.get("success") is False:
+            raise MaterialTransferSyncError(
+                f"device {command.device_id!r} {command.action} failed: {response}"
+            )
+
+    def transfer_material(
+        self,
+        mutation: InventoryMutation,
+        value: MaterialTransfer,
+    ) -> MutationResult[MaterialTransferResult]:
+        """提交权威位置，再按 unload -> load 收敛两端本地投影。
+
+        同一个幂等命令在设备同步阶段失败后可以安全重试：数据库 mutation
+        会 replay，但 unload/load 仍会使用相同 ``transfer_uuid`` 重放。目标
+        load 失败时不回滚权威位置，也不会重新挂回来源端，因此不会产生双挂载。
+        """
+
+        if mutation.operation != "transfer_material":
+            raise MaterialValidationError("material transfer operation is invalid")
+        dispatcher = self._resource_sync_dispatcher
+        if dispatcher is None:
+            raise MaterialTransferSyncError(
+                "material transfer resource-service dispatcher is not configured"
+            )
+
+        def apply(timestamp: int) -> _Applied[MaterialTransferResult]:
+            resolved: list[tuple[Any, SiteRead | None]] = []
+            destination_sites: set[str] = set()
+            for item in value.items:
+                target = self.get_material(item.target_material_uuid)
+                destination = self._transfer_destination_site(
+                    target,
+                    item.target_site,
+                )
+                if destination is not None:
+                    if destination.site_uuid in destination_sites:
+                        raise MaterialConflictError(
+                            "one transfer cannot target the same Site twice"
+                        )
+                    destination_sites.add(destination.site_uuid)
+                    if destination.occupied_material_uuid not in (
+                        None,
+                        item.material_uuid,
+                    ):
+                        raise MaterialConflictError(
+                            f"destination Site {destination.site_uuid} is occupied"
+                        )
+                resolved.append((item, destination))
 
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
-            if source is not None and (
-                destination is None or source.site_uuid != destination.site_uuid
-            ):
-                updated_source = SiteRecord.model_validate(
-                    {
-                        **source.model_dump(mode="json"),
-                        "occupied_material_uuid": None,
-                        "changed_by_job_uuid": mutation.job_uuid,
-                        "changed_by_command_uuid": mutation.command_uuid,
-                        "changed_at_ms": timestamp,
-                        "updated_at_ms": timestamp,
-                        "version": source.version + 1,
-                    }
-                )
-                self.repository.update_site(updated_source)
-                state_hash = self._site_state_hash(updated_source)
-                affected.append(
-                    AggregateVersion(
-                        aggregate_type="site",
-                        aggregate_uuid=source.site_uuid,
-                        version=updated_source.version,
-                        state_hash=state_hash,
-                    )
-                )
-                sequences.append(
-                    self._ledger(
-                        mutation,
-                        aggregate_type="site",
-                        aggregate_uuid=source.site_uuid,
-                        operation="vacate",
-                        previous_version=source.version,
-                        aggregate_version=updated_source.version,
-                        state_hash=state_hash,
-                        delta={"occupied_material_uuid": None},
-                        timestamp=timestamp,
-                    )
-                )
-
-            updated_material = MaterialRecord.model_validate(
-                {
-                    **material.model_dump(mode="json"),
-                    "parent_material_uuid": parent_uuid,
-                    "updated_at_ms": timestamp,
-                    "version": material.version + 1,
-                }
-            )
-            self.repository.update_material(updated_material)
-
-            if destination is not None and (
-                source is None or source.site_uuid != destination.site_uuid
-            ):
-                updated_destination = SiteRecord.model_validate(
-                    {
-                        **destination.model_dump(mode="json"),
-                        "occupied_material_uuid": value.material_uuid,
-                        "changed_by_job_uuid": mutation.job_uuid,
-                        "changed_by_command_uuid": mutation.command_uuid,
-                        "changed_at_ms": timestamp,
-                        "updated_at_ms": timestamp,
-                        "version": destination.version + 1,
-                    }
-                )
-                self.repository.update_site(updated_destination)
-                state_hash = self._site_state_hash(updated_destination)
-                affected.append(
-                    AggregateVersion(
-                        aggregate_type="site",
-                        aggregate_uuid=destination.site_uuid,
-                        version=updated_destination.version,
-                        state_hash=state_hash,
-                    )
-                )
-                sequences.append(
-                    self._ledger(
-                        mutation,
-                        aggregate_type="site",
-                        aggregate_uuid=destination.site_uuid,
-                        operation="occupy",
-                        previous_version=destination.version,
-                        aggregate_version=updated_destination.version,
-                        state_hash=state_hash,
-                        delta={"occupied_material_uuid": value.material_uuid},
-                        timestamp=timestamp,
-                    )
-                )
-
-            aggregate = self.get_material(value.material_uuid)
-            affected.append(
-                AggregateVersion(
-                    aggregate_type="material",
-                    aggregate_uuid=value.material_uuid,
-                    version=updated_material.version,
-                    state_hash=aggregate.state_hash,
-                )
-            )
-            sequences.append(
-                self._ledger(
+            materials: list[MaterialAggregateRead] = []
+            site_uuids: list[str | None] = []
+            for item, destination in resolved:
+                moved = self._apply_material_move(
                     mutation,
-                    aggregate_type="material",
-                    aggregate_uuid=value.material_uuid,
-                    operation="move",
-                    previous_version=material.version,
-                    aggregate_version=updated_material.version,
-                    state_hash=aggregate.state_hash,
-                    delta={
-                        "parent_material_uuid": parent_uuid,
-                        "destination_site_uuid": value.destination_site_uuid,
-                    },
-                    timestamp=timestamp,
+                    MaterialMove(
+                        material_uuid=item.material_uuid,
+                        destination_site_uuid=(
+                            destination.site_uuid
+                            if destination is not None
+                            else None
+                        ),
+                        parent_material_uuid=(
+                            None
+                            if destination is not None
+                            else item.target_material_uuid
+                        ),
+                    ),
+                    timestamp,
                 )
-            )
-            return _Applied(aggregate, affected, sequences)
+                affected.extend(moved.affected)
+                sequences.extend(moved.sequences)
+                materials.append(moved.data)
+                site_uuids.append(
+                    destination.site_uuid if destination is not None else None
+                )
 
-        return self._run_mutation(
-            mutation, value, MutationResult[MaterialAggregateRead], apply
-        )
+            return _Applied(
+                MaterialTransferResult(
+                    source_device_id=value.source_device_id,
+                    target_device_id=value.target_device_id,
+                    material_uuids=[item.material_uuid for item in value.items],
+                    target_material_uuids=[
+                        item.target_material_uuid for item in value.items
+                    ],
+                    destination_site_uuids=site_uuids,
+                    materials=materials,
+                ),
+                affected,
+                sequences,
+            )
+
+        with self._transfer_lock:
+            result = self._run_mutation(
+                mutation,
+                value,
+                MutationResult[MaterialTransferResult],
+                apply,
+            )
+            self._transfer_result_is_current(result.data)
+            self._dispatch_device_sync(
+                dispatcher,
+                MaterialDeviceSync(
+                    transfer_uuid=mutation.command_uuid,
+                    device_id=result.data.source_device_id,
+                    action="unload",
+                    material_uuids=result.data.material_uuids,
+                ),
+            )
+            self._dispatch_device_sync(
+                dispatcher,
+                MaterialDeviceSync(
+                    transfer_uuid=mutation.command_uuid,
+                    device_id=result.data.target_device_id,
+                    action="load",
+                    material_uuids=result.data.material_uuids,
+                    destination_site_uuids=(
+                        result.data.destination_site_uuids
+                    ),
+                ),
+            )
+            return result
 
     # -- Delete / Snapshot ------------------------------------------------
 
@@ -1951,9 +2956,11 @@ class MaterialsService:
 
 
 __all__ = [
+    "InsufficientInventoryError",
     "MaterialConflictError",
     "MaterialNoChangeError",
     "MaterialNotFoundError",
+    "MaterialTransferSyncError",
     "MaterialValidationError",
     "MaterialsService",
     "MaterialsServiceError",

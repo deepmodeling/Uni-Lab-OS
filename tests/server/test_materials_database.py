@@ -7,9 +7,9 @@ import sqlite3
 import pytest
 from pydantic import ValidationError
 
-from unilabos.server.database.materials import MATERIALS_DATABASE
+from unilabos.server.database.tables.materials import MATERIALS_DATABASE
 from unilabos.server.database.schema import initialize_database
-from unilabos.server.models.materials import (
+from unilabos.server.database.tables.materials import (
     InventoryReservationRecord,
     MaterialDataRecord,
     MaterialSubstanceRecord,

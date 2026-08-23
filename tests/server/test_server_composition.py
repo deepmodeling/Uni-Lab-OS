@@ -10,6 +10,12 @@ from unilabos.server.composition import (
     shutdown_server_services,
 )
 from unilabos.server.database import ServerDatabasePaths
+from unilabos.server.database.repositories import (
+    HistoryRepository,
+    MaterialsRepository,
+    RuntimeRepository,
+    TelemetryRepository,
+)
 from unilabos.config.config import BasicConfig
 from unilabos.server.scheduler.integration import (
     get_edge_backend,
@@ -17,6 +23,12 @@ from unilabos.server.scheduler.integration import (
     reset_for_test,
     setup_job_execution_backend,
     setup_materials_service,
+)
+from unilabos.server.services import (
+    HistoryService,
+    MaterialsService,
+    RuntimeService,
+    TelemetryService,
 )
 
 
@@ -35,6 +47,10 @@ def test_server_services_open_exactly_four_new_databases(tmp_path) -> None:
         assert services.telemetry.repository.connection is not (
             services.history.repository.connection
         )
+        assert isinstance(services.runtime.repository, RuntimeRepository)
+        assert isinstance(services.materials.repository, MaterialsRepository)
+        assert isinstance(services.telemetry.repository, TelemetryRepository)
+        assert isinstance(services.history.repository, HistoryRepository)
         assert {path.name for path in tmp_path.glob("*.db")} == {
             "runtime.db",
             "materials.db",
@@ -43,6 +59,15 @@ def test_server_services_open_exactly_four_new_databases(tmp_path) -> None:
         }
     finally:
         shutdown_server_services()
+
+
+@pytest.mark.parametrize(
+    "service_type",
+    (RuntimeService, MaterialsService, TelemetryService, HistoryService),
+)
+def test_services_require_an_explicit_repository(tmp_path, service_type) -> None:
+    with pytest.raises(TypeError, match="Repository"):
+        service_type(tmp_path / "service.db")
 
 
 def test_server_services_reject_runtime_layout_switch(tmp_path) -> None:

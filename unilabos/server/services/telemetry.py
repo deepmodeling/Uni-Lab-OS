@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 from typing import Optional
 
-from unilabos.server.models.telemetry import (
+from unilabos.server.database.repositories.telemetry import TelemetryRepository
+from unilabos.server.database.tables.telemetry import (
     DeviceStateLatestRecord,
     TelemetryEventRecord,
     TelemetrySourceCursorRecord,
@@ -19,7 +19,6 @@ from unilabos.server.protocol.telemetry import (
     TelemetryIngestRequest,
     TelemetryIngestResult,
 )
-from unilabos.server.repositories.telemetry import TelemetryRepository
 
 
 class TelemetryServiceError(RuntimeError):
@@ -41,15 +40,10 @@ class TelemetryValidationError(TelemetryServiceError):
 class TelemetryService:
     """原子追加 event、推进 source cursor，并按需更新最新设备快照。"""
 
-    def __init__(self, repository: TelemetryRepository | str | Path):
-        self.repository = (
-            repository
-            if isinstance(repository, TelemetryRepository)
-            else TelemetryRepository(repository)
-        )
-
-    def close(self) -> None:
-        self.repository.close()
+    def __init__(self, repository: TelemetryRepository):
+        if not isinstance(repository, TelemetryRepository):
+            raise TypeError("repository must be a TelemetryRepository")
+        self.repository = repository
 
     @staticmethod
     def _event_record(event: TelemetryEventWrite) -> TelemetryEventRecord:

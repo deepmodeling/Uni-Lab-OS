@@ -8,7 +8,6 @@ from typing import Union, Any, Dict, List, Tuple
 import uuid
 import networkx as nx
 from pylabrobot.resources import ResourceHolder
-from unilabos_msgs.msg import Resource
 
 from unilabos.config.config import BasicConfig
 from unilabos.resources.presets.container import RegularContainer
@@ -27,7 +26,6 @@ from unilabos.resources.objects.resource import (
 )
 from unilabos.resources.objects.site import ResourceSite
 from unilabos.resources.objects.state import TRACKER_STATE_KEYS
-from unilabos.ros.msgs.message_converter import convert_to_ros_msg
 from unilabos.resources.resource_tracker import (
     ResourceDictInstance,
     ResourceTreeSet,
@@ -40,6 +38,13 @@ from unilabos.resources.resource_tracker import (
 )
 from unilabos.utils import logger
 from unilabos.utils.banner_print import print_status
+
+if BasicConfig.backend == "ros2":
+    from unilabos_msgs.msg import Resource
+    from unilabos.ros.msgs.message_converter import convert_to_ros_msg
+else:
+    Resource = None
+    convert_to_ros_msg = None
 
 try:
     from pylabrobot.resources.resource import Resource as ResourcePLR
@@ -1477,12 +1482,14 @@ def initialize_resource(resource_config: dict, resource_type: Any = None) -> Uni
         if resource_class_config["type"] == "pylabrobot":
             resource_plr = RESOURCE(name=resource_config["name"])
             if resource_type != ResourcePLR:
-                tree_sets = ResourceTreeSet.from_plr_resources([resource_plr], known_newly_created=True)
+                tree_sets = ResourceTreeSet.from_plr_resources([resource_plr])
                 r = tree_sets.dump()
             else:
                 r = resource_plr
         elif resource_class_config["type"] == "unilabos":
             raise ValueError(f"No more support for unilabos Resource class {resource_class_config}")
+            if Resource is None or convert_to_ros_msg is None:
+                raise RuntimeError("HostLink JSON 模式不支持旧 unilabos ROS Resource")
             res_instance: RegularContainer = RESOURCE(id=resource_config["name"])
             res_instance.ulr_resource = convert_to_ros_msg(
                 Resource, {k: v for k, v in resource_config.items() if k != "class"}

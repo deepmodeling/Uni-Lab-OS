@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.protocol.common import AggregatePrecondition, InventoryMutation
 from unilabos.server.protocol.materials import (
     MaterialDataWrite,
@@ -88,7 +89,7 @@ def _node(
 
 
 def test_template_and_material_tree_roundtrip_is_authoritative(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     try:
         _template(service, "deck-template", "deck", with_site=True)
         _template(service, "tube-template", "tube")
@@ -119,11 +120,11 @@ def test_template_and_material_tree_roundtrip_is_authoritative(tmp_path) -> None
         assert replay.replayed is True
         assert replay.data == result.data
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_position_update_checks_material_version(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     try:
         _template(service, "tube-template", "tube")
         created = service.create_tree(
@@ -166,11 +167,11 @@ def test_position_update_checks_material_version(tmp_path) -> None:
                 MaterialPosition(position_x=4, position_y=5, position_z=6),
             )
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_move_clears_source_and_sets_destination_atomically(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     try:
         _template(service, "deck-template", "deck", with_site=True)
         _template(service, "tube-template", "tube")
@@ -218,11 +219,11 @@ def test_move_clears_source_and_sets_destination_atomically(tmp_path) -> None:
             == child_uuid
         )
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_snapshot_diff_and_apply_increment_material_once(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     try:
         _template(service, "tube-template", "tube")
         created = service.create_tree(
@@ -277,11 +278,11 @@ def test_snapshot_diff_and_apply_increment_material_once(tmp_path) -> None:
             item.aggregate_uuid for item in result.affected
         } == {updated.material.material_uuid}
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_recursive_delete_and_change_feed_are_aggregate_based(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     try:
         _template(service, "deck-template", "deck", with_site=True)
         _template(service, "tube-template", "tube")
@@ -312,11 +313,11 @@ def test_recursive_delete_and_change_feed_are_aggregate_based(tmp_path) -> None:
         assert service.acknowledge_changes(changes[-1].sequence) == len(changes)
         assert all(item.delivery_status == "acknowledged" for item in service.changes())
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_snapshot_moves_between_sites_in_one_transaction(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     try:
         _template(service, "root-template", "root")
         _template(service, "carrier-template", "carrier", with_site=True)
@@ -409,4 +410,4 @@ def test_snapshot_moves_between_sites_in_one_transaction(tmp_path) -> None:
             carrier_2.sites[0].site_uuid
         ).occupied_material_uuid == identities["tube"]
     finally:
-        service.close()
+        service.repository.close()

@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime import (
@@ -445,7 +446,7 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
     monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
     monkeypatch.setattr(HostLinkConfig, "request_timeout", 1.0)
 
-    material_service = MaterialsService(tmp_path / "materials.db")
+    material_service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     set_materials_gateway(LocalMaterialsClient(material_service))
     host = HostLinkBackend(HostLinkLocalRuntime(), is_slave=False)
     host.start()
@@ -506,7 +507,7 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
         client.close()
         host.stop()
         set_materials_gateway(None)
-        material_service.close()
+        material_service.repository.close()
 
 
 def test_hostlink_awaits_device_tools_without_thread_fallback(
@@ -991,7 +992,7 @@ def test_hostlink_runtime_uses_microbackend_resource_authority(
     monkeypatch.setattr(HostLinkConfig, "enable", True)
     monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
     monkeypatch.setattr(HostLinkConfig, "port", 0)
-    material_service = MaterialsService(tmp_path / "materials.db")
+    material_service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     set_materials_gateway(LocalMaterialsClient(material_service))
     runtime = _counter_runtime("resource-device", resource_uuid="device-uuid")
     backend = HostLinkBackend(runtime, is_slave=False)
@@ -1031,4 +1032,4 @@ def test_hostlink_runtime_uses_microbackend_resource_authority(
     finally:
         backend.stop()
         set_materials_gateway(None)
-        material_service.close()
+        material_service.repository.close()

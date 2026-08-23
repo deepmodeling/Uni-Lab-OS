@@ -10,9 +10,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-from unilabos.server.database.history import HISTORY_DATABASE
+from unilabos.server.database.tables.history import HISTORY_DATABASE
 from unilabos.server.database.schema import initialize_database
-from unilabos.server.models.history import HistoryEventRecord, PayloadObjectRecord
+from unilabos.server.database.tables.history import (
+    HistoryEventRecord,
+    PayloadObjectRecord,
+)
 from unilabos.server.protocol.common import canonical_json
 
 

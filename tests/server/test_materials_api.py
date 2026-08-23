@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.api.materials import install_materials_api
 from unilabos.client.materials import LocalMaterialsClient, bind_payload
 from unilabos.server.protocol.common import InventoryMutation
@@ -26,7 +27,7 @@ def _mutation(operation: str) -> InventoryMutation:
 
 
 def test_http_protocol_uses_mutation_payload(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     app = FastAPI()
     install_materials_api(app, service)
     template = ResourceTemplateWrite(
@@ -52,11 +53,11 @@ def test_http_protocol_uses_mutation_payload(tmp_path) -> None:
             assert fetched.status_code == 200
             assert fetched.json()["name"] == "beaker"
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_post_template_allocates_authoritative_uuid(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     client = LocalMaterialsClient(service)
     template = ResourceTemplateWrite(
         name="beaker",
@@ -73,11 +74,11 @@ def test_post_template_allocates_authoritative_uuid(tmp_path) -> None:
         assert created.data.template_uuid
         assert client.get_template(created.data.template_uuid).name == "beaker"
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_post_tree_resolves_template_name_and_allocates_all_uuids(tmp_path) -> None:
-    service = MaterialsService(tmp_path / "materials.db")
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     app = FastAPI()
     install_materials_api(app, service)
     tree = MaterialTreeCreate(
@@ -109,4 +110,4 @@ def test_post_tree_resolves_template_name_and_allocates_all_uuids(tmp_path) -> N
         assert body["root_material_uuid"]
         assert body["nodes"][0]["material"]["template_uuid"]
     finally:
-        service.close()
+        service.repository.close()

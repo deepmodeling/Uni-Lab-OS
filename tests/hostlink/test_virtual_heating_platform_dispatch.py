@@ -4,6 +4,7 @@ import threading
 import time
 import uuid
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig
@@ -62,7 +63,7 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
 ) -> None:
     monkeypatch.setattr(BasicConfig, "test_mode", True)
     monkeypatch.setattr(BasicConfig, "is_host_mode", True)
-    material_service = MaterialsService(tmp_path / "materials.db")
+    material_service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     set_materials_gateway(LocalMaterialsClient(material_service))
     device_state = DeviceStateStore(str(tmp_path / "device-state.db"))
     local = HostLinkLocalRuntime()
@@ -185,4 +186,4 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
         runtime.stop()
         device_state.close()
         set_materials_gateway(None)
-        material_service.close()
+        material_service.repository.close()

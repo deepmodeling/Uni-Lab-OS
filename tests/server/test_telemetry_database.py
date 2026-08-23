@@ -7,8 +7,8 @@ import sqlite3
 import pytest
 
 from unilabos.server.database.schema import initialize_database
-from unilabos.server.database.telemetry import TELEMETRY_DATABASE
-from unilabos.server.models.telemetry import DeviceStateLatestRecord
+from unilabos.server.database.tables.telemetry import TELEMETRY_DATABASE
+from unilabos.server.database.tables.telemetry import DeviceStateLatestRecord
 
 
 def _open(tmp_path) -> sqlite3.Connection:

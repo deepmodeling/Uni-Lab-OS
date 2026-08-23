@@ -10,11 +10,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-from unilabos.server.database.materials import MATERIALS_DATABASE
+from unilabos.server.database.tables.materials import MATERIALS_DATABASE
 from unilabos.server.database.schema import initialize_database
-from unilabos.server.models.materials import (
+from unilabos.server.database.tables.materials import (
     InventoryCommandEffectRecord,
     InventoryLedgerRecord,
+    InventoryLotRecord,
+    InventoryReservationRecord,
     MaterialDataRecord,
     MaterialPositionRecord,
     MaterialRecord,
@@ -66,6 +68,12 @@ class MaterialsRepository:
         """每个 materials.db 进程内只有这一个 writer 入口。"""
 
         with self._write_lock:
+            # Batch scheduler operations compose existing service mutations
+            # under one outer BEGIN IMMEDIATE.  The re-entrant writer never
+            # commits or rolls back its caller's transaction.
+            if self.connection.in_transaction:
+                yield self.connection
+                return
             self.connection.execute("BEGIN IMMEDIATE")
             try:
                 yield self.connection
@@ -178,6 +186,175 @@ class MaterialsRepository:
         )
         if cursor.rowcount != 1:
             raise RuntimeError("resource template version conflict")
+
+    # -- Inventory lot ----------------------------------------------------
+
+    @staticmethod
+    def _lot(row: sqlite3.Row) -> InventoryLotRecord:
+        values = dict(row)
+        values["quarantined"] = bool(values["quarantined"])
+        return InventoryLotRecord.model_validate(values)
+
+    def get_lot(self, lot_uuid: str) -> Optional[InventoryLotRecord]:
+        row = self.connection.execute(
+            "SELECT * FROM inventory_lot WHERE lot_uuid=?", (lot_uuid,)
+        ).fetchone()
+        return self._lot(row) if row is not None else None
+
+    def list_lots(
+        self,
+        *,
+        template_uuid: Optional[str] = None,
+        unit: Optional[str] = None,
+        include_quarantined: bool = False,
+        available_only: bool = False,
+    ) -> list[InventoryLotRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if template_uuid is not None:
+            clauses.append("template_uuid=?")
+            params.append(template_uuid)
+        if unit is not None:
+            clauses.append("unit=?")
+            params.append(unit)
+        if not include_quarantined:
+            clauses.append("quarantined=0")
+        if available_only:
+            clauses.append("quantity_available>0")
+        sql = "SELECT * FROM inventory_lot"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += (
+            " ORDER BY CASE WHEN expiry_at_ms IS NULL THEN 1 ELSE 0 END,"
+            " expiry_at_ms,created_at_ms,lot_uuid"
+        )
+        return [self._lot(row) for row in self.connection.execute(sql, params)]
+
+    def insert_lot(self, record: InventoryLotRecord) -> None:
+        values = record.model_dump(mode="json")
+        self.connection.execute(
+            """
+            INSERT INTO inventory_lot(
+                lot_uuid,template_uuid,batch_no,unit,quantity_total,
+                quantity_available,quantity_reserved,expiry_at_ms,quarantined,
+                created_at_ms,updated_at_ms,version
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                values["lot_uuid"], values["template_uuid"], values["batch_no"],
+                values["unit"], values["quantity_total"],
+                values["quantity_available"], values["quantity_reserved"],
+                values["expiry_at_ms"], values["quarantined"],
+                values["created_at_ms"], values["updated_at_ms"], values["version"],
+            ),
+        )
+
+    def update_lot(self, record: InventoryLotRecord) -> None:
+        values = record.model_dump(mode="json")
+        cursor = self.connection.execute(
+            """
+            UPDATE inventory_lot SET template_uuid=?,batch_no=?,unit=?,
+                quantity_total=?,quantity_available=?,quantity_reserved=?,
+                expiry_at_ms=?,quarantined=?,updated_at_ms=?,version=?
+            WHERE lot_uuid=? AND version=?
+            """,
+            (
+                values["template_uuid"], values["batch_no"], values["unit"],
+                values["quantity_total"], values["quantity_available"],
+                values["quantity_reserved"], values["expiry_at_ms"],
+                values["quarantined"], values["updated_at_ms"], values["version"],
+                values["lot_uuid"], values["version"] - 1,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("inventory lot version conflict")
+
+    # -- Inventory reservation ------------------------------------------
+
+    @staticmethod
+    def _reservation(row: sqlite3.Row) -> InventoryReservationRecord:
+        values = dict(row)
+        values["items"] = _load_json(values.pop("items_json"), [])
+        return InventoryReservationRecord.model_validate(values)
+
+    def get_reservation(
+        self, reservation_uuid: str
+    ) -> Optional[InventoryReservationRecord]:
+        row = self.connection.execute(
+            "SELECT * FROM inventory_reservation WHERE reservation_uuid=?",
+            (reservation_uuid,),
+        ).fetchone()
+        return self._reservation(row) if row is not None else None
+
+    def get_reservation_by_job(
+        self, job_uuid: str
+    ) -> Optional[InventoryReservationRecord]:
+        row = self.connection.execute(
+            "SELECT * FROM inventory_reservation WHERE job_uuid=?", (job_uuid,)
+        ).fetchone()
+        return self._reservation(row) if row is not None else None
+
+    def list_reservations(
+        self,
+        *,
+        task_uuid: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> list[InventoryReservationRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if task_uuid is not None:
+            clauses.append("task_uuid=?")
+            params.append(task_uuid)
+        if status is not None:
+            clauses.append("status=?")
+            params.append(status)
+        sql = "SELECT * FROM inventory_reservation"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at_ms,reservation_uuid"
+        return [
+            self._reservation(row) for row in self.connection.execute(sql, params)
+        ]
+
+    def insert_reservation(self, record: InventoryReservationRecord) -> None:
+        values = record.model_dump(mode="json")
+        self.connection.execute(
+            """
+            INSERT INTO inventory_reservation(
+                reservation_uuid,task_uuid,node_uuid,job_uuid,scheduler_revision,
+                request_hash,items_json,status,expires_at_ms,created_at_ms,
+                updated_at_ms,version
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                values["reservation_uuid"], values["task_uuid"],
+                values["node_uuid"], values["job_uuid"],
+                values["scheduler_revision"], values["request_hash"],
+                canonical_json(values["items"]), values["status"],
+                values["expires_at_ms"], values["created_at_ms"],
+                values["updated_at_ms"], values["version"],
+            ),
+        )
+
+    def update_reservation(self, record: InventoryReservationRecord) -> None:
+        values = record.model_dump(mode="json")
+        cursor = self.connection.execute(
+            """
+            UPDATE inventory_reservation SET task_uuid=?,node_uuid=?,job_uuid=?,
+                scheduler_revision=?,request_hash=?,items_json=?,status=?,
+                expires_at_ms=?,updated_at_ms=?,version=?
+            WHERE reservation_uuid=? AND version=?
+            """,
+            (
+                values["task_uuid"], values["node_uuid"], values["job_uuid"],
+                values["scheduler_revision"], values["request_hash"],
+                canonical_json(values["items"]), values["status"],
+                values["expires_at_ms"], values["updated_at_ms"], values["version"],
+                values["reservation_uuid"], values["version"] - 1,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("inventory reservation version conflict")
 
     # -- Material aggregate ----------------------------------------------
 

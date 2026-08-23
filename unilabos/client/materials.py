@@ -14,6 +14,13 @@ from unilabos.server.protocol.common import (
     MutationResult,
 )
 from unilabos.server.protocol.materials import (
+    InventoryLotInbound,
+    InventoryLotRead,
+    InventoryReservationCreate,
+    InventoryReservationRead,
+    InventoryReservationTransition,
+    InventoryTaskReservationCreate,
+    InventoryTaskReservationRead,
     MaterialAggregateRead,
     MaterialDataWrite,
     MaterialDelete,
@@ -25,6 +32,8 @@ from unilabos.server.protocol.materials import (
     MaterialSnapshotDiff,
     MaterialTreeCreate,
     MaterialTreeRead,
+    MaterialTransfer,
+    MaterialTransferResult,
     ResourceTemplateRead,
     ResourceTemplateWrite,
 )
@@ -66,6 +75,65 @@ class LocalMaterialsClient:
         value = {"template_uuid": template_uuid}
         return self.service.delete_template(bind_payload(mutation, value), template_uuid)
 
+    def inbound_inventory_lot(self, mutation, value):
+        return self.service.inbound_inventory_lot(bind_payload(mutation, value), value)
+
+    def get_inventory_lot(self, lot_uuid: str):
+        return self.service.get_inventory_lot(lot_uuid)
+
+    def list_inventory_lots(
+        self,
+        *,
+        template_uuid: Optional[str] = None,
+        unit: Optional[str] = None,
+        include_quarantined: bool = False,
+    ):
+        return self.service.list_inventory_lots(
+            template_uuid=template_uuid,
+            unit=unit,
+            include_quarantined=include_quarantined,
+        )
+
+    def reserve_inventory(self, mutation, value):
+        return self.service.reserve_inventory(bind_payload(mutation, value), value)
+
+    def reserve_task_inventory(self, mutation, value):
+        return self.service.reserve_task_inventory(
+            bind_payload(mutation, value), value
+        )
+
+    def get_inventory_reservation(self, reservation_uuid: str):
+        return self.service.get_inventory_reservation(reservation_uuid)
+
+    def get_inventory_reservation_by_job(self, job_uuid: str):
+        return self.service.get_inventory_reservation_by_job(job_uuid)
+
+    def list_inventory_reservations(
+        self,
+        *,
+        task_uuid: Optional[str] = None,
+        status: Optional[str] = None,
+    ):
+        return self.service.list_inventory_reservations(
+            task_uuid=task_uuid,
+            status=status,
+        )
+
+    def consume_inventory_reservation(self, mutation, value):
+        return self.service.consume_inventory_reservation(
+            bind_payload(mutation, value), value
+        )
+
+    def release_inventory_reservation(self, mutation, value):
+        return self.service.release_inventory_reservation(
+            bind_payload(mutation, value), value
+        )
+
+    def quarantine_inventory_reservation(self, mutation, value):
+        return self.service.quarantine_inventory_reservation(
+            bind_payload(mutation, value), value
+        )
+
     def create_tree(self, mutation, value):
         return self.service.create_tree(bind_payload(mutation, value), value)
 
@@ -96,6 +164,9 @@ class LocalMaterialsClient:
 
     def move_material(self, mutation, value):
         return self.service.move_material(bind_payload(mutation, value), value)
+
+    def transfer_material(self, mutation, value):
+        return self.service.transfer_material(bind_payload(mutation, value), value)
 
     def delete_material(self, mutation, value):
         return self.service.delete_material(bind_payload(mutation, value), value)
@@ -203,6 +274,20 @@ class HostLinkMaterialsClient:
             bound.model_dump(mode="json", exclude_none=False),
         )
         return MutationResult[MaterialAggregateRead].model_validate(response)
+
+    def transfer_material(
+        self,
+        mutation: InventoryMutation,
+        value: MaterialTransfer,
+    ) -> MutationResult[MaterialTransferResult]:
+        from unilabos.hostlink.protocol import ActionType
+
+        bound = bind_payload(mutation, value)
+        response = self.client.request(
+            ActionType.MATERIAL_TRANSFER,
+            bound.model_dump(mode="json", exclude_none=False),
+        )
+        return MutationResult[MaterialTransferResult].model_validate(response)
 
     def delete_material(
         self,
@@ -322,6 +407,120 @@ class HTTPMaterialsClient:
             self._request("DELETE", f"/templates/{template_uuid}", bound)
         )
 
+    def inbound_inventory_lot(
+        self, mutation: InventoryMutation, value: InventoryLotInbound
+    ) -> MutationResult[InventoryLotRead]:
+        return MutationResult[InventoryLotRead].model_validate(
+            self._request("POST", "/lots/inbound", bind_payload(mutation, value))
+        )
+
+    def get_inventory_lot(self, lot_uuid: str) -> InventoryLotRead:
+        return InventoryLotRead.model_validate(
+            self._request("GET", f"/lots/{lot_uuid}")
+        )
+
+    def list_inventory_lots(
+        self,
+        *,
+        template_uuid: Optional[str] = None,
+        unit: Optional[str] = None,
+        include_quarantined: bool = False,
+    ) -> list[InventoryLotRead]:
+        query = urlencode(
+            {
+                key: value
+                for key, value in {
+                    "template_uuid": template_uuid,
+                    "unit": unit,
+                    "include_quarantined": str(include_quarantined).lower(),
+                }.items()
+                if value is not None
+            }
+        )
+        return [
+            InventoryLotRead.model_validate(item)
+            for item in self._request("GET", f"/lots?{query}")
+        ]
+
+    def reserve_inventory(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryReservationCreate,
+    ) -> MutationResult[InventoryReservationRead]:
+        return MutationResult[InventoryReservationRead].model_validate(
+            self._request("POST", "/reservations", bind_payload(mutation, value))
+        )
+
+    def reserve_task_inventory(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryTaskReservationCreate,
+    ) -> MutationResult[InventoryTaskReservationRead]:
+        return MutationResult[InventoryTaskReservationRead].model_validate(
+            self._request(
+                "POST",
+                "/reservations/batch",
+                bind_payload(mutation, value),
+            )
+        )
+
+    def get_inventory_reservation(
+        self, reservation_uuid: str
+    ) -> InventoryReservationRead:
+        return InventoryReservationRead.model_validate(
+            self._request("GET", f"/reservations/{reservation_uuid}")
+        )
+
+    def get_inventory_reservation_by_job(
+        self, job_uuid: str
+    ) -> InventoryReservationRead:
+        return InventoryReservationRead.model_validate(
+            self._request("GET", f"/reservations/by-job/{job_uuid}")
+        )
+
+    def list_inventory_reservations(
+        self,
+        *,
+        task_uuid: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> list[InventoryReservationRead]:
+        query = urlencode(
+            {
+                key: value
+                for key, value in {"task_uuid": task_uuid, "status": status}.items()
+                if value is not None
+            }
+        )
+        return [
+            InventoryReservationRead.model_validate(item)
+            for item in self._request("GET", f"/reservations?{query}")
+        ]
+
+    def _transition_inventory_reservation(
+        self,
+        mutation: InventoryMutation,
+        value: InventoryReservationTransition,
+        action: str,
+    ) -> MutationResult[InventoryReservationRead]:
+        return MutationResult[InventoryReservationRead].model_validate(
+            self._request(
+                "POST",
+                f"/reservations/{value.reservation_uuid}/{action}",
+                bind_payload(mutation, value),
+            )
+        )
+
+    def consume_inventory_reservation(self, mutation, value):
+        return self._transition_inventory_reservation(mutation, value, "consume")
+
+    def release_inventory_reservation(self, mutation, value):
+        return self._transition_inventory_reservation(mutation, value, "release")
+
+    def quarantine_inventory_reservation(self, mutation, value):
+        return self._transition_inventory_reservation(
+            mutation, value, "quarantine"
+        )
+
     def create_tree(
         self, mutation: InventoryMutation, value: MaterialTreeCreate
     ) -> MutationResult[MaterialTreeRead]:
@@ -381,6 +580,11 @@ class HTTPMaterialsClient:
     def move_material(self, mutation, value: MaterialMove):
         return MutationResult[MaterialAggregateRead].model_validate(
             self._request("POST", "/move", bind_payload(mutation, value))
+        )
+
+    def transfer_material(self, mutation, value: MaterialTransfer):
+        return MutationResult[MaterialTransferResult].model_validate(
+            self._request("POST", "/transfer", bind_payload(mutation, value))
         )
 
     def delete_material(self, mutation, value: MaterialDelete):

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.config.config import BasicConfig, HTTPConfig
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.server.scheduler.integration import (
@@ -84,7 +85,7 @@ def test_host_stack_uses_embedded_materials_when_address_is_empty(tmp_path) -> N
 def test_host_stack_uses_external_materials_as_the_only_authority(
     tmp_path, monkeypatch
 ) -> None:
-    external_service = MaterialsService(tmp_path / "external-materials.db")
+    external_service = MaterialsService(MaterialsRepository(tmp_path / "external-materials.db"))
     external_client = LocalMaterialsClient(external_service)
     monkeypatch.setattr(
         "unilabos.client.materials.HTTPMaterialsClient",
@@ -109,7 +110,7 @@ def test_host_stack_uses_external_materials_as_the_only_authority(
         assert get_materials_service() is None
         assert len(external_client.list_templates()) == 1
     finally:
-        external_service.close()
+        external_service.repository.close()
 
 
 def test_host_stack_closes_partial_services_when_template_sync_fails(tmp_path) -> None:

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
+from typing import Iterator
 
 import pytest
 from pydantic import ValidationError
 
-from unilabos.server.database.history import INLINE_PAYLOAD_LIMIT_BYTES
+from unilabos.server.database.repositories.history import HistoryRepository
+from unilabos.server.database.tables.history import INLINE_PAYLOAD_LIMIT_BYTES
 from unilabos.server.protocol.history import (
     ExternalPayloadWrite,
     HistoryEventAppend,
@@ -22,6 +25,12 @@ from unilabos.server.services.history import (
 )
 
 
+@contextmanager
+def _history_service(database) -> Iterator[HistoryService]:
+    with HistoryRepository(database) as repository:
+        yield HistoryService(repository)
+
+
 def test_inline_payload_limit_and_external_reference(tmp_path) -> None:
     with pytest.raises(ValidationError, match="use external storage"):
         InlinePayloadWrite(
@@ -29,7 +38,7 @@ def test_inline_payload_limit_and_external_reference(tmp_path) -> None:
             inline_payload=b"x" * (INLINE_PAYLOAD_LIMIT_BYTES + 1),
         )
 
-    with HistoryService(tmp_path / "history.db") as service:
+    with _history_service(tmp_path / "history.db") as service:
         content = b"{}"
         inline = service.store_payload(
             InlinePayloadWrite(
@@ -58,7 +67,7 @@ def test_inline_payload_limit_and_external_reference(tmp_path) -> None:
 
 
 def test_payload_is_deduplicated_by_hash_and_length(tmp_path) -> None:
-    with HistoryService(tmp_path / "history.db") as service:
+    with _history_service(tmp_path / "history.db") as service:
         first = service.store_payload(
             InlinePayloadWrite(
                 payload_uuid="first",
@@ -88,7 +97,7 @@ def test_payload_is_deduplicated_by_hash_and_length(tmp_path) -> None:
 
 
 def test_history_event_append_and_filtered_sequence_query(tmp_path) -> None:
-    with HistoryService(tmp_path / "history.db") as service:
+    with _history_service(tmp_path / "history.db") as service:
         for ordinal, event_type in enumerate(
             ("job_transition", "job_log", "job_feedback"), start=1
         ):
@@ -116,7 +125,7 @@ def test_history_event_append_and_filtered_sequence_query(tmp_path) -> None:
 
 
 def test_manual_result_replacement_is_linear_append_only_chain(tmp_path) -> None:
-    with HistoryService(tmp_path / "history.db") as service:
+    with _history_service(tmp_path / "history.db") as service:
         original = service.append_event(
             HistoryEventAppend(
                 event_uuid="result-1",
@@ -173,7 +182,7 @@ def test_manual_result_replacement_is_linear_append_only_chain(tmp_path) -> None
 
 
 def test_replacement_rejects_non_result_event(tmp_path) -> None:
-    with HistoryService(tmp_path / "history.db") as service:
+    with _history_service(tmp_path / "history.db") as service:
         service.append_event(
             HistoryEventAppend(
                 event_uuid="log-1",

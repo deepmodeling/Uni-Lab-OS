@@ -6,7 +6,8 @@ import time
 
 import pytest
 
-from unilabos.server.models.runtime import DeviceRoute
+from unilabos.server.database.repositories.runtime import RuntimeRepository
+from unilabos.server.database.tables.runtime import DeviceRoute
 from unilabos.server.protocol.runtime import (
     AdapterCommandAck,
     AdapterCommandClaim,
@@ -85,7 +86,7 @@ def _command(
 
 
 def test_backend_session_and_endpoint_snapshot_upsert(tmp_path) -> None:
-    service = RuntimeService(tmp_path / "runtime.db")
+    service = RuntimeService(RuntimeRepository(tmp_path / "runtime.db"))
     try:
         _session(service)
         session = service.get_backend_session("session")
@@ -130,11 +131,11 @@ def test_backend_session_and_endpoint_snapshot_upsert(tmp_path) -> None:
         assert changed.endpoint.version == 2
         assert changed.endpoint.adapter_event_cursor == 0
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_command_inbox_is_idempotent_and_sequence_ordered(tmp_path) -> None:
-    service = RuntimeService(tmp_path / "runtime.db")
+    service = RuntimeService(RuntimeRepository(tmp_path / "runtime.db"))
     try:
         _session(service)
         first = _command(service, 1, "reconcile", "reconcile", job_uuid=None)
@@ -158,11 +159,11 @@ def test_command_inbox_is_idempotent_and_sequence_ordered(tmp_path) -> None:
 
         assert service.get_backend_session("session").command_cursor == 1
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_error_gate_release_and_backend_owned_retry(tmp_path) -> None:
-    service = RuntimeService(tmp_path / "runtime.db")
+    service = RuntimeService(RuntimeRepository(tmp_path / "runtime.db"))
     try:
         _session(service)
         _endpoint(service)
@@ -281,11 +282,11 @@ def test_error_gate_release_and_backend_owned_retry(tmp_path) -> None:
         assert retry.attempt_no == 2
         assert retry.job_uuid != failed.job_uuid
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_adapter_and_backend_outboxes_claim_retry_and_ack(tmp_path) -> None:
-    service = RuntimeService(tmp_path / "runtime.db")
+    service = RuntimeService(RuntimeRepository(tmp_path / "runtime.db"))
     try:
         _session(service)
         _endpoint(service)
@@ -390,4 +391,4 @@ def test_adapter_and_backend_outboxes_claim_retry_and_ack(tmp_path) -> None:
             "acknowledged"
         )
     finally:
-        service.close()
+        service.repository.close()

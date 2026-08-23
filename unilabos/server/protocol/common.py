@@ -8,7 +8,7 @@ from typing import Any, Generic, Literal, Optional, TypeVar
 
 from pydantic import Field, model_validator
 
-from unilabos.server.models.base import JsonObject, NonEmptyStr, ServerObject
+from unilabos.server.database.tables.base import JsonObject, NonEmptyStr, ServerObject
 
 
 PROTOCOL_VERSION = "materials.v1"

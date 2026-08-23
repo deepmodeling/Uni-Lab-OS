@@ -1,7 +1,7 @@
 """``runtime.v1`` 的微后端控制协议。
 
 这里的对象描述后端、微后端与执行 adapter 之间的稳定请求边界；数据库
-Record 仍由 :mod:`unilabos.server.models.runtime` 定义。
+Record 由 :mod:`unilabos.server.database.tables.runtime` 定义。
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from typing import Literal, Optional
 
 from pydantic import Field, model_validator
 
-from unilabos.server.models.base import JsonObject, NonEmptyStr, ServerObject
-from unilabos.server.models.runtime import (
+from unilabos.server.database.tables.base import JsonObject, NonEmptyStr, ServerObject
+from unilabos.server.database.tables.runtime import (
     DeviceActionCapability,
     DeviceRoute,
     ExecutorEndpointRecord,

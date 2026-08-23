@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from unilabos.server.models.base import NonEmptyStr, ServerObject
+from unilabos.server.database.tables.base import NonEmptyStr, ServerObject
 
 
 VirtualEnvironmentId = Literal["organic", "biology", "materials"]

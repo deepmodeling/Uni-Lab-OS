@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 
-from unilabos.server.models.history import HistoryEventRecord
+from unilabos.server.database.tables.history import HistoryEventRecord
 from unilabos.server.protocol.history import (
     HistoryEventAppend,
     HistoryEventQuery,

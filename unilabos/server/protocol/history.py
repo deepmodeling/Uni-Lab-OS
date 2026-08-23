@@ -8,9 +8,9 @@ from typing import Literal, Optional
 
 from pydantic import Field, field_serializer, field_validator, model_validator
 
-from unilabos.server.database.history import INLINE_PAYLOAD_LIMIT_BYTES
-from unilabos.server.models.history import PayloadObjectRecord
-from unilabos.server.models.base import (
+from unilabos.server.database.tables.history import INLINE_PAYLOAD_LIMIT_BYTES
+from unilabos.server.database.tables.history import PayloadObjectRecord
+from unilabos.server.database.tables.base import (
     JsonObject,
     NonEmptyStr,
     ServerObject,
@@ -114,17 +114,8 @@ class ExternalPayloadWrite(ServerObject):
 PayloadWrite = InlinePayloadWrite | ExternalPayloadWrite
 
 
-class PayloadObjectRead(PayloadObjectRecord):
-    """payload 只读协议；inline bytes 在线上固定使用 Base64。"""
-
-    @field_validator("inline_payload", mode="before")
-    @classmethod
-    def _decode_inline_payload(cls, value: object) -> object:
-        return _decode_base64_bytes(value)
-
-    @field_serializer("inline_payload", when_used="json")
-    def _encode_inline_payload(self, value: Optional[bytes]) -> Optional[str]:
-        return _encode_base64_bytes(value)
+# 表模型本身已定义稳定的 Base64 JSON 表示，读取协议无需再复制字段或校验。
+PayloadObjectRead = PayloadObjectRecord
 
 
 class HistoryEventAppend(ServerObject):

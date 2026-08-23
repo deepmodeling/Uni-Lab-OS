@@ -6,8 +6,8 @@ from typing import Literal, Optional
 
 from pydantic import Field, model_validator
 
-from unilabos.server.models.base import JsonObject, NonEmptyStr, ServerObject
-from unilabos.server.models.telemetry import (
+from unilabos.server.database.tables.base import JsonObject, NonEmptyStr, ServerObject
+from unilabos.server.database.tables.telemetry import (
     DeviceStateLatestRecord,
     TelemetryEventRecord,
     TelemetrySourceCursorRecord,

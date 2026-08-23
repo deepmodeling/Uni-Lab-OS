@@ -10,6 +10,7 @@ import time
 
 import pytest
 
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.scheduler.host_network import (
     SERVICE_OWNER,
     get_host_network_service,
@@ -145,7 +146,7 @@ def test_host_microbackend_owns_listener_material_and_ros(
     from unilabos.server.services.materials import MaterialsService
 
     monkeypatch.setattr(BasicConfig, "host_node_name", "west_lab")
-    material_service = MaterialsService(tmp_path / "materials.db")
+    material_service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     gateway = LocalMaterialsClient(material_service)
     beaker = RegularContainer(
         name="authority-beaker",
@@ -198,7 +199,7 @@ def test_host_microbackend_owns_listener_material_and_ros(
         assert status["peers"][0]["node_id"] == "slave-a"
     finally:
         client.close()
-        material_service.close()
+        material_service.repository.close()
 
 
 def test_slave_microbackend_applies_host_ros_config_before_ros_init() -> None:
@@ -233,7 +234,7 @@ def test_slave_material_create_is_proxied_by_host_authority(
     from unilabos.client.materials import LocalMaterialsClient
     from unilabos.server.services.materials import MaterialsService
 
-    material_service = MaterialsService(tmp_path / "materials.db")
+    material_service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
     service = setup_host_network_service(
         material_gateway=LocalMaterialsClient(material_service)
     )
@@ -317,7 +318,7 @@ def test_slave_material_create_is_proxied_by_host_authority(
         assert deleted == [authoritative.unilabos_uuid]
         assert material_service.list_materials() == []
     finally:
-        material_service.close()
+        material_service.repository.close()
 
 
 def test_startup_device_ids_requires_business_device_identity() -> None:

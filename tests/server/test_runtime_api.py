@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from unilabos.server.database.repositories.runtime import RuntimeRepository
 from unilabos.server.api.runtime import (
     create_runtime_router,
     install_runtime_api,
@@ -20,7 +21,7 @@ from unilabos.client.runtime import (
     LocalRuntimeClient,
     RuntimeHTTPError,
 )
-from unilabos.server.models.runtime import DeviceRoute
+from unilabos.server.database.tables.runtime import DeviceRoute
 from unilabos.server.protocol.runtime import (
     AdapterCommandAck,
     AdapterCommandClaim,
@@ -125,7 +126,7 @@ def _command(
 
 
 def test_http_client_exposes_runtime_state_machine_and_queries(tmp_path) -> None:
-    service = RuntimeService(tmp_path / "runtime.db")
+    service = RuntimeService(RuntimeRepository(tmp_path / "runtime.db"))
     app = FastAPI()
     install_runtime_api(app, service)
     try:
@@ -295,13 +296,13 @@ def test_http_client_exposes_runtime_state_machine_and_queries(tmp_path) -> None
             assert failed.status == "failed"
             assert client.list_execution_jobs(retry_of_job_uuid="job-1") == [retry]
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_explicit_outbox_commands_work_through_local_and_http_clients(
     tmp_path,
 ) -> None:
-    service = RuntimeService(tmp_path / "runtime.db")
+    service = RuntimeService(RuntimeRepository(tmp_path / "runtime.db"))
     app = FastAPI()
     app.include_router(create_runtime_router(service))
     local = LocalRuntimeClient(service)
@@ -336,11 +337,11 @@ def test_explicit_outbox_commands_work_through_local_and_http_clients(
             assert local.list_adapter_commands(status="pending") == [adapter]
             assert local.list_backend_events(status="pending") == [event]
     finally:
-        service.close()
+        service.repository.close()
 
 
 def test_runtime_http_errors_and_router_do_not_expose_delete(tmp_path) -> None:
-    service = RuntimeService(tmp_path / "runtime.db")
+    service = RuntimeService(RuntimeRepository(tmp_path / "runtime.db"))
     app = FastAPI()
     install_runtime_api(app, service)
     try:
@@ -368,4 +369,4 @@ def test_runtime_http_errors_and_router_do_not_expose_delete(tmp_path) -> None:
             assert mismatch.status_code == 422
             assert mismatch.json()["detail"] == "session UUID path mismatch"
     finally:
-        service.close()
+        service.repository.close()

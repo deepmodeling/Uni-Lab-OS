@@ -118,9 +118,8 @@ class DagWalk:
 class DagExecutor:
     """异步驱动：把 ready 集提交给注入的调度器，并发走完整张图。
 
-    submit：async callable(DagNode) -> NodeState（SUCCESS/FAILED）。生产实现 =
-        复用 ws_client _handle_job_start 的 send_goal 路径（经 DeviceActionManager）；
-        测试实现 = fake 调度器（可控时钟 + 可编程结果）。
+    submit：async callable(DagNode) -> NodeState（SUCCESS/FAILED）。Demo 实现复用
+        JobExecutionBackend 的执行队列；测试实现为 fake 调度器。
     on_node_terminal：每个节点到终态时回调，用于 T03 游标持久化 / 日志。
     walk：可注入既有 DagWalk（用于 resume），缺省新建。
     """

@@ -11,7 +11,14 @@ import asyncio
 import logging
 import threading
 from typing import Any, Dict, Optional
+from uuid import uuid5, UUID
 
+from unilabos.server.protocol.common import InventoryMutation
+from unilabos.server.protocol.materials import (
+    InventoryReservationCreate,
+    InventoryReservationTransition,
+    InventoryTaskReservationCreate,
+)
 from unilabos.server.scheduler.dispatch import build_job_start_payload
 from unilabos.server.scheduler.param_resolver import (
     ParamResolveError,
@@ -35,9 +42,16 @@ class WorkflowExecutionError(RuntimeError):
 class WorkflowTaskExecutor:
     """Run canonical tasks on one background asyncio loop."""
 
-    def __init__(self, service: WorkflowService, backend: Any) -> None:
+    def __init__(
+        self,
+        service: WorkflowService,
+        backend: Any,
+        *,
+        materials_gateway: Any = None,
+    ) -> None:
         self.service = service
         self.backend = backend
+        self.materials_gateway = materials_gateway
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._started = threading.Event()
@@ -94,8 +108,10 @@ class WorkflowTaskExecutor:
         jobs = prepared["jobs"]
         try:
             dag, specs = self._build_dag(task, jobs)
+            self._reserve_task_inventory(task, specs)
         except Exception as exc:
             self._fail_unstarted_task(task_uuid, jobs, exc)
+            self._release_unconsumed_task_inventory(task_uuid)
             raise
 
         completed = [
@@ -152,6 +168,7 @@ class WorkflowTaskExecutor:
             )
             return result
         finally:
+            self._release_unconsumed_task_inventory(task_uuid)
             with self._guard:
                 self._runners.pop(task_uuid, None)
                 for job_id in specs:
@@ -216,8 +233,10 @@ class WorkflowTaskExecutor:
                     f"executor_kind {job['executor_kind']!r} is not wired locally"
                 )
             param = dict(job.get("param") or planned.get("param") or {})
+            source_meta = dict(source.get("meta_data") or {})
             device_id = str(
-                job.get("material_uuid")
+                source_meta.get("target_device_id")
+                or job.get("material_uuid")
                 or planned.get("material_uuid")
                 or source.get("material_uuid")
                 or param.get("device_id")
@@ -245,6 +264,9 @@ class WorkflowTaskExecutor:
                     node_uuid: str(node_job["uuid"])
                     for node_uuid, node_job in jobs_by_node.items()
                 },
+                "inventory_requirements": list(
+                    planned.get("inventory_requirements") or []
+                ),
             }
 
         dag_edges = []
@@ -282,9 +304,106 @@ class WorkflowTaskExecutor:
             action_name=node.action,
             action_type=node.action_type,
             action_args=args,
+            inventory_requirements=self._job_specs[node.node_id][
+                "inventory_requirements"
+            ],
+            inventory_reservation_uuid=self._job_specs[node.node_id].get(
+                "inventory_reservation_uuid"
+            ),
         )
         payload["always_free"] = node.always_free
         self.backend.dispatch(payload)
+
+    @staticmethod
+    def _inventory_command_uuid(task_uuid: str) -> str:
+        try:
+            namespace = UUID(task_uuid)
+        except ValueError:
+            namespace = UUID("4f632a8d-f5cc-41e5-9471-f37c79dad537")
+        return str(uuid5(namespace, f"inventory:{task_uuid}"))
+
+    def _reserve_task_inventory(
+        self,
+        task: Dict[str, Any],
+        specs: Dict[str, Dict[str, Any]],
+    ) -> None:
+        requests = [
+            InventoryReservationCreate(
+                task_uuid=str(task["uuid"]),
+                node_uuid=str(spec["workflow_node_uuid"]),
+                job_uuid=job_uuid,
+                scheduler_revision=0,
+                requirements=spec["inventory_requirements"],
+            )
+            for job_uuid, spec in specs.items()
+            if spec["inventory_requirements"]
+        ]
+        if not requests:
+            return
+        if self.materials_gateway is None:
+            raise WorkflowExecutionError(
+                "workflow declares inventory requirements but materials authority "
+                "is unavailable"
+            )
+        task_uuid = str(task["uuid"])
+        value = InventoryTaskReservationCreate(
+            task_uuid=task_uuid,
+            scheduler_revision=0,
+            reservations=requests,
+        )
+        mutation = InventoryMutation(
+            command_uuid=self._inventory_command_uuid(task_uuid),
+            effect_key="inventory.task.reserve",
+            operation="reserve_task_inventory",
+            actor_type="scheduler",
+        )
+        result = self.materials_gateway.reserve_task_inventory(mutation, value)
+        for reservation in result.data.reservations:
+            spec = specs.get(reservation.job_uuid)
+            if spec is not None:
+                spec["inventory_reservation_uuid"] = (
+                    reservation.reservation_uuid
+                )
+
+    def _release_unconsumed_task_inventory(self, task_uuid: str) -> None:
+        if self.materials_gateway is None:
+            return
+        try:
+            reservations = self.materials_gateway.list_inventory_reservations(
+                task_uuid=task_uuid,
+                status="active",
+            )
+        except Exception:  # noqa: BLE001 - task result must remain persisted
+            logger.exception(
+                "failed to list active inventory reservations for task %s",
+                task_uuid,
+            )
+            return
+        command_uuid = self._inventory_command_uuid(task_uuid)
+        for reservation in reservations:
+            try:
+                value = InventoryReservationTransition(
+                    reservation_uuid=reservation.reservation_uuid,
+                    reason="workflow_terminal",
+                )
+                mutation = InventoryMutation(
+                    command_uuid=command_uuid,
+                    effect_key=(
+                        f"inventory.release:{reservation.reservation_uuid}"
+                    ),
+                    operation="release_inventory_reservation",
+                    actor_type="scheduler",
+                    job_uuid=reservation.job_uuid,
+                )
+                self.materials_gateway.release_inventory_reservation(
+                    mutation,
+                    value,
+                )
+            except Exception:  # noqa: BLE001 - ledger can be reconciled and retried
+                logger.exception(
+                    "failed to release inventory reservation %s",
+                    reservation.reservation_uuid,
+                )
 
     def _resolve_action_args(self, job_id: str) -> Dict[str, Any]:
         spec = self._job_specs[job_id]

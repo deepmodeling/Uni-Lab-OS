@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from unilabos.server.protocol.control import ExecuteJobContent
+from unilabos.server.protocol.materials import InventoryRequirement
 from unilabos.server.scheduler.backend import JobExecutionBackend
 from unilabos.server.scheduler.material_locks import MaterialActionLockManager
 
@@ -167,7 +168,29 @@ def test_execute_job_protocol_preserves_material_lock_declaration() -> None:
         action_name="use",
         action_args={"material": {"uuid": "material-1"}},
         materials_need_lock=["material"],
+        inventory_requirements=[
+            InventoryRequirement(
+                key="solvent",
+                kind="reagent",
+                template_uuid="solvent-template",
+                quantity=10,
+                unit="ul",
+            )
+        ],
         scheduler_revision=1,
     )
 
     assert content.model_dump(mode="json")["materials_need_lock"] == ["material"]
+    assert content.model_dump(mode="json")["inventory_requirements"] == [
+        {
+            "key": "solvent",
+            "kind": "reagent",
+            "material_uuid": None,
+            "template_uuid": "solvent-template",
+            "lot_uuid": None,
+            "parent_material_uuid": None,
+            "site_uuid": None,
+            "quantity": 10.0,
+            "unit": "ul",
+        }
+    ]

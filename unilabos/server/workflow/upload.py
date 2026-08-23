@@ -6,10 +6,29 @@
 
 import json
 import os
-import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol
 
 from unilabos.utils.banner_print import print_status
+
+
+class WorkflowUploadClient(Protocol):
+    def create_workflow(
+        self,
+        *,
+        name: str,
+        tags: list[Any],
+        description: Optional[str],
+        meta_data: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]: ...
+
+    def save_workflow_graph(
+        self,
+        workflow_uuid: str,
+        *,
+        revision: int,
+        nodes: list[dict[str, Any]],
+        edges: list[dict[str, Any]],
+    ) -> dict[str, Any]: ...
 
 
 def _is_node_link_format(data: Dict[str, Any]) -> bool:
@@ -37,6 +56,7 @@ def _convert_to_node_link(workflow_file: str, workflow_data: Dict[str, Any]) -> 
 
 
 def upload_workflow(
+    client: WorkflowUploadClient,
     workflow_file: str,
     workflow_name: Optional[str] = None,
     tags: Optional[List[str]] = None,
@@ -62,10 +82,6 @@ def upload_workflow(
     Returns:
         Dict: API响应数据
     """
-    from unilabos.legacy_support.http import get_legacy_http_client
-
-    http_client = get_legacy_http_client()
-
     if not os.path.exists(workflow_file):
         print_status(f"工作流文件不存在: {workflow_file}", "error")
         return {"code": -1, "message": f"文件不存在: {workflow_file}"}
@@ -97,7 +113,6 @@ def upload_workflow(
     # 提取工作流数据
     nodes = workflow_data.get("nodes", [])
     edges = workflow_data.get("edges", [])
-    workflow_uuid_val = workflow_data.get("workflow_uuid", str(uuid.uuid4()))
     wf_name_from_file = workflow_data.get("workflow_name", os.path.basename(workflow_file).replace(".json", ""))
 
     # 确定工作流名称
@@ -110,25 +125,28 @@ def upload_workflow(
     print_status(f"  - 描述: {description[:50]}{'...' if len(description) > 50 else ''}", "info")
     print_status(f"  - 发布状态: {published}", "info")
 
-    data = http_client.workflow_import(
+    created = client.create_workflow(
         name=final_name,
-        workflow_uuid=workflow_uuid_val,
-        workflow_name=final_name,
+        tags=tags or [],
+        description=description or None,
+        meta_data={
+            "source": "unilab-workflow-upload",
+            "published_requested": bool(published),
+            "source_workflow_uuid": workflow_data.get("workflow_uuid"),
+        },
+    )
+    workflow_uuid = str(created["uuid"])
+    graph = client.save_workflow_graph(
+        workflow_uuid,
+        revision=int(created["revision"]),
         nodes=nodes,
         edges=edges,
-        tags=tags,
-        published=published,
-        description=description,
     )
-    if str(data.get("code", 0)) == "0":
-        detail = data.get("data", {}) if isinstance(data, dict) else {}
-        print_status(f"工作流上传成功！{detail}", "success")
-        if isinstance(detail, dict):
-            print_status(f"  - UUID: {detail.get('uuid', 'N/A')}", "info")
-            print_status(f"  - 名称: {detail.get('name', 'N/A')}", "info")
-    else:
-        print_status(f"工作流上传失败：{data}", "error")
-    return data
+    detail = {"workflow": created, "graph": graph}
+    print_status(f"工作流上传成功！{workflow_uuid}", "success")
+    print_status(f"  - UUID: {workflow_uuid}", "info")
+    print_status(f"  - 名称: {created.get('name', final_name)}", "info")
+    return {"code": 0, "data": detail}
 
 
-__all__ = ["upload_workflow"]
+__all__ = ["WorkflowUploadClient", "upload_workflow"]

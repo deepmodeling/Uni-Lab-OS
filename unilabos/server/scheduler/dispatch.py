@@ -2,9 +2,8 @@
 
 service 层产出「该启动的节点 + 解析后的参数」，由 Dispatcher 落地执行：
 
-- ``CallbackDispatcher``：回调函数适配器。接 ws_client 时把回调指向
-  MessageProcessor._handle_job_start 同款载荷（device_id/action/action_type/
-  action_args/job_id/task_id），即可复用微后端队列与执行适配器。
+- ``CallbackDispatcher``：回调函数适配器，消费 Backend ``execute_job``
+  载荷（device_id/action/action_type/action_args/job_id/task_id）。
 - ``RecordingDispatcher``：测试/干跑用，记录下发序列。
 """
 
@@ -14,7 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 
 
 class DispatchPayload(Dict[str, Any]):
-    """job_start 形状的下发载荷（与 ws_client JobAddReq 字段对齐）。"""
+    """Backend ``execute_job`` 的执行器下发载荷。"""
 
 
 class Dispatcher(Protocol):
@@ -48,8 +47,11 @@ def build_job_start_payload(
     action_type: str,
     action_args: Any,
     materials_need_lock: Optional[List[str]] = None,
+    inventory_requirements: Optional[List[Dict[str, Any]]] = None,
+    inventory_reservation_uuid: Optional[str] = None,
+    scheduler_revision: int = 0,
 ) -> DispatchPayload:
-    """与云端 job_start 消息同形状（engine.SendActionData / ws_client JobAddReq）。"""
+    """构造执行器消费的 Backend ``execute_job`` 载荷。"""
     return DispatchPayload(
         job_id=job_id,
         task_id=task_id,
@@ -60,6 +62,9 @@ def build_job_start_payload(
         action_type=action_type,
         action_args=action_args,
         materials_need_lock=list(materials_need_lock or []),
+        inventory_requirements=list(inventory_requirements or []),
+        inventory_reservation_uuid=inventory_reservation_uuid,
+        scheduler_revision=scheduler_revision,
         sample_material={},
     )
 

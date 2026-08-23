@@ -6,8 +6,9 @@ from typing import Literal, Optional
 
 from pydantic import Field, JsonValue, model_validator
 
-from unilabos.server.models.base import JsonObject, NonEmptyStr, ServerObject
-from unilabos.server.models.runtime import MaterialBinding, Transport
+from unilabos.server.database.tables.base import JsonObject, NonEmptyStr, ServerObject
+from unilabos.server.database.tables.runtime import MaterialBinding, Transport
+from unilabos.server.protocol.materials import InventoryRequirement
 from unilabos.server.protocol.runtime import CommandEnvelope
 
 
@@ -80,6 +81,8 @@ class ExecuteJobContent(ServerObject):
     endpoint_uuid: Optional[NonEmptyStr] = None
     transport: Optional[Transport] = None
     material_bindings: list[MaterialBinding] = Field(default_factory=list)
+    inventory_requirements: list[InventoryRequirement] = Field(default_factory=list)
+    inventory_reservation_uuid: Optional[NonEmptyStr] = None
     scheduler_revision: int = Field(ge=0)
 
     @model_validator(mode="after")

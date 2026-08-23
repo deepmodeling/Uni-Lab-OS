@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.config.config import BasicConfig, HTTPConfig
 from unilabos.client.materials import LocalMaterialsClient
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.scheduler.integration import (
     get_materials_gateway,
     get_materials_service,

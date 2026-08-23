@@ -136,6 +136,7 @@ def create_scheduler_router(
     get_backend: Optional[Callable[[], Any]] = None,
     get_device_state: Optional[Callable[[], Any]] = None,
     get_history: Optional[Callable[[], Any]] = None,
+    get_workflow_authority: Optional[Callable[[], Any]] = None,
     *,
     include_execution_shaped_workflow_routes: bool = True,
 ) -> APIRouter:
@@ -159,9 +160,18 @@ def create_scheduler_router(
 
     @router.get("/health")
     def health() -> Dict[str, str]:
+        workflow_authority = (
+            get_workflow_authority()
+            if get_workflow_authority is not None
+            else None
+        )
         return {
             "status": "ok",
-            "scheduler": "ready" if get_scheduler() is not None else "disabled",
+            "scheduler": (
+                "ready"
+                if get_scheduler() is not None or workflow_authority is not None
+                else "disabled"
+            ),
         }
 
     @router.get("/hostlink/peers")

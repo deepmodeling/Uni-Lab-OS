@@ -1,12 +1,12 @@
-"""把整张 task_dag 接到现有 per-node job_start 执行栈的桥接层。
+"""把 Demo task_dag 接到当前逐节点执行栈的桥接层。
 
-生产的执行栈是**回调/队列驱动**：ws_client._handle_job_start 构造 JobInfo →
-DeviceActionManager.enqueue_job（每设备锁/幂等/串行 I3）→ HostNode.send_goal；
+执行栈是**回调/队列驱动**：JobExecutionBackend 构造 JobInfo →
+DeviceActionManager.enqueue_job（每设备锁/幂等/串行 I3）→ 执行适配器；
 完成经另一线程的 publish_job_status 终态回调回流。而 DagExecutor 需要的是
 ``submit(node) -> awaitable(NodeState)``。TaskDagRunner 做这层适配：
 
 - submit(node)：在事件循环上建一个 future 登记进 pending，调用注入的
-  ``on_start_node``（真正的入队 + 视情况 send_goal 副作用），await 该 future。
+  ``on_start_node``（真正的入队 + 执行副作用），await 该 future。
 - notify_terminal(job_id, status)：由 publish_job_status 在终态时**跨线程**回调，
   经 loop.call_soon_threadsafe 解析对应 future 为 NodeState（node_id 即 job_id）。
 - cancel()：停止 DagExecutor 调度后继，并把未决 future 一律解析为 CANCELLED，

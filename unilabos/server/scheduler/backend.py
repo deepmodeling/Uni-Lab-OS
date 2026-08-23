@@ -13,9 +13,8 @@
 - 对调度器：实现 ``Dispatcher`` 协议（``dispatch``），并以 listener 回推完成事件；
   调度器不感知 HostNode/DeviceActionManager。
 - 对执行适配器：实现 bridge 形状（``publish_job_status`` / ``publish_device_status``），
-  注册进 adapter bridges 即可接收执行回报与设备属性更新；与
-  legacy_support.websocket.LegacyWebSocketClient 同款接口，两条链路可并存。
-- 设备锁队列直接复用 legacy_support.websocket.DeviceActionManager（其不依赖 WS 连接）。
+  注册进 adapter bridges 即可接收执行回报与设备属性更新。
+- 设备动作占用由本包的 ``DeviceActionManager`` 管理。
 - 设备状态归本微后端管：属性更新经 worker 串行写入独立的
   DeviceStateStore（SQLite WAL，与物料/工作流库分开），并向监控总线
   device 通道发 device_property 事件。
@@ -34,7 +33,7 @@ import uuid
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
-from unilabos.legacy_support.websocket import (
+from unilabos.server.scheduler.execution_queue import (
     DeviceActionManager,
     JobInfo,
     JobStatus,
@@ -45,6 +44,10 @@ from unilabos.server.scheduler.dispatch import DispatchPayload
 from unilabos.server.scheduler.material_locks import (
     MaterialActionLockManager,
     extract_material_uuids,
+)
+from unilabos.server.scheduler.inventory_authority import (
+    SchedulerInventoryAuthority,
+    SchedulerInventoryError,
 )
 from unilabos.registry.action_policy import (
     SUCCESS_TYPE_OPERATOR_INTERVENTION,
@@ -88,6 +91,7 @@ class JobExecutionBackend:
         materials_need_lock_resolver: Optional[
             Callable[[str, str], List[str]]
         ] = None,
+        materials_gateway: Any = None,
     ):
         self.device_manager = device_manager or DeviceActionManager()
         self._host_node_getter = host_node_getter or self._default_host_getter
@@ -106,6 +110,11 @@ class JobExecutionBackend:
         self._material_locks = MaterialActionLockManager()
         self._job_material_uuids: Dict[str, tuple[str, ...]] = {}
         self._material_waiting_jobs: Dict[str, JobInfo] = {}
+        self._inventory_authority = (
+            SchedulerInventoryAuthority(materials_gateway)
+            if materials_gateway is not None
+            else None
+        )
         self._dispatch_lock = threading.RLock()
         self._pending_action_error_decisions: Dict[str, Dict[str, Any]] = {}
         self._resolved_action_error_decisions: Dict[str, Dict[str, Any]] = {}
@@ -176,29 +185,75 @@ class JobExecutionBackend:
             node_id=payload.get("node_id", ""),
             retry_count=int(payload.get("retry_count", 0) or 0),
         )
+        if self.device_manager.get_job_info(job_info.job_id) is not None:
+            self._enqueue_job(job_info)
+            return
+        with self._status_held_lock:
+            if job_info.job_id in self._status_held_jobs:
+                logger.info(
+                    "[JobExecutionBackend] duplicate status-held job %s ignored",
+                    job_info.job_id[:8],
+                )
+                return
         try:
             parameter_names = normalize_material_parameter_names(
                 payload.get("materials_need_lock")
             )
-            # Wire 元数据用于持久化重放，但不能削弱本地注册表声明。
+            # The wire copy is useful for durable replay, but it may never
+            # weaken the local registry contract.  Union both declarations so
+            # a stale Backend cannot accidentally dispatch an action unlocked.
             parameter_names.extend(
-                self._resolve_material_lock_parameters(
-                    job_info.device_id,
-                    job_info.action_name,
+                normalize_material_parameter_names(
+                    self._resolve_material_lock_parameters(
+                        job_info.device_id,
+                        job_info.action_name,
+                    )
                 )
             )
-            material_uuids = self._material_uuids_from_arguments(
-                parameter_names,
-                job_info.action_args,
+            material_uuids = set(
+                self._material_uuids_from_arguments(
+                    parameter_names, job_info.action_args
+                )
             )
         except (TypeError, ValueError) as exc:
             self._reject_job(
                 job_info,
                 str(exc),
-                "MaterialLockValidationError",
+                "MaterialLockResolutionError",
             )
             return
-        self._job_material_uuids[job_info.job_id] = material_uuids
+        inventory_reservation = None
+        if self._inventory_authority is not None:
+            try:
+                inventory_reservation = self._inventory_authority.prepare(payload)
+            except SchedulerInventoryError as exc:
+                self._reject_job(
+                    job_info,
+                    str(exc),
+                    "InventoryReservationError",
+                )
+                return
+        elif payload.get("inventory_requirements") or payload.get(
+            "inventory_reservation_uuid"
+        ):
+            self._reject_job(
+                job_info,
+                "materials authority is unavailable for inventory requirements",
+                "InventoryAuthorityUnavailable",
+            )
+            return
+        # A template-based warehouse requirement is resolved by the materials
+        # authority, so the allocated instance may not appear in action_args.
+        # It still belongs to this action's exclusive material lock set.
+        if inventory_reservation is not None:
+            material_uuids.update(
+                item.material_uuid
+                for item in inventory_reservation.items
+                if item.kind == "material" and item.material_uuid is not None
+            )
+        self._job_material_uuids[job_info.job_id] = (
+            MaterialActionLockManager.canonicalize(material_uuids)
+        )
         if (
             not job_info.always_free
             and self.status_incidents is not None
@@ -291,8 +346,8 @@ class JobExecutionBackend:
         self, device_id: str, action_name: str
     ) -> List[str]:
         if self._materials_need_lock_resolver is not None:
-            return normalize_material_parameter_names(
-                self._materials_need_lock_resolver(device_id, action_name)
+            return list(
+                self._materials_need_lock_resolver(device_id, action_name) or []
             )
         adapter = self._host_node_getter()
         mappings = getattr(adapter, "_action_value_mappings", {}) if adapter else {}
@@ -335,7 +390,7 @@ class JobExecutionBackend:
             self._put_event(("start", job), context=job.trace_context)
             return
         logger.info(
-            "[JobExecutionBackend] job %s 等待物料 UUID %s",
+            "[JobExecutionBackend] job %s waits for material UUID(s) %s",
             job.job_id[:8],
             list(material_uuids),
         )
@@ -364,6 +419,37 @@ class JobExecutionBackend:
                 context=getattr(ready_job, "trace_context", None),
             )
 
+    def _safe_inventory_cancel(self, job_id: str, *, reason: str) -> None:
+        if self._inventory_authority is None:
+            return
+        try:
+            self._inventory_authority.cancel(job_id, reason=reason)
+        except Exception:  # noqa: BLE001 - physical lock release must still converge
+            logger.exception(
+                "[JobExecutionBackend] inventory cancel failed for %s", job_id
+            )
+
+    def _safe_inventory_terminal(
+        self,
+        job_id: str,
+        *,
+        success: bool,
+        reason: str,
+    ) -> None:
+        if self._inventory_authority is None:
+            return
+        try:
+            self._inventory_authority.terminal(
+                job_id,
+                success=success,
+                reason=reason,
+            )
+        except Exception:  # noqa: BLE001 - physical lock release must still converge
+            logger.exception(
+                "[JobExecutionBackend] inventory terminal transition failed for %s",
+                job_id,
+            )
+
     def _reject_job(
         self,
         job: JobInfo,
@@ -372,6 +458,7 @@ class JobExecutionBackend:
     ) -> None:
         """把微后端无法接受的调度命令作为该 attempt 的 failed 回报。"""
 
+        self._safe_inventory_cancel(job.job_id, reason="job_rejected_before_execution")
         self._release_material_locks(job.job_id)
 
         item = QueueItem(
@@ -486,6 +573,7 @@ class JobExecutionBackend:
         success, next_job, _freed = self.device_manager.cancel_job(job_id)
         if not success:
             return False
+        self._safe_inventory_cancel(job_id, reason="job_canceled")
         self._release_material_locks(job_id)
         item = QueueItem(
             task_type="job_call_back_status",
@@ -536,6 +624,7 @@ class JobExecutionBackend:
             task_id
         )
         for job_id in cancelled:
+            self._safe_inventory_cancel(job_id, reason="task_canceled")
             self._release_material_locks(job_id)
             job = jobs_by_id.get(job_id)
             if job is None:
@@ -575,6 +664,7 @@ class JobExecutionBackend:
             for job in held:
                 self._status_held_jobs.pop(job.job_id, None)
         for job in held:
+            self._safe_inventory_cancel(job.job_id, reason="task_canceled")
             self._release_material_locks(job.job_id)
         return cancelled + [job.job_id for job in held]
 
@@ -609,7 +699,15 @@ class JobExecutionBackend:
         if status not in ("success", "failed", "canceled"):
             return
 
-        # 设备已经结束对物料的访问；审批只决定后续调度，不继续占用执行锁。
+        # The driver is no longer touching the materials once a terminal
+        # adapter result arrives.  Release here even when the failed job waits
+        # for a Backend decision; _handle_finished repeats this idempotently as
+        # the lifecycle-level finally guard.
+        self._safe_inventory_terminal(
+            item.job_id,
+            success=status == "success",
+            reason=f"action_{status}",
+        )
         self._release_material_locks(item.job_id)
 
         normalized_return_info = (
@@ -695,18 +793,6 @@ class JobExecutionBackend:
         result_data: Dict[str, Any],
     ) -> None:
         """Publish exactly the terminal result released by the microbackend."""
-
-        try:
-            from unilabos.app.web.controller import store_job_result
-
-            store_job_result(item.job_id, status, return_info, result_data)
-        except (ImportError, RuntimeError):
-            pass
-        except Exception:  # noqa: BLE001 - persistence must not block reporting
-            logger.exception(
-                "[JobExecutionBackend] failed to store terminal result for %s",
-                item.job_id,
-            )
 
         self._publish_to_result_bridges(result_data, item, status, return_info)
 
@@ -886,7 +972,7 @@ class JobExecutionBackend:
     # ── 设备状态桥（bridge 形状：publish_device_status） ──────
 
     def publish_device_status(self, device_status: dict, device_id: str, property_name: str) -> None:
-        """HostNode 设备属性更新入口（值变化时被调，与 ws_client 同形状）。
+        """HostNode 设备属性更新入口（值变化时调用）。
 
         ROS 回调线程里只做入队，SQLite 写入由 worker 串行执行。
         """
@@ -1277,6 +1363,10 @@ class JobExecutionBackend:
 
     def _start_goal(self, job: JobInfo) -> None:
         if self.device_manager.get_job_info(job.job_id) is None:
+            self._safe_inventory_cancel(
+                job.job_id,
+                reason="job_removed_before_execution",
+            )
             self._release_material_locks(job.job_id)
             return
         job_log = format_job_log(job.job_id, job.task_id, job.device_id, job.action_name)
@@ -1311,6 +1401,10 @@ class JobExecutionBackend:
                 "category": "transport",
                 "severity": "fatal",
             }
+            self._safe_inventory_cancel(
+                job.job_id,
+                reason="execution_adapter_unavailable",
+            )
             self._release_material_locks(job.job_id)
             if not self._begin_action_error_decision(
                 queue_item,
@@ -1319,6 +1413,21 @@ class JobExecutionBackend:
             ):
                 self._release_terminal(queue_item, "failed", return_info, {})
             return
+        if self._inventory_authority is not None:
+            try:
+                self._inventory_authority.consume(job.job_id)
+            except SchedulerInventoryError as exc:
+                logger.error(
+                    "[JobExecutionBackend] inventory consume failed for job %s: %s",
+                    job_log,
+                    exc,
+                )
+                self._reject_job(
+                    job,
+                    str(exc),
+                    "InventoryConsumeError",
+                )
+                return
         try:
             adapter.send_goal(
                 queue_item,
@@ -1342,6 +1451,11 @@ class JobExecutionBackend:
                 "category": "transport",
                 "severity": "fatal",
             }
+            self._safe_inventory_terminal(
+                job.job_id,
+                success=False,
+                reason="action_dispatch_failed",
+            )
             self._release_material_locks(job.job_id)
             if not self._begin_action_error_decision(
                 queue_item, return_info, {}
@@ -1352,34 +1466,41 @@ class JobExecutionBackend:
         self, job_id: str, success: bool, ret_value: Any, suc_type: str = "normal"
     ) -> None:
         finished_job = self.device_manager.get_job_info(job_id)
-        # 只有显式本地 Scheduler 模式才可能存在被提升的等待 job。
-        next_job = None
-        if finished_job is not None:
-            next_job, _lock_became_free = self.device_manager.end_job(job_id)
-        if next_job is not None:
-            self._request_material_locks_or_wait(next_job)
+        try:
+            # 只有显式本地 Scheduler 模式才可能存在被提升的等待 job。
+            next_job = None
+            if finished_job is not None:
+                next_job, _lock_became_free = self.device_manager.end_job(job_id)
+            if next_job is not None:
+                self._request_material_locks_or_wait(next_job)
 
-        add_event(
-            "action.finished",
-            {
-                "workflow.job.uuid": job_id,
-                "device.name": getattr(finished_job, "device_id", ""),
-                "action.name": getattr(finished_job, "action_name", ""),
-                "action.success": success,
-                "action.success.type": suc_type,
-            },
-        )
+            add_event(
+                "action.finished",
+                {
+                    "workflow.job.uuid": job_id,
+                    "device.name": getattr(finished_job, "device_id", ""),
+                    "action.name": getattr(finished_job, "action_name", ""),
+                    "action.success": success,
+                    "action.success.type": suc_type,
+                },
+            )
 
-        for listener in self._listeners:
-            try:
-                listener(job_id, success, ret_value, suc_type)
-            except Exception:  # noqa: BLE001 - 单个 listener 异常不阻断其他
-                logger.exception("[JobExecutionBackend] job finished listener failed")
-        self._release_material_locks(job_id)
+            for listener in self._listeners:
+                try:
+                    listener(job_id, success, ret_value, suc_type)
+                except Exception:  # noqa: BLE001 - 单个 listener 异常不阻断其他
+                    logger.exception("[JobExecutionBackend] job finished listener failed")
+        finally:
+            self._safe_inventory_terminal(
+                job_id,
+                success=success,
+                reason="action_finished",
+            )
+            self._release_material_locks(job_id)
 
     @staticmethod
     def _default_host_getter() -> Any:
-        from unilabos.app.execution_adapter import get_execution_adapter
+        from unilabos.hostlink.adapter_registry import get_execution_adapter
 
         return get_execution_adapter(0)
 

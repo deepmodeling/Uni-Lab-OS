@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import json
 import queue
 import threading
 import time
@@ -31,6 +32,17 @@ from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 from unilabos.utils.tracing import current_trace_ids
 
 CHANNELS = ("material", "device", "action", "scheduler", "status")
+
+
+def format_sse_event(event: Dict[str, Any]) -> str:
+    """按微后端监控契约编码一条 SSE 事件。"""
+
+    payload = json.dumps(event, ensure_ascii=False, default=str)
+    return (
+        f"id: {event['seq']}\n"
+        f"event: {event['channel']}\n"
+        f"data: {payload}\n\n"
+    )
 
 
 class MonitorBus:
@@ -112,4 +124,4 @@ class MonitorBus:
 # API 层直接引用（同进程同实例）。
 monitor_bus = MonitorBus()
 
-__all__ = ["CHANNELS", "MonitorBus", "monitor_bus"]
+__all__ = ["CHANNELS", "MonitorBus", "format_sse_event", "monitor_bus"]

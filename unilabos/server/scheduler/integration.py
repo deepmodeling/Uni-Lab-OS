@@ -30,6 +30,8 @@ _materials: Optional[MaterialsService] = None
 _standalone_materials_repository: Optional[MaterialsRepository] = None
 _materials_gateway: Any = None
 _device_state_projection: Optional[TelemetryDeviceStateProjection] = None
+_workflow_service: Any = None
+_workflow_executor: Any = None
 
 
 def get_edge_scheduler() -> None:
@@ -52,10 +54,16 @@ def get_materials_service() -> Optional[MaterialsService]:
     return _materials
 
 
-def get_workflow_executor() -> None:
-    """本地不再把 workflow 定义转换为可执行 DAG。"""
+def get_workflow_executor() -> Any:
+    """返回 Demo 显式启用的本地 WorkflowTask executor。"""
 
-    return None
+    return _workflow_executor
+
+
+def get_workflow_service() -> Any:
+    """返回 Demo 的本地 Workflow Authority；普通 Host 始终为 ``None``。"""
+
+    return _workflow_service
 
 
 def bind_workflow_executor(workflow_service: Any = None) -> None:
@@ -65,11 +73,55 @@ def bind_workflow_executor(workflow_service: Any = None) -> None:
     raise RuntimeError("workflow execution is owned by the backend scheduler")
 
 
+def setup_demo_workflow_authority(
+    *,
+    database_path: str | Path,
+    backend: Any = None,
+) -> Any:
+    """为 ``--demo-mode`` 装配唯一的本地 Workflow Authority。
+
+    普通 Host 继续由 Backend scheduler 持有 WorkflowTask 权威。Demo 是显式
+    ``local_scheduler`` profile，复用同一 JobExecutionBackend 下发到 HostLink。
+    """
+
+    global _workflow_service, _workflow_executor
+    if not BasicConfig.demo_mode:
+        raise RuntimeError("local workflow authority is restricted to --demo-mode")
+    if _workflow_service is not None:
+        return _workflow_service
+    execution_backend = backend or _backend
+    if execution_backend is None:
+        raise RuntimeError("job execution backend must be ready first")
+
+    from unilabos.server.scheduler.authority import SchedulerAuthorityProfile
+    from unilabos.server.scheduler.workflow_execution import WorkflowTaskExecutor
+    from unilabos.server.workflow.service import WorkflowService
+    from unilabos.server.workflow.store import WorkflowStore
+
+    service = WorkflowService(
+        WorkflowStore(database_path),
+        authority_profile=SchedulerAuthorityProfile.LOCAL_SCHEDULER,
+    )
+    executor = WorkflowTaskExecutor(
+        service,
+        execution_backend,
+        materials_gateway=_materials_gateway,
+    )
+    service.set_task_submitter(executor.submit)
+    executor.start(recover=True)
+    _workflow_service = service
+    _workflow_executor = executor
+    logger.info(
+        "[WorkflowIntegration] demo Workflow Authority ready (%s)",
+        database_path,
+    )
+    return service
+
+
 def setup_materials_service(
     *,
     database_paths: Optional[ServerDatabasePaths] = None,
     database_path: str | Path | None = None,
-    ws_client: Any = None,
 ) -> MaterialsService:
     """装配新的 materials writer；不构造旧 InventoryStore。"""
 
@@ -86,9 +138,6 @@ def setup_materials_service(
         _standalone_materials_repository = MaterialsRepository(database_path)
         _materials = MaterialsService(_standalone_materials_repository)
 
-    message_processor = getattr(ws_client, "message_processor", None)
-    if message_processor is not None:
-        message_processor.materials_service = _materials
     logger.info("[MaterialsIntegration] materials.v1 writer ready")
     return _materials
 
@@ -105,10 +154,11 @@ def get_materials_gateway() -> Any:
 
 
 def setup_job_execution_backend(
-    ws_client: Any = None,
+    control_client: Any = None,
     *,
     host_node_getter: Any = None,
     database_paths: Optional[ServerDatabasePaths] = None,
+    materials_gateway: Any = None,
 ) -> JobExecutionBackend:
     """启动只消费后端命令的微后端，不创建本地 DAG 或旧 Store。"""
 
@@ -145,6 +195,11 @@ def setup_job_execution_backend(
         materials_need_lock_resolver=make_device_materials_need_lock_resolver(
             host_node_getter
         ),
+        materials_gateway=(
+            materials_gateway
+            if materials_gateway is not None
+            else _materials_gateway
+        ),
     )
     coordinator = WorkflowBusinessCoordinator(
         services.runtime,
@@ -154,10 +209,9 @@ def setup_job_execution_backend(
         transport=BasicConfig.backend,
         host_uuid=BasicConfig.machine_name or BasicConfig.host_node_name or "host",
         instance_name=BasicConfig.host_node_name or "host",
-        legacy_bridge=ws_client,
         notice_callback=(
-            getattr(ws_client, "publish_runtime_events", None)
-            if ws_client is not None
+            getattr(control_client, "publish_runtime_events", None)
+            if control_client is not None
             else None
         ),
     )
@@ -179,12 +233,17 @@ def shutdown_edge_services() -> None:
 
     global _backend, _coordinator, _materials, _materials_gateway
     global _standalone_materials_repository
-    global _device_state_projection
+    global _device_state_projection, _workflow_service, _workflow_executor
 
     if BasicConfig.backend == "ros2":
         from unilabos.server.scheduler.host_network import shutdown_network_services
 
         shutdown_network_services()
+    if _workflow_executor is not None:
+        _workflow_executor.stop()
+    if _workflow_service is not None:
+        _workflow_service.set_task_submitter(None)
+        _workflow_service.close()
     if _backend is not None:
         _backend.stop()
     if _standalone_materials_repository is not None:
@@ -197,6 +256,8 @@ def shutdown_edge_services() -> None:
     _standalone_materials_repository = None
     _materials_gateway = None
     _device_state_projection = None
+    _workflow_service = None
+    _workflow_executor = None
 
 
 def reset_for_test() -> None:
@@ -211,8 +272,10 @@ __all__ = [
     "get_materials_service",
     "get_materials_gateway",
     "get_workflow_executor",
+    "get_workflow_service",
     "reset_for_test",
     "setup_job_execution_backend",
+    "setup_demo_workflow_authority",
     "setup_materials_service",
     "set_materials_gateway",
     "shutdown_edge_services",

@@ -637,6 +637,24 @@ class WorkflowStore:
             "handle_templates": handle_templates,
         }
 
+    def get_published_workflow_snapshot(
+        self,
+        workflow_uuid: str,
+    ) -> Dict[str, Any]:
+        """在同一 SQLite 锁视图中冻结应用图和 Authoring 源码事实。"""
+
+        with self._lock:
+            graph = self.get_graph(workflow_uuid, conn=self._conn)
+            row = self._conn.execute(
+                "SELECT applied_source FROM workflow_authoring "
+                "WHERE workflow_uuid = ?",
+                (workflow_uuid,),
+            ).fetchone()
+            applied_source = (
+                _load(row["applied_source"], None) if row is not None else None
+            )
+            return {**graph, "applied_source": applied_source}
+
     def save_graph(
         self,
         workflow_uuid: str,

@@ -10,7 +10,7 @@ import stat
 import struct
 import threading
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -25,6 +25,10 @@ except ImportError:  # pragma: no cover - exercised on Windows CI/runtime
 from pydantic import ValidationError
 
 from unilabos.server.scheduler.authority import SchedulerAuthorityProfile
+from unilabos.server.protocol.materials import InventoryRequirement
+from unilabos.server.workflow.execution_plan_graph import (
+    CompositeExecutionPlanNormalizer,
+)
 from unilabos.server.workflow.graph_validation import GraphValidationError, validate_graph
 from unilabos.server.workflow.json_codec import encode_json, strict_json_equal
 from unilabos.server.workflow.models import (
@@ -266,12 +270,14 @@ class WorkflowService:
         store: WorkflowStore,
         *,
         compiler: Optional[AuthoringCompiler] = None,
+        compiler_rebuilder: Optional[Callable[[], AuthoringCompiler]] = None,
         authority_profile: SchedulerAuthorityProfile = (
             SchedulerAuthorityProfile.LOCAL_SCHEDULER
         ),
     ):
         self._store = store
         self.compiler = compiler
+        self._compiler_rebuilder = compiler_rebuilder
         self._authority_profile = SchedulerAuthorityProfile.parse(authority_profile)
         self._locks_guard = threading.Lock()
         self._authoring_locks: Dict[str, threading.RLock] = {}
@@ -384,6 +390,15 @@ class WorkflowService:
         return self._validated_applied_backend_graph(
             self._store.get_graph(identity),
         )
+
+    def get_published_workflow_snapshot(
+        self,
+        workflow_uuid: str,
+    ) -> Dict[str, Any]:
+        """返回组合目录使用的同视图已应用工作流快照。"""
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        return self._store.get_published_workflow_snapshot(identity)
 
     def save_graph(
         self,
@@ -647,7 +662,14 @@ class WorkflowService:
             handle["uuid"]: handle for handle in graph.get("handle_templates", [])
         }
         graph_nodes = graph["nodes"]
-        graph_edges = graph["edges"]
+        node_index = {node["uuid"]: node for node in graph_nodes}
+        graph_edges, composite_params = (
+            CompositeExecutionPlanNormalizer().flatten_composite_edges(
+                nodes=node_index,
+                edges=graph["edges"],
+                handles=handles,
+            )
+        )
         if run_mode == "single_node" and target_node_uuid is not None:
             selected_node = next(
                 (node for node in graph_nodes if node["uuid"] == target_node_uuid),
@@ -669,8 +691,11 @@ class WorkflowService:
             raw_kind = (
                 template.get("node_type") if template is not None else node["type"]
             )
+            if str(raw_kind).strip().lower() == "workflow":
+                # Composite 调用节点只用于画布、追溯和边界映射，不拥有 Job。
+                continue
             kind = self._executor_kind(raw_kind)
-            if node["disabled"] or kind == "group":
+            if self._node_or_ancestor_disabled(node, node_index) or kind == "group":
                 continue
             enabled[node["uuid"]] = node
             node_kinds[node["uuid"]] = kind
@@ -740,6 +765,8 @@ class WorkflowService:
             policy = node.get("execution_policy") or {}
             template_uuid = node.get("workflow_node_template_uuid")
             template = templates.get(template_uuid)
+            planned_param = dict(node.get("param") or {})
+            planned_param.update(composite_params.get(node_uuid, {}))
             target_handles = sorted(
                 (
                     handle
@@ -761,7 +788,7 @@ class WorkflowService:
                 "uuid": node_uuid,
                 "topological_index": index,
                 "kind": kind,
-                "param": node.get("param") or {},
+                "param": planned_param,
                 "execution_policy": policy,
                 "inputs": [
                     {
@@ -775,6 +802,24 @@ class WorkflowService:
                     for handle in target_handles
                 ],
             }
+            raw_inventory_requirements = (
+                (node.get("meta_data") or {}).get("inventory_requirements") or []
+            )
+            if not isinstance(raw_inventory_requirements, list):
+                raise StoreConflict("inventory_requirements must be a list")
+            if raw_inventory_requirements:
+                try:
+                    planned_node["inventory_requirements"] = [
+                        InventoryRequirement.model_validate(item).model_dump(
+                            mode="json",
+                            exclude_none=False,
+                        )
+                        for item in raw_inventory_requirements
+                    ]
+                except ValueError as exc:
+                    raise StoreConflict(
+                        f"invalid inventory requirement on node {node_uuid}: {exc}"
+                    ) from exc
             if node.get("material_uuid") is not None:
                 planned_node["material_uuid"] = node["material_uuid"]
             if node.get("script") is not None:
@@ -792,7 +837,7 @@ class WorkflowService:
                     "executor_kind": kind,
                     "execution_policy": policy,
                     "execution_timeout_seconds": 0,
-                    "param": node.get("param") or {},
+                    "param": planned_param,
                 }
             )
         plan = {
@@ -803,6 +848,26 @@ class WorkflowService:
         if target_node_uuid is not None:
             plan["target_node_uuid"] = target_node_uuid
         return plan, jobs
+
+    @staticmethod
+    def _node_or_ancestor_disabled(
+        node: Mapping[str, Any],
+        nodes: Mapping[str, Mapping[str, Any]],
+    ) -> bool:
+        current: Mapping[str, Any] | None = node
+        seen: set[str] = set()
+        while current is not None:
+            if bool(current.get("disabled", False)):
+                return True
+            parent_uuid = current.get("parent_uuid")
+            if parent_uuid is None:
+                return False
+            identity = str(parent_uuid)
+            if identity in seen:
+                raise StoreConflict("workflow node parent hierarchy contains a cycle")
+            seen.add(identity)
+            current = nodes.get(identity)
+        return False
 
     @staticmethod
     def _handle_data_key(handle: Dict[str, Any]) -> str:
@@ -897,14 +962,73 @@ class WorkflowService:
 
         return self._store.list_source_registrations()
 
-    def recover_registered_sources(self) -> None:
-        """启动时逐一恢复已注册源码，隔离单个损坏 Draft。"""
+    def recover_registered_sources(
+        self,
+        *,
+        force_compile: bool = False,
+        preserve_author_source: bool = False,
+    ) -> None:
+        """按当前目录恢复全部源码；固定点模式不吞目录基础设施错误。"""
 
         for registration in self.list_registered_sources():
-            try:
-                self.reconcile_registered_source(registration["workflow_uuid"])
-            except (OSError, RuntimeError):
-                continue
+            self.reconcile_registered_source(
+                registration["workflow_uuid"],
+                force_compile=force_compile,
+                preserve_author_source=preserve_author_source,
+            )
+
+    def activate_registered_sources_to_fixed_point(self) -> None:
+        """按 child-first 依赖逐轮应用工作区候选，直到没有新工作流推进。"""
+
+        registrations = self.list_registered_sources()
+        self.recover_registered_sources(
+            force_compile=True,
+            preserve_author_source=True,
+        )
+        applied_workflows: set[str] = set()
+        while True:
+            applied_in_pass = False
+            for registration in registrations:
+                workflow_uuid = str(registration["workflow_uuid"])
+                if workflow_uuid in applied_workflows:
+                    continue
+                record = self._store.get_authoring_record(workflow_uuid)
+                candidate = record.get("candidate")
+                if not isinstance(candidate, dict):
+                    continue
+                candidate_hash = candidate.get("candidate_hash")
+                draft_hash = candidate.get("draft_hash")
+                workflow_revision = candidate.get("base_workflow_revision")
+                if (
+                    not isinstance(candidate_hash, str)
+                    or not isinstance(draft_hash, str)
+                    or isinstance(workflow_revision, bool)
+                    or not isinstance(workflow_revision, int)
+                ):
+                    raise WorkflowError("candidate_invalid")
+                result = self.apply_authoring(
+                    workflow_uuid,
+                    expected_draft_hash=draft_hash,
+                    expected_workflow_revision=workflow_revision,
+                    expected_candidate_hash=candidate_hash,
+                    preserve_author_source=True,
+                )
+                warnings = result.get("apply_result", {}).get("warnings")
+                if warnings:
+                    raise WorkflowError("template_catalog_unavailable")
+                applied_workflows.add(workflow_uuid)
+                applied_in_pass = True
+                if self._compiler_rebuilder is not None:
+                    try:
+                        self.compiler = self._compiler_rebuilder()
+                    except Exception:
+                        raise WorkflowError("template_catalog_unavailable") from None
+                self.recover_registered_sources(
+                    force_compile=True,
+                    preserve_author_source=True,
+                )
+            if not applied_in_pass:
+                return
 
     def close(self) -> None:
         """关闭由该 Service 独占的 Workflow 持久存储。"""
@@ -1002,6 +1126,9 @@ class WorkflowService:
     def reconcile_registered_source(
         self,
         workflow_uuid: str,
+        *,
+        force_compile: bool = False,
+        preserve_author_source: bool = False,
     ) -> Dict[str, Any]:
         workflow_uuid = self._get_authoring_workflow(workflow_uuid)["uuid"]
         with self._authoring_lock(workflow_uuid):
@@ -1090,6 +1217,7 @@ class WorkflowService:
                 actual_hash == record["observed_draft_hash"]
                 and not invalid_writeback_marker
                 and not (actual_hash is None and record.get("candidate") is not None)
+                and not force_compile
             ):
                 return self.get_authoring(workflow_uuid)
 
@@ -1103,6 +1231,13 @@ class WorkflowService:
                     registration=registration,
                     python_source=source["python_source"],
                 )
+                if preserve_author_source:
+                    compilation = self._preserve_author_source_compilation(
+                        compilation=compilation,
+                        workflow=workflow,
+                        graph=applied_graph,
+                        python_source=source["python_source"],
+                    )
                 diagnostics = compilation.diagnostics
                 candidate = self._issue_candidate(
                     workflow_revision=workflow["revision"],
@@ -1148,6 +1283,7 @@ class WorkflowService:
         expected_draft_hash: str,
         expected_workflow_revision: int,
         expected_candidate_hash: str,
+        preserve_author_source: bool = False,
     ) -> Dict[str, Any]:
         self._validate_hash(expected_draft_hash, nullable=False)
         self._validate_hash(expected_candidate_hash, nullable=False)
@@ -1191,6 +1327,13 @@ class WorkflowService:
                 registration=registration,
                 python_source=source["python_source"],
             )
+            if preserve_author_source:
+                compilation = self._preserve_author_source_compilation(
+                    compilation=compilation,
+                    workflow=workflow,
+                    graph=applied_graph,
+                    python_source=source["python_source"],
+                )
             if not self._normalize_candidate_diagnostics(
                 compilation,
                 python_source=source["python_source"],
@@ -1993,6 +2136,43 @@ class WorkflowService:
             raise
         except Exception:
             raise WorkflowError("internal_error") from None
+
+    def _preserve_author_source_compilation(
+        self,
+        *,
+        compilation: CandidateCompilation,
+        workflow: Dict[str, Any],
+        graph: Dict[str, Any],
+        python_source: str,
+    ) -> CandidateCompilation:
+        """冷启动自动应用时保留作者源码，不制造未确认的规范化编辑。"""
+
+        if (
+            not compilation.valid
+            or compilation.normalized_python_source == python_source
+        ):
+            return compilation
+        if self.compiler is None:
+            raise WorkflowError("template_catalog_unavailable")
+        preserve = getattr(self.compiler, "preserve_author_source", None)
+        if not callable(preserve):
+            raise WorkflowError("candidate_invalid")
+        try:
+            result = preserve(
+                compilation=compilation,
+                workflow_uuid=workflow["uuid"],
+                workflow_revision=workflow["revision"],
+                python_source=python_source,
+                applied_graph=graph,
+            )
+            preserved = CandidateCompilation.model_validate(result)
+        except WorkflowError:
+            raise
+        except Exception:
+            raise WorkflowError("candidate_invalid") from None
+        if preserved.normalized_python_source != python_source:
+            raise WorkflowError("candidate_invalid")
+        return preserved
 
     def _catalog_fingerprint(self) -> str:
         if self.compiler is None:

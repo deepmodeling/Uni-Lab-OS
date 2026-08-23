@@ -8,8 +8,11 @@ ROS HostNode never serves a second material snapshot.
 from __future__ import annotations
 
 import atexit
+import contextlib
+import json
 import os
 import threading
+import time
 from typing import Any, Iterable, Optional, Tuple
 
 from unilabos.config.config import BasicConfig, HostLinkConfig
@@ -69,6 +72,10 @@ class HostNetworkService:
             self._material_move,
         )
         self.server.register_handler(
+            ActionType.MATERIAL_TRANSFER,
+            self._material_transfer,
+        )
+        self.server.register_handler(
             ActionType.MATERIAL_DELETE,
             self._material_delete,
         )
@@ -81,6 +88,7 @@ class HostNetworkService:
             self._material_apply_snapshot,
         )
         self.server.register_handler(ActionType.ROS_INFO, self._ros_info)
+        self._bind_material_transfer_dispatcher()
 
     def _refresh_hello_payload(self) -> None:
         self.server.hello_payload = {
@@ -220,6 +228,14 @@ class HostNetworkService:
 
         with self._material_gateway_lock:
             self._material_gateway = gateway
+        self._bind_material_transfer_dispatcher()
+
+    def _bind_material_transfer_dispatcher(self) -> None:
+        gateway = self.material_gateway
+        service = getattr(gateway, "service", None)
+        setter = getattr(service, "set_resource_sync_dispatcher", None)
+        if callable(setter):
+            setter(self.dispatch_material_sync)
 
     @property
     def material_gateway(self) -> Any:
@@ -285,6 +301,71 @@ class HostNetworkService:
             mutation,
             value,
         ).model_dump(mode="json", exclude_none=False)
+
+    def _material_transfer(
+        self, data: dict[str, Any], peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialTransfer
+
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialTransfer.model_validate(mutation.payload)
+        owned = {str(item) for item in peer.get("device_ids") or []}
+        if owned and value.source_device_id not in owned:
+            raise PermissionError(
+                "Slave 未注册物料转移来源设备："
+                f"{value.source_device_id!r}"
+            )
+        return self._require_material_gateway().transfer_material(
+            mutation,
+            value,
+        ).model_dump(mode="json", exclude_none=False)
+
+    @staticmethod
+    def dispatch_material_sync(command: Any) -> dict[str, Any]:
+        """通过 ROS2 Host transport 调用设备内建 material_sync service。"""
+
+        from unilabos.ros.nodes.presets.host_node import HostNode
+        from unilabos_msgs.srv import SerialCommand
+
+        host_node = HostNode.get_instance(timeout=5.0)
+        if host_node is None:
+            raise RuntimeError("ROS2 HostNode 尚未就绪，无法同步设备物料")
+        data = command.model_dump(mode="json", exclude_none=False)
+        device_id = str(data["device_id"])
+        service_name = f"/srv/devices/{device_id}/material_sync"
+        client = host_node.create_client(
+            SerialCommand,
+            service_name,
+            callback_group=getattr(host_node, "callback_group", None),
+        )
+        try:
+            if not client.wait_for_service(timeout_sec=5.0):
+                raise RuntimeError(
+                    f"设备 {device_id!r} 未暴露 material_sync service"
+                )
+            request = SerialCommand.Request()
+            request.command = json.dumps(data, ensure_ascii=False)
+            future = client.call_async(request)
+            deadline = time.monotonic() + 30.0
+            while not future.done():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"设备 {device_id!r} material_sync 超时"
+                    )
+                time.sleep(0.02)
+            response = future.result()
+            result = json.loads(str(response.response or "{}"))
+            if not result.get("success"):
+                raise RuntimeError(
+                    f"设备 {device_id!r} material_sync 失败：{result}"
+                )
+            return result
+        finally:
+            destroy = getattr(host_node, "destroy_client", None)
+            if callable(destroy):
+                with contextlib.suppress(Exception):
+                    destroy(client)
 
     def _material_delete(
         self, data: dict[str, Any], _peer: dict[str, Any]

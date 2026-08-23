@@ -81,7 +81,6 @@ def setup_host_server_stack(
         else:
             materials_service = setup_materials_service(
                 database_paths=paths,
-                ws_client=communication_client,
             )
             materials_gateway = LocalMaterialsClient(materials_service)
             material_authority = str(paths.materials_db)
@@ -90,9 +89,19 @@ def setup_host_server_stack(
         set_materials_gateway(materials_gateway)
 
         execution_backend = setup_job_execution_backend(
-            ws_client=communication_client,
+            control_client=communication_client,
             database_paths=paths,
+            materials_gateway=materials_gateway,
         )
+        if BasicConfig.demo_mode:
+            from unilabos.server.scheduler.integration import (
+                setup_demo_workflow_authority,
+            )
+
+            setup_demo_workflow_authority(
+                database_path=paths.root / "workflow.db",
+                backend=execution_backend,
+            )
 
         host_network = None
         if args.get("backend") == "ros2":

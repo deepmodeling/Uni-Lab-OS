@@ -1,16 +1,13 @@
-import asyncio
 import ast
 import json
 import time
-from queue import Queue
 
 import pytest
 
-from unilabos.legacy_support.websocket import (
+from unilabos.server.scheduler.execution_queue import (
     DeviceActionManager,
     JobInfo,
     JobStatus,
-    MessageProcessor,
     QueueItem,
 )
 from unilabos.server.scheduler.backend import JobExecutionBackend
@@ -641,71 +638,8 @@ def test_operator_intervention_replaces_effective_result_but_keeps_raw_failure()
     assert json.loads(result_data["return_info"]) == return_info
 
 
-def test_websocket_release_requires_scheduler_update(monkeypatch):
-    import unilabos.legacy_support.websocket as ws_module
-
-    host = FakeHostDecisionNode()
-    decision_id = _begin_pending(host)
-    processor = MessageProcessor("ws://example.invalid", Queue(), DeviceActionManager())
-    monkeypatch.setattr(
-        ws_module,
-        "_get_job_execution_backend",
-        lambda: host,
-    )
-
-    unresolved = _decision(decision_id, "retry")
-    unresolved["scheduler_updated"] = False
-    asyncio.run(processor._handle_job_error_decision(unresolved))
-    assert decision_id in host._pending_action_error_decisions
-    assert not host.finished
-
-    asyncio.run(
-        processor._handle_job_error_decision(_decision(decision_id, "retry"))
-    )
-    assert not host._pending_action_error_decisions
-    assert host.finished[0][1] == "failed"
-
-
-def test_local_controller_job_execution_is_disabled(monkeypatch):
-    from unilabos.app.model import JobAddReq
-    from unilabos.app.web import controller
-
-    sent = []
-
-    class _Host:
-        def send_goal(self, item, *args, **kwargs):
-            sent.append(item)
-
-    monkeypatch.setattr(
-        HostNode,
-        "get_instance",
-        classmethod(lambda cls, index=0: _Host()),
-    )
-    monkeypatch.setattr(
-        controller,
-        "_get_action_type",
-        lambda device_id, action_name: "UniLabJsonCommand",
-    )
-    monkeypatch.setattr(
-        controller,
-        "check_device_action_busy",
-        lambda device_id, action_name: (False, None),
-    )
-
-    result = controller.job_add(
-        JobAddReq(
-            device_id="device-1",
-            action="run",
-            sample_material={},
-        )
-    )
-
-    assert result.status == 6
-    assert not sent
-
-
 def test_monitor_bus_sse_contract_and_bounded_replay():
-    from unilabos.app.web.event_bus import MonitorBus, format_sse_event
+    from unilabos.server.scheduler.monitor import MonitorBus, format_sse_event
 
     bus = MonitorBus(history=2)
     bus.emit("action", "job_status", {"job_id": "job-1", "status": "running"})

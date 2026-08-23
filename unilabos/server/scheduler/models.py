@@ -118,7 +118,7 @@ class WorkflowNode:
 
     @property
     def device_action_key(self) -> str:
-        """与 ws_client 一致的设备动作锁 key。"""
+        """与 JobExecutionBackend 一致的设备动作锁 key。"""
         return f"/devices/{self.device_id}/{self.action_name}"
 
     def is_ilab(self) -> bool:

@@ -57,7 +57,7 @@ class DagNode:
 
     @property
     def device_action_key(self) -> str:
-        """与 ws_client._handle_job_start 一致的每设备互斥键。
+        """与 JobExecutionBackend 一致的每设备互斥键。
 
         同 device_action_key 的非 always_free 节点由 DeviceActionManager
         每设备锁天然串行（I3），DagExecutor 不在此层做互斥。

@@ -10,7 +10,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Callable, Optional
 
 from unilabos.server.backend.http import BackendHTTPClient
-from unilabos.server.models.runtime import ExecutionJobRecord
+from unilabos.server.database.tables.runtime import ExecutionJobRecord
 from unilabos.server.protocol.common import canonical_hash, canonical_json
 from unilabos.server.protocol.control import (
     BackendCommandNotice,
@@ -63,7 +63,6 @@ class WorkflowBusinessCoordinator:
         host_uuid: str,
         instance_name: str,
         data_plane: Optional[BackendHTTPClient] = None,
-        legacy_bridge: Any = None,
         notice_callback: Optional[Callable[[], None]] = None,
     ) -> None:
         if transport not in {"hostlink", "ros2"}:
@@ -76,7 +75,6 @@ class WorkflowBusinessCoordinator:
         self.host_uuid = host_uuid
         self.instance_name = instance_name
         self.data_plane = data_plane or BackendHTTPClient()
-        self.legacy_bridge = legacy_bridge
         self.notice_callback = notice_callback
         self.adapter_epoch = str(uuid.uuid4())
         self._active_session_uuid: Optional[str] = None
@@ -255,6 +253,12 @@ class WorkflowBusinessCoordinator:
                     )
                 ),
                 "sample_material": content.sample_material,
+                "inventory_requirements": [
+                    item.model_dump(mode="json", exclude_none=False)
+                    for item in content.inventory_requirements
+                ],
+                "inventory_reservation_uuid": content.inventory_reservation_uuid,
+                "scheduler_revision": content.scheduler_revision,
                 "server_info": content.server_info,
                 "notebook_id": content.notebook_uuid,
                 "retry_count": content.attempt_no - 1,
@@ -358,7 +362,7 @@ class WorkflowBusinessCoordinator:
         try:
             job = self.runtime.get_execution_job(str(item.job_id))
         except RuntimeNotFoundError:
-            self._legacy("publish_job_started", item)
+            logger.warning("ignored start callback for unknown job %s", item.job_id)
             return
         if job.status == "dispatch_pending":
             job = self.runtime.transition_execution_job(
@@ -380,9 +384,7 @@ class WorkflowBusinessCoordinator:
         try:
             job = self.runtime.get_execution_job(str(item.job_id))
         except RuntimeNotFoundError:
-            self._legacy(
-                "publish_job_status", feedback_data, item, status, return_info
-            )
+            logger.warning("ignored status callback for unknown job %s", item.job_id)
             return
         if status == "running":
             if job.status == "dispatch_pending":
@@ -473,7 +475,8 @@ class WorkflowBusinessCoordinator:
         try:
             job = self.runtime.get_execution_job(str(item.job_id))
         except RuntimeNotFoundError:
-            return bool(self._legacy("publish_job_error_decision_required", report))
+            logger.warning("ignored error callback for unknown job %s", item.job_id)
+            return False
         item_data = asdict(item) if is_dataclass(item) else dict(vars(item))
         item_data.pop("trace_context", None)
         raw_payload = self._store_json(
@@ -551,11 +554,6 @@ class WorkflowBusinessCoordinator:
         )
         self._notify()
         return True
-
-    def publish_job_error_decision_required(self, report: dict[str, Any]) -> bool:
-        """旧 bridge 形状只用于兼容；新执行器会调用富信息入口。"""
-
-        return bool(self._legacy("publish_job_error_decision_required", report))
 
     # -- Durable adapter/outbound processing ---------------------------
 
@@ -846,12 +844,5 @@ class WorkflowBusinessCoordinator:
             self.notice_callback()
         except Exception:  # noqa: BLE001 - outbox remains durable for reconnect
             logger.exception("failed to publish runtime change notice")
-
-    def _legacy(self, method: str, *args: Any) -> Any:
-        callback = getattr(self.legacy_bridge, method, None)
-        if callable(callback):
-            return callback(*args)
-        return None
-
 
 __all__ = ["WorkflowBusinessCoordinator"]

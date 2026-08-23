@@ -207,6 +207,7 @@ def _node_kind(
         "script": "script",
         "py_script": "script",
         "group": "group",
+        "workflow": "workflow",
         "tool_call": "tool_call",
         "manual_confirm": "manual_confirm",
     }

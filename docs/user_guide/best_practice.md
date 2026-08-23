@@ -210,7 +210,7 @@ unilab --ak your_ak --sk your_sk -g graph.json --disable_browser
 unilab --ak your_ak --sk your_sk -g graph.json --port-management 8080
 
 # 测试环境
-unilab --addr test --ak your_ak --sk your_sk -g graph.json
+unilab --address test --ak your_ak --sk your_sk -g graph.json
 
 # 跳过环境检查（加快启动）
 unilab --ak your_ak --sk your_sk -g graph.json --skip_env_check
@@ -218,35 +218,34 @@ unilab --ak your_ak --sk your_sk -g graph.json --skip_env_check
 
 ---
 
-### 4. 上传注册表（一次性操作）
+### 4. 同步注册表
 
-#### 4.1 什么是注册表上传？
+#### 4.1 什么是注册表同步？
 
-注册表包含您的设备和物料的完整定义。上传到云端后，在线界面才能识别和使用这些设备。
+注册表包含设备和物料的完整定义。Host 启动时会把定义同步到本地微后端，Backend
+和在线界面再通过当前 API 读取这些定义。
 
-#### 4.2 何时需要上传？
+#### 4.2 何时需要重启同步？
 
-**必须上传的情况：**
+**需要重新同步的情况：**
 
 - 首次启动实验室
 - 添加了新的设备类型
 - 修改了设备的注册表定义
 
-#### 4.3 如何上传注册表
+#### 4.3 如何同步注册表
 
 ```bash
-unilab --ak your_ak --sk your_sk -g graph.json --upload_registry
+unilab --ak your_ak --sk your_sk -g graph.json
 ```
 
 **性能影响说明：**
 
-- 上传注册表会增加启动时间（通常 5-15 秒）
-- 上传时间取决于：
+- 同步注册表会增加少量启动时间
+- 同步时间取决于：
   - 设备和物料的数量
-  - 网络速度
-- 建议：开发调试时首次上传，后续本地测试可省略
 
-**验证上传成功：**
+**验证同步成功：**
 
 在 Web 界面的"仪器设备"或"物料耗材"模块中，应该能看到您的设备和物料列表。
 
@@ -644,7 +643,7 @@ sudo systemctl stop ufw
 ```bash
 # 在主机（Host）上启动
 conda activate unilab
-unilab --ak your_ak --sk your_sk -g host.json --upload_registry
+unilab --ak your_ak --sk your_sk -g host.json
 ```
 
 **主节点职责：**
@@ -1190,8 +1189,7 @@ my_pump:
 
 ```bash
 unilab --ak your_ak --sk your_sk -g graph.json \
-       --registry_path ./my_lab_devices/registry \
-       --upload_registry
+       --registry_path ./my_lab_devices/registry
 ```
 
 **支持多个注册表路径**（按顺序查找）：
@@ -1633,7 +1631,7 @@ git clone https://github.com/Xuwznln/LabDeviceWorkstationDemo.git
 python -m unilabos.app.main \
   --devices <克隆目录下的设备包目录> \
   --external_devices_only \
-  --ak your_ak --sk your_sk --addr test --upload_registry \
+  --ak your_ak --sk your_sk --address test \
   --disable_browser --port-management 8100 \
   -g <仓库内提供的图文件>
 ```
@@ -1802,8 +1800,7 @@ properties:
 
 ```bash
 unilab --ak your_ak --sk your_sk -g graph.json \
-       --registry_path ./my_lab_devices/my_lab_devices/registry \
-       --upload_registry
+       --registry_path ./my_lab_devices/my_lab_devices/registry
 ```
 
 2. **在组态图中添加**：

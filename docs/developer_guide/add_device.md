@@ -318,7 +318,7 @@ async def async_operation(self, duration: float) -> Dict[str, Any]:
     Args:
         duration: 持续时间(秒)
     """
-    # node 由 post_init 注入；该写法兼容 ROS 与 HostLink/simple backend
+    # node 由 post_init 注入；该写法兼容 ROS2 与 HostLink backend
     await self._node.sleep(duration)
     return {"success": True}
 ```
@@ -817,7 +817,7 @@ async def long_operation(self, duration: float) -> Dict[str, Any]:
 > `BaseROS2DeviceNode`。`node.sleep()`、`node.create_task()`、Topic 和设备 Action
 > API 会由当前 backend 实现。
 >
-> - HostLink/simple backend 使用标准 Python `asyncio` 事件循环，可使用
+> - HostLink backend 使用标准 Python `asyncio` 事件循环，可使用
 >   `asyncio.gather()`、`asyncio.wait_for()` 等原生能力。
 > - ROS backend 由 rclpy executor 调度。需要同时支持两类 backend 的驱动，优先使用
 >   `DeviceNode` 提供的 `sleep()` 和 `create_task()`。
@@ -828,7 +828,7 @@ async def long_operation(self, duration: float) -> Dict[str, Any]:
 >
 > ```python
 > async def complex_operation(self, duration: float) -> Dict[str, Any]:
->     """同一份驱动可在 ROS 和 HostLink/simple backend 中运行。"""
+>     """同一份驱动可在 ROS2 和 HostLink backend 中运行。"""
 >     self._status = "processing"
 >
 >     await self._node.sleep(duration)
@@ -850,8 +850,8 @@ async def long_operation(self, duration: float) -> Dict[str, Any]:
 >
 > **后端差异：**
 >
-> HostLink/simple 为每个设备维护标准 Python 事件循环；ROS backend 使用 rclpy
-> executor。只在 HostLink/simple 中运行的驱动可以直接使用 Python `asyncio`；需要在
+> HostLink 为每个设备维护标准 Python 事件循环；ROS backend 使用 rclpy
+> executor。只在 HostLink 中运行的驱动可以直接使用 Python `asyncio`；需要在
 > 两类 backend 中运行时，通过 `DeviceNode` 调度即可，不需要在驱动中写 backend 判断。
 
 ## 错误处理

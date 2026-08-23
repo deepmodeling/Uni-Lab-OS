@@ -39,7 +39,7 @@ Uni-Lab-OS 的 `8002` 端口只提供微后端 API，不再内置状态页、reg
 前端不应直接向 Host 创建或重试 Job。执行命令由调度后端下发；Host 报错后，后端
 负责询问前端、更新调度图或 attempt，再释放最终结果。
 
-## 旧 Backend
+## Backend 控制面
 
-`--legacy` 只用于旧完整载荷 WebSocket 和旧 `/lab/*` HTTP 契约。该兼容层已废弃，
-将在 **2026-12-01** 删除；新前端不要依赖它。
+旧完整载荷 WebSocket 和旧 `/lab/*` HTTP 契约已经删除。Backend WebSocket 只发送
+`control.v1` 轻通知；业务命令、结果与完整状态通过当前微后端 HTTP API 交换。

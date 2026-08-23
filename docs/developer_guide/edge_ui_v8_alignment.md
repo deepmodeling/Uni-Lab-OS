@@ -21,8 +21,8 @@ UniLabOS。设备运行时只提供 `hostlink` 和 `ros2` 两个公开 backend�
 | Inventory Provider | `unilabos/server/scheduler/inventory/` | 本地 SQLite 权威、17 类命令、Outbox、云端命令回报使用同一 wire schema |
 | Resource Provider | `unilabos/server/scheduler/inventory/backend_api.py` | Resource Template、Material、Site、状态历史接口已并入 |
 | Device State 与 Status Incident | `unilabos/server/scheduler/device_state.py`、`status_incidents.py` | 状态策略、联锁、Scheduler Hold、决策与恢复事件已接通 |
-| 实时监控 | `unilabos/server/scheduler/monitor.py`、`unilabos/app/web/event_bus.py` | material/device/action/scheduler/status 五通道共享同一个进程内序列 |
-| 配置、存储与生命周期 | `unilabos/config/config.py`、`unilabos/server/storage/`、`unilabos/app/web/server.py` | 统一路径、authority profile、启动与关闭已接入 |
+| 实时监控 | `unilabos/server/scheduler/monitor.py` | material/device/action/scheduler/status 五通道共享同一个进程内序列 |
+| 配置、存储与生命周期 | `unilabos/config/config.py`、`unilabos/server/storage/`、`unilabos/server/api/app.py` | 统一路径、authority profile、启动与关闭已接入 |
 
 旧 Host 专用诊断路由改为 `/api/v1/host-error-decisions*` 和
 `/api/v1/host-monitor/*`；Edge UI 契约里的 `/api/v1/error-decisions*` 与

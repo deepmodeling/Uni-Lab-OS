@@ -11,12 +11,12 @@ Adapter、HostLink Slave 和物料权威之间的通信边界。它既是 0.1 �
 代码依据以以下目录为准：
 
 - 四库协议与 HTTP：`unilabos/server/protocol/`、`unilabos/server/api/`；
-- 默认装配：`unilabos/app/main.py`、`unilabos/app/web/server.py`、
+- 默认装配：`unilabos/app/main.py`、`unilabos/server/api/app.py`、
   `unilabos/server/startup.py`、`unilabos/server/scheduler/integration.py`；
 - Workflow Authority：`unilabos/server/workflow/`；
 - Scheduler/Inventory/Resource Provider：`unilabos/server/scheduler/`；
 - control.v1：`unilabos/server/backend/`；
-- HostLink：`unilabos/hostlink/`、`unilabos/basic/runtime.py`；
+- HostLink：`unilabos/hostlink/`、`unilabos/hostlink/local_runtime.py`；
 - OpenLab 消费契约：相邻仓库 `OpenLab-site-source/packages/protocol/src/`，其中
   `catalog.ts` 是操作目录，`client.ts` 是浏览器门面。
 
@@ -96,7 +96,7 @@ UniLabOS Microbackend
 | Legacy Inventory `/inventory` | `server/scheduler/inventory/api.py` | **否** | 可独立挂载；不等于 `materials.v1` |
 | Backend Resource Provider | `server/scheduler/inventory/backend_api.py` | **否** | 可独立挂载；响应为 Backend `{code,data,error}` |
 | Lab layout/warehouse | `server/scheduler/inventory/layout.py` | **否** | 仅 Router 工厂；新四库没有空间 Authority |
-| 设备目录 `/devices*` | OpenLab catalog 有定义；UniLabOS 仅有 `app/web/controller.py` helper | **否** | 当前无 FastAPI Router；UI 应从 runtime endpoint capability/HostLink peer 读取 |
+| 设备目录 `/devices*` | OpenLab catalog 有定义；UniLabOS 当前未提供对应 Router | **否** | UI 应从 runtime endpoint capability/HostLink peer 读取 |
 | 兼容 `/device-state*` | `server/scheduler/api.py` | 是 | 当前由 `TelemetryDeviceStateProjection` 提供 current/history/stats；底层真相仍是 telemetry.v1 |
 | 虚拟物料环境 reset | `server/api/materials.py` | 是 | catalog 可读；reset 仅 `--test_mode` 且需 request UUID 与显式确认 |
 | 三工位虚拟加热设备 | `devices/virtual/heating_platform.py` | 仅设备图引用后 | Driver 已存在；不是一启动 Host 就自动出现的全局设备 |
@@ -104,7 +104,7 @@ UniLabOS Microbackend
 | 浏览器 Workflow SSE `/events` | `server/workflow/api.py` | 随 Workflow Authority，默认 Host 否 | durable cursor；不是 control.v1 WS |
 | Monitor SSE `/monitor/events` | `server/scheduler/api.py` | 是 | 进程内有限 replay；不支持 Last-Event-ID 精确恢复 |
 
-默认装配依据：`unilabos/app/web/server.py::setup_server()` 和
+默认装配依据：`unilabos/server/api/app.py::setup_server()` 和
 `unilabos/server/scheduler/integration.py::get_edge_scheduler()`。
 
 ### 3.1 两套 Workflow API 不得混用
@@ -301,7 +301,7 @@ HostLink 描述符由 `HostLinkDeviceNode.describe()` 产生：
 `GET /api/v1/runtime/endpoints` 读取动作能力，而不是依赖当前未实现的
 `/api/v1/devices/{id}/actions/...` Router。
 
-依据：`unilabos/basic/runtime.py::describe()`、
+依据：`unilabos/hostlink/local_runtime.py::HostLinkDeviceNode.describe()`、
 `unilabos/server/models/runtime.py::DeviceActionCapability`、
 `unilabos/server/scheduler/coordinator.py`。
 
@@ -451,7 +451,7 @@ Authority，再基于新版本重算，不能盲目重试旧 body。
 | `GET /device-state*` | 默认可用；是 telemetry.v1 的 current/history/stats 兼容投影 |
 | 旧 `POST/GET /workflows*` | 默认根本不注册 |
 
-依据：`unilabos/server/scheduler/api.py`、`unilabos/app/web/server.py`。
+依据：`unilabos/server/scheduler/api.py`、`unilabos/server/api/app.py`。
 
 ### 9.3 Workflow Authority API（实现存在、默认未挂）
 
@@ -486,7 +486,7 @@ GET。兼容查询另为 `POST /api/v1/edge/material/query`。
   list/latest；依据 `server/scheduler/inventory/backend_api.py`。
 - Lab：`/api/v1/lab/profile|layout|warehouse|zones|placements|assembly|demo`；依据
   `server/scheduler/inventory/layout.py`。
-- 两者默认均未由 `app/web/server.py` 安装；与 materials.v1 同时挂载前必须先决定
+- 两者默认均未由 `server/api/app.py` 安装；与 materials.v1 同时挂载前必须先决定
   writer 和路径所有权。
 
 ## 10. control.v1 WebSocket
@@ -550,20 +550,7 @@ Material mutation 由 Host 代理到启动时选择的 embedded 或 external aut
 不能持有第二个 materials writer。依据：`hostlink/server.py`、`hostlink/backend.py`、
 `client/materials.py`。
 
-## 12. Legacy WebSocket（仅 `--legacy`）
-
-旧协议与 control.v1 使用同一 schedule URL，但发送完整业务 payload。接收 action
-包括 `job_start`、`query_action_state`、`query_action_lock`、`inventory_command`、
-`cancel_action/cancel_task`、material/device add/update/remove、`request_restart`、
-`job_error_decision`；上行包括 `job_status`、`device_status`、
-`inventory_command_result`、`report_action_lock`、`host_node_ready`、
-`job_error_decision_required`、ping。
-
-旧 `job_start` 幂等缓存只在内存，24 小时、最多 1024 项；断线可回放缓存终态，但进程
-重启不恢复。新部署必须使用 control.v1 durable inbox/outbox。依据：
-`unilabos/legacy_support/websocket.py`；命令行说明计划在 2026-12 移除 `--legacy`。
-
-## 13. SSE 与事件恢复
+## 12. SSE 与事件恢复
 
 | 端点 | Authority | 恢复语义 |
 | --- | --- | --- |
@@ -575,9 +562,9 @@ Monitor 五通道为 material/device/action/scheduler/status。慢消费者会�
 返回 503，这是一个明确缺口。依据：`server/scheduler/monitor.py`、
 `server/scheduler/api.py`、`server/workflow/api.py`。
 
-## 14. 安全与权限
+## 13. 安全与权限
 
-### 14.1 已实现
+### 13.1 已实现
 
 - control.v1 WebSocket 和 Backend HTTP 使用 `Authorization: Lab ...`；
 - Backend template/instance 同步客户端分别支持 developer/operator bearer token；
@@ -585,7 +572,7 @@ Monitor 五通道为 material/device/action/scheduler/status。慢消费者会�
 - Workflow/Material mutation 使用 schema、版本和业务状态机限制写集合；
 - HostLink 对 Slave 发起的跨设备/service/cancel 调用校验 caller device 是否属于该 peer。
 
-### 14.2 当前缺口
+### 13.2 当前缺口
 
 - `:8002` FastAPI 没有统一认证/授权 middleware，并允许 `*` CORS；内部 runtime
   ingest/claim/ACK、materials mutation、telemetry/history append 与调试 report 都可能
@@ -602,7 +589,7 @@ Monitor 五通道为 material/device/action/scheduler/status。慢消费者会�
 生产部署应在反向代理/防火墙限制 `:8002` 和 `:7302`，只向浏览器开放明确 GET 与已
 授权 operator command；受信 ingest/claim/ACK 必须与浏览器路由隔离。
 
-## 15. 错误模型
+## 14. 错误模型
 
 | 家族 | not found | conflict | validation | 其他 |
 | --- | --- | --- | --- | --- |
@@ -616,7 +603,7 @@ Monitor 五通道为 material/device/action/scheduler/status。慢消费者会�
 OpenLab 客户端必须同时检查 HTTP status 与对应家族的 business code；错误日志应包含
 operation、object UUID、command/event UUID 和可用的 traceparent，不记录 Lab secret。
 
-## 16. 版本与兼容
+## 15. 版本与兼容
 
 | 层 | 当前版本 |
 | --- | --- |
@@ -641,7 +628,7 @@ operation、object UUID、command/event UUID 和可用的 traceparent，不记�
 5. Edge UI v8 契约由 OpenLab `packages/protocol/src/catalog.ts`、各 domain client 和
    `scripts/validate-contract.mjs` 共同体现；它不是由某个 UniLabOS 分支自动生成。
 
-## 17. OpenLab Edge UI v8 来源与消费方
+## 16. OpenLab Edge UI v8 来源与消费方
 
 | 契约 | OpenLab 来源 | 页面/Store 消费 | UniLabOS 依据/差异 |
 | --- | --- | --- | --- |
@@ -660,27 +647,36 @@ operation、object UUID、command/event UUID 和可用的 traceparent，不记�
 不应自行拼 URL 或根据数据库列猜接口。旧 archive/分支只能作为历史输入，当前合同真相
 是版本化 protocol package、contract tests 和 UniLabOS 实际 Router 的交集。
 
-## 18. 最小端到端加热 Demo
+## 17. 最小端到端加热 Demo
 
 ### 18.1 前置条件
 
-1. Backend Workflow Authority 已挂 `/workflows`、`/workflow-tasks`、`/events`；
+1. 常规部署的 Backend Workflow Authority 已挂 `/workflows`、`/workflow-tasks`、
+   `/events`；`--demo-mode` 是明确例外，会在当前 UniLabOS Host 内挂唯一的本地
+   Workflow Authority；
 2. UniLabOS Host 用 `hostlink` 启动且 control.v1 已连接 Backend；
 3. 设备图显式引用 `virtual_heating_platform`，runtime endpoint snapshot 可见它的
    `heat_site(site_id,target_temperature_c,duration_seconds)` action schema；
 4. materials authority 中已有三个实际 Material，并分别占用三个 Site；
 5. OpenLab 只从 materials.v1 和 telemetry.v1 读取当前值。
 
-公开演示 Slave 可使用单一命令启动：
+本机三工位演示可使用单一命令启动：
 
 ```powershell
 unilab --demo-mode
 ```
 
-该模式选择内置三工位 graph、`hostlink`/Slave/test mode，默认连接
-`bj.wznln.com:38005`（2026-08-20 公共 DNS A 记录为 `140.143.251.219`），允许无 Host
-启动，并以最大 10 秒退避持续重连。运行时保留域名而不是写死 IP，因此 DNS 变化后
-下一轮 TCP 建连会重新解析。生产环境不能复用该裸 TCP 演示安全边界。
+该模式选择内置三工位 graph、`hostlink` Host/test mode，并把本进程拥有的 HTTP
+微后端监听在 `0.0.0.0:6005`。Demo registry 只扫描 JSON HostLink 所需的
+`container.py` 与 `heating_platform.py`，因此该演示路径不要求安装 ROS message Python
+包。它同时在四库目录旁创建独立 `workflow.db`，以 `local_scheduler` profile 装配
+`WorkflowService → WorkflowTaskExecutor → JobExecutionBackend → HostLink`；该显式 Demo
+组合不改变普通 Host 的 Backend-controlled 单权威规则。本机微前端连接
+`http://127.0.0.1:6005`；公开演示微前端使用
+`https://edge.whalent.com`，由可信 HTTPS 入口反向代理到本机 `6005`。健康检查失败后
+每 5 秒继续尝试。这里的 `6005` 是 Edge HTTP 端口，不是 HostLink TCP 端口；HostLink
+listener 仍使用独立配置（默认 `7302`）。浏览器不直接访问明文 6005，因此 GitHub
+Pages 不会触发 mixed-content 拦截。
 
 ### 18.2 创建并放置物料
 
@@ -770,11 +766,12 @@ ledger 不含完整温度历史。当前 Demo 的数值卡从 Material 最新快
 - 设备状态历史来自 telemetry event，而物料当前值来自 materials aggregate；
 - 重连后 UI 通过 HTTP 校准，不依赖最后一帧 SSE/WS data。
 
-## 19. 已发现缺口与 0.1 后续清单
+## 18. 已发现缺口与 0.1 后续清单
 
 ### P0：Demo/安全闭环前必须处理
 
-1. 明确部署并挂载 Workflow Authority；默认 Host 自身没有 `/workflow-tasks`。
+1. 明确部署并挂载 Workflow Authority；默认 Host 自身没有 `/workflow-tasks`，只有
+   `--demo-mode` 会显式挂本地 Authority。
 2. 冻结“Task 提交参数覆盖”合同，或确认 Demo 参数只保存在 Graph node `param`；当前
    HTTP Task `input` 会被忽略并强制为空对象。
 3. 冻结 Material observation history；当前 changes ledger 不保存温度值。
@@ -797,16 +794,14 @@ ledger 不含完整温度历史。当前 Demo 的数值卡从 Material 最新快
 
 12. 定义 lab/site/tenant 自定义 scope、角色权限、每 scope cursor/限额。
 13. 为 HostLink 增加双向认证与 TLS，或正式限制为可信局域网传输。
-14. 决定 legacy Inventory/Resource Provider/Lab layout 的迁移或删除计划，避免双 writer。
+14. 完成旧 Inventory/Resource Provider/Lab layout 数据迁移，避免双 writer。
 15. 将 Backend `{code}` 与 FastAPI status 统一为一个可机器识别错误合同。
-16. 移除 2026-12 到期的 legacy full-payload WebSocket，并提供迁移测试。
 
-## 20. 审计与校验方式
+## 19. 审计与校验方式
 
 - HTTP 路由：检索所有 `@router.get/post/put/patch/delete`，并与
-  `app/web/server.py::setup_server()` 的实际 include 条件交叉检查；
-- wire DTO：读取 `server/protocol/*.py`、`hostlink/protocol.py` 和
-  `legacy_support/websocket.py`；
+  `server/api/app.py::setup_server()` 的实际 include 条件交叉检查；
+- wire DTO：读取 `server/protocol/*.py` 和 `hostlink/protocol.py`；
 - Authority/数据库：读取 `server/composition.py`、`server/database/DESIGN.md`、
   `server/scheduler/integration.py`；
 - Edge UI：对照 OpenLab `packages/protocol/src/catalog.ts`、domain clients、

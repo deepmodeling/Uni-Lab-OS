@@ -119,7 +119,9 @@ class VirtualHeatingPlatform:
             0.05, float(self.config.get("update_interval_s", 0.25))
         )
         self._lock = RLock()
+        self._materials_lock = RLock()
         self._provision_lock = RLock()
+        self._proof_started = False
         self._platform_uuid = ""
         self._sites: dict[int, dict[str, Any]] = {
             index: {
@@ -140,14 +142,24 @@ class VirtualHeatingPlatform:
         """保存 HostLink/ROS2 共用节点，用于跨设备场景动作。"""
 
         self._device_node = node
+
+    @not_action
+    def _start_scenario_proof(self) -> None:
+        """物料初始化完成后至多启动一次 CI 场景证明。"""
+
         proof_file = os.environ.get("UNILABOS_HEATING_SCENARIO_PROOF_FILE")
-        if proof_file:
-            threading.Thread(
-                target=self._write_scenario_proof,
-                args=(Path(proof_file),),
-                name="heating-scenario-proof",
-                daemon=True,
-            ).start()
+        if not proof_file:
+            return
+        with self._lock:
+            if self._proof_started:
+                return
+            self._proof_started = True
+        threading.Thread(
+            target=self._write_scenario_proof,
+            args=(Path(proof_file),),
+            name="heating-scenario-proof",
+            daemon=True,
+        ).start()
 
     @not_action
     def _write_scenario_proof(self, proof_file: Path) -> None:
@@ -194,6 +206,7 @@ class VirtualHeatingPlatform:
     def initialize(self) -> bool:
         try:
             self._provision_materials()
+            self._start_scenario_proof()
         except LinkError as exc:
             # Demo Slave may intentionally start while the public Host is down.
             # HostLinkBackend calls on_hostlink_connected after reconnect.
@@ -202,7 +215,7 @@ class VirtualHeatingPlatform:
 
     @not_action
     def _provision_materials(self) -> None:
-        with self._provision_lock:
+        with self._provision_lock, self._materials_lock:
             self._ensure_demo_materials()
             self._refresh_material_state()
 
@@ -211,6 +224,7 @@ class VirtualHeatingPlatform:
         """Idempotently materialize the demo after every HostLink reconnect."""
 
         self._provision_materials()
+        self._start_scenario_proof()
 
     @staticmethod
     def _mutation(
@@ -412,6 +426,11 @@ class VirtualHeatingPlatform:
 
     @not_action
     def _refresh_material_state(self) -> None:
+        with self._materials_lock:
+            self._refresh_material_state_locked()
+
+    @not_action
+    def _refresh_material_state_locked(self) -> None:
         if not self._platform_uuid:
             return
         gateway = self._gateway()
@@ -707,6 +726,27 @@ class VirtualHeatingPlatform:
 
     @not_action
     def _write_material_temperature(
+        self,
+        site_id: int,
+        *,
+        temperature_c: float,
+        target_temperature_c: float,
+        state: str,
+        progress: float,
+        job_uuid: str,
+    ) -> None:
+        with self._materials_lock:
+            self._write_material_temperature_locked(
+                site_id,
+                temperature_c=temperature_c,
+                target_temperature_c=target_temperature_c,
+                state=state,
+                progress=progress,
+                job_uuid=job_uuid,
+            )
+
+    @not_action
+    def _write_material_temperature_locked(
         self,
         site_id: int,
         *,

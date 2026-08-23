@@ -94,7 +94,7 @@ jobs:
           call install\unilabos_msgs\setup.bat
           echo Installing pip dependencies...
           uv pip install -r unilabos/utils/requirements.txt
-          uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git
+          uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git@6285d662effa972be97a781ba7493553f2ba94ee
           uv pip uninstall enum34 || echo enum34 not installed, skipping
           uv pip install pytest
           uv pip install .

@@ -437,8 +437,11 @@ class Registry:
                     0, pkg_root / "ros" / "nodes" / "presets" / "host_node.py"
                 )
             if BasicConfig.demo_mode:
-                core_files.append(
-                    pkg_root / "devices" / "virtual" / "heating_platform.py"
+                core_files.extend(
+                    (
+                        pkg_root / "devices" / "virtual" / "heating_platform.py",
+                        pkg_root / "devices" / "virtual" / "workbench.py",
+                    )
                 )
             scan_result = scan_directory(
                 scan_root, python_path=python_path, executor=self._startup_executor,

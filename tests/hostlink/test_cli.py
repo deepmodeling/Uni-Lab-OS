@@ -1,7 +1,8 @@
 import pytest
 
+from unilabos.app.main import _resolve_backend_control_client
 from unilabos.app.cli.parser import build_parser
-from unilabos.config.config import HostLinkConfig
+from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink.startup import apply_hostlink_cli
 from unilabos.hostlink.startup import (
     HEATING_DEMO_EDGE_URL,
@@ -43,6 +44,7 @@ def test_heating_demo_mode_starts_local_host_microbackend() -> None:
     assert args["is_slave"] is False
     assert args["slave_no_host"] is False
     assert args["test_mode"] is True
+    assert args["disable_browser"] is True
     assert args["external_devices_only"] is True
     assert args["graph"] == str(HEATING_DEMO_GRAPH)
     assert args["port_management"] == HEATING_DEMO_HTTP_PORT
@@ -50,6 +52,22 @@ def test_heating_demo_mode_starts_local_host_microbackend() -> None:
     assert args["hostlink_port"] is None
     assert HEATING_DEMO_HTTP_PORT == 6005
     assert HEATING_DEMO_EDGE_URL == "https://edge.whalent.com"
+
+
+def test_heating_demo_does_not_start_privileged_backend_control(monkeypatch) -> None:
+    monkeypatch.setattr(BasicConfig, "demo_mode", True)
+
+    def fail_if_called():
+        raise AssertionError("demo mode must not create a Backend control client")
+
+    assert _resolve_backend_control_client(fail_if_called) is None
+
+
+def test_normal_host_still_starts_backend_control(monkeypatch) -> None:
+    client = object()
+    monkeypatch.setattr(BasicConfig, "demo_mode", False)
+
+    assert _resolve_backend_control_client(lambda: client) is client
 
 
 def test_heating_demo_mode_preserves_explicit_port_and_graph(tmp_path) -> None:

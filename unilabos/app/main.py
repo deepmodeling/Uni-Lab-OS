@@ -80,6 +80,14 @@ def _load_graph_json_preview(file_path: str | None) -> Dict[str, Any] | None:
         return None
 
 
+def _resolve_backend_control_client(factory):
+    """Demo 持有本地 Workflow Authority，不建立上游 control.v1 会话。"""
+
+    if BasicConfig.demo_mode:
+        return None
+    return factory()
+
+
 def main():
     """主函数"""
     # CLI 仅负责解析和轻量子命令分流；设备 runtime 在后续按需启动。
@@ -424,11 +432,13 @@ def main():
 
     # Host 持有唯一微后端；Slave 只能经 HostLink 间接访问它。
     if BasicConfig.is_host_mode:
-        comm_client = get_backend_client()
-        args_dict["bridges"].append(comm_client)
+        comm_client = _resolve_backend_control_client(get_backend_client)
+        if comm_client is not None:
+            args_dict["bridges"].append(comm_client)
 
         def _exit(signum, frame):
-            comm_client.stop()
+            if comm_client is not None:
+                comm_client.stop()
             sys.exit(0)
 
         signal.signal(signal.SIGINT, _exit)
@@ -459,7 +469,8 @@ def main():
             )
 
         # 微后端必须先于控制链路接收命令，避免首个 job_start 绕过生命周期权威。
-        comm_client.start()
+        if comm_client is not None:
+            comm_client.start()
     else:
         print_status("SlaveMode跳过Websocket连接")
         if args_dict["backend"] == "ros2":

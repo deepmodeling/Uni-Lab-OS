@@ -262,6 +262,7 @@ def test_hostlink_registry_does_not_require_ros_message_packages() -> None:
         "from unilabos.registry.registry import build_registry; "
         "registry = build_registry(external_only=True); "
         "assert 'virtual_heating_platform' in registry.device_type_registry; "
+        "assert 'virtual_workbench' in registry.device_type_registry; "
         "import unilabos.resources.graphio; "
         "assert 'rclpy' not in sys.modules; "
         "assert 'unilabos.ros.msgs.message_converter' not in sys.modules; "

@@ -38,6 +38,7 @@ def configure_heating_demo_args(args: MutableMapping[str, Any]) -> None:
     args["slave_no_host"] = False
     args["test_mode"] = True
     args["visual"] = "disable"
+    args["disable_browser"] = True
     # Demo driver metadata comes from the AST registry.  Skipping the legacy
     # YAML catalog keeps this JSON-only HostLink path independent of ROS
     # message packages while preserving normal HostLink startup semantics.

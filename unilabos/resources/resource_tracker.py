@@ -984,6 +984,9 @@ class ResourceTreeSet(object):
                 resource_meta_data,
             ) = uuids.pop(0)
 
+            resource_state = copy.deepcopy(states[d["name"]])
+            state_rotation = resource_state.pop("rotation", None)
+
             serialized_location = d.get("location")
             raw_pos = (
                 {
@@ -1000,7 +1003,11 @@ class ResourceTreeSet(object):
                 else missing
             )
             if static_pose is None:
-                serialized_rotation = d.get("rotation") or {"x": 0, "y": 0, "z": 0}
+                serialized_rotation = (
+                    d.get("rotation")
+                    or state_rotation
+                    or {"x": 0, "y": 0, "z": 0}
+                )
                 static_pose = {
                     "size": {
                         "width": d["size_x"],
@@ -1019,6 +1026,14 @@ class ResourceTreeSet(object):
                     "cross_section_type": d.get("cross_section_type", "rectangle"),
                     "extra": legacy_pose_extra,
                 }
+            else:
+                serialized_rotation = d.get("rotation") or state_rotation
+                if serialized_rotation is not None:
+                    static_pose["rotation"] = {
+                        "x": serialized_rotation["x"],
+                        "y": serialized_rotation["y"],
+                        "z": serialized_rotation["z"],
+                    }
             if raw_pos is not None:
                 if sidecar_position is not missing:
                     normalized_sidecar_position = ResourceDictPositionObject.model_validate(
@@ -1072,7 +1087,7 @@ class ResourceTreeSet(object):
                         ]
                     )
                 },
-                "data": states[d["name"]],
+                "data": resource_state,
                 "extra": extra,
                 "sites": extract_plr_sites(plr_resource, d),
                 "sites_initialized": True,
@@ -1211,7 +1226,12 @@ class ResourceTreeSet(object):
                     if res.pose.position is not None
                     else None
                 ),
-                "rotation": {"x": 0, "y": 0, "z": 0, "type": "Rotation"},
+                "rotation": {
+                    "x": res.pose.rotation.x,
+                    "y": res.pose.rotation.y,
+                    "z": res.pose.rotation.z,
+                    "type": "Rotation",
+                },
                 "category": res.config.get("category", plr_type),
                 "children": [
                     node_to_plr_dict(child, has_model) for child in node.children

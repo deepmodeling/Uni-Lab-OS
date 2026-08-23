@@ -167,10 +167,19 @@ def test_snapshot_observer_diffs_the_complete_root_with_all_descendants(
             by_name["left"].material.material_uuid
         )
 
+        deep.rotate(z=15)
+        await observer.wait_idle()
+        rotated = materials.get_tree(root.unilabos_uuid)
+        rotated_deep = next(
+            node for node in rotated.nodes if node.material.name == "deep"
+        )
+        assert rotated_deep.position.rotation_z == 15.0
+        assert "rotation" not in rotated_deep.data.data
+
         # 权威回灌期间的 PLR state 变化不允许反向形成 snapshot 回声。
         before_versions = {
             node.material.material_uuid: node.material.version
-            for node in stored.nodes
+            for node in rotated.nodes
         }
         with observer.suppress_authority_projection():
             right.tracker.set_liquids([("authority", 1.0, "ul")])

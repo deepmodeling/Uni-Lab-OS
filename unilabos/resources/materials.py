@@ -3,6 +3,7 @@
 这里集中放置 PLR 物料的高层操作：
 
 - ``create``：向 materials authority 申请创建物料树并取回权威 UUID；
+- ``snapshot``：把整棵已登记 PLR 根树原子 diff/apply 到 authority；
 - ``transfer``：先由 authority 切换挂载关系，再同步来源与目标设备快照；
 - ``apply_substances``：把液体或固体内容物写入物料或指定孔位；
 - ``resolve_site_spot``：把 Site/slot 标识解析为 PLR spot。
@@ -359,6 +360,31 @@ def create(
     )
 
 
+async def snapshot(
+    plr_root_resource: Any,
+    *,
+    source_device_id: str,
+    source_device_uuid: str = "",
+    gateway: MaterialGateway | None = None,
+) -> Any:
+    """提交一棵完整 PLR 根树，所有后代会在同一 snapshot 中做 diff。
+
+    这是显式工具入口；设备运行时通常由 ``MaterialSnapshotObserver`` 在任意
+    child 的 state/assign/unassign 变化后自动调用同一严格服务入口。
+    """
+
+    from unilabos.device_runtime.resource import AuthorityResourceService
+
+    service = AuthorityResourceService(
+        gateway or resolve_materials_gateway()
+    )
+    return await service.snapshot_resource_tree(
+        str(source_device_id),
+        str(source_device_uuid),
+        plr_root_resource,
+    )
+
+
 __all__ = [
     "LIQUID_UNIT",
     "SELF_SLOT",
@@ -370,5 +396,6 @@ __all__ = [
     "resolve_materials_gateway",
     "resolve_substance_targets",
     "set_substance_on_target",
+    "snapshot",
     "transfer",
 ]

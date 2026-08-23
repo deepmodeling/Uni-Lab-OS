@@ -4,17 +4,15 @@
 - auth: 认证管理（login, logout, whoami）
 - auth_resolver: 凭据多源解析（CLI / session / local_config.py）
 - config: 配置管理（config show）
-- lab: 实验室管理
 - material: 物料管理
 - workflow: 工作流管理
-- package: 社区设备包 inspect / upload / install
+- package: 社区设备包 inspect / install
 - parser/router: 顶层参数契约与轻量子命令统一分发
 """
 
 from .auth import cmd_login, cmd_logout, cmd_whoami
 from .auth_resolver import resolve_effective_auth
 from .config import cmd_config_show
-from .lab import cmd_lab_list
 from .material import cmd_material_list
 from .package import (
     PackageCLIError,
@@ -32,7 +30,6 @@ __all__ = [
     "cmd_whoami",
     "resolve_effective_auth",
     "cmd_config_show",
-    "cmd_lab_list",
     "cmd_material_list",
     "PackageCLIError",
     "cmd_package",

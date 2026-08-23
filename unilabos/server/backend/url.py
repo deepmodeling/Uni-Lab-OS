@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from typing import Optional
-from urllib.parse import urlparse
-
 from unilabos.config.config import HTTPConfig
+from unilabos.utils.address import derive_websocket_address
 
 
 def build_backend_websocket_url() -> Optional[str]:
@@ -15,22 +14,12 @@ def build_backend_websocket_url() -> Optional[str]:
     连接能力限定为 scheduler，后续其他数据域也复用该 Backend 会话。
     """
 
-    if HTTPConfig.schedule_addr:
-        parsed = urlparse(HTTPConfig.schedule_addr)
-        scheme = "wss" if parsed.scheme in {"https", "wss"} else "ws"
-        return f"{scheme}://{parsed.netloc}/api/v1/ws/schedule"
-
     if not HTTPConfig.remote_addr:
         return None
-
-    parsed = urlparse(HTTPConfig.remote_addr)
-    scheme = "wss" if parsed.scheme == "https" else "ws"
-    if ":" in parsed.netloc and parsed.port is not None:
-        return (
-            f"{scheme}://{parsed.hostname}:{parsed.port + 1}"
-            "/api/v1/ws/schedule"
-        )
-    return f"{scheme}://{parsed.netloc}/api/v1/ws/schedule"
+    return derive_websocket_address(
+        HTTPConfig.remote_addr,
+        websocket_address=HTTPConfig.schedule_addr,
+    )
 
 
 __all__ = ["build_backend_websocket_url"]

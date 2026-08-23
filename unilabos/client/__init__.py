@@ -15,6 +15,7 @@ from .session import (
     DEFAULT_BASE_URL,
     resolve_addr,
 )
+from unilabos.utils.address import resolve_address
 from .output import (
     OutputFormat,
     OutputFormatter,
@@ -25,6 +26,7 @@ from .output import (
     print_error,
     print_warning,
 )
+from .workflow import HTTPWorkflowClient, WorkflowClientError
 
 __all__ = [
     "Envelope",
@@ -39,6 +41,7 @@ __all__ = [
     "ContextInfo",
     "DEFAULT_BASE_URL",
     "resolve_addr",
+    "resolve_address",
     "OutputFormat",
     "OutputFormatter",
     "set_output_format",
@@ -47,4 +50,6 @@ __all__ = [
     "print_success",
     "print_error",
     "print_warning",
+    "HTTPWorkflowClient",
+    "WorkflowClientError",
 ]

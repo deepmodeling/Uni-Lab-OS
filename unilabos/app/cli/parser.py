@@ -38,8 +38,8 @@ def _register_runtime_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=False,
         help=(
-            "Run the three-site heating demo as an offline-tolerant HostLink "
-            "slave; defaults to bj.wznln.com:38005 and retries forever."
+            "Run the local three-site heating demo as a HostLink host with "
+            "its HTTP microbackend listening on port 6005."
         ),
     )
     _add(group, "-g", "--graph", help="Physical setup graph file path.")
@@ -310,36 +310,16 @@ def _register_backend_arguments(parser: argparse.ArgumentParser) -> None:
     )
     _add(
         group,
+        "--address",
         "--addr",
+        dest="address",
         type=str,
-        default="https://leap-lab.bohrium.com/api/v1",
-        help="Laboratory backend address (API)",
-    )
-    _add(
-        group,
-        "--schedule_addr",
-        type=str,
-        default="",
+        default=None,
         help=(
-            "Backend WebSocket address. If empty, derived from --addr: "
-            "port +1 when --addr has a port, otherwise the same host is used."
+            "Unified Backend or microbackend address. HTTP APIs and WebSocket "
+            "notifications are derived from this value; --addr is an alias."
         ),
     )
-    _add(
-        group,
-        "--legacy",
-        action="store_true",
-        default=False,
-        help="Connect to the old Backend WS protocol and enable old HTTP APIs.",
-    )
-    _add(
-        group,
-        "--upload_registry",
-        action="store_true",
-        help="Upload registry through the old Backend HTTP API (requires --legacy).",
-    )
-
-
 def _register_development_arguments(parser: argparse.ArgumentParser) -> None:
     group = parser.add_argument_group("validation and development")
     _add(
@@ -398,22 +378,6 @@ def _register_development_arguments(parser: argparse.ArgumentParser) -> None:
         default=False,
         help="Load extra lab_ prefixed labware resource definitions",
     )
-    _add(
-        group,
-        "--restart_mode",
-        action="store_true",
-        default=False,
-        help="Enable supervisor mode and restart when requested through Backend WS",
-    )
-    _add(
-        group,
-        "--auto_restart_count",
-        type=int,
-        default=500,
-        help="Maximum number of automatic restarts (default: 500)",
-    )
-
-
 def build_parser() -> argparse.ArgumentParser:
     """构建不带运行时副作用的统一 CLI parser。"""
 

@@ -9,7 +9,6 @@ from typing import Dict, Optional, Protocol, Tuple, Union
 import requests
 
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.legacy_support import require_legacy_support
 from unilabos.utils import logger
 
 
@@ -25,7 +24,6 @@ class _UploadClient:
 
 
 def _default_upload_client() -> _UploadClient:
-    require_legacy_support("legacy storage HTTP API")
     return _UploadClient(
         remote_addr=HTTPConfig.remote_addr.rstrip("/"),
         auth=BasicConfig.auth_secret(),
@@ -211,13 +209,7 @@ if __name__ == "__main__":
     parser.add_argument("--ak", type=str, help="Access Key，如果提供则覆盖配置")
     parser.add_argument("--sk", type=str, help="Secret Key，如果提供则覆盖配置")
     parser.add_argument("--remote-addr", type=str, help="远程服务器地址（包含/api/v1），如果提供则覆盖配置")
-    parser.add_argument("--legacy", action="store_true", help="Enable old Backend HTTP API compatibility")
-
     args = parser.parse_args()
-
-    from unilabos.legacy_support import configure_legacy_support
-
-    configure_legacy_support(args.legacy)
 
     http_client = _default_upload_client()
 

@@ -13,9 +13,143 @@ from .package import (
 )
 
 CLIENT_COMMANDS = frozenset(
-    {"login", "logout", "whoami", "config", "lab", "material", "workflow"}
+    {"login", "logout", "whoami", "config", "material", "workflow"}
 )
 PACKAGE_COMMANDS = frozenset({"package", "pkg"})
+
+
+def _add_client_connection_options(
+    command_parser: argparse.ArgumentParser,
+    *,
+    include_auth: bool = False,
+    jsonl: bool = False,
+) -> None:
+    """允许统一连接参数位于子命令之后。"""
+
+    command_parser.add_argument(
+        "--address",
+        "--addr",
+        dest="address",
+        default=argparse.SUPPRESS,
+        help="Backend or microbackend address; --addr is an alias.",
+    )
+    if include_auth:
+        command_parser.add_argument("--ak", default=argparse.SUPPRESS)
+        command_parser.add_argument("--sk", default=argparse.SUPPRESS)
+    command_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Output in JSON format.",
+    )
+    if jsonl:
+        command_parser.add_argument(
+            "--jsonl",
+            action="store_true",
+            default=False,
+            help="Emit one compact JSON object per item or task change.",
+        )
+
+
+def _register_workflow_authority_commands(workflow_actions: Any) -> None:
+    workflow_list = workflow_actions.add_parser(
+        "list",
+        help="List workflow definitions",
+    )
+    workflow_list.add_argument("--page", type=int, default=1)
+    workflow_list.add_argument(
+        "--page_size",
+        "--page-size",
+        dest="page_size",
+        type=int,
+        default=100,
+    )
+    workflow_list.add_argument("--name", default="")
+    _add_client_connection_options(
+        workflow_list,
+        include_auth=True,
+        jsonl=True,
+    )
+
+    workflow_inspect = workflow_actions.add_parser(
+        "inspect",
+        help="Inspect a workflow, Task, or node Job",
+    )
+    workflow_inspect.add_argument("identity")
+    workflow_inspect.add_argument(
+        "--kind",
+        choices=["workflow", "task", "job"],
+        default="task",
+    )
+    _add_client_connection_options(workflow_inspect, include_auth=True)
+
+    workflow_run = workflow_actions.add_parser(
+        "run",
+        help="Create a workflow Task",
+    )
+    workflow_run.add_argument("workflow_uuid")
+    workflow_run.add_argument(
+        "--mode",
+        choices=["normal", "step", "single_node"],
+        default="normal",
+    )
+    workflow_run.add_argument(
+        "--target_node",
+        "--target-node",
+        dest="target_node",
+        default=None,
+    )
+    workflow_run.add_argument("--operation_id", "--operation-id", default=None)
+    workflow_run.add_argument("--follow", action="store_true")
+    workflow_run.add_argument("--after", type=int, default=0)
+    workflow_run.add_argument("--timeout", type=float, default=300.0)
+    workflow_run.add_argument(
+        "--max_events",
+        "--max-events",
+        dest="max_events",
+        type=int,
+        default=500,
+    )
+    _add_client_connection_options(
+        workflow_run,
+        include_auth=True,
+        jsonl=True,
+    )
+
+    workflow_watch = workflow_actions.add_parser(
+        "watch",
+        help="Watch a Task via WS invalidations and HTTP snapshots",
+    )
+    workflow_watch.add_argument("task_uuid")
+    workflow_watch.add_argument("--after", type=int, default=0)
+    workflow_watch.add_argument("--timeout", type=float, default=300.0)
+    workflow_watch.add_argument(
+        "--max_events",
+        "--max-events",
+        dest="max_events",
+        type=int,
+        default=500,
+    )
+    _add_client_connection_options(
+        workflow_watch,
+        include_auth=True,
+        jsonl=True,
+    )
+
+    workflow_authoring = workflow_actions.add_parser(
+        "authoring",
+        help="Wait for an Authoring revision or diagnostics",
+    )
+    workflow_authoring.add_argument("workflow_uuid")
+    workflow_authoring.add_argument(
+        "--after_revision",
+        "--after-revision",
+        dest="after_revision",
+        type=int,
+        required=True,
+    )
+    workflow_authoring.add_argument("--timeout", type=float, default=30.0)
+    _add_client_connection_options(workflow_authoring, include_auth=True)
 
 
 def register_cli_commands(
@@ -35,24 +169,24 @@ def register_cli_commands(
     login_parser = subparsers.add_parser("login", help="Save ak/sk to session file")
     login_parser.add_argument("--ak", type=str, required=True, help="Access key")
     login_parser.add_argument("--sk", type=str, required=True, help="Secret key")
-    subparsers.add_parser("logout", help="Clear local ak/sk")
-    subparsers.add_parser("whoami", help="Show current user information")
+    _add_client_connection_options(login_parser)
+    logout_parser = subparsers.add_parser("logout", help="Clear local ak/sk")
+    _add_client_connection_options(logout_parser)
+    whoami_parser = subparsers.add_parser(
+        "whoami",
+        help="Show current user information",
+    )
+    _add_client_connection_options(whoami_parser)
 
     config_parser = subparsers.add_parser("config", help="Show session configuration")
     config_actions = config_parser.add_subparsers(
         title="config subcommands", dest="config_command"
     )
-    config_actions.add_parser("show", help="Show current session configuration")
-
-    lab_parser = subparsers.add_parser("lab", help="Laboratory management")
-    lab_actions = lab_parser.add_subparsers(
-        title="lab subcommands", dest="lab_command"
+    config_show = config_actions.add_parser(
+        "show",
+        help="Show current session configuration",
     )
-    lab_list = lab_actions.add_parser("list", help="List laboratories")
-    lab_list.add_argument("--page", type=int, default=1, help="Page number")
-    lab_list.add_argument(
-        "--page_size", "--page-size", type=int, default=20, help="Page size"
-    )
+    _add_client_connection_options(config_show)
 
     material_parser = subparsers.add_parser("material", help="Material management")
     material_actions = material_parser.add_subparsers(
@@ -68,14 +202,13 @@ def register_cli_commands(
         default=False,
         help="Only return root material instances",
     )
+    _add_client_connection_options(material_list)
 
     workflow_parser = subparsers.add_parser("workflow", help="Workflow management")
     workflow_actions = workflow_parser.add_subparsers(
         title="workflow subcommands", dest="workflow_command"
     )
-    workflow_upload = workflow_actions.add_parser(
-        "upload", help="Upload workflow file"
-    )
+    workflow_upload = workflow_actions.add_parser("upload", help="Upload workflow file")
     workflow_upload.add_argument(
         "-f",
         "--workflow_file",
@@ -101,13 +234,15 @@ def register_cli_commands(
     workflow_upload.add_argument(
         "--description", type=str, default="", help="Workflow description"
     )
+    _add_client_connection_options(workflow_upload, include_auth=True)
+    _register_workflow_authority_commands(workflow_actions)
 
 
 def _prepare_command_session(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
 ):
-    from unilabos.client import SessionManager, resolve_addr
+    from unilabos.client import SessionManager, resolve_address
 
     values = vars(args)
     working_dir = os.path.abspath(values.get("working_dir") or os.getcwd())
@@ -116,12 +251,10 @@ def _prepare_command_session(
         if os.path.isdir(data_dir):
             working_dir = data_dir
 
-    address = values.get("addr")
-    args.addr_resolved = (
-        resolve_addr(address)
-        if address and address != parser.get_default("addr")
-        else None
-    )
+    address = values.get("address")
+    args.address_resolved = resolve_address(address) if address else None
+    # 兼容尚未迁移的第三方 CLI 扩展；内部代码统一读取 address_resolved。
+    args.addr_resolved = args.address_resolved
     return SessionManager(working_dir=working_dir)
 
 
@@ -137,14 +270,10 @@ def run_client_command(
     command = values.get("command")
     if command not in CLIENT_COMMANDS:
         return False
-    if command in {"lab", "workflow"} and not values.get("legacy"):
-        parser.error(f"{command} uses the old Backend HTTP API; add --legacy")
-
     from unilabos.app.cli.auth import cmd_login, cmd_logout, cmd_whoami
     from unilabos.app.cli.config import cmd_config_show
-    from unilabos.app.cli.lab import cmd_lab_list
     from unilabos.app.cli.material import cmd_material_list
-    from unilabos.app.cli.workflow import cmd_workflow_upload
+    from unilabos.app.cli.workflow import cmd_workflow_command, cmd_workflow_upload
     from unilabos.client import OutputFormat, print_error, set_output_format
 
     if values.get("json", False):
@@ -160,12 +289,22 @@ def run_client_command(
         cmd_whoami(args, session_manager)
     elif command == "config" and values.get("config_command") == "show":
         cmd_config_show(args, session_manager)
-    elif command == "lab" and values.get("lab_command") == "list":
-        cmd_lab_list(args, session_manager)
     elif command == "material" and values.get("material_command") == "list":
         cmd_material_list(args, session_manager)
-    elif command == "workflow" and values.get("workflow_command") == "upload":
-        cmd_workflow_upload(args, session_manager)
+    elif command == "workflow":
+        if values.get("workflow_command") == "upload":
+            cmd_workflow_upload(args, session_manager)
+        elif values.get("workflow_command") in {
+            "list",
+            "inspect",
+            "run",
+            "watch",
+            "authoring",
+        }:
+            cmd_workflow_command(args, session_manager)
+        else:
+            print_error("workflow 子命令不完整")
+            raise SystemExit(1)
     else:
         print_error(f"{command} 子命令不完整")
         raise SystemExit(1)

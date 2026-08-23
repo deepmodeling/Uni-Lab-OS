@@ -42,3 +42,34 @@ def test_material_list_uses_microbackend_without_legacy(monkeypatch, capsys) -> 
         ("roots_only", True),
     ]
     assert "material-1" in capsys.readouterr().out
+
+
+def test_material_list_accepts_unified_address_after_subcommand(
+    monkeypatch,
+    capsys,
+) -> None:
+    calls = []
+
+    class _Client:
+        def __init__(self, address: str):
+            calls.append(("address", address))
+
+        def list_materials(self, *, roots_only: bool):
+            calls.append(("roots_only", roots_only))
+            return []
+
+    monkeypatch.setattr(
+        "unilabos.app.cli.material.HTTPMaterialsClient",
+        _Client,
+    )
+    parser = build_parser()
+    args = parser.parse_args(
+        ["material", "list", "--address", "http://edge:8002"]
+    )
+
+    assert run_client_command(args, parser) is True
+    assert calls == [
+        ("address", "http://edge:8002"),
+        ("roots_only", False),
+    ]
+    assert capsys.readouterr().err == ""

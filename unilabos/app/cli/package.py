@@ -1,4 +1,4 @@
-"""社区设备包命令：参数注册、分发与 inspect/upload/install 实现。"""
+"""社区设备包命令：本地 inspect/install 实现。"""
 
 import hashlib
 import json
@@ -7,7 +7,7 @@ import subprocess
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from unilabos.registry.init_enforce import validate_init_param_enforce
 from unilabos.utils import logger
@@ -41,19 +41,15 @@ def register_package_commands(subparsers: Any) -> None:
     package_parser = subparsers.add_parser(
         "package",
         aliases=["pkg"],
-        help="Community device package tools: inspect / upload / install",
+        help="Community device package tools: inspect / install",
     )
     package_actions = package_parser.add_subparsers(
         title="package actions", dest="package_action"
     )
-    for action in ("inspect", "upload"):
+    for action in ("inspect",):
         action_parser = package_actions.add_parser(
             action,
-            help=(
-                "Scan package dir and generate package_info/archive (local only)"
-                if action == "inspect"
-                else "Upload package through the old Backend HTTP API (--legacy)"
-            ),
+            help="Scan package dir and generate package_info/archive locally",
         )
         action_parser.add_argument(
             "--path",
@@ -74,16 +70,6 @@ def register_package_commands(subparsers: Any) -> None:
             default=None,
             help="Output dir for archive/package_info.json",
         )
-        if action == "upload":
-            action_parser.add_argument(
-                "--download-url",
-                "--download_url",
-                dest="download_url",
-                type=str,
-                default="",
-                help="Explicit archive URL; otherwise upload through legacy OSS API",
-            )
-
     install_parser = package_actions.add_parser(
         "install",
         help="Install a pip spec / git URL locally, then scan @device IDs",
@@ -381,7 +367,7 @@ def build_action_value_mappings(actions: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_resources(devices: Dict[str, Dict[str, Any]], package_info: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """把扫描出的设备 meta 映射为 /lab/resource 的 resources 项，并附 resource 级 source_registry。"""
+    """把扫描出的设备 meta 映射为本地包清单 resources。"""
     resources: List[Dict[str, Any]] = []
     for device_id, meta in devices.items():
         actions = meta.get("actions") if isinstance(meta.get("actions"), dict) else {}
@@ -395,7 +381,7 @@ def build_resources(devices: Dict[str, Dict[str, Any]], package_info: Dict[str, 
             "action_value_mappings": action_value_mappings,
             "status_types": status_props,
         }
-        # source_registry：保存设备原始注册表，供后端 BuildEffectiveTemplate 读取 class.action_value_mappings
+        # source_registry 保存原始定义，供 Registry/materials adapter 读取动作能力。
         source_registry = {
             "class": reg_class,
             "handles": handles,
@@ -428,10 +414,9 @@ def build_resources_from_registry(
     entries: Dict[str, Dict[str, Any]],
     package_info: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    """把 registry.yaml 设备条目映射为 /lab/resource 的 resources 项。
+    """把 registry.yaml 设备条目映射为本地包清单 resources。
 
-    条目本身已含 class.action_value_mappings/schema，直接作为 source_registry，
-    后端 BuildEffectiveTemplate 可据此构造 effective_template。
+    条目本身已含 class.action_value_mappings/schema，直接保留为 source_registry。
     """
     resources: List[Dict[str, Any]] = []
     for device_id, entry in entries.items():
@@ -573,50 +558,6 @@ def inspect_package(
     }
 
 
-def upload_package(
-    path: str,
-    http_client: Any,
-    namespace: Optional[str] = None,
-    out_dir: Optional[str] = None,
-    download_url: str = "",
-) -> Dict[str, Any]:
-    """inspect → 上传归档（或用显式 download_url）→ 带顶层 package_info 调 /lab/resource。"""
-    if http_client is None:
-        raise PackageCLIError("upload 需要有效的 http_client（请确认已传 --ak/--sk）")
-
-    result = inspect_package(path, namespace=namespace, out_dir=out_dir)
-    package_info: Dict[str, Any] = result["package_info"]
-    archive_path = result["archive_path"]
-
-    final_url, object_key = _resolve_download_target(http_client, archive_path, download_url)
-    package_info["download_url"] = final_url
-    if object_key:
-        package_info["oss_object_key"] = object_key
-
-    # 同步顶层 package_info 到每个 resource 的 package_info，确保 resource 级也带 download_url/sha256
-    resources = result["resources"]
-    for item in resources:
-        item["package_info"] = package_info
-
-    response = http_client.upload_package_resources(resources, package_info)
-    status = getattr(response, "status_code", None)
-    text = getattr(response, "text", "")
-    if status not in (200, 201):
-        raise PackageCLIError(f"上传 /lab/resource 失败：{status} {text}")
-
-    print_status("package upload 完成，设备模板已落库 package_info + source_registry", "info")
-    print_status(f"  download_url : {final_url or '(空，请确认 OSS 或 --download-url)'}", "info")
-    print_status(f"  class_namespace : {package_info['class_namespace']}", "info")
-    print_status("  现在可用含 community.* 节点的 graph 启动 Edge 触发 resolve/下载", "info")
-
-    return {
-        "package_info": package_info,
-        "resources": resources,
-        "download_url": final_url,
-        "response_status": status,
-    }
-
-
 def install_package(spec: str, run_inspect: bool = True) -> Dict[str, Any]:
     """本地安装一个设备包：uv pip install 优先、回退 pip install，
     """
@@ -643,7 +584,7 @@ def install_package(spec: str, run_inspect: bool = True) -> Dict[str, Any]:
     return {"spec": spec, "installer": installer, "dist_name": dist_name, "device_ids": device_ids}
 
 
-def cmd_package(args_dict: Dict[str, Any], http_client: Any = None) -> None:
+def cmd_package(args_dict: Dict[str, Any]) -> None:
     """package 子命令分发入口，由 main() 在配置/鉴权就绪后调用。"""
     action = args_dict.get("package_action")
     path = args_dict.get("package_path")
@@ -652,7 +593,7 @@ def cmd_package(args_dict: Dict[str, Any], http_client: Any = None) -> None:
 
     if not action:
         raise PackageCLIError(
-            "缺少 package 子动作，请使用 `unilab package inspect|upload|install`"
+            "缺少 package 子动作，请使用 `unilab package inspect|install`"
         )
 
     if action == "install":
@@ -667,14 +608,6 @@ def cmd_package(args_dict: Dict[str, Any], http_client: Any = None) -> None:
 
     if action == "inspect":
         inspect_package(path, namespace=namespace, out_dir=out_dir)
-    elif action == "upload":
-        upload_package(
-            path,
-            http_client=http_client,
-            namespace=namespace,
-            out_dir=out_dir,
-            download_url=args_dict.get("download_url", "") or "",
-        )
     else:
         raise PackageCLIError(f"未知 package 子动作：{action}")
 
@@ -689,41 +622,9 @@ def run_package_command(
 
     if args.get("command") not in {"package", "pkg"}:
         return False
+    del args_namespace, session_manager
     try:
-        http_client = None
-        if args.get("package_action") == "upload":
-            if not args.get("legacy"):
-                raise PackageCLIError(
-                    "package upload uses the old Backend HTTP API; add --legacy"
-                )
-            if args_namespace is not None and session_manager is not None:
-                import base64
-
-                from unilabos.app.cli.auth_resolver import resolve_effective_auth
-                from unilabos.legacy_support.http import LegacyHTTPClient
-
-                with session_manager:
-                    effective = resolve_effective_auth(
-                        args_namespace,
-                        session_manager,
-                    )
-                if not effective["ak"] or not effective["sk"]:
-                    raise PackageCLIError(
-                        "package upload requires ak/sk; use `unilab login` or "
-                        "pass --ak/--sk"
-                    )
-                secret = base64.b64encode(
-                    f"{effective['ak']}:{effective['sk']}".encode()
-                ).decode()
-                http_client = LegacyHTTPClient(
-                    remote_addr=effective["base_url"],
-                    auth=secret,
-                )
-            else:
-                from unilabos.legacy_support.http import get_legacy_http_client
-
-                http_client = get_legacy_http_client()
-        cmd_package(args, http_client=http_client)
+        cmd_package(args)
     except PackageCLIError as exc:
         print_status(str(exc), "error")
         raise SystemExit(1) from exc
@@ -862,26 +763,6 @@ def _installed_device_ids(dist_name: str) -> List[str]:
         executor.shutdown(wait=True)
     devices = result.get("devices", {})
     return sorted(did for did, meta in devices.items() if isinstance(meta, dict))
-
-
-def _resolve_download_target(http_client: Any, archive_path: str, download_url: str) -> Tuple[str, str]:
-    """确定归档的可达地址：显式 download_url 优先（本地调试可指向静态服务），否则走 /lab/storage/token 预签名直传 OSS。"""
-    if download_url:
-        print_status(f"使用显式 download_url：{download_url}", "info")
-        return download_url, ""
-
-    print_status(f"上传归档到 OSS（预签名直传）：{archive_path}", "info")
-    try:
-        public_url, object_key = http_client.upload_file_to_oss(archive_path, scene="models")
-    except Exception as exc:
-        raise PackageCLIError(
-            f"归档预签名直传失败：{exc}；可改用 --download-url 指向可达地址（本地静态服务或已有 OSS URL）"
-        ) from exc
-    if not public_url and not object_key:
-        raise PackageCLIError(
-            "OSS 直传未返回 public_url/object_key；可改用 --download-url 直接指定可达地址"
-        )
-    return public_url, object_key
 
 
 def _map_handles(handles: List[Any]) -> List[Dict[str, Any]]:

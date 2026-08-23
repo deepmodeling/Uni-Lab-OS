@@ -53,6 +53,7 @@ from unilabos.ros.msgs.message_converter import (
     msg_converter_manager,
 )
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode, DeviceNodeResourceTracker
+from unilabos.ros.naming import ros_device_namespace
 from unilabos.ros.nodes.presets.controller_node import ControllerNode
 from unilabos.utils import logger
 from unilabos.utils.exception import DeviceClassInvalid
@@ -427,6 +428,16 @@ class HostNode(BaseROS2DeviceNode):
             if not namespace.startswith("/devices/"):
                 continue
             edge_device_id = namespace[9:]
+            # Local devices retain their logical ID even when their ROS wire
+            # namespace had to replace characters such as ``-`` with ``_``.
+            edge_device_id = next(
+                (
+                    logical_id
+                    for logical_id, known_namespace in self.devices_names.items()
+                    if known_namespace == namespace
+                ),
+                edge_device_id,
+            )
             # 将设备添加到当前设备集合
             device_key = f"{namespace}/{edge_device_id}"  # namespace已经包含device_id了，这里复写一遍
             current_devices.add(device_key)
@@ -687,7 +698,7 @@ class HostNode(BaseROS2DeviceNode):
                 "UniLabJsonCommand"
             ):
                 continue
-            action_id = f"/devices/{device_id}/{action_name}"
+            action_id = f"{d._ros_node.namespace}/{action_name}"
             if action_id not in self._action_clients:
                 action_type = action_value_mapping["type"]
                 try:
@@ -737,7 +748,16 @@ class HostNode(BaseROS2DeviceNode):
                 # 解析设备名和属性名
                 parts = topic.split("/")
                 if len(parts) >= 4:  # 可能有WorkstationNode，创建更长的设备
-                    device_id = "/".join(parts[2:-1])
+                    wire_device_id = "/".join(parts[2:-1])
+                    wire_namespace = f"/devices/{wire_device_id}"
+                    device_id = next(
+                        (
+                            logical_id
+                            for logical_id, known_namespace in self.devices_names.items()
+                            if known_namespace == wire_namespace
+                        ),
+                        wire_device_id,
+                    )
                     property_name = parts[-1]
 
                     # 初始化设备状态字典
@@ -833,8 +853,12 @@ class HostNode(BaseROS2DeviceNode):
         u = uuid.UUID(item.job_id)
         device_id = item.device_id
         action_name = item.action_name
+        namespace = self.devices_names.get(
+            device_id,
+            ros_device_namespace(device_id),
+        )
         if BasicConfig.test_mode:
-            action_id = f"/devices/{device_id}/{action_name}"
+            action_id = f"{namespace}/{action_name}"
             self.lab_logger().info(
                 f"[TEST MODE] 模拟执行: {action_id} (job={item.job_id[:8]}), 参数: {str(action_kwargs)[:500]}"
             )
@@ -846,7 +870,7 @@ class HostNode(BaseROS2DeviceNode):
         if action_type.startswith("UniLabJsonCommand"):
             if action_name.startswith("auto-"):
                 action_name = action_name[5:]
-            action_id = f"/devices/{device_id}/_execute_driver_command"
+            action_id = f"{namespace}/_execute_driver_command"
             json_command: Dict[str, Any] = {
                 "function_name": action_name,
                 "function_args": action_kwargs,
@@ -856,9 +880,9 @@ class HostNode(BaseROS2DeviceNode):
             }
             action_kwargs = {"string": json.dumps(json_command)}
             if action_type.startswith("UniLabJsonCommandAsync"):
-                action_id = f"/devices/{device_id}/_execute_driver_command_async"
+                action_id = f"{namespace}/_execute_driver_command_async"
         else:
-            action_id = f"/devices/{device_id}/{action_name}"
+            action_id = f"{namespace}/{action_name}"
         if action_name == "test_latency" and server_info is not None:
             self.server_latest_timestamp = server_info.get("send_timestamp", 0.0)
         if action_id not in self._action_clients:

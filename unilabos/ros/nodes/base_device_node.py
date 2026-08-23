@@ -59,6 +59,11 @@ from unilabos.ros.msgs.message_converter import (
     convert_to_ros_msg_with_mapping,
     get_ros_type_by_msgname,
 )
+from unilabos.ros.naming import (
+    ros_device_namespace,
+    ros_device_node_name,
+    ros_device_path,
+)
 from unilabos_msgs.srv import SerialCommand  # type: ignore
 
 from unilabos.resources.resource_tracker import (
@@ -486,8 +491,12 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         self.set_resource_service(AuthorityResourceService())
 
         # 初始化ROS节点
-        self.node_name = f'{device_id.split("/")[-1]}'
-        self.namespace = f"/devices/{device_id}"
+        # ``device_id`` is the stable API/material identity and may contain
+        # characters (for example ``virtual-heater``) that ROS names reject.
+        # Only the ROS wire identity is normalized; callers and registries keep
+        # using the original logical ID.
+        self.node_name = ros_device_node_name(device_id)
+        self.namespace = ros_device_namespace(device_id)
         Node.__init__(self, self.node_name, namespace=self.namespace)  # type: ignore
         if self.resource_tracker is None:
             self.lab_logger().critical("资源跟踪器未初始化，请检查")
@@ -1412,8 +1421,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         if cache_key in self._remote_action_type_cache:
             return self._remote_action_type_cache[cache_key]
 
-        node_name = clean_device_id.split("/")[-1]
-        namespace = f"/devices/{clean_device_id}"
+        wire_device_id = ros_device_path(clean_device_id)
+        node_name = wire_device_id.split("/")[-1]
+        namespace = f"/devices/{wire_device_id}"
         target_action_id = f"{namespace}/{function_name}"
         resolved: Optional[Any] = None
         try:
@@ -1461,7 +1471,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         clean_device_id = (
             device_id[len("/devices/"):] if device_id.startswith("/devices/") else device_id.lstrip("/")
         )
-        namespace = f"/devices/{clean_device_id}"
+        namespace = ros_device_namespace(clean_device_id)
         function_name = action_name[5:] if action_name.startswith("auto-") else action_name
 
         # 未显式指定类型时，从 ROS 图自动探测目标动作是否为原生 action

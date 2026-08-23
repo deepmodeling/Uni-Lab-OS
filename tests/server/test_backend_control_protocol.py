@@ -9,7 +9,7 @@ from unilabos.server.backend.http import BackendHTTPClient
 from unilabos.server.backend.sync import InstanceSynchronizer, TemplateSynchronizer
 from unilabos.server.backend.websocket import BackendWebSocketClient
 from unilabos.server.protocol.common import canonical_hash
-from unilabos.server.protocol.control import BackendCommandNotice
+from unilabos.server.protocol.control import BackendCommandNotice, EdgeChangeNotice
 
 
 class _Response:
@@ -47,11 +47,28 @@ def _notice_data() -> dict:
     }
 
 
-def test_ws_notice_forbids_execution_or_result_body() -> None:
-    with pytest.raises(ValidationError, match="action_args"):
+@pytest.mark.parametrize("forbidden", ["action_args", "payload", "url"])
+def test_backend_ws_notice_forbids_body_or_arbitrary_url(forbidden: str) -> None:
+    with pytest.raises(ValidationError, match=forbidden):
         BackendCommandNotice.model_validate(
-            {**_notice_data(), "action_args": {"volume": 5}}
+            {**_notice_data(), forbidden: {"volume": 5}}
         )
+
+
+@pytest.mark.parametrize("forbidden", ["payload", "data", "url"])
+def test_edge_ws_notice_forbids_body_or_arbitrary_url(forbidden: str) -> None:
+    notice = {
+        "session_uuid": "session-1",
+        "event_uuid": "event-1",
+        "event_sequence": 1,
+        "event_type": "job.succeeded",
+        "aggregate_type": "execution_job",
+        "aggregate_uuid": "job-1",
+        "aggregate_version": 2,
+        forbidden: {"result": "secret"},
+    }
+    with pytest.raises(ValidationError, match=forbidden):
+        EdgeChangeNotice.model_validate(notice)
 
 
 def test_http_client_fetches_full_document_from_uuid_derived_path() -> None:

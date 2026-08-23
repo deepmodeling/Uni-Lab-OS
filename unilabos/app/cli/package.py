@@ -6,8 +6,10 @@ import re
 import subprocess
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 from unilabos.registry.init_enforce import validate_init_param_enforce
 from unilabos.utils import logger
@@ -77,7 +79,14 @@ def register_package_commands(subparsers: Any) -> None:
     install_parser.add_argument(
         "install_spec",
         type=str,
-        help="pip spec (name==version / name) or git URL (git+https://...)",
+        help="pip spec, local path, or GitHub URL (https://github.com/owner/repo)",
+    )
+    install_parser.add_argument(
+        "--ref",
+        dest="install_ref",
+        type=str,
+        default=None,
+        help="Pin a GitHub repository install to a branch, tag, or commit SHA",
     )
     install_parser.add_argument(
         "--no-inspect",
@@ -558,18 +567,28 @@ def inspect_package(
     }
 
 
-def install_package(spec: str, run_inspect: bool = True) -> Dict[str, Any]:
+def install_package(
+    spec: str,
+    run_inspect: bool = True,
+    *,
+    ref: Optional[str] = None,
+) -> Dict[str, Any]:
     """本地安装一个设备包：uv pip install 优先、回退 pip install，
     """
-    spec = (spec or "").strip()
-    if not spec:
-        raise PackageCLIError("缺少安装目标，用法：unilab package install <pip-spec 或 git-url>")
+    original_spec = (spec or "").strip()
+    install_spec = normalize_install_spec(original_spec, ref=ref)
+    before = _installed_distribution_records()
 
-    installer = _run_pip_install(spec)
-    print_status(f"package install 完成：{spec}（{installer}）", "info")
+    installer = _run_pip_install(install_spec)
+    print_status(f"package install 完成：{install_spec}（{installer}）", "info")
 
-    # PyPI 规格直接取名；本地目录/文件路径装完后从其 pyproject.toml 读分发名（git/URL 仍取不到）。
-    dist_name = _spec_dist_name(spec) or _local_dist_name(spec)
+    after = _installed_distribution_records()
+    dist_name = _resolve_installed_distribution(
+        original_spec,
+        install_spec,
+        before,
+        after,
+    )
     device_ids: List[str] = []
     if run_inspect and dist_name:
         device_ids = _installed_device_ids(dist_name)
@@ -579,9 +598,15 @@ def install_package(spec: str, run_inspect: bool = True) -> Dict[str, Any]:
     elif dist_name:
         print_status(f"  已安装分发      : {dist_name}（未扫描到 @device，可能非 Uni-Lab 设备包）", "info")
     else:
-        print_status("  已安装（git/URL 来源，无法确定分发名，跳过设备扫描）", "info")
+        print_status("  已安装（无法从安装元数据确定分发名，跳过设备扫描）", "warning")
 
-    return {"spec": spec, "installer": installer, "dist_name": dist_name, "device_ids": device_ids}
+    return {
+        "spec": original_spec,
+        "install_spec": install_spec,
+        "installer": installer,
+        "dist_name": dist_name,
+        "device_ids": device_ids,
+    }
 
 
 def cmd_package(args_dict: Dict[str, Any]) -> None:
@@ -600,6 +625,7 @@ def cmd_package(args_dict: Dict[str, Any]) -> None:
         install_package(
             args_dict.get("install_spec", "") or "",
             run_inspect=not args_dict.get("no_inspect", False),
+            ref=args_dict.get("install_ref"),
         )
         return
 
@@ -632,6 +658,189 @@ def run_package_command(
 
 
 # --- 内部工具 ---
+
+
+_PEP508_DIRECT_REFERENCE_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[^\]]+\])?\s*@\s*\S+$"
+)
+_GITHUB_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+_GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
+
+
+def _split_github_repository_url(value: str) -> Optional[tuple[str, str, Optional[str]]]:
+    """解析 GitHub 仓库 URL；只接受 owner/repo 根路径，不吞掉 archive/release URL。"""
+
+    raw = value[4:] if value.startswith("git+") else value
+    parsed = urlsplit(raw)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
+        return None
+    path = parsed.path.strip("/")
+    owner, separator, repo_part = path.partition("/")
+    if not separator or not owner or not repo_part:
+        raise PackageCLIError(
+            "GitHub 仓库地址必须是 https://github.com/<owner>/<repo>[.git]"
+        )
+    pinned_ref: Optional[str] = None
+    if ".git@" in repo_part:
+        repo_part, pinned_ref = repo_part.rsplit(".git@", 1)
+    elif repo_part.endswith(".git"):
+        repo_part = repo_part[:-4]
+    elif "@" in repo_part:
+        raise PackageCLIError("GitHub URL 内固定版本时必须使用 .git@<ref> 或 --ref")
+    elif "/" in repo_part:
+        # release/archive/raw 等仍是普通 HTTP direct URL，交给 pip 自己处理。
+        return None
+    if parsed.query or parsed.fragment:
+        raise PackageCLIError("GitHub 仓库安装 URL 不允许 query/fragment，请用 --ref 固定版本")
+    if not owner or not repo_part or not all(
+        _GITHUB_COMPONENT_RE.fullmatch(part) for part in (owner, repo_part)
+    ):
+        raise PackageCLIError("GitHub owner/repo 含不支持的字符")
+    if pinned_ref is not None and not _GIT_REF_RE.fullmatch(pinned_ref):
+        raise PackageCLIError(f"无效 Git ref：{pinned_ref!r}")
+    return owner, repo_part, pinned_ref
+
+
+def normalize_install_spec(spec: str, *, ref: Optional[str] = None) -> str:
+    """把普通 GitHub 仓库链接归一化为 pip VCS spec，保留其他合法 pip spec。
+
+    普通 HTTP wheel/zip、PEP 508 direct URL、PyPI requirement 与本地路径不被误判
+    为 git 仓库。``--ref`` 只允许和 GitHub 仓库根 URL 一起使用。
+    """
+
+    value = (spec or "").strip()
+    if not value:
+        raise PackageCLIError(
+            "缺少安装目标，用法：unilab package install <pip-spec 或 GitHub URL>"
+        )
+    requested_ref = (ref or "").strip() or None
+    if requested_ref is not None and not _GIT_REF_RE.fullmatch(requested_ref):
+        raise PackageCLIError(f"无效 Git ref：{requested_ref!r}")
+
+    # 带显式 distribution 名的 PEP 508 direct reference 已能让 pip 和扫描器准确识别。
+    if _PEP508_DIRECT_REFERENCE_RE.fullmatch(value):
+        if requested_ref is not None:
+            raise PackageCLIError("PEP 508 direct reference 已包含来源，不能再同时使用 --ref")
+        return value
+
+    github = _split_github_repository_url(value)
+    if github is None:
+        if requested_ref is not None:
+            raise PackageCLIError("--ref 只适用于 GitHub 仓库根 URL")
+        return value
+
+    owner, repo, embedded_ref = github
+    if requested_ref is not None and embedded_ref is not None:
+        raise PackageCLIError("GitHub URL 已包含 ref，不能再同时使用 --ref")
+    pinned_ref = requested_ref or embedded_ref
+    normalized = f"git+https://github.com/{owner}/{repo}.git"
+    if pinned_ref:
+        normalized += f"@{pinned_ref}"
+    return normalized
+
+
+@dataclass(frozen=True)
+class InstalledDistributionRecord:
+    """安装前后可稳定比较的 distribution 元数据子集。"""
+
+    name: str
+    version: str
+    direct_url: str
+    fingerprint: str
+
+
+def _installed_distribution_records() -> Dict[str, InstalledDistributionRecord]:
+    """读取当前环境分发及 PEP 610 direct_url.json，不猜仓库名对应的 project.name。"""
+
+    try:
+        from importlib.metadata import distributions
+    except Exception:
+        return {}
+
+    records: Dict[str, InstalledDistributionRecord] = {}
+    for dist in distributions():
+        try:
+            name = str(dist.metadata.get("Name") or "").strip()
+            if not name:
+                continue
+            direct_url_text = dist.read_text("direct_url.json") or ""
+            direct_url = ""
+            if direct_url_text:
+                parsed = json.loads(direct_url_text)
+                if isinstance(parsed, dict):
+                    direct_url = str(parsed.get("url") or "").strip()
+            location = str(getattr(dist, "_path", ""))
+            version = str(dist.version or "")
+            fingerprint = "\0".join((version, direct_url_text, location))
+            records[normalize_name(name)] = InstalledDistributionRecord(
+                name=name,
+                version=version,
+                direct_url=direct_url,
+                fingerprint=fingerprint,
+            )
+        except Exception as exc:
+            logger.warning(f"[package] 忽略无法读取的 installed distribution: {exc}")
+    return records
+
+
+def _canonical_direct_source(value: str) -> str:
+    """把 pip VCS spec/direct_url.json URL 归一到可比较的仓库来源，不包含 ref。"""
+
+    source = value.strip()
+    if _PEP508_DIRECT_REFERENCE_RE.fullmatch(source):
+        source = source.split("@", 1)[1].strip()
+    if source.startswith("git+"):
+        source = source[4:]
+    parsed = urlsplit(source)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    path = parsed.path.rstrip("/")
+    if ".git@" in path:
+        path = path.rsplit(".git@", 1)[0] + ".git"
+    if path.endswith(".git"):
+        path = path[:-4]
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}".lower()
+
+
+def _resolve_installed_distribution(
+    original_spec: str,
+    install_spec: str,
+    before: Dict[str, InstalledDistributionRecord],
+    after: Dict[str, InstalledDistributionRecord],
+) -> str:
+    """用显式分发名、direct_url.json 与安装前后差异确定实际 project.name。"""
+
+    explicit = _spec_dist_name(original_spec) or _local_dist_name(original_spec)
+    if explicit:
+        record = after.get(normalize_name(explicit))
+        return record.name if record is not None else explicit
+
+    expected_source = _canonical_direct_source(install_spec)
+    if expected_source:
+        matches = [
+            record
+            for record in after.values()
+            if _canonical_direct_source(record.direct_url) == expected_source
+        ]
+        if len(matches) == 1:
+            return matches[0].name
+
+    changed = [
+        record
+        for key, record in after.items()
+        if key not in before or before[key].fingerprint != record.fingerprint
+    ]
+    if len(changed) == 1:
+        return changed[0].name
+    if expected_source:
+        changed_matches = [
+            record
+            for record in changed
+            if _canonical_direct_source(record.direct_url) == expected_source
+        ]
+        if len(changed_matches) == 1:
+            return changed_matches[0].name
+    return ""
 
 
 def _run_pip_install(spec: str) -> str:

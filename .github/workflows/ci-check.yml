@@ -5,6 +5,7 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:
 
 jobs:
   registry-check:
@@ -25,6 +26,8 @@ jobs:
       # 原生崩溃(0xC0000005 访问违例)时打印 Python 调用栈，便于定位是哪个设备模块 import 崩溃
       PYTHONFAULTHANDLER: "1"
       UNILABOS_README_EXAMPLES_ROOT: ${{ github.workspace }}/readme-examples
+      LAN_DEMO_REF: 311428b04ddab49df3a85ad83622ef42e9e18f9c
+      WORKSTATION_DEMO_REF: 248aeb3ac8c78506d23486eeb70b5b5bbbfac55b
       ROS_DISTRO: ${{ matrix.ros_distro }}
       ROS_CHANNEL: robostack-${{ matrix.ros_distro }}
       ROS_PACKAGE_PREFIX: ros-${{ matrix.ros_distro }}
@@ -45,14 +48,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: Xuwznln/LabDeviceLanDemo
-          ref: 2f98f55015b47816e0a08731ca115903d6ea5161
+          ref: ${{ env.LAN_DEMO_REF }}
           path: readme-examples/LabDeviceLanDemo
 
       - name: Checkout README workstation device example
         uses: actions/checkout@v6
         with:
           repository: Xuwznln/LabDeviceWorkstationDemo
-          ref: ad5b43fc7c64ca02b0020f69aa2ed15bdb0e8089
+          ref: ${{ env.WORKSTATION_DEMO_REF }}
           path: readme-examples/LabDeviceWorkstationDemo
 
       - name: Setup Miniforge
@@ -104,12 +107,48 @@ jobs:
           echo Checking LabDeviceWorkstationDemo registry...
           python -m unilabos --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo\workstation_demo" --external_devices_only
 
+      - name: Install README examples from ordinary pinned GitHub URLs
+        run: |
+          call conda activate check-env
+          call install\unilabos_msgs\setup.bat
+          unilab package install https://github.com/Xuwznln/LabDeviceLanDemo --ref %LAN_DEMO_REF% > lan-package-install.txt
+          type lan-package-install.txt
+          findstr /C:"hub_node_demo" lan-package-install.txt
+          findstr /C:"status_reporter_demo" lan-package-install.txt
+          unilab package install https://github.com/Xuwznln/LabDeviceWorkstationDemo --ref %WORKSTATION_DEMO_REF% > workstation-package-install.txt
+          type workstation-package-install.txt
+          findstr /C:"demo_workstation" workstation-package-install.txt
+          findstr /C:"modbus_sensor" workstation-package-install.txt
+
+      - name: Run pinned HostLink demo closed loops
+        run: |
+          call conda activate check-env
+          call install\unilabos_msgs\setup.bat
+          pushd "%GITHUB_WORKSPACE%\readme-examples\LabDeviceLanDemo"
+          python -m lan_demo.smoke --backend hostlink --timeout 45
+          popd
+          pushd "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo"
+          python -m workstation_demo.smoke --backend hostlink --timeout 45
+          popd
+
+      - name: Gate four-database and control.v1 contracts
+        run: |
+          call conda activate check-env
+          call install\unilabos_msgs\setup.bat
+          python -m pytest -q tests\app\test_package_cli.py tests\server\test_schema_manifest.py tests\server\test_backend_control_protocol.py tests\server\test_workflow_business_coordinator.py -p no:launch_testing -p no:launch_ros
+
       - name: Gate HostLink direct and ROS2-assisted networking
         run: |
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
           echo Running HostLink direct backend, microbackend ownership, ROS2 assist and decorator tests...
-          python -m pytest -q tests\hostlink tests\networking tests\basic tests\device_runtime tests\app\test_backend_selection.py tests\app\test_rclpy_dll_patch.py tests\registry\test_backend_metadata.py tests\ros\test_action_schema_compat.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py -p no:launch_testing -p no:launch_ros
+          python -m pytest -q tests\hostlink tests\networking tests\device_runtime tests\app\test_backend_selection.py tests\app\test_rclpy_dll_patch.py tests\registry\test_backend_metadata.py tests\ros\test_action_schema_compat.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py -p no:launch_testing -p no:launch_ros
+
+      - name: Run all heating scenarios on ROS2
+        run: |
+          call conda activate check-env
+          call install\unilabos_msgs\setup.bat
+          python tests\device_runtime\heating_scenario_smoke.py ros2
 
       - name: Run check mode (AST registry validation)
         # check_mode 会真实 import 所有设备类(连带 matplotlib/opencv 等原生库)。

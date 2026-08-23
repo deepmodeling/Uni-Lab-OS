@@ -1616,27 +1616,32 @@ solenoid_valve:
 
 ### 11.6 参考驱动实现（可运行示例仓库）
 
-为了让上述机制有可直接运行、可对照学习的范本，我们提供了两个**自包含外部设备包**，均作为独立 GitHub 仓库维护（由 [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) fork 生成）。克隆后通过 `--devices <包目录> --external_devices_only` 加载，每个仓库的 README 都附带分步启动教程和实测日志输出，建议在编写自己的驱动前先跑一遍。
+为了让上述机制有可直接运行、可对照学习的范本，我们提供了两个**自包含外部设备包**，均作为独立 GitHub 仓库维护（由 [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) fork 生成）。普通 GitHub 仓库 URL 可直接交给 `unilab package install`；安装器会归一化为 VCS spec、识别仓库实际的 Python distribution，并扫描已安装的 `@device` ID。每个仓库的 README 都附带 HostLink/ROS2 双运行时的有限时 smoke 和终态 JSON。
 
 | 示例仓库                                                                          | 演示要点                                           | 关键技术                                                                                                |
 | --------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo)                   | 局域网跨设备闭环：中枢 hub 与子设备 sub 分进程运行 | 跨设备 `@subscribe` 订阅、`call_device_action` 远程 ros action 调用、自动 `msg_type` 解析、轮次复位检测  |
-| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo)   | 工作站内 `hardware_interface` 代理：多子设备共享同一通信端点 | 共享串口（默认 IO 方法名 `send_command`/`read_data`）、Modbus `extra_info` 按设备注入 `slave_id`（即本章 §11.5） |
+| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo)                   | 局域网跨设备闭环：中枢 hub 与子设备 sub 分进程运行 | HostLink/ROS2 共用 `@subscribe`、`call_device_action` 与轮次复位检测 |
+| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo)   | 工作站内 `hardware_interface` 代理：多子设备共享同一通信端点 | HostLink/ROS2 共用工作站初始化；共享串口与 Modbus `slave_id` 注入 |
 
-**快速启动（通用形式，单进程）：**
+**固定版本安装与闭环验收：**
 
 ```bash
-conda activate unilab
+unilab package install https://github.com/Xuwznln/LabDeviceLanDemo --ref <commit-sha>
+unilab package install https://github.com/Xuwznln/LabDeviceWorkstationDemo --ref <commit-sha>
+
+git clone https://github.com/Xuwznln/LabDeviceLanDemo.git
+cd LabDeviceLanDemo
+python -m lan_demo.smoke --backend hostlink --timeout 45
+python -m lan_demo.smoke --backend ros2 --timeout 60
+
+cd ..
 git clone https://github.com/Xuwznln/LabDeviceWorkstationDemo.git
-python -m unilabos.app.main \
-  --devices <克隆目录下的设备包目录> \
-  --external_devices_only \
-  --ak your_ak --sk your_sk --address test \
-  --disable_browser --port-management 8100 \
-  -g <仓库内提供的图文件>
+cd LabDeviceWorkstationDemo
+python -m workstation_demo.smoke --backend hostlink --timeout 45
+python -m workstation_demo.smoke --backend ros2 --timeout 60
 ```
 
-`--devices` 指向的设备包目录、`-g` 图文件等具体路径以各仓库 README 为准；`LabDeviceLanDemo` 还需按「先 host 后 slave」启动两个进程（仅图文件与 `--is_slave` 不同）。
+smoke 会自行启动并回收所需进程：LAN 示例验证 hub/sub 的 subscribe + remote action；工作站示例验证 shared serial、两个不同 `slave_id` 的 Modbus 子设备及动作返回。它们不要求 AK/SK，也不调用旧 `/api/v1/job/add`；正式工作流正文由 Workflow Authority HTTP API 提供，Edge 只消费 `control.v1` 轻通知后按 UUID 拉取命令。
 
 > 这两个仓库同时是 §9（自定义设备）、§11.5（通信共享机制）的可运行落地示例：想从零写一个新驱动，可直接 fork [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) 作为脚手架，改写设备类与图文件即可。
 

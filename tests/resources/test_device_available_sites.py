@@ -259,7 +259,7 @@ def test_ast_scanner_parses_real_workbench_typed_pose_models():
     ]
 
     def assert_workbench_metadata(metadata):
-        assert metadata["supported_backends"] == ["ros2"]
+        assert metadata["supported_backends"] == ["hostlink", "ros2"]
         assert [
             {
                 "label": site["label"],

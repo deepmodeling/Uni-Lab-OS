@@ -10,6 +10,7 @@ solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -32,6 +33,7 @@ solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -54,6 +56,7 @@ solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -76,6 +79,7 @@ solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -98,6 +102,7 @@ solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -121,6 +126,7 @@ solenoid_valve:
         goal_default:
           command: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -149,6 +155,7 @@ solenoid_valve:
         goal_default:
           string: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -227,6 +234,7 @@ solenoid_valve.mock:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -249,6 +257,7 @@ solenoid_valve.mock:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -272,6 +281,7 @@ solenoid_valve.mock:
         goal_default:
           position: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -297,6 +307,7 @@ solenoid_valve.mock:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -329,6 +340,7 @@ solenoid_valve.mock:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -411,6 +423,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -433,6 +446,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -455,6 +469,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -478,6 +493,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal_default:
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -505,6 +521,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal_default:
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -531,6 +548,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -553,6 +571,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -575,6 +594,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -597,6 +617,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -619,6 +640,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -642,6 +664,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal_default:
           full_command: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -668,6 +691,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal_default:
           baudrate: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -694,6 +718,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal_default:
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -721,6 +746,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
           max_velocity: null
           position: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -751,6 +777,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal_default:
           position: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -780,6 +807,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal_default:
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -807,6 +835,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -829,6 +858,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -987,6 +1017,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1009,6 +1040,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1031,6 +1063,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1054,6 +1087,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal_default:
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1081,6 +1115,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal_default:
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1107,6 +1142,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1129,6 +1165,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1151,6 +1188,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1173,6 +1211,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1195,6 +1234,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1218,6 +1258,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal_default:
           full_command: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1244,6 +1285,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal_default:
           baudrate: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1270,6 +1312,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal_default:
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1297,6 +1340,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
           max_velocity: null
           position: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1327,6 +1371,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal_default:
           position: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1356,6 +1401,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal_default:
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1383,6 +1429,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1405,6 +1452,7 @@ syringe_pump_with_valve.runze.SY03B-T08:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

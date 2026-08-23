@@ -10,6 +10,7 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -32,6 +33,7 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -55,6 +57,7 @@ xrd_d7mate:
         goal_default:
           params: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -83,6 +86,7 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -116,6 +120,7 @@ xrd_d7mate:
         goal_default:
           int_input: 0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -156,6 +161,7 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -186,6 +192,7 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -216,6 +223,7 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -258,6 +266,7 @@ xrd_d7mate:
           sample_id: null
           start_theta: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -304,6 +313,7 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -336,6 +346,7 @@ xrd_d7mate:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -372,6 +383,7 @@ xrd_d7mate:
           current: null
           voltage: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -413,6 +425,7 @@ xrd_d7mate:
           string: ''
           wait_minutes: 3.0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -468,6 +481,7 @@ xrd_d7mate:
         goal_default:
           status: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

@@ -42,10 +42,15 @@ from unilabos.legacy_support.websocket import (
     format_job_log,
 )
 from unilabos.server.scheduler.dispatch import DispatchPayload
+from unilabos.server.scheduler.material_locks import (
+    MaterialActionLockManager,
+    extract_material_uuids,
+)
 from unilabos.registry.action_policy import (
     SUCCESS_TYPE_OPERATOR_INTERVENTION,
     resolve_error_options_by_names,
 )
+from unilabos.registry.material_locks import normalize_material_parameter_names
 from unilabos.utils.type_check import serialize_result_info
 from unilabos.utils.tracing import (
     add_event,
@@ -80,6 +85,9 @@ class JobExecutionBackend:
         status_incidents: Any = None,
         result_bridges: Optional[List[Any]] = None,
         queue_conflicts: bool = False,
+        materials_need_lock_resolver: Optional[
+            Callable[[str, str], List[str]]
+        ] = None,
     ):
         self.device_manager = device_manager or DeviceActionManager()
         self._host_node_getter = host_node_getter or self._default_host_getter
@@ -94,6 +102,10 @@ class JobExecutionBackend:
         ]
         # 后端控制模式不在 Edge 重排命令；冲突代表上游调度错误。
         self.queue_conflicts = bool(queue_conflicts)
+        self._materials_need_lock_resolver = materials_need_lock_resolver
+        self._material_locks = MaterialActionLockManager()
+        self._job_material_uuids: Dict[str, tuple[str, ...]] = {}
+        self._material_waiting_jobs: Dict[str, JobInfo] = {}
         self._dispatch_lock = threading.RLock()
         self._pending_action_error_decisions: Dict[str, Dict[str, Any]] = {}
         self._resolved_action_error_decisions: Dict[str, Dict[str, Any]] = {}
@@ -164,6 +176,29 @@ class JobExecutionBackend:
             node_id=payload.get("node_id", ""),
             retry_count=int(payload.get("retry_count", 0) or 0),
         )
+        try:
+            parameter_names = normalize_material_parameter_names(
+                payload.get("materials_need_lock")
+            )
+            # Wire 元数据用于持久化重放，但不能削弱本地注册表声明。
+            parameter_names.extend(
+                self._resolve_material_lock_parameters(
+                    job_info.device_id,
+                    job_info.action_name,
+                )
+            )
+            material_uuids = self._material_uuids_from_arguments(
+                parameter_names,
+                job_info.action_args,
+            )
+        except (TypeError, ValueError) as exc:
+            self._reject_job(
+                job_info,
+                str(exc),
+                "MaterialLockValidationError",
+            )
+            return
+        self._job_material_uuids[job_info.job_id] = material_uuids
         if (
             not job_info.always_free
             and self.status_incidents is not None
@@ -238,7 +273,7 @@ class JobExecutionBackend:
         job_log = format_job_log(job_info.job_id, job_info.task_id, job_info.device_id, job_info.action_name)
         if should_start_now:
             logger.info("[JobExecutionBackend] job %s start now", job_log)
-            self._put_event(("start", job_info), context=job_info.trace_context)
+            self._request_material_locks_or_wait(job_info)
         elif not self.queue_conflicts:
             logger.error(
                 "[JobExecutionBackend] scheduler dispatched conflicting job %s",
@@ -252,6 +287,83 @@ class JobExecutionBackend:
         else:
             logger.info("[JobExecutionBackend] job %s queued", job_log)
 
+    def _resolve_material_lock_parameters(
+        self, device_id: str, action_name: str
+    ) -> List[str]:
+        if self._materials_need_lock_resolver is not None:
+            return normalize_material_parameter_names(
+                self._materials_need_lock_resolver(device_id, action_name)
+            )
+        adapter = self._host_node_getter()
+        mappings = getattr(adapter, "_action_value_mappings", {}) if adapter else {}
+        actions = mappings.get(device_id, {}) if isinstance(mappings, dict) else {}
+        for candidate in (action_name, f"auto-{action_name}"):
+            mapping = actions.get(candidate)
+            if isinstance(mapping, dict):
+                return normalize_material_parameter_names(
+                    mapping.get("materials_need_lock")
+                )
+        return []
+
+    @staticmethod
+    def _material_uuids_from_arguments(
+        parameter_names: Any,
+        action_args: Mapping[str, Any],
+    ) -> tuple[str, ...]:
+        names = normalize_material_parameter_names(parameter_names)
+        material_uuids: Set[str] = set()
+        for name in names:
+            if name not in action_args:
+                raise ValueError(
+                    f"materials_need_lock 参数 {name!r} 未出现在 action_args 中"
+                )
+            resolved = extract_material_uuids(action_args[name])
+            if not resolved:
+                raise ValueError(
+                    f"materials_need_lock 参数 {name!r} 无法解析权威物料 UUID"
+                )
+            material_uuids.update(resolved)
+        return MaterialActionLockManager.canonicalize(material_uuids)
+
+    def _request_material_locks_or_wait(self, job: JobInfo) -> None:
+        with self._dispatch_lock:
+            material_uuids = self._job_material_uuids.get(job.job_id, ())
+            acquired = self._material_locks.request(job.job_id, material_uuids)
+            if not acquired:
+                self._material_waiting_jobs[job.job_id] = job
+        if acquired:
+            self._put_event(("start", job), context=job.trace_context)
+            return
+        logger.info(
+            "[JobExecutionBackend] job %s 等待物料 UUID %s",
+            job.job_id[:8],
+            list(material_uuids),
+        )
+
+    def _release_material_locks(self, job_id: str) -> None:
+        ready_jobs: List[JobInfo] = []
+        with self._dispatch_lock:
+            ready_job_ids = self._material_locks.release(job_id)
+            self._job_material_uuids.pop(job_id, None)
+            self._material_waiting_jobs.pop(job_id, None)
+            while ready_job_ids:
+                ready_job_id = ready_job_ids.pop(0)
+                ready_job = self._material_waiting_jobs.pop(ready_job_id, None)
+                if (
+                    ready_job is None
+                    or self.device_manager.get_job_info(ready_job_id) is None
+                ):
+                    ready_job_ids.extend(
+                        self._material_locks.release(ready_job_id)
+                    )
+                    continue
+                ready_jobs.append(ready_job)
+        for ready_job in ready_jobs:
+            self._put_event(
+                ("start", ready_job),
+                context=getattr(ready_job, "trace_context", None),
+            )
+
     def _reject_job(
         self,
         job: JobInfo,
@@ -259,6 +371,8 @@ class JobExecutionBackend:
         exception_type: str,
     ) -> None:
         """把微后端无法接受的调度命令作为该 attempt 的 failed 回报。"""
+
+        self._release_material_locks(job.job_id)
 
         item = QueueItem(
             task_type="job_call_back_status",
@@ -372,6 +486,7 @@ class JobExecutionBackend:
         success, next_job, _freed = self.device_manager.cancel_job(job_id)
         if not success:
             return False
+        self._release_material_locks(job_id)
         item = QueueItem(
             task_type="job_call_back_status",
             device_id=job.device_id,
@@ -393,10 +508,7 @@ class JobExecutionBackend:
                     "[JobExecutionBackend] cancellation listener failed"
                 )
         if next_job is not None:
-            self._put_event(
-                ("start", next_job),
-                context=getattr(next_job, "trace_context", None),
-            )
+            self._request_material_locks_or_wait(next_job)
         return True
 
     def cancel_task(self, task_id: str) -> List[str]:
@@ -424,6 +536,7 @@ class JobExecutionBackend:
             task_id
         )
         for job_id in cancelled:
+            self._release_material_locks(job_id)
             job = jobs_by_id.get(job_id)
             if job is None:
                 continue
@@ -452,10 +565,7 @@ class JobExecutionBackend:
                         "[JobExecutionBackend] cancellation listener failed"
                     )
         for next_job in next_jobs:
-            self._put_event(
-                ("start", next_job),
-                context=getattr(next_job, "trace_context", None),
-            )
+            self._request_material_locks_or_wait(next_job)
         with self._status_held_lock:
             held = [
                 job
@@ -464,6 +574,8 @@ class JobExecutionBackend:
             ]
             for job in held:
                 self._status_held_jobs.pop(job.job_id, None)
+        for job in held:
+            self._release_material_locks(job.job_id)
         return cancelled + [job.job_id for job in held]
 
     def busy_device_action_keys(self) -> Set[str]:
@@ -496,6 +608,9 @@ class JobExecutionBackend:
             return
         if status not in ("success", "failed", "canceled"):
             return
+
+        # 设备已经结束对物料的访问；审批只决定后续调度，不继续占用执行锁。
+        self._release_material_locks(item.job_id)
 
         normalized_return_info = (
             dict(return_info) if isinstance(return_info, dict) else {}
@@ -1161,6 +1276,9 @@ class JobExecutionBackend:
                     self._pending -= 1
 
     def _start_goal(self, job: JobInfo) -> None:
+        if self.device_manager.get_job_info(job.job_id) is None:
+            self._release_material_locks(job.job_id)
+            return
         job_log = format_job_log(job.job_id, job.task_id, job.device_id, job.action_name)
         queue_item = QueueItem(
             task_type="job_call_back_status",
@@ -1193,6 +1311,7 @@ class JobExecutionBackend:
                 "category": "transport",
                 "severity": "fatal",
             }
+            self._release_material_locks(job.job_id)
             if not self._begin_action_error_decision(
                 queue_item,
                 return_info,
@@ -1223,6 +1342,7 @@ class JobExecutionBackend:
                 "category": "transport",
                 "severity": "fatal",
             }
+            self._release_material_locks(job.job_id)
             if not self._begin_action_error_decision(
                 queue_item, return_info, {}
             ):
@@ -1237,10 +1357,7 @@ class JobExecutionBackend:
         if finished_job is not None:
             next_job, _lock_became_free = self.device_manager.end_job(job_id)
         if next_job is not None:
-            self._put_event(
-                ("start", next_job),
-                context=getattr(next_job, "trace_context", None),
-            )
+            self._request_material_locks_or_wait(next_job)
 
         add_event(
             "action.finished",
@@ -1258,6 +1375,7 @@ class JobExecutionBackend:
                 listener(job_id, success, ret_value, suc_type)
             except Exception:  # noqa: BLE001 - 单个 listener 异常不阻断其他
                 logger.exception("[JobExecutionBackend] job finished listener failed")
+        self._release_material_locks(job_id)
 
     @staticmethod
     def _default_host_getter() -> Any:
@@ -1266,10 +1384,10 @@ class JobExecutionBackend:
         return get_execution_adapter(0)
 
 
-def make_device_lock_resource_resolver(
+def make_device_materials_need_lock_resolver(
     host_node_getter: Optional[Callable[[], Any]] = None,
 ) -> Callable[[str, str], List[str]]:
-    """生产 lock_resource resolver：读取 ``@action(lock_resource=[...])`` 声明。
+    """读取 ``@action(materials_need_lock=[...])`` 的参数名声明。
 
     查找顺序（对齐「Slave 与 Host 同注册表副本」机制）：
 
@@ -1287,7 +1405,9 @@ def make_device_lock_resource_resolver(
         mapping = mappings.get(action_name) or mappings.get(f"auto-{action_name}")
         if not isinstance(mapping, dict):
             return None
-        return list(mapping.get("lock_resource") or [])
+        return normalize_material_parameter_names(
+            mapping.get("materials_need_lock")
+        )
 
     def resolve(device_id: str, action_name: str) -> List[str]:
         host_node = getter()
@@ -1394,7 +1514,7 @@ def create_edge_stack(
     返回 (scheduler, backend)；backend 已 start，并需由调用方注册进
     执行适配器 bridges（或在测试中手动回调 ``publish_job_status``）。
     ``inventory`` 传入 InventoryService 时启用物料预留/消费衔接。
-    物料锁 resolver 默认接设备 action_value_mappings 的 lock_resource 声明。
+    物料锁 resolver 默认接 action_value_mappings 的 materials_need_lock 声明。
     ``estimator`` 传入 DurationEstimator 时用于泳道图预估（与 orderer 共享）。
     ``monitor`` 传入 MonitorBus 时向实时监控面板推事件。
     ``device_state_store`` 传入 DeviceStateStore 时启用设备状态落盘
@@ -1418,13 +1538,18 @@ def create_edge_stack(
         status_incidents=status_incidents,
         result_bridges=result_bridges,
         queue_conflicts=True,
+        materials_need_lock_resolver=make_device_materials_need_lock_resolver(
+            host_node_getter
+        ),
     )
     scheduler = EdgeScheduler(
         orderer=orderer,
         dispatcher=backend,
         busy_key_provider=backend.busy_device_action_keys,
         inventory=inventory,
-        lock_resource_resolver=make_device_lock_resource_resolver(host_node_getter),
+        materials_need_lock_resolver=make_device_materials_need_lock_resolver(
+            host_node_getter
+        ),
         estimator=estimator,
         monitor=monitor,
         history=history,
@@ -1441,6 +1566,6 @@ __all__ = [
     "JobExecutionBackend",
     "JobFinishedListener",
     "create_edge_stack",
-    "make_device_lock_resource_resolver",
+    "make_device_materials_need_lock_resolver",
     "make_device_status_policy_resolver",
 ]

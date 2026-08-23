@@ -14,6 +14,7 @@ from unilabos.server.composition import (
 from unilabos.server.database import ServerDatabasePaths
 from unilabos.server.scheduler.backend import (
     JobExecutionBackend,
+    make_device_materials_need_lock_resolver,
     make_device_status_policy_resolver,
 )
 from unilabos.server.scheduler.coordinator import WorkflowBusinessCoordinator
@@ -141,6 +142,9 @@ def setup_job_execution_backend(
         status_policy_resolver=make_device_status_policy_resolver(host_node_getter),
         status_incidents=status_incidents,
         result_bridges=[],
+        materials_need_lock_resolver=make_device_materials_need_lock_resolver(
+            host_node_getter
+        ),
     )
     coordinator = WorkflowBusinessCoordinator(
         services.runtime,

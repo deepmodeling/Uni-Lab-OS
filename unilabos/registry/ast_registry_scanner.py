@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from unilabos.registry.backend_metadata import normalize_supported_backends
+from unilabos.registry.material_locks import normalize_material_parameter_names
 from unilabos.registry.utils import resolve_registry_displayname
 from unilabos.resources.objects.site import normalize_available_sites
 
@@ -37,7 +38,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 12      # 缓存/entry 构建格式版本号，格式变更时递增
+_CACHE_VERSION = 13      # 缓存/entry 构建格式版本号，格式变更时递增
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 # 合法的装饰器来源模块
@@ -1010,6 +1011,13 @@ def _extract_class_body(
                     normalize_error_policy(action_args["error_policy"]) or {}
                 )
             method_params = _extract_method_params(item, import_map)
+            action_args["materials_need_lock"] = normalize_material_parameter_names(
+                action_args.get("materials_need_lock"),
+                action_parameter_names=(
+                    param["name"] for param in method_params
+                ),
+                action_name=method_name,
+            )
             return_type = _get_annotation_str(item.returns, import_map)
             is_async = isinstance(item, ast.AsyncFunctionDef)
             method_doc = ast.get_docstring(item)

@@ -10,7 +10,7 @@ service 层产出「该启动的节点 + 解析后的参数」，由 Dispatcher 
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Protocol
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 
 class DispatchPayload(Dict[str, Any]):
@@ -47,6 +47,7 @@ def build_job_start_payload(
     action_name: str,
     action_type: str,
     action_args: Any,
+    materials_need_lock: Optional[List[str]] = None,
 ) -> DispatchPayload:
     """与云端 job_start 消息同形状（engine.SendActionData / ws_client JobAddReq）。"""
     return DispatchPayload(
@@ -58,6 +59,7 @@ def build_job_start_payload(
         action=action_name,
         action_type=action_type,
         action_args=action_args,
+        materials_need_lock=list(materials_need_lock or []),
         sample_material={},
     )
 

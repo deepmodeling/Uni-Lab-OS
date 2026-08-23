@@ -24,7 +24,7 @@
   物料状态不明，同样转 quarantined 待复核
 - 工作流终态（failed/canceled）：剩余 active 预留自动 release（依据 DB，不依赖内存）
 
-物料锁（``@action(lock_resource=[...])``，注入 lock_resource_resolver 时启用）：
+物料锁（``@action(materials_need_lock=[...])``，注入 resolver 时启用）：
 
 - 下发前用 resolver 取该动作声明的 ResourceSlot 参数名，从已解析参数里提取
   资源标识生成锁键；与在执行 job 的锁键冲突 → 本轮跳过（等释放后的重排）
@@ -62,6 +62,7 @@ from unilabos.server.scheduler.ordering import (
     TaskOrderer,
 )
 from unilabos.server.scheduler.param_resolver import ParamResolveError
+from unilabos.server.scheduler.material_locks import extract_material_uuids
 from unilabos.utils.tracing import (
     DetachedSpan,
     add_event,
@@ -70,42 +71,6 @@ from unilabos.utils.tracing import (
 )
 
 logger = logging.getLogger(__name__)
-
-# ResourceSlot 参数值里可作为资源标识的字段（按优先级取第一个非空）
-_RESOURCE_ID_FIELDS = ("unilabos_uuid", "uuid", "id", "name")
-
-
-def _extract_resource_ids(value: Any) -> Set[str]:
-    """从 action 参数值提取资源标识（锁键素材）。
-
-    支持形态：字符串（uuid/名称）、dict（ResourceSlot 原始入参，含
-    unilabos_uuid/uuid/id/name 任一字段，或嵌套 ``data.unilabos_uuid``）、
-    以及它们的 list/tuple。取不到标识的值直接忽略（宁可漏锁不误锁）。
-    """
-    ids: Set[str] = set()
-    if value is None:
-        return ids
-    if isinstance(value, str):
-        if value:
-            ids.add(value)
-        return ids
-    if isinstance(value, (list, tuple, set)):
-        for item in value:
-            ids |= _extract_resource_ids(item)
-        return ids
-    if isinstance(value, dict):
-        nested = value.get("data")
-        if isinstance(nested, dict) and nested.get("unilabos_uuid"):
-            ids.add(str(nested["unilabos_uuid"]))
-            return ids
-        for field_name in _RESOURCE_ID_FIELDS:
-            field_value = value.get(field_name)
-            if isinstance(field_value, str) and field_value:
-                ids.add(field_value)
-                return ids
-        return ids
-    return ids
-
 
 class EdgeScheduler:
     def __init__(
@@ -116,7 +81,9 @@ class EdgeScheduler:
         busy_key_provider: Optional["Callable[[], Set[str]]"] = None,
         workflow_state_listener: Optional["Callable[[str, str], None]"] = None,
         inventory: Any = None,
-        lock_resource_resolver: Optional["Callable[[str, str], List[str]]"] = None,
+        materials_need_lock_resolver: Optional[
+            "Callable[[str, str], List[str]]"
+        ] = None,
         estimator: Optional[DurationEstimator] = None,
         timeline_capacity: int = 400,
         monitor: Any = None,
@@ -143,9 +110,9 @@ class EdgeScheduler:
         self._inventory = inventory
         # 有物料需求的 workflow（其余 workflow 不产生任何 inventory 调用）
         self._material_workflows: Set[str] = set()
-        # 物料/资源锁：resolver(device_id, action_name) -> @action(lock_resource=[...])
+        # 物料锁：resolver(device_id, action_name) -> @action(materials_need_lock=[...])
         # 声明的参数名列表；None = 物料锁关闭
-        self._lock_resource_resolver = lock_resource_resolver
+        self._materials_need_lock_resolver = materials_need_lock_resolver
         # job_id -> 该 job 持有的资源锁键（job 完成/取消时释放）
         self._job_resource_locks: Dict[str, Set[str]] = {}
         # 时长预估器（declared / historical / auto 三种 mode，内含两种计算模式）
@@ -497,7 +464,7 @@ class EdgeScheduler:
                 run.mark_failed(task.node.id)
                 continue
 
-            # 物料锁：@action(lock_resource=[...]) 声明的资源被在执行 job 占用 → 本轮跳过
+            # 物料锁：@action(materials_need_lock=[...]) 声明的物料被占用 → 本轮跳过
             lock_keys = self._resource_lock_keys(task.node, resolved_args)
             if lock_keys & held_resource_locks:
                 logger.info(
@@ -544,6 +511,10 @@ class EdgeScheduler:
                 action_name=task.node.action_name,
                 action_type=task.node.action_type,
                 action_args=resolved_args,
+                materials_need_lock=self._material_lock_parameter_names(
+                    task.node.device_id,
+                    task.node.action_name,
+                ),
             )
             # 预估基于 sjson 覆写后的 resolved 参数：父节点经 gjson/sjson 传下来的
             # 实际值（如 time）直接决定声明式预估结果
@@ -734,16 +705,18 @@ class EdgeScheduler:
         return held
 
     def _resource_lock_keys(self, node: Any, resolved_args: Dict[str, Any]) -> Set[str]:
-        """节点的资源锁键集合：lock_resource 参数值 + 实体型物料需求。"""
+        """节点的资源锁键集合：声明的物料参数值 + 实体型物料需求。"""
         keys: Set[str] = set()
-        if self._lock_resource_resolver is not None:
+        if self._materials_need_lock_resolver is not None:
             try:
-                param_names = self._lock_resource_resolver(node.device_id, node.action_name) or []
+                param_names = self._material_lock_parameter_names(
+                    node.device_id, node.action_name
+                )
             except Exception:  # noqa: BLE001 - resolver 失败按无锁处理，不阻断下发
-                logger.exception("[EdgeScheduler] lock_resource resolver failed")
+                logger.exception("[EdgeScheduler] materials_need_lock resolver failed")
                 param_names = []
             for name in param_names:
-                for rid in _extract_resource_ids(resolved_args.get(name)):
+                for rid in extract_material_uuids(resolved_args.get(name)):
                     keys.add(f"res:{rid}")
         for req in getattr(node, "material_requirements", []) or []:
             if getattr(req, "instance_uuid", ""):
@@ -751,6 +724,15 @@ class EdgeScheduler:
             elif getattr(req, "barcode", ""):
                 keys.add(f"res:barcode:{req.barcode}")
         return keys
+
+    def _material_lock_parameter_names(
+        self, device_id: str, action_name: str
+    ) -> List[str]:
+        if self._materials_need_lock_resolver is None:
+            return []
+        return list(
+            self._materials_need_lock_resolver(device_id, action_name) or []
+        )
 
     def _busy_keys(self) -> Set[str]:
         busy = set(self._external_busy_keys)

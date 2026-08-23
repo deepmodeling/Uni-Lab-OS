@@ -10,6 +10,7 @@ virtual_centrifuge:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -33,6 +34,7 @@ virtual_centrifuge:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -87,6 +89,7 @@ virtual_centrifuge:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -333,6 +336,7 @@ virtual_column:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -356,6 +360,7 @@ virtual_column:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -437,6 +442,7 @@ virtual_column:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -772,6 +778,7 @@ virtual_filter:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -795,6 +802,7 @@ virtual_filter:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -874,6 +882,7 @@ virtual_filter:
             type: ''
           volume: 0.0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -1219,6 +1228,7 @@ virtual_gas_source:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1242,6 +1252,7 @@ virtual_gas_source:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1265,6 +1276,7 @@ virtual_gas_source:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1287,6 +1299,7 @@ virtual_gas_source:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1309,6 +1322,7 @@ virtual_gas_source:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -1341,6 +1355,7 @@ virtual_gas_source:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -1375,6 +1390,7 @@ virtual_gas_source:
         goal_default:
           string: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -1458,6 +1474,7 @@ virtual_heatchill:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1481,6 +1498,7 @@ virtual_heatchill:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1544,6 +1562,7 @@ virtual_heatchill:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -1725,6 +1744,7 @@ virtual_heatchill:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -1883,6 +1903,7 @@ virtual_heatchill:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -2090,6 +2111,7 @@ virtual_multiway_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2113,6 +2135,7 @@ virtual_multiway_valve:
         goal_default:
           port_number: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2140,6 +2163,7 @@ virtual_multiway_valve:
         goal_default:
           position: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2166,6 +2190,7 @@ virtual_multiway_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2189,6 +2214,7 @@ virtual_multiway_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2211,6 +2237,7 @@ virtual_multiway_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2234,6 +2261,7 @@ virtual_multiway_valve:
         goal_default:
           port_number: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2260,6 +2288,7 @@ virtual_multiway_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2283,6 +2312,7 @@ virtual_multiway_valve:
         goal_default:
           port_number: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2312,6 +2342,7 @@ virtual_multiway_valve:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -2357,6 +2388,7 @@ virtual_multiway_valve:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -2542,6 +2574,7 @@ virtual_rotavap:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2565,6 +2598,7 @@ virtual_rotavap:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2623,6 +2657,7 @@ virtual_rotavap:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -2935,6 +2970,7 @@ virtual_sample_demo:
             data_type: sample_index
             handler_key: samples_result_out
             label: 样品索引
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2986,6 +3022,7 @@ virtual_sample_demo:
             data_type: sample_list
             handler_key: absorbance_out
             label: 吸光度列表
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -3038,6 +3075,7 @@ virtual_sample_demo:
             data_type: sample_list
             handler_key: volumes_out
             label: 均分体积
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -3111,6 +3149,7 @@ virtual_separator:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -3134,6 +3173,7 @@ virtual_separator:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -3326,6 +3366,7 @@ virtual_separator:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -4138,6 +4179,7 @@ virtual_solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4161,6 +4203,7 @@ virtual_solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4184,6 +4227,7 @@ virtual_solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4207,6 +4251,7 @@ virtual_solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4229,6 +4274,7 @@ virtual_solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4251,6 +4297,7 @@ virtual_solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -4283,6 +4330,7 @@ virtual_solenoid_valve:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -4317,6 +4365,7 @@ virtual_solenoid_valve:
         goal_default:
           string: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -4359,6 +4408,7 @@ virtual_solenoid_valve:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -4517,6 +4567,7 @@ virtual_solid_dispenser:
           viscous: false
           volume: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -4689,6 +4740,7 @@ virtual_solid_dispenser:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4713,6 +4765,7 @@ virtual_solid_dispenser:
         goal_default:
           reagent_name: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4739,6 +4792,7 @@ virtual_solid_dispenser:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4763,6 +4817,7 @@ virtual_solid_dispenser:
         goal_default:
           mass_str: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4790,6 +4845,7 @@ virtual_solid_dispenser:
         goal_default:
           mol_str: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4882,6 +4938,7 @@ virtual_stirrer:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4905,6 +4962,7 @@ virtual_stirrer:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -4956,6 +5014,7 @@ virtual_stirrer:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -5137,6 +5196,7 @@ virtual_stirrer:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -5309,6 +5369,7 @@ virtual_stirrer:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -5525,6 +5586,7 @@ virtual_transfer_pump:
           velocity: null
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5552,6 +5614,7 @@ virtual_transfer_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5577,6 +5640,7 @@ virtual_transfer_pump:
           velocity: null
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5605,6 +5669,7 @@ virtual_transfer_pump:
         goal_default:
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5630,6 +5695,7 @@ virtual_transfer_pump:
         goal_default:
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5654,6 +5720,7 @@ virtual_transfer_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5677,6 +5744,7 @@ virtual_transfer_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5700,6 +5768,7 @@ virtual_transfer_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5725,6 +5794,7 @@ virtual_transfer_pump:
           velocity: null
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5756,6 +5826,7 @@ virtual_transfer_pump:
           velocity: null
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5786,6 +5857,7 @@ virtual_transfer_pump:
         goal_default:
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5811,6 +5883,7 @@ virtual_transfer_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5840,6 +5913,7 @@ virtual_transfer_pump:
           max_velocity: 0.0
           position: 0.0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -5925,6 +5999,7 @@ virtual_transfer_pump:
           viscous: false
           volume: 0.0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -6070,6 +6145,7 @@ virtual_vacuum_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -6093,6 +6169,7 @@ virtual_vacuum_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -6116,6 +6193,7 @@ virtual_vacuum_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -6138,6 +6216,7 @@ virtual_vacuum_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -6160,6 +6239,7 @@ virtual_vacuum_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -6192,6 +6272,7 @@ virtual_vacuum_pump:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -6226,6 +6307,7 @@ virtual_vacuum_pump:
         goal_default:
           string: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info

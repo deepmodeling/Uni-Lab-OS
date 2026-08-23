@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Iterator
 
 from unilabos.registry.init_enforce import merge_init_param_enforce
+from unilabos.registry.material_locks import normalize_material_parameter_names
 from unilabos.resources.device_site_adapter import apply_device_available_sites
 from unilabos.resources.resource_tracker import ResourceDictInstance
 from unilabos.utils.exception import DeviceClassInvalid
@@ -26,7 +27,22 @@ class DeviceDefinition:
 
     @property
     def action_value_mappings(self) -> dict[str, Any]:
-        return dict(self.driver_config.get("action_value_mappings") or {})
+        mappings: dict[str, Any] = {}
+        for action_name, raw_definition in (
+            self.driver_config.get("action_value_mappings") or {}
+        ).items():
+            if not isinstance(raw_definition, dict):
+                mappings[action_name] = raw_definition
+                continue
+            definition = dict(raw_definition)
+            definition["materials_need_lock"] = (
+                normalize_material_parameter_names(
+                    definition.get("materials_need_lock"),
+                    action_name=str(action_name),
+                )
+            )
+            mappings[action_name] = definition
+        return mappings
 
     @property
     def status_types(self) -> dict[str, Any]:

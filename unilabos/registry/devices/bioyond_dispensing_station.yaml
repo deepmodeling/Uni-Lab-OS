@@ -13,6 +13,7 @@ bioyond_dispensing_station:
         goal_default:
           data: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -41,6 +42,7 @@ bioyond_dispensing_station:
           report_request: null
           used_materials: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -73,6 +75,7 @@ bioyond_dispensing_station:
         goal_default:
           order_id: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -100,6 +103,7 @@ bioyond_dispensing_station:
         goal_default:
           material_name: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -127,6 +131,7 @@ bioyond_dispensing_station:
         goal_default:
           workflow_id: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -179,6 +184,7 @@ bioyond_dispensing_station:
             handler_key: BATCH_CREATE_RESULT
             io_type: sink
             label: Complete Batch Create Result JSON (contains order_codes and order_ids)
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -250,6 +256,7 @@ bioyond_dispensing_station:
             handler_key: BATCH_CREATE_RESULT
             io_type: sink
             label: Complete Batch Create Result JSON (contains order_codes and order_ids)
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -329,6 +336,7 @@ bioyond_dispensing_station:
             handler_key: feeding_order
             io_type: sink
             label: Feeding Order Data From Calculation Node
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -441,6 +449,7 @@ bioyond_dispensing_station:
           speed: ''
           temperature: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -538,6 +547,7 @@ bioyond_dispensing_station:
           temperature: ''
           volume: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -589,6 +599,7 @@ bioyond_dispensing_station:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -617,6 +628,7 @@ bioyond_dispensing_station:
           target_device_id: null
           transfer_groups: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           target_device_id: unilabos_devices
         result: {}
@@ -669,6 +681,7 @@ bioyond_dispensing_station:
             handler_key: batch_reports_result
             io_type: sink
             label: Batch Order Completion Reports
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

@@ -246,6 +246,14 @@ class WorkflowBusinessCoordinator:
                 "action": content.action_name,
                 "action_type": content.action_type,
                 "action_args": content.action_args,
+                "materials_need_lock": sorted(
+                    set(content.materials_need_lock)
+                    | set(
+                        self._action_materials_need_lock(
+                            content.device_uuid, content.action_name
+                        )
+                    )
+                ),
                 "sample_material": content.sample_material,
                 "server_info": content.server_info,
                 "notebook_id": content.notebook_uuid,
@@ -268,6 +276,21 @@ class WorkflowBusinessCoordinator:
         except Exception:  # noqa: BLE001 - capability hint cannot reject a job
             pass
         return False
+
+    def _action_materials_need_lock(
+        self, device_uuid: str, action_name: str
+    ) -> list[str]:
+        try:
+            adapter = self.executor._host_node_getter()
+            mappings = getattr(adapter, "_action_value_mappings", {})
+            actions = mappings.get(device_uuid, {}) if isinstance(mappings, dict) else {}
+            for candidate in (action_name, f"auto-{action_name}"):
+                value = actions.get(candidate)
+                if isinstance(value, dict):
+                    return list(value.get("materials_need_lock") or [])
+        except Exception:  # noqa: BLE001 - capability hint cannot reject a job
+            pass
+        return []
 
     def _apply_error_decision(
         self,

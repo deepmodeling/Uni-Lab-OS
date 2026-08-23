@@ -24,6 +24,7 @@ from unilabos_msgs.msg import Resource
 
 from unilabos.config.config import BasicConfig
 from unilabos.registry.backend_metadata import normalize_supported_backends
+from unilabos.registry.material_locks import normalize_material_parameter_names
 from unilabos.registry.decorators import (
     get_device_meta,
     get_action_meta,
@@ -1040,6 +1041,11 @@ class Registry:
             _fb_iv = (action_args or {}).get("feedback_interval", method_info.get("feedback_interval", 1.0))
             entry["feedback_interval"] = _fb_iv
             entry["error_policy"] = (action_args or {}).get("error_policy") or {}
+            entry["materials_need_lock"] = normalize_material_parameter_names(
+                (action_args or {}).get("materials_need_lock"),
+                action_parameter_names=(param["name"] for param in params),
+                action_name=action_name,
+            )
             nt = normalize_enum_value((action_args or {}).get("node_type"), NodeType)
             if nt:
                 entry["node_type"] = nt
@@ -1179,6 +1185,13 @@ class Registry:
             _fb_iv = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
             action_entry["feedback_interval"] = _fb_iv
             action_entry["error_policy"] = action_args.get("error_policy") or {}
+            action_entry["materials_need_lock"] = normalize_material_parameter_names(
+                action_args.get("materials_need_lock"),
+                action_parameter_names=(
+                    param["name"] for param in method_params
+                ),
+                action_name=action_name,
+            )
             nt = normalize_enum_value(action_args.get("node_type"), NodeType)
             if nt:
                 action_entry["node_type"] = nt
@@ -2195,6 +2208,13 @@ class Registry:
                             "handles": old_cfg.get("handles", []),
                             "placeholder_keys": merged_pk,
                             "error_policy": old_cfg.get("error_policy") or {},
+                            "materials_need_lock": normalize_material_parameter_names(
+                                old_cfg.get("materials_need_lock"),
+                                action_parameter_names=(
+                                    param["name"] for param in v["args"]
+                                ),
+                                action_name=action_key,
+                            ),
                         }
                         if v.get("always_free"):
                             entry["always_free"] = True
@@ -2237,6 +2257,12 @@ class Registry:
                 )
                 for action_name, action_config in device_config["class"]["action_value_mappings"].items():
                     action_config.setdefault("error_policy", {})
+                    action_config["materials_need_lock"] = (
+                        normalize_material_parameter_names(
+                            action_config.get("materials_need_lock"),
+                            action_name=action_name,
+                        )
+                    )
                     if "handles" not in action_config:
                         action_config["handles"] = {}
                     elif isinstance(action_config["handles"], list):

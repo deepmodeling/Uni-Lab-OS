@@ -11,6 +11,7 @@ raman.home_made:
         goal_default:
           int_time: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -37,6 +38,7 @@ raman.home_made:
         goal_default:
           output_voltage_laser: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -64,6 +66,7 @@ raman.home_made:
           int_time: null
           laser_power: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -96,6 +99,7 @@ raman.home_made:
           laser_power: null
           sample_name: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -133,6 +137,7 @@ raman.home_made:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info

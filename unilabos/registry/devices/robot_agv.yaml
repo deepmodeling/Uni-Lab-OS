@@ -13,6 +13,7 @@ agv.SEER:
           ex_data: ''
           obj: receive_socket
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -47,6 +48,7 @@ agv.SEER:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info

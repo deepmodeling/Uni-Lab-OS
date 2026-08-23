@@ -394,6 +394,7 @@ def action(
     node_type: Optional["NodeType"] = None,
     feedback_interval: Optional[float] = None,
     error_policy: Optional[Dict[str, Any]] = None,
+    materials_need_lock: Optional[List[str]] = None,
 ):
     """
     动作方法装饰器
@@ -428,10 +429,13 @@ def action(
                    不填写时不写入注册表。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
+        materials_need_lock: 本动作执行期间需要独占的物料参数名列表。参数值
+                             必须能解析出由物料权威分配的 UUID。
     """
 
     def decorator(func: F) -> F:
         import asyncio as _asyncio
+        import inspect as _inspect
 
         if _asyncio.iscoroutinefunction(func):
             @wraps(func)
@@ -469,6 +473,15 @@ def action(
 
             normalized_error_policy = normalize_error_policy(error_policy) or {}
         meta["error_policy"] = normalized_error_policy
+        from unilabos.registry.material_locks import (
+            normalize_material_parameter_names,
+        )
+
+        meta["materials_need_lock"] = normalize_material_parameter_names(
+            materials_need_lock,
+            action_parameter_names=_inspect.signature(func).parameters,
+            action_name=func.__qualname__,
+        )
         wrapper._action_registry_meta = meta  # type: ignore[attr-defined]
         wrapper._action_error_policy = normalized_error_policy  # type: ignore[attr-defined]
 

@@ -10,6 +10,7 @@ linear_motion.grbl:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -32,6 +33,7 @@ linear_motion.grbl:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -55,6 +57,7 @@ linear_motion.grbl:
         goal_default:
           position: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -80,6 +83,7 @@ linear_motion.grbl:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -102,6 +106,7 @@ linear_motion.grbl:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -135,6 +140,7 @@ linear_motion.grbl:
           behavior_tree: ''
           poses: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -380,6 +386,7 @@ linear_motion.grbl:
             sec: 0
           position: 0.0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -530,6 +537,7 @@ linear_motion.toyo_xyz.sim:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -557,6 +565,7 @@ linear_motion.toyo_xyz.sim:
           retry: 10
           speed: 1
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -604,6 +613,7 @@ linear_motion.toyo_xyz.sim:
           speed: 1
           target_link: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -654,6 +664,7 @@ linear_motion.toyo_xyz.sim:
           parent_link: null
           resource: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -682,6 +693,7 @@ linear_motion.toyo_xyz.sim:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -707,6 +719,7 @@ linear_motion.toyo_xyz.sim:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -753,6 +766,7 @@ linear_motion.toyo_xyz.sim:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -799,6 +813,7 @@ linear_motion.toyo_xyz.sim:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -885,6 +900,7 @@ motor.iCL42:
           position: null
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -916,6 +932,7 @@ motor.iCL42:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -941,6 +958,7 @@ motor.iCL42:
           position: null
           velocity: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -974,6 +992,7 @@ motor.iCL42:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         result:
           success: success
         schema:

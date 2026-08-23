@@ -72,6 +72,7 @@ class ExecuteJobContent(ServerObject):
     action_name: NonEmptyStr
     action_type: str = ""
     action_args: JsonObject = Field(default_factory=dict)
+    materials_need_lock: list[NonEmptyStr] = Field(default_factory=list)
     sample_material: JsonObject = Field(default_factory=dict)
     server_info: Optional[JsonObject] = None
     notebook_uuid: str = ""

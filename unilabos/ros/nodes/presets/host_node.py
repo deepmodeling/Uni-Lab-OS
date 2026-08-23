@@ -1743,6 +1743,7 @@ class HostNode(BaseROS2DeviceNode):
     @action(
         description="设置物料内容物（液体/固体，默认单位 微升/微克）；接收单个物料，设置后输出",
         always_free=True,
+        materials_need_lock=["resource"],
         placeholder_keys={"resource": PLACEHOLDER_DEDUCT_REAGENT},
         handles=[
             ActionInputHandle(
@@ -1800,6 +1801,7 @@ class HostNode(BaseROS2DeviceNode):
     @action(
         description="废弃台面物料（指定设备 + uuid：云端销毁并通知该设备本地移除）",
         always_free=True,
+        materials_need_lock=["resource"],
         placeholder_keys={
             "resource": PLACEHOLDER_NODES,
             "device_id": PLACEHOLDER_DEVICES,
@@ -1909,6 +1911,7 @@ class HostNode(BaseROS2DeviceNode):
     @action(
         description="转移物料（系统派发）：把已物理就位的物料在系统中改挂到目标设备的目标孔位（人工/机械臂工作流的统一末步）",
         always_free=True,
+        materials_need_lock=["resource", "mount_resource"],
         placeholder_keys={
             "target_device": PLACEHOLDER_DEVICES,
             "mount_resource": PLACEHOLDER_NODES,
@@ -1994,6 +1997,7 @@ class HostNode(BaseROS2DeviceNode):
     @action(
         description="人工搬运闸门：到该步暂停等人工确认（人工把物料搬运到位），仅透传物料，不做系统转移（人工工作流中间步，对应机械臂 pick/place）",
         always_free=True,
+        materials_need_lock=["resource", "mount_resource"],
         node_type=NodeType.MANUAL_CONFIRM,
         placeholder_keys={
             "assignee_user_ids": PLACEHOLDER_MANUAL_CONFIRM,

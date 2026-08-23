@@ -11,6 +11,7 @@ xyz_stepper_controller:
         goal_default:
           degrees: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -39,6 +40,7 @@ xyz_stepper_controller:
         goal_default:
           axis: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -67,6 +69,7 @@ xyz_stepper_controller:
         goal_default:
           enable: true
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -98,6 +101,7 @@ xyz_stepper_controller:
           axis: null
           enable: true
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -129,6 +133,7 @@ xyz_stepper_controller:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -155,6 +160,7 @@ xyz_stepper_controller:
         goal_default:
           axis: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -187,6 +193,7 @@ xyz_stepper_controller:
           precision: 100
           speed: 5000
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -235,6 +242,7 @@ xyz_stepper_controller:
           precision: 100
           speed: 5000
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -283,6 +291,7 @@ xyz_stepper_controller:
           revolutions: null
           speed: 5000
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -331,6 +340,7 @@ xyz_stepper_controller:
           y: null
           z: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -378,6 +388,7 @@ xyz_stepper_controller:
           y_deg: null
           z_deg: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -425,6 +436,7 @@ xyz_stepper_controller:
           y_rev: null
           z_rev: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -468,6 +480,7 @@ xyz_stepper_controller:
         goal_default:
           revolutions: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -498,6 +511,7 @@ xyz_stepper_controller:
           axis: null
           speed: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -534,6 +548,7 @@ xyz_stepper_controller:
         goal_default:
           steps: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -562,6 +577,7 @@ xyz_stepper_controller:
         goal_default:
           steps: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -589,6 +605,7 @@ xyz_stepper_controller:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -616,6 +633,7 @@ xyz_stepper_controller:
           axis: null
           timeout: 30.0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

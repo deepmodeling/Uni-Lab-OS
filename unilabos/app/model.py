@@ -58,6 +58,10 @@ class JobAddReq(BaseModel):
     )
     sample_material: dict = Field(examples=[{"string": "string"}], description="sample uuid to material uuid")
     action_args: dict = Field(examples=[{"string": "string"}], description="action arguments", default_factory=dict)
+    materials_need_lock: list[str] | None = Field(
+        default=None,
+        description="@action material parameter names; Edge registry is the fallback authority",
+    )
     task_id: str = Field(examples=["task_id"], description="task uuid (auto-generated if empty)", default="")
     job_id: str = Field(examples=["job_id"], description="goal uuid (auto-generated if empty)", default="")
     node_id: str = Field(examples=["node_id"], description="node uuid", default="")

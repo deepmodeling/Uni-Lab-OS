@@ -373,6 +373,9 @@ def build_action_value_mappings(actions: Dict[str, Any]) -> Dict[str, Any]:
         }
         if goal_default:
             entry["goal_default"] = goal_default
+        materials_need_lock = action_args.get("materials_need_lock")
+        if isinstance(materials_need_lock, list):
+            entry["materials_need_lock"] = list(materials_need_lock)
         result[name] = entry
     return result
 

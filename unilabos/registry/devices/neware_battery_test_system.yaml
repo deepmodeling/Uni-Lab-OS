@@ -12,6 +12,7 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -34,6 +35,7 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -57,6 +59,7 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -82,6 +85,7 @@ neware_battery_test_system:
         goal_default:
           filepath: bts_status.json
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -109,6 +113,7 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         result:
           return_info: return_info
           success: success
@@ -144,6 +149,7 @@ neware_battery_test_system:
         goal_default:
           plate_num: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -170,6 +176,7 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -196,6 +203,7 @@ neware_battery_test_system:
         goal_default:
           string: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -238,6 +246,7 @@ neware_battery_test_system:
           csv_path: null
           output_dir: .
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -269,6 +278,7 @@ neware_battery_test_system:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -305,6 +315,7 @@ neware_battery_test_system:
             handler_key: uploaded_files
             io_type: sink
             label: Uploaded Files (with standard flow info)
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

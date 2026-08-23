@@ -927,22 +927,23 @@ class MessageProcessor:
             microbackend = _get_job_execution_backend()
             if microbackend is None:
                 raise RuntimeError("Job execution microbackend is not available")
-            microbackend.dispatch(
-                {
-                    "job_id": req.job_id,
-                    "task_id": req.task_id,
-                    "node_id": req.node_id,
-                    "device_id": req.device_id,
-                    "action": req.action,
-                    "action_type": req.action_type,
-                    "action_args": req.action_args,
-                    "sample_material": req.sample_material,
-                    "server_info": req.server_info,
-                    "notebook_id": req.notebook_id or "",
-                    "retry_count": req.retry_count,
-                    "always_free": action_always_free,
-                }
-            )
+            dispatch_payload = {
+                "job_id": req.job_id,
+                "task_id": req.task_id,
+                "node_id": req.node_id,
+                "device_id": req.device_id,
+                "action": req.action,
+                "action_type": req.action_type,
+                "action_args": req.action_args,
+                "sample_material": req.sample_material,
+                "server_info": req.server_info,
+                "notebook_id": req.notebook_id or "",
+                "retry_count": req.retry_count,
+                "always_free": action_always_free,
+            }
+            if req.materials_need_lock is not None:
+                dispatch_payload["materials_need_lock"] = req.materials_need_lock
+            microbackend.dispatch(dispatch_payload)
             logger.info(f"[MessageProcessor] Submitted job {job_log} to microbackend")
 
         except Exception as e:

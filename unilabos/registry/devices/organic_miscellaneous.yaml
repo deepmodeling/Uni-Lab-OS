@@ -11,6 +11,7 @@ rotavap.one:
         goal_default:
           cmd: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -36,6 +37,7 @@ rotavap.one:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -59,6 +61,7 @@ rotavap.one:
         goal_default:
           time: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -85,6 +88,7 @@ rotavap.one:
         goal_default:
           time: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -113,6 +117,7 @@ rotavap.one:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -189,6 +194,7 @@ separator.homemade:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -213,6 +219,7 @@ separator.homemade:
           condition: null
           value: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -246,6 +253,7 @@ separator.homemade:
         goal_default:
           data: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -305,6 +313,7 @@ separator.homemade:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           message: message
@@ -462,6 +471,7 @@ separator.homemade:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info

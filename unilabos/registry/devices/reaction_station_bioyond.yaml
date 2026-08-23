@@ -21,6 +21,7 @@ reaction_station.bioyond:
           start_point: 0
           start_step_key: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -63,6 +64,7 @@ reaction_station.bioyond:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -86,6 +88,7 @@ reaction_station.bioyond:
         goal_default:
           json_str: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -114,6 +117,7 @@ reaction_station.bioyond:
         goal_default:
           workflow_ids: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -144,6 +148,7 @@ reaction_station.bioyond:
         goal_default:
           json_str: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -172,6 +177,7 @@ reaction_station.bioyond:
         goal_default:
           report_request: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -199,6 +205,7 @@ reaction_station.bioyond:
         goal_default:
           web_workflow_json: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -232,6 +239,7 @@ reaction_station.bioyond:
           reactor_id: null
           temperature: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -264,6 +272,7 @@ reaction_station.bioyond:
         goal_default:
           preintake_id: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -291,6 +300,7 @@ reaction_station.bioyond:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -317,6 +327,7 @@ reaction_station.bioyond:
           check_interval: 10
           timeout: 7200
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -349,6 +360,7 @@ reaction_station.bioyond:
         goal_default:
           value: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -378,6 +390,7 @@ reaction_station.bioyond:
         goal_default:
           workflow_id: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -405,6 +418,7 @@ reaction_station.bioyond:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -440,6 +454,7 @@ reaction_station.bioyond:
           torque_variation: 2
           volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -502,6 +517,7 @@ reaction_station.bioyond:
             handler_key: ACTUALS_EXTRACTED
             io_type: sink
             label: Extracted Actuals
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -542,6 +558,7 @@ reaction_station.bioyond:
           torque_variation: 1
           volume: '350'
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -609,6 +626,7 @@ reaction_station.bioyond:
             handler_key: solvents
             io_type: source
             label: Solvents Data From Calculation Node
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -690,6 +708,7 @@ reaction_station.bioyond:
             handler_key: feeding_order
             io_type: source
             label: Feeding Order Data From Calculation Node
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -756,6 +775,7 @@ reaction_station.bioyond:
           torque_variation: 1
           volume_formula: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -806,6 +826,7 @@ reaction_station.bioyond:
           task_name: null
           workflow_name: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -843,6 +864,7 @@ reaction_station.bioyond:
           cutoff: '900000'
           temperature: -10.0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -877,6 +899,7 @@ reaction_station.bioyond:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -899,6 +922,7 @@ reaction_station.bioyond:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -933,6 +957,7 @@ reaction_station.bioyond:
           time: '0'
           torque_variation: 1
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1019,6 +1044,7 @@ reaction_station.reactor:
         goal_default:
           payload: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

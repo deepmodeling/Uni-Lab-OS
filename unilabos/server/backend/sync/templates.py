@@ -269,6 +269,11 @@ def _action_definition(raw_action: Any) -> Dict[str, Any]:
         "display_name": str(
             action.get("display_name") or action.get("displayname") or ""
         ).strip(),
+        "materials_need_lock": [
+            str(name)
+            for name in _array(action.get("materials_need_lock"))
+            if str(name).strip()
+        ],
     }
     node_type = str(action.get("node_type") or "").strip()
     if node_type:

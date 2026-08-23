@@ -43,6 +43,7 @@ liquid_handler:
           targets: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           reagent_sources: unilabos_resources
           targets: unilabos_resources
@@ -307,6 +308,7 @@ liquid_handler:
           use_channels: []
           vols: []
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -459,6 +461,7 @@ liquid_handler:
           protocol_type: null
           protocol_version: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -506,6 +509,7 @@ liquid_handler:
           msg: null
           seconds: 0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -536,6 +540,7 @@ liquid_handler:
         goal_default:
           tip_racks: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -567,6 +572,7 @@ liquid_handler:
           volumes: null
           wells: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -605,6 +611,7 @@ liquid_handler:
           volumes: null
           wells: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1073,6 +1080,7 @@ liquid_handler:
           volumes: null
           well_names: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           plate: unilabos_resources
         result: {}
@@ -1628,6 +1636,7 @@ liquid_handler:
         goal_default:
           tip_racks: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1656,6 +1665,7 @@ liquid_handler:
         goal_default:
           targets: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1686,6 +1696,7 @@ liquid_handler:
           target_group_name: null
           unit_volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1719,6 +1730,7 @@ liquid_handler:
         goal_default:
           use_channels: []
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -1771,6 +1783,7 @@ liquid_handler:
           use_channels: []
           vols: []
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -1920,6 +1933,7 @@ liquid_handler:
           tip_spots: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           tip_spots: unilabos_resources
         result:
@@ -2079,6 +2093,7 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -2241,6 +2256,7 @@ liquid_handler:
           offsets: []
           targets: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -2450,6 +2466,7 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -2803,6 +2820,7 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3157,6 +3175,7 @@ liquid_handler:
             y: 0.0
             z: 0.0
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3397,6 +3416,7 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -3545,6 +3565,7 @@ liquid_handler:
           tip_spots: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3698,6 +3719,7 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3889,6 +3911,7 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -4183,6 +4206,7 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           sources: unilabos_resources
           waste_liquid: unilabos_resources
@@ -4441,6 +4465,7 @@ liquid_handler:
           allow_nonzero_volume: false
           use_channels: []
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -4483,6 +4508,7 @@ liquid_handler:
         goal_default:
           allow_nonzero_volume: false
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -4567,6 +4593,7 @@ liquid_handler:
             type: ''
           volume: 0.0
         handles: {}
+        materials_need_lock: []
         result:
           name: name
         schema:
@@ -4811,6 +4838,7 @@ liquid_handler:
           viscous: false
           volume: 0.0
         handles: {}
+        materials_need_lock: []
         schema:
           description: ''
           properties:
@@ -4953,6 +4981,7 @@ liquid_handler:
             data_type: resource
             handler_key: targets_out
             label: 移液后目标孔
+        materials_need_lock: []
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources
@@ -5343,6 +5372,7 @@ liquid_handler.biomek:
           resources: null
           slot_on_deck: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5405,6 +5435,7 @@ liquid_handler.biomek:
           allow_marshal: false
           data: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5441,6 +5472,7 @@ liquid_handler.biomek:
           parent: null
           slot_on_deck: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5504,6 +5536,7 @@ liquid_handler.biomek:
           protocol_type: ''
           protocol_version: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -5574,6 +5607,7 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: plate_out
             label: plate
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -5632,6 +5666,7 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: targets
             label: targets
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -5688,6 +5723,7 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: plate_out
             label: plate
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -5732,6 +5768,7 @@ liquid_handler.biomek:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -5807,6 +5844,7 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: targets_out
             label: targets
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -5928,6 +5966,7 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: targets_out
             label: 移液后目标孔
+        materials_need_lock: []
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources
@@ -6330,6 +6369,7 @@ liquid_handler.laiyu:
           targets: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           reagent_sources: unilabos_resources
           targets: unilabos_resources
@@ -6595,6 +6635,7 @@ liquid_handler.laiyu:
           use_channels: []
           vols: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           resources: unilabos_resources
         result:
@@ -6764,6 +6805,7 @@ liquid_handler.laiyu:
           touch_tip: false
           use_channels: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -6894,6 +6936,7 @@ liquid_handler.laiyu:
           use_channels: []
           vols: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           resources: unilabos_resources
         result:
@@ -7046,6 +7089,7 @@ liquid_handler.laiyu:
           tip_spots: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           tip_spots: unilabos_resources
         result:
@@ -7192,6 +7236,7 @@ liquid_handler.laiyu:
           offsets: []
           targets: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           targets: unilabos_resources
         result:
@@ -7344,6 +7389,7 @@ liquid_handler.laiyu:
           tip_spots: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           tip_spots: unilabos_resources
         result:
@@ -7559,6 +7605,7 @@ liquid_handler.prcxi:
           targets: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           reagent_sources: unilabos_resources
           targets: unilabos_resources
@@ -7824,6 +7871,7 @@ liquid_handler.prcxi:
           use_channels: []
           vols: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           resources: unilabos_resources
         result:
@@ -7979,6 +8027,7 @@ liquid_handler.prcxi:
           protocol_type: ''
           protocol_version: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8026,6 +8075,7 @@ liquid_handler.prcxi:
           msg: null
           seconds: 0
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8055,6 +8105,7 @@ liquid_handler.prcxi:
           temperature: null
           time: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8084,6 +8135,7 @@ liquid_handler.prcxi:
         goal_default:
           tip_racks: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8115,6 +8167,7 @@ liquid_handler.prcxi:
           dis_to_top: 0
           well: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8146,6 +8199,7 @@ liquid_handler.prcxi:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8171,6 +8225,7 @@ liquid_handler.prcxi:
           volumes: null
           wells: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8210,6 +8265,7 @@ liquid_handler.prcxi:
           module_no: null
           time: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8245,6 +8301,7 @@ liquid_handler.prcxi:
         goal_default:
           targets: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8275,6 +8332,7 @@ liquid_handler.prcxi:
           target_group_name: null
           unit_volume: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -8310,6 +8368,7 @@ liquid_handler.prcxi:
         goal_default:
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -8365,6 +8424,7 @@ liquid_handler.prcxi:
           use_channels: []
           vols: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           resources: unilabos_resources
         result:
@@ -8517,6 +8577,7 @@ liquid_handler.prcxi:
           tip_spots: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           tip_spots: unilabos_resources
         result:
@@ -8663,6 +8724,7 @@ liquid_handler.prcxi:
           offsets: []
           targets: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           targets: unilabos_resources
         result:
@@ -8878,6 +8940,7 @@ liquid_handler.prcxi:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           plate: unilabos_resources
           to: unilabos_resources
@@ -9194,6 +9257,7 @@ liquid_handler.prcxi:
           tip_spots: []
           use_channels: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           tip_spots: unilabos_resources
         result:
@@ -9369,6 +9433,7 @@ liquid_handler.prcxi:
             sample_id: ''
             type: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           sources: unilabos_resources
           waste_liquid: unilabos_resources
@@ -9641,6 +9706,7 @@ liquid_handler.prcxi:
             data_type: resource
             handler_key: output_wells
             label: 已设定液体孔
+        materials_need_lock: []
         placeholder_keys:
           wells: unilabos_resources
         result:
@@ -9783,6 +9849,7 @@ liquid_handler.prcxi:
             data_type: number_array
             handler_key: output_volumes
             label: 各孔设定体积
+        materials_need_lock: []
         placeholder_keys:
           plate: unilabos_resources
         result: {}
@@ -10339,6 +10406,7 @@ liquid_handler.prcxi:
         goal_default:
           tip_racks: []
         handles: {}
+        materials_need_lock: []
         placeholder_keys:
           tip_racks: unilabos_resources
         result:
@@ -10466,6 +10534,7 @@ liquid_handler.prcxi:
           viscous: false
           volume: 0.0
         handles: {}
+        materials_need_lock: []
         schema:
           description: ''
           properties:
@@ -10608,6 +10677,7 @@ liquid_handler.prcxi:
             data_type: resource
             handler_key: targets_out
             label: 移液后目标孔
+        materials_need_lock: []
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources
@@ -11041,6 +11111,7 @@ liquid_handler.revvity:
             type: ''
           wf_name: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info

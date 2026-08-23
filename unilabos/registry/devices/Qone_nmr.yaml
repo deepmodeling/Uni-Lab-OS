@@ -10,6 +10,7 @@ Qone_nmr:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -44,6 +45,7 @@ Qone_nmr:
           monitor_dir: null
           stability_checks: 3
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -84,6 +86,7 @@ Qone_nmr:
           string_list: null
           txt_encoding: utf-8
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -117,6 +120,7 @@ Qone_nmr:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -149,6 +153,7 @@ Qone_nmr:
         goal_default:
           string: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info

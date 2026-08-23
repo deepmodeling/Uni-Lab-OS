@@ -4,9 +4,7 @@ import os
 import platform
 import shutil
 import signal
-import subprocess
 import sys
-import time
 from typing import Dict, Any, List
 import networkx as nx
 import yaml
@@ -35,7 +33,6 @@ if unilabos_dir not in sys.path:
 
 from unilabos.app.cli.parser import build_parser  # noqa: E402
 from unilabos.app.cli.router import run_cli_command  # noqa: E402
-from unilabos.app.utils import cleanup_for_restart  # noqa: E402
 from unilabos.utils.banner_print import print_status, print_unilab_banner  # noqa: E402
 from unilabos.config.config import (  # noqa: E402
     BasicConfig,
@@ -43,89 +40,7 @@ from unilabos.config.config import (  # noqa: E402
     load_config,
     resolve_host_node_name,
 )
-
-# Global restart flags (used by ws_client and web/server)
-_restart_requested: bool = False
-_restart_reason: str = ""
-
-RESTART_EXIT_CODE = 42
-
-
-def _build_child_argv():
-    """Build sys.argv for child process, stripping supervisor-only arguments."""
-    result = []
-    skip_next = False
-    for arg in sys.argv:
-        if skip_next:
-            skip_next = False
-            continue
-        if arg in ("--restart_mode", "--restart-mode"):
-            continue
-        if arg in ("--auto_restart_count", "--auto-restart-count"):
-            skip_next = True
-            continue
-        if arg.startswith("--auto_restart_count=") or arg.startswith("--auto-restart-count="):
-            continue
-        result.append(arg)
-    return result
-
-
-def _run_as_supervisor(max_restarts: int):
-    """
-    Supervisor process that spawns and monitors child processes.
-
-    Similar to Uvicorn's --reload: the supervisor itself does no heavy work,
-    it only launches the real process as a child and restarts it when the child
-    exits with RESTART_EXIT_CODE.
-    """
-    child_argv = [sys.executable] + _build_child_argv()
-    restart_count = 0
-
-    print_status(
-        f"[Supervisor] Restart mode enabled (max restarts: {max_restarts}), "
-        f"child command: {' '.join(child_argv)}",
-        "info",
-    )
-
-    while True:
-        print_status(
-            f"[Supervisor] Launching process (restart {restart_count}/{max_restarts})...",
-            "info",
-        )
-
-        try:
-            process = subprocess.Popen(child_argv)
-            exit_code = process.wait()
-        except KeyboardInterrupt:
-            print_status("[Supervisor] Interrupted, terminating child process...", "info")
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-            sys.exit(1)
-
-        if exit_code == RESTART_EXIT_CODE:
-            restart_count += 1
-            if restart_count > max_restarts:
-                print_status(
-                    f"[Supervisor] Maximum restart count ({max_restarts}) reached, exiting",
-                    "warning",
-                )
-                sys.exit(1)
-            print_status(
-                f"[Supervisor] Child requested restart ({restart_count}/{max_restarts}), restarting in 2s...",
-                "info",
-            )
-            time.sleep(2)
-        else:
-            if exit_code != 0:
-                print_status(f"[Supervisor] Child exited with code {exit_code}", "warning")
-            else:
-                print_status("[Supervisor] Child exited normally", "info")
-            sys.exit(exit_code)
-
+from unilabos.utils.address import resolve_address  # noqa: E402
 
 def load_config_from_file(config_path):
     if config_path is None:
@@ -176,12 +91,6 @@ def main():
 
     configure_heating_demo_args(args_dict)
 
-    from unilabos.legacy_support import configure_legacy_support
-
-    configure_legacy_support(bool(args_dict["legacy"]))
-    if args_dict["upload_registry"] and not args_dict["legacy"]:
-        parser.error("--upload_registry uses the old Backend HTTP API; add --legacy")
-
     if run_cli_command(args, parser):
         return
 
@@ -204,11 +113,6 @@ def main():
         from unilabos.app.utils import patch_rclpy_dll_windows
 
         patch_rclpy_dll_windows()
-
-    # Supervisor mode: spawn child processes and monitor for restart
-    if args_dict.get("restart_mode", False):
-        _run_as_supervisor(args_dict.get("auto_restart_count", 5))
-        return
 
     # 环境检查 - 检查并自动安装必需的包 (可选)
     skip_env_check = args_dict.get("skip_env_check", False)
@@ -314,23 +218,10 @@ def main():
     if comm_log_path is not None:
         logger.info(f"[COMM_LOG_FILE] {comm_log_path}")
 
-    if args.addr != parser.get_default("addr"):
-        if args.addr == "test":
-            print_status("使用测试环境地址", "info")
-            HTTPConfig.remote_addr = "https://leap-lab.test.bohrium.com/api/v1"
-        elif args.addr == "uat":
-            print_status("使用uat环境地址", "info")
-            HTTPConfig.remote_addr = "https://leap-lab.uat.bohrium.com/api/v1"
-        elif args.addr == "local":
-            print_status("使用本地环境地址", "info")
-            HTTPConfig.remote_addr = "http://127.0.0.1:48197/api/v1"
-        else:
-            HTTPConfig.remote_addr = args.addr
-
-    # schedule 通道地址：显式指定则直接使用，否则在连接时从 remote_addr 派生
-    if args_dict.get("schedule_addr", ""):
-        HTTPConfig.schedule_addr = args_dict["schedule_addr"]
-        print_status(f"使用独立 schedule 地址: {HTTPConfig.schedule_addr}", "info")
+    address = args_dict.get("address")
+    if address:
+        HTTPConfig.remote_addr = resolve_address(address)
+        print_status(f"使用统一服务地址: {HTTPConfig.remote_addr}", "info")
 
     # 设置BasicConfig参数
     if args_dict.get("ak", ""):
@@ -392,12 +283,6 @@ def main():
         args_dict["_graph_file_path"] = graph_file_path
         graph_preview = _load_graph_json_preview(graph_file_path)
 
-        http_client_for_community = None
-        if args_dict["legacy"] and BasicConfig.ak and BasicConfig.sk:
-            from unilabos.legacy_support.http import get_legacy_http_client
-
-            http_client_for_community = get_legacy_http_client()
-
         if graph_preview:
             from unilabos.app.community_packages import (
                 CommunityPackageError,
@@ -408,7 +293,6 @@ def main():
                 community_result = prepare_community_packages(
                     graph_preview,
                     working_dir=BasicConfig.working_dir,
-                    http_client=http_client_for_community,
                 )
             except CommunityPackageError as exc:
                 print_status(str(exc), "error")
@@ -457,14 +341,6 @@ def main():
         resource_count = len(lab_registry.resource_type_registry)
         print_status(f"Check mode: 注册表验证完成 ({device_count} 设备, {resource_count} 资源)，退出", "info")
         os._exit(0)
-
-    if args_dict["upload_registry"]:
-        if BasicConfig.ak and BasicConfig.sk:
-            from unilabos.app.register import register_devices_and_resources
-
-            register_devices_and_resources(lab_registry)
-        else:
-            print_status("未提供 ak 和 sk，跳过旧 Backend 注册表上报", "warning")
 
     # 以下导入依赖 ROS2 环境，check_mode 已退出不需要
     from unilabos.resources.graphio import (
@@ -605,7 +481,7 @@ def main():
     from unilabos.app.runtime_startup import run_runtime
 
     try:
-        restart_requested = run_runtime(args_dict)
+        run_runtime(args_dict)
     finally:
         if comm_client is not None:
             comm_client.stop()
@@ -613,12 +489,6 @@ def main():
             from unilabos.server.scheduler.integration import shutdown_edge_services
 
             shutdown_edge_services()
-
-    if restart_requested:
-        print_status("[Main] Restart requested, cleaning up...", "info")
-        cleanup_for_restart()
-        raise SystemExit(RESTART_EXIT_CODE)
-
 
 if __name__ == "__main__":
     main()

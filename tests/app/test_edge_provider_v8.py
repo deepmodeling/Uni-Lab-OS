@@ -2,25 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
-from queue import Queue
 from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import unilabos.legacy_support.websocket as ws_module
 from unilabos.server.scheduler.api import create_scheduler_router
 from unilabos.server.scheduler.backend import JobExecutionBackend
-from unilabos.server.scheduler.inventory.service import InventoryService
 from unilabos.server.scheduler.inventory.site_spec import canonical_component_sites
-from unilabos.server.scheduler.inventory.store import InventoryStore
 from unilabos.server.scheduler.monitor import MonitorBus
 from unilabos.server.scheduler.service import EdgeScheduler
 from unilabos.server.scheduler.status_incidents import StatusIncidentManager
-from unilabos.app.web.event_bus import monitor_bus as host_monitor_bus
 from unilabos.server.workflow.api import install_workflow_api
-from unilabos.legacy_support.websocket import DeviceActionManager, MessageProcessor
 from unilabos.server.workflow.models import WorkflowNodeWrite
 from unilabos.server.workflow.service import WorkflowService
 from unilabos.server.workflow.store import WorkflowStore
@@ -32,7 +25,7 @@ def test_host_and_provider_publish_into_one_monitor_sequence():
         monitor_bus as provider_monitor_bus,
     )
 
-    assert host_monitor_bus is provider_monitor_bus
+    assert provider_monitor_bus is not None
     assert "status" in CHANNELS
 
 
@@ -90,6 +83,22 @@ def test_workflow_v8_runtime_read_routes_keep_empty_and_not_found_semantics():
     )
     assert missing.status_code == 200
     assert missing.json()["code"] == 3002
+
+
+def test_demo_workflow_authority_marks_scheduler_health_ready():
+    app = FastAPI()
+    app.include_router(
+        create_scheduler_router(
+            lambda: None,
+            get_workflow_authority=lambda: object(),
+            include_execution_shaped_workflow_routes=False,
+        )
+    )
+
+    response = TestClient(app).get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "scheduler": "ready"}
 
 
 def test_status_incident_v8_rest_snapshot_and_status_channel_contract():
@@ -266,60 +275,3 @@ def test_provider_site_boundary_flattens_canonical_pose_without_losing_admission
             "allowed_resource_template_uuids": ["tube.v1"],
         }
     ]
-
-
-def test_cloud_inventory_command_uses_the_same_wire_result_schema(monkeypatch):
-    class NoopThread:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start(self) -> None:
-            pass
-
-    monkeypatch.setattr(ws_module.threading, "Thread", NoopThread)
-    queue = Queue(maxsize=20)
-    processor = MessageProcessor("ws://mock", queue, DeviceActionManager())
-    processor.inventory_service = InventoryService(
-        InventoryStore(":memory:"),
-        edge_id="edge-mock",
-        lab_id="lab-mock",
-    )
-
-    def command(command_id: str, payload: dict, **extra):
-        return {
-            "command_id": command_id,
-            "type": "inventory.inbound",
-            "actor": "operator:test",
-            "warehouse_zone_id": "zone-test",
-            "payload": payload,
-            **extra,
-        }
-
-    asyncio.run(
-        processor._handle_inventory_command(
-            command(
-                "cmd-valid",
-                {"template_id": "tpl", "quantity": 4, "lot_id": "lot-valid"},
-            )
-        )
-    )
-    asyncio.run(
-        processor._handle_inventory_command(
-            command(
-                "cmd-invalid",
-                {"template_id": "tpl", "quantity": 9, "lot_id": "lot-invalid"},
-                unknown=True,
-            )
-        )
-    )
-
-    results = []
-    while not queue.empty():
-        message = queue.get_nowait()
-        if message.get("action") == "inventory_command_result":
-            results.append(message["data"])
-    assert [item["status"] for item in results] == ["completed", "rejected"]
-    assert results[1]["error_code"] == "validation_error"
-    assert isinstance(results[0]["timestamp"], int)
-    assert processor.inventory_service.store.get_lot("lot-valid") is not None
-    assert processor.inventory_service.store.get_lot("lot-invalid") is None

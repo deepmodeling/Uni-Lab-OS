@@ -5,7 +5,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from unilabos.legacy_support import legacy_support_enabled
 from unilabos.utils import logger
 
 APP_BRIDGES = ("websocket",)
@@ -113,7 +112,7 @@ class BaseBackendClient(ABC):
 
 
 class BackendSessionFactory:
-    """创建固定 WebSocket 传输的后端客户端；--legacy 只改变线协议。"""
+    """创建唯一的 ``control.v1`` Backend WebSocket 客户端。"""
 
     _client_cache: Optional[BaseBackendClient] = None
 
@@ -125,8 +124,6 @@ class BackendSessionFactory:
         Returns:
             通信客户端实例
         """
-        if legacy_support_enabled():
-            return cls._create_legacy_client()
         return cls._create_backend_client()
 
     @classmethod
@@ -153,14 +150,6 @@ class BackendSessionFactory:
         from unilabos.server.backend.websocket import BackendWebSocketClient
 
         return BackendWebSocketClient()
-
-    @classmethod
-    def _create_legacy_client(cls) -> BaseBackendClient:
-        """创建旧后端完整 WebSocket payload 客户端。"""
-
-        from unilabos.legacy_support.websocket import LegacyWebSocketClient
-
-        return LegacyWebSocketClient()
 
     @classmethod
     def reset_client(cls):

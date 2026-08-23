@@ -8,19 +8,22 @@ from typing import Any
 
 import pytest
 
-from unilabos.app.execution_adapter import (
+from unilabos.hostlink.adapter_registry import (
     clear_execution_adapter,
     get_execution_adapter,
     set_execution_adapter,
 )
+from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
 from unilabos.server.scheduler.backend import JobExecutionBackend
 from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.action import ActionContext
 from unilabos.hostlink.backend import HostLinkBackend
-from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
-from unilabos.legacy_support.websocket import LegacyWebSocketClient, QueueItem
+from unilabos.server.scheduler.execution_queue import QueueItem
 from unilabos.registry.action_policy import normalize_error_policy
+from unilabos.server.scheduler.workflow_execution import WorkflowTaskExecutor
+from unilabos.server.workflow.models import WorkflowNodeWrite
+from unilabos.server.workflow.service import WorkflowService
+from unilabos.server.workflow.store import WorkflowStore
 
 
 class CommunicationError(RuntimeError):
@@ -198,6 +201,68 @@ def test_hostlink_adapter_executes_microbackend_job(
     assert status == "success"
     assert data["return_value"] == {"value": 7}
     assert return_info["return_value"] == {"value": 7}
+
+
+def test_local_demo_workflow_task_dispatches_parameterized_hostlink_action(
+    execution_stack,
+) -> None:
+    _adapter, microbackend, driver, _bridge = execution_stack
+    service = WorkflowService(WorkflowStore(":memory:"))
+    executor = WorkflowTaskExecutor(service, microbackend)
+    service.set_task_submitter(executor.submit)
+    executor.start(recover=True)
+    try:
+        workflow = service.create_workflow(
+            name="three-site heating demo",
+            tags=["demo"],
+            description=None,
+            meta_data={},
+        )
+        node_uuid = str(uuid.uuid4())
+        service.save_graph(
+            workflow["uuid"],
+            revision=workflow["revision"],
+            nodes=[
+                WorkflowNodeWrite(
+                    uuid=node_uuid,
+                    name="parameterized HostLink action",
+                    type="device_action",
+                    material_uuid=str(uuid.uuid4()),
+                    action_name="succeed",
+                    action_type="NativeAction",
+                    param={"value": 11},
+                    meta_data={"target_device_id": "device-1"},
+                )
+            ],
+            edges=[],
+        )
+        task = service.create_workflow_task(
+            workflow_uuid=workflow["uuid"],
+            run_mode="normal",
+            target_node_uuid=None,
+            input_value={},
+            description="value=11",
+            meta_data={},
+        )
+        deadline = time.monotonic() + 3
+        current = service.get_workflow_task(task["uuid"])
+        while current["status"] not in {"succeeded", "failed"}:
+            if time.monotonic() >= deadline:
+                pytest.fail("workflow task did not reach a terminal state")
+            time.sleep(0.02)
+            current = service.get_workflow_task(task["uuid"])
+
+        assert current["status"] == "succeeded"
+        assert driver.calls == 1
+        assert current["output"][node_uuid] == {
+            "suc": True,
+            "suc_type": "normal",
+            "return_value": {"value": 11},
+        }
+    finally:
+        service.set_task_submitter(None)
+        executor.stop()
+        service.close()
 
 
 def test_hostlink_adapter_honors_action_goal_and_result_mapping(
@@ -408,40 +473,3 @@ def test_hostlink_injects_declared_system_sample_parameter(execution_stack) -> N
     assert bridge.statuses[-1][2]["return_value"] == {
         "samples": {"sample-1": "material-1"}
     }
-
-
-def test_websocket_reports_hostlink_devices_and_action_locks(execution_stack) -> None:
-    _adapter, _microbackend, _driver, _bridge = execution_stack
-    client = LegacyWebSocketClient()
-    messages: list[dict[str, Any]] = []
-    client.is_disabled = False
-    client.is_connected = lambda: True  # type: ignore[method-assign]
-    client.message_processor.send_message = lambda message: messages.append(message) or True
-
-    client.report_all_action_locks()
-    client.publish_host_ready()
-
-    lock_messages = [
-        message for message in messages if message["action"] == "report_action_lock"
-    ]
-    assert lock_messages
-    locks = lock_messages[-1]["data"]["locks"]
-    assert {lock["action_name"] for lock in locks} == {
-        "succeed",
-        "mapped",
-        "fail",
-        "wait_until_cancelled",
-        "samples",
-    }
-    ready = next(
-        message for message in messages if message["action"] == "host_node_ready"
-    )
-    assert ready["data"]["devices"] == [
-        {
-            "device_id": "device-1",
-            "namespace": "/devices",
-            "device_key": "/devices/device-1",
-            "is_online": True,
-            "machine_name": BasicConfig.machine_name,
-        }
-    ]

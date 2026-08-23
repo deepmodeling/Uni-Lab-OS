@@ -4,9 +4,9 @@ from unilabos.app.cli.parser import build_parser
 from unilabos.config.config import HostLinkConfig
 from unilabos.hostlink.startup import apply_hostlink_cli
 from unilabos.hostlink.startup import (
+    HEATING_DEMO_EDGE_URL,
     HEATING_DEMO_GRAPH,
-    HEATING_DEMO_HOST,
-    HEATING_DEMO_PORT,
+    HEATING_DEMO_HTTP_PORT,
     configure_heating_demo_args,
 )
 
@@ -34,21 +34,25 @@ def test_disable_browser_can_be_combined_with_management_port() -> None:
     assert args.disable_browser is True
 
 
-def test_heating_demo_mode_is_one_command_offline_tolerant_slave() -> None:
+def test_heating_demo_mode_starts_local_host_microbackend() -> None:
     args = vars(build_parser().parse_args(["--demo-mode"]))
 
     configure_heating_demo_args(args)
 
     assert args["backend"] == "hostlink"
-    assert args["is_slave"] is True
-    assert args["slave_no_host"] is True
+    assert args["is_slave"] is False
+    assert args["slave_no_host"] is False
     assert args["test_mode"] is True
+    assert args["external_devices_only"] is True
     assert args["graph"] == str(HEATING_DEMO_GRAPH)
-    assert args["host_node_ip"] == HEATING_DEMO_HOST
-    assert args["hostlink_port"] == HEATING_DEMO_PORT
+    assert args["port_management"] == HEATING_DEMO_HTTP_PORT
+    assert args["host_node_ip"] == ""
+    assert args["hostlink_port"] is None
+    assert HEATING_DEMO_HTTP_PORT == 6005
+    assert HEATING_DEMO_EDGE_URL == "https://edge.whalent.com"
 
 
-def test_heating_demo_mode_preserves_explicit_target_and_graph(tmp_path) -> None:
+def test_heating_demo_mode_preserves_explicit_port_and_graph(tmp_path) -> None:
     graph = tmp_path / "custom.json"
     args = vars(
         build_parser().parse_args(
@@ -56,8 +60,8 @@ def test_heating_demo_mode_preserves_explicit_target_and_graph(tmp_path) -> None
                 "--demo-mode",
                 "--graph",
                 str(graph),
-                "--host-node-ip",
-                "demo.example:39000",
+                "--port",
+                "29005",
             ]
         )
     )
@@ -65,8 +69,7 @@ def test_heating_demo_mode_preserves_explicit_target_and_graph(tmp_path) -> None
     configure_heating_demo_args(args)
 
     assert args["graph"] == str(graph)
-    assert args["host_node_ip"] == "demo.example:39000"
-    assert args["hostlink_port"] is None
+    assert args["port_management"] == 29005
 
 
 def test_networking_cli_accepts_host_and_domain_aliases() -> None:

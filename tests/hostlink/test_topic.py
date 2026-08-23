@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.device_runtime import LocalTopicBus, TopicEvent
+from unilabos.hostlink.topic import LocalTopicBus, TopicEvent
 from unilabos.utils.decorator import subscribe
 
 

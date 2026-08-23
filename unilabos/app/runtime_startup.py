@@ -9,34 +9,34 @@ from unilabos.config.config import BasicConfig
 from unilabos.utils.banner_print import print_status
 
 
-def _run_management_or_wait(backend_thread: threading.Thread) -> bool:
+def _run_management_or_wait(backend_thread: threading.Thread) -> None:
     if not BasicConfig.is_host_mode:
         backend_thread.join()
-        return False
+        return
 
-    from unilabos.app.web import start_server
+    from unilabos.server.api.app import start_server
 
-    return bool(
-        start_server(
-            open_browser=not BasicConfig.disable_browser,
-            port=BasicConfig.port,
-        )
+    start_server(
+        open_browser=not BasicConfig.disable_browser,
+        port=BasicConfig.port,
     )
 
 
-def run_runtime(args: dict[str, Any]) -> bool:
-    """启动 runtime，并返回管理端是否请求 supervisor 重启。"""
+def run_runtime(args: dict[str, Any]) -> None:
+    """启动设备 runtime 和 Host 微后端管理 API。"""
 
     from unilabos.app.backend import start_backend
 
     if args["visual"] == "disable":
-        return _run_management_or_wait(start_backend(**args))
+        _run_management_or_wait(start_backend(**args))
+        return
 
     from unilabos.resources.graphio import dict_from_graph
 
     devices_and_resources = dict_from_graph(args["graph"])
     if devices_and_resources is None:
-        return _run_management_or_wait(start_backend(**args))
+        _run_management_or_wait(start_backend(**args))
+        return
 
     from unilabos.device_mesh.resource_visalization import ResourceVisualization
 
@@ -49,7 +49,7 @@ def run_runtime(args: dict[str, Any]) -> bool:
     backend_thread = start_backend(**args)
 
     if BasicConfig.is_host_mode:
-        from unilabos.app.web import start_server
+        from unilabos.server.api.app import start_server
 
         threading.Thread(
             target=start_server,
@@ -76,7 +76,6 @@ def run_runtime(args: dict[str, Any]) -> bool:
         )
 
     backend_thread.join()
-    return False
 
 
 __all__ = ["run_runtime"]

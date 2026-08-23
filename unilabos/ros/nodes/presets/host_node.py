@@ -58,10 +58,10 @@ from unilabos.utils import logger
 from unilabos.utils.exception import DeviceClassInvalid
 from unilabos.utils.type_check import serialize_result_info
 from unilabos.config.config import BasicConfig
-from unilabos.app.execution_adapter import execution_result_bridges
+from unilabos.hostlink.adapter_registry import execution_result_bridges
 
 if TYPE_CHECKING:
-    from unilabos.legacy_support.websocket import QueueItem
+    from unilabos.server.scheduler.execution_queue import QueueItem
 
 
 @dataclass
@@ -1880,18 +1880,17 @@ class HostNode(BaseROS2DeviceNode):
         与 apply_deduct_resource 一致：入参均为「单个物料」（单 ResourceSlot），框架在 send_goal 已把
         list（一棵树扁平节点组→装配成一个物料）或 dict（资源引用→with_children 拉取）解析为单个 PLR 实例。
 
-        复用 base_device_node.transfer_resource_to_another（移除来源 → 云端改父 → 增加到目标）。
-        transfer 只负责"系统记账"，物理搬运由前序节点（manual_confirm/机械臂 pick+place）保证。
+        复用 base_device_node.transfer_resource_to_another，把转移意图一次提交给 materials
+        authority。微后端先提交权威位置，再按来源 unload → 目标 load 的固定顺序通知设备；
+        设备端只投影权威结果，不会把本地中间状态反向写回。物理搬运仍由前序节点
+        （manual_confirm/机械臂 pick+place）保证。
 
         site：目标父级（carrier/deck/plate 等带 _ordering 的容器）上的槽位名，显式指定物料落在哪个槽位；
         目标端通过 resolve_site_spot（与 set_substance 同一套 slot/site 解析：int 索引 / "A1" 标签 /
-        名称匹配）换算成 assign_child_resource 的 spot。空串视作不指定（由父级默认排布）。注意：若物料 extra
-        里带了前端隐式写入的 update_resource_site，目标端会用 extra 的值覆盖此处显式 site
-        （见 base_device_node.transfer_to_new_resource）。
+        名称匹配）换算成 assign_child_resource 的 spot。空串视作不指定（由父级默认排布）。
 
-        注意：底层按"运行该动作的节点"作为来源执行本地移除，host 运行时来源即 host（根节点）。
-        若物料此前已被 apply_deduct_resource 挂到某边缘设备，该设备的本地副本不会在此处被移除，
-        需依赖下次同步对齐（详见 cursor_docs 记录的源设备移除限制）。
+        注意：来源设备由运行该动作的节点身份确定。Slave 只向 HostLink Host 提交请求，Host
+        校验来源设备归属后代发给微后端；目标设备可位于本机、另一个 Slave 或 ROS2 节点。
         """
         if resource is None:
             raise ValueError("转移失败：未接收到待转移物料")
@@ -2123,7 +2122,7 @@ class HostNode(BaseROS2DeviceNode):
         if resource is None:
             resource = RegularContainer("test_resource传入None")
         return {
-            "resources": ResourceTreeSet.from_plr_resources([resource, *resources], known_newly_created=True).dump(),
+            "resources": ResourceTreeSet.from_plr_resources([resource, *resources]).dump(),
             "devices": [device, *devices],
             "unilabos_samples": [LabSample(sample_uuid=sample_uuid, oss_path="", extra={"material_uuid": content} if isinstance(content, str) else content.serialize()) for sample_uuid, content in sample_uuids.items()]
         }

@@ -50,7 +50,7 @@ class UniLiquidHandlerRvizBackend(LiquidHandlerBackend):
       import rclpy
     except ModuleNotFoundError as exc:
       raise RuntimeError(
-        "UniLiquidHandlerRvizBackend 需要 ROS2；Basic/HostLink 请改用非 RViz backend"
+        "UniLiquidHandlerRvizBackend 需要 ROS2；HostLink 请改用非 RViz backend"
       ) from exc
     super().__init__()
     self._rclpy = rclpy

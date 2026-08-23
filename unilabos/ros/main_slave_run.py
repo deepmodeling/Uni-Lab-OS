@@ -10,7 +10,7 @@ import uuid
 import rclpy
 from unilabos_msgs.srv._serial_command import SerialCommand_Response
 
-from unilabos.app.register import register_devices_and_resources
+from unilabos.app.register import collect_devices_and_resources
 from unilabos.ros.nodes.presets.resource_mesh_manager import ResourceMeshManager
 from unilabos.resources.resource_tracker import DeviceNodeResourceTracker, ResourceTreeSet
 from unilabos.devices.ros_dev.liquid_handler_joint_publisher import LiquidHandlerJointPublisher
@@ -172,7 +172,9 @@ def slave(
         sclient.wait_for_service()
 
         registry_config = {}
-        devices_to_register, resources_to_register = register_devices_and_resources(lab_registry, True)
+        devices_to_register, resources_to_register = collect_devices_and_resources(
+            lab_registry
+        )
         registry_config.update(devices_to_register)
         registry_config.update(resources_to_register)
         request = SerialCommand.Request()

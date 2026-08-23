@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from unilabos.app.execution_adapter import (
+from unilabos.hostlink.adapter_registry import (
     clear_execution_adapter,
     set_execution_adapter,
 )
+from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
 from unilabos.device_runtime.definition import (
-    iter_device_configs,
+    iter_device_config_entries,
     resolve_device_definition,
 )
 from unilabos.hostlink.backend import HostLinkBackend
-from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
 from unilabos.hostlink.local_runtime import (
     HostLinkDriverSpec,
     HostLinkLocalRuntime,
@@ -44,7 +44,9 @@ def build_runtime(devices_config: Any) -> HostLinkLocalRuntime:
     if devices_config is None:
         return runtime
 
-    for device_id, node in iter_device_configs(devices_config):
+    for entry in iter_device_config_entries(devices_config):
+        device_id = entry.device_id
+        node = entry.config
         if node.res_content.klass == "host_node":
             logger.debug(
                 "[HostLink] 跳过图中的 host_node；Host 生命周期由微后端管理"
@@ -67,6 +69,8 @@ def build_runtime(devices_config: Any) -> HostLinkLocalRuntime:
                 action_value_mappings=definition.action_value_mappings,
                 status_names=tuple(definition.status_types),
                 device_config=node,
+                parent_device_id=entry.parent_device_id,
+                hardware_interface=definition.hardware_interface,
             )
         )
     return runtime

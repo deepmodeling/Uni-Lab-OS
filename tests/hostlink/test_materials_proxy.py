@@ -3,13 +3,13 @@ from __future__ import annotations
 from uuid import uuid4
 import time
 
-from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.materials import HostLinkMaterialsClient, LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.hostlink.client import HostLinkClient
 from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.protocol.common import InventoryMutation
 from unilabos.server.protocol.materials import (
     MaterialDataWrite,

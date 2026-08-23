@@ -1673,10 +1673,49 @@ class ResourceTreeSet(object):
         Returns:
             ResourceTreeSet: 反序列化后的资源树集合
         """
-        nested_lists = []
-        for tree_data in data:
-            nested_lists.extend(ResourceTreeSet.from_raw_dict_list(tree_data).trees)
-        return cls(nested_lists)
+        if not isinstance(data, list):
+            raise TypeError("ResourceTreeSet.load 需要 list[list[dict]]")
+
+        trees: list[ResourceTreeInstance] = []
+        global_uuids: set[str] = set()
+        for group_index, tree_data in enumerate(data):
+            if not isinstance(tree_data, list) or not tree_data:
+                raise ValueError(
+                    f"物料组 {group_index} 必须是非空列表，且只表示一棵根树"
+                )
+            group_uuids: set[str] = set()
+            for node in tree_data:
+                if not isinstance(node, dict):
+                    raise TypeError(
+                        f"物料组 {group_index} 的节点必须是字典"
+                    )
+                node_uuid = str(
+                    node.get("uuid")
+                    or (node.get("data") or {}).get("unilabos_uuid")
+                    or ""
+                ).strip()
+                if not node_uuid:
+                    raise ValueError(
+                        f"物料组 {group_index} 存在缺少微后端 UUID 的节点"
+                    )
+                if node_uuid in group_uuids:
+                    raise ValueError(
+                        f"物料组 {group_index} 存在重复 UUID: {node_uuid}"
+                    )
+                if node_uuid in global_uuids:
+                    raise ValueError(
+                        f"不同物料组之间存在重复 UUID: {node_uuid}"
+                    )
+                group_uuids.add(node_uuid)
+            parsed = cls.from_raw_dict_list(tree_data)
+            if len(parsed.trees) != 1:
+                raise ValueError(
+                    f"物料组 {group_index} 必须恰好包含一个根节点，"
+                    f"实际为 {len(parsed.trees)} 个"
+                )
+            trees.append(parsed.trees[0])
+            global_uuids.update(group_uuids)
+        return cls(trees)
 
 
 def prepare_resource_creation_payloads(
@@ -2095,6 +2134,9 @@ class DeviceNodeResourceTracker(object):
         self.resources.append(resource)
         # 递归收集uuid映射
         self._collect_uuid_mapping(resource)
+        observer = getattr(self, "_material_snapshot_observer", None)
+        if observer is not None:
+            observer.observe(resource)
 
     def remove_resource(self, resource) -> bool:
         """
@@ -2106,6 +2148,10 @@ class DeviceNodeResourceTracker(object):
         Returns:
             bool: 如果成功移除返回True，资源不存在返回False
         """
+        observer = getattr(self, "_material_snapshot_observer", None)
+        if observer is not None:
+            observer.unobserve(resource)
+
         # 从 resources 列表中移除
         resource_id = id(resource)
         for i, r in enumerate(self.resources):
@@ -2137,6 +2183,10 @@ class DeviceNodeResourceTracker(object):
 
     def clear_resource(self):
         """清空所有资源"""
+        observer = getattr(self, "_material_snapshot_observer", None)
+        if observer is not None:
+            for resource in list(self.resources):
+                observer.unobserve(resource)
         self.resources = []
         self.uuid_to_resources.clear()
         self.resource2parent_resource.clear()

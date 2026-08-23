@@ -1,4 +1,4 @@
-"""Small ROS-shaped runtime primitives implemented with the Python stdlib."""
+"""HostLink 对 ROS clock、rate 和 timer 调用形状的轻量兼容。"""
 
 from __future__ import annotations
 
@@ -33,93 +33,6 @@ class DeviceClock:
         return DeviceTime()
 
 
-@dataclass(frozen=True)
-class DeviceParameterValue:
-    value: Any
-
-    @property
-    def bool_value(self) -> bool:
-        return bool(self.value) if isinstance(self.value, bool) else False
-
-    @property
-    def integer_value(self) -> int:
-        return (
-            int(self.value)
-            if isinstance(self.value, int) and not isinstance(self.value, bool)
-            else 0
-        )
-
-    @property
-    def double_value(self) -> float:
-        return (
-            float(self.value)
-            if isinstance(self.value, (int, float)) and not isinstance(self.value, bool)
-            else 0.0
-        )
-
-    @property
-    def string_value(self) -> str:
-        return self.value if isinstance(self.value, str) else ""
-
-    @property
-    def byte_array_value(self) -> list[int]:
-        return list(self.value) if isinstance(self.value, (bytes, bytearray)) else []
-
-    @property
-    def bool_array_value(self) -> list[bool]:
-        return (
-            list(self.value)
-            if isinstance(self.value, list)
-            and all(isinstance(v, bool) for v in self.value)
-            else []
-        )
-
-    @property
-    def integer_array_value(self) -> list[int]:
-        return (
-            list(self.value)
-            if isinstance(self.value, list)
-            and all(isinstance(v, int) and not isinstance(v, bool) for v in self.value)
-            else []
-        )
-
-    @property
-    def double_array_value(self) -> list[float]:
-        return (
-            [float(v) for v in self.value]
-            if isinstance(self.value, list)
-            and all(
-                isinstance(v, (int, float)) and not isinstance(v, bool)
-                for v in self.value
-            )
-            else []
-        )
-
-    @property
-    def string_array_value(self) -> list[str]:
-        return (
-            list(self.value)
-            if isinstance(self.value, list)
-            and all(isinstance(v, str) for v in self.value)
-            else []
-        )
-
-
-@dataclass(frozen=True)
-class DeviceParameter:
-    name: str
-    value: Any = None
-
-    def get_parameter_value(self) -> DeviceParameterValue:
-        return DeviceParameterValue(self.value)
-
-
-@dataclass(frozen=True)
-class SetParametersResult:
-    successful: bool = True
-    reason: str = ""
-
-
 class DeviceRate:
     def __init__(self, frequency: float) -> None:
         if float(frequency) <= 0:
@@ -131,7 +44,7 @@ class DeviceRate:
 
 
 class DeviceTimer:
-    """A repeating timer scheduled by a backend-neutral ``DeviceNode``."""
+    """在 HostLink 设备事件循环中运行的重复定时器。"""
 
     def __init__(
         self,
@@ -208,11 +121,8 @@ class DeviceTimer:
 
 __all__ = [
     "DeviceClock",
-    "DeviceParameter",
-    "DeviceParameterValue",
     "DeviceRate",
     "DeviceTime",
     "DeviceTimer",
-    "SetParametersResult",
     "TimeMessage",
 ]

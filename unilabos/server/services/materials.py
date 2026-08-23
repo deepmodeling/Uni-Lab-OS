@@ -1751,7 +1751,9 @@ class MaterialsService:
                     mode="json", exclude={"data", "substances"}
                 )
                 data_values["data_json"] = node.data.data
-                data_values["sites_initialized"] = bool(node_sites[node.client_ref])
+                # create_tree 已由 authority 完整解析模板；即使模板没有 Site，
+                # 空数组也仍是权威快照，不能退回“尚未初始化”的第三态。
+                data_values["sites_initialized"] = True
                 state_hash = self._data_state_hash(
                     {
                         **node.data.model_dump(mode="json"),

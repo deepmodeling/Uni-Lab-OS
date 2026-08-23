@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
+from contextvars import ContextVar
+import logging
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol, Sequence
+from typing import Any, Awaitable, Callable, Iterator, Protocol, Sequence
 from uuid import uuid4
 
 from unilabos.resources.resource_tracker import ResourceTreeSet
@@ -22,12 +26,10 @@ from unilabos.server.protocol.common import (
     AggregatePrecondition,
     InventoryMutation,
 )
-from unilabos.server.protocol.materials import (
-    MaterialAggregateRead,
-    MaterialDelete,
-    MaterialMove,
-    SiteRead,
-)
+from unilabos.server.protocol.materials import MaterialDelete
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,7 +43,7 @@ class MaterialSyncResponse:
 
 
 class MaterialSyncService:
-    """HostLink/Basic 使用的无 ROS 本地物料同步消息类型。"""
+    """HostLink 使用的无 ROS 本地物料同步消息类型。"""
 
     Request = MaterialSyncRequest
     Response = MaterialSyncResponse
@@ -64,21 +66,21 @@ class ResourceService(Protocol):
         resources: Any,
     ) -> ResourceTreeSet: ...
 
+    async def snapshot_resource_tree(
+        self,
+        device_id: str,
+        device_uuid: str,
+        root_resource: Any,
+    ) -> ResourceTreeSet:
+        """提交一棵 UUID 集合完整的运行时物料树快照。"""
+        ...
+
     async def get_resources(
         self,
         device_id: str,
         resources_uuid: list[str],
         with_children: bool,
     ) -> ResourceTreeSet: ...
-
-    async def move_resources(
-        self,
-        device_id: str,
-        device_uuid: str,
-        resources_uuid: Sequence[str],
-        target_resources_uuid: Sequence[str],
-        sites: Sequence[Any | None],
-    ) -> list[MaterialAggregateRead]: ...
 
     def get_resources_sync(
         self,
@@ -115,6 +117,279 @@ class ResourceService(Protocol):
 
 
 GatewayProvider = Callable[[], MaterialGateway]
+
+
+@dataclass
+class _ObservedMaterialRoot:
+    root: Any
+    did_assign: Callable[[Any], None]
+    did_unassign: Callable[[Any], None]
+    state_callbacks: dict[int, tuple[Any, Callable[[dict[str, Any]], None]]]
+    dirty: bool = False
+    scheduled: bool = False
+
+
+class MaterialSnapshotObserver:
+    """把任意 PLR 后代变更合并成完整根物料树 snapshot。
+
+    PLR 只会向父节点传播 assign/unassign callback，state callback 不传播。
+    因此这里递归监听每个后代的 state，但以根对象为唯一排队键。一次事件循环
+    内连续修改多个孔位只提交一次；提交期间再次发生变化则紧接着再提交一轮。
+    """
+
+    def __init__(
+        self,
+        service: ResourceService,
+        *,
+        device_id: Callable[[], str],
+        device_uuid: Callable[[], str],
+        schedule: Callable[[Awaitable[Any]], Any],
+    ) -> None:
+        self._service = service
+        self._device_id = device_id
+        self._device_uuid = device_uuid
+        self._schedule = schedule
+        self._roots: dict[int, _ObservedMaterialRoot] = {}
+        self._guard = threading.RLock()
+        self._suppression_depth: ContextVar[int] = ContextVar(
+            f"material_snapshot_suppression_{id(self)}",
+            default=0,
+        )
+        self._errors: list[BaseException] = []
+
+    def set_service(self, service: ResourceService) -> None:
+        """运行时链路重绑时复用 tracker 上的同一个 observer。"""
+
+        self._service = service
+
+    @property
+    def errors(self) -> tuple[BaseException, ...]:
+        with self._guard:
+            return tuple(self._errors)
+
+    @contextmanager
+    def suppress_authority_projection(self) -> Iterator[None]:
+        """权威快照投影回 PLR 时禁止产生反向 snapshot。"""
+
+        token = self._suppression_depth.set(
+            self._suppression_depth.get() + 1
+        )
+        try:
+            yield
+        finally:
+            self._suppression_depth.reset(token)
+
+    @staticmethod
+    def _can_observe(resource: Any) -> bool:
+        return bool(
+            str(getattr(resource, "unilabos_uuid", "") or "").strip()
+            and callable(
+                getattr(resource, "register_state_update_callback", None)
+            )
+            and callable(
+                getattr(resource, "register_did_assign_resource_callback", None)
+            )
+            and callable(
+                getattr(resource, "register_did_unassign_resource_callback", None)
+            )
+        )
+
+    @staticmethod
+    def _walk(resource: Any) -> list[Any]:
+        result = [resource]
+        for child in list(getattr(resource, "children", None) or []):
+            result.extend(MaterialSnapshotObserver._walk(child))
+        return result
+
+    def observe(self, root: Any) -> bool:
+        """监听一棵已经由微后端分配 UUID 的 PLR 根树。"""
+
+        if not self._can_observe(root):
+            return False
+        root_key = id(root)
+        with self._guard:
+            if root_key in self._roots:
+                return False
+
+            def did_assign(resource: Any, *, _root_key: int = root_key) -> None:
+                self._observe_state_subtree(_root_key, resource)
+                self._queue(_root_key)
+
+            def did_unassign(resource: Any, *, _root_key: int = root_key) -> None:
+                self._drop_state_subtree(_root_key, resource)
+                self._queue(_root_key)
+
+            observed = _ObservedMaterialRoot(
+                root=root,
+                did_assign=did_assign,
+                did_unassign=did_unassign,
+                state_callbacks={},
+            )
+            self._roots[root_key] = observed
+
+        root.register_did_assign_resource_callback(did_assign)
+        root.register_did_unassign_resource_callback(did_unassign)
+        self._observe_state_subtree(root_key, root)
+        return True
+
+    def observe_all(self, roots: Sequence[Any]) -> None:
+        for root in roots:
+            self.observe(root)
+
+    def _observe_state_subtree(self, root_key: int, resource: Any) -> None:
+        for node in self._walk(resource):
+            register = getattr(node, "register_state_update_callback", None)
+            if not callable(register):
+                continue
+            node_key = id(node)
+            with self._guard:
+                observed = self._roots.get(root_key)
+                if observed is None or node_key in observed.state_callbacks:
+                    continue
+
+                def state_updated(
+                    _state: dict[str, Any],
+                    *,
+                    _root_key: int = root_key,
+                ) -> None:
+                    self._queue(_root_key)
+
+                observed.state_callbacks[node_key] = (node, state_updated)
+            register(state_updated)
+
+    def _drop_state_subtree(self, root_key: int, resource: Any) -> None:
+        for node in self._walk(resource):
+            with self._guard:
+                observed = self._roots.get(root_key)
+                entry = (
+                    observed.state_callbacks.pop(id(node), None)
+                    if observed is not None
+                    else None
+                )
+            if entry is None:
+                continue
+            deregister = getattr(
+                entry[0], "deregister_state_update_callback", None
+            )
+            if callable(deregister):
+                try:
+                    deregister(entry[1])
+                except ValueError:
+                    pass
+
+    def unobserve(self, root: Any) -> bool:
+        root_key = id(root)
+        with self._guard:
+            observed = self._roots.pop(root_key, None)
+        if observed is None:
+            return False
+        for method_name, callback in (
+            ("deregister_did_assign_resource_callback", observed.did_assign),
+            (
+                "deregister_did_unassign_resource_callback",
+                observed.did_unassign,
+            ),
+        ):
+            deregister = getattr(root, method_name, None)
+            if callable(deregister):
+                try:
+                    deregister(callback)
+                except ValueError:
+                    pass
+        for node, callback in list(observed.state_callbacks.values()):
+            deregister = getattr(node, "deregister_state_update_callback", None)
+            if callable(deregister):
+                try:
+                    deregister(callback)
+                except ValueError:
+                    pass
+        return True
+
+    def _queue(self, root_key: int) -> None:
+        if self._suppression_depth.get() > 0:
+            return
+        with self._guard:
+            observed = self._roots.get(root_key)
+            if observed is None:
+                return
+            observed.dirty = True
+            if observed.scheduled:
+                return
+            observed.scheduled = True
+        coroutine = self._flush(root_key)
+        try:
+            self._schedule(coroutine)
+        except Exception as exc:
+            coroutine.close()
+            with self._guard:
+                current = self._roots.get(root_key)
+                if current is not None:
+                    current.scheduled = False
+                self._errors.append(exc)
+            logger.exception("物料 snapshot 无法进入 backend 执行队列")
+
+    async def _flush(self, root_key: int) -> None:
+        # 合并同一个同步 tick 内多个 child 的变化。
+        await asyncio.sleep(0)
+        while True:
+            with self._guard:
+                observed = self._roots.get(root_key)
+                if observed is None:
+                    return
+                observed.dirty = False
+                root = observed.root
+            try:
+                # 先在设备执行线程冻结整棵 PLR 树，避免后台 I/O 时继续读取
+                # 一半旧、一半新的 child state。
+                runtime_tree = ResourceTreeSet.from_plr_resources([root])
+                snapshot_method = getattr(
+                    self._service, "snapshot_resource_tree", None
+                )
+                if callable(snapshot_method):
+                    await snapshot_method(
+                        self._device_id(),
+                        self._device_uuid(),
+                        runtime_tree,
+                    )
+                else:
+                    # 仅供旧测试替身使用；生产 ResourceService 必须提供严格入口。
+                    await self._service.update_resources(
+                        self._device_id(),
+                        self._device_uuid(),
+                        runtime_tree,
+                    )
+            except asyncio.CancelledError:
+                with self._guard:
+                    current = self._roots.get(root_key)
+                    if current is not None:
+                        current.scheduled = False
+                raise
+            except Exception as exc:
+                logger.exception("提交完整物料根树 snapshot 失败")
+                with self._guard:
+                    self._errors.append(exc)
+                    current = self._roots.get(root_key)
+                    if current is not None:
+                        current.scheduled = False
+                return
+            with self._guard:
+                current = self._roots.get(root_key)
+                if current is None:
+                    return
+                if current.dirty:
+                    continue
+                current.scheduled = False
+                return
+
+    async def wait_idle(self) -> None:
+        """等待当前已排队的 snapshot 完成，主要供停机排空和测试使用。"""
+
+        while True:
+            with self._guard:
+                pending = any(item.scheduled for item in self._roots.values())
+            if not pending:
+                return
+            await asyncio.sleep(0)
 
 
 def _runtime_gateway() -> MaterialGateway:
@@ -285,6 +560,8 @@ class AuthorityResourceService:
         device_id: str,
         device_uuid: str,
         resources: Any,
+        *,
+        allow_partial: bool = True,
     ) -> ResourceTreeSet:
         runtime = _existing_tree_set(resources)
         gateway = self._gateway()
@@ -317,7 +594,7 @@ class AuthorityResourceService:
             snapshot = resource_tree_to_snapshot(
                 partial,
                 base,
-                allow_partial=True,
+                allow_partial=allow_partial,
             )
             diff = gateway.compare_snapshot(snapshot)
             if diff.changed:
@@ -349,159 +626,20 @@ class AuthorityResourceService:
             resources,
         )
 
-    @staticmethod
-    def _destination_site(
-        target: MaterialAggregateRead,
-        selector: Any | None,
-    ) -> SiteRead | None:
-        if selector is None or str(selector).strip() == "":
-            return None
-        normalized = str(selector).strip()
-        matches = [
-            site
-            for site in target.sites
-            if normalized
-            in {
-                site.site_uuid,
-                site.label,
-                str(site.site_index),
-            }
-        ]
-        if not matches:
-            raise ValueError(
-                f"目标物料 {target.material.material_uuid} 不存在 Site {selector!r}"
-            )
-        if len(matches) > 1:
-            raise ValueError(
-                f"目标物料 {target.material.material_uuid} 的 Site {selector!r} 不唯一"
-            )
-        return matches[0]
-
-    @staticmethod
-    def _move_preconditions(
-        material: MaterialAggregateRead,
-        source_site: SiteRead | None,
-        destination_site: SiteRead | None,
-    ) -> list[AggregatePrecondition]:
-        conditions = [
-            AggregatePrecondition(
-                aggregate_type="material",
-                aggregate_uuid=material.material.material_uuid,
-                expected_version=material.material.version,
-                expected_state_hash=material.state_hash,
-            )
-        ]
-        seen_sites: set[str] = set()
-        for site in (source_site, destination_site):
-            if site is None or site.site_uuid in seen_sites:
-                continue
-            seen_sites.add(site.site_uuid)
-            conditions.append(
-                AggregatePrecondition(
-                    aggregate_type="site",
-                    aggregate_uuid=site.site_uuid,
-                    expected_version=site.version,
-                )
-            )
-        return conditions
-
-    def move_resources_sync(
+    async def snapshot_resource_tree(
         self,
         device_id: str,
         device_uuid: str,
-        resources_uuid: Sequence[str],
-        target_resources_uuid: Sequence[str],
-        sites: Sequence[Any | None],
-    ) -> list[MaterialAggregateRead]:
-        material_uuids = [str(value or "").strip() for value in resources_uuid]
-        target_uuids = [
-            str(value or "").strip() for value in target_resources_uuid
-        ]
-        site_selectors = list(sites)
-        if not material_uuids:
-            raise ValueError("物料转移至少需要一个来源物料")
-        if not (
-            len(material_uuids) == len(target_uuids) == len(site_selectors)
-        ):
-            raise ValueError("来源物料、目标物料和 Site 数量必须一致")
-        if any(not value for value in material_uuids):
-            raise ValueError("来源物料 UUID 不能为空")
-        if any(not value for value in target_uuids):
-            raise ValueError("目标物料 UUID 不能为空")
+        root_resource: Any,
+    ) -> ResourceTreeSet:
+        """严格提交完整根树；缺少任一权威 child 都拒绝，不做局部合并。"""
 
-        gateway = self._gateway()
-        aggregate_cache: dict[str, MaterialAggregateRead] = {}
-        root_cache: dict[str, str] = {}
-        moved: list[MaterialAggregateRead] = []
-        for material_uuid, target_uuid, selector in zip(
-            material_uuids,
-            target_uuids,
-            site_selectors,
-        ):
-            material = gateway.get_material(material_uuid)
-            target = gateway.get_material(target_uuid)
-            destination_site = self._destination_site(target, selector)
-            source_root_uuid = self._root_material_uuid(
-                gateway,
-                material_uuid,
-                aggregate_cache,
-                root_cache,
-            )
-            source_tree = gateway.get_tree(source_root_uuid)
-            source_site = next(
-                (
-                    site
-                    for node in source_tree.nodes
-                    for site in node.sites
-                    if site.occupied_material_uuid == material_uuid
-                ),
-                None,
-            )
-            mutation = self._mutation(
-                "move_material",
-                device_id=device_id,
-                device_uuid=device_uuid,
-                root_material_uuid=material_uuid,
-                preconditions=self._move_preconditions(
-                    material,
-                    source_site,
-                    destination_site,
-                ),
-            )
-            result = gateway.move_material(
-                mutation,
-                MaterialMove(
-                    material_uuid=material_uuid,
-                    destination_site_uuid=(
-                        destination_site.site_uuid
-                        if destination_site is not None
-                        else None
-                    ),
-                    parent_material_uuid=(
-                        None if destination_site is not None else target_uuid
-                    ),
-                ),
-            )
-            moved.append(result.data)
-            aggregate_cache[material_uuid] = result.data
-            root_cache.clear()
-        return moved
-
-    async def move_resources(
-        self,
-        device_id: str,
-        device_uuid: str,
-        resources_uuid: Sequence[str],
-        target_resources_uuid: Sequence[str],
-        sites: Sequence[Any | None],
-    ) -> list[MaterialAggregateRead]:
         return await asyncio.to_thread(
-            self.move_resources_sync,
+            self._update_sync,
             device_id,
             device_uuid,
-            resources_uuid,
-            target_resources_uuid,
-            sites,
+            root_resource,
+            allow_partial=False,
         )
 
     def _get_sync(
@@ -614,6 +752,7 @@ class AuthorityResourceService:
 
 __all__ = [
     "AuthorityResourceService",
+    "MaterialSnapshotObserver",
     "MaterialSyncRequest",
     "MaterialSyncResponse",
     "MaterialSyncService",

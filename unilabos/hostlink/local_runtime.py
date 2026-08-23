@@ -25,12 +25,32 @@ from typing import (
 
 from unilabos.device_runtime.action import ActionContext
 from unilabos.device_runtime.driver_creator import (
+    is_workstation_driver,
     select_driver_creator,
 )
 from unilabos.device_runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.device_runtime.resource import ResourceService
-from unilabos.device_runtime.service import LocalServiceBus
-from unilabos.device_runtime.topic import LocalTopicBus, message_to_value
+from unilabos.hostlink.service import (
+    DeviceService,
+    DeviceServiceClient,
+    LocalServiceBus,
+    ServiceBus,
+    build_service_callback,
+    normalize_service_name,
+)
+from unilabos.hostlink.primitives import (
+    DeviceClock,
+    DeviceRate,
+    DeviceTimer,
+)
+from unilabos.hostlink.topic import (
+    LocalTopicBus,
+    TopicBus,
+    TopicPublisher,
+    TopicSubscription,
+    message_to_value,
+    normalize_topic,
+)
 from unilabos.registry.decorators import get_topic_config
 from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
@@ -207,6 +227,9 @@ class HostLinkDeviceNode(DeviceNode):
         action_value_mappings: Optional[Dict[str, Any]] = None,
         status_names: Iterable[str] = (),
         resource_tracker: Optional[DeviceNodeResourceTracker] = None,
+        parent_device_id: str = "",
+        hardware_interface: Optional[Dict[str, Any]] = None,
+        is_workstation: bool = False,
     ) -> None:
         self.driver = driver
         self.device_id = device_id
@@ -228,6 +251,14 @@ class HostLinkDeviceNode(DeviceNode):
         self.status_names = tuple(
             sorted({str(name).strip() for name in status_names if str(name).strip()})
         )
+        self.parent_device_id = str(parent_device_id or "")
+        self.children: list[ResourceDictInstance] = []
+        self.sub_devices: dict[str, HostLinkDeviceNode] = {}
+        self.communication_node_id_to_instance: dict[
+            str, HostLinkDeviceNode
+        ] = {}
+        self._hardware_interface = dict(hardware_interface or {})
+        self.driver_is_workstation = bool(is_workstation)
         self._logger = logging.getLogger(f"unilabos.hostlink.{device_id}")
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(
@@ -241,6 +272,210 @@ class HostLinkDeviceNode(DeviceNode):
         self._decorated_subscriptions: list[Any] = []
         self._status_bindings = self._build_status_bindings()
         self.resource_tracker = resource_tracker or DeviceNodeResourceTracker()
+
+    @property
+    def driver_instance(self) -> Any:
+        """与 ROS2DeviceNode 一致的驱动实例入口。"""
+
+        return self.driver
+
+    @property
+    def ros_node_instance(self) -> "HostLinkDeviceNode":
+        """兼容用 ``ros_node_instance`` 表示运行节点的工作站代码。"""
+
+        return self
+
+    def get_name(self) -> str:
+        return self.device_id.strip("/").split("/")[-1]
+
+    def get_namespace(self) -> str:
+        return f"/devices/{self.device_id.strip('/')}"
+
+    def get_logger(self) -> logging.Logger:
+        return self.lab_logger()
+
+    def get_clock(self) -> DeviceClock:
+        clock = self.__dict__.get("_device_clock")
+        if clock is None:
+            clock = DeviceClock()
+            self.__dict__["_device_clock"] = clock
+        return clock
+
+    def create_timer(
+        self,
+        timer_period_sec: float,
+        callback: Callable[[], Any],
+        callback_group: Any = None,
+        clock: Any = None,
+        autostart: bool = True,
+    ) -> DeviceTimer:
+        del callback_group, clock
+        timer = DeviceTimer(
+            self,
+            timer_period_sec,
+            callback,
+            autostart=autostart,
+        )
+        self.__dict__.setdefault("_device_timers", []).append(timer)
+        return timer
+
+    def destroy_timer(self, timer: DeviceTimer) -> bool:
+        timers = self.__dict__.setdefault("_device_timers", [])
+        timer.cancel()
+        if timer in timers:
+            timers.remove(timer)
+            return True
+        return False
+
+    @staticmethod
+    def create_rate(frequency: float, clock: Any = None) -> DeviceRate:
+        del clock
+        return DeviceRate(frequency)
+
+    def set_action_router(self, router: Any) -> None:
+        self.__dict__["_device_action_router"] = router
+
+    def set_service_bus(self, bus: ServiceBus) -> None:
+        self.__dict__["_device_service_bus"] = bus
+
+    def create_service(
+        self,
+        srv_type: Any,
+        srv_name: str,
+        callback: Callable[..., Any],
+        *,
+        qos_profile: Any = None,
+        callback_group: Any = None,
+    ) -> DeviceService:
+        """注册一个使用 ROS 调用形状的 HostLink service。"""
+
+        del qos_profile, callback_group
+        bus = self.__dict__.get("_device_service_bus")
+        if bus is None:
+            raise BackendCapabilityError("HostLink service bus 尚未初始化")
+        name = normalize_service_name(srv_name, self.device_id)
+        bus.register_service(
+            name,
+            build_service_callback(self, srv_type, callback),
+            owner_device_id=self.device_id,
+        )
+        service = DeviceService(bus, name, srv_type, self.device_id)
+        self.__dict__.setdefault("_device_services", []).append(service)
+        return service
+
+    def destroy_service(self, service: DeviceService) -> bool:
+        services = self.__dict__.setdefault("_device_services", [])
+        service.destroy()
+        if service in services:
+            services.remove(service)
+            return True
+        return False
+
+    def create_client(
+        self,
+        srv_type: Any,
+        srv_name: str,
+        *,
+        qos_profile: Any = None,
+        callback_group: Any = None,
+    ) -> DeviceServiceClient:
+        """创建一个使用 ROS 调用形状的 HostLink service client。"""
+
+        del qos_profile, callback_group
+        bus = self.__dict__.get("_device_service_bus")
+        if bus is None:
+            raise BackendCapabilityError("HostLink service bus 尚未初始化")
+        client = DeviceServiceClient(
+            bus,
+            normalize_service_name(srv_name, self.device_id),
+            srv_type,
+            self.device_id,
+        )
+        self.__dict__.setdefault("_device_service_clients", []).append(client)
+        return client
+
+    def destroy_client(self, client: DeviceServiceClient) -> bool:
+        clients = self.__dict__.setdefault("_device_service_clients", [])
+        if client in clients:
+            clients.remove(client)
+            return True
+        return False
+
+    def service_names(self) -> list[str]:
+        internal = self.__dict__.get("_material_sync_service")
+        return sorted(
+            str(service.service_name)
+            for service in self.__dict__.setdefault("_device_services", [])
+            if service is not internal
+        )
+
+    def set_topic_bus(self, bus: TopicBus) -> None:
+        self.__dict__["_device_topic_bus"] = bus
+
+    def resolve_topic_name(self, topic: str) -> str:
+        return normalize_topic(topic, self.device_id)
+
+    def create_publisher(
+        self,
+        msg_type: Any,
+        topic: str,
+        qos_profile: Any = 10,
+        **kwargs: Any,
+    ) -> TopicPublisher:
+        """创建一个使用 ROS 调用形状的 HostLink publisher。"""
+
+        del qos_profile
+        bus = self.__dict__.get("_device_topic_bus")
+        if bus is None:
+            raise BackendCapabilityError("HostLink topic bus 尚未初始化")
+        return TopicPublisher(
+            bus,
+            self.resolve_topic_name(topic),
+            self.device_id,
+            msg_type,
+            retain=bool(kwargs.get("retain", False)),
+        )
+
+    def create_subscription(
+        self,
+        msg_type: Any,
+        topic: str,
+        callback: Callable[[Any], Any],
+        qos_profile: Any = 10,
+        **kwargs: Any,
+    ) -> TopicSubscription:
+        """创建一个使用 ROS 调用形状的 HostLink subscription。"""
+
+        del msg_type, qos_profile
+        bus = self.__dict__.get("_device_topic_bus")
+        if bus is None:
+            raise BackendCapabilityError("HostLink topic bus 尚未初始化")
+
+        def invoke(value: Any) -> Any:
+            async def run_callback() -> Any:
+                result = callback(value)
+                if inspect.isawaitable(result):
+                    return await result
+                return result
+
+            return self.create_task(run_callback())
+
+        return bus.subscribe(
+            self.resolve_topic_name(topic),
+            invoke,
+            trigger_when_change=bool(kwargs.get("trigger_when_change", False)),
+            replay_retained=bool(kwargs.get("replay_retained", True)),
+        )
+
+    @staticmethod
+    def destroy_subscription(subscription: TopicSubscription) -> bool:
+        subscription.destroy()
+        return True
+
+    @staticmethod
+    def destroy_publisher(publisher: TopicPublisher) -> bool:
+        del publisher
+        return True
 
     _ROS2_RUNTIME_ATTRIBUTES = frozenset(
         {
@@ -265,12 +500,25 @@ class HostLinkDeviceNode(DeviceNode):
             ) from exc
         raise exc
 
-    def create_device(self, device_id: str, config: Any) -> dict[str, Any]:
-        """使用与启动阶段相同的工厂动态创建普通设备或子设备。"""
+    def initialize_device(
+        self,
+        device_id: str,
+        device_config: ResourceDictInstance,
+    ) -> "HostLinkDeviceNode":
+        """用启动阶段同一个工厂初始化并登记工作站子设备。"""
 
         runtime = self.__dict__.get("_hostlink_runtime")
         if runtime is None:
-            return {"success": False, "error": "HostLink runtime is unavailable"}
+            raise RuntimeError("HostLink runtime is unavailable")
+        return runtime.add_child_device_from_config(
+            self.device_id,
+            device_id,
+            device_config,
+        )
+
+    def create_device(self, device_id: str, config: Any) -> dict[str, Any]:
+        """使用与启动阶段相同的工厂动态创建普通设备或子设备。"""
+
         try:
             if isinstance(config, ResourceDictInstance):
                 device_config = config
@@ -281,7 +529,9 @@ class HostLinkDeviceNode(DeviceNode):
                 device_config = ResourceDictInstance.get_resource_instance_from_dict(
                     payload
                 )
-            node = runtime.add_device_from_config(device_id, device_config)
+            node = self.initialize_device(device_id, device_config)
+            if self.driver_is_workstation and device_config not in self.children:
+                self.children.append(device_config)
             return {
                 "success": True,
                 "device_id": node.device_id,
@@ -814,6 +1064,8 @@ class HostLinkDriverSpec:
     display_name: str = ""
     resource_uuid: str = ""
     device_config: Any = None
+    parent_device_id: str = ""
+    hardware_interface: Dict[str, Any] = field(default_factory=dict)
 
 
 class HostLinkLocalRuntime:
@@ -856,10 +1108,81 @@ class HostLinkLocalRuntime:
                     node.device_id,
                 )
 
+    @staticmethod
+    def _setup_hardware_proxy(
+        device: HostLinkDeviceNode,
+        communication_device: HostLinkDeviceNode,
+    ) -> None:
+        """按 ROS 工作站相同的 hardware_interface 约定连接共享通信端。"""
+
+        device_hw = device._hardware_interface
+        communication_hw = communication_device._hardware_interface
+        interface_attr = str(device_hw.get("name") or "")
+        if not interface_attr or not hasattr(device.driver, interface_attr):
+            return
+        communication_id = getattr(device.driver, interface_attr)
+        if communication_id != communication_device.device_id:
+            return
+
+        extra_names: list[str] = []
+        for name in [
+            *(device_hw.get("extra_info") or []),
+            *(communication_hw.get("extra_info") or []),
+        ]:
+            normalized = str(name)
+            if normalized not in extra_names and hasattr(device.driver, normalized):
+                extra_names.append(normalized)
+
+        def extra_kwargs() -> Dict[str, Any]:
+            return {name: getattr(device.driver, name) for name in extra_names}
+
+        for target_name, source_key in (
+            (device_hw.get("read"), "read"),
+            (device_hw.get("write"), "write"),
+        ):
+            source_name = communication_hw.get(source_key)
+            source = (
+                getattr(communication_device.driver, source_name, None)
+                if source_name
+                else None
+            )
+            if not target_name or not callable(source):
+                continue
+
+            def proxy(
+                *args: Any,
+                _source: Callable[..., Any] = source,
+                **kwargs: Any,
+            ) -> Any:
+                return _source(*args, **{**extra_kwargs(), **kwargs})
+
+            setattr(device.driver, str(target_name), proxy)
+
+    def _configure_workstation_children(
+        self,
+        workstation: HostLinkDeviceNode,
+    ) -> None:
+        if not workstation.driver_is_workstation:
+            return
+        for device in workstation.sub_devices.values():
+            for communication_device in workstation.sub_devices.values():
+                if communication_device is device:
+                    continue
+                self._setup_hardware_proxy(device, communication_device)
+
     def add_driver(self, spec: HostLinkDriverSpec) -> HostLinkDeviceNode:
         if spec.device_id in self.devices:
             raise ValueError(f"HostLink 设备 ID 重复：{spec.device_id}")
-        resource_tracker = DeviceNodeResourceTracker()
+        parent = (
+            self.devices.get(spec.parent_device_id)
+            if spec.parent_device_id
+            else None
+        )
+        resource_tracker = (
+            parent.resource_tracker
+            if parent is not None and parent.driver_is_workstation
+            else DeviceNodeResourceTracker()
+        )
         driver = instantiate_driver(
             spec.driver_class,
             spec.device_id,
@@ -877,12 +1200,20 @@ class HostLinkLocalRuntime:
             action_value_mappings=spec.action_value_mappings,
             status_names=spec.status_names,
             resource_tracker=resource_tracker,
+            parent_device_id=spec.parent_device_id,
+            hardware_interface=spec.hardware_interface,
+            is_workstation=is_workstation_driver(spec.driver_class),
         )
         node.set_action_router(self)
         node.set_topic_bus(self.topic_bus)
         node.set_service_bus(self.service_bus)
         node.children = list(spec.device_config.children) if spec.device_config else []
         node.__dict__["_hostlink_runtime"] = self
+        if parent is not None:
+            parent.sub_devices[spec.device_id] = node
+            if "serial_" in spec.device_id or "io_" in spec.device_id:
+                parent.communication_node_id_to_instance[spec.device_id] = node
+            self._configure_workstation_children(parent)
         if self._resource_service is not None:
             node.set_resource_service(self._resource_service)
         self.devices[spec.device_id] = node
@@ -890,8 +1221,17 @@ class HostLinkLocalRuntime:
         try:
             if self._started:
                 node.start()
+                # post_init 可能刚注册 service；再次刷新描述，避免远端等待
+                # 下一个心跳后才能发现动态子设备的完整能力。
+                self._notify_device_change("updated", node)
         except Exception:
             self.devices.pop(spec.device_id, None)
+            if parent is not None:
+                parent.sub_devices.pop(spec.device_id, None)
+                parent.communication_node_id_to_instance.pop(
+                    spec.device_id,
+                    None,
+                )
             self._notify_device_change("removed", node)
             raise
         return node
@@ -900,6 +1240,8 @@ class HostLinkLocalRuntime:
         self,
         device_id: str,
         device_config: ResourceDictInstance,
+        *,
+        parent_device_id: str = "",
     ) -> HostLinkDeviceNode:
         from unilabos.device_runtime.definition import resolve_device_definition
 
@@ -920,14 +1262,45 @@ class HostLinkLocalRuntime:
                 status_names=tuple(definition.status_types),
                 resource_uuid=definition.resource_uuid,
                 device_config=device_config,
+                parent_device_id=parent_device_id,
+                hardware_interface=getattr(definition, "hardware_interface", {}),
             )
+        )
+
+    def add_child_device_from_config(
+        self,
+        parent_device_id: str,
+        device_id: str,
+        device_config: ResourceDictInstance,
+    ) -> HostLinkDeviceNode:
+        """动态创建子设备并登记到其工作站运行节点。"""
+
+        return self.add_device_from_config(
+            device_id,
+            device_config,
+            parent_device_id=parent_device_id,
         )
 
     def remove_device(self, device_id: str) -> bool:
         normalized = self._normalize_device_id(device_id)
-        node = self.devices.pop(normalized, None)
+        node = self.devices.get(normalized)
         if node is None:
             return False
+        for child_id in list(node.sub_devices):
+            self.remove_device(child_id)
+        self.devices.pop(normalized, None)
+        if node.parent_device_id:
+            parent = self.devices.get(node.parent_device_id)
+            if parent is not None:
+                parent.sub_devices.pop(normalized, None)
+                parent.communication_node_id_to_instance.pop(normalized, None)
+                if parent.driver_is_workstation:
+                    parent.children = [
+                        child
+                        for child in parent.children
+                        if self._normalize_device_id(child.res_content.id)
+                        != normalized
+                    ]
         node.stop()
         self._notify_device_change("removed", node)
         return True
@@ -1006,7 +1379,9 @@ class HostLinkLocalRuntime:
         self._stopped.clear()
         started: list[HostLinkDeviceNode] = []
         try:
-            for node in self.devices.values():
+            # 设备图按父节点优先加入；反向启动可保证 Workstation post_init
+            # 运行前，其 sub-device 的 action/service/status 已全部就绪。
+            for node in reversed(tuple(self.devices.values())):
                 node.start()
                 started.append(node)
             self._started = True

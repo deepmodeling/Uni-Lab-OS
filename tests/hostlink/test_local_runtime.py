@@ -321,15 +321,12 @@ def test_hostlink_runtime_exposes_registered_actions_and_status() -> None:
         runtime.stop()
 
 
-def test_hostlink_runtime_supports_ros_shaped_timer_clock_and_parameters() -> None:
+def test_hostlink_runtime_supports_ros_shaped_timer_clock_and_rate() -> None:
     driver = AsyncDriver("dev-1", {})
     node = HostLinkDeviceNode(driver, "dev-1")
     fired = []
     node.start()
     try:
-        parameter = node.declare_parameter("speed", 3)
-        assert parameter.value == 3
-        assert node.get_parameter("speed").get_parameter_value().integer_value == 3
         assert node.get_clock().now().nanoseconds > 0
 
         timer = node.create_timer(0.01, lambda: fired.append(True))

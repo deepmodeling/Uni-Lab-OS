@@ -69,6 +69,9 @@ def test_plr_create_returns_server_uuid_and_all_substances(tmp_path) -> None:
             ("NaCl", 5.0, "ug"),
         ]
         assert created.resources[0].unilabos_uuid == authoritative_uuid
+        assert created.result.data.nodes[0].sites == []
+        assert created.result.data.nodes[0].data.sites_initialized is True
+        assert created.tree.root_nodes[0].res_content.sites_initialized is True
     finally:
         service.repository.close()
 

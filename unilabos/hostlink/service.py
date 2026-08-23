@@ -1,4 +1,4 @@
-"""Backend-neutral ROS-shaped service and client helpers."""
+"""HostLink 的 ROS-shaped service/client 兼容实现。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional, Protocol
 
-from unilabos.device_runtime.topic import normalize_topic, value_to_message
+from unilabos.hostlink.topic import normalize_topic, value_to_message
 
 ServiceCallback = Callable[[Any], Awaitable[Any]]
 

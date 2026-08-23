@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from unilabos.app import backend as backend_module
-from unilabos.app.execution_adapter import get_execution_adapter
+from unilabos.hostlink.adapter_registry import get_execution_adapter
 from unilabos.app.backend import (
     BACKEND_NAMES,
     BackendConfigurationError,
@@ -221,7 +221,7 @@ def test_hostlink_host_registers_direct_execution_adapter(monkeypatch) -> None:
 
 def test_web_package_does_not_eagerly_import_ros_modules() -> None:
     code = (
-        "import sys; import unilabos.app.web; "
+        "import sys; import unilabos.server.api.app; "
         "assert not any(name.startswith('unilabos.ros') for name in sys.modules)"
     )
     result = subprocess.run(
@@ -241,6 +241,31 @@ def test_hostlink_entrypoint_does_not_import_ros_runtime() -> None:
         "import unilabos.hostlink.main_hostlink_run; "
         "assert 'rclpy' not in sys.modules; "
         "assert not any(name.startswith('unilabos.ros') for name in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_hostlink_registry_does_not_require_ros_message_packages() -> None:
+    code = (
+        "import sys, tempfile; "
+        "from unilabos.config.config import BasicConfig; "
+        "BasicConfig.backend = 'hostlink'; "
+        "BasicConfig.demo_mode = True; "
+        "tmp = tempfile.TemporaryDirectory(); "
+        "BasicConfig.working_dir = tmp.name; "
+        "from unilabos.registry.registry import build_registry; "
+        "registry = build_registry(external_only=True); "
+        "assert 'virtual_heating_platform' in registry.device_type_registry; "
+        "import unilabos.resources.graphio; "
+        "assert 'rclpy' not in sys.modules; "
+        "assert 'unilabos.ros.msgs.message_converter' not in sys.modules; "
+        "tmp.cleanup()"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],

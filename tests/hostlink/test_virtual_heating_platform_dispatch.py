@@ -4,14 +4,14 @@ import threading
 import time
 import uuid
 
-from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig
 from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
 from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
-from unilabos.legacy_support.websocket import QueueItem
+from unilabos.server.scheduler.execution_queue import QueueItem
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.scheduler.backend import JobExecutionBackend
 from unilabos.server.scheduler.device_state import DeviceStateStore
 from unilabos.server.scheduler.integration import set_materials_gateway

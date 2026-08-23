@@ -17,9 +17,9 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from unilabos.app.execution_adapter import execution_result_bridges
 from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
+from unilabos.hostlink.adapter_registry import execution_result_bridges
 from unilabos.hostlink.backend import HostLinkBackend, to_wire_value
 from unilabos.hostlink.protocol import RemoteError
 from unilabos.resources.resource_tracker import PARAM_SAMPLE_UUIDS
@@ -27,7 +27,7 @@ from unilabos.utils import logger
 from unilabos.utils.type_check import serialize_result_info
 
 if TYPE_CHECKING:
-    from unilabos.legacy_support.websocket import QueueItem
+    from unilabos.server.scheduler.execution_queue import QueueItem
 
 
 @dataclass

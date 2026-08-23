@@ -12,7 +12,7 @@ import traceback
 import uuid
 from typing import Any, Dict, Optional
 
-from unilabos.device_runtime.topic import message_to_value
+from unilabos.hostlink.topic import message_to_value
 
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 8 * 1024 * 1024
@@ -31,6 +31,7 @@ class ActionType:
     MATERIAL_GET_BY_RESOURCE_ID = "material.resource-id.get"
     MATERIAL_DATA_PUT = "material.data.put"
     MATERIAL_MOVE = "material.move"
+    MATERIAL_TRANSFER = "material.transfer"
     MATERIAL_DELETE = "material.delete"
     MATERIAL_COMPARE_SNAPSHOT = "material.snapshot.compare"
     MATERIAL_APPLY_SNAPSHOT = "material.snapshot.apply"

@@ -19,8 +19,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import yaml
-from unilabos_msgs.action import EmptyIn, ResourceCreateFromOuter, ResourceCreateFromOuterEasy
-from unilabos_msgs.msg import Resource
 
 from unilabos.config.config import BasicConfig
 from unilabos.registry.backend_metadata import normalize_supported_backends
@@ -62,20 +60,35 @@ from unilabos.registry.utils import (
 from unilabos.resources.graphio import resource_plr_to_ulab, tree_to_list
 from unilabos.resources.resource_tracker import ResourceTreeSet, RETURN_UNILABOS_SAMPLES
 from unilabos.resources.objects.site import normalize_available_sites
-from unilabos.ros.msgs.message_converter import (
-    msg_converter_manager,
-    ros_action_result_mapping,
-    ros_action_to_json_schema,
-    String,
-    ros_message_to_json_schema,
-)
 from unilabos.utils import logger
 from unilabos.utils.decorator import singleton
 from unilabos.utils.cls_creator import import_class
 from unilabos.utils.import_manager import get_enhanced_class_info
 from unilabos.utils.type_check import NoAliasDumper
 from msgcenterpy.instances.json_schema_instance import JSONSchemaMessageInstance
-from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
+
+_HOSTLINK_SCHEMA_ONLY = BasicConfig.backend == "hostlink"
+
+if not _HOSTLINK_SCHEMA_ONLY:
+    from unilabos_msgs.action import ResourceCreateFromOuterEasy
+    from unilabos_msgs.msg import Resource
+    from unilabos.ros.msgs.message_converter import (
+        msg_converter_manager,
+        ros_action_result_mapping,
+        ros_action_to_json_schema,
+        String,
+        ros_message_to_json_schema,
+    )
+    from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
+else:
+    # HostLink transmits JSON descriptors and values.  ROS message classes are
+    # intentionally absent on this path; legacy ROS actions remain as string
+    # metadata and are not executable by the JSON-only demo registry.
+    ResourceCreateFromOuterEasy = None
+    Resource = None
+    msg_converter_manager = None
+    ROS2MessageInstance = None
+    String = str
 
 _module_hash_cache: Dict[str, Optional[str]] = {}
 
@@ -139,18 +152,19 @@ class Registry:
     """
 
     def __init__(self, registry_paths=None):
-        import ctypes
+        if not _HOSTLINK_SCHEMA_ONLY:
+            import ctypes
 
-        try:
-            # noinspection PyUnusedImports
-            import unilabos_msgs
-        except ImportError:
-            logger.error("[UniLab Registry] unilabos_msgs模块未找到，请确保已根据官方文档安装unilabos_msgs包。")
-            sys.exit(1)
-        try:
-            ctypes.CDLL(str(Path(unilabos_msgs.__file__).parent / "unilabos_msgs_s__rosidl_typesupport_c.pyd"))
-        except OSError:
-            pass
+            try:
+                # noinspection PyUnusedImports
+                import unilabos_msgs
+            except ImportError:
+                logger.error("[UniLab Registry] unilabos_msgs模块未找到，请确保已根据官方文档安装unilabos_msgs包。")
+                sys.exit(1)
+            try:
+                ctypes.CDLL(str(Path(unilabos_msgs.__file__).parent / "unilabos_msgs_s__rosidl_typesupport_c.pyd"))
+            except OSError:
+                pass
 
         self.registry_paths = [Path(__file__).absolute().parent]
         if registry_paths:
@@ -234,6 +248,12 @@ class Registry:
         """设置 host_node 内置设备 — 基于 _run_ast_scan 已扫描的结果进行覆写。"""
         # 从 AST 扫描结果中取出 host_node 的 action_value_mappings
         ast_entry = self.device_type_registry.get("host_node", {})
+        if _HOSTLINK_SCHEMA_ONLY:
+            # HostLink Host 生命周期由微后端管理，图中也不会实例化 ROS
+            # HostNode。保留 AST 生成的 JSON 描述即可。
+            if ast_entry:
+                self.device_type_registry["host_node"] = ast_entry
+            return
         ast_actions = ast_entry.get("class", {}).get("action_value_mappings", {})
 
         # 取出 AST 生成的 action entries, 补充特定覆写
@@ -411,10 +431,15 @@ class Registry:
 
         # 主扫描
         if external_only:
-            core_files = [
-                pkg_root / "ros" / "nodes" / "presets" / "host_node.py",
-                pkg_root / "resources" / "container.py",
-            ]
+            core_files = [pkg_root / "resources" / "container.py"]
+            if not _HOSTLINK_SCHEMA_ONLY:
+                core_files.insert(
+                    0, pkg_root / "ros" / "nodes" / "presets" / "host_node.py"
+                )
+            if BasicConfig.demo_mode:
+                core_files.append(
+                    pkg_root / "devices" / "virtual" / "heating_platform.py"
+                )
             scan_result = scan_directory(
                 scan_root, python_path=python_path, executor=self._startup_executor,
                 cache=ast_cache, include_files=core_files,
@@ -555,6 +580,8 @@ class Registry:
     def _replace_type_with_class(self, type_name: str, device_id: str, field_name: str) -> Any:
         """将类型名称替换为实际的 ROS 消息类对象（带缓存）"""
         if not type_name or type_name == "":
+            return type_name
+        if _HOSTLINK_SCHEMA_ONLY:
             return type_name
 
         cached = self._type_resolve_cache.get(type_name)
@@ -750,15 +777,14 @@ class Registry:
 
             is_slot, is_list_slot = detect_slot_type(param_type)
             if is_slot == "ResourceSlot":
+                resource_schema = self._resource_reference_schema(param_name)
                 if is_list_slot:
                     schema["properties"][param_name] = {
-                        "items": ros_message_to_json_schema(Resource, param_name),
+                        "items": resource_schema,
                         "type": "array",
                     }
                 else:
-                    schema["properties"][param_name] = ros_message_to_json_schema(
-                        Resource, param_name
-                    )
+                    schema["properties"][param_name] = resource_schema
             elif is_slot == "DeviceSlot":
                 schema["properties"][param_name] = {"type": "string", "description": "device reference"}
             else:
@@ -899,6 +925,8 @@ class Registry:
 
     def _add_builtin_actions(self, device_config: Dict[str, Any], device_id: str):
         """为设备添加内置的驱动命令动作（运行时需要，上报注册表时会过滤掉）"""
+        if _HOSTLINK_SCHEMA_ONLY:
+            return
         str_single_input = self._replace_type_with_class("StrSingleInput", device_id, "内置动作")
         for additional_action in ["_execute_driver_command", "_execute_driver_command_async"]:
             try:
@@ -1280,13 +1308,14 @@ class Registry:
             # --- 检测 ResourceSlot / DeviceSlot (兼容 runtime 和 AST 两种格式) ---
             is_slot, is_list_slot = detect_slot_type(ptype)
             if is_slot == "ResourceSlot":
+                resource_schema = self._resource_reference_schema(pname)
                 if is_list_slot:
                     schema["properties"][pname] = {
-                        "items": ros_message_to_json_schema(Resource, pname),
+                        "items": resource_schema,
                         "type": "array",
                     }
                 else:
-                    schema["properties"][pname] = ros_message_to_json_schema(Resource, pname)
+                    schema["properties"][pname] = resource_schema
             elif is_slot == "DeviceSlot":
                 schema["properties"][pname] = {"type": "string", "description": "device reference"}
             else:
@@ -1299,6 +1328,16 @@ class Registry:
 
         self._apply_docstring_param_metadata(schema, doc_info, apply_defaults=True)
         return schema
+
+    @staticmethod
+    def _resource_reference_schema(param_name: str) -> Dict[str, Any]:
+        if _HOSTLINK_SCHEMA_ONLY:
+            return {
+                "type": "object",
+                "title": param_name,
+                "description": "materials.v1 resource reference",
+            }
+        return ros_message_to_json_schema(Resource, param_name)
 
     def _generate_status_schema_from_ast(
         self, status_properties: Dict[str, Any],
@@ -1772,6 +1811,11 @@ class Registry:
 
         仅做 ROS2 消息类型查找，不 import 任何设备模块，速度快且无副作用。
         """
+        if _HOSTLINK_SCHEMA_ONLY:
+            logger.info(
+                "[UniLab Registry] HostLink JSON 模式：保留消息类型字符串，跳过 ROS 类型解析"
+            )
+            return
         t0 = time.time()
         for device_id in list(self.device_type_registry):
             try:

@@ -3,7 +3,7 @@
 Some Uni-Lab PyLabRobot builds expose an RViz backend from the package
 ``__init__`` and therefore import ``rclpy`` even when RViz is not selected.
 Keep that optional backend lazy so Chatterbox and hardware backends can run in
-Basic/HostLink processes without ROS installed.
+HostLink processes without ROS installed.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def _install_optional_plr_rviz_stub() -> None:
         def __init__(self, *_args, **_kwargs) -> None:
             raise RuntimeError(
                 "LiquidHandlerRvizBackend 需要 ROS2；"
-                "Basic/HostLink 请使用硬件 backend 或 Chatterbox backend"
+                "HostLink 请使用硬件 backend 或 Chatterbox backend"
             )
 
     module.LiquidHandlerRvizBackend = LiquidHandlerRvizBackend

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from unilabos.app.web.server import app
+from unilabos.server.api.app import app
 
 
 def test_web_root_is_a_backend_frontend_catalog() -> None:

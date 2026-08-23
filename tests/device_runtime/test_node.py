@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import sys
+import threading
+from uuid import uuid4
 
 import pytest
+from pylabrobot.resources import Coordinate
 
 from unilabos.hostlink.local_runtime import HostLinkDeviceNode, HostLinkLocalRuntime
 from unilabos.device_runtime import (
@@ -13,10 +16,48 @@ from unilabos.device_runtime import (
     BackendCapabilityError,
     DeviceNode,
 )
+from unilabos.resources.presets.container import RegularContainer
+from unilabos.resources.resource_tracker import (
+    DeviceNodeResourceTracker,
+    ResourceTreeSet,
+)
 
 
 class Driver:
     pass
+
+
+class RecordingSnapshotService:
+    def __init__(self) -> None:
+        self.snapshots: list[ResourceTreeSet] = []
+        self.received = threading.Event()
+
+    async def snapshot_resource_tree(
+        self,
+        device_id: str,
+        device_uuid: str,
+        root_resource: ResourceTreeSet,
+    ) -> ResourceTreeSet:
+        assert device_id == "device-1"
+        assert device_uuid == "device-uuid"
+        self.snapshots.append(ResourceTreeSet.load(root_resource.dump()))
+        self.received.set()
+        return root_resource
+
+
+def _tracked_container(name: str) -> RegularContainer:
+    resource = RegularContainer(
+        name=name,
+        size_x=10,
+        size_y=10,
+        size_z=20,
+        max_volume=100,
+    )
+    resource.unilabos_uuid = str(uuid4())
+    resource.unilabos_extra = {
+        "unilabos_resource_class": "tracked-container"
+    }
+    return resource
 
 
 def test_hostlink_node_implements_backend_neutral_contract() -> None:
@@ -62,6 +103,42 @@ def test_missing_resource_transport_fails_explicitly() -> None:
 
     with pytest.raises(BackendCapabilityError, match="hostlink"):
         asyncio.run(node.update_resource([]))
+
+
+def test_device_node_automatically_snapshots_the_complete_tracked_root() -> None:
+    root = _tracked_container("root")
+    child = _tracked_container("child")
+    sibling = _tracked_container("sibling")
+    root.assign_child_resource(child, Coordinate(1, 2, 3))
+    root.assign_child_resource(sibling, Coordinate(4, 5, 6))
+    tracker = DeviceNodeResourceTracker()
+    tracker.add_resource(root)
+    service = RecordingSnapshotService()
+    node = HostLinkDeviceNode(
+        Driver(),
+        "device-1",
+        resource_uuid="device-uuid",
+        resource_tracker=tracker,
+    )
+    node.set_resource_service(service)
+    node.start()
+    try:
+        child.tracker.set_liquids([("solid", 3.0, "ug")])
+        assert service.received.wait(timeout=2)
+        assert len(service.snapshots) == 1
+        snapshot = service.snapshots[0]
+        assert set(snapshot.all_nodes_uuid) == {
+            root.unilabos_uuid,
+            child.unilabos_uuid,
+            sibling.unilabos_uuid,
+        }
+        by_name = {
+            item.res_content.name: item.res_content
+            for item in snapshot.all_nodes
+        }
+        assert by_name["child"].substances == [("solid", 3.0, "ug")]
+    finally:
+        node.stop()
 
 
 def test_runtime_propagates_selected_backend_to_nodes() -> None:

@@ -1,8 +1,8 @@
 """Registry-facing backend capability metadata.
 
-``basic`` is an internal local driver runtime, not a public transport.  Device
-metadata therefore exposes only the two transport backends understood by the
-scheduler and frontend: HostLink and ROS 2.
+The local Python driver runtime belongs to HostLink and is not a third public
+transport. Device metadata therefore exposes only the two transport backends
+understood by the scheduler and frontend: HostLink and ROS 2.
 """
 
 from __future__ import annotations

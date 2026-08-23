@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
@@ -10,8 +11,8 @@ from typing import Any, Dict, Optional
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
 from unilabos.device_runtime.resource import AuthorityResourceService
-from unilabos.device_runtime.service import normalize_service_name
-from unilabos.device_runtime.topic import (
+from unilabos.hostlink.service import normalize_service_name
+from unilabos.hostlink.topic import (
     TopicEvent,
     message_to_value,
     normalize_topic,
@@ -163,6 +164,10 @@ class HostLinkBackend:
             self._handle_material_move,
         )
         self.server.register_handler(
+            ActionType.MATERIAL_TRANSFER,
+            self._handle_material_transfer,
+        )
+        self.server.register_handler(
             ActionType.MATERIAL_DELETE,
             self._handle_material_delete,
         )
@@ -176,6 +181,7 @@ class HostLinkBackend:
         )
         self.server.start()
         set_hostlink_server(self.server)
+        self._bind_material_transfer_dispatcher()
         logger.info(
             "[HostLink backend] Host 已启动：%s:%d，本地设备=%s",
             HostLinkConfig.bind,
@@ -302,6 +308,75 @@ class HostLinkBackend:
         return gateway.move_material(mutation, value).model_dump(
             mode="json", exclude_none=False
         )
+
+    @staticmethod
+    def _handle_material_transfer(
+        data: dict[str, Any], peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialTransfer
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialTransfer.model_validate(mutation.payload)
+        owned = {str(item) for item in peer.get("device_ids") or []}
+        if owned and value.source_device_id not in owned:
+            raise PermissionError(
+                "Slave 未注册物料转移来源设备："
+                f"{value.source_device_id!r}"
+            )
+        return gateway.transfer_material(mutation, value).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    def _bind_material_transfer_dispatcher(self) -> None:
+        """让嵌入式 MaterialsService 通过当前 HostLink runtime 调设备服务。"""
+
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        service = getattr(gateway, "service", None)
+        setter = getattr(service, "set_resource_sync_dispatcher", None)
+        if callable(setter):
+            setter(self.dispatch_material_sync)
+
+    def dispatch_material_sync(self, command: Any) -> dict[str, Any]:
+        """把微后端 unload/load 命令路由到本机或任意 HostLink Slave。"""
+
+        from unilabos.device_runtime.resource import MaterialSyncService
+
+        data = command.model_dump(mode="json", exclude_none=False)
+        device_id = str(data["device_id"])
+        service_name = f"/srv/devices/{device_id}/material_sync"
+        if not self.has_service(service_name):
+            raise RuntimeError(
+                f"设备 {device_id!r} 未暴露 material_sync service"
+            )
+        request = MaterialSyncService.Request(
+            command=json.dumps(data, ensure_ascii=False)
+        )
+        response = self.call_service(
+            service_name,
+            request,
+            caller_device_id="edge-microbackend",
+            timeout=30.0,
+        )
+        wire = to_wire_value(response)
+        raw = wire.get("response") if isinstance(wire, dict) else wire
+        if isinstance(raw, str):
+            result = json.loads(raw or "{}")
+        elif isinstance(raw, dict):
+            result = raw
+        else:
+            result = {"success": bool(raw)}
+        if not result.get("success"):
+            raise RuntimeError(
+                f"设备 {device_id!r} material_sync 失败：{result}"
+            )
+        return result
 
     @staticmethod
     def _handle_material_delete(
@@ -442,6 +517,8 @@ class HostLinkBackend:
     @staticmethod
     def _service_target(name: str) -> str:
         parts = normalize_service_name(name).strip("/").split("/")
+        if parts and parts[0] == "srv":
+            parts = parts[1:]
         if len(parts) >= 3 and parts[0] == "devices":
             return parts[1]
         return ""

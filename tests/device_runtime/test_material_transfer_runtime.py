@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import asyncio
 
+from unilabos.client.materials import LocalMaterialsClient
+from unilabos.config.config import BasicConfig, HostLinkConfig
+from unilabos.device_runtime.resource import AuthorityResourceService
+from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.resources.presets.container import RegularContainer
-from unilabos.resources.resource_tracker import ResourceTreeSet
+from unilabos.server.database.repositories.materials import MaterialsRepository
+from unilabos.server.scheduler.integration import set_materials_gateway
+from unilabos.server.services.materials import MaterialsService
 
 
-def _container(name: str, material_uuid: str) -> RegularContainer:
+def _container(name: str) -> RegularContainer:
     resource = RegularContainer(
         name=name,
         size_x=10,
@@ -15,7 +21,6 @@ def _container(name: str, material_uuid: str) -> RegularContainer:
         size_z=20,
         max_volume=100,
     )
-    resource.unilabos_uuid = material_uuid
     resource.unilabos_extra = {
         "unilabos_resource_class": "runtime-transfer-container"
     }
@@ -39,48 +44,34 @@ class _Driver:
         self.transferred.append((old_parent, resource, new_parent))
 
 
-class _MoveResourceService:
-    def __init__(self, moved_resource: RegularContainer) -> None:
-        self.tree = ResourceTreeSet.from_plr_resources([moved_resource])
-        self.moves = []
+def test_hostlink_runtime_transfer_is_committed_and_dispatched_by_authority(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    materials = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
+    gateway = LocalMaterialsClient(materials)
+    set_materials_gateway(gateway)
+    monkeypatch.setattr(BasicConfig, "is_host_mode", True)
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
 
-    async def move_resources(
-        self,
-        device_id,
-        device_uuid,
-        resources_uuid,
-        target_resources_uuid,
-        sites,
-    ):
-        self.moves.append(
-            (
-                device_id,
-                device_uuid,
-                list(resources_uuid),
-                list(target_resources_uuid),
-                list(sites),
-            )
-        )
-        self.tree.root_nodes[0].res_content.parent_uuid = target_resources_uuid[0]
-        return []
+    authority = AuthorityResourceService(gateway)
+    material = asyncio.run(
+        authority.create_resources("setup", "setup", _container("tube"))
+    ).resources[0]
+    mount = asyncio.run(
+        authority.create_resources("setup", "setup", _container("mount"))
+    ).resources[0]
 
-    async def get_resources(self, _device_id, resources_uuid, _with_children):
-        assert list(resources_uuid) == self.tree.root_nodes_uuid
-        return ResourceTreeSet.load(self.tree.dump())
-
-
-def test_hostlink_runtime_moves_material_through_common_authority_and_service() -> None:
     runtime = HostLinkLocalRuntime()
     source = runtime.add_driver(HostLinkDriverSpec("source", _Driver, {}))
     target = runtime.add_driver(HostLinkDriverSpec("target", _Driver, {}))
-    material = _container("tube", "material-1")
-    mount = _container("deck", "mount-1")
     source.resource_tracker.add_resource(material)
     target.resource_tracker.add_resource(mount)
-    authority = _MoveResourceService(material)
-    runtime.set_resource_service(authority)  # type: ignore[arg-type]
-    runtime.start()
+    backend = HostLinkBackend(runtime, is_slave=False)
     try:
+        backend.start()
         result = asyncio.run(
             source.transfer_resource_to_another(
                 [material],
@@ -90,21 +81,19 @@ def test_hostlink_runtime_moves_material_through_common_authority_and_service() 
             )
         )
 
+        material_uuid = material.unilabos_uuid
         assert result["success"] is True
-        assert authority.moves == [
-            (
-                "source",
-                "",
-                ["material-1"],
-                ["mount-1"],
-                [None],
-            )
-        ]
-        assert "material-1" not in source.resource_tracker.uuid_to_resources
-        attached = target.resource_tracker.uuid_to_resources["material-1"]
+        assert (
+            materials.get_material(material_uuid).material.parent_material_uuid
+            == mount.unilabos_uuid
+        )
+        assert material_uuid not in source.resource_tracker.uuid_to_resources
+        attached = target.resource_tracker.uuid_to_resources[material_uuid]
         assert attached.parent is mount
         assert source.driver.removed == [material]
         assert target.driver.added == [attached]
         assert target.driver.transferred == [(None, attached, mount)]
     finally:
-        runtime.stop()
+        backend.stop()
+        set_materials_gateway(None)
+        materials.repository.close()

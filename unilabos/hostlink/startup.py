@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import socket
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping
 
@@ -12,9 +11,9 @@ from unilabos.hostlink.ros_assist import parse_host_target, validate_domain_id
 from unilabos.utils.banner_print import print_status
 
 
-HEATING_DEMO_HOST = "bj.wznln.com"
-HEATING_DEMO_PORT = 38005
-HEATING_DEMO_PUBLIC_IPV4 = "140.143.251.219"
+HEATING_DEMO_EDGE_HOST = "edge.whalent.com"
+HEATING_DEMO_HTTP_PORT = 6005
+HEATING_DEMO_EDGE_URL = f"https://{HEATING_DEMO_EDGE_HOST}"
 HEATING_DEMO_GRAPH = (
     Path(__file__).resolve().parents[1]
     / "test"
@@ -24,40 +23,29 @@ HEATING_DEMO_GRAPH = (
 
 
 def configure_heating_demo_args(args: MutableMapping[str, Any]) -> None:
-    """Apply one-command demo defaults before backend selection.
+    """Apply local three-site demo defaults before backend selection.
 
-    Explicit graph/Host values still win. ``slave_no_host`` is intentional:
-    the HostLink manager is unbounded and keeps reconnecting in the background
-    when the public demo Host is temporarily unavailable.
+    The demo process is the local Host and owns its HTTP microbackend.  The
+    public HTTPS hostname terminates TLS in front of that port; it is not a
+    HostLink TCP target.
+    Explicit graph and management-port values still win.
     """
 
     if not args.get("demo_mode", False):
         return
     args["backend"] = "hostlink"
-    args["is_slave"] = True
-    args["slave_no_host"] = True
+    args["is_slave"] = False
+    args["slave_no_host"] = False
     args["test_mode"] = True
     args["visual"] = "disable"
+    # Demo driver metadata comes from the AST registry.  Skipping the legacy
+    # YAML catalog keeps this JSON-only HostLink path independent of ROS
+    # message packages while preserving normal HostLink startup semantics.
+    args["external_devices_only"] = True
     if not args.get("graph"):
         args["graph"] = str(HEATING_DEMO_GRAPH)
-    if not str(args.get("host_node_ip") or "").strip():
-        args["host_node_ip"] = HEATING_DEMO_HOST
-    if args.get("hostlink_port") is None:
-        target = str(args.get("host_node_ip") or "")
-        if target == HEATING_DEMO_HOST or ":" not in target:
-            args["hostlink_port"] = HEATING_DEMO_PORT
-
-
-def _resolved_addresses(host: str, port: int) -> list[str]:
-    try:
-        return sorted(
-            {
-                str(item[4][0])
-                for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-            }
-        )
-    except OSError:
-        return []
+    if args.get("port_management") is None:
+        args["port_management"] = HEATING_DEMO_HTTP_PORT
 
 
 def apply_hostlink_cli(args: Mapping[str, Any], *, is_slave: bool) -> None:
@@ -98,15 +86,6 @@ def apply_hostlink_cli(args: Mapping[str, Any], *, is_slave: bool) -> None:
             f"Slave HostNode: {HostLinkConfig.host}:{HostLinkConfig.port}",
             "info",
         )
-        if args.get("demo_mode", False):
-            resolved = _resolved_addresses(HostLinkConfig.host, HostLinkConfig.port)
-            print_status(
-                "加热演示模式：HostLink 将持续重连 "
-                f"{HostLinkConfig.host}:{HostLinkConfig.port}；"
-                f"本机 DNS={','.join(resolved) or '暂不可解析'}；"
-                f"公共 DNS 参考={HEATING_DEMO_PUBLIC_IPV4}",
-                "info",
-            )
 
     timeout_fields = {
         "hostlink_heartbeat_interval": "heartbeat_interval",
@@ -160,10 +139,10 @@ def validate_hostlink_backend(args: Mapping[str, Any], *, is_slave: bool) -> Non
 
 
 __all__ = [
+    "HEATING_DEMO_EDGE_HOST",
+    "HEATING_DEMO_EDGE_URL",
     "HEATING_DEMO_GRAPH",
-    "HEATING_DEMO_HOST",
-    "HEATING_DEMO_PORT",
-    "HEATING_DEMO_PUBLIC_IPV4",
+    "HEATING_DEMO_HTTP_PORT",
     "apply_hostlink_cli",
     "configure_heating_demo_args",
     "validate_hostlink_backend",

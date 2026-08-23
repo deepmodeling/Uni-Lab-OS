@@ -20,12 +20,12 @@ def test_slave_runtime_waits_for_backend_without_starting_web(monkeypatch) -> No
         lambda **_args: thread,
     )
 
-    assert run_runtime({"visual": "disable"}) is False
+    assert run_runtime({"visual": "disable"}) is None
     assert thread.join_count == 1
 
 
-def test_host_runtime_returns_management_restart_request(monkeypatch) -> None:
-    import unilabos.app.web as web
+def test_host_runtime_starts_management_api(monkeypatch) -> None:
+    import unilabos.server.api.app as web
 
     thread = _Thread()
     calls = []
@@ -42,6 +42,6 @@ def test_host_runtime_returns_management_restart_request(monkeypatch) -> None:
         lambda **kwargs: calls.append(kwargs) or True,
     )
 
-    assert run_runtime({"visual": "disable"}) is True
+    assert run_runtime({"visual": "disable"}) is None
     assert thread.join_count == 0
     assert calls == [{"open_browser": False, "port": 9002}]

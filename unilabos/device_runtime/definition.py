@@ -65,6 +65,15 @@ class DeviceDefinition:
         return self.driver_config.get("type") == "ros2"
 
 
+@dataclass(frozen=True)
+class DeviceConfigEntry:
+    """设备树中的一个运行节点及其最近设备父节点。"""
+
+    device_id: str
+    config: ResourceDictInstance
+    parent_device_id: str = ""
+
+
 def resolve_device_definition(
     device_id: str,
     device_config: ResourceDictInstance,
@@ -138,30 +147,38 @@ def resolve_device_definition(
     )
 
 
-def iter_device_configs(devices_config: Any) -> Iterator[tuple[str, ResourceDictInstance]]:
-    """产出普通设备、工作站和子设备；图中的设备 ID 始终是全局身份。"""
+def iter_device_config_entries(devices_config: Any) -> Iterator[DeviceConfigEntry]:
+    """按父节点优先顺序产出普通设备、工作站和子设备。"""
 
     if devices_config is None:
         return
 
     def walk(
         node: ResourceDictInstance,
-    ) -> Iterator[tuple[str, ResourceDictInstance]]:
+        parent_device_id: str = "",
+    ) -> Iterator[DeviceConfigEntry]:
         resource = node.res_content
+        next_parent_id = parent_device_id
         if getattr(resource, "type", None) == "device":
             device_id = str(resource.id).strip().strip("/")
             if not device_id:
                 raise DeviceClassInvalid("Device id cannot be empty")
-            yield device_id, node
+            yield DeviceConfigEntry(
+                device_id=device_id,
+                config=node,
+                parent_device_id=parent_device_id,
+            )
+            next_parent_id = device_id
         for child in node.children:
-            yield from walk(child)
+            yield from walk(child, next_parent_id)
 
     for root in devices_config.root_nodes:
         yield from walk(root)
 
 
 __all__ = [
+    "DeviceConfigEntry",
     "DeviceDefinition",
-    "iter_device_configs",
+    "iter_device_config_entries",
     "resolve_device_definition",
 ]

@@ -4,7 +4,6 @@ import inspect
 import json
 from pathlib import Path
 
-from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig
 from unilabos.device_runtime.action import ActionContext
@@ -15,6 +14,7 @@ from unilabos.devices.virtual.heating_platform import (
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.decorators import get_device_meta
 from unilabos.resources.objects.resource import ResourceDict
+from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.scheduler.integration import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 

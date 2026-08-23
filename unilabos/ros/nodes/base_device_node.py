@@ -75,7 +75,7 @@ from unilabos.device_runtime.driver_creator import (
 from rclpy.task import Task, Future
 from unilabos.utils.import_manager import default_manager
 from unilabos.utils.log import info, debug, warning, error, critical, logger, trace
-from unilabos.utils.type_check import get_type_class, TypeEncoder, serialize_result_info
+from unilabos.utils.type_check import TypeEncoder, serialize_result_info
 from unilabos.utils.exception import ActionResultError, DeviceActionError
 
 if TYPE_CHECKING:
@@ -1383,7 +1383,6 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             target_resources,
             sites,
         )
-        return "转运完成"
 
     # ==================================================================
     # 跨设备调用动作（便捷封装）
@@ -2310,46 +2309,6 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             # 执行失败时跳过物料状态更新
             if execution_error:
                 execution_success = False
-
-            # 向Host更新物料当前状态
-            if not execution_error and action_name not in ["create_resource_detailed", "create_resource"]:
-                for k, v in goal.get_fields_and_field_types().items():
-                    if v not in ["unilabos_msgs/Resource", "sequence<unilabos_msgs/Resource>"]:
-                        continue
-                    self.lab_logger().info(f"更新资源状态: {k}")
-                    # 仅当action_kwargs[k]不为None时尝试转换
-                    akv = action_kwargs[k]  # 已经是完成转换的物料了
-                    apv = action_paramtypes[k]
-                    final_type = get_type_class(apv)
-                    if final_type is None:
-                        continue
-                    try:
-                        # 去重：使用 seen 集合获取唯一的资源对象
-                        seen = set()
-                        unique_resources = []
-                        for rs in akv:  # todo: 这里目前只支持plr的类型
-                            if isinstance(rs, list):
-                                for r in rs:
-                                    res = self.resource_tracker.parent_resource(r)  # 获取 resource 对象
-                                    if res is None:
-                                        res = rs
-                                    if id(res) not in seen:
-                                        seen.add(id(res))
-                                        unique_resources.append(res)
-                            else:
-                                res = self.resource_tracker.parent_resource(rs)
-                                if res is None:
-                                    res = rs
-                                if id(res) not in seen:
-                                    seen.add(id(res))
-                                    unique_resources.append(res)
-
-                        # 使用新的资源树接口
-                        if unique_resources:
-                            await self.update_resource(unique_resources)
-                    except Exception as e:
-                        self.lab_logger().error(f"资源更新失败: {e}")
-                        self.lab_logger().error(traceback.format_exc())
 
             # 发布结果
             goal_handle.succeed()

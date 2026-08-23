@@ -1,4 +1,4 @@
-"""Backend-neutral topic publishing and subscription helpers."""
+"""HostLink 的 JSON topic 编解码与本地消息总线。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ TopicCallback = Callable[[Any], Any]
 TopicEventListener = Callable[["TopicEvent"], None]
 SubscriptionListener = Callable[[str, bool], None]
 
-_logger = logging.getLogger("unilabos.device_runtime.topic")
+_logger = logging.getLogger("unilabos.hostlink.topic")
 
 
 def normalize_topic(topic: str, device_id: str = "") -> str:
@@ -135,7 +135,7 @@ def value_to_message(message_type: Any, value: Any) -> Any:
 
 @dataclass(frozen=True)
 class TopicEvent:
-    """One transport-independent topic publication."""
+    """一条可通过 HostLink JSON wire 传输的 topic 消息。"""
 
     topic: str
     value: Any
@@ -256,7 +256,7 @@ class TopicSubscription:
 
 
 class LocalTopicBus:
-    """Thread-safe exact-topic broker used by Basic and HostLink runtimes."""
+    """Thread-safe exact-topic broker used by the HostLink local runtime."""
 
     def __init__(self) -> None:
         self._lock = threading.RLock()

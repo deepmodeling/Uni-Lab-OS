@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 import websockets
 
-from unilabos.app.execution_adapter import get_execution_adapter
+from unilabos.hostlink.adapter_registry import get_execution_adapter
 from unilabos.config.config import BasicConfig, WSConfig
 from unilabos.server.backend.session import BaseBackendClient
 from unilabos.server.backend.url import build_backend_websocket_url

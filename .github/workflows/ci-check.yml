@@ -84,9 +84,11 @@ jobs:
         run: |
           call conda activate check-env
           if /I "%ROS_DISTRO%"=="humble" python -m pip install empy==3.3.4
-          colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE="%CONDA_PREFIX%\python.exe"
+          set "CMAKE_PYTHON=%CONDA_PREFIX:\=/%/python.exe"
+          colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE="%CMAKE_PYTHON%"
+          if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
           call install\unilabos_msgs\setup.bat
-          python -c "import os; from unilabos_msgs.msg import Resource; print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp312: OK')"
+          python -c "import os; from rosidl_generator_py import import_type_support_impl; from unilabos_msgs.msg import Resource; import_type_support_impl.import_type_support('unilabos_msgs'); print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp312 typesupport: OK')"
 
       - name: Install pip dependencies and unilabos
         run: |

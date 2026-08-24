@@ -51,7 +51,7 @@ jobs:
           auto-update-conda: false
       - name: Install contract dependencies
         run: |
-          mamba install -n check-env --override-channels -c conda-forge conda-forge::numpy=2 conda-forge::uv conda-forge::opencv -y
+          call mamba install -n check-env --override-channels -c conda-forge conda-forge::numpy=2 conda-forge::uv conda-forge::opencv -y
           call conda activate check-env
           uv pip install -r unilabos/utils/requirements.txt
           uv pip install pywinauto pytest git+https://github.com/Xuwznln/pylabrobot.git@%PYLABROBOT_REF%
@@ -115,7 +115,7 @@ jobs:
           auto-update-conda: false
       - name: Install HostLink dependencies without ROS
         run: |
-          mamba install -n check-env --override-channels -c conda-forge conda-forge::numpy=2 conda-forge::uv conda-forge::opencv -y
+          call mamba install -n check-env --override-channels -c conda-forge conda-forge::numpy=2 conda-forge::uv conda-forge::opencv -y
           call conda activate check-env
           uv pip install -r unilabos/utils/requirements.txt
           uv pip install pywinauto pytest git+https://github.com/Xuwznln/pylabrobot.git@%PYLABROBOT_REF%
@@ -183,7 +183,7 @@ jobs:
           show-channel-urls: true
       - name: Install ROS 2 dependencies and build tools
         run: |
-          mamba install -n check-env --override-channels -c conda-forge -c %ROS_CHANNEL% conda-forge::numpy=2 conda-forge::uv conda-forge::opencv conda-forge::colcon-common-extensions %ROS_CHANNEL%::ros2-distro-mutex=%ROS_MUTEX% %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-ros-core %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-action-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-std-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-geometry-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-control-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-nav2-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-cv-bridge %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-vision-opencv %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf-transformations %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-moveit-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf2-ros %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf2-ros-py conda-forge::transforms3d -y
+          call mamba install -n check-env --override-channels -c conda-forge -c %ROS_CHANNEL% conda-forge::numpy=2 conda-forge::uv conda-forge::opencv conda-forge::colcon-common-extensions %ROS_CHANNEL%::ros2-distro-mutex=%ROS_MUTEX% %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-ros-core %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-action-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-std-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-geometry-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-control-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-nav2-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-cv-bridge %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-vision-opencv %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf-transformations %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-moveit-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf2-ros %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf2-ros-py conda-forge::transforms3d -y
       - name: Initialize MSVC x64 toolchain
         uses: ilammy/msvc-dev-cmd@v1
         with:

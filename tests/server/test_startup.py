@@ -82,6 +82,35 @@ def test_host_stack_uses_embedded_materials_when_address_is_empty(tmp_path) -> N
     assert get_materials_service() is not None
 
 
+def test_ros_stack_binds_projection_without_requiring_hostlink_listener(
+    tmp_path, monkeypatch
+) -> None:
+    bound = []
+    monkeypatch.setattr(BasicConfig, "backend", "ros2")
+    monkeypatch.setattr(
+        "unilabos.server.scheduler.host_network.bind_ros_material_projection_dispatcher",
+        lambda gateway: bound.append(gateway) or True,
+    )
+    monkeypatch.setattr(
+        "unilabos.server.scheduler.host_network.setup_host_network_service",
+        lambda *, material_gateway: None,
+    )
+
+    stack = setup_host_server_stack(
+        args={
+            "backend": "ros2",
+            "server_database_root": str(tmp_path / "edge"),
+            "material_microbackend_addr": "",
+        },
+        working_dir=tmp_path,
+        registry=_Registry(),
+        communication_client=_communication_client(),
+    )
+
+    assert bound == [stack.materials_gateway]
+    assert stack.host_network is None
+
+
 def test_host_stack_uses_external_materials_as_the_only_authority(
     tmp_path, monkeypatch
 ) -> None:

@@ -17,7 +17,12 @@ from unilabos.server.workflow.graph_validation import (
     validate_graph,
 )
 from unilabos.server.workflow.json_codec import decode_json_bytes, encode_json
-from unilabos.server.workflow.models import WorkflowEdgeWrite, WorkflowNodeWrite
+from unilabos.server.workflow.models import (
+    WorkflowEdgeWrite,
+    WorkflowHandleTemplateWrite,
+    WorkflowNodeTemplateWrite,
+    WorkflowNodeWrite,
+)
 from unilabos.server.workflow.schema import (
     WORKFLOW_SCHEMA_VERSION,
     WorkflowSchemaError,
@@ -635,6 +640,187 @@ class WorkflowStore:
             "edges": [self._edge_row(row) for row in edge_rows],
             "node_templates": node_templates,
             "handle_templates": handle_templates,
+        }
+
+    def sync_template_catalog(
+        self,
+        *,
+        authority_id: str,
+        node_templates: Iterable[WorkflowNodeTemplateWrite],
+        handle_templates: Iterable[WorkflowHandleTemplateWrite],
+    ) -> Dict[str, Any]:
+        """幂等同步一个受控 Authoring 模板目录。
+
+        浏览器只有读取权限；模板 UUID 与 Handle UUID 由服务端发布者生成，
+        从而避免前端为了通过 Graph 校验临时杜撰标识。
+        """
+
+        authority = authority_id.strip()
+        if not authority:
+            raise ValueError("template catalog authority_id must not be blank")
+        nodes = list(node_templates)
+        handles = list(handle_templates)
+        node_by_uuid = {item.uuid: item for item in nodes}
+        handle_by_uuid = {item.uuid: item for item in handles}
+        if len(node_by_uuid) != len(nodes):
+            raise StoreConflict("duplicate workflow node template UUID")
+        if len(handle_by_uuid) != len(handles):
+            raise StoreConflict("duplicate workflow handle template UUID")
+        if any(
+            item.workflow_node_template_uuid not in node_by_uuid
+            for item in handles
+        ):
+            raise StoreConflict("workflow handle template references another catalog")
+
+        now = utc_now()
+        with self.transaction() as conn:
+            for item in nodes:
+                values = (
+                    item.description,
+                    _json(item.meta_data),
+                    authority,
+                    item.resource_template_uuid,
+                    item.name,
+                    item.display_name,
+                    item.class_name,
+                    _json(item.goal),
+                    _json(item.goal_default),
+                    _json(item.feedback),
+                    _json(item.result),
+                    None if item.schema_value is None else _json(item.schema_value),
+                    item.type,
+                    item.icon,
+                    item.header,
+                    item.footer,
+                    item.node_type,
+                )
+                existing = conn.execute(
+                    "SELECT create_time FROM workflow_node_template WHERE uuid = ?",
+                    (item.uuid,),
+                ).fetchone()
+                if existing is None:
+                    conn.execute(
+                        """
+                        INSERT INTO workflow_node_template(
+                            uuid, create_time, update_time, deleted_at,
+                            description, meta_data, authority_id,
+                            resource_template_uuid, name, display_name, class,
+                            goal, goal_default, feedback, result, schema, type,
+                            icon, header, footer, node_type
+                        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                  ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (item.uuid, now, now, *values),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE workflow_node_template
+                        SET update_time = ?, deleted_at = NULL,
+                            description = ?, meta_data = ?, authority_id = ?,
+                            resource_template_uuid = ?, name = ?,
+                            display_name = ?, class = ?, goal = ?,
+                            goal_default = ?, feedback = ?, result = ?,
+                            schema = ?, type = ?, icon = ?, header = ?,
+                            footer = ?, node_type = ?
+                        WHERE uuid = ?
+                        """,
+                        (now, *values, item.uuid),
+                    )
+
+            for item in handles:
+                values = (
+                    item.description,
+                    _json(item.meta_data),
+                    authority,
+                    item.workflow_node_template_uuid,
+                    item.handle_key,
+                    item.io_type,
+                    item.display_name,
+                    item.type,
+                    int(item.required),
+                    item.data_source,
+                    item.data_key,
+                )
+                existing = conn.execute(
+                    "SELECT create_time FROM workflow_handle_template WHERE uuid = ?",
+                    (item.uuid,),
+                ).fetchone()
+                if existing is None:
+                    conn.execute(
+                        """
+                        INSERT INTO workflow_handle_template(
+                            uuid, create_time, update_time, deleted_at,
+                            description, meta_data, authority_id,
+                            workflow_node_template_uuid, handle_key, io_type,
+                            display_name, type, required, data_source, data_key
+                        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (item.uuid, now, now, *values),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE workflow_handle_template
+                        SET update_time = ?, deleted_at = NULL,
+                            description = ?, meta_data = ?, authority_id = ?,
+                            workflow_node_template_uuid = ?, handle_key = ?,
+                            io_type = ?, display_name = ?, type = ?, required = ?,
+                            data_source = ?, data_key = ?
+                        WHERE uuid = ?
+                        """,
+                        (now, *values, item.uuid),
+                    )
+
+            retained_nodes = set(node_by_uuid)
+            retained_handles = set(handle_by_uuid)
+            for table, retained in (
+                ("workflow_handle_template", retained_handles),
+                ("workflow_node_template", retained_nodes),
+            ):
+                rows = conn.execute(
+                    f"SELECT uuid FROM {table} "
+                    "WHERE authority_id = ? AND deleted_at IS NULL",
+                    (authority,),
+                ).fetchall()
+                omitted = [row["uuid"] for row in rows if row["uuid"] not in retained]
+                if omitted:
+                    marks = ",".join("?" for _ in omitted)
+                    conn.execute(
+                        f"UPDATE {table} SET deleted_at = ?, update_time = ? "
+                        f"WHERE uuid IN ({marks})",
+                        (now, now, *omitted),
+                    )
+        return self.list_template_catalog(authority_id=authority)
+
+    def list_template_catalog(
+        self,
+        *,
+        authority_id: str | None = None,
+    ) -> Dict[str, Any]:
+        """返回 Authoring 可引用的全部活动模板与 Handle。"""
+
+        clause = "WHERE deleted_at IS NULL"
+        params: tuple[Any, ...] = ()
+        if authority_id is not None:
+            clause += " AND authority_id = ?"
+            params = (authority_id,)
+        with self._lock:
+            node_rows = self._conn.execute(
+                "SELECT * FROM workflow_node_template "
+                f"{clause} ORDER BY authority_id, create_time, uuid",
+                params,
+            ).fetchall()
+            handle_rows = self._conn.execute(
+                "SELECT * FROM workflow_handle_template "
+                f"{clause} ORDER BY authority_id, create_time, uuid",
+                params,
+            ).fetchall()
+        return {
+            "node_templates": [self._node_template_row(row) for row in node_rows],
+            "handle_templates": [
+                self._handle_template_row(row) for row in handle_rows
+            ],
         }
 
     def get_published_workflow_snapshot(

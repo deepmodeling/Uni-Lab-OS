@@ -102,10 +102,28 @@ def setup_demo_workflow_authority(
         WorkflowStore(database_path),
         authority_profile=SchedulerAuthorityProfile.LOCAL_SCHEDULER,
     )
+    from unilabos.server.workflow.builtin_catalog import (
+        BUILTIN_CATALOG_AUTHORITY,
+        builtin_workflow_catalog,
+    )
+
+    node_templates, handle_templates = builtin_workflow_catalog()
+    service.sync_template_catalog(
+        authority_id=BUILTIN_CATALOG_AUTHORITY,
+        node_templates=node_templates,
+        handle_templates=handle_templates,
+    )
     executor = WorkflowTaskExecutor(
         service,
         execution_backend,
         materials_gateway=_materials_gateway,
+        history=configure_server_services(BasicConfig.server_database_paths).history,
+        endpoint_uuid=":".join(
+            (
+                BasicConfig.backend,
+                BasicConfig.machine_name or BasicConfig.host_node_name or "host",
+            )
+        ),
     )
     service.set_task_submitter(executor.submit)
     executor.start(recover=True)

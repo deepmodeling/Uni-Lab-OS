@@ -65,6 +65,10 @@ class ItemizedCarrier(Carrier[ResourceHolder]):
     ``resource_sites`` 只保存微后端的 canonical Site 快照，不替代 PLR 槽位树。
     """
 
+    # 与普通 PLR Carrier 不同，本类的构造器显式消费 canonical
+    # ResourceSite[]，用于重建设备本地 holder 与权威 Site UUID。
+    unilabos_accepts_canonical_sites = True
+
     def __init__(
         self,
         name: str,

@@ -2499,6 +2499,35 @@ class MaterialsService:
             )
             return result
 
+    def reconcile_device_projection(
+        self,
+        *,
+        command_uuid: str,
+        device_id: str,
+        root_material_uuid: str,
+    ) -> None:
+        """把一个权威根树重新投影到设备内建 resource service。
+
+        该入口只供 provision/recovery 使用，不改变 materials.v1 位置事实；正常
+        跨设备转移仍必须调用 :meth:`transfer_material`。
+        """
+
+        dispatcher = self._resource_sync_dispatcher
+        if dispatcher is None:
+            raise MaterialTransferSyncError(
+                "material projection dispatcher is not configured"
+            )
+        self._dispatch_device_sync(
+            dispatcher,
+            MaterialDeviceSync(
+                transfer_uuid=command_uuid,
+                device_id=device_id,
+                action="load",
+                material_uuids=[root_material_uuid],
+                destination_site_uuids=[None],
+            ),
+        )
+
     # -- Delete / Snapshot ------------------------------------------------
 
     def delete_material(

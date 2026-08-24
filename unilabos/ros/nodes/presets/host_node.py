@@ -857,7 +857,13 @@ class HostNode(BaseROS2DeviceNode):
             device_id,
             ros_device_namespace(device_id),
         )
-        if BasicConfig.test_mode:
+        local_device = self.devices_instances.get(device_id)
+        run_simulator = bool(
+            local_device is not None
+            and getattr(local_device.driver_instance, "run_in_test_mode", False)
+            is True
+        )
+        if BasicConfig.test_mode and not run_simulator:
             action_id = f"{namespace}/{action_name}"
             self.lab_logger().info(
                 f"[TEST MODE] 模拟执行: {action_id} (job={item.job_id[:8]}), 参数: {str(action_kwargs)[:500]}"

@@ -37,6 +37,8 @@ from unilabos.server.workflow.models import (
     CandidateDiagnostic,
     CandidateSourceMapEntry,
     WorkflowEdgeWrite,
+    WorkflowHandleTemplateWrite,
+    WorkflowNodeTemplateWrite,
     WorkflowNodeWrite,
     normalize_json_array,
     normalize_json_object,
@@ -390,6 +392,43 @@ class WorkflowService:
         return self._validated_applied_backend_graph(
             self._store.get_graph(identity),
         )
+
+    def list_template_catalog(self) -> Dict[str, Any]:
+        """返回 Graph authoring 可引用的服务端模板目录。"""
+
+        return self._store.list_template_catalog()
+
+    def sync_template_catalog(
+        self,
+        *,
+        authority_id: str,
+        node_templates: Iterable[WorkflowNodeTemplateWrite | Dict[str, Any]],
+        handle_templates: Iterable[WorkflowHandleTemplateWrite | Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """供注册表/内建 demo 发布模板；不暴露浏览器写入口。"""
+
+        try:
+            nodes = [
+                item
+                if isinstance(item, WorkflowNodeTemplateWrite)
+                else WorkflowNodeTemplateWrite.model_validate(item)
+                for item in node_templates
+            ]
+            handles = [
+                item
+                if isinstance(item, WorkflowHandleTemplateWrite)
+                else WorkflowHandleTemplateWrite.model_validate(item)
+                for item in handle_templates
+            ]
+            return self._store.sync_template_catalog(
+                authority_id=authority_id,
+                node_templates=nodes,
+                handle_templates=handles,
+            )
+        except (TypeError, ValueError, ValidationError):
+            raise WorkflowError("invalid_input") from None
+        except StoreConflict:
+            raise WorkflowConflict("template_catalog_conflict") from None
 
     def get_published_workflow_snapshot(
         self,

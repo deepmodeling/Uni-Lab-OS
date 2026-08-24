@@ -37,6 +37,11 @@ from unilabos.server.protocol.virtual_environment import (
     VirtualEnvironmentId,
     VirtualEnvironmentResetRequest,
 )
+from unilabos.server.protocol.heating_demo import (
+    HeatingScenarioId,
+    HeatingScenarioResetRequest,
+)
+from unilabos.server.services.heating_demo import HeatingDemoProvisionService
 from unilabos.server.services.virtual_environment import VirtualEnvironmentService
 
 
@@ -73,6 +78,7 @@ def _call(function, *args, **kwargs):
 def create_materials_router(service: MaterialsService) -> APIRouter:
     router = APIRouter(prefix="/api/v1/materials", tags=["materials-v1"])
     virtual_environments = VirtualEnvironmentService(service)
+    heating_demo = HeatingDemoProvisionService(service)
 
     @router.get("/virtual-environments")
     async def list_virtual_environments():
@@ -92,6 +98,24 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             virtual_environments.reset,
             preset_id,
             request_uuid=str(value.request_uuid),
+        )
+
+    @router.post("/heating-demo/scenarios/{scenario_id}/reset")
+    def reset_heating_demo_scenario(
+        scenario_id: HeatingScenarioId,
+        value: HeatingScenarioResetRequest,
+    ):
+        if not (BasicConfig.demo_mode and BasicConfig.test_mode):
+            raise HTTPException(
+                status_code=403,
+                detail="heating demo reset requires --demo-mode --test_mode",
+            )
+        return _call(
+            heating_demo.reset,
+            scenario_id,
+            request_uuid=str(value.request_uuid),
+            source_device_id=value.source_device_id,
+            target_device_id=value.target_device_id,
         )
 
     @router.put("/templates/{template_uuid}")
@@ -297,7 +321,10 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
         )
 
     @router.post("/transfer")
-    async def transfer_material(mutation: InventoryMutation):
+    def transfer_material(mutation: InventoryMutation):
+        # unload/load 会同步等待 HostLink 或 ROS2 resource service；让 FastAPI
+        # 在线程池执行，避免阻塞 ASGI loop，也避免 HostLink 在运行中的 loop
+        # 上调用同步 client.call()。
         return _call(
             service.transfer_material,
             mutation,

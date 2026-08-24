@@ -202,6 +202,89 @@ class WorkflowEdgeWrite(BaseModel):
         return normalized or None
 
 
+class WorkflowNodeTemplateWrite(BaseModel):
+    """服务端受控同步的 Workflow 节点模板。"""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    uuid: str
+    resource_template_uuid: str
+    name: str
+    display_name: str
+    description: Optional[str] = None
+    meta_data: JsonObject = Field(default_factory=dict)
+    class_name: Optional[str] = Field(default=None, alias="class")
+    goal: JsonObject = Field(default_factory=dict)
+    goal_default: JsonObject = Field(default_factory=dict)
+    feedback: JsonObject = Field(default_factory=dict)
+    result: JsonObject = Field(default_factory=dict)
+    schema_value: Optional[Any] = Field(default=None, alias="schema")
+    type: str = "action"
+    icon: Optional[str] = None
+    header: Optional[str] = None
+    footer: Optional[str] = None
+    node_type: str
+
+    @field_validator("uuid", "resource_template_uuid")
+    @classmethod
+    def _valid_template_uuid(cls, value: str) -> str:
+        return validate_uuid(value)
+
+    @field_validator("meta_data", "goal", "goal_default", "feedback", "result", mode="before")
+    @classmethod
+    def _template_json_object(cls, value: Any) -> JsonObject:
+        return normalize_json_object(value)
+
+    @field_validator("schema_value")
+    @classmethod
+    def _template_schema(cls, value: Any) -> Any:
+        return None if value is None else validate_json_value(value)
+
+    @field_validator("name", "display_name", "type", "node_type")
+    @classmethod
+    def _template_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+
+class WorkflowHandleTemplateWrite(BaseModel):
+    """服务端受控同步的 Workflow Handle 模板。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    uuid: str
+    workflow_node_template_uuid: str
+    handle_key: str
+    io_type: Literal["source", "target"]
+    display_name: str
+    description: Optional[str] = None
+    meta_data: JsonObject = Field(default_factory=dict)
+    type: str = "default"
+    required: bool = False
+    data_source: Optional[str] = None
+    data_key: Optional[str] = None
+
+    @field_validator("uuid", "workflow_node_template_uuid")
+    @classmethod
+    def _valid_handle_uuid(cls, value: str) -> str:
+        return validate_uuid(value)
+
+    @field_validator("meta_data", mode="before")
+    @classmethod
+    def _handle_json_object(cls, value: Any) -> JsonObject:
+        return normalize_json_object(value)
+
+    @field_validator("handle_key", "display_name", "type")
+    @classmethod
+    def _handle_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+
 class CandidateCompilation(BaseModel):
     """One compiler result before the service issues a Candidate hash."""
 

@@ -246,6 +246,12 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             service.list_workflows(page=page, page_size=page_size, name=name)
         )
 
+    @router.get("/workflow-template-catalog")
+    def list_workflow_template_catalog() -> JSONResponse:
+        """返回节点与 Handle UUID 的权威 Authoring 目录。"""
+
+        return _success(service.list_template_catalog())
+
     @router.get("/workflows/{workflow_uuid}")
     def get_workflow(workflow_uuid: str) -> JSONResponse:
         return _success(service.get_workflow(workflow_uuid))

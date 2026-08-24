@@ -97,7 +97,13 @@ def main():
 
     from unilabos.hostlink.startup import configure_heating_demo_args
 
-    configure_heating_demo_args(args_dict)
+    configure_heating_demo_args(
+        args_dict,
+        backend_explicit=any(
+            value == "--backend" or value.startswith("--backend=")
+            for value in sys.argv[1:]
+        ),
+    )
 
     if run_cli_command(args, parser):
         return

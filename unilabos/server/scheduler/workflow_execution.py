@@ -14,10 +14,12 @@ from typing import Any, Dict, Optional
 from uuid import uuid5, UUID
 
 from unilabos.server.protocol.common import InventoryMutation
+from unilabos.server.protocol.history import HistoryEventAppend
 from unilabos.server.protocol.materials import (
     InventoryReservationCreate,
     InventoryReservationTransition,
     InventoryTaskReservationCreate,
+    MaterialTransfer,
 )
 from unilabos.server.scheduler.dispatch import build_job_start_payload
 from unilabos.server.scheduler.param_resolver import (
@@ -29,10 +31,12 @@ from unilabos.server.scheduler.dag.dag_executor import DagWalk
 from unilabos.server.scheduler.dag.dag_model import DagEdge, DagNode, NodeState, TaskDag
 from unilabos.server.scheduler.dag.task_dag_runner import TaskDagRunner
 from unilabos.server.workflow.service import WorkflowService
+from unilabos.server.services.history import HistoryConflictError, HistoryService
 
 logger = logging.getLogger(__name__)
 
 _JOB_TERMINAL = {"succeeded", "failed", "skipped", "canceled", "timeout"}
+_HISTORY_NAMESPACE = UUID("b38c442e-c397-4fd4-9590-e918e2e68ee6")
 
 
 class WorkflowExecutionError(RuntimeError):
@@ -48,10 +52,14 @@ class WorkflowTaskExecutor:
         backend: Any,
         *,
         materials_gateway: Any = None,
+        history: Optional[HistoryService] = None,
+        endpoint_uuid: Optional[str] = None,
     ) -> None:
         self.service = service
         self.backend = backend
         self.materials_gateway = materials_gateway
+        self.history = history
+        self.endpoint_uuid = endpoint_uuid
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._started = threading.Event()
@@ -106,6 +114,7 @@ class WorkflowTaskExecutor:
             return {}
         task = prepared["task"]
         jobs = prepared["jobs"]
+        self._append_task_history(task_uuid, "running")
         try:
             dag, specs = self._build_dag(task, jobs)
             self._reserve_task_inventory(task, specs)
@@ -156,7 +165,7 @@ class WorkflowTaskExecutor:
                 if self.service.get_workflow_node_job(job_id)["status"]
                 in {"succeeded", "skipped"}
             }
-            self.service.finish_workflow_task(
+            finished_task = self.service.finish_workflow_task(
                 task_uuid,
                 status=task_status,
                 output=output,
@@ -166,6 +175,7 @@ class WorkflowTaskExecutor:
                     else [{"code": "node_execution_failed"}]
                 ),
             )
+            self._append_task_history(task_uuid, str(finished_task["status"]))
             return result
         finally:
             self._release_unconsumed_task_inventory(task_uuid)
@@ -228,24 +238,32 @@ class WorkflowTaskExecutor:
         for workflow_node_uuid, job in jobs_by_node.items():
             planned = planned_nodes.get(workflow_node_uuid, {})
             source = snapshot_nodes.get(workflow_node_uuid, {})
-            if job["executor_kind"] != "device_action":
+            executor_kind = str(job["executor_kind"])
+            if executor_kind not in {"device_action", "tool_call"}:
                 raise WorkflowExecutionError(
-                    f"executor_kind {job['executor_kind']!r} is not wired locally"
+                    f"executor_kind {executor_kind!r} is not wired locally"
                 )
             param = dict(job.get("param") or planned.get("param") or {})
             source_meta = dict(source.get("meta_data") or {})
-            device_id = str(
-                source_meta.get("target_device_id")
-                or job.get("material_uuid")
-                or planned.get("material_uuid")
-                or source.get("material_uuid")
-                or param.get("device_id")
-                or ""
-            )
             action = str(source.get("action_name") or param.get("action") or "")
+            if executor_kind == "device_action":
+                device_id = str(
+                    source_meta.get("target_device_id")
+                    or job.get("material_uuid")
+                    or planned.get("material_uuid")
+                    or source.get("material_uuid")
+                    or param.get("device_id")
+                    or ""
+                )
+            else:
+                device_id = "materials.v1"
+                if action not in {"materials.transfer", "transfer_material"}:
+                    raise WorkflowExecutionError(
+                        f"tool_call {action!r} is not an allowed authority operation"
+                    )
             if not device_id or not action:
                 raise WorkflowExecutionError(
-                    f"workflow node {workflow_node_uuid} lacks material_uuid/device action"
+                    f"workflow node {workflow_node_uuid} lacks executor target/action"
                 )
             job_id = str(job["uuid"])
             dag_nodes[job_id] = DagNode(
@@ -258,6 +276,9 @@ class WorkflowTaskExecutor:
             )
             specs[job_id] = {
                 "workflow_node_uuid": workflow_node_uuid,
+                "executor_kind": executor_kind,
+                "device_id": device_id,
+                "action": action,
                 "base_param": param,
                 "edges": list(plan.get("edges") or []),
                 "jobs_by_node": {
@@ -294,7 +315,19 @@ class WorkflowTaskExecutor:
 
     def _start_node(self, task: Dict[str, Any], node: DagNode) -> None:
         args = self._resolve_action_args(node.node_id)
-        self.service.mark_workflow_node_job_running(node.node_id)
+        running_job = self.service.mark_workflow_node_job_running(node.node_id)
+        self._append_job_history(running_job)
+        if self._job_specs[node.node_id]["executor_kind"] == "tool_call":
+            # Authority operation 可能同步等待 HostLink/ROS2 service；它和设备
+            # action 一样不能占用 WorkflowTaskExecutor 的 DAG event loop。
+            asyncio.get_running_loop().run_in_executor(
+                None,
+                self._execute_authority_operation,
+                task,
+                node,
+                args,
+            )
+            return
         payload = build_job_start_payload(
             job_id=node.node_id,
             task_id=str(task["uuid"]),
@@ -313,6 +346,62 @@ class WorkflowTaskExecutor:
         )
         payload["always_free"] = node.always_free
         self.backend.dispatch(payload)
+
+    def _execute_authority_operation(
+        self,
+        task: Dict[str, Any],
+        node: DagNode,
+        args: Dict[str, Any],
+    ) -> None:
+        """执行白名单内的微后端 Authority operation。
+
+        正文来自已持久化 Workflow Node 参数；ready edge 只表达依赖。物料
+        转移仍通过 materials.v1 client，沿用 commit-before-unload/load 语义。
+        """
+
+        try:
+            if node.action not in {"materials.transfer", "transfer_material"}:
+                raise WorkflowExecutionError(
+                    f"authority operation {node.action!r} is not supported"
+                )
+            if self.materials_gateway is None:
+                raise WorkflowExecutionError("materials.v1 authority is unavailable")
+            value = MaterialTransfer.model_validate(args)
+            mutation = InventoryMutation(
+                command_uuid=self._authority_command_uuid(node.node_id),
+                effect_key=f"workflow.materials.transfer:{node.node_id}",
+                operation="transfer_material",
+                actor_type="scheduler",
+                actor_uuid="workflow-task-executor",
+                job_uuid=node.node_id,
+            )
+            result = self.materials_gateway.transfer_material(mutation, value)
+            returned = (
+                result.model_dump(mode="json", exclude_none=False)
+                if hasattr(result, "model_dump")
+                else result
+            )
+        except Exception as exc:  # noqa: BLE001 - 失败必须进入统一 Job 终态
+            logger.exception(
+                "workflow authority operation failed: task=%s job=%s",
+                task["uuid"],
+                node.node_id,
+            )
+            self._on_backend_finished(
+                node.node_id,
+                False,
+                {"error": f"{type(exc).__name__}: {exc}"},
+            )
+            return
+        self._on_backend_finished(node.node_id, True, returned)
+
+    @staticmethod
+    def _authority_command_uuid(job_uuid: str) -> str:
+        try:
+            namespace = UUID(job_uuid)
+        except ValueError:
+            namespace = UUID("11aa174d-4162-4586-b836-cc6afba7c21d")
+        return str(uuid5(namespace, "authority-operation:v1"))
 
     @staticmethod
     def _inventory_command_uuid(task_uuid: str) -> str:
@@ -455,7 +544,7 @@ class WorkflowTaskExecutor:
         job_status = "skipped" if success and suc_type == "skip" else (
             "succeeded" if success else "failed"
         )
-        self.service.record_workflow_node_job_terminal(
+        terminal_job = self.service.record_workflow_node_job_terminal(
             job_id,
             status=job_status,
             return_info={
@@ -465,6 +554,7 @@ class WorkflowTaskExecutor:
             },
             error_info=[] if success else [{"code": "action_failed"}],
         )
+        self._append_job_history(terminal_job)
         runner.notify_terminal(
             job_id,
             NodeState.SUCCESS if success else NodeState.FAILED,
@@ -484,12 +574,13 @@ class WorkflowTaskExecutor:
         }.get(state)
         if status is None:
             return
-        self.service.record_workflow_node_job_terminal(
+        terminal_job = self.service.record_workflow_node_job_terminal(
             job_id,
             status=status,
             return_info={},
             error_info=([] if status == "succeeded" else [{"code": status}]),
         )
+        self._append_job_history(terminal_job)
 
     def _fail_unstarted_task(
         self,
@@ -499,18 +590,104 @@ class WorkflowTaskExecutor:
     ) -> None:
         for job in jobs:
             if job["status"] not in _JOB_TERMINAL:
-                self.service.record_workflow_node_job_terminal(
+                terminal_job = self.service.record_workflow_node_job_terminal(
                     str(job["uuid"]),
                     status="canceled",
                     error_info=[{"code": "plan_not_executable"}],
                 )
-        self.service.finish_workflow_task(
+                self._append_job_history(terminal_job)
+        finished_task = self.service.finish_workflow_task(
             task_uuid,
             status="failed",
             error_info=[
                 {"code": "plan_not_executable", "message": str(error)}
             ],
         )
+        self._append_task_history(task_uuid, str(finished_task["status"]))
+
+    def _append_task_history(self, task_uuid: str, status: str) -> None:
+        """Project the canonical Workflow task transition into ``history.v1``."""
+
+        if self.history is None:
+            return
+        self._append_history_once(
+            HistoryEventAppend(
+                event_uuid=str(
+                    uuid5(
+                        _HISTORY_NAMESPACE,
+                        f"workflow-task:{task_uuid}:{status}",
+                    )
+                ),
+                event_type="job_transition",
+                endpoint_uuid=self.endpoint_uuid,
+                event_key="workflow_task_transition",
+                summary={
+                    "entity_type": "workflow_task",
+                    "workflow_task_uuid": task_uuid,
+                    "status": status,
+                },
+                actor_type="edge",
+                actor_uuid=self.endpoint_uuid or "workflow-task-executor",
+            )
+        )
+
+    def _append_job_history(self, job: Dict[str, Any]) -> None:
+        """Project one persisted Workflow Node Job transition into ``history.v1``."""
+
+        if self.history is None:
+            return
+        job_uuid = str(job["uuid"])
+        status = str(job["status"])
+        spec = self._job_specs.get(job_uuid, {})
+        self._append_history_once(
+            HistoryEventAppend(
+                event_uuid=str(
+                    uuid5(
+                        _HISTORY_NAMESPACE,
+                        f"workflow-node-job:{job_uuid}:{status}",
+                    )
+                ),
+                event_type="job_transition",
+                job_uuid=job_uuid,
+                endpoint_uuid=self.endpoint_uuid,
+                device_uuid=(
+                    str(spec["device_id"])
+                    if spec.get("device_id")
+                    else None
+                ),
+                action_name=(
+                    str(spec["action"])
+                    if spec.get("action")
+                    else None
+                ),
+                event_key="workflow_node_job_transition",
+                summary={
+                    "entity_type": "workflow_node_job",
+                    "workflow_task_uuid": str(job["workflow_task_uuid"]),
+                    "workflow_node_uuid": str(job["workflow_node_uuid"]),
+                    "executor_kind": str(job["executor_kind"]),
+                    "status": status,
+                },
+                actor_type="edge",
+                actor_uuid=self.endpoint_uuid or "workflow-task-executor",
+            )
+        )
+
+    def _append_history_once(self, event: HistoryEventAppend) -> None:
+        """Append an idempotent projection without weakening Workflow authority."""
+
+        assert self.history is not None
+        try:
+            self.history.append_event(event)
+        except HistoryConflictError:
+            existing = self.history.get_event(str(event.event_uuid))
+            if (
+                existing.event_type != event.event_type
+                or existing.job_uuid != event.job_uuid
+                or existing.event_key != event.event_key
+                or existing.summary != event.summary
+            ):
+                raise
 
 
 __all__ = ["WorkflowExecutionError", "WorkflowTaskExecutor"]

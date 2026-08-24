@@ -54,6 +54,14 @@ def test_heating_demo_mode_starts_local_host_microbackend() -> None:
     assert HEATING_DEMO_EDGE_URL == "https://edge.whalent.com"
 
 
+def test_heating_demo_mode_preserves_explicit_ros2_backend() -> None:
+    args = vars(build_parser().parse_args(["--demo-mode", "--backend", "ros2"]))
+
+    configure_heating_demo_args(args, backend_explicit=True)
+
+    assert args["backend"] == "ros2"
+
+
 def test_heating_demo_does_not_start_privileged_backend_control(monkeypatch) -> None:
     monkeypatch.setattr(BasicConfig, "demo_mode", True)
 

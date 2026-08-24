@@ -105,8 +105,12 @@ def setup_host_server_stack(
 
         host_network = None
         if args.get("backend") == "ros2":
-            from unilabos.server.scheduler.host_network import setup_host_network_service
+            from unilabos.server.scheduler.host_network import (
+                bind_ros_material_projection_dispatcher,
+                setup_host_network_service,
+            )
 
+            bind_ros_material_projection_dispatcher(materials_gateway)
             host_network = setup_host_network_service(
                 material_gateway=materials_gateway
             )

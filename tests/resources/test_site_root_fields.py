@@ -690,6 +690,45 @@ def test_itemized_carrier_resource_tree_roundtrip_preserves_sites():
     assert restored_sites == [site]
 
 
+def test_itemized_carrier_roundtrip_restores_occupied_site_resource():
+    owner_uuid = str(uuid4())
+    occupant_uuid = str(uuid4())
+    site = ResourceSite(
+        uuid=str(uuid4()),
+        template_name="StrictCarrier",
+        material_uuid=owner_uuid,
+        index=0,
+        label="A1",
+        pose={
+            "position": {"x": 1, "y": 2, "z": 3},
+            "position3d": {"x": 1, "y": 2, "z": 3},
+            "size": {"width": 4, "height": 5, "depth": 6},
+        },
+    )
+    carrier = ItemizedCarrier(
+        name="carrier",
+        size_x=100,
+        size_y=100,
+        size_z=20,
+        sites=[site],
+    )
+    carrier.unilabos_uuid = owner_uuid
+    set_plr_template_name(carrier, "StrictCarrier")
+    sample = Resource("sample", 1, 1, 1)
+    sample.unilabos_uuid = occupant_uuid
+    set_plr_template_name(sample, "Sample")
+    carrier.assign_resource_to_site(sample, 0)
+
+    tree = ResourceTreeSet.from_plr_resources([carrier])
+    restored = ResourceTreeSet.load(tree.dump()).to_plr_resources()[0]
+
+    assert isinstance(restored, ItemizedCarrier)
+    assert restored.sites[0].resource is not None
+    assert restored.sites[0].resource.unilabos_uuid == occupant_uuid
+    assert restored.resource_sites is not None
+    assert restored.resource_sites[0].occupied_material_uuid == occupant_uuid
+
+
 def test_itemized_carrier_site_boundary_has_only_canonical_fields():
     site = ResourceSite(
         uuid=str(uuid4()),

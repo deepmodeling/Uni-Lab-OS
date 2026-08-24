@@ -326,6 +326,7 @@ class HostNetworkService:
         """通过 ROS2 Host transport 调用设备内建 material_sync service。"""
 
         from unilabos.ros.nodes.presets.host_node import HostNode
+        from unilabos.ros.naming import ros_device_namespace
         from unilabos_msgs.srv import SerialCommand
 
         host_node = HostNode.get_instance(timeout=5.0)
@@ -333,7 +334,7 @@ class HostNetworkService:
             raise RuntimeError("ROS2 HostNode 尚未就绪，无法同步设备物料")
         data = command.model_dump(mode="json", exclude_none=False)
         device_id = str(data["device_id"])
-        service_name = f"/srv/devices/{device_id}/material_sync"
+        service_name = f"/srv{ros_device_namespace(device_id)}/material_sync"
         client = host_node.create_client(
             SerialCommand,
             service_name,
@@ -415,6 +416,22 @@ _host_service: Optional[HostNetworkService] = None
 _slave_setup_lock = threading.Lock()
 _cleanup_registration_lock = threading.Lock()
 _cleanup_registered = False
+
+
+def bind_ros_material_projection_dispatcher(material_gateway: Any) -> bool:
+    """Bind the embedded materials authority to the ROS material-sync service.
+
+    A pure ROS2 Host may explicitly disable HostLink.  It still needs the same
+    commit-before-unload/load projection path, so binding cannot depend on a
+    HostLink listener having been created.
+    """
+
+    service = getattr(material_gateway, "service", None)
+    setter = getattr(service, "set_resource_sync_dispatcher", None)
+    if not callable(setter):
+        return False
+    setter(HostNetworkService.dispatch_material_sync)
+    return True
 
 
 def _register_process_cleanup() -> None:
@@ -596,6 +613,7 @@ def shutdown_network_services() -> None:
 
 
 __all__ = [
+    "bind_ros_material_projection_dispatcher",
     "HostNetworkService",
     "SERVICE_OWNER",
     "get_host_network_service",

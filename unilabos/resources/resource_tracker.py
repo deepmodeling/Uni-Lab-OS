@@ -44,7 +44,12 @@ def plr_class_accepts_serialized_sites(plr_cls: type) -> bool:
     from pylabrobot.resources.carrier import Carrier
 
     return (
-        not issubclass(plr_cls, Carrier)
+        (
+            not issubclass(plr_cls, Carrier)
+            or bool(
+                getattr(plr_cls, "unilabos_accepts_canonical_sites", False)
+            )
+        )
         and "sites" in inspect.signature(plr_cls).parameters
     )
 
@@ -1193,6 +1198,14 @@ class ResourceTreeSet(object):
             """转换节点为 PLR 字典格式"""
             res = node.res_content
             plr_type = TYPE_MAP.get(res.type, res.type)
+            site_occupants = {
+                site.occupied_material_uuid
+                for site in (res.sites or [])
+                if site.occupied_material_uuid
+            }
+            site_holder_uuids = {
+                site.uuid for site in (res.sites or []) if site.uuid
+            }
             if res.type not in TYPE_MAP:
                 logger.warning(f"未知类型 {res.type}")
 
@@ -1234,7 +1247,10 @@ class ResourceTreeSet(object):
                 },
                 "category": res.config.get("category", plr_type),
                 "children": [
-                    node_to_plr_dict(child, has_model) for child in node.children
+                    node_to_plr_dict(child, has_model)
+                    for child in node.children
+                    if child.res_content.uuid
+                    not in site_occupants | site_holder_uuids
                 ],
                 "parent_name": res.parent_instance_name,
             }
@@ -1288,6 +1304,54 @@ class ResourceTreeSet(object):
                     if plr_dict["location"] is not None
                     else None
                 )
+                # canonical Site occupant 在 materials 树中以 owner 为 parent，
+                # 但 ItemizedCarrier 的 PLR 结构必须是 carrier -> holder ->
+                # occupant。先让 sites 构造稳定 holder，再把被过滤的直接子物料
+                # 放进相同 ordinal，避免把 occupant 错当成 carrier 直接 child。
+                site_spot_by_occupant = {
+                    site.occupied_material_uuid: spot
+                    for spot, site in enumerate(
+                        tree.root_node.res_content.sites or []
+                    )
+                    if site.occupied_material_uuid
+                }
+                assign_to_site = getattr(
+                    plr_resource, "assign_resource_to_site", None
+                )
+                if site_spot_by_occupant and not callable(assign_to_site):
+                    raise ValueError(
+                        f"资源 {plr_resource.name!r} 声明了 canonical Site occupant，"
+                        "但运行时类型不支持 assign_resource_to_site"
+                    )
+                descendants = {
+                    child.res_content.uuid: child
+                    for child in tree.get_all_nodes()[1:]
+                }
+                for occupant_uuid, spot in site_spot_by_occupant.items():
+                    child = descendants.get(occupant_uuid)
+                    if child is None:
+                        raise ValueError(
+                            f"canonical Site occupant {occupant_uuid!r} "
+                            "不在资源树中"
+                        )
+                    child_dict = node_to_plr_dict(child, has_model)
+                    child_cls = find_subclass(child_dict["type"], PLRResource)
+                    if child_cls is None:
+                        raise ValueError(
+                            f"无法找到 Site occupant 类型 {child_dict['type']!r}"
+                        )
+                    child_spec = inspect.signature(child_cls)
+                    if "category" not in child_spec.parameters:
+                        child_dict.pop("category", None)
+                    child_resource = child_cls.deserialize(
+                        child_dict, allow_marshal=True
+                    )
+                    child_resource.location = (
+                        cast(Coordinate, deserialize(child_dict["location"]))
+                        if child_dict["location"] is not None
+                        else None
+                    )
+                    assign_to_site(child_resource, spot)
                 plr_resource.load_all_state(all_states)
                 # 使用 DeviceNodeResourceTracker 设置 UUID 和 Extra
                 tracker.loop_set_uuid(plr_resource, name_to_uuid)

@@ -22,7 +22,11 @@ HEATING_DEMO_GRAPH = (
 )
 
 
-def configure_heating_demo_args(args: MutableMapping[str, Any]) -> None:
+def configure_heating_demo_args(
+    args: MutableMapping[str, Any],
+    *,
+    backend_explicit: bool = False,
+) -> None:
     """Apply local three-site demo defaults before backend selection.
 
     The demo process is the local Host and owns its HTTP microbackend.  The
@@ -33,7 +37,8 @@ def configure_heating_demo_args(args: MutableMapping[str, Any]) -> None:
 
     if not args.get("demo_mode", False):
         return
-    args["backend"] = "hostlink"
+    if not backend_explicit:
+        args["backend"] = "hostlink"
     args["is_slave"] = False
     args["slave_no_host"] = False
     args["test_mode"] = True

@@ -295,6 +295,7 @@ def plr_resources_to_create(resources: Sequence[Any]) -> MaterialTreeCreate:
 
 def material_tree_to_resource_tree(value: MaterialTreeRead) -> ResourceTreeSet:
     raw: list[dict[str, Any]] = []
+    site_pose_by_occupant: dict[str, dict[str, Any]] = {}
     for node in value.nodes:
         material = node.material
         substance_metadata = [
@@ -361,6 +362,22 @@ def material_tree_to_resource_tree(value: MaterialTreeRead) -> ResourceTreeSet:
                 "unknown_counter": node.data.unknown_counter,
             }
         )
+        for site in node.sites:
+            if site.occupied_material_uuid:
+                site_pose_by_occupant[site.occupied_material_uuid] = site.pose
+
+    # materials.v1 的 Site 是权威占位信息；被占用物料可以不重复保存绝对
+    # position。PLR 反序列化父子树时要求 child location，因此只在适配边界
+    # 用所属 Site 的二维 position（缺省时用 position3d）补齐运行时坐标。
+    for item in raw:
+        if not item["parent_uuid"] or item["pose"].get("position") is not None:
+            continue
+        site_pose = site_pose_by_occupant.get(item["uuid"])
+        if not site_pose:
+            continue
+        position = site_pose.get("position") or site_pose.get("position3d")
+        if position is not None:
+            item["pose"]["position"] = copy.deepcopy(position)
     return ResourceTreeSet.from_raw_dict_list(raw)
 
 

@@ -219,25 +219,32 @@ def setup_job_execution_backend(
             else _materials_gateway
         ),
     )
-    coordinator = WorkflowBusinessCoordinator(
-        services.runtime,
-        services.history,
-        backend,
-        endpoint_uuid=endpoint_uuid,
-        transport=BasicConfig.backend,
-        host_uuid=BasicConfig.machine_name or BasicConfig.host_node_name or "host",
-        instance_name=BasicConfig.host_node_name or "host",
-        notice_callback=(
-            getattr(control_client, "publish_runtime_events", None)
-            if control_client is not None
-            else None
-        ),
-    )
-    backend.result_bridges.append(coordinator)
+    coordinator: Optional[WorkflowBusinessCoordinator] = None
+    if not BasicConfig.demo_mode:
+        # 普通 profile 的 Job 生命周期由 Backend coordinator 持有；Demo 的
+        # local WorkflowTaskExecutor 则写 workflow.db。两种 owner 不能同时接收
+        # 同一结果，否则本地 Job 会被 coordinator 当成 runtime.db 的 unknown job，
+        # 失败结果还可能被错误地挂进 Backend error gate。
+        coordinator = WorkflowBusinessCoordinator(
+            services.runtime,
+            services.history,
+            backend,
+            endpoint_uuid=endpoint_uuid,
+            transport=BasicConfig.backend,
+            host_uuid=BasicConfig.machine_name or BasicConfig.host_node_name or "host",
+            instance_name=BasicConfig.host_node_name or "host",
+            notice_callback=(
+                getattr(control_client, "publish_runtime_events", None)
+                if control_client is not None
+                else None
+            ),
+        )
+        backend.result_bridges.append(coordinator)
     _coordinator = coordinator
     backend.start()
     backend.rebuild_status_incidents()
-    coordinator.restore()
+    if coordinator is not None:
+        coordinator.restore()
     _backend = backend
     logger.info(
         "[JobExecutionIntegration] backend-controlled microbackend ready (%s)",

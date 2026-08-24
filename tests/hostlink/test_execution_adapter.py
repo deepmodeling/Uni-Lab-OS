@@ -265,6 +265,69 @@ def test_local_demo_workflow_task_dispatches_parameterized_hostlink_action(
         service.close()
 
 
+def test_local_demo_workflow_failure_reaches_terminal_without_backend_gate(
+    execution_stack,
+) -> None:
+    _adapter, microbackend, driver, _bridge = execution_stack
+    # Demo composition intentionally has no Backend-owned result bridge. The local
+    # WorkflowTaskExecutor is the sole lifecycle owner and must receive failures.
+    microbackend.result_bridges.clear()
+    service = WorkflowService(WorkflowStore(":memory:"))
+    executor = WorkflowTaskExecutor(service, microbackend)
+    service.set_task_submitter(executor.submit)
+    executor.start(recover=True)
+    try:
+        workflow = service.create_workflow(
+            name="failing local workflow",
+            tags=["demo"],
+            description=None,
+            meta_data={},
+        )
+        node_uuid = str(uuid.uuid4())
+        service.save_graph(
+            workflow["uuid"],
+            revision=workflow["revision"],
+            nodes=[
+                WorkflowNodeWrite(
+                    uuid=node_uuid,
+                    name="expected device failure",
+                    type="device_action",
+                    material_uuid=str(uuid.uuid4()),
+                    action_name="fail",
+                    action_type="NativeAction",
+                    param={},
+                    meta_data={"target_device_id": "device-1"},
+                )
+            ],
+            edges=[],
+        )
+        task = service.create_workflow_task(
+            workflow_uuid=workflow["uuid"],
+            run_mode="normal",
+            target_node_uuid=None,
+            input_value={},
+            description="expected failure",
+            meta_data={},
+        )
+        deadline = time.monotonic() + 3
+        current = service.get_workflow_task(task["uuid"])
+        while current["status"] not in {"succeeded", "failed"}:
+            if time.monotonic() >= deadline:
+                pytest.fail("failed workflow task did not reach a terminal state")
+            time.sleep(0.02)
+            current = service.get_workflow_task(task["uuid"])
+
+        jobs = service.list_workflow_node_jobs(task["uuid"])
+        assert current["status"] == "failed"
+        assert driver.calls == 1
+        assert [job["status"] for job in jobs] == ["failed"]
+        assert microbackend.list_error_decisions() == []
+    finally:
+        service.set_task_submitter(None)
+        executor.stop()
+        service.close()
+
+
 def test_hostlink_adapter_honors_action_goal_and_result_mapping(
     execution_stack,
 ) -> None:

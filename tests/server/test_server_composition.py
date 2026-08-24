@@ -18,6 +18,7 @@ from unilabos.server.database.repositories import (
 )
 from unilabos.config.config import BasicConfig
 from unilabos.server.scheduler.integration import (
+    get_business_coordinator,
     get_edge_backend,
     get_materials_service,
     reset_for_test,
@@ -86,6 +87,7 @@ def test_host_startup_uses_four_new_writers_without_local_scheduler(
 ) -> None:
     paths = ServerDatabasePaths.resolve(tmp_path)
     monkeypatch.setattr(BasicConfig, "backend", "hostlink")
+    monkeypatch.setattr(BasicConfig, "demo_mode", False)
     monkeypatch.setattr(BasicConfig, "machine_name", "test-host")
     monkeypatch.setattr(BasicConfig, "server_database_paths", paths)
     try:
@@ -94,6 +96,8 @@ def test_host_startup_uses_four_new_writers_without_local_scheduler(
 
         assert get_materials_service() is materials
         assert get_edge_backend() is backend
+        assert get_business_coordinator() is not None
+        assert backend.result_bridges == [get_business_coordinator()]
         assert backend.device_state.endpoint_uuid == "hostlink:test-host"
         assert {path.name for path in tmp_path.glob("*.db")} == {
             "runtime.db",
@@ -101,5 +105,23 @@ def test_host_startup_uses_four_new_writers_without_local_scheduler(
             "telemetry.db",
             "history.db",
         }
+    finally:
+        reset_for_test()
+
+
+def test_demo_backend_leaves_job_lifecycle_to_local_workflow_executor(
+    tmp_path, monkeypatch
+) -> None:
+    paths = ServerDatabasePaths.resolve(tmp_path)
+    monkeypatch.setattr(BasicConfig, "backend", "hostlink")
+    monkeypatch.setattr(BasicConfig, "demo_mode", True)
+    monkeypatch.setattr(BasicConfig, "machine_name", "demo-host")
+    monkeypatch.setattr(BasicConfig, "server_database_paths", paths)
+    try:
+        backend = setup_job_execution_backend(database_paths=paths)
+
+        assert get_edge_backend() is backend
+        assert get_business_coordinator() is None
+        assert backend.result_bridges == []
     finally:
         reset_for_test()

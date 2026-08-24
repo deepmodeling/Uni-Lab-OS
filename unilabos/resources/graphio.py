@@ -39,12 +39,18 @@ from unilabos.resources.resource_tracker import (
 from unilabos.utils import logger
 from unilabos.utils.banner_print import print_status
 
+Resource = None
+convert_to_ros_msg = None
 if BasicConfig.backend == "ros2":
-    from unilabos_msgs.msg import Resource
-    from unilabos.ros.msgs.message_converter import convert_to_ros_msg
-else:
-    Resource = None
-    convert_to_ros_msg = None
+    try:
+        from unilabos_msgs.msg import Resource
+        from unilabos.ros.msgs.message_converter import convert_to_ros_msg
+    except (ImportError, AttributeError):
+        # A HostLink-only installation intentionally has no generated ROS
+        # interfaces.  Graph loading remains available in its JSON mode; the
+        # legacy ROS Resource conversion below raises a focused error if used.
+        Resource = None
+        convert_to_ros_msg = None
 
 try:
     from pylabrobot.resources.resource import Resource as ResourcePLR

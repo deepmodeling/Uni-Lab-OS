@@ -275,3 +275,32 @@ def test_hostlink_registry_does_not_require_ros_message_packages() -> None:
         timeout=20,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_registry_falls_back_to_json_schema_without_generated_ros_messages() -> None:
+    code = (
+        "import pathlib, sys, tempfile; "
+        "tmp = tempfile.TemporaryDirectory(); "
+        "root = pathlib.Path(tmp.name) / 'unilabos_msgs'; "
+        "(root / 'msg').mkdir(parents=True); "
+        "(root / 'action').mkdir(); "
+        "(root / '__init__.py').write_text('', encoding='utf-8'); "
+        "(root / 'msg' / '__init__.py').write_text('', encoding='utf-8'); "
+        "(root / 'action' / '__init__.py').write_text('', encoding='utf-8'); "
+        "sys.path.insert(0, tmp.name); "
+        "from unilabos.config.config import BasicConfig; "
+        "assert BasicConfig.backend == 'ros2'; "
+        "import unilabos.registry.registry as registry; "
+        "import unilabos.resources.graphio as graphio; "
+        "assert registry._HOSTLINK_SCHEMA_ONLY is True; "
+        "assert graphio.Resource is None; "
+        "assert 'rclpy' not in sys.modules; "
+        "tmp.cleanup()"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr

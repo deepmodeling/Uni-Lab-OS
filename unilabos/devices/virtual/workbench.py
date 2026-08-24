@@ -343,11 +343,20 @@ class VirtualWorkbench:
                 "arm_state": self._arm_state.value,
                 "arm_current_task": self._arm_current_task,
                 "heating_stations": self._get_stations_status(),
-                "active_tasks_count": len(self._active_tasks),
+                "active_tasks_count": self._count_active_tasks(),
             }
         )
         if message:
             self.data["message"] = message
+
+    def _count_active_tasks(self) -> int:
+        """只统计仍在执行的任务，保留终态记录供诊断。"""
+
+        with self._tasks_lock:
+            return sum(
+                task.get("status") not in {"completed", "failed", "canceled"}
+                for task in self._active_tasks.values()
+            )
 
     def _find_available_heating_station(self) -> Optional[int]:
         """查找空闲的加热台"""
@@ -1337,8 +1346,7 @@ class VirtualWorkbench:
     @property
     @topic_config()
     def active_tasks_count(self) -> int:
-        with self._tasks_lock:
-            return len(self._active_tasks)
+        return self._count_active_tasks()
 
     @property
     @topic_config()

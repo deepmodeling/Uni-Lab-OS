@@ -31,6 +31,9 @@ from unilabos.server.workflow.builtin_catalog import (
     MATERIAL_TRANSFER_TEMPLATE_UUID,
     TRANSFER_READY_SOURCE_UUID,
     TRANSFER_READY_TARGET_UUID,
+    WORKBENCH_DATA_HANDLE_UUIDS,
+    WORKBENCH_READY_HANDLE_UUIDS,
+    WORKBENCH_TEMPLATE_UUIDS,
     builtin_workflow_catalog,
 )
 from unilabos.server.workflow.service import WorkflowService
@@ -86,12 +89,15 @@ def test_catalog_api_publishes_real_ready_handles_and_validates_graph() -> None:
         assert {item["uuid"] for item in catalog["node_templates"]} == {
             HEAT_SITE_TEMPLATE_UUID,
             MATERIAL_TRANSFER_TEMPLATE_UUID,
+            *WORKBENCH_TEMPLATE_UUIDS.values(),
         }
         assert {item["uuid"] for item in catalog["handle_templates"]} == {
             HEAT_READY_SOURCE_UUID,
             HEAT_READY_TARGET_UUID,
             TRANSFER_READY_SOURCE_UUID,
             TRANSFER_READY_TARGET_UUID,
+            *WORKBENCH_READY_HANDLE_UUIDS.values(),
+            *WORKBENCH_DATA_HANDLE_UUIDS.values(),
         }
 
         workflow = service.create_workflow(

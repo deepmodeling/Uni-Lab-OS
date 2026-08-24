@@ -33,6 +33,7 @@ def test_virtual_workbench_hostlink_action_status_and_peer_call() -> None:
                 "heating_station_1_state",
                 "heating_station_1_material",
                 "heating_station_1_progress",
+                "active_tasks_count",
             ),
         )
     )
@@ -85,6 +86,7 @@ def test_virtual_workbench_hostlink_action_status_and_peer_call() -> None:
         assert moved["success"] is True
         assert moved["output_position"] == "C1"
         final_status = runtime.snapshot_states()["workbench"]
+        assert final_status["active_tasks_count"] == 0
         assert final_status["heating_station_1_state"] == "idle"
         assert final_status["heating_station_1_material"] == ""
         assert final_status["arm_state"] == "idle"

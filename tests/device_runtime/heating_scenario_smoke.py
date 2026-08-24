@@ -17,6 +17,11 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from unilabos.server.demo.heating_scenarios import build_heating_scenario_graph
+from unilabos.server.demo.workbench_scenarios import (
+    DEFAULT_WORKBENCH_MATERIAL_UUID,
+    WorkbenchScenarioId,
+    build_workbench_scenario_graph,
+)
 
 
 def _free_port() -> int:
@@ -141,8 +146,21 @@ def _run_scenario(
         "GET",
         f"/api/v1/workflow-tasks/{task['uuid']}/jobs",
     )
-    assert current["status"] == "succeeded", current
-    assert all(job["status"] == "succeeded" for job in jobs), jobs
+    nodes = {node["uuid"]: node for node in saved["nodes"]}
+    failed_jobs = [
+        {
+            "action_name": nodes.get(job["workflow_node_uuid"], {}).get(
+                "action_name"
+            ),
+            "status": job["status"],
+            "error_info": job.get("error_info"),
+            "return_info": job.get("return_info"),
+        }
+        for job in jobs
+        if job["status"] != "succeeded"
+    ]
+    assert current["status"] == "succeeded", failed_jobs
+    assert not failed_jobs, failed_jobs
     expected_jobs = {
         "single_sequential": 2,
         "parallel_three_site": 3,
@@ -223,6 +241,207 @@ def _run_scenario(
         "node_to_job": node_to_job,
         "jobs": jobs,
         "environment": environment,
+    }
+
+
+def _run_workbench_scenario(
+    base_url: str,
+    scenario_id: WorkbenchScenarioId,
+    *,
+    workbench_material_uuid: str,
+) -> dict[str, Any]:
+    workflow = _request(
+        base_url,
+        "POST",
+        "/api/v1/workflows",
+        {
+            "name": f"smoke:workbench:{scenario_id}:{uuid4().hex[:8]}",
+            "tags": ["smoke", "workbench", scenario_id],
+            "meta_data": {
+                "demo": "virtual-workbench-scenarios",
+                "scenario_id": scenario_id,
+            },
+        },
+    )
+    graph = build_workbench_scenario_graph(
+        scenario_id,
+        revision=int(workflow["revision"]),
+        workbench_material_uuid=workbench_material_uuid,
+    )
+    saved = _request(
+        base_url,
+        "PUT",
+        f"/api/v1/workflows/{workflow['uuid']}/graph",
+        graph,
+    )
+    task = _request(
+        base_url,
+        "POST",
+        "/api/v1/workflow-tasks",
+        {
+            "workflow_uuid": workflow["uuid"],
+            "run_mode": "normal",
+            "meta_data": {
+                "demo": "virtual-workbench-scenarios",
+                "scenario_id": scenario_id,
+            },
+        },
+    )
+    deadline = time.monotonic() + 45.0
+    current = task
+    while time.monotonic() < deadline:
+        current = _request(
+            base_url,
+            "GET",
+            f"/api/v1/workflow-tasks/{task['uuid']}",
+        )
+        if current["status"] in {
+            "succeeded",
+            "failed",
+            "canceled",
+            "timeout",
+        }:
+            break
+        time.sleep(0.05)
+    jobs = _request(
+        base_url,
+        "GET",
+        f"/api/v1/workflow-tasks/{task['uuid']}/jobs",
+    )
+    nodes = {node["uuid"]: node for node in saved["nodes"]}
+    failed_jobs = [
+        {
+            "action_name": nodes.get(job["workflow_node_uuid"], {}).get(
+                "action_name"
+            ),
+            "status": job["status"],
+            "error_info": job.get("error_info"),
+            "return_info": job.get("return_info"),
+        }
+        for job in jobs
+        if job["status"] != "succeeded"
+    ]
+    assert current["status"] == "succeeded", failed_jobs
+    assert not failed_jobs, failed_jobs
+    expected_jobs = {
+        "single_sample": 4,
+        "sequential_two_samples": 7,
+        "parallel_three_samples": 10,
+    }[scenario_id]
+    assert len(jobs) == expected_jobs
+
+    def phase(job: dict[str, Any]) -> str:
+        return str(nodes[job["workflow_node_uuid"]]["meta_data"]["phase"])
+
+    def sample_number(job: dict[str, Any]) -> int | None:
+        raw = nodes[job["workflow_node_uuid"]]["meta_data"].get(
+            "sample_number"
+        )
+        return int(raw) if raw is not None else None
+
+    assert sum(phase(job) == "prepare" for job in jobs) == 1
+    output_jobs = [job for job in jobs if phase(job) == "output"]
+    assert {
+        job["return_info"]["return_value"]["output_position"]
+        for job in output_jobs
+    } == {f"C{index}" for index in range(1, len(output_jobs) + 1)}
+
+    if scenario_id == "sequential_two_samples":
+        first_output = next(
+            job
+            for job in jobs
+            if phase(job) == "output" and sample_number(job) == 1
+        )
+        second_move = next(
+            job
+            for job in jobs
+            if phase(job) == "move" and sample_number(job) == 2
+        )
+        first_finished = _time(first_output["finished_at"])
+        second_started = _time(second_move["started_at"])
+        assert first_finished <= second_started, {
+            "first_output_finished_at": first_output["finished_at"],
+            "second_move_started_at": second_move["started_at"],
+        }
+    elif scenario_id == "parallel_three_samples":
+        heat_jobs = [job for job in jobs if phase(job) == "heat"]
+        assert len(heat_jobs) == 3
+        latest_start = max(_time(job["started_at"]) for job in heat_jobs)
+        earliest_finish = min(_time(job["finished_at"]) for job in heat_jobs)
+        assert latest_start < earliest_finish, [
+            {
+                "started_at": job["started_at"],
+                "finished_at": job["finished_at"],
+            }
+            for job in heat_jobs
+        ]
+
+    idle_snapshot: dict[str, Any] = {}
+    # HostLink follows the registry status period (5 s by default); the Job
+    # result can therefore precede the next telemetry projection snapshot.
+    # ROS2 publishes each property independently, so the first projection can
+    # also be a valid partial snapshot while the remaining topics arrive.
+    required_property_names = {
+        "arm_state",
+        "active_tasks_count",
+        *(
+            f"heating_station_{index}_{suffix}"
+            for index in range(1, 4)
+            for suffix in ("state", "material")
+        ),
+    }
+    state_deadline = time.monotonic() + 7.0
+    while time.monotonic() < state_deadline:
+        device_state = _request(
+            base_url,
+            "GET",
+            "/api/v1/device-state/virtual-workbench",
+        )
+        properties = device_state["properties"]
+        missing_properties = required_property_names - properties.keys()
+        if missing_properties:
+            idle_snapshot = {
+                "missing_properties": sorted(missing_properties),
+                "available_properties": sorted(properties),
+            }
+            time.sleep(0.05)
+            continue
+        idle_snapshot = {
+            "arm_state": properties["arm_state"]["value"],
+            "active_tasks_count": properties["active_tasks_count"]["value"],
+            "heating_stations": {
+                index: {
+                    "state": properties[f"heating_station_{index}_state"]["value"],
+                    "material": properties[f"heating_station_{index}_material"]["value"],
+                }
+                for index in range(1, 4)
+            },
+        }
+        if (
+            idle_snapshot["arm_state"] == "idle"
+            and idle_snapshot["active_tasks_count"] == 0
+            and all(
+                value == {"state": "idle", "material": ""}
+                for value in idle_snapshot["heating_stations"].values()
+            )
+        ):
+            break
+        time.sleep(0.05)
+    assert not idle_snapshot.get("missing_properties"), idle_snapshot
+    assert idle_snapshot["arm_state"] == "idle", idle_snapshot
+    assert idle_snapshot["active_tasks_count"] == 0, idle_snapshot
+    for index in range(1, 4):
+        assert idle_snapshot["heating_stations"][index] == {
+            "state": "idle",
+            "material": "",
+        }, idle_snapshot
+
+    return {
+        "scenario_id": scenario_id,
+        "workflow_uuid": workflow["uuid"],
+        "task_uuid": task["uuid"],
+        "job_count": len(jobs),
+        "jobs": jobs,
     }
 
 
@@ -309,15 +528,30 @@ def run_heating_scenario_smoke(
                         resource_ids = {
                             item["material"]["resource_id"] for item in materials
                         }
+                        template_names = {
+                            item["name"] for item in catalog["node_templates"]
+                        }
                         if (
                             health["status"] == "ok"
-                            and len(catalog["node_templates"]) >= 2
+                            and {
+                                "heat_site",
+                                "materials.transfer",
+                                "auto-prepare_materials",
+                                "auto-move_to_heating_station",
+                                "auto-start_heating",
+                                "auto-move_to_output",
+                            }.issubset(template_names)
                             and {
                                 "virtual-heater",
                                 "virtual-heater-target",
                             }.issubset(resource_ids)
                         ):
                             break
+                        readiness_error = RuntimeError(
+                            "incomplete demo catalog: "
+                            f"templates={sorted(template_names)!r}, "
+                            f"resources={sorted(resource_ids)!r}"
+                        )
                     except (OSError, RuntimeError, URLError, KeyError) as exc:
                         readiness_error = exc
                     time.sleep(0.25)
@@ -340,6 +574,18 @@ def run_heating_scenario_smoke(
                         ("cross_device_transfer", 90.0),
                     )
                 }
+                workbench_scenarios = {
+                    scenario_id: _run_workbench_scenario(
+                        base_url,
+                        scenario_id,
+                        workbench_material_uuid=DEFAULT_WORKBENCH_MATERIAL_UUID,
+                    )
+                    for scenario_id in (
+                        "single_sample",
+                        "sequential_two_samples",
+                        "parallel_three_samples",
+                    )
+                }
                 telemetry = _request(
                     base_url,
                     "GET",
@@ -352,16 +598,33 @@ def run_heating_scenario_smoke(
                 )
                 assert telemetry, "telemetry.v1 must contain device samples"
                 assert history, "history.v1 must contain workflow/job events"
+                logs = log_path.read_text(encoding="utf-8", errors="replace")
+                unknown_job_messages = (
+                    "ignored start callback for unknown job",
+                    "ignored status callback for unknown job",
+                    "ignored error callback for unknown job",
+                )
+                unknown_job_lines = [
+                    line
+                    for line in logs.splitlines()
+                    if any(message in line for message in unknown_job_messages)
+                ]
+                assert not unknown_job_lines, "\n".join(unknown_job_lines[-10:])
                 return {
                     "success": True,
                     "backend": backend,
                     "scenarios": scenarios,
+                    "workbench_scenarios": workbench_scenarios,
                     "telemetry_event_count": len(telemetry),
                     "history_event_count": len(history),
                 }
             except Exception as exc:
                 logs = log_path.read_text(encoding="utf-8", errors="replace")
-                raise RuntimeError(f"{backend} multi-job smoke failed: {exc}\n{logs}") from exc
+                log_tail = "\n".join(logs.splitlines()[-30:])
+                raise RuntimeError(
+                    f"{backend} multi-job smoke failed: {exc!r}\n"
+                    f"--- runtime log tail ---\n{log_tail}"
+                ) from exc
             finally:
                 _stop(process)
 

@@ -14,3 +14,11 @@ def test_hostlink_runs_all_heating_scenarios_from_shared_graph() -> None:
         "parallel_three_site": 3,
         "cross_device_transfer": 3,
     }
+    assert {
+        scenario_id: value["job_count"]
+        for scenario_id, value in proof["workbench_scenarios"].items()
+    } == {
+        "single_sample": 4,
+        "sequential_two_samples": 7,
+        "parallel_three_samples": 10,
+    }

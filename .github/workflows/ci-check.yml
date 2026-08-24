@@ -64,7 +64,7 @@ jobs:
       - name: Gate four-database, control and workflow contracts
         run: |
           call conda activate check-env
-          python -m pytest -q tests\app\test_package_cli.py tests\server\test_schema_manifest.py tests\server\test_backend_control_protocol.py tests\server\test_workflow_business_coordinator.py tests\server\test_workflow_template_catalog.py -p no:launch_testing -p no:launch_ros
+          python -m pytest -q tests\app\test_package_cli.py tests\server\test_schema_manifest.py tests\server\test_backend_control_protocol.py tests\server\test_workflow_business_coordinator.py tests\server\test_server_composition.py tests\server\test_telemetry_state_projection.py tests\server\test_workflow_template_catalog.py tests\server\test_workbench_scenarios.py -p no:launch_testing -p no:launch_ros
       - name: Validate external AST registries
         run: |
           call conda activate check-env
@@ -131,7 +131,7 @@ jobs:
         run: |
           call conda activate check-env
           python -m pytest -q tests\hostlink tests\networking tests\app\test_backend_selection.py tests\registry\test_backend_metadata.py tests\resources\test_site_root_fields.py -p no:launch_testing -p no:launch_ros
-      - name: Run canonical multi-job heating workflows on HostLink
+      - name: Run canonical Heating and Workbench workflows on HostLink
         run: |
           call conda activate check-env
           python -m pytest -q tests\device_runtime\test_heating_scenario_smoke.py -s -p no:launch_testing -p no:launch_ros
@@ -216,7 +216,7 @@ jobs:
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
           python -m pytest -q tests\ros\test_action_schema_compat.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py tests\ros\test_naming.py tests\app\test_rclpy_dll_patch.py tests\app\test_backend_selection.py::test_ros2_registry_uses_generated_message_schemas -p no:launch_testing -p no:launch_ros
-      - name: Run canonical multi-job heating workflows on ROS2
+      - name: Run canonical Heating and Workbench workflows on ROS2
         run: |
           call conda activate check-env
           call install\unilabos_msgs\setup.bat

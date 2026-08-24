@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+import os
 import subprocess
 import sys
 import threading
@@ -27,7 +29,6 @@ from unilabos.server.startup import resolve_database_paths
 
 def test_only_public_communication_backends_are_selectable() -> None:
     assert BACKEND_NAMES == ("hostlink", "ros2")
-    assert BasicConfig.backend == "ros2"
 
 
 @pytest.mark.parametrize(
@@ -251,15 +252,28 @@ def test_hostlink_entrypoint_does_not_import_ros_runtime() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_hostlink_registry_does_not_require_ros_message_packages() -> None:
-    code = (
-        "import sys, tempfile; "
-        "from unilabos.config.config import BasicConfig; "
-        "BasicConfig.backend = 'hostlink'; "
-        "BasicConfig.demo_mode = True; "
+def _missing_generated_messages_setup() -> str:
+    return (
+        "import pathlib, sys, tempfile; "
         "tmp = tempfile.TemporaryDirectory(); "
+        "root = pathlib.Path(tmp.name) / 'unilabos_msgs'; "
+        "(root / 'msg').mkdir(parents=True); "
+        "(root / 'action').mkdir(); "
+        "(root / '__init__.py').write_text('', encoding='utf-8'); "
+        "(root / 'msg' / '__init__.py').write_text('', encoding='utf-8'); "
+        "(root / 'action' / '__init__.py').write_text('', encoding='utf-8'); "
+        "sys.path.insert(0, tmp.name); "
+    )
+
+
+def test_explicit_hostlink_registry_does_not_require_generated_messages() -> None:
+    code = _missing_generated_messages_setup() + (
+        "from unilabos.config.config import BasicConfig; "
+        "assert BasicConfig.backend == 'hostlink'; "
+        "BasicConfig.demo_mode = True; "
         "BasicConfig.working_dir = tmp.name; "
-        "from unilabos.registry.registry import build_registry; "
+        "from unilabos.registry.registry import build_registry, _HOSTLINK_SCHEMA_ONLY; "
+        "assert _HOSTLINK_SCHEMA_ONLY is True; "
         "registry = build_registry(external_only=True); "
         "assert 'virtual_heating_platform' in registry.device_type_registry; "
         "assert 'virtual_workbench' in registry.device_type_registry; "
@@ -273,34 +287,44 @@ def test_hostlink_registry_does_not_require_ros_message_packages() -> None:
         capture_output=True,
         text=True,
         timeout=20,
+        env={**os.environ, "UNILABOS_BASICCONFIG_BACKEND": "hostlink"},
     )
     assert result.returncode == 0, result.stderr
 
 
-def test_registry_falls_back_to_json_schema_without_generated_ros_messages() -> None:
-    code = (
-        "import pathlib, sys, tempfile; "
-        "tmp = tempfile.TemporaryDirectory(); "
-        "root = pathlib.Path(tmp.name) / 'unilabos_msgs'; "
-        "(root / 'msg').mkdir(parents=True); "
-        "(root / 'action').mkdir(); "
-        "(root / '__init__.py').write_text('', encoding='utf-8'); "
-        "(root / 'msg' / '__init__.py').write_text('', encoding='utf-8'); "
-        "(root / 'action' / '__init__.py').write_text('', encoding='utf-8'); "
-        "sys.path.insert(0, tmp.name); "
+def test_explicit_ros2_registry_fails_without_generated_messages() -> None:
+    code = _missing_generated_messages_setup() + (
         "from unilabos.config.config import BasicConfig; "
         "assert BasicConfig.backend == 'ros2'; "
-        "import unilabos.registry.registry as registry; "
-        "import unilabos.resources.graphio as graphio; "
-        "assert registry._HOSTLINK_SCHEMA_ONLY is True; "
-        "assert graphio.Resource is None; "
-        "assert 'rclpy' not in sys.modules; "
-        "tmp.cleanup()"
+        "import unilabos.registry.registry"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
         timeout=20,
+        env={**os.environ, "UNILABOS_BASICCONFIG_BACKEND": "ros2"},
+    )
+    assert result.returncode != 0
+    assert "ResourceCreateFromOuterEasy" in result.stderr
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("rclpy") is None,
+    reason="requires a real ROS2 Humble/Jazzy environment",
+)
+def test_ros2_registry_uses_generated_message_schemas() -> None:
+    code = (
+        "from unilabos.config.config import BasicConfig; "
+        "assert BasicConfig.backend == 'ros2'; "
+        "import unilabos.registry.registry as registry; "
+        "assert registry._HOSTLINK_SCHEMA_ONLY is False"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={**os.environ, "UNILABOS_BASICCONFIG_BACKEND": "ros2"},
     )
     assert result.returncode == 0, result.stderr

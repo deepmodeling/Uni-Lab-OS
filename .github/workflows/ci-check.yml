@@ -22,6 +22,8 @@ jobs:
     name: contract, installer and AST registry
     runs-on: windows-2022
     timeout-minutes: 45
+    env:
+      UNILABOS_BASICCONFIG_BACKEND: hostlink
     defaults:
       run:
         shell: cmd
@@ -58,6 +60,7 @@ jobs:
           uv pip uninstall enum34 || echo enum34 not installed, skipping
           uv pip install -e .
           python -c "import importlib.util; assert importlib.util.find_spec('rclpy') is None; print('contract job: no ROS runtime installed')"
+          python -c "from unilabos.config.config import BasicConfig; assert BasicConfig.backend == 'hostlink'; import unilabos.registry.registry as registry; assert registry._HOSTLINK_SCHEMA_ONLY is True; print('explicit HostLink schema mode: OK')"
       - name: Gate four-database, control and workflow contracts
         run: |
           call conda activate check-env
@@ -65,8 +68,8 @@ jobs:
       - name: Validate external AST registries
         run: |
           call conda activate check-env
-          python -m unilabos --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceLanDemo\lan_demo" --external_devices_only
-          python -m unilabos --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo\workstation_demo" --external_devices_only
+          python -m unilabos --backend hostlink --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceLanDemo\lan_demo" --external_devices_only
+          python -m unilabos --backend hostlink --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo\workstation_demo" --external_devices_only
       - name: Install ordinary pinned GitHub URLs and discover devices
         run: |
           call conda activate check-env
@@ -86,6 +89,8 @@ jobs:
     name: pure Python HostLink runtime
     runs-on: windows-2022
     timeout-minutes: 45
+    env:
+      UNILABOS_BASICCONFIG_BACKEND: hostlink
     defaults:
       run:
         shell: cmd
@@ -149,6 +154,7 @@ jobs:
       matrix:
         ros_distro: [humble, jazzy]
     env:
+      UNILABOS_BASICCONFIG_BACKEND: ros2
       ROS_DISTRO: ${{ matrix.ros_distro }}
       ROS_CHANNEL: robostack-${{ matrix.ros_distro }}
       ROS_PACKAGE_PREFIX: ros-${{ matrix.ros_distro }}
@@ -209,7 +215,7 @@ jobs:
         run: |
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
-          python -m pytest -q tests\ros\test_action_schema_compat.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py tests\ros\test_naming.py tests\app\test_rclpy_dll_patch.py -p no:launch_testing -p no:launch_ros
+          python -m pytest -q tests\ros\test_action_schema_compat.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py tests\ros\test_naming.py tests\app\test_rclpy_dll_patch.py tests\app\test_backend_selection.py::test_ros2_registry_uses_generated_message_schemas -p no:launch_testing -p no:launch_ros
       - name: Run canonical multi-job heating workflows on ROS2
         run: |
           call conda activate check-env

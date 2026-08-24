@@ -70,22 +70,16 @@ from msgcenterpy.instances.json_schema_instance import JSONSchemaMessageInstance
 _HOSTLINK_SCHEMA_ONLY = BasicConfig.backend == "hostlink"
 
 if not _HOSTLINK_SCHEMA_ONLY:
-    try:
-        from unilabos_msgs.action import ResourceCreateFromOuterEasy
-        from unilabos_msgs.msg import Resource
-        from unilabos.ros.msgs.message_converter import (
-            msg_converter_manager,
-            ros_action_result_mapping,
-            ros_action_to_json_schema,
-            String,
-            ros_message_to_json_schema,
-        )
-        from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
-    except (ImportError, AttributeError):
-        # Keep registry discovery usable in a pure-Python HostLink install.
-        # A ROS2 runtime still has to pass the explicit generated-interface
-        # typesupport gate before it can start.
-        _HOSTLINK_SCHEMA_ONLY = True
+    from unilabos_msgs.action import ResourceCreateFromOuterEasy
+    from unilabos_msgs.msg import Resource
+    from unilabos.ros.msgs.message_converter import (
+        msg_converter_manager,
+        ros_action_result_mapping,
+        ros_action_to_json_schema,
+        String,
+        ros_message_to_json_schema,
+    )
+    from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
 
 if _HOSTLINK_SCHEMA_ONLY:
     # HostLink transmits JSON descriptors and values.  ROS message classes are

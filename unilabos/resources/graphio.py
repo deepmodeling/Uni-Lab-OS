@@ -10,7 +10,6 @@ import networkx as nx
 from pylabrobot.resources import ResourceHolder
 
 from unilabos.config.config import BasicConfig
-from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.presets.itemized_carrier import BottleCarrier, ItemizedCarrier
 from unilabos.resources.objects.joint_state import ResourceJointState
 from unilabos.resources.objects.pose import (
@@ -38,19 +37,6 @@ from unilabos.resources.resource_tracker import (
 )
 from unilabos.utils import logger
 from unilabos.utils.banner_print import print_status
-
-Resource = None
-convert_to_ros_msg = None
-if BasicConfig.backend == "ros2":
-    try:
-        from unilabos_msgs.msg import Resource
-        from unilabos.ros.msgs.message_converter import convert_to_ros_msg
-    except (ImportError, AttributeError):
-        # A HostLink-only installation intentionally has no generated ROS
-        # interfaces.  Graph loading remains available in its JSON mode; the
-        # legacy ROS Resource conversion below raises a focused error if used.
-        Resource = None
-        convert_to_ros_msg = None
 
 try:
     from pylabrobot.resources.resource import Resource as ResourcePLR
@@ -1494,13 +1480,6 @@ def initialize_resource(resource_config: dict, resource_type: Any = None) -> Uni
                 r = resource_plr
         elif resource_class_config["type"] == "unilabos":
             raise ValueError(f"No more support for unilabos Resource class {resource_class_config}")
-            if Resource is None or convert_to_ros_msg is None:
-                raise RuntimeError("HostLink JSON 模式不支持旧 unilabos ROS Resource")
-            res_instance: RegularContainer = RESOURCE(id=resource_config["name"])
-            res_instance.ulr_resource = convert_to_ros_msg(
-                Resource, {k: v for k, v in resource_config.items() if k != "class"}
-            )
-            r = [res_instance.get_ulr_resource_as_dict()]
         elif isinstance(RESOURCE, dict):
             r = [RESOURCE.copy()]
 

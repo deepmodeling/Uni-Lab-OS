@@ -230,3 +230,9 @@ def load_config(config_path=None):
     else:
         config_path = os.path.join(os.path.dirname(__file__), "example_config.py")
         load_config(config_path)
+
+
+# Registry schema selection happens at import time.  Apply explicit environment
+# configuration before any caller can import the registry; load_config() repeats
+# the overlay after a config file is loaded so environment values still win.
+_update_config_from_env()

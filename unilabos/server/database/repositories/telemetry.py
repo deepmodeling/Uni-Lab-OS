@@ -7,6 +7,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 from typing import Any, Optional
 
@@ -27,6 +28,17 @@ def _load_json(value: Any) -> Any:
     return json.loads(str(value))
 
 
+def _serialized(method: Any) -> Any:
+    """Serialize complete cursor lifetimes on the repository connection."""
+
+    @wraps(method)
+    def wrapper(self: "TelemetryRepository", *args: Any, **kwargs: Any) -> Any:
+        with self._connection_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class TelemetryRepository:
     """Repository 独占一个 connection，所有写入经过同一个 writer 入口。"""
 
@@ -39,8 +51,9 @@ class TelemetryRepository:
         else:
             self.connection = initialize_database(database, TELEMETRY_DATABASE)
             self._owns_connection = True
-        self._write_lock = threading.RLock()
+        self._connection_lock = threading.RLock()
 
+    @_serialized
     def close(self) -> None:
         if self._owns_connection:
             self.connection.close()
@@ -55,7 +68,7 @@ class TelemetryRepository:
     def write(self) -> Iterator[sqlite3.Connection]:
         """每个 telemetry.db 进程内只有这一个 writer 事务入口。"""
 
-        with self._write_lock:
+        with self._connection_lock:
             self.connection.execute("BEGIN IMMEDIATE")
             try:
                 yield self.connection
@@ -83,6 +96,7 @@ class TelemetryRepository:
         values["payload"] = _load_json(values.pop("payload_json"))
         return TelemetryEventRecord.model_validate(values)
 
+    @_serialized
     def get_source_cursor(
         self, endpoint_uuid: str
     ) -> Optional[TelemetrySourceCursorRecord]:
@@ -92,6 +106,7 @@ class TelemetryRepository:
         ).fetchone()
         return self._cursor(row) if row is not None else None
 
+    @_serialized
     def save_source_cursor(
         self,
         record: TelemetrySourceCursorRecord,
@@ -139,6 +154,7 @@ class TelemetryRepository:
         if cursor.rowcount != 1:
             raise RuntimeError("telemetry source cursor version conflict")
 
+    @_serialized
     def source_epoch_exists(self, endpoint_uuid: str, source_epoch: str) -> bool:
         row = self.connection.execute(
             """
@@ -149,6 +165,7 @@ class TelemetryRepository:
         ).fetchone()
         return row is not None
 
+    @_serialized
     def get_device_state(
         self, endpoint_uuid: str, device_uuid: str
     ) -> Optional[DeviceStateLatestRecord]:
@@ -161,6 +178,7 @@ class TelemetryRepository:
         ).fetchone()
         return self._state(row) if row is not None else None
 
+    @_serialized
     def list_device_states(
         self, endpoint_uuid: Optional[str] = None
     ) -> list[DeviceStateLatestRecord]:
@@ -178,6 +196,7 @@ class TelemetryRepository:
             )
         return [self._state(row) for row in rows]
 
+    @_serialized
     def upsert_device_state(
         self, record: DeviceStateLatestRecord
     ) -> DeviceStateLatestRecord:
@@ -226,12 +245,14 @@ class TelemetryRepository:
             raise RuntimeError("device state upsert did not persist a row")
         return saved
 
+    @_serialized
     def get_event(self, event_uuid: str) -> Optional[TelemetryEventRecord]:
         row = self.connection.execute(
             "SELECT * FROM telemetry_event WHERE event_uuid=?", (event_uuid,)
         ).fetchone()
         return self._event(row) if row is not None else None
 
+    @_serialized
     def get_event_at_source_position(
         self,
         *,
@@ -256,6 +277,7 @@ class TelemetryRepository:
         ).fetchone()
         return self._event(row) if row is not None else None
 
+    @_serialized
     def append_event(self, record: TelemetryEventRecord) -> TelemetryEventRecord:
         values = record.model_dump(mode="json")
         cursor = self.connection.execute(
@@ -310,6 +332,7 @@ class TelemetryRepository:
             params.append(query.observed_to_ms)
         return clauses, params
 
+    @_serialized
     def query_events(self, query: TelemetryEventQuery) -> list[TelemetryEventRecord]:
         clauses, params = self._event_filters(query)
         params.append(query.limit)
@@ -322,6 +345,7 @@ class TelemetryRepository:
         )
         return [self._event(row) for row in rows]
 
+    @_serialized
     def count_events(self, query: TelemetryEventQuery) -> int:
         clauses, params = self._event_filters(query)
         row = self.connection.execute(

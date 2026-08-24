@@ -2,9 +2,44 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+
+import pytest
+
 from unilabos.server.database.repositories.telemetry import TelemetryRepository
 from unilabos.server.scheduler.telemetry_state import TelemetryDeviceStateProjection
 from unilabos.server.services.telemetry import TelemetryService
+
+
+def test_projection_read_waits_for_open_telemetry_write_transaction(
+    tmp_path,
+) -> None:
+    repository = TelemetryRepository(tmp_path / "serialized-telemetry.db")
+    service = TelemetryService(repository)
+    projection = TelemetryDeviceStateProjection(service, endpoint_uuid="host")
+    projection.set("workbench", "arm_state", "idle")
+    writer_started = threading.Event()
+    release_writer = threading.Event()
+
+    def hold_write_transaction() -> None:
+        with repository.write():
+            writer_started.set()
+            assert release_writer.wait(timeout=5)
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            writer = executor.submit(hold_write_transaction)
+            assert writer_started.wait(timeout=5)
+            reader = executor.submit(projection.latest_for, "workbench")
+            with pytest.raises(FutureTimeout):
+                reader.result(timeout=0.1)
+            release_writer.set()
+            writer.result(timeout=5)
+            assert reader.result(timeout=5)["arm_state"]["value"] == "idle"
+    finally:
+        release_writer.set()
+        repository.close()
 
 
 def test_projection_persists_latest_properties_and_events(tmp_path) -> None:

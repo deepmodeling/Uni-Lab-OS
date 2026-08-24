@@ -301,10 +301,11 @@ class VirtualHeatingPlatform:
         if len(sites) != 3:
             raise RuntimeError("virtual heating platform requires exactly three sites")
 
-        samples: list[Any] = []
+        samples: list[tuple[Any, bool]] = []
         for index in range(1, 4):
             sample_resource_id = f"{self.device_id}-sample-{index}"
             sample = self._material_by_resource_id(sample_resource_id)
+            sample_created = sample is None
             if sample is None:
                 created = gateway.create_tree(
                     self._mutation(
@@ -352,68 +353,27 @@ class VirtualHeatingPlatform:
                     ),
                 )
                 sample = created.data.nodes[0]
-            samples.append(sample)
+            samples.append((sample, sample_created))
 
-        # A previous demo may have left sample 1 on Site 3. Restore the
-        # canonical all-sites layout in two phases so a stale Site snapshot or
-        # a sample permutation cannot create a transient occupancy conflict.
-        occupied_site_by_material = {
-            site.occupied_material_uuid: site
-            for site in sites
-            if site.occupied_material_uuid
-        }
-        for index, sample in enumerate(samples, start=1):
-            current = occupied_site_by_material.get(sample.material.material_uuid)
-            if current is not None and int(current.site_index) != index:
+        # Device startup may create missing demo identities, but materials.v1
+        # remains the position authority.  Seed a canonical Site only for a
+        # sample created during this provision pass.  Existing samples may be
+        # intentionally unmounted or transferred to another device, and an
+        # occupied Site may contain any legitimately loaded material; neither
+        # state is rewritten by initialize().  Repeating a demo is an explicit
+        # HeatingDemoProvisionService.reset operation instead.
+        for index, ((sample, sample_created), site) in enumerate(
+            zip(samples, sites), start=1
+        ):
+            if (
+                sample_created
+                and site.occupied_material_uuid is None
+                and sample.material.parent_material_uuid is None
+            ):
                 gateway.move_material(
                     self._mutation(
                         "move_material",
-                        f"unmount-misplaced-sample:{index}:{uuid4().hex}",
-                    ),
-                    MaterialMove(material_uuid=sample.material.material_uuid),
-                )
-
-        platform = gateway.get_material(self._platform_uuid)
-        sites = sorted(platform.sites, key=lambda item: int(item.site_index))
-
-        # Cross-device demo transfers can leave a source platform's sample on
-        # one of this virtual platform's sites.  The virtual demo provisioner
-        # owns these three sites, so reclaim demo occupants before restoring
-        # the canonical sample layout.  Refuse to displace a non-demo material
-        # so this recovery rule cannot hide an unexpected production payload.
-        for index, (sample, site) in enumerate(zip(samples, sites), start=1):
-            occupant_uuid = site.occupied_material_uuid
-            if (
-                occupant_uuid is None
-                or occupant_uuid == sample.material.material_uuid
-            ):
-                continue
-            occupant = gateway.get_material(occupant_uuid)
-            if occupant.material.meta_data.get("demo") != "openlab-heating":
-                raise RuntimeError(
-                    f"heating site {index} is occupied by non-demo material "
-                    f"{occupant_uuid}"
-                )
-            gateway.move_material(
-                self._mutation(
-                    "move_material",
-                    (
-                        "unmount-unexpected-site-occupant:"
-                        f"{index}:{occupant_uuid}:{uuid4().hex}"
-                    ),
-                ),
-                MaterialMove(material_uuid=occupant_uuid),
-            )
-
-        platform = gateway.get_material(self._platform_uuid)
-        sites = sorted(platform.sites, key=lambda item: int(item.site_index))
-        for index, (sample, site) in enumerate(zip(samples, sites), start=1):
-            if site.occupied_material_uuid != sample.material.material_uuid:
-                if site.occupied_material_uuid is not None:
-                    raise RuntimeError(f"heating site {index} is already occupied")
-                gateway.move_material(
-                    self._mutation(
-                        "move_material", f"place-sample:{index}:{uuid4().hex}"
+                        f"place-new-sample:{index}:{uuid4().hex}",
                     ),
                     MaterialMove(
                         material_uuid=sample.material.material_uuid,

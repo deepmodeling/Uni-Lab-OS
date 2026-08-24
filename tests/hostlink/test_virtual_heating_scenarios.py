@@ -7,6 +7,7 @@ from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
 from unilabos.registry.decorators import has_action_decorator
 from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.demo.heating_scenarios import build_heating_scenario_graph
+from unilabos.server.protocol.materials import MaterialTransfer, MaterialTransferItem
 from unilabos.server.scheduler.integration import set_materials_gateway
 from unilabos.server.services.heating_demo import HeatingDemoProvisionService
 from unilabos.server.services.materials import MaterialsService
@@ -107,6 +108,72 @@ def test_demo_provision_and_canonical_graphs_use_real_jobs(tmp_path) -> None:
             "load",
             "load",
         ]
+    finally:
+        set_materials_gateway(None)
+        materials.repository.close()
+
+
+def test_only_explicit_demo_reset_restores_layout_after_transfer(tmp_path) -> None:
+    materials = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
+    set_materials_gateway(LocalMaterialsClient(materials))
+    materials.set_resource_sync_dispatcher(lambda command: {"success": True})
+    source = VirtualHeatingPlatform(device_id="virtual-heater")
+    target = VirtualHeatingPlatform(device_id="virtual-heater-target")
+    try:
+        source.initialize()
+        target.initialize()
+        provision = HeatingDemoProvisionService(materials)
+        before = provision.reset(
+            "cross_device_transfer",
+            request_uuid=str(uuid4()),
+            source_device_id="virtual-heater",
+            target_device_id="virtual-heater-target",
+        )
+        transfer_material_uuid = str(before.transfer_material_uuid)
+        materials.transfer_material(
+            VirtualHeatingPlatform._mutation(
+                "transfer_material", f"explicit-transfer:{uuid4()}"
+            ),
+            MaterialTransfer(
+                source_device_id="virtual-heater",
+                target_device_id="virtual-heater-target",
+                items=[
+                    MaterialTransferItem(
+                        material_uuid=transfer_material_uuid,
+                        target_material_uuid=str(before.target_platform_uuid),
+                        target_site=str(before.transfer_target_site_uuid),
+                    )
+                ],
+            ),
+        )
+        transferred = materials.get_material(transfer_material_uuid)
+        assert transferred.material.parent_material_uuid == (
+            before.target_platform_uuid
+        )
+
+        after = provision.reset(
+            "cross_device_transfer",
+            request_uuid=str(uuid4()),
+            source_device_id="virtual-heater",
+            target_device_id="virtual-heater-target",
+        )
+
+        source_platform = materials.get_material_by_resource_id("virtual-heater")
+        target_platform = materials.get_material_by_resource_id(
+            "virtual-heater-target"
+        )
+        source_site_1 = next(
+            site for site in source_platform.sites if int(site.site_index) == 1
+        )
+        target_site_3 = next(
+            site for site in target_platform.sites if int(site.site_index) == 3
+        )
+        assert after.assignments[transfer_material_uuid] == source_site_1.site_uuid
+        assert source_site_1.occupied_material_uuid == transfer_material_uuid
+        assert target_site_3.occupied_material_uuid is None
+        assert materials.get_material(
+            transfer_material_uuid
+        ).material.parent_material_uuid == source_platform.material.material_uuid
     finally:
         set_materials_gateway(None)
         materials.repository.close()

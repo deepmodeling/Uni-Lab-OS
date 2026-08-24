@@ -473,3 +473,24 @@ def test_hostlink_injects_declared_system_sample_parameter(execution_stack) -> N
     assert bridge.statuses[-1][2]["return_value"] == {
         "samples": {"sample-1": "material-1"}
     }
+
+
+def test_hostlink_injects_empty_declared_system_sample_parameter(
+    execution_stack,
+) -> None:
+    _adapter, microbackend, _driver, bridge = execution_stack
+    item = _item("samples")
+    microbackend.dispatch(
+        {
+            "job_id": item.job_id,
+            "task_id": item.task_id,
+            "node_id": item.node_id,
+            "device_id": item.device_id,
+            "action": item.action_name,
+            "action_type": "UniLabJsonCommand",
+            "action_args": {},
+            "sample_material": {},
+        }
+    )
+    assert bridge.status_event.wait(2)
+    assert bridge.statuses[-1][2]["return_value"] == {"samples": {}}

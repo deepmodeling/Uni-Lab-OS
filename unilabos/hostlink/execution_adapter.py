@@ -262,9 +262,6 @@ class HostLinkExecutionAdapter:
         sample_material: Dict[str, Any],
     ) -> Dict[str, Any]:
         kwargs = deepcopy(action_kwargs)
-        if not sample_material:
-            return kwargs
-
         descriptor = self._action_descriptor(item.device_id)
         system_parameters = descriptor.get("system_parameters")
         action_parameters = (
@@ -273,7 +270,7 @@ class HostLinkExecutionAdapter:
             else []
         )
         if PARAM_SAMPLE_UUIDS in action_parameters:
-            kwargs.setdefault(PARAM_SAMPLE_UUIDS, deepcopy(sample_material))
+            kwargs.setdefault(PARAM_SAMPLE_UUIDS, deepcopy(sample_material or {}))
         return kwargs
 
     def send_goal(

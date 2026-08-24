@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from uuid import uuid4
 
 import pytest
@@ -33,6 +35,31 @@ def _mutation(operation: str, *, command_uuid: str | None = None, **values):
         operation=operation,
         **values,
     )
+
+
+def test_repository_serializes_reads_with_an_open_write_transaction(tmp_path) -> None:
+    repository = MaterialsRepository(tmp_path / "serialized-materials.db")
+    writer_started = threading.Event()
+    release_writer = threading.Event()
+
+    def hold_write_transaction() -> None:
+        with repository.write():
+            writer_started.set()
+            assert release_writer.wait(timeout=5)
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            writer = executor.submit(hold_write_transaction)
+            assert writer_started.wait(timeout=5)
+            reader = executor.submit(repository.list_materials)
+            with pytest.raises(FutureTimeout):
+                reader.result(timeout=0.1)
+            release_writer.set()
+            writer.result(timeout=5)
+            assert reader.result(timeout=5) == []
+    finally:
+        release_writer.set()
+        repository.close()
 
 
 def _template(

@@ -7,6 +7,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 from typing import Any, Optional
 
@@ -35,6 +36,17 @@ def _load_json(value: Any, fallback: Any) -> Any:
     return json.loads(str(value))
 
 
+def _serialized(method: Any) -> Any:
+    """Serialize complete cursor lifetimes on the repository connection."""
+
+    @wraps(method)
+    def wrapper(self: "MaterialsRepository", *args: Any, **kwargs: Any) -> Any:
+        with self._connection_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class MaterialsRepository:
     """表行 CRUD。
 
@@ -51,8 +63,9 @@ class MaterialsRepository:
         else:
             self.connection = initialize_database(database, MATERIALS_DATABASE)
             self._owns_connection = True
-        self._write_lock = threading.RLock()
+        self._connection_lock = threading.RLock()
 
+    @_serialized
     def close(self) -> None:
         if self._owns_connection:
             self.connection.close()
@@ -67,7 +80,7 @@ class MaterialsRepository:
     def write(self) -> Iterator[sqlite3.Connection]:
         """每个 materials.db 进程内只有这一个 writer 入口。"""
 
-        with self._write_lock:
+        with self._connection_lock:
             # Batch scheduler operations compose existing service mutations
             # under one outer BEGIN IMMEDIATE.  The re-entrant writer never
             # commits or rolls back its caller's transaction.
@@ -96,6 +109,7 @@ class MaterialsRepository:
         values["definition_json"] = _load_json(values["definition_json"], {})
         return ResourceTemplateRecord.model_validate(values)
 
+    @_serialized
     def get_template(
         self, template_uuid: str, *, include_deleted: bool = False
     ) -> Optional[ResourceTemplateRecord]:
@@ -106,6 +120,7 @@ class MaterialsRepository:
         row = self.connection.execute(sql, params).fetchone()
         return self._template(row) if row is not None else None
 
+    @_serialized
     def get_template_by_name(
         self, name: str, *, include_deleted: bool = False
     ) -> Optional[ResourceTemplateRecord]:
@@ -115,6 +130,7 @@ class MaterialsRepository:
         row = self.connection.execute(sql, (name,)).fetchone()
         return self._template(row) if row is not None else None
 
+    @_serialized
     def list_templates(
         self, *, status: Optional[str] = None
     ) -> list[ResourceTemplateRecord]:
@@ -131,6 +147,7 @@ class MaterialsRepository:
         )
         return [self._template(row) for row in rows]
 
+    @_serialized
     def count_active_materials_for_template(self, template_uuid: str) -> int:
         row = self.connection.execute(
             "SELECT COUNT(*) FROM material WHERE template_uuid=? "
@@ -139,6 +156,7 @@ class MaterialsRepository:
         ).fetchone()
         return int(row[0])
 
+    @_serialized
     def insert_template(self, record: ResourceTemplateRecord) -> None:
         values = record.model_dump(mode="json")
         self.connection.execute(
@@ -162,6 +180,7 @@ class MaterialsRepository:
             ),
         )
 
+    @_serialized
     def update_template(self, record: ResourceTemplateRecord) -> None:
         values = record.model_dump(mode="json")
         cursor = self.connection.execute(
@@ -195,12 +214,14 @@ class MaterialsRepository:
         values["quarantined"] = bool(values["quarantined"])
         return InventoryLotRecord.model_validate(values)
 
+    @_serialized
     def get_lot(self, lot_uuid: str) -> Optional[InventoryLotRecord]:
         row = self.connection.execute(
             "SELECT * FROM inventory_lot WHERE lot_uuid=?", (lot_uuid,)
         ).fetchone()
         return self._lot(row) if row is not None else None
 
+    @_serialized
     def list_lots(
         self,
         *,
@@ -230,6 +251,7 @@ class MaterialsRepository:
         )
         return [self._lot(row) for row in self.connection.execute(sql, params)]
 
+    @_serialized
     def insert_lot(self, record: InventoryLotRecord) -> None:
         values = record.model_dump(mode="json")
         self.connection.execute(
@@ -249,6 +271,7 @@ class MaterialsRepository:
             ),
         )
 
+    @_serialized
     def update_lot(self, record: InventoryLotRecord) -> None:
         values = record.model_dump(mode="json")
         cursor = self.connection.execute(
@@ -277,6 +300,7 @@ class MaterialsRepository:
         values["items"] = _load_json(values.pop("items_json"), [])
         return InventoryReservationRecord.model_validate(values)
 
+    @_serialized
     def get_reservation(
         self, reservation_uuid: str
     ) -> Optional[InventoryReservationRecord]:
@@ -286,6 +310,7 @@ class MaterialsRepository:
         ).fetchone()
         return self._reservation(row) if row is not None else None
 
+    @_serialized
     def get_reservation_by_job(
         self, job_uuid: str
     ) -> Optional[InventoryReservationRecord]:
@@ -294,6 +319,7 @@ class MaterialsRepository:
         ).fetchone()
         return self._reservation(row) if row is not None else None
 
+    @_serialized
     def list_reservations(
         self,
         *,
@@ -316,6 +342,7 @@ class MaterialsRepository:
             self._reservation(row) for row in self.connection.execute(sql, params)
         ]
 
+    @_serialized
     def insert_reservation(self, record: InventoryReservationRecord) -> None:
         values = record.model_dump(mode="json")
         self.connection.execute(
@@ -336,6 +363,7 @@ class MaterialsRepository:
             ),
         )
 
+    @_serialized
     def update_reservation(self, record: InventoryReservationRecord) -> None:
         values = record.model_dump(mode="json")
         cursor = self.connection.execute(
@@ -403,6 +431,7 @@ class MaterialsRepository:
         values["extra_json"] = _load_json(values["extra_json"], {})
         return SiteRecord.model_validate(values)
 
+    @_serialized
     def get_material(
         self, material_uuid: str, *, include_deleted: bool = False
     ) -> Optional[MaterialRecord]:
@@ -412,6 +441,7 @@ class MaterialsRepository:
         row = self.connection.execute(sql, (material_uuid,)).fetchone()
         return self._material(row) if row is not None else None
 
+    @_serialized
     def get_material_by_resource_id(
         self, resource_id: str, *, include_deleted: bool = False
     ) -> Optional[MaterialRecord]:
@@ -421,6 +451,7 @@ class MaterialsRepository:
         row = self.connection.execute(sql, (resource_id,)).fetchone()
         return self._material(row) if row is not None else None
 
+    @_serialized
     def list_materials(
         self, *, parent_material_uuid: Optional[str] = None, roots_only: bool = False
     ) -> list[MaterialRecord]:
@@ -442,6 +473,7 @@ class MaterialsRepository:
             )
         return [self._material(row) for row in rows]
 
+    @_serialized
     def tree_materials(self, root_material_uuid: str) -> list[MaterialRecord]:
         rows = self.connection.execute(
             """
@@ -464,18 +496,21 @@ class MaterialsRepository:
         )
         return [self._material(row) for row in rows]
 
+    @_serialized
     def get_position(self, material_uuid: str) -> Optional[MaterialPositionRecord]:
         row = self.connection.execute(
             "SELECT * FROM material_position WHERE material_uuid=?", (material_uuid,)
         ).fetchone()
         return self._position(row) if row is not None else None
 
+    @_serialized
     def get_data(self, material_uuid: str) -> Optional[MaterialDataRecord]:
         row = self.connection.execute(
             "SELECT * FROM material_data WHERE material_uuid=?", (material_uuid,)
         ).fetchone()
         return self._data(row) if row is not None else None
 
+    @_serialized
     def list_substances(self, material_uuid: str) -> list[MaterialSubstanceRecord]:
         rows = self.connection.execute(
             "SELECT * FROM material_substance WHERE material_uuid=? ORDER BY ordinal",
@@ -483,6 +518,7 @@ class MaterialsRepository:
         )
         return [self._substance(row) for row in rows]
 
+    @_serialized
     def list_sites(
         self, owner_material_uuid: str, *, include_deleted: bool = False
     ) -> list[SiteRecord]:
@@ -495,6 +531,7 @@ class MaterialsRepository:
             for row in self.connection.execute(sql, (owner_material_uuid,))
         ]
 
+    @_serialized
     def get_site(
         self, site_uuid: str, *, include_deleted: bool = False
     ) -> Optional[SiteRecord]:
@@ -504,6 +541,7 @@ class MaterialsRepository:
         row = self.connection.execute(sql, (site_uuid,)).fetchone()
         return self._site(row) if row is not None else None
 
+    @_serialized
     def occupied_site(self, material_uuid: str) -> Optional[SiteRecord]:
         row = self.connection.execute(
             "SELECT * FROM site WHERE occupied_material_uuid=? AND deleted_at_ms IS NULL",
@@ -511,6 +549,7 @@ class MaterialsRepository:
         ).fetchone()
         return self._site(row) if row is not None else None
 
+    @_serialized
     def sites_occupied_by(self, material_uuids: Sequence[str]) -> list[SiteRecord]:
         if not material_uuids:
             return []
@@ -522,6 +561,7 @@ class MaterialsRepository:
         )
         return [self._site(row) for row in rows]
 
+    @_serialized
     def insert_material(self, record: MaterialRecord) -> None:
         values = record.model_dump(mode="json")
         columns = (
@@ -546,6 +586,7 @@ class MaterialsRepository:
             params,
         )
 
+    @_serialized
     def update_material(self, record: MaterialRecord) -> None:
         values = record.model_dump(mode="json")
         assignments = (
@@ -576,6 +617,7 @@ class MaterialsRepository:
         if cursor.rowcount != 1:
             raise RuntimeError("material version conflict")
 
+    @_serialized
     def replace_position(self, record: MaterialPositionRecord) -> None:
         values = record.model_dump(mode="json")
         columns = tuple(values)
@@ -591,6 +633,7 @@ class MaterialsRepository:
             params,
         )
 
+    @_serialized
     def replace_data(self, record: MaterialDataRecord) -> None:
         values = record.model_dump(mode="json", exclude={"substances"})
         columns = tuple(values)
@@ -606,6 +649,7 @@ class MaterialsRepository:
             params,
         )
 
+    @_serialized
     def replace_substances(
         self, material_uuid: str, records: Sequence[MaterialSubstanceRecord]
     ) -> None:
@@ -633,6 +677,7 @@ class MaterialsRepository:
                 ),
             )
 
+    @_serialized
     def insert_site(self, record: SiteRecord) -> None:
         values = record.model_dump(mode="json")
         columns = (
@@ -664,6 +709,7 @@ class MaterialsRepository:
             params,
         )
 
+    @_serialized
     def update_site(self, record: SiteRecord) -> None:
         values = record.model_dump(mode="json")
         cursor = self.connection.execute(
@@ -693,6 +739,7 @@ class MaterialsRepository:
         if cursor.rowcount != 1:
             raise RuntimeError("site version conflict")
 
+    @_serialized
     def clear_site_occupants(self, site_uuids: Sequence[str]) -> None:
         """Snapshot move 的事务内准备步骤；不独立形成版本或 ledger。"""
 
@@ -703,6 +750,7 @@ class MaterialsRepository:
 
     # -- Idempotency / ledger --------------------------------------------
 
+    @_serialized
     def get_effect(
         self, command_uuid: str, effect_key: str
     ) -> Optional[InventoryCommandEffectRecord]:
@@ -717,6 +765,7 @@ class MaterialsRepository:
         values["result_json"] = _load_json(values["result_json"], {})
         return InventoryCommandEffectRecord.model_validate(values)
 
+    @_serialized
     def insert_effect(self, record: InventoryCommandEffectRecord) -> None:
         values = record.model_dump(mode="json")
         self.connection.execute(
@@ -739,6 +788,7 @@ class MaterialsRepository:
             ),
         )
 
+    @_serialized
     def complete_effect(
         self,
         *,
@@ -763,6 +813,7 @@ class MaterialsRepository:
             ),
         )
 
+    @_serialized
     def append_ledger(self, record: InventoryLedgerRecord) -> int:
         values = record.model_dump(mode="json")
         cursor = self.connection.execute(
@@ -788,12 +839,14 @@ class MaterialsRepository:
         )
         return int(cursor.lastrowid)
 
+    @_serialized
     def latest_ledger_sequence(self) -> int:
         row = self.connection.execute(
             "SELECT COALESCE(MAX(sequence),0) FROM inventory_ledger"
         ).fetchone()
         return int(row[0])
 
+    @_serialized
     def list_ledger(
         self, *, after_sequence: int = 0, limit: int = 100
     ) -> list[InventoryLedgerRecord]:
@@ -809,6 +862,7 @@ class MaterialsRepository:
             result.append(InventoryLedgerRecord.model_validate(values))
         return result
 
+    @_serialized
     def acknowledge_ledger(self, through_sequence: int, *, acknowledged_at_ms: int) -> int:
         cursor = self.connection.execute(
             """

@@ -11,6 +11,7 @@ import asyncio
 import inspect
 import traceback
 from abc import abstractmethod
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 from unilabos.device_runtime.async_utils import schedule_async_func
@@ -25,6 +26,33 @@ from unilabos.utils.cls_creator import create_instance_from_config
 
 T = TypeVar("T")
 TaskScheduler = Callable[[Any], Any]
+
+
+def normalize_driver_init_kwargs(
+    driver_class: Type[Any],
+    device_id: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the same logical-ID/config constructor payload for every backend."""
+
+    raw_config = dict(config or {})
+    parameters = {
+        name: parameter
+        for name, parameter in inspect.signature(
+            driver_class.__init__
+        ).parameters.items()
+        if name != "self"
+    }
+    accepts_kwargs = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    kwargs = {"config": raw_config} if "config" in parameters else raw_config
+    if "device_id" in parameters or accepts_kwargs:
+        kwargs.setdefault("device_id", device_id)
+    elif "id" in parameters:
+        kwargs.setdefault("id", device_id)
+    return kwargs
 
 
 class ClassCreator(Generic[T]):
@@ -354,10 +382,72 @@ def uses_pylabrobot_creator(driver_class: Type[Any]) -> bool:
     }
 
 
+def is_workstation_driver(driver_class: Type[Any]) -> bool:
+    from unilabos.devices.workstation.workstation_base import WorkstationBase
+
+    return issubclass(driver_class, WorkstationBase)
+
+
+@dataclass(frozen=True)
+class DriverCreatorSelection(Generic[T]):
+    creator: DeviceClassCreator[T]
+    kind: str
+
+    @property
+    def is_workstation(self) -> bool:
+        return self.kind == "workstation"
+
+
+def select_driver_creator(
+    driver_class: Type[T],
+    children: List[ResourceDictInstance],
+    resource_tracker: DeviceNodeResourceTracker,
+    *,
+    task_scheduler: Optional[TaskScheduler] = None,
+) -> DriverCreatorSelection[T]:
+    """为两种 backend 选择同一个驱动构造器。"""
+
+    if uses_pylabrobot_creator(driver_class):
+        from unilabos.resources.plr_additional_res_reg import register
+
+        register()
+        return DriverCreatorSelection(
+            PyLabRobotCreator(
+                driver_class,
+                children=children,
+                resource_tracker=resource_tracker,
+                task_scheduler=task_scheduler,
+            ),
+            "pylabrobot",
+        )
+    if is_workstation_driver(driver_class):
+        return DriverCreatorSelection(
+            WorkstationNodeCreator(
+                driver_class,
+                children=children,
+                resource_tracker=resource_tracker,
+                task_scheduler=task_scheduler,
+            ),
+            "workstation",
+        )
+    return DriverCreatorSelection(
+        DeviceClassCreator(
+            driver_class,
+            children=children,
+            resource_tracker=resource_tracker,
+        ),
+        "device",
+    )
+
+
 __all__ = [
     "ClassCreator",
     "DeviceClassCreator",
+    "DriverCreatorSelection",
     "PyLabRobotCreator",
     "WorkstationNodeCreator",
+    "is_workstation_driver",
+    "normalize_driver_init_kwargs",
+    "select_driver_creator",
     "uses_pylabrobot_creator",
 ]

@@ -19,11 +19,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import yaml
-from unilabos_msgs.action import EmptyIn, ResourceCreateFromOuter, ResourceCreateFromOuterEasy
-from unilabos_msgs.msg import Resource
 
 from unilabos.config.config import BasicConfig
 from unilabos.registry.backend_metadata import normalize_supported_backends
+from unilabos.registry.material_locks import normalize_material_parameter_names
 from unilabos.registry.decorators import (
     get_device_meta,
     get_action_meta,
@@ -38,6 +37,7 @@ from unilabos.registry.decorators import (
     normalize_enum_value,
 )
 from unilabos.registry.init_enforce import validate_init_param_enforce
+from unilabos.registry.status_policy import normalize_status_policy
 from unilabos.registry.yaml_ref import resolve_yaml_refs
 from unilabos.registry.utils import (
     ROSMsgNotFound,
@@ -59,23 +59,85 @@ from unilabos.registry.utils import (
 )
 from unilabos.resources.graphio import resource_plr_to_ulab, tree_to_list
 from unilabos.resources.resource_tracker import ResourceTreeSet, RETURN_UNILABOS_SAMPLES
-from unilabos.resources.site_definition import normalize_available_sites
-from unilabos.ros.msgs.message_converter import (
-    msg_converter_manager,
-    ros_action_result_mapping,
-    ros_action_to_json_schema,
-    String,
-    ros_message_to_json_schema,
-)
+from unilabos.resources.objects.site import normalize_available_sites
 from unilabos.utils import logger
 from unilabos.utils.decorator import singleton
 from unilabos.utils.cls_creator import import_class
 from unilabos.utils.import_manager import get_enhanced_class_info
 from unilabos.utils.type_check import NoAliasDumper
 from msgcenterpy.instances.json_schema_instance import JSONSchemaMessageInstance
-from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
+
+_HOSTLINK_SCHEMA_ONLY = BasicConfig.backend == "hostlink"
+
+if not _HOSTLINK_SCHEMA_ONLY:
+    from unilabos_msgs.action import ResourceCreateFromOuterEasy
+    from unilabos_msgs.msg import Resource
+    from unilabos.ros.msgs.message_converter import (
+        msg_converter_manager,
+        ros_action_result_mapping,
+        ros_action_to_json_schema,
+        String,
+        ros_message_to_json_schema,
+    )
+    from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
+
+if _HOSTLINK_SCHEMA_ONLY:
+    # HostLink transmits JSON descriptors and values.  ROS message classes are
+    # intentionally absent on this path; legacy ROS actions remain as string
+    # metadata and are not executable by the JSON-only demo registry.
+    ResourceCreateFromOuterEasy = None
+    Resource = None
+    msg_converter_manager = None
+    ROS2MessageInstance = None
+    String = str
 
 _module_hash_cache: Dict[str, Optional[str]] = {}
+
+
+def _normalize_status_policy_map(
+    policies: Any,
+    *,
+    device_id: str,
+) -> Dict[str, Dict[str, Any]]:
+    """校验注册表中的 property -> status_policy 映射并生成稳定副本。"""
+
+    if policies is None:
+        return {}
+    if not isinstance(policies, dict):
+        raise TypeError(f"设备 {device_id!r} 的 class.status_policies 必须是字典")
+
+    normalized: Dict[str, Dict[str, Any]] = {}
+    for property_name, policy in policies.items():
+        if not isinstance(property_name, str) or not property_name.strip():
+            raise ValueError(f"设备 {device_id!r} 的 status_policy 属性名必须是非空字符串")
+        try:
+            parsed = normalize_status_policy(policy)
+        except (TypeError, ValueError) as exc:
+            raise type(exc)(
+                f"设备 {device_id!r} 状态 {property_name!r} 的 status_policy 无效: {exc}"
+            ) from exc
+        if parsed is not None:
+            normalized[property_name] = parsed
+    return dict(sorted(normalized.items()))
+
+
+def _status_policies_from_ast(
+    status_properties: Dict[str, Any],
+    *,
+    device_id: str,
+) -> Dict[str, Dict[str, Any]]:
+    raw: Dict[str, Any] = {}
+    for property_name, info in status_properties.items():
+        topic_config = info.get("topic_config") or {}
+        if isinstance(topic_config, dict) and topic_config.get("status_policy") is not None:
+            published_name = topic_config.get("name") or property_name
+            if published_name in raw:
+                raise ValueError(
+                    f"设备 {device_id!r} 存在重复的 status_policy 发布名 "
+                    f"{published_name!r}"
+                )
+            raw[published_name] = topic_config["status_policy"]
+    return _normalize_status_policy_map(raw, device_id=device_id)
 
 
 @singleton
@@ -91,18 +153,19 @@ class Registry:
     """
 
     def __init__(self, registry_paths=None):
-        import ctypes
+        if not _HOSTLINK_SCHEMA_ONLY:
+            import ctypes
 
-        try:
-            # noinspection PyUnusedImports
-            import unilabos_msgs
-        except ImportError:
-            logger.error("[UniLab Registry] unilabos_msgs模块未找到，请确保已根据官方文档安装unilabos_msgs包。")
-            sys.exit(1)
-        try:
-            ctypes.CDLL(str(Path(unilabos_msgs.__file__).parent / "unilabos_msgs_s__rosidl_typesupport_c.pyd"))
-        except OSError:
-            pass
+            try:
+                # noinspection PyUnusedImports
+                import unilabos_msgs
+            except ImportError:
+                logger.error("[UniLab Registry] unilabos_msgs模块未找到，请确保已根据官方文档安装unilabos_msgs包。")
+                sys.exit(1)
+            try:
+                ctypes.CDLL(str(Path(unilabos_msgs.__file__).parent / "unilabos_msgs_s__rosidl_typesupport_c.pyd"))
+            except OSError:
+                pass
 
         self.registry_paths = [Path(__file__).absolute().parent]
         if registry_paths:
@@ -186,6 +249,12 @@ class Registry:
         """设置 host_node 内置设备 — 基于 _run_ast_scan 已扫描的结果进行覆写。"""
         # 从 AST 扫描结果中取出 host_node 的 action_value_mappings
         ast_entry = self.device_type_registry.get("host_node", {})
+        if _HOSTLINK_SCHEMA_ONLY:
+            # HostLink Host 生命周期由微后端管理，图中也不会实例化 ROS
+            # HostNode。保留 AST 生成的 JSON 描述即可。
+            if ast_entry:
+                self.device_type_registry["host_node"] = ast_entry
+            return
         ast_actions = ast_entry.get("class", {}).get("action_value_mappings", {})
 
         # 取出 AST 生成的 action entries, 补充特定覆写
@@ -220,6 +289,7 @@ class Registry:
             "class": {
                 "module": "unilabos.ros.nodes.presets.host_node:HostNode",
                 "status_types": {},
+                "status_policies": {},
                 "action_value_mappings": {
                     "create_resource": {
                         "type": ResourceCreateFromOuterEasy,
@@ -362,10 +432,18 @@ class Registry:
 
         # 主扫描
         if external_only:
-            core_files = [
-                pkg_root / "ros" / "nodes" / "presets" / "host_node.py",
-                pkg_root / "resources" / "container.py",
-            ]
+            core_files = [pkg_root / "resources" / "container.py"]
+            if not _HOSTLINK_SCHEMA_ONLY:
+                core_files.insert(
+                    0, pkg_root / "ros" / "nodes" / "presets" / "host_node.py"
+                )
+            if BasicConfig.demo_mode:
+                core_files.extend(
+                    (
+                        pkg_root / "devices" / "virtual" / "heating_platform.py",
+                        pkg_root / "devices" / "virtual" / "workbench.py",
+                    )
+                )
             scan_result = scan_directory(
                 scan_root, python_path=python_path, executor=self._startup_executor,
                 cache=ast_cache, include_files=core_files,
@@ -506,6 +584,8 @@ class Registry:
     def _replace_type_with_class(self, type_name: str, device_id: str, field_name: str) -> Any:
         """将类型名称替换为实际的 ROS 消息类对象（带缓存）"""
         if not type_name or type_name == "":
+            return type_name
+        if _HOSTLINK_SCHEMA_ONLY:
             return type_name
 
         cached = self._type_resolve_cache.get(type_name)
@@ -701,15 +781,14 @@ class Registry:
 
             is_slot, is_list_slot = detect_slot_type(param_type)
             if is_slot == "ResourceSlot":
+                resource_schema = self._resource_reference_schema(param_name)
                 if is_list_slot:
                     schema["properties"][param_name] = {
-                        "items": ros_message_to_json_schema(Resource, param_name),
+                        "items": resource_schema,
                         "type": "array",
                     }
                 else:
-                    schema["properties"][param_name] = ros_message_to_json_schema(
-                        Resource, param_name
-                    )
+                    schema["properties"][param_name] = resource_schema
             elif is_slot == "DeviceSlot":
                 schema["properties"][param_name] = {"type": "string", "description": "device reference"}
             else:
@@ -850,6 +929,8 @@ class Registry:
 
     def _add_builtin_actions(self, device_config: Dict[str, Any], device_id: str):
         """为设备添加内置的驱动命令动作（运行时需要，上报注册表时会过滤掉）"""
+        if _HOSTLINK_SCHEMA_ONLY:
+            return
         str_single_input = self._replace_type_with_class("StrSingleInput", device_id, "内置动作")
         for additional_action in ["_execute_driver_command", "_execute_driver_command_async"]:
             try:
@@ -883,7 +964,8 @@ class Registry:
 
         # --- status_types (string version) ---
         status_types_str: Dict[str, str] = {}
-        for name, info in ast_meta.get("status_properties", {}).items():
+        status_properties = ast_meta.get("status_properties", {})
+        for name, info in status_properties.items():
             ret_type = info.get("return_type", "str")
             if not ret_type or ret_type in ("Any", "None", "Unknown", ""):
                 ret_type = "String"
@@ -907,6 +989,10 @@ class Registry:
                         ret_type = inner
             status_types_str[name] = ret_type
         status_types_str = dict(sorted(status_types_str.items()))
+        status_policies = _status_policies_from_ast(
+            status_properties,
+            device_id=device_id,
+        )
 
         # --- action_value_mappings ---
         action_value_mappings: Dict[str, Any] = {}
@@ -987,6 +1073,11 @@ class Registry:
             _fb_iv = (action_args or {}).get("feedback_interval", method_info.get("feedback_interval", 1.0))
             entry["feedback_interval"] = _fb_iv
             entry["error_policy"] = (action_args or {}).get("error_policy") or {}
+            entry["materials_need_lock"] = normalize_material_parameter_names(
+                (action_args or {}).get("materials_need_lock"),
+                action_parameter_names=(param["name"] for param in params),
+                action_name=action_name,
+            )
             nt = normalize_enum_value((action_args or {}).get("node_type"), NodeType)
             if nt:
                 entry["node_type"] = nt
@@ -1126,6 +1217,13 @@ class Registry:
             _fb_iv = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
             action_entry["feedback_interval"] = _fb_iv
             action_entry["error_policy"] = action_args.get("error_policy") or {}
+            action_entry["materials_need_lock"] = normalize_material_parameter_names(
+                action_args.get("materials_need_lock"),
+                action_parameter_names=(
+                    param["name"] for param in method_params
+                ),
+                action_name=action_name,
+            )
             nt = normalize_enum_value(action_args.get("node_type"), NodeType)
             if nt:
                 action_entry["node_type"] = nt
@@ -1162,6 +1260,7 @@ class Registry:
             "class": {
                 "module": module_str,
                 "status_types": status_types_str,
+                "status_policies": status_policies,
                 "action_value_mappings": action_value_mappings,
                 "type": ast_meta.get("device_type", "python"),
                 "supported_backends": normalize_supported_backends(
@@ -1213,13 +1312,14 @@ class Registry:
             # --- 检测 ResourceSlot / DeviceSlot (兼容 runtime 和 AST 两种格式) ---
             is_slot, is_list_slot = detect_slot_type(ptype)
             if is_slot == "ResourceSlot":
+                resource_schema = self._resource_reference_schema(pname)
                 if is_list_slot:
                     schema["properties"][pname] = {
-                        "items": ros_message_to_json_schema(Resource, pname),
+                        "items": resource_schema,
                         "type": "array",
                     }
                 else:
-                    schema["properties"][pname] = ros_message_to_json_schema(Resource, pname)
+                    schema["properties"][pname] = resource_schema
             elif is_slot == "DeviceSlot":
                 schema["properties"][pname] = {"type": "string", "description": "device reference"}
             else:
@@ -1232,6 +1332,16 @@ class Registry:
 
         self._apply_docstring_param_metadata(schema, doc_info, apply_defaults=True)
         return schema
+
+    @staticmethod
+    def _resource_reference_schema(param_name: str) -> Dict[str, Any]:
+        if _HOSTLINK_SCHEMA_ONLY:
+            return {
+                "type": "object",
+                "title": param_name,
+                "description": "materials.v1 resource reference",
+            }
+        return ros_message_to_json_schema(Resource, param_name)
 
     def _generate_status_schema_from_ast(
         self, status_properties: Dict[str, Any],
@@ -1408,10 +1518,39 @@ class Registry:
             """Import class, create instance, dump tree. Returns (rid, config_info)."""
             try:
                 res_class = import_class(module_str)
-                if callable(res_class) and not isinstance(res_class, type):
+                if isinstance(res_class, type):
+                    signature = inspect.signature(res_class)
+                    required = [
+                        parameter
+                        for name, parameter in signature.parameters.items()
+                        if name != "name"
+                        and parameter.kind
+                        in (
+                            inspect.Parameter.POSITIONAL_ONLY,
+                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                            inspect.Parameter.KEYWORD_ONLY,
+                        )
+                        and parameter.default is inspect.Parameter.empty
+                    ]
+                    if required:
+                        return resource_id, []
+                    name_parameter = signature.parameters.get("name")
+                    if (
+                        name_parameter is not None
+                        and name_parameter.kind is not inspect.Parameter.POSITIONAL_ONLY
+                    ):
+                        res_instance = res_class(name=res_class.__name__)
+                    elif name_parameter is not None:
+                        res_instance = res_class(res_class.__name__)
+                    else:
+                        res_instance = res_class()
+                elif callable(res_class):
                     res_instance = res_class(res_class.__name__)
+                else:
+                    return resource_id, []
+                if res_instance is not None:
                     tree_set = ResourceTreeSet.from_plr_resources(
-                        [res_instance], known_newly_created=True, old_size=True
+                        [res_instance], known_random_uuid=True, old_size=True
                     )
                     dumped = tree_set.dump()
                     return resource_id, dumped[0] if dumped else []
@@ -1575,6 +1714,10 @@ class Registry:
             return
 
         class_info = entry.get("class", {})
+        class_info["status_policies"] = _normalize_status_policy_map(
+            class_info.get("status_policies"),
+            device_id=device_id,
+        )
 
         # 解析 status_types
         status_types = class_info.get("status_types", {})
@@ -1622,6 +1765,28 @@ class Registry:
                         if resolved:
                             class_info["status_types"][name] = resolved
 
+                    topic_config = info.get("topic_config") or {}
+                    policy = (
+                        topic_config.get("status_policy")
+                        if isinstance(topic_config, dict)
+                        else None
+                    )
+                    published_name = (
+                        topic_config.get("name") or name
+                        if isinstance(topic_config, dict)
+                        else name
+                    )
+                    if (
+                        policy is not None
+                        and published_name not in class_info["status_policies"]
+                    ):
+                        class_info["status_policies"].update(
+                            _normalize_status_policy_map(
+                                {published_name: policy},
+                                device_id=device_id,
+                            )
+                        )
+
                 for action_name_key, action_config in action_mappings.items():
                     type_obj = action_config.get("type")
                     if isinstance(type_obj, str) and type_obj in (
@@ -1650,6 +1815,11 @@ class Registry:
 
         仅做 ROS2 消息类型查找，不 import 任何设备模块，速度快且无副作用。
         """
+        if _HOSTLINK_SCHEMA_ONLY:
+            logger.info(
+                "[UniLab Registry] HostLink JSON 模式：保留消息类型字符串，跳过 ROS 类型解析"
+            )
+            return
         t0 = time.time()
         for device_id in list(self.device_type_registry):
             try:
@@ -1937,6 +2107,12 @@ class Registry:
                         device_type=device_config["class"].get("type", "python"),
                     )
                 )
+                device_config["class"]["status_policies"] = (
+                    _normalize_status_policy_map(
+                        device_config["class"].get("status_policies"),
+                        device_id=device_id,
+                    )
+                )
 
                 enhanced_info = {}
                 enhanced_import_map: Dict[str, str] = {}
@@ -2080,6 +2256,13 @@ class Registry:
                             "handles": old_cfg.get("handles", []),
                             "placeholder_keys": merged_pk,
                             "error_policy": old_cfg.get("error_policy") or {},
+                            "materials_need_lock": normalize_material_parameter_names(
+                                old_cfg.get("materials_need_lock"),
+                                action_parameter_names=(
+                                    param["name"] for param in v["args"]
+                                ),
+                                action_name=action_key,
+                            ),
                         }
                         if v.get("always_free"):
                             entry["always_free"] = True
@@ -2122,6 +2305,12 @@ class Registry:
                 )
                 for action_name, action_config in device_config["class"]["action_value_mappings"].items():
                     action_config.setdefault("error_policy", {})
+                    action_config["materials_need_lock"] = (
+                        normalize_material_parameter_names(
+                            action_config.get("materials_need_lock"),
+                            action_name=action_name,
+                        )
+                    )
                     if "handles" not in action_config:
                         action_config["handles"] = {}
                     elif isinstance(action_config["handles"], list):
@@ -2200,6 +2389,10 @@ class Registry:
         for device_id, device_config in data.items():
             if "class" not in device_config:
                 continue
+            device_config["class"]["status_policies"] = _normalize_status_policy_map(
+                device_config["class"].get("status_policies"),
+                device_id=device_id,
+            )
             # status_types: str → class
             for st_name, st_type in device_config["class"].get("status_types", {}).items():
                 if isinstance(st_type, str):
@@ -2441,6 +2634,10 @@ class Registry:
                     class_config.get("supported_backends"),
                     device_type=class_config.get("type", "python"),
                 )
+                class_config["status_policies"] = _normalize_status_policy_map(
+                    class_config.get("status_policies"),
+                    device_id=device_id,
+                )
             if "class" in device_info_copy and "action_value_mappings" in device_info_copy["class"]:
                 action_mappings = device_info_copy["class"]["action_value_mappings"]
                 builtin_actions = ["_execute_driver_command", "_execute_driver_command_async"]
@@ -2513,6 +2710,10 @@ class Registry:
             entry["class"]["supported_backends"] = normalize_supported_backends(
                 entry["class"].get("supported_backends"),
                 device_type=entry["class"].get("type", "python"),
+            )
+            entry["class"]["status_policies"] = _normalize_status_policy_map(
+                entry["class"].get("status_policies"),
+                device_id=device_id,
             )
             status_types = entry["class"].get("status_types", {})
             for name, type_obj in status_types.items():

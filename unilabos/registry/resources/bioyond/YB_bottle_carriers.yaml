@@ -3,7 +3,7 @@ YB_100ml_yeti:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_100ml_yeti
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_100ml_yeti
     type: pylabrobot
   description: YB_100ml_yeti
   displayname: YB_100ml_yeti
@@ -16,7 +16,7 @@ YB_20ml_fenyepingban:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_20ml_fenyepingban
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_20ml_fenyepingban
     type: pylabrobot
   description: YB_20ml_fenyepingban
   displayname: YB_20ml_fenyepingban
@@ -29,7 +29,7 @@ YB_5ml_fenyepingban:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_5ml_fenyepingban
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_5ml_fenyepingban
     type: pylabrobot
   description: YB_5ml_fenyepingban
   displayname: YB_5ml_fenyepingban
@@ -42,7 +42,7 @@ YB_6StockCarrier:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_6StockCarrier
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_6StockCarrier
     type: pylabrobot
   description: YB_6StockCarrier
   displayname: YB_6StockCarrier
@@ -55,7 +55,7 @@ YB_6VialCarrier:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_6VialCarrier
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_6VialCarrier
     type: pylabrobot
   description: YB_6VialCarrier
   displayname: YB_6VialCarrier
@@ -68,7 +68,7 @@ YB_gao_nian_ye_Bottle:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_gao_nian_ye_Bottle
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_gao_nian_ye_Bottle
     type: pylabrobot
   description: YB_gao_nian_ye_Bottle
   displayname: YB_gao_nian_ye_Bottle
@@ -81,7 +81,7 @@ YB_gaonianye:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_gaonianye
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_gaonianye
     type: pylabrobot
   description: YB_gaonianye
   displayname: YB_gaonianye
@@ -94,7 +94,7 @@ YB_jia_yang_tou_da_Carrier:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_jia_yang_tou_da_Carrier
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_jia_yang_tou_da_Carrier
     type: pylabrobot
   description: YB_jia_yang_tou_da_Carrier
   displayname: YB_jia_yang_tou_da_Carrier
@@ -107,7 +107,7 @@ YB_peiyepingdaban:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_peiyepingdaban
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_peiyepingdaban
     type: pylabrobot
   description: YB_peiyepingdaban
   displayname: YB_peiyepingdaban
@@ -120,7 +120,7 @@ YB_peiyepingxiaoban:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_peiyepingxiaoban
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_peiyepingxiaoban
     type: pylabrobot
   description: YB_peiyepingxiaoban
   displayname: YB_peiyepingxiaoban
@@ -133,7 +133,7 @@ YB_qiang_tou_he:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_qiang_tou_he
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_qiang_tou_he
     type: pylabrobot
   description: YB_qiang_tou_he
   displayname: YB_qiang_tou_he
@@ -146,7 +146,7 @@ YB_shi_pei_qi_kuai:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_shi_pei_qi_kuai
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_shi_pei_qi_kuai
     type: pylabrobot
   description: YB_shi_pei_qi_kuai
   displayname: YB_shi_pei_qi_kuai
@@ -159,7 +159,7 @@ YB_ye:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_ye
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_ye
     type: pylabrobot
   description: YB_ye_Bottle_Carrier
   displayname: YB_ye
@@ -172,7 +172,7 @@ YB_ye_100ml_Bottle:
   - yb3
   - YB_bottle_carriers
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_ye_100ml_Bottle
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_ye_100ml_Bottle
     type: pylabrobot
   description: YB_ye_100ml_Bottle
   displayname: YB_ye_100ml_Bottle

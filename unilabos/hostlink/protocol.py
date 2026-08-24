@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import json
 import socket
+import traceback
 import uuid
 from typing import Any, Dict, Optional
 
-from unilabos.device_runtime.topic import message_to_value
+from unilabos.hostlink.topic import message_to_value
 
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 8 * 1024 * 1024
@@ -22,6 +23,18 @@ class ActionType:
 
     HELLO = "hello"
     PING = "ping"
+    # Slave 只经 HostLink 提交物料请求；Host 再代理到配置的 materials authority。
+    MATERIAL_TEMPLATE_LIST = "material.template.list"
+    MATERIAL_TEMPLATE_CREATE = "material.template.create"
+    MATERIAL_CREATE = "material.create"
+    MATERIAL_GET_TREE = "material.tree.get"
+    MATERIAL_GET_BY_RESOURCE_ID = "material.resource-id.get"
+    MATERIAL_DATA_PUT = "material.data.put"
+    MATERIAL_MOVE = "material.move"
+    MATERIAL_TRANSFER = "material.transfer"
+    MATERIAL_DELETE = "material.delete"
+    MATERIAL_COMPARE_SNAPSHOT = "material.snapshot.compare"
+    MATERIAL_APPLY_SNAPSHOT = "material.snapshot.apply"
     ROS_INFO = "ros_info"
     DEVICE_CALL = "device.call"
     DEVICE_STATE = "device.state"
@@ -40,6 +53,36 @@ class LinkError(Exception):
 
 class RemoteError(LinkError):
     """The remote endpoint returned ``ok=false``."""
+
+    def __init__(
+        self,
+        message: str,
+        error_info: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_info = dict(error_info) if isinstance(error_info, dict) else {}
+
+
+def exception_error_info(exc: BaseException) -> Dict[str, Any]:
+    """Build or forward structured exception identity across HostLink."""
+
+    if isinstance(exc, RemoteError) and exc.error_info:
+        info = dict(exc.error_info)
+        info.setdefault("error_message", str(exc))
+        return info
+    info: Dict[str, Any] = {
+        "exception_type": type(exc).__name__,
+        "exception_mro": [kind.__name__ for kind in type(exc).__mro__],
+        "error_message": str(exc),
+        "traceback": "".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        ),
+    }
+    for key in ("category", "severity"):
+        value = getattr(exc, key, None)
+        if value is not None:
+            info[key] = str(getattr(value, "value", value))
+    return info
 
 
 def new_request(
@@ -63,6 +106,7 @@ def new_response(
     ok: bool,
     data: Any = None,
     error: str = "",
+    error_info: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     message: Dict[str, Any] = {
         "v": PROTOCOL_VERSION,
@@ -74,6 +118,8 @@ def new_response(
         message["data"] = data
     else:
         message["error"] = error or "unknown error"
+        if error_info:
+            message["error_info"] = dict(error_info)
     return message
 
 
@@ -156,6 +202,7 @@ __all__ = [
     "PROTOCOL_VERSION",
     "RemoteError",
     "encode_frame",
+    "exception_error_info",
     "new_request",
     "new_response",
     "read_message",

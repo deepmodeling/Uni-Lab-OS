@@ -16,7 +16,7 @@ class post_process_deck(Deck):
         size_y: float = 1000.0,
         size_z: float = 2670.0,
         category: str = "deck",
-        setup: bool = True,
+        setup: bool = False,
     ) -> None:
         super().__init__(name=name, size_x=1700.0, size_y=1350.0, size_z=2670.0)
         if setup:
@@ -38,6 +38,12 @@ class post_process_deck(Deck):
 
         for warehouse_name, warehouse in self.warehouses.items():
             self.assign_child_resource(warehouse, location=self.warehouse_locations[warehouse_name])
+
+
+def create_post_process_deck(name: str = "post_process_deck") -> post_process_deck:
+    deck = post_process_deck(name=name)
+    deck.setup()
+    return deck
 
 
 

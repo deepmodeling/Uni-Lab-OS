@@ -8,12 +8,12 @@ if str(ROOT_DIR) not in sys.path:
 
 import pytest
 
-from unilabos.workflow.convert_from_json import (
+from unilabos.server.workflow.convert_from_json import (
     convert_from_json,
     normalize_steps as _normalize_steps,
     normalize_labware as _normalize_labware,
 )
-from unilabos.workflow.common import draw_protocol_graph_with_ports
+from unilabos.server.workflow.common import draw_protocol_graph_with_ports
 
 
 @pytest.mark.parametrize(

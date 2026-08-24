@@ -2,7 +2,7 @@ BIOYOND_PolymerStation_1BottleCarrier:
   category:
   - bottle_carriers
   class:
-    module: unilabos.resources.bioyond.bottle_carriers:BIOYOND_PolymerStation_1BottleCarrier
+    module: unilabos.resources.presets.bioyond.bottle_carriers:BIOYOND_PolymerStation_1BottleCarrier
     type: pylabrobot
   description: BIOYOND_PolymerStation_1BottleCarrier
   displayname: BIOYOND_PolymerStation_1BottleCarrier
@@ -14,7 +14,7 @@ BIOYOND_PolymerStation_1FlaskCarrier:
   category:
   - bottle_carriers
   class:
-    module: unilabos.resources.bioyond.bottle_carriers:BIOYOND_PolymerStation_1FlaskCarrier
+    module: unilabos.resources.presets.bioyond.bottle_carriers:BIOYOND_PolymerStation_1FlaskCarrier
     type: pylabrobot
   description: BIOYOND_PolymerStation_1FlaskCarrier
   displayname: BIOYOND_PolymerStation_1FlaskCarrier
@@ -26,7 +26,7 @@ BIOYOND_PolymerStation_6StockCarrier:
   category:
   - bottle_carriers
   class:
-    module: unilabos.resources.bioyond.bottle_carriers:BIOYOND_PolymerStation_6StockCarrier
+    module: unilabos.resources.presets.bioyond.bottle_carriers:BIOYOND_PolymerStation_6StockCarrier
     type: pylabrobot
   description: BIOYOND_PolymerStation_6StockCarrier
   displayname: BIOYOND_PolymerStation_6StockCarrier
@@ -38,7 +38,7 @@ BIOYOND_PolymerStation_8StockCarrier:
   category:
   - bottle_carriers
   class:
-    module: unilabos.resources.bioyond.bottle_carriers:BIOYOND_PolymerStation_8StockCarrier
+    module: unilabos.resources.presets.bioyond.bottle_carriers:BIOYOND_PolymerStation_8StockCarrier
     type: pylabrobot
   description: BIOYOND_PolymerStation_8StockCarrier (2x4布局，8个位置)
   displayname: BIOYOND_PolymerStation_8StockCarrier

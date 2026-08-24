@@ -36,6 +36,7 @@ from unilabos_msgs.action import SendCmd, StrSingleInput
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 
 from unilabos.config.config import BasicConfig
+from unilabos.device_runtime.action import ActionContext, bind_action_context
 from unilabos.device_runtime.node import DeviceNode
 from unilabos.device_runtime.async_utils import schedule_async_func
 from unilabos.registry.decorators import get_topic_config
@@ -45,12 +46,11 @@ from unilabos.registry.action_policy import (
 from unilabos.registry.placeholder_type import ResourceSlotRawInput
 from unilabos.utils.decorator import get_all_subscriptions
 
-from unilabos.resources.container import RegularContainer
-from unilabos.resources.liquids import apply_substances, resolve_site_spot
+from unilabos.resources.presets.container import RegularContainer
+from unilabos.resources.materials import apply_substances, resolve_site_spot
 from unilabos.resources.graphio import (
     initialize_resources,
 )
-from unilabos.resources.plr_additional_res_reg import register
 from unilabos.resources.objects.resource import EXTRA_SAMPLE_UUID, ResourceDictType
 from unilabos.ros.msgs.message_converter import (
     String,
@@ -60,14 +60,12 @@ from unilabos.ros.msgs.message_converter import (
     convert_to_ros_msg_with_mapping,
     get_ros_type_by_msgname,
 )
-from unilabos_msgs.srv import (
-    ResourceAdd,
-    ResourceDelete,
-    ResourceUpdate,
-    ResourceList,
-    SerialCommand,
-)  # type: ignore
-from unilabos_msgs.msg import Resource  # type: ignore
+from unilabos.ros.naming import (
+    ros_device_namespace,
+    ros_device_node_name,
+    ros_device_path,
+)
+from unilabos_msgs.srv import SerialCommand  # type: ignore
 
 from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
@@ -78,15 +76,13 @@ from unilabos.resources.resource_tracker import (
     JSON_UNILABOS_PARAM,
 )
 from unilabos.device_runtime.driver_creator import (
-    DeviceClassCreator,
-    PyLabRobotCreator,
-    WorkstationNodeCreator,
-    uses_pylabrobot_creator,
+    normalize_driver_init_kwargs,
+    select_driver_creator,
 )
 from rclpy.task import Task, Future
 from unilabos.utils.import_manager import default_manager
 from unilabos.utils.log import info, debug, warning, error, critical, logger, trace
-from unilabos.utils.type_check import get_type_class, TypeEncoder, serialize_result_info
+from unilabos.utils.type_check import TypeEncoder, serialize_result_info
 from unilabos.utils.exception import ActionResultError, DeviceActionError
 
 if TYPE_CHECKING:
@@ -488,13 +484,21 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         self.device_id = device_id
         self.registry_name = registry_name
         self.uuid = device_uuid
+        self.resource_uuid = device_uuid
         self.publish_high_frequency = False
         self.callback_group = ReentrantCallbackGroup()
         self.resource_tracker = resource_tracker
+        from unilabos.device_runtime.resource import AuthorityResourceService
+
+        self.set_resource_service(AuthorityResourceService())
 
         # 初始化ROS节点
-        self.node_name = f'{device_id.split("/")[-1]}'
-        self.namespace = f"/devices/{device_id}"
+        # ``device_id`` is the stable API/material identity and may contain
+        # characters (for example ``virtual-heater``) that ROS names reject.
+        # Only the ROS wire identity is normalized; callers and registries keep
+        # using the original logical ID.
+        self.node_name = ros_device_node_name(device_id)
+        self.namespace = ros_device_namespace(device_id)
         Node.__init__(self, self.node_name, namespace=self.namespace)  # type: ignore
         if self.resource_tracker is None:
             self.lab_logger().critical("资源跟踪器未初始化，请检查")
@@ -550,15 +554,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
         # 创建资源管理客户端
         self._resource_clients: Dict[str, Client] = {
-            "resource_add": self.create_client(ResourceAdd, "/resources/add", callback_group=self.callback_group),
             "resource_get": self.create_client(SerialCommand, "/resources/get", callback_group=self.callback_group),
-            "resource_delete": self.create_client(
-                ResourceDelete, "/resources/delete", callback_group=self.callback_group
-            ),
-            "resource_update": self.create_client(
-                ResourceUpdate, "/resources/update", callback_group=self.callback_group
-            ),
-            "resource_list": self.create_client(ResourceList, "/resources/list", callback_group=self.callback_group),
             "c2s_update_resource_tree": self.create_client(
                 SerialCommand, "/c2s_update_resource_tree", callback_group=self.callback_group
             ),
@@ -830,6 +826,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                 self.s2c_resource_tree,  # type: ignore
                 callback_group=self.callback_group,
             ),
+            "material_sync": self.setup_material_sync_service(),
             "s2c_device_manage": self.create_service(
                 SerialCommand,
                 f"/srv{self.namespace}/s2c_device_manage",
@@ -863,25 +860,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         return rclpy.get_global_executor().create_task(coroutine)
 
     async def update_resource(self, resources: List["ResourcePLR"]):
-        r = SerialCommand.Request()
-        tree_set = ResourceTreeSet.from_plr_resources(resources)
-        # host_node 的根物料无父 uuid 是预期状态（归属 host_node 自身、不物理挂载），不告警/不回填；
-        # 其它设备的无父根物料才自动以当前设备为根。
-        is_host = self.device_id == "host_node"
-        for tree in tree_set.trees:
-            root_node = tree.root_node
-            if not root_node.res_content.uuid_parent and not is_host:
-                logger.warning(f"更新无父节点物料{root_node}，自动以当前设备作为根节点")
-                root_node.res_content.parent_uuid = self.uuid
-        r.command = json.dumps({"data": {"data": tree_set.dump()}, "action": "update"})
-        response: SerialCommand_Response = await self._resource_clients["c2s_update_resource_tree"].call_async(r)  # type: ignore
-        try:
-            uuid_maps = json.loads(response.response)
-            self.resource_tracker.loop_update_uuid(resources, uuid_maps)
-        except Exception as e:
-            self.lab_logger().error(f"更新资源uuid失败: {e}")
-            self.lab_logger().error(traceback.format_exc())
-        self.lab_logger().trace(f"资源更新结果: {response}")
+        return await DeviceNode.update_resource(self, resources)
 
     async def get_resource(self, resources_uuid: List[str], with_children: bool = True) -> ResourceTreeSet:
         """
@@ -894,18 +873,11 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         Returns:
             ResourceTreeSet: 资源树集合
         """
-        response: SerialCommand.Response = await self._resource_clients["c2s_update_resource_tree"].call_async(
-            SerialCommand.Request(
-                command=json.dumps(
-                    {
-                        "data": {"data": resources_uuid, "with_children": with_children},
-                        "action": "get",
-                    }
-                )
-            )
-        )  # type: ignore
-        raw_nodes = json.loads(response.response)
-        tree_set = ResourceTreeSet.from_raw_dict_list(raw_nodes)
+        tree_set = await DeviceNode.get_resource(
+            self,
+            resources_uuid,
+            with_children,
+        )
         self.lab_logger().trace(f"获取资源结果: {len(tree_set.trees)} 个资源树 {tree_set.root_nodes}")
         return tree_set
 
@@ -1415,71 +1387,13 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         target_resources: List["ResourcePLR"],
         sites: List[str],
     ):
-        # 准备工作
-        uids = []
-        target_uids = []
-        for plr_resource in plr_resources:
-            uid = getattr(plr_resource, "unilabos_uuid", None)
-            if uid is None:
-                raise ValueError(f"来源物料{plr_resource}没有unilabos_uuid属性，无法转运")
-            uids.append(uid)
-        for target_resource in target_resources:
-            uid = getattr(target_resource, "unilabos_uuid", None)
-            if uid is None:
-                raise ValueError(f"目标物料{target_resource}没有unilabos_uuid属性，无法转运")
-            target_uids.append(uid)
-        _ns = target_device_id if target_device_id.startswith("/devices/") else f"/devices/{target_device_id.lstrip('/')}"
-        srv_address = f"/srv{_ns}/s2c_resource_tree"
-        sclient = self.create_client(SerialCommand, srv_address)
-        # 等待服务可用（设置超时）
-        if not sclient.wait_for_service(timeout_sec=5.0):
-            self.lab_logger().error(f"[{self.device_id} Node-Resource] Service {srv_address} not available")
-            raise ValueError(f"[{self.device_id} Node-Resource] Service {srv_address} not available")
-
-        # 先从当前节点移除资源
-        await self.s2c_resource_tree(
-            SerialCommand_Request(
-                command=json.dumps([{"action": "remove", "data": uids}], ensure_ascii=False)  # 只移除父节点
-            ),
-            SerialCommand_Response(),
+        return await DeviceNode.transfer_resource_to_another(
+            self,
+            plr_resources,
+            target_device_id,
+            target_resources,
+            sites,
         )
-
-        # 通知云端转运资源
-        for plr_resource, target_uid, site in zip(plr_resources, target_uids, sites):
-            tree_set = ResourceTreeSet.from_plr_resources([plr_resource])
-            for root_node in tree_set.root_nodes:
-                root_node.res_content.parent = None
-                root_node.res_content.parent_uuid = target_uid
-            r = SerialCommand.Request()
-            r.command = json.dumps({"data": {"data": tree_set.dump()}, "action": "update"})  # 和Update Resource一致
-            response: SerialCommand_Response = await self._resource_clients["c2s_update_resource_tree"].call_async(r)  # type: ignore
-            self.lab_logger().info(f"资源云端转运到{target_device_id}结果: {response.response}")
-
-            # 创建请求
-            request = SerialCommand.Request()
-            request.command = json.dumps(
-                [
-                    {
-                        "action": "add",
-                        "data": tree_set.all_nodes_uuid,  # 只添加父节点，子节点会自动添加
-                        "additional_add_params": {"site": site},
-                    }
-                ],
-                ensure_ascii=False,
-            )
-
-            future = sclient.call_async(request)
-            timeout = 30.0
-            start_time = time.time()
-            while not future.done():
-                if time.time() - start_time > timeout:
-                    self.lab_logger().error(
-                        f"[{self.device_id} Node-Resource] Timeout waiting for response from {target_device_id}"
-                    )
-                    return False
-                time.sleep(0.05)
-            self.lab_logger().info(f"资源本地增加到{target_device_id}结果: {response.response}")
-        return "转运完成"
 
     # ==================================================================
     # 跨设备调用动作（便捷封装）
@@ -1509,8 +1423,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         if cache_key in self._remote_action_type_cache:
             return self._remote_action_type_cache[cache_key]
 
-        node_name = clean_device_id.split("/")[-1]
-        namespace = f"/devices/{clean_device_id}"
+        wire_device_id = ros_device_path(clean_device_id)
+        node_name = wire_device_id.split("/")[-1]
+        namespace = f"/devices/{wire_device_id}"
         target_action_id = f"{namespace}/{function_name}"
         resolved: Optional[Any] = None
         try:
@@ -1558,7 +1473,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         clean_device_id = (
             device_id[len("/devices/"):] if device_id.startswith("/devices/") else device_id.lstrip("/")
         )
-        namespace = f"/devices/{clean_device_id}"
+        namespace = ros_device_namespace(clean_device_id)
         function_name = action_name[5:] if action_name.startswith("auto-") else action_name
 
         # 未显式指定类型时，从 ROS 图自动探测目标动作是否为原生 action
@@ -2155,6 +2070,21 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                 ACTION, action_paramtypes = self.get_real_function(self.driver_instance, action_name)
 
             action_kwargs = convert_from_ros_msg_with_mapping(goal, action_value_mapping["goal"])
+            raw_goal_uuid = getattr(getattr(goal_handle, "goal_id", None), "uuid", ())
+            try:
+                goal_action_id = bytes(raw_goal_uuid).hex()
+            except (TypeError, ValueError):
+                goal_action_id = ""
+            action_context = (
+                ActionContext(action_id=goal_action_id)
+                if goal_action_id
+                else ActionContext()
+            )
+            _, action_kwargs = bind_action_context(
+                ACTION,
+                action_kwargs,
+                action_context,
+            )
             self.lab_logger().debug(f"任务 {ACTION.__name__} 接收到原始目标: {str(action_kwargs)[:1000]}")
             self.lab_logger().trace(f"任务 {ACTION.__name__} 接收到原始目标: {action_kwargs}")
             report_action_name = self._resolve_report_action_name(
@@ -2407,46 +2337,6 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             if execution_error:
                 execution_success = False
 
-            # 向Host更新物料当前状态
-            if not execution_error and action_name not in ["create_resource_detailed", "create_resource"]:
-                for k, v in goal.get_fields_and_field_types().items():
-                    if v not in ["unilabos_msgs/Resource", "sequence<unilabos_msgs/Resource>"]:
-                        continue
-                    self.lab_logger().info(f"更新资源状态: {k}")
-                    # 仅当action_kwargs[k]不为None时尝试转换
-                    akv = action_kwargs[k]  # 已经是完成转换的物料了
-                    apv = action_paramtypes[k]
-                    final_type = get_type_class(apv)
-                    if final_type is None:
-                        continue
-                    try:
-                        # 去重：使用 seen 集合获取唯一的资源对象
-                        seen = set()
-                        unique_resources = []
-                        for rs in akv:  # todo: 这里目前只支持plr的类型
-                            if isinstance(rs, list):
-                                for r in rs:
-                                    res = self.resource_tracker.parent_resource(r)  # 获取 resource 对象
-                                    if res is None:
-                                        res = rs
-                                    if id(res) not in seen:
-                                        seen.add(id(res))
-                                        unique_resources.append(res)
-                            else:
-                                res = self.resource_tracker.parent_resource(rs)
-                                if res is None:
-                                    res = rs
-                                if id(res) not in seen:
-                                    seen.add(id(res))
-                                    unique_resources.append(res)
-
-                        # 使用新的资源树接口
-                        if unique_resources:
-                            await self.update_resource(unique_resources)
-                    except Exception as e:
-                        self.lab_logger().error(f"资源更新失败: {e}")
-                        self.lab_logger().error(traceback.format_exc())
-
             # 发布结果
             goal_handle.succeed()
             ##### self.lab_logger().info(f"设置动作成功: {action_name}")
@@ -2486,7 +2376,11 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
         return execute_callback
 
-    def _execute_driver_command(self, string: str):
+    def _execute_driver_command(
+        self,
+        string: str,
+        action_context: Optional[ActionContext] = None,
+    ):
         try:
             target = json.loads(string)
         except Exception as ex:
@@ -2563,6 +2457,12 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                                     f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
                                 )
                                 raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
+
+            _, function_args = bind_action_context(
+                function,
+                function_args,
+                action_context,
+            )
 
             # todo: 默认反报送
             return function(**function_args)
@@ -2667,7 +2567,11 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         self.lab_logger().warning(f"单物料 list 输入未索引到本地实例，使用装配实例：{getattr(plr, 'name', plr)}")
         return plr
 
-    async def _execute_driver_command_async(self, string: str):
+    async def _execute_driver_command_async(
+        self,
+        string: str,
+        action_context: Optional[ActionContext] = None,
+    ):
         try:
             target = json.loads(string)
         except Exception as ex:
@@ -2754,6 +2658,11 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                                 )
                                 raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
 
+            _, function_args = bind_action_context(
+                function,
+                function_args,
+                action_context,
+            )
             return await function(**function_args)
         except KeyError as ex:
             raise JsonCommandInitError(
@@ -2904,43 +2813,27 @@ class ROS2DeviceNode:
         self.driver_is_workstation = False
         self.resource_tracker = DeviceNodeResourceTracker()
 
-        # use_pylabrobot_creator 使用 cls的包路径检测
-        use_pylabrobot_creator = uses_pylabrobot_creator(driver_class)
+        creator_selection = select_driver_creator(
+            driver_class,
+            children=children,
+            resource_tracker=self.resource_tracker,
+            task_scheduler=rclpy.get_global_executor().create_task,
+        )
+        self.driver_is_workstation = creator_selection.is_workstation
+        self._driver_creator = creator_selection.creator
 
-        # 创建设备类实例
-        if use_pylabrobot_creator:
-            # 先对pylabrobot的子资源进行加载，不然subclass无法认出
-            # 在下方对于加载Deck等Resource要手动import
-            register()
-            self._driver_creator = PyLabRobotCreator(
-                driver_class,
-                children=children,
-                resource_tracker=self.resource_tracker,
-                task_scheduler=rclpy.get_global_executor().create_task,
-            )
-        else:
-            from unilabos.devices.workstation.workstation_base import WorkstationBase
-
-            if issubclass(
-                self._driver_class, WorkstationBase
-            ):  # 是WorkstationNode的子节点，就要调用WorkstationNodeCreator
-                self.driver_is_workstation = True
-                self._driver_creator = WorkstationNodeCreator(
-                    driver_class,
-                    children=children,
-                    resource_tracker=self.resource_tracker,
-                    task_scheduler=rclpy.get_global_executor().create_task,
-                )
-            else:
-                self._driver_creator = DeviceClassCreator(
-                    driver_class, children=children, resource_tracker=self.resource_tracker
-                )
-
+        normalized_driver_params = normalize_driver_init_kwargs(
+            driver_class,
+            device_id,
+            driver_params,
+        )
         if driver_is_ros:
-            driver_params["device_id"] = device_id
-            driver_params["registry_name"] = device_config.res_content.klass
-            driver_params["resource_tracker"] = self.resource_tracker
-        self._driver_instance = self._driver_creator.create_instance(driver_params)
+            normalized_driver_params["device_id"] = device_id
+            normalized_driver_params["registry_name"] = device_config.res_content.klass
+            normalized_driver_params["resource_tracker"] = self.resource_tracker
+        self._driver_instance = self._driver_creator.create_instance(
+            normalized_driver_params
+        )
         if self._driver_instance is None:
             logger.critical(f"设备实例创建失败 {driver_class}, params: {driver_params}")
             raise DeviceInitError("错误: 设备实例创建失败")

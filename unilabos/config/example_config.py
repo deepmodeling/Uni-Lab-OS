@@ -29,4 +29,5 @@ class HostLinkConfig:
     ros_domain_id = ""  # Host 可在此统一配置，也可用 --ros-domain-id
     ros_discovery_range = ""
     ros_static_peers = ""
-    ros_discovery_server = ""  # 外部 Fast DDS host:port；off 表示禁用
+    ros_discovery_server = ""  # 空=微后端托管；外部 host:port；off=禁用
+    ros_discovery_port = 0  # 0=复用 HostLink 数字端口（TCP/UDP）

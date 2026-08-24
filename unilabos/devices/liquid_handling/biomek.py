@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import json
 import pathlib
-from typing import Sequence, Optional, List, Union, Literal
+from typing import TYPE_CHECKING, Sequence, Optional, List, Union, Literal
 
 import requests
-from geometry_msgs.msg import Point
 from pylabrobot.liquid_handling import LiquidHandler
 from pylabrobot.resources import (
     TipRack,
@@ -11,9 +12,11 @@ from pylabrobot.resources import (
     Coordinate,
 )
 import copy
-from unilabos_msgs.msg import Resource
 
 from unilabos.resources.resource_tracker import DeviceNodeResourceTracker  # type: ignore
+
+if TYPE_CHECKING:
+    from unilabos_msgs.msg import Resource
 
 
 class LiquidHandlerBiomek:

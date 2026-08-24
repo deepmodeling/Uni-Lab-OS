@@ -5,6 +5,7 @@ hotel.thermo_orbitor_rs2_hotel:
   class:
     action_value_mappings: {}
     module: unilabos.devices.resource_container.container:HotelContainer
+    status_policies: {}
     status_types:
       rotation: ''
     supported_backends:

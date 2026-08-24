@@ -1,4 +1,4 @@
-from unilabos.resources.itemized_carrier import Bottle
+from unilabos.resources.presets.itemized_carrier import Bottle
 
 
 def POST_PROCESS_PolymerStation_Reagent_Bottle(

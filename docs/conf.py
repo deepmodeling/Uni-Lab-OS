@@ -70,9 +70,6 @@ html_theme_options = {
     "logo_only": False,
 }
 
-# 设置 HTML 文档的静态文件路径
-html_static_path = ["_static"]  # 如果有自定义 CSS，可以放在 _static 目录中
-
 section_titles = {
     "Simple": "## 简单单变量动作函数",
     "Organic": """## 常量有机化学操作

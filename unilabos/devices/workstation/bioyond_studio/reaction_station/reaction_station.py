@@ -8,7 +8,6 @@ from pathlib import Path
 from datetime import datetime
 from unilabos.devices.workstation.bioyond_studio.station import BioyondWorkstation
 from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import MachineState
-from unilabos.ros.msgs.message_converter import convert_to_ros_msg, Float64, String
 
 
 
@@ -991,11 +990,12 @@ class BioyondReactionStation(BioyondWorkstation):
                 for k, t in topics.items():
                     v = data.get(k)
                     if v is not None:
-                        pub = self._ros_node.create_publisher(Float64, t, 10)
-                        pub.publish(convert_to_ros_msg(Float64, float(v)))
+                        self._ros_node.publish_topic(t, float(v))
 
-                evt_pub = self._ros_node.create_publisher(String, f"{ns}/events/temperature_cutoff", 10)
-                evt_pub.publish(convert_to_ros_msg(String, json.dumps(event, ensure_ascii=False)))
+                self._ros_node.publish_topic(
+                    f"{ns}/events/temperature_cutoff",
+                    event,
+                )
 
             return {"processed": True, "frame": data.get("frameCode")}
         except Exception as e:

@@ -97,20 +97,28 @@ See [Best Practice Guide](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/b
 ## Reference Driver Implementations
 
 Two runnable example device packages are maintained as standalone GitHub repositories (generated
-from [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate)). Clone either one, load it
-with `--devices <pkg> --external_devices_only`, and read it when writing your own drivers:
+from [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate)). Install a verified revision
+directly from its ordinary GitHub URL; Uni-Lab-OS normalizes the URL, installs the actual Python
+distribution, and reports the discovered `@device` IDs:
+
+```bash
+unilab package install https://github.com/Xuwznln/LabDeviceLanDemo --ref <commit-sha>
+unilab package install https://github.com/Xuwznln/LabDeviceWorkstationDemo --ref <commit-sha>
+```
 
 | Example repository | Demonstrates |
 |--------------------|--------------|
-| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo) | Cross-device `@subscribe` + remote `call_device_action` LAN closed loop (hub/sub as two processes) |
-| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo) | `hardware_interface` proxy — multiple sub-devices share one communication endpoint: shared serial (default IO method names) and Modbus `extra_info` (per-device `slave_id` injection) |
+| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo) | HostLink/ROS2 cross-device `@subscribe` + remote `call_device_action` LAN closed loop (hub/sub as two processes) |
+| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo) | HostLink/ROS2 `hardware_interface` proxy — multiple sub-devices share one communication endpoint: shared serial (default IO method names) and Modbus `extra_info` (per-device `slave_id` injection) |
 
-Each repository README ships a step-by-step launch tutorial with verified output. For the underlying
+Each repository README ships bounded `--backend hostlink` and `--backend ros2` smoke commands with
+machine-readable terminal JSON; neither demo requires an AK/SK or the legacy `/api/v1/job/add` API.
+For the underlying
 communication-sharing mechanism see [Best Practice Guide §11.5](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html);
 to write a new driver from scratch see [Add Device](https://deepmodeling.github.io/Uni-Lab-OS/developer_guide/add_device.html).
-The main repository CI validates pinned revisions of both packages. It also runs the LAN demo shape
-as separate HostLink Host/Slave processes over loopback and an available non-loopback LAN IPv4,
-covering cross-device `@subscribe` followed by a remote device action.
+The main repository CI installs both pinned GitHub URLs, verifies discovered devices, and runs the
+two HostLink closed loops. Each external repository independently runs the same graph on HostLink
+and ROS2 before its revision is accepted as a main-repository pin.
 
 ## Message Format
 

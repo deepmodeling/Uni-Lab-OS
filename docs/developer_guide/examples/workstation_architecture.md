@@ -4,6 +4,13 @@
 > **适用场景**：大型工作站接入、子设备管理、物料系统集成  
 > **前置知识**：{doc}`../add_device` | {doc}`../add_registry`
 
+> **Backend 边界**：Workstation 不是 ROS2 专属设备。选择 `hostlink` 时，运行时会
+> 初始化对应的 HostLink node，并以 HostLink 初始化其 sub-device；普通 Python 驱动的
+> Action、Service 和状态上报均可使用。本文保留的 `ROS2WorkstationNode` 名称用于说明
+> ROS2 具体实现和历史示例，不代表 HostLink 与 ROS2 100% 等价。依赖 MoveIt、RViz、
+> ROS graph/TF 或 ROS2 专用高频图像/消息图的工作站仍必须使用 `ros2` backend。
+> backend 选择与启动方式见 {doc}`../../user_guide/launch`。
+
 ## 0. 问题简介
 
 我们可以从以下几类例子，来理解对接大型工作站需要哪些设计。本文档之后的实战案例也将由这些组成。

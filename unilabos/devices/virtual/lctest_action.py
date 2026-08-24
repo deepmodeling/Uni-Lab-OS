@@ -294,7 +294,7 @@ class TestActionDevice:
         ]
 
         resource_tree = (
-            ResourceTreeSet.from_plr_resources(selected_resources, known_newly_created=True).dump()
+            ResourceTreeSet.from_plr_resources(selected_resources).dump()
             if selected_resources
             else []
         )
@@ -464,7 +464,7 @@ class TestActionDevice:
             raise ValueError(f"资源检查失败: {failed}")
 
         resource_tree = (
-            ResourceTreeSet.from_plr_resources(selected_resources, known_newly_created=True).dump()
+            ResourceTreeSet.from_plr_resources(selected_resources).dump()
             if selected_resources
             else []
         )

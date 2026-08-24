@@ -679,7 +679,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         # 如果 liquid_names 和 volumes 都为空，直接返回 wells
         if not liquid_names and not volumes:
             return SetLiquidReturn(
-                wells=ResourceTreeSet.from_plr_resources(wells, known_newly_created=False).dump(), volumes=res_volumes  # type: ignore
+                wells=ResourceTreeSet.from_plr_resources(wells).dump(), volumes=res_volumes  # type: ignore
             )
 
         for well, liquid_name, volume in zip(wells, liquid_names, volumes):
@@ -687,7 +687,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
             res_volumes.append(volume)
 
         return SetLiquidReturn(
-            wells=ResourceTreeSet.from_plr_resources(wells, known_newly_created=False).dump(), volumes=res_volumes  # type: ignore
+            wells=ResourceTreeSet.from_plr_resources(wells).dump(), volumes=res_volumes  # type: ignore
         )
 
     def set_liquid_from_plate(
@@ -709,8 +709,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         # 如果 liquid_names 和 volumes 都为空，直接返回
         if not liquid_names and not volumes:
             return SetLiquidFromPlateReturn(
-                plate=ResourceTreeSet.from_plr_resources([plate], known_newly_created=False).dump(),  # type: ignore
-                wells=ResourceTreeSet.from_plr_resources(wells, known_newly_created=False).dump(),  # type: ignore
+                plate=ResourceTreeSet.from_plr_resources([plate]).dump(),  # type: ignore
+                wells=ResourceTreeSet.from_plr_resources(wells).dump(),  # type: ignore
                 volumes=res_volumes,
             )
 
@@ -727,8 +727,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
             time.sleep(0.01)
 
         return SetLiquidFromPlateReturn(
-            plate=ResourceTreeSet.from_plr_resources([plate], known_newly_created=False).dump(),  # type: ignore
-            wells=ResourceTreeSet.from_plr_resources(wells, known_newly_created=False).dump(),  # type: ignore
+            plate=ResourceTreeSet.from_plr_resources([plate]).dump(),  # type: ignore
+            wells=ResourceTreeSet.from_plr_resources(wells).dump(),  # type: ignore
             volumes=res_volumes,
         )
 
@@ -1272,8 +1272,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
             )
 
         return TransferLiquidReturn(
-            sources=ResourceTreeSet.from_plr_resources(list(sources), known_newly_created=False).dump(),  # type: ignore
-            targets=ResourceTreeSet.from_plr_resources(list(targets), known_newly_created=False).dump(),  # type: ignore
+            sources=ResourceTreeSet.from_plr_resources(list(sources)).dump(),  # type: ignore
+            targets=ResourceTreeSet.from_plr_resources(list(targets)).dump(),  # type: ignore
         )
 
     async def _transfer_one_to_one(

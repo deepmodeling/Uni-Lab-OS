@@ -1,22 +1,24 @@
-"""由 Basic 驱动运行时与 HostLink 组成的无 ROS 分布式 backend。"""
+"""由本地驱动运行时与 HostLink 组成的无 ROS 分布式 backend。"""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
-from unilabos.basic.runtime import BasicRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.device_runtime.action import ActionCancelled, ActionContext
-from unilabos.device_runtime.service import normalize_service_name
-from unilabos.device_runtime.topic import (
+from unilabos.device_runtime.resource import AuthorityResourceService
+from unilabos.hostlink.service import normalize_service_name
+from unilabos.hostlink.topic import (
     TopicEvent,
     message_to_value,
     normalize_topic,
 )
 from unilabos.hostlink.client import HostLinkClient, set_hostlink_client
+from unilabos.hostlink.local_runtime import HostLinkLocalRuntime
 from unilabos.hostlink.protocol import ActionType, LinkError
 from unilabos.hostlink.server import HostLinkServer, set_hostlink_server
 from unilabos.utils import logger
@@ -28,12 +30,12 @@ def to_wire_value(value: Any) -> Any:
     return message_to_value(value)
 
 
-class HostLinkBackendRuntime:
+class HostLinkBackend:
     """Run local Python drivers and expose Slave devices to one Host."""
 
     def __init__(
         self,
-        local: BasicRuntime,
+        local: HostLinkLocalRuntime,
         *,
         is_slave: bool,
     ) -> None:
@@ -58,6 +60,7 @@ class HostLinkBackendRuntime:
         for node in self.local.devices.values():
             node.set_action_router(self)
             node.set_service_bus(self)
+        self.local.add_device_change_listener(self._on_local_device_change)
         self.local.topic_bus.add_outbound_listener(self._on_local_topic)
         self.local.topic_bus.add_subscription_listener(
             self._on_local_subscription_change
@@ -76,6 +79,15 @@ class HostLinkBackendRuntime:
                     self.client.configure_device_descriptors(self.local.descriptors())
                 self._connect_slave()
             else:
+                from unilabos.server.scheduler.integration import (
+                    get_materials_gateway,
+                )
+
+                self.local.set_resource_service(
+                    AuthorityResourceService(
+                        gateway_provider=get_materials_gateway
+                    )
+                )
                 self.local.start()
                 self._start_host()
         except Exception:
@@ -123,13 +135,296 @@ class HostLinkBackendRuntime:
             ActionType.TOPIC_UNSUBSCRIBE,
             self._handle_topic_unsubscribe,
         )
+        self.server.register_handler(
+            ActionType.MATERIAL_TEMPLATE_LIST,
+            self._handle_material_template_list,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_TEMPLATE_CREATE,
+            self._handle_material_template_create,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_CREATE,
+            self._handle_material_create,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_GET_TREE,
+            self._handle_material_get_tree,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_GET_BY_RESOURCE_ID,
+            self._handle_material_get_by_resource_id,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_DATA_PUT,
+            self._handle_material_data_put,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_MOVE,
+            self._handle_material_move,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_TRANSFER,
+            self._handle_material_transfer,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_DELETE,
+            self._handle_material_delete,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_COMPARE_SNAPSHOT,
+            self._handle_material_compare_snapshot,
+        )
+        self.server.register_handler(
+            ActionType.MATERIAL_APPLY_SNAPSHOT,
+            self._handle_material_apply_snapshot,
+        )
         self.server.start()
         set_hostlink_server(self.server)
+        self._bind_material_transfer_dispatcher()
         logger.info(
             "[HostLink backend] Host 已启动：%s:%d，本地设备=%s",
             HostLinkConfig.bind,
             self.server.port,
             sorted(self.local.devices),
+        )
+
+    @staticmethod
+    def _handle_material_template_list(
+        _data: dict[str, Any], _peer: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        return [
+            item.model_dump(mode="json", exclude_none=False)
+            for item in gateway.list_templates()
+        ]
+
+    @staticmethod
+    def _handle_material_template_create(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import ResourceTemplateWrite
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        value = ResourceTemplateWrite.model_validate(mutation.payload)
+        return gateway.create_template(mutation, value).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_create(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Proxy Slave creation through the Host-selected authority."""
+
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialTreeCreate
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialTreeCreate.model_validate(mutation.payload)
+        result = gateway.create_tree(mutation, value)
+        return result.model_dump(mode="json", exclude_none=False)
+
+    @staticmethod
+    def _handle_material_get_tree(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        root_material_uuid = str(data.get("root_material_uuid") or "").strip()
+        if not root_material_uuid:
+            raise ValueError("material.tree.get requires root_material_uuid")
+        return gateway.get_tree(root_material_uuid).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_get_by_resource_id(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        resource_id = str(data.get("resource_id") or "").strip()
+        if not resource_id:
+            raise ValueError("material.resource-id.get requires resource_id")
+        return gateway.get_material_by_resource_id(resource_id).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_data_put(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialDataWrite
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        material_uuid = str(data.get("material_uuid") or "").strip()
+        if not material_uuid:
+            raise ValueError("material.data.put requires material_uuid")
+        mutation_data = dict(data)
+        mutation_data.pop("material_uuid", None)
+        mutation = InventoryMutation.model_validate(mutation_data)
+        value = MaterialDataWrite.model_validate(mutation.payload)
+        return gateway.put_data(mutation, material_uuid, value).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_move(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialMove
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialMove.model_validate(mutation.payload)
+        return gateway.move_material(mutation, value).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_transfer(
+        data: dict[str, Any], peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialTransfer
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialTransfer.model_validate(mutation.payload)
+        owned = {str(item) for item in peer.get("device_ids") or []}
+        if owned and value.source_device_id not in owned:
+            raise PermissionError(
+                "Slave 未注册物料转移来源设备："
+                f"{value.source_device_id!r}"
+            )
+        return gateway.transfer_material(mutation, value).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    def _bind_material_transfer_dispatcher(self) -> None:
+        """让嵌入式 MaterialsService 通过当前 HostLink runtime 调设备服务。"""
+
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        service = getattr(gateway, "service", None)
+        setter = getattr(service, "set_resource_sync_dispatcher", None)
+        if callable(setter):
+            setter(self.dispatch_material_sync)
+
+    def dispatch_material_sync(self, command: Any) -> dict[str, Any]:
+        """把微后端 unload/load 命令路由到本机或任意 HostLink Slave。"""
+
+        from unilabos.device_runtime.resource import MaterialSyncService
+
+        data = command.model_dump(mode="json", exclude_none=False)
+        device_id = str(data["device_id"])
+        service_name = f"/srv/devices/{device_id}/material_sync"
+        if not self.has_service(service_name):
+            raise RuntimeError(
+                f"设备 {device_id!r} 未暴露 material_sync service"
+            )
+        request = MaterialSyncService.Request(
+            command=json.dumps(data, ensure_ascii=False)
+        )
+        response = self.call_service(
+            service_name,
+            request,
+            caller_device_id="edge-microbackend",
+            timeout=30.0,
+        )
+        wire = to_wire_value(response)
+        raw = wire.get("response") if isinstance(wire, dict) else wire
+        if isinstance(raw, str):
+            result = json.loads(raw or "{}")
+        elif isinstance(raw, dict):
+            result = raw
+        else:
+            result = {"success": bool(raw)}
+        if not result.get("success"):
+            raise RuntimeError(
+                f"设备 {device_id!r} material_sync 失败：{result}"
+            )
+        return result
+
+    @staticmethod
+    def _handle_material_delete(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialDelete
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        value = MaterialDelete.model_validate(mutation.payload)
+        return gateway.delete_material(mutation, value).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_compare_snapshot(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.materials import MaterialSnapshot
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        snapshot = MaterialSnapshot.model_validate(data)
+        return gateway.compare_snapshot(snapshot).model_dump(
+            mode="json", exclude_none=False
+        )
+
+    @staticmethod
+    def _handle_material_apply_snapshot(
+        data: dict[str, Any], _peer: dict[str, Any]
+    ) -> dict[str, Any]:
+        from unilabos.server.protocol.common import InventoryMutation
+        from unilabos.server.protocol.materials import MaterialSnapshot
+        from unilabos.server.scheduler.integration import get_materials_gateway
+
+        gateway = get_materials_gateway()
+        if gateway is None:
+            raise RuntimeError("Host 尚未配置 materials authority")
+        mutation = InventoryMutation.model_validate(data)
+        snapshot = MaterialSnapshot.model_validate(mutation.payload)
+        return gateway.apply_snapshot(mutation, snapshot).model_dump(
+            mode="json", exclude_none=False
         )
 
     def _start_slave(self) -> None:
@@ -148,6 +443,11 @@ class HostLinkBackendRuntime:
             device_descriptors=self.local.descriptors(),
             heartbeat_payload_provider=self._heartbeat_payload,
             on_status_change=self._on_client_status_change,
+        )
+        from unilabos.client.materials import HostLinkMaterialsClient
+
+        self.local.set_resource_service(
+            AuthorityResourceService(HostLinkMaterialsClient(self.client))
         )
         self.client.register_handler(ActionType.DEVICE_CALL, self._handle_device_call)
         self.client.register_handler(
@@ -217,6 +517,8 @@ class HostLinkBackendRuntime:
     @staticmethod
     def _service_target(name: str) -> str:
         parts = normalize_service_name(name).strip("/").split("/")
+        if parts and parts[0] == "srv":
+            parts = parts[1:]
         if len(parts) >= 3 and parts[0] == "devices":
             return parts[1]
         return ""
@@ -228,6 +530,13 @@ class HostLinkBackendRuntime:
         target = self._service_target(normalized)
         if not target:
             return False
+        if normalized.endswith("/material_sync"):
+            if self.server is not None:
+                return target in self.server.devices(online_only=True)
+            if self.client is not None:
+                # material_sync 是所有新版设备的内建能力；Host 负责最终路由，
+                # Slave 无需缓存其他 Slave 的 service 描述。
+                return self.client.online
         if self.server is not None:
             remote = self.server.devices(online_only=True).get(target)
             descriptor = (remote or {}).get("device") or {}
@@ -321,15 +630,49 @@ class HostLinkBackendRuntime:
         return response.get("response") if isinstance(response, dict) else response
 
     def _heartbeat_payload(self) -> Dict[str, Any]:
-        return {"states": to_wire_value(self.local.snapshot_states())}
+        return {
+            "devices": self.local.descriptors(),
+            "states": to_wire_value(self.local.snapshot_states()),
+        }
+
+    def _on_local_device_change(self, event: str, node: Any) -> None:
+        if event == "added":
+            node.set_action_router(self)
+            node.set_service_bus(self)
+            if self.client is not None:
+                node.add_status_listener(self._on_local_status)
+        elif event == "removed":
+            node.remove_status_listener(self._on_local_status)
+
+        descriptors = self.local.descriptors()
+        if self.client is not None:
+            self.client.configure_device_descriptors(descriptors)
+        if self.server is not None:
+            self.server.hello_payload["devices"] = descriptors
 
     def _on_client_status_change(self, online: bool) -> None:
         if not online:
             return
         try:
-            self._topic_executor.submit(self._register_topic_subscriptions)
+            self._topic_executor.submit(self._restore_online_state)
         except RuntimeError:
             pass
+
+    def _restore_online_state(self) -> None:
+        """Restore subscriptions and notify opt-in drivers after every reconnect."""
+
+        self._register_topic_subscriptions()
+        for node in self.local.devices.values():
+            callback = getattr(node.driver, "on_hostlink_connected", None)
+            if not callable(callback):
+                continue
+            try:
+                callback()
+            except Exception:  # noqa: BLE001 - one driver must not break reconnect
+                logger.exception(
+                    "[HostLink backend] 设备 %s 重连恢复失败",
+                    node.device_id,
+                )
 
     def _register_topic_subscriptions(self) -> None:
         client = self.client
@@ -1057,7 +1400,13 @@ class HostLinkBackendRuntime:
                 result.setdefault(device_id, remote)
         return result
 
+    def request_stop(self) -> None:
+        """Ask the backend entrypoint to leave its wait loop and clean up."""
+
+        self.local.request_stop()
+
     def stop(self) -> None:
+        self.local.remove_device_change_listener(self._on_local_device_change)
         self.local.topic_bus.remove_outbound_listener(self._on_local_topic)
         self.local.topic_bus.remove_subscription_listener(
             self._on_local_subscription_change
@@ -1078,4 +1427,4 @@ class HostLinkBackendRuntime:
         self._started = False
 
 
-__all__ = ["HostLinkBackendRuntime", "to_wire_value"]
+__all__ = ["HostLinkBackend", "to_wire_value"]

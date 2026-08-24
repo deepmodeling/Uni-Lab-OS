@@ -133,12 +133,12 @@ python unilabos\app\main.py -g celljson.json --ak <user的AK> --sk <user的SK>
 python unilabos\app\register.py --complete_registry
 ```
 
-### 3.3 启动并上传注册表
+### 3.3 启动并同步注册表
 
-新增设备之后，启动 unilab 需要增加`--upload_registry`参数，来上传注册表信息。
+新增设备之后，正常启动 unilab 即会把 Registry 同步到本地微后端。
 
 ```bash
-python unilabos\app\main.py -g celljson.json --ak <user的AK> --sk <user的SK> --upload_registry
+python unilabos\app\main.py -g celljson.json --ak <user的AK> --sk <user的SK>
 ```
 
 ## 4. 注意事项
@@ -157,14 +157,14 @@ module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinC
 
 1. ✅ 在网页端生成注册表信息
 2. ✅ 使用 `--complete_registry` 补全注册表
-3. ✅ 使用 `--upload_registry` 上传注册表信息
+3. ✅ 启动微后端并检查注册表同步结果
 
 ### 4.3 驱动更新流程
 
 如果不是新增设备，仅修改了工站驱动的 `.py` 文件：
 
 1. ✅ 运行 `--complete_registry` 补全注册表
-2. ✅ 运行 `--upload_registry` 上传注册表
+2. ✅ 重启微后端并检查注册表同步结果
 3. ❌ 不需要在网页端重新生成注册表
 
 ### 4.4 PLC 通信注意事项

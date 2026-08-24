@@ -26,13 +26,15 @@ class AuthError(Exception):
 def cmd_login(args, session_manager: SessionManager):
     """login 命令处理 — 保存 ak/sk 到会话文件
 
-    如果同时传了 --addr，会一并持久化 base_url。
+    如果同时传了 --address，会一并持久化 base_url。
     """
     try:
         with session_manager:
             state = session_manager.get_state()
 
-            addr = getattr(args, "addr_resolved", None)
+            addr = getattr(args, "address_resolved", None)
+            if addr is None:
+                addr = getattr(args, "addr_resolved", None)
             if addr:
                 state.base_url = addr
 

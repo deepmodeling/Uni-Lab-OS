@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import importlib.util
+import os
 import subprocess
 import sys
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
 
 from unilabos.app import backend as backend_module
+from unilabos.hostlink.adapter_registry import get_execution_adapter
 from unilabos.app.backend import (
     BACKEND_NAMES,
     BackendConfigurationError,
@@ -16,15 +20,15 @@ from unilabos.app.backend import (
     resolve_backend_selection,
     start_backend,
 )
-from unilabos.app.main import parse_args
-from unilabos.basic.runtime import BasicRuntime
-from unilabos.config.config import BasicConfig
+from unilabos.app.cli.parser import build_parser
+from unilabos.hostlink.local_runtime import HostLinkLocalRuntime
+from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.hostlink import main_hostlink_run
+from unilabos.server.startup import resolve_database_paths
 
 
 def test_only_public_communication_backends_are_selectable() -> None:
     assert BACKEND_NAMES == ("hostlink", "ros2")
-    assert BasicConfig.backend == "ros2"
 
 
 @pytest.mark.parametrize(
@@ -51,17 +55,13 @@ def test_automancer_placeholder_is_not_selectable() -> None:
         normalize_backend_name("automancer")
 
 
-def test_backend_specific_bridge_defaults() -> None:
-    assert resolve_backend_selection("ros2").app_bridges == (
-        "websocket",
-        "fastapi",
-    )
-    assert resolve_backend_selection("hostlink").app_bridges == ()
+def test_backend_selection_has_no_application_bridge_configuration() -> None:
+    assert resolve_backend_selection("ros2").name == "ros2"
+    assert resolve_backend_selection("hostlink", is_slave=True).name == "hostlink"
+    assert not hasattr(resolve_backend_selection("ros2"), "app_bridges")
 
 
 def test_backend_capability_validation() -> None:
-    with pytest.raises(BackendConfigurationError, match="不支持应用桥"):
-        resolve_backend_selection("hostlink", ["websocket"])
     with pytest.raises(BackendConfigurationError, match="不支持 --visual"):
         resolve_backend_selection("hostlink", visual="rviz")
     assert resolve_backend_selection("hostlink", is_slave=True).name == "hostlink"
@@ -87,7 +87,7 @@ def test_registry_driver_backend_defaults_and_explicit_support() -> None:
 
 
 def test_cli_shows_and_accepts_only_public_backend_names() -> None:
-    parser = parse_args()
+    parser = build_parser()
     assert parser.parse_args(["--backend", "hostlink"]).backend == "hostlink"
     assert parser.parse_args(["--backend", "ros2"]).backend == "ros2"
     for value in ("basic", "simple", "dora", "ros"):
@@ -96,6 +96,67 @@ def test_cli_shows_and_accepts_only_public_backend_names() -> None:
     help_text = parser.format_help()
     assert "{hostlink,ros2}" in help_text
     assert "automancer" not in help_text
+
+
+def test_workflow_upload_uses_grouped_cli_only() -> None:
+    parser = build_parser()
+    parsed = parser.parse_args(
+        [
+            "workflow",
+            "upload",
+            "-f",
+            "workflow.json",
+            "-n",
+            "demo",
+            "--tags",
+            "chemistry",
+        ]
+    )
+    assert parsed.command == "workflow"
+    assert parsed.workflow_command == "upload"
+    assert parsed.workflow_file == "workflow.json"
+    assert parsed.workflow_name == "demo"
+    assert parsed.tags == ["chemistry"]
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["workflow_upload", "-f", "workflow.json"])
+
+
+def test_local_scheduler_cli_is_removed() -> None:
+    parser = build_parser()
+    parsed = parser.parse_args([])
+    assert not hasattr(parsed, "edge_scheduler")
+    assert not hasattr(parsed, "scheduler_authority_profile")
+
+    for arguments in (
+        ["--edge-scheduler"],
+        ["--scheduler-authority-profile", "local_scheduler"],
+        ["--edge-inventory-db", "inventory.db"],
+    ):
+        with pytest.raises(SystemExit):
+            parser.parse_args(arguments)
+
+
+def test_server_database_cli_resolves_only_the_four_new_files(tmp_path) -> None:
+    parsed = build_parser().parse_args(
+        [
+            "--server-database-root",
+            str(tmp_path),
+            "--runtime-db",
+            "control.db",
+        ]
+    )
+
+    paths = resolve_database_paths(vars(parsed), working_dir=tmp_path)
+
+    assert paths.runtime_db == (tmp_path / "control.db").resolve()
+    assert {path.name for path in paths.as_mapping().values()} == {
+        "control.db",
+        "materials.db",
+        "telemetry.db",
+        "history.db",
+    }
+    assert list(tmp_path.glob("*.db")) == []
 
 
 def test_start_backend_imports_only_selected_profile(monkeypatch) -> None:
@@ -123,15 +184,45 @@ def test_start_backend_imports_only_selected_profile(monkeypatch) -> None:
     assert received[0][2] == []
 
 
-def test_hostlink_still_builds_its_internal_basic_runtime() -> None:
-    runtime = main_hostlink_run.build_runtime(None, backend_name="hostlink")
-    assert isinstance(runtime, BasicRuntime)
+def test_hostlink_builds_its_local_driver_runtime() -> None:
+    runtime = main_hostlink_run.build_runtime(None)
+    assert isinstance(runtime, HostLinkLocalRuntime)
     assert runtime.backend_name == "hostlink"
+
+
+def test_hostlink_host_registers_direct_execution_adapter(monkeypatch) -> None:
+    monkeypatch.setattr(BasicConfig, "backend", "hostlink")
+    monkeypatch.setattr(BasicConfig, "machine_name", "test-hostlink-host")
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    thread = threading.Thread(
+        target=main_hostlink_run.main,
+        args=(None, object()),
+        daemon=True,
+    )
+    thread.start()
+    try:
+        deadline = time.monotonic() + 3
+        adapter = None
+        while adapter is None and time.monotonic() < deadline:
+            adapter = get_execution_adapter(0)
+            time.sleep(0.01)
+        assert adapter is not None
+        assert adapter.runtime is main_hostlink_run.get_runtime()
+    finally:
+        runtime = main_hostlink_run.get_runtime()
+        if runtime is not None:
+            runtime.request_stop()
+        thread.join(timeout=3)
+    assert not thread.is_alive()
+    assert main_hostlink_run.get_runtime() is None
+    assert get_execution_adapter(0) is None
 
 
 def test_web_package_does_not_eagerly_import_ros_modules() -> None:
     code = (
-        "import sys; import unilabos.app.web; "
+        "import sys; import unilabos.server.api.app; "
         "assert not any(name.startswith('unilabos.ros') for name in sys.modules)"
     )
     result = subprocess.run(
@@ -139,5 +230,101 @@ def test_web_package_does_not_eagerly_import_ros_modules() -> None:
         capture_output=True,
         text=True,
         timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_hostlink_entrypoint_does_not_import_ros_runtime() -> None:
+    code = (
+        "import sys; "
+        "from unilabos.config.config import BasicConfig; "
+        "BasicConfig.backend = 'hostlink'; "
+        "import unilabos.hostlink.main_hostlink_run; "
+        "assert 'rclpy' not in sys.modules; "
+        "assert not any(name.startswith('unilabos.ros') for name in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def _missing_generated_messages_setup() -> str:
+    return (
+        "import pathlib, sys, tempfile; "
+        "tmp = tempfile.TemporaryDirectory(); "
+        "root = pathlib.Path(tmp.name) / 'unilabos_msgs'; "
+        "(root / 'msg').mkdir(parents=True); "
+        "(root / 'action').mkdir(); "
+        "(root / '__init__.py').write_text('', encoding='utf-8'); "
+        "(root / 'msg' / '__init__.py').write_text('', encoding='utf-8'); "
+        "(root / 'action' / '__init__.py').write_text('', encoding='utf-8'); "
+        "sys.path.insert(0, tmp.name); "
+    )
+
+
+def test_explicit_hostlink_registry_does_not_require_generated_messages() -> None:
+    code = _missing_generated_messages_setup() + (
+        "from unilabos.config.config import BasicConfig; "
+        "assert BasicConfig.backend == 'hostlink'; "
+        "BasicConfig.demo_mode = True; "
+        "BasicConfig.working_dir = tmp.name; "
+        "from unilabos.registry.registry import build_registry, _HOSTLINK_SCHEMA_ONLY; "
+        "assert _HOSTLINK_SCHEMA_ONLY is True; "
+        "registry = build_registry(external_only=True); "
+        "assert 'virtual_heating_platform' in registry.device_type_registry; "
+        "assert 'virtual_workbench' in registry.device_type_registry; "
+        "import unilabos.resources.graphio; "
+        "assert 'rclpy' not in sys.modules; "
+        "assert 'unilabos.ros.msgs.message_converter' not in sys.modules; "
+        "tmp.cleanup()"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "UNILABOS_BASICCONFIG_BACKEND": "hostlink"},
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_explicit_ros2_registry_fails_without_generated_messages() -> None:
+    code = _missing_generated_messages_setup() + (
+        "from unilabos.config.config import BasicConfig; "
+        "assert BasicConfig.backend == 'ros2'; "
+        "import unilabos.registry.registry"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "UNILABOS_BASICCONFIG_BACKEND": "ros2"},
+    )
+    assert result.returncode != 0
+    assert "ResourceCreateFromOuterEasy" in result.stderr
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("rclpy") is None,
+    reason="requires a real ROS2 Humble/Jazzy environment",
+)
+def test_ros2_registry_uses_generated_message_schemas() -> None:
+    code = (
+        "from unilabos.config.config import BasicConfig; "
+        "assert BasicConfig.backend == 'ros2'; "
+        "import unilabos.registry.registry as registry; "
+        "assert registry._HOSTLINK_SCHEMA_ONLY is False"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={**os.environ, "UNILABOS_BASICCONFIG_BACKEND": "ros2"},
     )
     assert result.returncode == 0, result.stderr

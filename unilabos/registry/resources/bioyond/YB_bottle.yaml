@@ -3,7 +3,7 @@ YB_20ml_fenyeping:
   - yb3
   - YB_bottle
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_20ml_fenyeping
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_20ml_fenyeping
     type: pylabrobot
   description: YB_20ml_fenyeping
   displayname: YB_20ml_fenyeping
@@ -16,7 +16,7 @@ YB_5ml_fenyeping:
   - yb3
   - YB_bottle
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_5ml_fenyeping
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_5ml_fenyeping
     type: pylabrobot
   description: YB_5ml_fenyeping
   displayname: YB_5ml_fenyeping
@@ -29,7 +29,7 @@ YB_jia_yang_tou_da:
   - yb3
   - YB_bottle
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_jia_yang_tou_da
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_jia_yang_tou_da
     type: pylabrobot
   description: YB_jia_yang_tou_da
   displayname: YB_jia_yang_tou_da
@@ -42,7 +42,7 @@ YB_pei_ye_da_Bottle:
   - yb3
   - YB_bottle
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_pei_ye_da_Bottle
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_pei_ye_da_Bottle
     type: pylabrobot
   description: YB_pei_ye_da_Bottle
   displayname: YB_pei_ye_da_Bottle
@@ -55,7 +55,7 @@ YB_pei_ye_xiao_Bottle:
   - yb3
   - YB_bottle
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_pei_ye_xiao_Bottle
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_pei_ye_xiao_Bottle
     type: pylabrobot
   description: YB_pei_ye_xiao_Bottle
   displayname: YB_pei_ye_xiao_Bottle
@@ -68,7 +68,7 @@ YB_qiang_tou:
   - yb3
   - YB_bottle
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_qiang_tou
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_qiang_tou
     type: pylabrobot
   description: YB_qiang_tou
   displayname: YB_qiang_tou
@@ -82,7 +82,7 @@ YB_ye_Bottle:
   - YB_bottle_carriers
   - YB_bottle
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_ye_Bottle
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_ye_Bottle
     type: pylabrobot
   description: YB_ye_Bottle
   displayname: YB_ye_Bottle

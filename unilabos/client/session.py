@@ -19,9 +19,10 @@ from unilabos.utils.file_lock import (
     acquire_exclusive_file_lock,
     release_file_lock,
 )
+from unilabos.utils.address import DEFAULT_BACKEND_ADDRESS, resolve_address
 
 
-DEFAULT_BASE_URL = "https://leap-lab.bohrium.com/api/v1"
+DEFAULT_BASE_URL = DEFAULT_BACKEND_ADDRESS
 
 
 @dataclass
@@ -74,21 +75,9 @@ class SessionState:
 
 
 def resolve_addr(addr: str) -> str:
-    """解析 --addr 参数
+    """兼容旧调用名；新代码统一使用 ``resolve_address``。"""
 
-    支持别名：
-      test  → https://leap-lab.test.bohrium.com/api/v1
-      uat   → https://leap-lab.uat.bohrium.com/api/v1
-      local → http://127.0.0.1:48197/api/v1
-      其他  → 直接作为 URL 使用
-    """
-    aliases = {
-        "test": "https://leap-lab.test.bohrium.com/api/v1",
-        "uat": "https://leap-lab.uat.bohrium.com/api/v1",
-        "local": "http://127.0.0.1:48197/api/v1",
-        "prod": DEFAULT_BASE_URL,
-    }
-    return aliases.get(addr, addr)
+    return resolve_address(addr)
 
 
 class SessionManager:

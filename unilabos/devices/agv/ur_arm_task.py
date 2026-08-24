@@ -7,8 +7,6 @@ except ImportError as ex:
 import time
 import json
 from unilabos.devices.agv.robotiq_gripper import RobotiqGripper
-from std_msgs.msg import Float64MultiArray
-from pydantic import BaseModel
 
 class UrArmTask():
     def __init__(self, host, retry=30):
@@ -163,4 +161,3 @@ if __name__ == "__main__":
     arm = UrArmTask("192.168.1.178")
     # arm.move_pos_task('t2_y4_transfer3.urp')
     # print(arm.arm_pose())
- 

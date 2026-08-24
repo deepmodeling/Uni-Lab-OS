@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from unilabos.hostlink.protocol import (
     ActionType,
+    exception_error_info,
     LineReader,
     LinkError,
     PROTOCOL_VERSION,
@@ -79,6 +80,8 @@ class _PeerSession:
     ) -> Any:
         request_id, pending = self._begin_request(action_type, data)
         wait_timeout = self.request_timeout if timeout is None else float(timeout)
+        if wait_timeout < 0:
+            wait_timeout = None
         try:
             try:
                 response = pending.wait(wait_timeout)
@@ -100,6 +103,8 @@ class _PeerSession:
 
         request_id, pending = self._begin_request(action_type, data)
         wait_timeout = self.request_timeout if timeout is None else float(timeout)
+        if wait_timeout < 0:
+            wait_timeout = None
         try:
             try:
                 response = await pending.wait_async(wait_timeout)
@@ -139,7 +144,10 @@ class _PeerSession:
     @staticmethod
     def _response_data(response: Dict[str, Any]) -> Any:
         if not response.get("ok"):
-            raise RemoteError(str(response.get("error") or "remote error"))
+            raise RemoteError(
+                str(response.get("error") or "remote error"),
+                response.get("error_info"),
+            )
         return response.get("data")
 
     def resolve_response(self, message: Dict[str, Any]) -> None:
@@ -455,7 +463,12 @@ class HostLinkServer:
             return new_response(request_id, True, handler(data, peer))
         except Exception as exc:  # noqa: BLE001 - protocol boundary
             logger.warning(f"[HostLink] {action} from {peer_key} failed: {exc}")
-            return new_response(request_id, False, error=str(exc))
+            return new_response(
+                request_id,
+                False,
+                error=str(exc),
+                error_info=exception_error_info(exc),
+            )
 
     def _touch_peer(
         self,
@@ -542,6 +555,21 @@ class HostLinkServer:
                     states = peer.setdefault("states", {})
                     if isinstance(data.get("states"), dict):
                         states.update(data["states"])
+                    if action == ActionType.PING and isinstance(
+                        data.get("devices"), list
+                    ):
+                        devices: Dict[str, Dict[str, Any]] = {}
+                        for item in data["devices"]:
+                            if not isinstance(item, dict):
+                                continue
+                            device_id = str(item.get("id") or "").strip()
+                            if device_id:
+                                devices[device_id] = {
+                                    **item,
+                                    "id": device_id,
+                                }
+                        peer["devices"] = devices
+                        peer["device_ids"] = sorted(devices)
                     device_id = str(data.get("device_id") or "").strip()
                     state = data.get("state")
                     if device_id and isinstance(state, dict):
@@ -612,7 +640,11 @@ class HostLinkServer:
         _data: Dict[str, Any],
         _peer: Dict[str, Any],
     ) -> Dict[str, Any]:
-        return {"pong": True, "server_time": time.time()}
+        return {
+            "pong": True,
+            "server_time": time.time(),
+            "devices": list(self.hello_payload.get("devices") or []),
+        }
 
     def _handle_ros_info(
         self,

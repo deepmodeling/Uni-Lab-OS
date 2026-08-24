@@ -27,8 +27,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from unilabos.registry.backend_metadata import normalize_supported_backends
+from unilabos.registry.material_locks import normalize_material_parameter_names
 from unilabos.registry.utils import resolve_registry_displayname
-from unilabos.resources.site_definition import normalize_available_sites
+from unilabos.resources.objects.site import normalize_available_sites
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ from unilabos.resources.site_definition import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 11      # 缓存格式版本号，格式变更时递增
+_CACHE_VERSION = 13      # 缓存/entry 构建格式版本号，格式变更时递增
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 # 合法的装饰器来源模块
@@ -483,10 +484,7 @@ def _parse_file(
 
 _STATIC_MODEL_CALLS = frozenset(
     {
-        "unilabos.resources.site_definition:SiteDefinition",
-        "unilabos.resources.resource_pose:ResourceDictPosition",
-        "unilabos.resources.resource_pose:ResourceDictPositionObject",
-        "unilabos.resources.resource_pose:ResourceDictPositionSize",
+        "unilabos.resources.objects.site:SiteDefinition",
         "unilabos.resources.objects.pose:ResourceDictPosition",
         "unilabos.resources.objects.pose:ResourceDictPositionObject",
         "unilabos.resources.objects.pose:ResourceDictPositionSize",
@@ -965,6 +963,15 @@ def _extract_class_body(
             topic_dec = _find_method_decorator(item, "topic_config")
             if topic_dec is not None:
                 topic_args = _extract_decorator_args(topic_dec, import_map)
+                topic_args.setdefault("status_policy", {})
+                if topic_args["status_policy"]:
+                    from unilabos.registry.status_policy import (
+                        normalize_status_policy,
+                    )
+
+                    topic_args["status_policy"] = (
+                        normalize_status_policy(topic_args["status_policy"]) or {}
+                    )
 
             return_type = _get_annotation_str(item.returns, import_map)
             # 非 @property 的 @topic_config 方法，用去掉 get_ 前缀的名称
@@ -1004,6 +1011,13 @@ def _extract_class_body(
                     normalize_error_policy(action_args["error_policy"]) or {}
                 )
             method_params = _extract_method_params(item, import_map)
+            action_args["materials_need_lock"] = normalize_material_parameter_names(
+                action_args.get("materials_need_lock"),
+                action_parameter_names=(
+                    param["name"] for param in method_params
+                ),
+                action_name=method_name,
+            )
             return_type = _get_annotation_str(item.returns, import_map)
             is_async = isinstance(item, ast.AsyncFunctionDef)
             method_doc = ast.get_docstring(item)

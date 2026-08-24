@@ -510,15 +510,15 @@ AI4M_station:
 ```cmd
 # 真机
 python unilabos/app/main.py -g unilabos/devices/workstation/AI4M/AI4M.json `
-  --ak <ak> --sk <sk> --upload_registry --addr <api_url> --disable_browser
+  --ak <ak> --sk <sk> --address <api_url> --disable_browser
 
 # 仿真（KEPServerEX 跑在本机 49320 端口）
 python unilabos/app/main.py -g unilabos/devices/workstation/AI4M/AI4Msim.json `
-  --ak <ak> --sk <sk> --upload_registry --disable_browser
+  --ak <ak> --sk <sk> --disable_browser
 ```
 
-`--upload_registry` 会把 `AI4M_station.yaml` 的 schema 上传到云端，
-之后实验记录本就能看到所有 `auto-*` 动作。
+启动时会把 Registry schema 同步到本地微后端；Backend 和前端通过当前注册表 API
+读取 `auto-*` 动作，不再由 Host 直接上传旧 Backend 注册表。
 
 ---
 
@@ -590,7 +590,7 @@ A4.write_node('{"node_name": "alarm_reset", "value": false}')
 - [ ] 5. 在 `unilabos/registry/devices/` 下新建 `<设备名>_station.yaml`，配置 `init_param_schema` 和 `action_value_mappings`。
 - [ ] 6. 在该目录新建 `<设备名>.json`（Graph），填好 `url` 和 `csv_path`。
 - [ ] 7. 用 `if __name__ == '__main__':` 单独跑驱动确认握手 OK。
-- [ ] 8. 用 `python unilabos/app/main.py -g <Graph> --upload_registry ...` 上线，到实验记录本下发动作回归。
+- [ ] 8. 用 `python unilabos/app/main.py -g <Graph> ...` 上线，通过微后端注册表 API 确认能力后下发动作回归。
 
 ---
 

@@ -121,7 +121,7 @@
             "deck": {
                 "data": {
                     "_resource_child_name": "Bioyond_Dispensing_Deck",
-                    "_resource_type": "unilabos.resources.bioyond.decks:BIOYOND_PolymerPreparationStation_Deck"
+                    "_resource_type": "unilabos.resources.presets.bioyond.decks:BIOYOND_PolymerPreparationStation_Deck"
                 }
             },
             "size_x": 2700.0,

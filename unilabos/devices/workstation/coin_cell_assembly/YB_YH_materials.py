@@ -18,9 +18,9 @@ from pylabrobot.resources.tip_rack import TipRack, TipSpot
 from pylabrobot.resources.trash import Trash
 from pylabrobot.resources.utils import create_ordered_items_2d
 
-from unilabos.resources.battery.magazine import MagazineHolder_4_Cathode, MagazineHolder_6_Cathode, MagazineHolder_6_Anode, MagazineHolder_6_Battery
-from unilabos.resources.battery.bottle_carriers import YIHUA_Electrolyte_12VialCarrier
-from unilabos.resources.battery.electrode_sheet import ElectrodeSheet
+from unilabos.resources.presets.battery.magazine import MagazineHolder_4_Cathode, MagazineHolder_6_Cathode, MagazineHolder_6_Anode, MagazineHolder_6_Battery
+from unilabos.resources.presets.battery.bottle_carriers import YIHUA_Electrolyte_12VialCarrier
+from unilabos.resources.presets.battery.electrode_sheet import ElectrodeSheet
 
 
 
@@ -485,6 +485,8 @@ class WasteTipBox(Trash):
         model=None,
         compute_volume_from_height=None,
         compute_height_from_volume=None,
+        height_volume_data=None,
+        no_go_zones=None,
     ):
         """初始化废枪头盒
 
@@ -504,6 +506,12 @@ class WasteTipBox(Trash):
             size_z=size_z,
             category=category,
             model=model,
+            material_z_thickness=material_z_thickness,
+            max_volume=max_volume,
+            compute_volume_from_height=compute_volume_from_height,
+            compute_height_from_volume=compute_height_from_volume,
+            height_volume_data=height_volume_data,
+            no_go_zones=no_go_zones,
         )
         self._unilabos_state: WasteTipBoxstate = WasteTipBoxstate()
 

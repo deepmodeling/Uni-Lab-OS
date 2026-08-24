@@ -8,7 +8,7 @@
 ``ros2``
     完整 ROS 2 运行时。
 
-``BasicRuntime`` 是 HostLink 内部使用的本地执行引擎，不是可部署 backend；Dora
+HostLink 的本地驱动执行器也位于 ``unilabos.hostlink``，不是第三种 backend；Dora
 代码保留用于实验，也不进入公开选择。CLI、运行时、测试和文档共享本模块中的
 公开 backend 清单，并确保可选 backend 只在被选中时导入。
 """
@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from unilabos.utils import logger
 
@@ -38,8 +38,6 @@ class BackendProfile:
     display_name: str
     module: str
     description: str
-    default_app_bridges: tuple[str, ...]
-    supported_app_bridges: tuple[str, ...]
     supports_slave: bool
     supports_visualization: bool
 
@@ -49,7 +47,6 @@ class BackendSelection:
     """完成规范化和校验的启动选择。"""
 
     profile: BackendProfile
-    app_bridges: tuple[str, ...]
 
     @property
     def name(self) -> str:
@@ -62,8 +59,6 @@ BACKEND_PROFILES: dict[str, BackendProfile] = {
         display_name="HostLink",
         module="unilabos.hostlink.main_hostlink_run",
         description="HostLink TCP 分布式 Python 驱动运行时（不启动 rclpy/DDS）",
-        default_app_bridges=(),
-        supported_app_bridges=(),
         supports_slave=True,
         supports_visualization=False,
     ),
@@ -72,8 +67,6 @@ BACKEND_PROFILES: dict[str, BackendProfile] = {
         display_name="ROS 2",
         module="unilabos.ros.main_slave_run",
         description="ROS 2 分布式设备运行时",
-        default_app_bridges=("websocket", "fastapi"),
-        supported_app_bridges=("websocket", "fastapi"),
         supports_slave=True,
         supports_visualization=True,
     ),
@@ -85,8 +78,8 @@ DEFAULT_PYTHON_DRIVER_BACKENDS = ("hostlink", "ros2")
 
 _REMOVED_BACKENDS: dict[str, str] = {
     "automancer": "automancer 从未实现，现已移除",
-    "basic": "basic 是 HostLink 的内部本地执行引擎，请使用 backend 'hostlink'",
-    "simple": "simple/basic 不再是公开 backend，请使用 backend 'hostlink'",
+    "basic": "basic backend 已移除，请使用 backend 'hostlink'",
+    "simple": "simple/basic backend 已移除，请使用 backend 'hostlink'",
     "dora": "dora 是实验运行时，不是公开 backend",
     "ros": "ros 旧别名已移除，请使用 backend 'ros2'",
 }
@@ -141,32 +134,14 @@ def resolve_driver_backends(class_config: dict[str, Any]) -> tuple[str, ...]:
 
 def resolve_backend_selection(
     backend: str,
-    app_bridges: Optional[Iterable[str]] = None,
     *,
     is_slave: bool = False,
     visual: str = "disable",
 ) -> BackendSelection:
-    """规范化 backend 选择，并拒绝不支持的组合。
-
-    ``None`` 表示用户未指定 ``--app_bridges``，使用该 backend 的默认值；
-    显式空序列表示关闭全部应用桥。
-    """
+    """规范化 backend 选择，并拒绝不支持的组合。"""
 
     name = normalize_backend_name(backend)
     profile = BACKEND_PROFILES[name]
-    bridges = (
-        profile.default_app_bridges
-        if app_bridges is None
-        else tuple(dict.fromkeys(str(item).strip().lower() for item in app_bridges))
-    )
-    bridges = tuple(item for item in bridges if item)
-    unsupported_bridges = sorted(set(bridges) - set(profile.supported_app_bridges))
-    if unsupported_bridges:
-        unsupported = ", ".join(unsupported_bridges)
-        supported = ", ".join(profile.supported_app_bridges) or "无"
-        raise BackendConfigurationError(
-            f"backend '{name}' 不支持应用桥：{unsupported}；支持项：{supported}"
-        )
     if is_slave and not profile.supports_slave:
         raise BackendConfigurationError(
             f"backend '{name}' 不支持 --is_slave；"
@@ -177,7 +152,7 @@ def resolve_backend_selection(
             f"backend '{name}' 不支持 --visual {visual}；"
             "请使用 --visual disable 或 backend 'ros2'"
         )
-    return BackendSelection(profile=profile, app_bridges=bridges)
+    return BackendSelection(profile=profile)
 
 
 def _load_entrypoint(profile: BackendProfile, is_slave: bool) -> Callable[..., None]:

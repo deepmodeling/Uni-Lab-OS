@@ -1,18 +1,16 @@
-import asyncio
 import ast
 import json
 import time
-from queue import Queue
 
 import pytest
 
-from unilabos.app.ws_client import (
+from unilabos.server.scheduler.execution_queue import (
     DeviceActionManager,
     JobInfo,
     JobStatus,
-    MessageProcessor,
     QueueItem,
 )
+from unilabos.server.scheduler.backend import JobExecutionBackend
 from unilabos.registry.action_policy import (
     SUCCESS_TYPE_NORMAL,
     SUCCESS_TYPE_OPERATOR_INTERVENTION,
@@ -379,42 +377,29 @@ class _DecisionBridge:
         return True
 
 
-class FakeHostDecisionNode:
-    _ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS = (
-        HostNode._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS
-    )
-    _begin_action_error_decision = HostNode._begin_action_error_decision
-    handle_action_error_decision = HostNode.handle_action_error_decision
-    _publish_action_error_decision_resolved = (
-        HostNode._publish_action_error_decision_resolved
-    )
-    _prune_action_error_decision_tombstones_locked = (
-        HostNode._prune_action_error_decision_tombstones_locked
-    )
-    _remember_action_error_decision_resolution_locked = (
-        HostNode._remember_action_error_decision_resolution_locked
-    )
-    get_resolved_action_error_decision = (
-        HostNode.get_resolved_action_error_decision
-    )
-    _request_goal_cancel = HostNode._request_goal_cancel
-    cancel_job = HostNode.cancel_job
-    get_pending_action_error_decisions = (
-        HostNode.get_pending_action_error_decisions
-    )
-
+class _DecisionStatusBridge(_DecisionBridge):
     def __init__(self):
-        import threading
+        super().__init__()
+        self.finished = []
 
-        self.decision_bridge = _DecisionBridge()
-        self.bridges = [self.decision_bridge]
-        self.local_events = []
-        self._goals = {"job-1": object()}
-        self._pending_action_error_decisions = {}
-        self._resolved_action_error_decisions = {}
-        self._pending_action_error_decisions_lock = threading.RLock()
-        self._canceled_jobs = set()
-        self._inflight_goal_jobs = set()
+    def publish_job_status(self, result_data, item, status, return_info=None):
+        if status in {"success", "failed", "canceled"}:
+            self.finished.append((item, status, return_info, result_data))
+
+
+class _RecordingMonitor:
+    def __init__(self, events):
+        self.events = events
+
+    def emit(self, channel, event_type, data):
+        if channel == "action":
+            self.events.append((event_type, data))
+
+
+class _FakeExecutionAdapter:
+    def __init__(self):
+        self.sent_goals = []
+        self.cancelled = []
         self._action_value_mappings = {
             "device-1": {
                 "run": {
@@ -440,29 +425,45 @@ class FakeHostDecisionNode:
                 "auto-reset": {"type": "UniLabJsonCommand"},
             }
         }
-        self.sent_goals = []
-        self.finished = []
-
-    def lab_logger(self):
-        return _Logger()
-
-    def _emit_local_action_event(self, item, event_type, data):
-        self.local_events.append((event_type, data))
 
     def send_goal(self, *args, **kwargs):
         self.sent_goals.append((args, kwargs))
 
-    def _finish_error_handled_job(
-        self,
-        item,
-        status,
-        return_info,
-        result_data,
-    ):
-        self.finished.append((item, status, return_info, result_data))
-        self._inflight_goal_jobs.discard(item.job_id)
-        self._goals.pop(item.job_id, None)
-        self._canceled_jobs.discard(item.job_id)
+    def cancel_goal(self, job_id):
+        self.cancelled.append(job_id)
+        return True
+
+
+class FakeMicrobackend(JobExecutionBackend):
+    def __init__(self):
+        self.adapter = _FakeExecutionAdapter()
+        self.decision_bridge = _DecisionStatusBridge()
+        self.local_events = []
+        super().__init__(
+            host_node_getter=lambda: self.adapter,
+            monitor=_RecordingMonitor(self.local_events),
+            result_bridges=[self.decision_bridge],
+        )
+        self._action_value_mappings = self.adapter._action_value_mappings
+        self.sent_goals = self.adapter.sent_goals
+        self.finished = self.decision_bridge.finished
+        self.device_manager.enqueue_job(
+            JobInfo(
+                job_id="job-1",
+                task_id="task-1",
+                device_id="device-1",
+                notebook_id="notebook-1",
+                action_name="run",
+                device_action_key="/devices/device-1/run",
+                status=JobStatus.QUEUE,
+                start_time=time.time(),
+                node_id="node-1",
+            )
+        )
+
+
+# 兼容下方历史测试变量名；对象本身已经是微后端，不再模拟 HostNode。
+FakeHostDecisionNode = FakeMicrobackend
 
 
 def _queue_item():
@@ -552,7 +553,7 @@ def test_host_holds_failure_and_publishes_registry_options_to_backend():
     assert report["expires_at"] > report["created_at"]
     assert report["max_retries"] == 2
     assert report["default_on_decision_timeout"] == "abort"
-    assert "job-1" not in host._goals
+    assert host.device_manager.get_job_info("job-1") is not None
     assert host.decision_bridge.required == [report]
     assert not host.finished
 
@@ -561,6 +562,24 @@ def test_host_holds_failure_and_publishes_registry_options_to_backend():
         "job-1",
         _decision(decision_id, "abort"),
     )
+
+
+def test_empty_registry_policy_still_uses_backend_owned_default_error_flow():
+    host = FakeHostDecisionNode()
+    host._action_value_mappings["device-1"]["run"]["error_policy"] = {}
+
+    decision_id = _begin_pending(host)
+
+    report = next(
+        item
+        for item in host.get_pending_action_error_decisions()
+        if item["decision_id"] == decision_id
+    )
+    assert [option["action"] for option in report["options"]] == [
+        "retry",
+        "abort",
+        "operator_intervention",
+    ]
 
 
 def test_backend_release_keeps_retry_as_failed_without_host_redispatch():
@@ -619,140 +638,8 @@ def test_operator_intervention_replaces_effective_result_but_keeps_raw_failure()
     assert json.loads(result_data["return_info"]) == return_info
 
 
-def test_websocket_release_requires_scheduler_update(monkeypatch):
-    host = FakeHostDecisionNode()
-    decision_id = _begin_pending(host)
-    processor = MessageProcessor("ws://example.invalid", Queue(), DeviceActionManager())
-    monkeypatch.setattr(
-        HostNode,
-        "get_instance",
-        classmethod(lambda cls, index=0: host),
-    )
-
-    unresolved = _decision(decision_id, "retry")
-    unresolved["scheduler_updated"] = False
-    asyncio.run(processor._handle_job_error_decision(unresolved))
-    assert decision_id in host._pending_action_error_decisions
-    assert not host.finished
-
-    asyncio.run(
-        processor._handle_job_error_decision(_decision(decision_id, "retry"))
-    )
-    assert not host._pending_action_error_decisions
-    assert host.finished[0][1] == "failed"
-
-
-def test_local_controller_job_execution_is_disabled(monkeypatch):
-    from unilabos.app.model import JobAddReq
-    from unilabos.app.web import controller
-
-    sent = []
-
-    class _Host:
-        def send_goal(self, item, *args, **kwargs):
-            sent.append(item)
-
-    monkeypatch.setattr(
-        HostNode,
-        "get_instance",
-        classmethod(lambda cls, index=0: _Host()),
-    )
-    monkeypatch.setattr(
-        controller,
-        "_get_action_type",
-        lambda device_id, action_name: "UniLabJsonCommand",
-    )
-    monkeypatch.setattr(
-        controller,
-        "check_device_action_busy",
-        lambda device_id, action_name: (False, None),
-    )
-
-    result = controller.job_add(
-        JobAddReq(
-            device_id="device-1",
-            action="run",
-            sample_material={},
-        )
-    )
-
-    assert result.status == 6
-    assert not sent
-
-
-def test_micro_backend_error_decision_api_is_read_only(monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from unilabos.app.web.api import api
-    from unilabos.app.web.controller import job_result_store, store_job_result
-
-    host = FakeHostDecisionNode()
-    decision_id = _begin_pending(host)
-    monkeypatch.setattr(
-        HostNode,
-        "get_instance",
-        classmethod(lambda cls, index=0: host),
-    )
-    app = FastAPI()
-    app.include_router(api, prefix="/api/v1")
-    client = TestClient(app)
-
-    paths = app.openapi()["paths"]
-    assert "/api/v1/error-decisions" in paths
-    assert "/api/v1/error-decisions/{decision_id}" in paths
-    assert "/api/v1/monitor/events" in paths
-    assert "/api/v1/monitor/snapshot" in paths
-
-    response = client.get("/api/v1/error-decisions")
-    assert response.status_code == 200
-    assert response.json()["decisions"][0]["decision_id"] == decision_id
-    snapshot = client.get("/api/v1/monitor/snapshot")
-    assert snapshot.status_code == 200
-    assert snapshot.json()["host_ready"] is True
-    assert snapshot.json()["pending_error_decisions"][0]["decision_id"] == decision_id
-
-    request = _decision(
-        decision_id,
-        "skip",
-        reason="operator confirmed",
-    )
-    response = client.post(
-        f"/api/v1/error-decisions/{decision_id}",
-        json=request,
-    )
-    assert response.status_code == 409
-    assert "scheduler backend" in response.json()["detail"]
-    assert decision_id in host._pending_action_error_decisions
-
-    local_job = client.post(
-        "/api/v1/job/add",
-        json={
-            "device_id": "device-1",
-            "action": "run",
-            "sample_material": {},
-        },
-    )
-    assert local_job.status_code == 409
-    assert "scheduler backend" in local_job.json()["detail"]
-
-    store_job_result(
-        "job-poll",
-        "success",
-        {"suc": True, "suc_type": "skip", "return_value": None},
-    )
-    try:
-        first = client.get("/api/v1/job/job-poll/status")
-        second = client.get("/api/v1/job/job-poll/status")
-        assert first.status_code == second.status_code == 200
-        assert first.json()["data"] == second.json()["data"]
-        assert first.json()["data"]["status"] == 4
-    finally:
-        job_result_store.get_and_remove("job-poll")
-
-
 def test_monitor_bus_sse_contract_and_bounded_replay():
-    from unilabos.app.web.event_bus import MonitorBus, format_sse_event
+    from unilabos.server.scheduler.monitor import MonitorBus, format_sse_event
 
     bus = MonitorBus(history=2)
     bus.emit("action", "job_status", {"job_id": "job-1", "status": "running"})
@@ -988,7 +875,7 @@ def test_cancel_pending_error_decision_rejects_late_backend_release():
     assert host.cancel_job("job-1")
 
     assert not host._pending_action_error_decisions
-    assert not host._inflight_goal_jobs
+    assert host.device_manager.get_job_info("job-1") is None
     assert host.finished[0][1] == "canceled"
     resolved_events = _local_event_data(host, "job_error_decision_resolved")
     assert resolved_events[0]["selected_action"] == "abort"
@@ -1003,6 +890,8 @@ def test_cancel_pending_error_decision_rejects_late_backend_release():
 
 
 def test_goal_accepted_after_inflight_cancel_is_canceled_immediately():
+    import threading
+
     class _CancelFuture:
         def add_done_callback(self, callback):
             self.callback = callback
@@ -1035,8 +924,19 @@ def test_goal_accepted_after_inflight_cancel_is_canceled_immediately():
         def result(self):
             return self.goal_handle
 
-    host = FakeHostDecisionNode()
-    host._goals.clear()
+    class _RosExecutionAdapter:
+        _request_goal_cancel = HostNode._request_goal_cancel
+
+        def __init__(self):
+            self._goals = {}
+            self._inflight_goal_jobs = set()
+            self._canceled_jobs = {"job-1"}
+            self._goal_state_lock = threading.RLock()
+
+        def lab_logger(self):
+            return _Logger()
+
+    host = _RosExecutionAdapter()
     host._canceled_jobs.add("job-1")
     goal_handle = _GoalHandle()
 

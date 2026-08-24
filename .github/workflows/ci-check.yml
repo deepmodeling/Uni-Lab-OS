@@ -5,57 +5,178 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:
+
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: 1
+  MPLBACKEND: Agg
+  PYTHONFAULTHANDLER: "1"
+  UNILABOS_README_EXAMPLES_ROOT: ${{ github.workspace }}/readme-examples
+  LAN_DEMO_REF: d8c9d54c9bd7d76fc56315ecfb5b608ace0844e9
+  WORKSTATION_DEMO_REF: 248aeb3ac8c78506d23486eeb70b5b5bbbfac55b
+  PYLABROBOT_REF: 6285d662effa972be97a781ba7493553f2ba94ee
 
 jobs:
-  registry-check:
-    name: registry-check (${{ matrix.ros_distro }})
+  contract-registry:
+    name: contract, installer and AST registry
     runs-on: windows-2022
-
-    strategy:
-      fail-fast: false
-      matrix:
-        ros_distro: [jazzy, humble]
-
+    timeout-minutes: 45
     env:
-      # Fix Unicode encoding issue on Windows runner (cp1252 -> utf-8)
-      PYTHONIOENCODING: utf-8
-      PYTHONUTF8: 1
-      # 强制 matplotlib 使用无头后端，避免在无显示的 Windows runner 上加载 GUI 后端 DLL 导致原生崩溃
-      MPLBACKEND: Agg
-      # 原生崩溃(0xC0000005 访问违例)时打印 Python 调用栈，便于定位是哪个设备模块 import 崩溃
-      PYTHONFAULTHANDLER: "1"
-      UNILABOS_README_EXAMPLES_ROOT: ${{ github.workspace }}/readme-examples
-      ROS_DISTRO: ${{ matrix.ros_distro }}
-      ROS_CHANNEL: robostack-${{ matrix.ros_distro }}
-      ROS_PACKAGE_PREFIX: ros-${{ matrix.ros_distro }}
-      ROS_MUTEX: ${{ matrix.ros_distro == 'jazzy' && '0.15' || '0.9' }}
-
+      UNILABOS_BASICCONFIG_BACKEND: hostlink
     defaults:
       run:
         shell: cmd
-
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      # README 中列出的外部设备示例也要随主仓库接口一起验证。
-      # 固定到已验证提交，避免外部仓库更新让当前 PR 的 CI 无故变化。
-      - name: Checkout README LAN device example
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           repository: Xuwznln/LabDeviceLanDemo
-          ref: 2f98f55015b47816e0a08731ca115903d6ea5161
+          ref: ${{ env.LAN_DEMO_REF }}
           path: readme-examples/LabDeviceLanDemo
-
-      - name: Checkout README workstation device example
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           repository: Xuwznln/LabDeviceWorkstationDemo
-          ref: ad5b43fc7c64ca02b0020f69aa2ed15bdb0e8089
+          ref: ${{ env.WORKSTATION_DEMO_REF }}
           path: readme-examples/LabDeviceWorkstationDemo
+      - name: Setup Python-only Miniforge
+        uses: conda-incubator/setup-miniconda@v4
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          python-version: '3.12.13'
+          channels: conda-forge
+          channel-priority: strict
+          activate-environment: check-env
+          auto-update-conda: false
+      - name: Install contract dependencies
+        run: |
+          call mamba install -n check-env --override-channels -c conda-forge conda-forge::numpy=2 conda-forge::uv conda-forge::opencv -y
+          call conda activate check-env
+          uv pip install -r unilabos/utils/requirements.txt
+          uv pip install pywinauto pytest git+https://github.com/Xuwznln/pylabrobot.git@%PYLABROBOT_REF%
+          uv pip uninstall enum34 || echo enum34 not installed, skipping
+          uv pip install -e .
+          python -c "import importlib.util; assert importlib.util.find_spec('rclpy') is None; print('contract job: no ROS runtime installed')"
+          python -c "from unilabos.config.config import BasicConfig; assert BasicConfig.backend == 'hostlink'; import unilabos.registry.registry as registry; assert registry._HOSTLINK_SCHEMA_ONLY is True; print('explicit HostLink schema mode: OK')"
+      - name: Gate four-database, control and workflow contracts
+        run: |
+          call conda activate check-env
+          python -m pytest -q tests\app\test_package_cli.py tests\server\test_schema_manifest.py tests\server\test_backend_control_protocol.py tests\server\test_workflow_business_coordinator.py tests\server\test_server_composition.py tests\server\test_telemetry_state_projection.py tests\server\test_workflow_template_catalog.py tests\server\test_workbench_scenarios.py -p no:launch_testing -p no:launch_ros
+      - name: Validate external AST registries
+        run: |
+          call conda activate check-env
+          python -m unilabos --backend hostlink --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceLanDemo\lan_demo" --external_devices_only
+          python -m unilabos --backend hostlink --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo\workstation_demo" --external_devices_only
+      - name: Install ordinary pinned GitHub URLs and discover devices
+        run: |
+          call conda activate check-env
+          unilab package install https://github.com/Xuwznln/LabDeviceLanDemo --ref %LAN_DEMO_REF% > lan-package-install.txt
+          type lan-package-install.txt
+          findstr /C:"hub_node_demo" lan-package-install.txt
+          findstr /C:"status_reporter_demo" lan-package-install.txt
+          unilab package install https://github.com/Xuwznln/LabDeviceWorkstationDemo --ref %WORKSTATION_DEMO_REF% > workstation-package-install.txt
+          type workstation-package-install.txt
+          findstr /C:"demo_workstation" workstation-package-install.txt
+          findstr /C:"modbus_sensor" workstation-package-install.txt
+      - name: Check generated files
+        shell: bash
+        run: git diff --exit-code
 
-      - name: Setup Miniforge
+  hostlink-runtime:
+    name: pure Python HostLink runtime
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      UNILABOS_BASICCONFIG_BACKEND: hostlink
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v6
+        with:
+          repository: Xuwznln/LabDeviceLanDemo
+          ref: ${{ env.LAN_DEMO_REF }}
+          path: readme-examples/LabDeviceLanDemo
+      - uses: actions/checkout@v6
+        with:
+          repository: Xuwznln/LabDeviceWorkstationDemo
+          ref: ${{ env.WORKSTATION_DEMO_REF }}
+          path: readme-examples/LabDeviceWorkstationDemo
+      - name: Setup Python-only Miniforge
+        uses: conda-incubator/setup-miniconda@v4
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          python-version: '3.12.13'
+          channels: conda-forge
+          channel-priority: strict
+          activate-environment: check-env
+          auto-update-conda: false
+      - name: Install HostLink dependencies without ROS
+        run: |
+          call mamba install -n check-env --override-channels -c conda-forge conda-forge::numpy=2 conda-forge::uv conda-forge::opencv -y
+          call conda activate check-env
+          uv pip install -r unilabos/utils/requirements.txt
+          uv pip install pywinauto pytest git+https://github.com/Xuwznln/pylabrobot.git@%PYLABROBOT_REF%
+          uv pip uninstall enum34 || echo enum34 not installed, skipping
+          uv pip install -e .
+          python -c "import importlib.util; assert importlib.util.find_spec('rclpy') is None; print('HostLink evidence is ROS-independent')"
+      - name: Gate HostLink and networking contracts
+        run: |
+          call conda activate check-env
+          python -m pytest -q tests\hostlink tests\networking tests\app\test_backend_selection.py tests\registry\test_backend_metadata.py tests\resources\test_site_root_fields.py -p no:launch_testing -p no:launch_ros
+      - name: Run canonical Heating and Workbench workflows on HostLink
+        run: |
+          call conda activate check-env
+          python -m pytest -q tests\device_runtime\test_heating_scenario_smoke.py -s -p no:launch_testing -p no:launch_ros
+      - name: Run pinned HostLink demo closed loops
+        run: |
+          call conda activate check-env
+          pushd "%GITHUB_WORKSPACE%\readme-examples\LabDeviceLanDemo"
+          python -m lan_demo.smoke --backend hostlink --timeout 45
+          popd
+          pushd "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo"
+          python -m workstation_demo.smoke --backend hostlink --timeout 45
+          popd
+
+  ros2-runtime:
+    name: ROS2 runtime (${{ matrix.ros_distro }})
+    runs-on: windows-2022
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        ros_distro: [humble, jazzy]
+    env:
+      UNILABOS_BASICCONFIG_BACKEND: ros2
+      ROS_DISTRO: ${{ matrix.ros_distro }}
+      ROS_CHANNEL: robostack-${{ matrix.ros_distro }}
+      ROS_PACKAGE_PREFIX: ros-${{ matrix.ros_distro }}
+      ROS_MUTEX: ${{ matrix.ros_distro == 'jazzy' && '0.15' || '0.9' }}
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v6
+        with:
+          repository: Xuwznln/LabDeviceLanDemo
+          ref: ${{ env.LAN_DEMO_REF }}
+          path: readme-examples/LabDeviceLanDemo
+      - uses: actions/checkout@v6
+        with:
+          repository: Xuwznln/LabDeviceWorkstationDemo
+          ref: ${{ env.WORKSTATION_DEMO_REF }}
+          path: readme-examples/LabDeviceWorkstationDemo
+      - name: Setup ROS Miniforge
         uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
@@ -66,83 +187,62 @@ jobs:
           activate-environment: check-env
           auto-update-conda: false
           show-channel-urls: true
-
-      - name: Install ROS 2 ${{ matrix.ros_distro }} dependencies and build tools
+      - name: Install ROS 2 dependencies and build tools
         run: |
-          echo Installing ROS 2 %ROS_DISTRO% dependencies...
-          mamba install -n check-env --override-channels -c conda-forge -c %ROS_CHANNEL% conda-forge::numpy=2 conda-forge::uv conda-forge::opencv conda-forge::colcon-common-extensions %ROS_CHANNEL%::ros2-distro-mutex=%ROS_MUTEX% %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-ros-core %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-action-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-std-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-geometry-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-control-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-nav2-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-cv-bridge %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-vision-opencv %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf-transformations %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-moveit-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf2-ros %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf2-ros-py conda-forge::transforms3d -y
-
+          call mamba install -n check-env --override-channels -c conda-forge -c %ROS_CHANNEL% conda-forge::numpy=2 conda-forge::uv conda-forge::opencv conda-forge::colcon-common-extensions %ROS_CHANNEL%::ros2-distro-mutex=%ROS_MUTEX% %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-ros-core %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-action-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-std-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-geometry-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-control-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-nav2-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-cv-bridge %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-vision-opencv %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf-transformations %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-moveit-msgs %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf2-ros %ROS_CHANNEL%::%ROS_PACKAGE_PREFIX%-tf2-ros-py conda-forge::transforms3d -y
       - name: Initialize MSVC x64 toolchain
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-
-      - name: Build unilabos_msgs for ${{ matrix.ros_distro }}/cp312
+      - name: Build and gate unilabos_msgs typesupport
         run: |
           call conda activate check-env
-          colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF
+          if /I "%ROS_DISTRO%"=="humble" python -m pip install empy==3.3.4
+          set "CMAKE_PYTHON=%CONDA_PREFIX:\=/%/python.exe"
+          colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE="%CMAKE_PYTHON%"
+          if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
           call install\unilabos_msgs\setup.bat
-          python -c "import os; from unilabos_msgs.msg import Resource; print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp312: OK')"
-
-      - name: Install pip dependencies and unilabos
+          python -c "import os; from rosidl_generator_py import import_type_support_impl; from unilabos_msgs.msg import Resource; import_type_support_impl.import_type_support('unilabos_msgs'); print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp312 typesupport: OK')"
+      - name: Install UniLabOS and test dependencies
         run: |
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
-          echo Installing pip dependencies...
           uv pip install -r unilabos/utils/requirements.txt
-          uv pip install pywinauto git+https://github.com/Xuwznln/pylabrobot.git
+          uv pip install pywinauto pytest git+https://github.com/Xuwznln/pylabrobot.git@%PYLABROBOT_REF%
           uv pip uninstall enum34 || echo enum34 not installed, skipping
-          uv pip install pytest
-          uv pip install .
-
-      - name: Validate README example device packages
+          uv pip install -e .
+      - name: Gate ROS2 runtime contracts
         run: |
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
-          echo Checking LabDeviceLanDemo registry...
-          python -m unilabos --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceLanDemo\lan_demo" --external_devices_only
-          echo Checking LabDeviceWorkstationDemo registry...
-          python -m unilabos --check_mode --skip_env_check --devices "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo\workstation_demo" --external_devices_only
-
-      - name: Run HostLink networking tests
+          python -m pytest -q tests\ros\test_action_schema_compat.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py tests\ros\test_naming.py tests\app\test_rclpy_dll_patch.py tests\app\test_backend_selection.py::test_ros2_registry_uses_generated_message_schemas -p no:launch_testing -p no:launch_ros
+      - name: Run canonical Heating and Workbench workflows on ROS2
         run: |
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
-          echo Running HostLink, ROS2 domain and networking runtime tests...
-          python -m pytest -q tests\hostlink tests\networking tests\basic tests\device_runtime tests\app\test_backend_selection.py tests\app\test_rclpy_dll_patch.py tests\registry\test_backend_metadata.py tests\ros\test_action_schema_compat.py tests\ros\test_domain_init.py tests\ros\test_device_node_contract.py -p no:launch_testing -p no:launch_ros
-
-      - name: Run check mode (AST registry validation)
-        # check_mode 会真实 import 所有设备类(连带 matplotlib/opencv 等原生库)。
-        # Windows runner 上偶发原生崩溃(退出码 -1073741819 = 0xC0000005 访问违例)，
-        # 这是环境/DLL 层面的 flaky 崩溃，与注册表内容无关，因此对该步做有限次重试。
-        # 注意：段错误退出码为负数，必须用 "%ERRORLEVEL% EQU 0" 显式判断，
-        # 不能用 "if errorlevel 1"(它对负数退出码会误判为成功)。
+          python -m tests.device_runtime.heating_scenario_smoke ros2
+      - name: Run pinned ROS2 demo closed loops
         run: |
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
-          echo Running check mode...
+          pushd "%GITHUB_WORKSPACE%\readme-examples\LabDeviceLanDemo"
+          python -m lan_demo.smoke --backend ros2 --timeout 45
+          popd
+          pushd "%GITHUB_WORKSPACE%\readme-examples\LabDeviceWorkstationDemo"
+          python -m workstation_demo.smoke --backend ros2 --timeout 45
+          popd
+      - name: Run full registry check with bounded retries
+        run: |
+          call conda activate check-env
+          call install\unilabos_msgs\setup.bat
           set ATTEMPTS=4
           set COUNT=0
           :retry
           set /a COUNT+=1
-          echo === Check attempt %COUNT% of %ATTEMPTS% ===
           python -m unilabos --check_mode --skip_env_check
-          if %ERRORLEVEL% EQU 0 (
-            echo Check passed on attempt %COUNT%
-            exit /b 0
-          )
-          echo Attempt %COUNT% failed with exit code %ERRORLEVEL%
+          if %ERRORLEVEL% EQU 0 exit /b 0
           if %COUNT% LSS %ATTEMPTS% goto retry
-          echo All %ATTEMPTS% attempts failed
           exit /b 1
-
-      - name: Check for uncommitted changes
+      - name: Check generated files
         shell: bash
-        run: |
-          if ! git diff --exit-code; then
-            echo "::error::检测到文件变化！请先在本地运行 'python -m unilabos --complete_registry' 并提交变更"
-            echo "变化的文件:"
-            git diff --name-only
-            exit 1
-          fi
-          echo "检查通过：无文件变化"
+        run: git diff --exit-code

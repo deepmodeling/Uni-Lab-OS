@@ -16,7 +16,7 @@ unilab --graph <graph.json> --config <config.py> --backend ros2
 unilab --graph <graph.json> --config <config.py> --backend hostlink  # no ROS2 runtime
 
 # Common CLI flags
-unilab --app_bridges websocket fastapi    # communication bridges
+unilab --legacy                          # deprecated old Backend compatibility; removed 2026-12
 unilab --test_mode                        # simulate hardware, no real execution
 unilab --check_mode                       # CI validation of registry imports
 unilab --skip_env_check                   # skip auto-install of dependencies
@@ -24,7 +24,7 @@ unilab --visual rviz|web|disable          # visualization mode
 unilab --is_slave                         # run as slave node
 
 # Workflow upload subcommand
-unilab workflow_upload -f <workflow.json> -n <name> --tags tag1 tag2
+unilab workflow upload -f <workflow.json> -n <name> --tags tag1 tag2
 
 # Tests
 pytest tests/                              # all tests
@@ -36,7 +36,7 @@ pytest tests/resources/test_resourcetreeset.py::TestClassName::test_method  # si
 
 ### Startup Flow
 
-`unilab` CLI → `unilabos/app/main.py:main()` → loads config → builds registry → reads device graph (JSON/GraphML) → starts the selected backend (`hostlink`/`ros2`) → starts only the bridges supported by that backend. `BasicRuntime` is HostLink's internal local driver executor, not a public backend.
+`unilab` CLI → `unilabos/app/cli/parser.py:build_parser()` → `app/cli/router.py` handles lightweight subcommands (`package` included) → `unilabos/app/main.py:main()` loads config and starts device runtime only when no CLI subcommand handled the request. Runtime then builds the registry, reads the device graph (JSON/GraphML), and starts `hostlink` or `ros2`. HostLink's local driver executor is `unilabos.hostlink.local_runtime.HostLinkLocalRuntime`; there is no separate Basic backend.
 
 ### Core Layers
 

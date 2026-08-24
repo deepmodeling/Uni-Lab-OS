@@ -25,6 +25,7 @@ from pylabrobot.liquid_handling.standard import (
 )
 from pylabrobot.resources import Tip, Deck, Plate, Well, TipRack, Resource, Container, Coordinate, TipSpot, Trash
 
+from unilabos.config.config import BasicConfig
 from unilabos.devices.liquid_handling.liquid_handler_abstract import LiquidHandlerAbstract
 from unilabos.devices.liquid_handling.rviz_backend import UniLiquidHandlerRvizBackend
 
@@ -35,8 +36,21 @@ class TransformXYZDeck(Deck):
     该类定义了 Laiyu 的工作台布局和槽位信息。
     """
 
-    def __init__(self, name: str, size_x: float, size_y: float, size_z: float):
-        super().__init__(name, size_x, size_y, size_z)
+    def __init__(
+        self,
+        name: str,
+        size_x: float = 624.3,
+        size_y: float = 565.2,
+        size_z: float = 900.0,
+        category: str = "deck",
+    ):
+        super().__init__(
+            name=name,
+            size_x=size_x,
+            size_y=size_y,
+            size_z=size_z,
+            category=category,
+        )
         self.name = name
 
 class TransformXYZBackend(LiquidHandlerBackend):
@@ -84,7 +98,17 @@ class TransformXYZContainer(Plate, TipRack):
 class TransformXYZHandler(LiquidHandlerAbstract):
     support_touch_tip = False
 
-    def __init__(self, deck: Deck, host: str = "127.0.0.1", port: int = 9999, timeout: float = 10.0, channel_num=1, simulator=True, **backend_kwargs):
+    def __init__(
+        self,
+        deck: Deck,
+        host: str = "127.0.0.1",
+        port: int = 9999,
+        timeout: float = 10.0,
+        channel_num: int = 1,
+        simulator: bool = True,
+        simulate_rviz: bool = False,
+        **backend_kwargs,
+    ):
         # Handle case where deck is passed as a dict (from serialization)
         if isinstance(deck, dict):
             # Try to create a TransformXYZDeck from the dict
@@ -99,11 +123,25 @@ class TransformXYZHandler(LiquidHandlerAbstract):
                 # Fallback: create a basic deck
                 deck = TransformXYZDeck(name='deck', size_x=100, size_y=100, size_z=100)
 
-        if simulator:
-            self._unilabos_backend = TransformXYZRvizBackend(name="laiyu",channel_num=channel_num)
+        if simulator and simulate_rviz:
+            if BasicConfig.backend != "ros2":
+                raise RuntimeError(
+                    "simulate_rviz 只支持 ROS2；HostLink 模拟请关闭该选项"
+                )
+            self._unilabos_backend = TransformXYZRvizBackend(
+                name="laiyu",
+                channel_num=channel_num,
+            )
+        elif simulator:
+            self._unilabos_backend = LiquidHandlerChatterboxBackend(channel_num)
         else:
             self._unilabos_backend = TransformXYZBackend(name="laiyu",host=host, port=port, timeout=timeout)
-        super().__init__(backend=self._unilabos_backend, deck=deck, simulator=simulator, channel_num=channel_num)
+        super().__init__(
+            backend=self._unilabos_backend,
+            deck=deck,
+            simulator=False,
+            channel_num=channel_num,
+        )
 
     async def add_liquid(
         self,

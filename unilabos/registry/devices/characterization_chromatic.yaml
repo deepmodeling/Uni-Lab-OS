@@ -10,6 +10,7 @@ hplc.agilent:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -33,6 +34,7 @@ hplc.agilent:
         goal_default:
           file_path: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -61,6 +63,7 @@ hplc.agilent:
           resource: null
           wf_name: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -91,6 +94,7 @@ hplc.agilent:
         goal_default:
           device_name: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -116,6 +120,7 @@ hplc.agilent:
         goal_default:
           device_name: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -142,6 +147,7 @@ hplc.agilent:
         goal_default:
           command: ''
         handles: {}
+        materials_need_lock: []
         result:
           success: success
         schema:
@@ -176,6 +182,7 @@ hplc.agilent:
           type: object
         type: SendCmd
     module: unilabos.devices.hplc.AgilentHPLC:HPLCDriver
+    status_policies: {}
     status_types:
       could_run: bool
       device_status: str
@@ -240,6 +247,7 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -272,6 +280,7 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -294,6 +303,7 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -316,6 +326,7 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -349,6 +360,7 @@ hplc.agilent-zhida:
         goal_default:
           string: ''
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result:
           return_info: return_info
@@ -382,6 +394,7 @@ hplc.agilent-zhida:
           type: object
         type: StrSingleInput
     module: unilabos.devices.zhida_hplc.zhida:ZhidaClient
+    status_policies: {}
     status_types:
       methods: dict
       status: dict

@@ -20,6 +20,7 @@ from unilabos.ros.msgs.message_converter import (
     convert_from_ros_msg_with_mapping,
 )
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker, ROS2DeviceNode
+from unilabos.ros.naming import ros_device_namespace
 from unilabos.resources.objects.resource import ResourceDictType
 from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDictInstance
 from unilabos.utils.type_check import serialize_result_info
@@ -166,7 +167,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                     "UniLabJsonCommand"
                 ):
                     continue
-                action_id = f"/devices/{device_id_abs}/{action_name}"
+                action_id = f"{ros_device_namespace(device_id_abs)}/{action_name}"
                 if action_id not in self._action_clients:
                     try:
                         self._action_clients[action_id] = ActionClient(
@@ -243,7 +244,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                 self.lab_logger().warning(f"[Workstation-DeviceMgr] Resource tracker cleanup: {ex}")
 
             # Remove action clients for this sub-device
-            action_prefix = f"/devices/{device_id}/"
+            action_prefix = f"{ros_device_namespace(device_id)}/"
             to_remove = [k for k in self._action_clients if k.startswith(action_prefix)]
             for k in to_remove:
                 try:
@@ -520,9 +521,9 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
             self.lab_logger().info(f"[Protocol Log] {action_kwargs}")
             raise ROS2WorkstationNodeTempError(f"[Protocol Log] {action_kwargs}")
         if device_id in ["", None, "self"]:
-            action_id = f"/devices/{self.device_id}/{action_name}"
+            action_id = f"{ros_device_namespace(self.device_id)}/{action_name}"
         else:
-            action_id = f"/devices/{device_id}/{action_name}"  # 执行时取消了主节点信息 /{self.device_id}
+            action_id = f"{ros_device_namespace(device_id)}/{action_name}"  # 执行时取消了主节点信息 /{self.device_id}
 
         # 检查动作客户端是否存在
         if action_id not in self._action_clients:

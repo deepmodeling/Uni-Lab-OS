@@ -78,6 +78,32 @@ class PRCXIError(RuntimeError):
     """Lilith 返回 Success=false 时抛出的业务异常"""
 
 
+def _normalize_itemized_constructor_data(
+    name: str,
+    ordered_items: Optional[Dict[str, Resource]],
+    ordering: Optional[OrderedDict],
+) -> Tuple[Optional[Dict[str, Resource]], Optional[OrderedDict]]:
+    """统一 PRCXI ItemizedResource 的构造与反序列化输入。"""
+
+    if ordered_items is not None:
+        return ordered_items, None
+    if ordering is None:
+        return None, None
+    if ordering and all(isinstance(value, Resource) for value in ordering.values()):
+        return dict(ordering), None
+
+    # PLR serialize 保存 label -> child name。旧快照可能只有 None，按标准命名补齐，
+    # 这样 Resource.deserialize 随后挂载 children 时仍可通过 A1/B1 正常索引。
+    normalized = OrderedDict(
+        (
+            label,
+            value if isinstance(value, str) and value else f"{name}_{label}",
+        )
+        for label, value in ordering.items()
+    )
+    return None, normalized
+
+
 class Material(TypedDict):  # 和Plate同关系
     uuid: str
     Code: Optional[str]
@@ -321,30 +347,9 @@ class PRCXI9300Plate(Plate):
         material_info: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
-        # 如果 ordered_items 不为 None，直接使用
-        items = None
-        ordering_param = None
-        if ordered_items is not None:
-            items = ordered_items
-        elif ordering is not None:
-            # 检查 ordering 中的值是否是字符串（从 JSON 反序列化时的情况）
-            # 如果是字符串，说明这是位置名称，需要让 Plate 自己创建 Well 对象
-            # 我们只传递位置信息（键），不传递值，使用 ordering 参数
-            if ordering:
-                values = list(ordering.values())
-                value = values[0]
-                if isinstance(value, str):
-                    # ordering 的值是字符串，只使用键（位置信息）创建新的 OrderedDict
-                    # 传递 ordering 参数而不是 ordered_items，让 Plate 自己创建 Well 对象
-                    items = None
-                    # 使用 ordering 参数，只包含位置信息（键）
-                    ordering_param = collections.OrderedDict((k, None) for k in ordering.keys())
-                elif value is None:
-                    ordering_param = ordering
-            else:
-                # ordering 的值已经是对象，可以直接使用
-                items = ordering
-                ordering_param = None
+        items, ordering_param = _normalize_itemized_constructor_data(
+            name, ordered_items, ordering
+        )
 
         # 根据情况传递不同的参数
         if items is not None:
@@ -411,27 +416,9 @@ class PRCXI9300TipRack(TipRack):
         material_info: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
-        # 如果 ordered_items 不为 None，直接使用
-        if ordered_items is not None:
-            items = ordered_items
-        elif ordering is not None:
-            # 检查 ordering 中的值类型来决定如何处理：
-            # - 字符串值（从 JSON 反序列化）: 只用键创建 ordering_param
-            # - None 值（从第二次往返序列化）: 同样只用键创建 ordering_param
-            # - 对象值（已经是实际的 Resource 对象）: 直接作为 ordered_items 使用
-            first_val = next(iter(ordering.values()), None) if ordering else None
-            if not ordering or first_val is None or isinstance(first_val, str):
-                # ordering 的值是字符串或 None，只使用键（位置信息）创建新的 OrderedDict
-                # 传递 ordering 参数而不是 ordered_items，让 TipRack 自己创建 Tip 对象
-                items = None
-                ordering_param = collections.OrderedDict((k, None) for k in ordering.keys())
-            else:
-                # ordering 的值已经是对象，可以直接使用
-                items = ordering
-                ordering_param = None
-        else:
-            items = None
-            ordering_param = None
+        items, ordering_param = _normalize_itemized_constructor_data(
+            name, ordered_items, ordering
+        )
 
         # 根据情况传递不同的参数
         if items is not None:
@@ -560,45 +547,51 @@ class PRCXI9300TubeRack(TubeRack):
         **kwargs,
     ):
 
-        # 如果 ordered_items 不为 None，直接使用
-        if ordered_items is not None:
-            items_to_pass = ordered_items
-            ordering_param = None
-        elif ordering is not None:
-            # 检查 ordering 中的值类型来决定如何处理：
-            # - 字符串值（从 JSON 反序列化）: 只用键创建 ordering_param
-            # - None 值（从第二次往返序列化）: 同样只用键创建 ordering_param
-            # - 对象值（已经是实际的 Resource 对象）: 直接作为 ordered_items 使用
-            first_val = next(iter(ordering.values()), None) if ordering else None
-            if not ordering or first_val is None or isinstance(first_val, str):
-                # ordering 的值是字符串或 None，只使用键（位置信息）创建新的 OrderedDict
-                # 传递 ordering 参数而不是 ordered_items，让 TubeRack 自己创建 Tube 对象
-                items_to_pass = None
-                ordering_param = collections.OrderedDict((k, None) for k in ordering.keys())
-            else:
-                # ordering 的值已经是对象，可以直接使用
-                items_to_pass = ordering
-                ordering_param = None
-        elif items is not None:
-            # 兼容旧的 items 参数
-            items_to_pass = items
-            ordering_param = None
-        else:
-            items_to_pass = None
-            ordering_param = None
+        items_to_pass, ordering_param = _normalize_itemized_constructor_data(
+            name, ordered_items if ordered_items is not None else items, ordering
+        )
 
         # 根据情况传递不同的参数
         if items_to_pass is not None:
-            super().__init__(name, size_x, size_y, size_z, ordered_items=items_to_pass, model=model, **kwargs)
+            super().__init__(
+                name,
+                size_x,
+                size_y,
+                size_z,
+                ordered_items=items_to_pass,
+                category=category,
+                model=model,
+                **kwargs,
+            )
         elif ordering_param is not None:
-            # 传递 ordering 参数，让 TubeRack 自己创建 Tube 对象
-            super().__init__(name, size_x, size_y, size_z, ordering=ordering_param, model=model, **kwargs)
+            super().__init__(
+                name,
+                size_x,
+                size_y,
+                size_z,
+                ordering=ordering_param,
+                category=category,
+                model=model,
+                **kwargs,
+            )
         else:
-            super().__init__(name, size_x, size_y, size_z, model=model, **kwargs)
+            super().__init__(
+                name,
+                size_x,
+                size_y,
+                size_z,
+                category=category,
+                model=model,
+                **kwargs,
+            )
 
         self._unilabos_state = {}
         if material_info:
             self._unilabos_state["Material"] = material_info
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        super().load_state(state)
+        self._unilabos_state = state
 
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         try:
@@ -677,6 +670,10 @@ class PRCXI9300PlateAdapter(PlateAdapter):
         self._unilabos_state = {}
         if material_info:
             self._unilabos_state["Material"] = material_info
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        super().load_state(state)
+        self._unilabos_state = state
 
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
         try:

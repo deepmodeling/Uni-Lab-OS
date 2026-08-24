@@ -34,8 +34,10 @@ def cmd_config_show(args, session_manager: SessionManager):
                 },
             }
 
-            # 如果传了 --addr 但与会话中的不同，显示覆盖提示
-            addr_override = getattr(args, "addr_resolved", None)
+            # 如果传了 --address 但与会话中的不同，显示覆盖提示
+            addr_override = getattr(args, "address_resolved", None)
+            if addr_override is None:
+                addr_override = getattr(args, "addr_resolved", None)
             if addr_override and addr_override != state.base_url:
                 output["addr_override"] = addr_override
 

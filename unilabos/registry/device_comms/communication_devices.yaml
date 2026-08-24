@@ -12,6 +12,7 @@ serial:
           request: null
           response: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -40,6 +41,7 @@ serial:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -63,6 +65,7 @@ serial:
         goal_default:
           command: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -83,6 +86,7 @@ serial:
           type: object
         type: UniLabJsonCommand
     module: unilabos.ros.nodes.presets.serial_node:ROS2SerialNode
+    status_policies: {}
     status_types: {}
     supported_backends:
     - ros2

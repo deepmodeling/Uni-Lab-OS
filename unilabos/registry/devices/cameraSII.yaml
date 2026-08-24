@@ -11,6 +11,7 @@ cameracontroller_device:
         goal_default:
           config: null
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -35,6 +36,7 @@ cameracontroller_device:
         goal: {}
         goal_default: {}
         handles: {}
+        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -53,6 +55,7 @@ cameracontroller_device:
           type: object
         type: UniLabJsonCommand
     module: unilabos.devices.cameraSII.cameraUSB:CameraController
+    status_policies: {}
     status_types:
       status: Dict[str, Any]
     supported_backends:

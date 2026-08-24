@@ -1,115 +1,212 @@
-#!/usr/bin/env python3
-"""
-测试修改后的 get_child_identifier 函数
-"""
+from __future__ import annotations
 
-from unilabos.resources.itemized_carrier import ItemizedCarrier, Bottle
-from pylabrobot.resources.coordinate import Coordinate
+import pytest
+from pylabrobot.resources import Coordinate, Resource, ResourceHolder
 
-def test_get_child_identifier_with_indices():
-    """测试返回x,y,z索引的 get_child_identifier 函数"""
-    
-    # 创建一些测试瓶子
-    bottle1 = Bottle("bottle1", diameter=25.0, height=50.0, max_volume=15.0)
-    bottle1.location = Coordinate(10, 20, 5)
-    
-    bottle2 = Bottle("bottle2", diameter=25.0, height=50.0, max_volume=15.0) 
-    bottle2.location = Coordinate(50, 20, 5)
-    
-    bottle3 = Bottle("bottle3", diameter=25.0, height=50.0, max_volume=15.0) 
-    bottle3.location = Coordinate(90, 20, 5)
-    
-    # 创建载架，指定维度
-    sites = {
-        "A1": bottle1,
-        "A2": bottle2, 
-        "A3": bottle3,
-        "B1": None,  # 空位
-        "B2": None,
-        "B3": None
+from unilabos.resources.presets.itemized_carrier import Bottle, ItemizedCarrier
+from unilabos.resources.presets.warehouse import warehouse_factory
+
+
+def _holder(name: str, x: float, y: float, z: float = 0) -> ResourceHolder:
+    holder = ResourceHolder(
+        name=name,
+        size_x=10,
+        size_y=10,
+        size_z=10,
+        child_location=Coordinate.zero(),
+    )
+    holder.location = Coordinate(x, y, z)
+    return holder
+
+
+def test_explicit_layout_is_not_overwritten_by_dimensions():
+    carrier = ItemizedCarrier(
+        name="layout_carrier",
+        size_x=10,
+        size_y=20,
+        size_z=30,
+        num_items_x=1,
+        num_items_y=2,
+        num_items_z=3,
+        layout="row-major",
+    )
+
+    assert carrier.layout == "row-major"
+    assert carrier.serialize()["layout"] == "row-major"
+
+
+def test_layout_is_inferred_only_when_omitted():
+    carrier = ItemizedCarrier(
+        name="layout_carrier",
+        size_x=10,
+        size_y=20,
+        size_z=30,
+        num_items_x=1,
+        num_items_y=2,
+        num_items_z=3,
+    )
+
+    assert carrier.layout == "z-y"
+
+
+def test_item_returns_holder_and_resource_is_the_occupant():
+    holders = {
+        "A1": _holder("holder_A1", 10, 20),
+        "B1": _holder("holder_B1", 10, 40),
+        "A2": _holder("holder_A2", 50, 20),
+        "B2": _holder("holder_B2", 50, 40),
     }
-    
     carrier = ItemizedCarrier(
         name="test_carrier",
-        size_x=150,
-        size_y=100,
+        size_x=100,
+        size_y=80,
         size_z=30,
-        num_items_x=3,  # 3列
-        num_items_y=2,  # 2行  
-        num_items_z=1,  # 1层
-        sites=sites
+        num_items_x=2,
+        num_items_y=2,
+        num_items_z=1,
+        sites=holders,
     )
-    
-    print("测试载架维度:")
-    print(f"num_items_x: {carrier.num_items_x}")
-    print(f"num_items_y: {carrier.num_items_y}")
-    print(f"num_items_z: {carrier.num_items_z}")
-    print()
-    
-    # 测试获取bottle1的标识符信息 (A1 = idx:0, x:0, y:0, z:0)
-    result1 = carrier.get_child_identifier(bottle1)
-    print("测试bottle1 (A1):")
-    print(f"  identifier: {result1['identifier']}")
-    print(f"  idx: {result1['idx']}")
-    print(f"  x index: {result1['x']}")
-    print(f"  y index: {result1['y']}")
-    print(f"  z index: {result1['z']}")
-    
-    # Assert 验证 bottle1 (A1) 的结果
-    assert result1['identifier'] == 'A1', f"Expected identifier 'A1', got '{result1['identifier']}'"
-    assert result1['idx'] == 0, f"Expected idx 0, got {result1['idx']}"
-    assert result1['x'] == 0, f"Expected x index 0, got {result1['x']}"
-    assert result1['y'] == 0, f"Expected y index 0, got {result1['y']}"
-    assert result1['z'] == 0, f"Expected z index 0, got {result1['z']}"
-    print("  ✓ bottle1 (A1) 测试通过")
-    print()
-    
-    # 测试获取bottle2的标识符信息 (A2 = idx:1, x:1, y:0, z:0)
-    result2 = carrier.get_child_identifier(bottle2)
-    print("测试bottle2 (A2):")
-    print(f"  identifier: {result2['identifier']}")
-    print(f"  idx: {result2['idx']}")
-    print(f"  x index: {result2['x']}")
-    print(f"  y index: {result2['y']}")
-    print(f"  z index: {result2['z']}")
-    
-    # Assert 验证 bottle2 (A2) 的结果
-    assert result2['identifier'] == 'A2', f"Expected identifier 'A2', got '{result2['identifier']}'"
-    assert result2['idx'] == 1, f"Expected idx 1, got {result2['idx']}"
-    assert result2['x'] == 1, f"Expected x index 1, got {result2['x']}"
-    assert result2['y'] == 0, f"Expected y index 0, got {result2['y']}"
-    assert result2['z'] == 0, f"Expected z index 0, got {result2['z']}"
-    print("  ✓ bottle2 (A2) 测试通过")
-    print()
-        
-    # 测试获取bottle3的标识符信息 (A3 = idx:2, x:2, y:0, z:0)
-    result3 = carrier.get_child_identifier(bottle3)
-    print("测试bottle3 (A3):")
-    print(f"  identifier: {result3['identifier']}")
-    print(f"  idx: {result3['idx']}")
-    print(f"  x index: {result3['x']}")
-    print(f"  y index: {result3['y']}")
-    print(f"  z index: {result3['z']}")
-    
-    # Assert 验证 bottle3 (A3) 的结果
-    assert result3['identifier'] == 'A3', f"Expected identifier 'A3', got '{result3['identifier']}'"
-    assert result3['idx'] == 2, f"Expected idx 2, got {result3['idx']}"
-    assert result3['x'] == 2, f"Expected x index 2, got {result3['x']}"
-    assert result3['y'] == 0, f"Expected y index 0, got {result3['y']}"
-    assert result3['z'] == 0, f"Expected z index 0, got {result3['z']}"
-    print("  ✓ bottle3 (A3) 测试通过")
-    print()
-    
-    # 测试错误情况：查找不存在的资源
-    bottle_not_exists = Bottle("bottle_not_exists", diameter=25.0, height=50.0, max_volume=15.0)
-    try:
-        carrier.get_child_identifier(bottle_not_exists)
-        assert False, "应该抛出 ValueError 异常"
-    except ValueError as e:
-        print("✓ 正确抛出了 ValueError 异常：", str(e))
-        assert "is not assigned to this carrier" in str(e), "异常消息应该包含预期的文本"
-    
-    print("\n🎉 所有测试都通过了！")
+    bottle = Bottle("bottle", diameter=25, height=50, max_volume=15)
 
-if __name__ == "__main__":
-    test_get_child_identifier_with_indices()
+    carrier["B2"] = bottle
+
+    assert carrier["B2"] is holders["B2"]
+    assert carrier["B2"].resource is bottle
+    assert bottle.parent is holders["B2"]
+    assert carrier.get_resources() == [bottle]
+    assert carrier.get_child_identifier(bottle) == {
+        "identifier": "B2",
+        "idx": 3,
+        "x": 1,
+        "y": 1,
+        "z": 0,
+    }
+    assert carrier.get_child_identifier(holders["B2"])["identifier"] == "B2"
+
+    carrier["B2"] = None
+
+    assert carrier["B2"].resource is None
+    assert carrier.get_resources() == []
+    assert carrier["B2"] in carrier.get_free_sites()
+
+
+def test_plr_roundtrip_keeps_holder_resource_and_site_coordinates():
+    carrier = ItemizedCarrier(
+        name="carrier",
+        size_x=100,
+        size_y=80,
+        size_z=30,
+        num_items_x=2,
+        num_items_y=1,
+        num_items_z=1,
+        sites={
+            "A1": _holder("holder_A1", 10, 20),
+            "A2": _holder("holder_A2", 50, 20),
+        },
+    )
+    bottle = Bottle("bottle", diameter=25, height=50, max_volume=15)
+    carrier["A2"] = bottle
+
+    restored = Resource.deserialize(carrier.serialize())
+
+    assert isinstance(restored, ItemizedCarrier)
+    assert isinstance(restored["A2"], ResourceHolder)
+    assert restored["A2"].resource is not None
+    assert restored["A2"].resource.name == "bottle"
+    assert restored.get_child_identifier(restored["A2"].resource) == {
+        "identifier": "A2",
+        "idx": 1,
+        "x": 1,
+        "y": 0,
+        "z": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    ("ordering_layout", "expected_labels"),
+    [
+        ("row-major", ["A01", "A02", "A03", "B01", "B02", "B03"]),
+        ("col-major", ["A01", "B01", "A02", "B02", "A03", "B03"]),
+    ],
+)
+def test_warehouse_xy_generation_matches_label_and_order(
+    ordering_layout: str, expected_labels: list[str]
+):
+    warehouse = warehouse_factory(
+        "warehouse",
+        num_items_x=3,
+        num_items_y=2,
+        num_items_z=1,
+        dx=10,
+        dy=20,
+        dz=30,
+        item_dx=100,
+        item_dy=10,
+        item_dz=5,
+        layout=ordering_layout,
+    )
+
+    assert list(warehouse._ordering) == expected_labels
+    for label, holder in warehouse._ordering.items():
+        identifier = warehouse.get_child_identifier(holder)
+        assert identifier["identifier"] == label
+        assert holder.location.x == 10 + identifier["x"] * 100
+        expected_y = (
+            20 + identifier["y"] * 10
+            if ordering_layout == "row-major"
+            else 20 + (1 - identifier["y"]) * 10
+        )
+        assert holder.location.y == expected_y
+        assert identifier["z"] == 0
+
+
+def test_warehouse_xyz_generation_and_removed_position_keep_grid_indices():
+    warehouse = warehouse_factory(
+        "warehouse",
+        num_items_x=1,
+        num_items_y=2,
+        num_items_z=2,
+        dx=10,
+        dy=20,
+        dz=30,
+        item_dx=100,
+        item_dy=10,
+        item_dz=5,
+        removed_positions=[1],
+        layout="row-major",
+    )
+
+    assert list(warehouse._ordering) == ["A01", "A02", "B02"]
+    assert warehouse.get_child_identifier(warehouse["A01"]) == {
+        "identifier": "A01",
+        "idx": 0,
+        "x": 0,
+        "y": 0,
+        "z": 0,
+    }
+    assert warehouse.get_child_identifier(warehouse["B02"]) == {
+        "identifier": "B02",
+        "idx": 2,
+        "x": 0,
+        "y": 1,
+        "z": 1,
+    }
+    assert warehouse.get_site_by_layer_position(row=1, col=0, layer=1) is warehouse[
+        "B02"
+    ]
+    with pytest.raises(ValueError, match="已被移除"):
+        warehouse.get_site_by_layer_position(row=1, col=0, layer=0)
+
+
+def test_get_child_identifier_rejects_unassigned_resource():
+    carrier = ItemizedCarrier(
+        name="carrier",
+        size_x=10,
+        size_y=10,
+        size_z=10,
+        sites={"A1": _holder("holder_A1", 0, 0)},
+    )
+    bottle = Bottle("unassigned", diameter=1, height=1, max_volume=1)
+
+    with pytest.raises(ValueError, match="is not assigned to this carrier"):
+        carrier.get_child_identifier(bottle)

@@ -43,7 +43,7 @@ from unilabos.resources.objects.pose import (
     ResourceDictPositionObject,
     ResourceDictPositionSize,
 )
-from unilabos.resources.site_definition import SiteDefinition
+from unilabos.resources.objects.site import SiteDefinition
 
 # ============ TypedDict 返回类型定义 ============
 
@@ -175,7 +175,7 @@ VIRTUAL_WORKBENCH_AVAILABLE_SITES: List[SiteDefinition] = [
     category=["virtual_device"],
     description="Virtual Workbench with 1 robotic arm and 3 heating stations for concurrent material processing",
     available_sites=VIRTUAL_WORKBENCH_AVAILABLE_SITES,
-    supported_backends=["ros2"],
+    supported_backends=["hostlink", "ros2"],
 )
 class VirtualWorkbench:
     """
@@ -192,7 +192,8 @@ class VirtualWorkbench:
     4. 加热完成后, 机械臂将物料移动到目标位置Cn
     """
 
-    _ros_node: DeviceNode
+    _device_node: DeviceNode
+    run_in_test_mode = True
 
     # 配置常量
     ARM_OPERATION_TIME: float = 2  # 机械臂操作时间(秒)
@@ -266,9 +267,11 @@ class VirtualWorkbench:
         )
 
     @not_action
-    def post_init(self, ros_node: DeviceNode):
-        """ROS节点初始化后回调"""
-        self._ros_node = ros_node
+    def post_init(self, node: DeviceNode):
+        """绑定 HostLink/ROS2 共用的设备节点契约。"""
+        self._device_node = node
+        if node.backend_name == "ros2":
+            self.initialize()
 
     @not_action
     def initialize(self) -> bool:
@@ -340,11 +343,20 @@ class VirtualWorkbench:
                 "arm_state": self._arm_state.value,
                 "arm_current_task": self._arm_current_task,
                 "heating_stations": self._get_stations_status(),
-                "active_tasks_count": len(self._active_tasks),
+                "active_tasks_count": self._count_active_tasks(),
             }
         )
         if message:
             self.data["message"] = message
+
+    def _count_active_tasks(self) -> int:
+        """只统计仍在执行的任务，保留终态记录供诊断。"""
+
+        with self._tasks_lock:
+            return sum(
+                task.get("status") not in {"completed", "failed", "canceled"}
+                for task in self._active_tasks.values()
+            )
 
     def _find_available_heating_station(self) -> Optional[int]:
         """查找空闲的加热台"""
@@ -396,7 +408,7 @@ class VirtualWorkbench:
         function_args: str = "{}",
     ) -> dict:
         """
-        演示通过 _ros_node 便捷函数跨设备调用动作（走 serial JSON 指令通道）。
+        演示通过 DeviceNode 便捷函数跨设备调用动作。
 
         Args:
             target_device[目标设备]: 被调用设备的 ID（可带或不带 /devices/ 前缀）。
@@ -409,7 +421,11 @@ class VirtualWorkbench:
         # call_device_action 只接受 dict 入参（序列化由其内部完成）；UI 传来的是 JSON 字符串，这里先解析成 dict
         kwargs = json.loads(function_args) if function_args else {}
         # 同步 action 在线程池中执行，使用同步便捷函数即可（阻塞安全）
-        return_value = self._ros_node.call_device_action(target_device, function_name, kwargs)
+        return_value = self._device_node.call_device_action(
+            target_device,
+            function_name,
+            kwargs,
+        )
         return {"success": True, "target_device": target_device, "function_name": function_name, "return_value": return_value}
 
     @action(
@@ -602,7 +618,7 @@ class VirtualWorkbench:
             target_device[目标设备]: 接收资源的目标设备 ID。
             mount_resource[目标孔位]: 目标设备上的挂载孔位列表。
         """
-        return await self._ros_node.transfer_resource_to_another(
+        return await self._device_node.transfer_resource_to_another(
             plr_resources=resource,
             target_device_id=target_device,
             target_resources=mount_resource,
@@ -1330,8 +1346,7 @@ class VirtualWorkbench:
     @property
     @topic_config()
     def active_tasks_count(self) -> int:
-        with self._tasks_lock:
-            return len(self._active_tasks)
+        return self._count_active_tasks()
 
     @property
     @topic_config()

@@ -210,7 +210,7 @@ unilab --ak your_ak --sk your_sk -g graph.json --disable_browser
 unilab --ak your_ak --sk your_sk -g graph.json --port-management 8080
 
 # 测试环境
-unilab --addr test --ak your_ak --sk your_sk -g graph.json
+unilab --address test --ak your_ak --sk your_sk -g graph.json
 
 # 跳过环境检查（加快启动）
 unilab --ak your_ak --sk your_sk -g graph.json --skip_env_check
@@ -218,35 +218,34 @@ unilab --ak your_ak --sk your_sk -g graph.json --skip_env_check
 
 ---
 
-### 4. 上传注册表（一次性操作）
+### 4. 同步注册表
 
-#### 4.1 什么是注册表上传？
+#### 4.1 什么是注册表同步？
 
-注册表包含您的设备和物料的完整定义。上传到云端后，在线界面才能识别和使用这些设备。
+注册表包含设备和物料的完整定义。Host 启动时会把定义同步到本地微后端，Backend
+和在线界面再通过当前 API 读取这些定义。
 
-#### 4.2 何时需要上传？
+#### 4.2 何时需要重启同步？
 
-**必须上传的情况：**
+**需要重新同步的情况：**
 
 - 首次启动实验室
 - 添加了新的设备类型
 - 修改了设备的注册表定义
 
-#### 4.3 如何上传注册表
+#### 4.3 如何同步注册表
 
 ```bash
-unilab --ak your_ak --sk your_sk -g graph.json --upload_registry
+unilab --ak your_ak --sk your_sk -g graph.json
 ```
 
 **性能影响说明：**
 
-- 上传注册表会增加启动时间（通常 5-15 秒）
-- 上传时间取决于：
+- 同步注册表会增加少量启动时间
+- 同步时间取决于：
   - 设备和物料的数量
-  - 网络速度
-- 建议：开发调试时首次上传，后续本地测试可省略
 
-**验证上传成功：**
+**验证同步成功：**
 
 在 Web 界面的"仪器设备"或"物料耗材"模块中，应该能看到您的设备和物料列表。
 
@@ -644,7 +643,7 @@ sudo systemctl stop ufw
 ```bash
 # 在主机（Host）上启动
 conda activate unilab
-unilab --ak your_ak --sk your_sk -g host.json --upload_registry
+unilab --ak your_ak --sk your_sk -g host.json
 ```
 
 **主节点职责：**
@@ -1190,8 +1189,7 @@ my_pump:
 
 ```bash
 unilab --ak your_ak --sk your_sk -g graph.json \
-       --registry_path ./my_lab_devices/registry \
-       --upload_registry
+       --registry_path ./my_lab_devices/registry
 ```
 
 **支持多个注册表路径**（按顺序查找）：
@@ -1618,27 +1616,32 @@ solenoid_valve:
 
 ### 11.6 参考驱动实现（可运行示例仓库）
 
-为了让上述机制有可直接运行、可对照学习的范本，我们提供了两个**自包含外部设备包**，均作为独立 GitHub 仓库维护（由 [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) fork 生成）。克隆后通过 `--devices <包目录> --external_devices_only` 加载，每个仓库的 README 都附带分步启动教程和实测日志输出，建议在编写自己的驱动前先跑一遍。
+为了让上述机制有可直接运行、可对照学习的范本，我们提供了两个**自包含外部设备包**，均作为独立 GitHub 仓库维护（由 [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) fork 生成）。普通 GitHub 仓库 URL 可直接交给 `unilab package install`；安装器会归一化为 VCS spec、识别仓库实际的 Python distribution，并扫描已安装的 `@device` ID。每个仓库的 README 都附带 HostLink/ROS2 双运行时的有限时 smoke 和终态 JSON。
 
 | 示例仓库                                                                          | 演示要点                                           | 关键技术                                                                                                |
 | --------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo)                   | 局域网跨设备闭环：中枢 hub 与子设备 sub 分进程运行 | 跨设备 `@subscribe` 订阅、`call_device_action` 远程 ros action 调用、自动 `msg_type` 解析、轮次复位检测  |
-| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo)   | 工作站内 `hardware_interface` 代理：多子设备共享同一通信端点 | 共享串口（默认 IO 方法名 `send_command`/`read_data`）、Modbus `extra_info` 按设备注入 `slave_id`（即本章 §11.5） |
+| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo)                   | 局域网跨设备闭环：中枢 hub 与子设备 sub 分进程运行 | HostLink/ROS2 共用 `@subscribe`、`call_device_action` 与轮次复位检测 |
+| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo)   | 工作站内 `hardware_interface` 代理：多子设备共享同一通信端点 | HostLink/ROS2 共用工作站初始化；共享串口与 Modbus `slave_id` 注入 |
 
-**快速启动（通用形式，单进程）：**
+**固定版本安装与闭环验收：**
 
 ```bash
-conda activate unilab
+unilab package install https://github.com/Xuwznln/LabDeviceLanDemo --ref <commit-sha>
+unilab package install https://github.com/Xuwznln/LabDeviceWorkstationDemo --ref <commit-sha>
+
+git clone https://github.com/Xuwznln/LabDeviceLanDemo.git
+cd LabDeviceLanDemo
+python -m lan_demo.smoke --backend hostlink --timeout 45
+python -m lan_demo.smoke --backend ros2 --timeout 60
+
+cd ..
 git clone https://github.com/Xuwznln/LabDeviceWorkstationDemo.git
-python -m unilabos.app.main \
-  --devices <克隆目录下的设备包目录> \
-  --external_devices_only \
-  --ak your_ak --sk your_sk --addr test --upload_registry \
-  --disable_browser --port-management 8100 \
-  -g <仓库内提供的图文件>
+cd LabDeviceWorkstationDemo
+python -m workstation_demo.smoke --backend hostlink --timeout 45
+python -m workstation_demo.smoke --backend ros2 --timeout 60
 ```
 
-`--devices` 指向的设备包目录、`-g` 图文件等具体路径以各仓库 README 为准；`LabDeviceLanDemo` 还需按「先 host 后 slave」启动两个进程（仅图文件与 `--is_slave` 不同）。
+smoke 会自行启动并回收所需进程：LAN 示例验证 hub/sub 的 subscribe + remote action；工作站示例验证 shared serial、两个不同 `slave_id` 的 Modbus 子设备及动作返回。它们不要求 AK/SK，也不调用旧 `/api/v1/job/add`；正式工作流正文由 Workflow Authority HTTP API 提供，Edge 只消费 `control.v1` 轻通知后按 UUID 拉取命令。
 
 > 这两个仓库同时是 §9（自定义设备）、§11.5（通信共享机制）的可运行落地示例：想从零写一个新驱动，可直接 fork [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) 作为脚手架，改写设备类与图文件即可。
 
@@ -1802,8 +1805,7 @@ properties:
 
 ```bash
 unilab --ak your_ak --sk your_sk -g graph.json \
-       --registry_path ./my_lab_devices/my_lab_devices/registry \
-       --upload_registry
+       --registry_path ./my_lab_devices/my_lab_devices/registry
 ```
 
 2. **在组态图中添加**：

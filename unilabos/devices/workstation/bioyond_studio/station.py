@@ -8,24 +8,35 @@ import time
 import traceback
 import threading
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, Any, List, Optional, Union
 import json
 from pathlib import Path
 
 from unilabos.devices.workstation.workstation_base import WorkstationBase, ResourceSynchronizer
 from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import BioyondV1RPC
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
-from unilabos.resources.warehouse import WareHouse
+from unilabos.resources.presets.warehouse import WareHouse
 from unilabos.utils.log import logger
-from unilabos.resources.graphio import resource_bioyond_to_plr, resource_plr_to_bioyond
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
-from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
-from unilabos.ros.msgs.message_converter import convert_to_ros_msg, Float64, String
 from pylabrobot.resources.resource import Resource as ResourcePLR
 
 
 from unilabos.devices.workstation.workstation_http_service import WorkstationHTTPService
+
+if TYPE_CHECKING:
+    from unilabos.device_runtime.node import DeviceNode
+
+
+def resource_bioyond_to_plr(*args, **kwargs):
+    from unilabos.resources.graphio import resource_bioyond_to_plr as convert
+
+    return convert(*args, **kwargs)
+
+
+def resource_plr_to_bioyond(*args, **kwargs):
+    from unilabos.resources.graphio import resource_plr_to_bioyond as convert
+
+    return convert(*args, **kwargs)
 
 
 class ConnectionMonitor:
@@ -93,21 +104,7 @@ class ConnectionMonitor:
                 ns = self.workstation._ros_node.namespace
                 topic = f"{ns}/events/device_status"
 
-                # 使用 ROS2DeviceNode 的发布功能
-                # 如果没有预定义的 publisher，需要动态创建
-                # 注意：workstation base node 可能没有自动创建 arbitrary publishers 的机制
-                # 这里我们先尝试用 String json 发布
-
-                # 在 ROS2DeviceNode 中通常需要先 create_publisher
-                # 为了简单起见，我们检查是否已有 publisher，没有则创建
-                if not hasattr(self.workstation, "_device_status_pub"):
-                    self.workstation._device_status_pub = self.workstation._ros_node.create_publisher(
-                        String, topic, 10
-                    )
-
-                self.workstation._device_status_pub.publish(
-                    convert_to_ros_msg(String, json.dumps(event_data, ensure_ascii=False))
-                )
+                self.workstation._ros_node.publish_topic(topic, event_data)
         except Exception as e:
             logger.error(f"发布设备状态事件失败: {e}")
 
@@ -705,14 +702,7 @@ class BioyondWorkstation(WorkstationBase):
 
             topic = f"{self._ros_node.namespace}/events/task_status"
 
-            if not hasattr(self, "_task_status_pub"):
-                self._task_status_pub = self._ros_node.create_publisher(
-                    String, topic, 10
-                )
-
-            self._task_status_pub.publish(
-                convert_to_ros_msg(String, json.dumps(event_data, ensure_ascii=False))
-            )
+            self._ros_node.publish_topic(topic, event_data)
         except Exception as e:
             logger.error(f"发布任务状态事件失败: {e}")
 
@@ -799,7 +789,7 @@ class BioyondWorkstation(WorkstationBase):
         except Exception as e:
             logger.error(f"停止 HTTP 服务时发生错误: {e}")
 
-    def post_init(self, ros_node: ROS2WorkstationNode):
+    def post_init(self, ros_node: "DeviceNode"):
         self._ros_node = ros_node
 
         # 启动连接监控

@@ -1,7 +1,7 @@
 """有效凭据解析
 
 按优先级聚合来自不同来源的 ak/sk 与 base_url：
-  1. CLI 参数 (--ak / --sk / --addr)
+  1. CLI 参数 (--ak / --sk / --address)
   2. 会话文件 (working_dir/session.json)
   3. 本地配置 (working_dir/local_config.py 的 BasicConfig.ak/sk + HTTPConfig.remote_addr)
 
@@ -65,7 +65,9 @@ def resolve_effective_auth(args: Any, session_manager: SessionManager) -> Dict[s
 
     cli_ak = getattr(args, "ak", "") or ""
     cli_sk = getattr(args, "sk", "") or ""
-    cli_addr = getattr(args, "addr_resolved", None)
+    cli_addr = getattr(args, "address_resolved", None)
+    if cli_addr is None:
+        cli_addr = getattr(args, "addr_resolved", None)
 
     config_data = _try_load_local_config(str(session_manager.working_dir))
     cfg_ak = (config_data or {}).get("ak", "")

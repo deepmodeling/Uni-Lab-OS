@@ -53,7 +53,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from unilabos.registry.backend_metadata import normalize_supported_backends
-from unilabos.resources.site_definition import (
+from unilabos.resources.objects.site import (
     SiteDefinitionInput,
     normalize_available_sites,
 )
@@ -394,6 +394,7 @@ def action(
     node_type: Optional["NodeType"] = None,
     feedback_interval: Optional[float] = None,
     error_policy: Optional[Dict[str, Any]] = None,
+    materials_need_lock: Optional[List[str]] = None,
 ):
     """
     动作方法装饰器
@@ -428,10 +429,13 @@ def action(
                    不填写时不写入注册表。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
+        materials_need_lock: 本动作执行期间需要独占的物料参数名列表。参数值
+                             必须能解析出由物料权威分配的 UUID。
     """
 
     def decorator(func: F) -> F:
         import asyncio as _asyncio
+        import inspect as _inspect
 
         if _asyncio.iscoroutinefunction(func):
             @wraps(func)
@@ -469,6 +473,15 @@ def action(
 
             normalized_error_policy = normalize_error_policy(error_policy) or {}
         meta["error_policy"] = normalized_error_policy
+        from unilabos.registry.material_locks import (
+            normalize_material_parameter_names,
+        )
+
+        meta["materials_need_lock"] = normalize_material_parameter_names(
+            materials_need_lock,
+            action_parameter_names=_inspect.signature(func).parameters,
+            action_name=func.__qualname__,
+        )
         wrapper._action_registry_meta = meta  # type: ignore[attr-defined]
         wrapper._action_error_policy = normalized_error_policy  # type: ignore[attr-defined]
 
@@ -656,6 +669,7 @@ def topic_config(
     print_publish: Optional[bool] = None,
     qos: Optional[int] = None,
     name: Optional[str] = None,
+    status_policy: Optional[Dict[str, Any]] = None,
 ) -> Callable[[F], F]:
     """
     Topic发布配置装饰器
@@ -667,11 +681,19 @@ def topic_config(
         print_publish: 是否打印发布日志。None 表示使用节点默认配置
         qos: QoS深度配置。None 表示使用默认值 10
         name: 自定义发布名称。None 表示使用方法名（去掉 get_ 前缀）
+        status_policy: 标量状态的 incident/联锁策略。注册时会校验并归一化，
+            运行时由微后端根据设备状态生成 incident。
 
     Note:
         与 @property 连用时，@topic_config 必须放在 @property 下面，
         这样装饰器执行顺序为：先 topic_config 添加配置，再 property 包装。
     """
+
+    normalized_status_policy: Dict[str, Any] = {}
+    if status_policy:
+        from unilabos.registry.status_policy import normalize_status_policy
+
+        normalized_status_policy = normalize_status_policy(status_policy) or {}
 
     def decorator(func: F) -> F:
         @wraps(func)
@@ -682,6 +704,7 @@ def topic_config(
         wrapper._topic_print_publish = print_publish  # type: ignore[attr-defined]
         wrapper._topic_qos = qos  # type: ignore[attr-defined]
         wrapper._topic_name = name  # type: ignore[attr-defined]
+        wrapper._topic_status_policy = normalized_status_policy  # type: ignore[attr-defined]
         wrapper._has_topic_config = True  # type: ignore[attr-defined]
 
         return wrapper  # type: ignore[return-value]
@@ -690,13 +713,14 @@ def topic_config(
 
 
 def get_topic_config(func) -> dict:
-    """获取函数上的 topic 配置 (period, print_publish, qos, name)"""
+    """获取函数上的 topic 配置及已归一化的状态策略。"""
     if hasattr(func, "_has_topic_config") and getattr(func, "_has_topic_config", False):
         return {
             "period": getattr(func, "_topic_period", None),
             "print_publish": getattr(func, "_topic_print_publish", None),
             "qos": getattr(func, "_topic_qos", None),
             "name": getattr(func, "_topic_name", None),
+            "status_policy": getattr(func, "_topic_status_policy", {}),
         }
     return {}
 

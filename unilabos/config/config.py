@@ -2,31 +2,42 @@ import base64
 import traceback
 import os
 import importlib.util
-from typing import Literal
+import re
+from typing import Literal, Optional
 from unilabos.utils import logger
+
+
+HOST_NODE_REGISTRY_NAME = "host_node"
+DEFAULT_HOST_NODE_NAME = HOST_NODE_REGISTRY_NAME
+_ROS_NODE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_REMOVED_CONFIG_FIELDS = {
+    "BasicConfig": frozenset({"app_bridges", "communication_protocol"}),
+}
 
 
 class BasicConfig:
     # 运行时 backend 名称由 unilabos.app.backend 统一规范化。
     backend: Literal["hostlink", "ros2"] = "ros2"
-    app_bridges: tuple[str, ...] = ("websocket", "fastapi")
     ak = ""
     sk = ""
     working_dir = ""
+    # 由微后端组合根一次解析；四个数据库 writer 不得自行推导路径。
+    server_database_paths = None
     config_path = ""
     is_host_mode = True
     slave_no_host = False  # 是否跳过rclient.wait_for_service()
-    upload_registry = False
+    # 可重命名的 HostNode 运行时实例；注册表类型仍固定为 host_node。
+    host_node_name = "host_node"
     machine_name = "undefined"
     vis_2d_enable = False
     no_update_feedback = False
     enable_resource_load = True
-    communication_protocol = "websocket"
     startup_json_path = None  # 填写绝对路径
     disable_browser = False  # 只禁止浏览器自动打开，不停止管理端服务
     port = 8002  # 管理端 HTTP/Web API 与主微前端服务
     check_mode = False  # CI 检查模式，用于验证 registry 导入和文件一致性
     test_mode = False  # 测试模式，所有动作不实际执行，返回模拟结果
+    demo_mode = False  # 三工位加热演示：本机 Host + 6005 HTTP 微后端
     extra_resource = False  # 是否加载lab_开头的额外资源
     # 'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
     log_level: Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
@@ -38,6 +49,20 @@ class BasicConfig:
         target = f"{cls.ak}:{cls.sk}"
         base64_target = base64.b64encode(target.encode("utf-8")).decode("utf-8")
         return base64_target
+
+
+def resolve_host_node_name(value: Optional[str] = None) -> str:
+    """返回可用于 ROS/HostLink 的 HostNode 运行时名称。"""
+
+    name = str(BasicConfig.host_node_name if value is None else value).strip()
+    if not name:
+        name = DEFAULT_HOST_NODE_NAME
+    if not _ROS_NODE_NAME_PATTERN.fullmatch(name):
+        raise ValueError(
+            "HostNode name must start with a letter or underscore and contain "
+            "only ASCII letters, digits, and underscores"
+        )
+    return name
 
 
 # WebSocket配置
@@ -53,8 +78,11 @@ class WSConfig:
 # HTTP配置
 class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"
-    # schedule 通道（WebSocket）地址；为空时从 remote_addr 派生：带端口则 +1，否则沿用原 netloc
+    # 独立部署的低层覆盖；CLI 只暴露统一 --address。为空时从 remote_addr 派生。
     schedule_addr = ""
+    # Edge 只访问微后端物料中心；可选择进程内或独立部署的微后端。
+    material_microbackend_addr = ""
+    material_query_timeout = 10
 
 
 # Host/Slave 控制通道。ROS2 backend 用它同步发现参数；hostlink backend 还会
@@ -74,7 +102,30 @@ class HostLinkConfig:
     ros_discovery_range = ""  # SYSTEM_DEFAULT / SUBNET / LOCALHOST / OFF
     ros_static_peers = ""  # 分号分隔
     # 外部 Fast DDS Discovery Server 的 host:port；off 表示明确清除继承值。
+    # 空值由 ROS2 组网微后端托管；0 复用 HostLink 数字端口（TCP/UDP 可共存）。
     ros_discovery_server = ""
+    ros_discovery_port = 0
+
+
+class OTelConfig:
+    """OpenTelemetry 配置；默认关闭且所有调用均 fail-open。"""
+
+    enabled = False
+    endpoint = ""
+    insecure = True
+    service_name = "uni-lab-edge"
+    service_namespace = "unilab"
+    service_version = "0.11.3"
+    deployment_environment = ""
+    headers = ""
+    resource_attributes = ""
+    trace_sampler = "parentbased_always_on"
+    sample_ratio = 1.0
+    max_queue_size = 2048
+    max_export_batch_size = 512
+    schedule_delay_ms = 5000
+    export_timeout_ms = 5000
+    shutdown_timeout_ms = 5000
 
 
 # ROS配置
@@ -96,6 +147,8 @@ def _update_config_from_module(module):
             if hasattr(module, name) and isinstance(getattr(module, name), type):
                 for attr in dir(getattr(module, name)):
                     if not attr.startswith("_"):
+                        if attr in _REMOVED_CONFIG_FIELDS.get(name, ()):
+                            continue
                         setattr(obj, attr, getattr(getattr(module, name), attr))
 
 
@@ -177,3 +230,9 @@ def load_config(config_path=None):
     else:
         config_path = os.path.join(os.path.dirname(__file__), "example_config.py")
         load_config(config_path)
+
+
+# Registry schema selection happens at import time.  Apply explicit environment
+# configuration before any caller can import the registry; load_config() repeats
+# the overlay after a config file is loaded so environment values still win.
+_update_config_from_env()

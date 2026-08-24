@@ -6,21 +6,26 @@ import threading
 import time
 import types
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from functools import wraps
 from pylabrobot.resources import Deck, Resource as PLRResource
-from unilabos_msgs.msg import Resource
 from unilabos.device_comms.modbus_plc.client import ModbusTcpClient
 from unilabos.devices.workstation.workstation_base import WorkstationBase
 from unilabos.device_comms.modbus_plc.client import TCPClient, ModbusNode, PLCWorkflow, ModbusWorkflow, WorkflowAction, BaseClient
 from unilabos.device_comms.modbus_plc.modbus import DeviceType, Base as ModbusNodeBase, DataType, WorderOrder
 from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import *
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
-from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import CoincellDeck
-from unilabos.resources.graphio import convert_resources_to_type
 from unilabos.utils.log import logger
 import struct
+
+if TYPE_CHECKING:
+    from unilabos.device_runtime.node import DeviceNode
+
+
+def convert_resources_to_type(*args, **kwargs):
+    from unilabos.resources.graphio import convert_resources_to_type as convert
+
+    return convert(*args, **kwargs)
 
 
 def _decode_float32_correct(registers):
@@ -191,7 +196,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         self.csv_export_file = None
         self.coin_num_N = 0  #已组装电池数量
 
-    def post_init(self, ros_node: ROS2WorkstationNode):
+    def post_init(self, ros_node: "DeviceNode"):
         self._ros_node = ros_node
         #self.deck = create_a_coin_cell_deck()
         self._ros_node.run_async_func(self._ros_node.update_resource, True, **{

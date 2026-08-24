@@ -178,3 +178,36 @@ def test_async_requests_work_in_both_directions() -> None:
     finally:
         client.close()
         server.stop()
+
+
+def test_negative_request_timeout_allows_scheduler_managed_long_action() -> None:
+    server = HostLinkServer(
+        "127.0.0.1",
+        0,
+        heartbeat_timeout=1,
+        request_timeout=0.02,
+    ).start()
+    client = HostLinkClient(
+        "127.0.0.1",
+        server.port,
+        device_ids=["long-action-device"],
+        heartbeat_interval=10,
+        request_timeout=0.02,
+    )
+
+    def long_action(_data):
+        time.sleep(0.06)
+        return {"done": True}
+
+    client.register_handler("test.long_action", long_action)
+    try:
+        assert client.connect_blocking(timeout=2)
+        assert server.request_device(
+            "long-action-device",
+            "test.long_action",
+            {},
+            timeout=-1,
+        ) == {"done": True}
+    finally:
+        client.close()
+        server.stop()

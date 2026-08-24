@@ -4,7 +4,6 @@ import os
 import re
 from typing import TypedDict
 
-import pyautogui
 from pywinauto import Application
 from pywinauto.application import WindowSpecification
 from pywinauto.controls.uiawrapper import UIAWrapper
@@ -179,6 +178,8 @@ class HPLCDriver(UniversalDriver):
         rectangle = element_info.rectangle
         point_x = int(rectangle.left + rectangle.width() * 0.15)
         point_y = int(rectangle.top + rectangle.height() * 0.15)
+        import pyautogui
+
         r, g, b = pyautogui.pixel(point_x, point_y)
         if 270 > r > 250 and 200 > g > 180 and b < 10:  # 是黄色
             self._is_running = False

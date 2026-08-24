@@ -429,54 +429,61 @@ class VirtualEnvironmentService:
         if preset is None:
             raise MaterialValidationError(f"unknown virtual environment: {preset_id}")
         with self._reset_lock:
-            current = self.current_state()
-            if current.setup_uuid == request_uuid and current.preset_id == preset_id:
-                return VirtualEnvironmentResetResult(
-                    replayed=True,
-                    deleted_root_count=0,
-                    state=current,
-                )
+            # Reset/reseed is one authority transaction.  Repository methods
+            # and service mutations re-enter this connection-wide lock, so
+            # concurrent HTTP projections never observe the empty midpoint.
+            with self.materials.repository.write():
+                current = self.current_state()
+                if (
+                    current.setup_uuid == request_uuid
+                    and current.preset_id == preset_id
+                ):
+                    return VirtualEnvironmentResetResult(
+                        replayed=True,
+                        deleted_root_count=0,
+                        state=current,
+                    )
 
-            timestamp = int(time.time() * 1000)
-            roots = self.materials.list_materials(roots_only=True)
-            deleted = 0
-            for root in roots:
-                value = MaterialDelete(
-                    material_uuid=root.material.material_uuid,
-                    recursive=True,
-                )
-                self.materials.delete_material(
+                timestamp = int(time.time() * 1000)
+                roots = self.materials.list_materials(roots_only=True)
+                deleted = 0
+                for root in roots:
+                    value = MaterialDelete(
+                        material_uuid=root.material.material_uuid,
+                        recursive=True,
+                    )
+                    self.materials.delete_material(
+                        self._mutation(
+                            request_uuid,
+                            effect_key=f"virtual-reset:delete:{root.material.material_uuid}",
+                            operation="delete_material",
+                            payload=value,
+                            timestamp=timestamp,
+                        ),
+                        value,
+                    )
+                    deleted += 1
+
+                tree = self._tree(preset, request_uuid, timestamp)
+                result = self.materials.create_tree(
                     self._mutation(
                         request_uuid,
-                        effect_key=f"virtual-reset:delete:{root.material.material_uuid}",
-                        operation="delete_material",
-                        payload=value,
+                        effect_key=f"virtual-reset:create:{preset_id}",
+                        operation="create_material_tree",
+                        payload=tree,
                         timestamp=timestamp,
                     ),
-                    value,
+                    tree,
                 )
-                deleted += 1
-
-            tree = self._tree(preset, request_uuid, timestamp)
-            result = self.materials.create_tree(
-                self._mutation(
-                    request_uuid,
-                    effect_key=f"virtual-reset:create:{preset_id}",
-                    operation="create_material_tree",
-                    payload=tree,
-                    timestamp=timestamp,
-                ),
-                tree,
-            )
-            state = self.current_state()
-            if state.root_material_uuid != result.data.root_material_uuid:
-                raise MaterialConflictError(
-                    "virtual environment state was replaced concurrently"
+                state = self.current_state()
+                if state.root_material_uuid != result.data.root_material_uuid:
+                    raise MaterialConflictError(
+                        "virtual environment state was replaced concurrently"
+                    )
+                return VirtualEnvironmentResetResult(
+                    deleted_root_count=deleted,
+                    state=state,
                 )
-            return VirtualEnvironmentResetResult(
-                deleted_root_count=deleted,
-                state=state,
-            )
 
 
 __all__ = ["PRESETS", "VirtualEnvironmentService"]

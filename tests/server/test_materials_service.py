@@ -26,6 +26,7 @@ from unilabos.server.services.materials import (
     MaterialConflictError,
     MaterialsService,
 )
+from unilabos.server.services.virtual_environment import VirtualEnvironmentService
 
 
 def _mutation(operation: str, *, command_uuid: str | None = None, **values):
@@ -59,6 +60,73 @@ def test_repository_serializes_reads_with_an_open_write_transaction(tmp_path) ->
             assert reader.result(timeout=5) == []
     finally:
         release_writer.set()
+        repository.close()
+
+
+def test_virtual_reseed_and_service_projection_share_connection_boundary(
+    tmp_path, monkeypatch
+) -> None:
+    repository = MaterialsRepository(tmp_path / "concurrent-reseed.db")
+    service = MaterialsService(repository)
+    virtual_environments = VirtualEnvironmentService(service)
+    reseed_applied = threading.Event()
+    release_reseed = threading.Event()
+
+    virtual_environments.reset("organic", request_uuid=str(uuid4()))
+    biology_request = str(uuid4())
+    biology_resource_id = (
+        "openlab-demo:biology:"
+        f"{biology_request.replace('-', '')[:12]}:bench"
+    )
+    original_create_tree = service.create_tree
+
+    def create_tree_then_hold_transaction(*args, **kwargs):
+        result = original_create_tree(*args, **kwargs)
+        reseed_applied.set()
+        assert release_reseed.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(service, "create_tree", create_tree_then_hold_transaction)
+
+    def read_and_update_projection():
+        aggregate = service.get_material_by_resource_id(biology_resource_id)
+        value = MaterialDataWrite(
+            data={**aggregate.data.data, "projection_touch": True},
+            substances=aggregate.data.substances,
+            sites_initialized=aggregate.data.sites_initialized,
+            unknown_counter=aggregate.data.unknown_counter,
+            state_status=aggregate.data.state_status,
+            observed_at_ms=aggregate.data.observed_at_ms + 1,
+        )
+        return service.put_data(
+            _mutation("put_data"),
+            aggregate.material.material_uuid,
+            value,
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            writer = executor.submit(
+                virtual_environments.reset,
+                "biology",
+                request_uuid=biology_request,
+            )
+            assert reseed_applied.wait(timeout=5)
+            reader = executor.submit(read_and_update_projection)
+            with pytest.raises(FutureTimeout):
+                reader.result(timeout=0.1)
+
+            release_reseed.set()
+            reset_result = writer.result(timeout=5)
+            update_result = reader.result(timeout=5)
+
+        assert reset_result.state.preset_id == "biology"
+        assert reset_result.state.active_material_count == 7
+        assert update_result.data.data.data["projection_touch"] is True
+        assert virtual_environments.current_state().preset_id == "biology"
+        assert len(service.list_materials()) == 7
+    finally:
+        release_reseed.set()
         repository.close()
 
 

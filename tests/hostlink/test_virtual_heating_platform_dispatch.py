@@ -10,6 +10,7 @@ from unilabos.config.config import BasicConfig
 from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
 from unilabos.hostlink.backend import HostLinkBackend
 from unilabos.hostlink.execution_adapter import HostLinkExecutionAdapter
+from unilabos.server.protocol.materials import MaterialMove
 from unilabos.server.scheduler.execution_queue import QueueItem
 from unilabos.server.database.repositories.materials import MaterialsRepository
 from unilabos.server.scheduler.backend import JobExecutionBackend
@@ -56,6 +57,76 @@ def _item(device_id: str, action_name: str) -> QueueItem:
         device_action_key=f"/devices/{device_id}/{action_name}",
         node_id=str(uuid.uuid4()),
     )
+
+
+def test_restart_reclaims_foreign_demo_sample_from_owned_site(tmp_path) -> None:
+    service = MaterialsService(MaterialsRepository(tmp_path / "materials.db"))
+    set_materials_gateway(LocalMaterialsClient(service))
+    source = VirtualHeatingPlatform(device_id="virtual-heater")
+    target = VirtualHeatingPlatform(device_id="virtual-heater-target")
+    try:
+        assert source.initialize() is True
+        assert target.initialize() is True
+
+        source_sample = service.get_material_by_resource_id(
+            "virtual-heater-sample-1"
+        )
+        target_sample = service.get_material_by_resource_id(
+            "virtual-heater-target-sample-3"
+        )
+        target_platform = service.get_material_by_resource_id(
+            "virtual-heater-target"
+        )
+        target_site = next(
+            site for site in target_platform.sites if int(site.site_index) == 3
+        )
+
+        service.move_material(
+            VirtualHeatingPlatform._mutation(
+                "move_material", f"test-unmount-target:{uuid.uuid4()}"
+            ),
+            MaterialMove(material_uuid=target_sample.material.material_uuid),
+        )
+        service.move_material(
+            VirtualHeatingPlatform._mutation(
+                "move_material", f"test-cross-device-transfer:{uuid.uuid4()}"
+            ),
+            MaterialMove(
+                material_uuid=source_sample.material.material_uuid,
+                destination_site_uuid=target_site.site_uuid,
+            ),
+        )
+
+        restarted_target = VirtualHeatingPlatform(
+            device_id="virtual-heater-target"
+        )
+        assert restarted_target.initialize() is True
+
+        refreshed_target = service.get_material_by_resource_id(
+            "virtual-heater-target"
+        )
+        expected_occupants = [
+            service.get_material_by_resource_id(
+                f"virtual-heater-target-sample-{index}"
+            ).material.material_uuid
+            for index in range(1, 4)
+        ]
+        assert [
+            site.occupied_material_uuid
+            for site in sorted(
+                refreshed_target.sites,
+                key=lambda item: int(item.site_index),
+            )
+        ] == expected_occupants
+        assert (
+            service.get_material_by_resource_id(
+                "virtual-heater-sample-1"
+            ).material.parent_material_uuid
+            is None
+        )
+    finally:
+        set_materials_gateway(None)
+        service.repository.close()
 
 
 def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_history(

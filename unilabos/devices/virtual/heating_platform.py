@@ -375,6 +375,38 @@ class VirtualHeatingPlatform:
 
         platform = gateway.get_material(self._platform_uuid)
         sites = sorted(platform.sites, key=lambda item: int(item.site_index))
+
+        # Cross-device demo transfers can leave a source platform's sample on
+        # one of this virtual platform's sites.  The virtual demo provisioner
+        # owns these three sites, so reclaim demo occupants before restoring
+        # the canonical sample layout.  Refuse to displace a non-demo material
+        # so this recovery rule cannot hide an unexpected production payload.
+        for index, (sample, site) in enumerate(zip(samples, sites), start=1):
+            occupant_uuid = site.occupied_material_uuid
+            if (
+                occupant_uuid is None
+                or occupant_uuid == sample.material.material_uuid
+            ):
+                continue
+            occupant = gateway.get_material(occupant_uuid)
+            if occupant.material.meta_data.get("demo") != "openlab-heating":
+                raise RuntimeError(
+                    f"heating site {index} is occupied by non-demo material "
+                    f"{occupant_uuid}"
+                )
+            gateway.move_material(
+                self._mutation(
+                    "move_material",
+                    (
+                        "unmount-unexpected-site-occupant:"
+                        f"{index}:{occupant_uuid}:{uuid4().hex}"
+                    ),
+                ),
+                MaterialMove(material_uuid=occupant_uuid),
+            )
+
+        platform = gateway.get_material(self._platform_uuid)
+        sites = sorted(platform.sites, key=lambda item: int(item.site_index))
         for index, (sample, site) in enumerate(zip(samples, sites), start=1):
             if site.occupied_material_uuid != sample.material.material_uuid:
                 if site.occupied_material_uuid is not None:

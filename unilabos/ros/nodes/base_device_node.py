@@ -36,6 +36,7 @@ from unilabos_msgs.action import SendCmd, StrSingleInput
 from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
 
 from unilabos.config.config import BasicConfig
+from unilabos.device_runtime.action import ActionContext, bind_action_context
 from unilabos.device_runtime.node import DeviceNode
 from unilabos.device_runtime.async_utils import schedule_async_func
 from unilabos.registry.decorators import get_topic_config
@@ -2069,6 +2070,21 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                 ACTION, action_paramtypes = self.get_real_function(self.driver_instance, action_name)
 
             action_kwargs = convert_from_ros_msg_with_mapping(goal, action_value_mapping["goal"])
+            raw_goal_uuid = getattr(getattr(goal_handle, "goal_id", None), "uuid", ())
+            try:
+                goal_action_id = bytes(raw_goal_uuid).hex()
+            except (TypeError, ValueError):
+                goal_action_id = ""
+            action_context = (
+                ActionContext(action_id=goal_action_id)
+                if goal_action_id
+                else ActionContext()
+            )
+            _, action_kwargs = bind_action_context(
+                ACTION,
+                action_kwargs,
+                action_context,
+            )
             self.lab_logger().debug(f"任务 {ACTION.__name__} 接收到原始目标: {str(action_kwargs)[:1000]}")
             self.lab_logger().trace(f"任务 {ACTION.__name__} 接收到原始目标: {action_kwargs}")
             report_action_name = self._resolve_report_action_name(
@@ -2360,7 +2376,11 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
         return execute_callback
 
-    def _execute_driver_command(self, string: str):
+    def _execute_driver_command(
+        self,
+        string: str,
+        action_context: Optional[ActionContext] = None,
+    ):
         try:
             target = json.loads(string)
         except Exception as ex:
@@ -2437,6 +2457,12 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                                     f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
                                 )
                                 raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
+
+            _, function_args = bind_action_context(
+                function,
+                function_args,
+                action_context,
+            )
 
             # todo: 默认反报送
             return function(**function_args)
@@ -2541,7 +2567,11 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         self.lab_logger().warning(f"单物料 list 输入未索引到本地实例，使用装配实例：{getattr(plr, 'name', plr)}")
         return plr
 
-    async def _execute_driver_command_async(self, string: str):
+    async def _execute_driver_command_async(
+        self,
+        string: str,
+        action_context: Optional[ActionContext] = None,
+    ):
         try:
             target = json.loads(string)
         except Exception as ex:
@@ -2628,6 +2658,11 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                                 )
                                 raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
 
+            _, function_args = bind_action_context(
+                function,
+                function_args,
+                action_context,
+            )
             return await function(**function_args)
         except KeyError as ex:
             raise JsonCommandInitError(

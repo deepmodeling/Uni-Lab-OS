@@ -11,6 +11,7 @@ from unilabos.device_runtime.action import (
     ActionCancelled,
     ActionContext,
     DeviceActionRouter,
+    bind_action_context,
 )
 from unilabos.device_runtime.node import (
     BackendCapabilityError,
@@ -32,6 +33,7 @@ __all__ = [
     "DeviceConfigEntry",
     "DeviceDefinition",
     "DeviceActionRouter",
+    "bind_action_context",
     "iter_device_config_entries",
     "ResourceService",
     "resolve_device_definition",

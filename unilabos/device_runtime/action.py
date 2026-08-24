@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -64,9 +65,28 @@ class ActionContext:
             raise ActionCancelled(f"action cancelled: {self.action_id}")
 
 
+def bind_action_context(
+    action: Callable[..., Any],
+    arguments: Optional[Dict[str, Any]] = None,
+    action_context: Optional[ActionContext] = None,
+) -> tuple[ActionContext, Dict[str, Any]]:
+    """按驱动签名注入 backend-neutral ``ActionContext``。"""
+
+    context = action_context or ActionContext()
+    bound_arguments = dict(arguments or {})
+    try:
+        signature = inspect.signature(action)
+    except (TypeError, ValueError):
+        return context, bound_arguments
+    if "action_context" in signature.parameters:
+        bound_arguments.setdefault("action_context", context)
+    return context, bound_arguments
+
+
 __all__ = [
     "ActionCancelled",
     "ActionContext",
     "DeviceActionRouter",
     "FeedbackCallback",
+    "bind_action_context",
 ]

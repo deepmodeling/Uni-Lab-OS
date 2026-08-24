@@ -23,7 +23,7 @@ from typing import (
     get_origin,
 )
 
-from unilabos.device_runtime.action import ActionContext
+from unilabos.device_runtime.action import ActionContext, bind_action_context
 from unilabos.device_runtime.driver_creator import (
     is_workstation_driver,
     normalize_driver_init_kwargs,
@@ -722,9 +722,7 @@ class HostLinkDeviceNode(DeviceNode):
             mapping = {}
         kwargs = self._map_action_arguments(signature, mapping, kwargs)
         kwargs = self._resolve_action_resources(signature, kwargs)
-        context = action_context or ActionContext()
-        if "action_context" in signature.parameters:
-            kwargs.setdefault("action_context", context)
+        context, kwargs = bind_action_context(action, kwargs, action_context)
         return action, context, kwargs, mapping
 
     @staticmethod

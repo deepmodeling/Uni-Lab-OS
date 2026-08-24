@@ -15,6 +15,7 @@ from unilabos.device_runtime import (
     ActionContext,
     BackendCapabilityError,
     DeviceNode,
+    bind_action_context,
 )
 from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.resource_tracker import (
@@ -96,6 +97,29 @@ def test_action_context_carries_feedback_and_cancellation() -> None:
     assert context.is_cancelled is True
     with pytest.raises(ActionCancelled, match="action-1"):
         context.raise_if_cancelled()
+
+
+def test_action_context_binding_matches_both_runtime_adapters() -> None:
+    expected = ActionContext(action_id="job-42")
+
+    def contextual(value: int, action_context: ActionContext) -> str:
+        return f"{action_context.action_id}:{value}"
+
+    def plain(value: int) -> int:
+        return value
+
+    context, arguments = bind_action_context(
+        contextual,
+        {"value": 7},
+        expected,
+    )
+    assert context is expected
+    assert arguments == {"value": 7, "action_context": expected}
+    assert contextual(**arguments) == "job-42:7"
+
+    generated, plain_arguments = bind_action_context(plain, {"value": 7})
+    assert generated.action_id
+    assert plain_arguments == {"value": 7}
 
 
 def test_missing_resource_transport_fails_explicitly() -> None:

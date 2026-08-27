@@ -91,7 +91,9 @@ import {
   currentTaskDispatchReadiness,
   isTaskDispatchPreflightResult,
   preflightTaskDispatch,
+  taskDispatchIssueResolution,
   TaskDispatchPreflightHttpError,
+  type TaskDispatchPreflightIssue,
   type TaskDispatchPreflightResult,
   type TaskDispatchReadiness,
 } from './taskDispatchPreflight';
@@ -2272,6 +2274,32 @@ function App() {
     void mutateTaskWorkspace((version) => taskApiRef.current.advance(taskWorkspacePath, version));
   }, [mutateTaskWorkspace, showCanvasToast, taskWorkspacePath, visibleTaskDispatchReadiness]);
 
+  const inspectTaskDispatchIssue = useCallback((issue: TaskDispatchPreflightIssue) => {
+    if (issue.node_id && nodes.some((node) => node.id === issue.node_id)) {
+      exitTaskTemplateEditing();
+      setNodes((current) => current.map((node) => ({
+        ...node,
+        selected: node.id === issue.node_id,
+      })));
+      setWorkspace('workflow');
+      setCanvasTab('workflow');
+      bumpViewportFit();
+      showCanvasToast(`已定位动作节点：${issue.node_id}`);
+      return;
+    }
+    if (
+      issue.template_id
+      && taskTemplates.some((template) => template.id === issue.template_id)
+    ) {
+      setSelectedTaskTemplateId(issue.template_id);
+      setTaskTemplateDrawerTab('templates');
+      setIsTaskDetailModalOpen(true);
+      showCanvasToast(`已打开 Task 模板：${issue.template_name || issue.template_id}`);
+      return;
+    }
+    showCanvasToast(taskDispatchIssueResolution(issue));
+  }, [bumpViewportFit, exitTaskTemplateEditing, nodes, showCanvasToast, taskTemplates]);
+
   const clearTaskQueue = useCallback(() => {
     if (!taskInstances.length) {
       return;
@@ -3904,6 +3932,7 @@ function App() {
           isTransitioning={isSchedulerTransitioning}
           onAdvance={advanceTaskSchedule}
           onClear={clearTaskQueue}
+          onInspectDispatchIssue={inspectTaskDispatchIssue}
           onResetProgress={resetTaskQueueProgress}
           onRetryDispatchPreflight={retryTaskDispatchPreflight}
           resetProgressDisabled={

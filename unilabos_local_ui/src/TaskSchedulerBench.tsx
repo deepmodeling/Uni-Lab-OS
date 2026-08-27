@@ -11,6 +11,7 @@ import {
   taskDispatchButtonTitle,
   taskDispatchIssueResolution,
   taskDispatchReadinessLabel,
+  type TaskDispatchPreflightIssue,
   type TaskDispatchReadiness,
 } from './taskDispatchPreflight';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
@@ -182,6 +183,7 @@ type Props = {
   onDeleteSelectedTemplates: () => void;
   onToggleRun: () => void;
   onRetryDispatchPreflight: () => void;
+  onInspectDispatchIssue: (issue: TaskDispatchPreflightIssue) => void;
   onAdvance: () => void;
   onSelectTask: (task: Task) => void;
   onUpdateTaskParameters: (
@@ -647,11 +649,18 @@ export function TaskSchedulerBench(props: Props) {
                 <ul>
                   {props.dispatchReadiness.result?.errors.map((issue, index) => (
                     <li key={`${issue.code}:${issue.template_id}:${issue.node_id}:${index}`}>
-                      <code>{issue.code}</code>
-                      <div className="scheduler-bench__dispatch-issue-content">
-                        <span>{issue.message}</span>
-                        <small>处理建议：{taskDispatchIssueResolution(issue)}</small>
-                      </div>
+                      <button
+                        className="scheduler-bench__dispatch-issue"
+                        onClick={() => props.onInspectDispatchIssue(issue)}
+                        title="定位并处理此阻断项"
+                        type="button"
+                      >
+                        <code>{issue.code}</code>
+                        <div className="scheduler-bench__dispatch-issue-content">
+                          <span>{issue.message}</span>
+                          <small>处理建议：{taskDispatchIssueResolution(issue)}</small>
+                        </div>
+                      </button>
                     </li>
                   ))}
                 </ul>

@@ -199,6 +199,16 @@ assert.match(
 );
 assert.match(
   benchSource,
+  /onClick=\{\(\) => props\.onInspectDispatchIssue\(issue\)\}[\s\S]*?定位并处理此阻断项/,
+  '结构化阻断项应提供可点击的定位入口',
+);
+assert.match(
+  mainSource,
+  /inspectTaskDispatchIssue = useCallback[\s\S]*?node\.id === issue\.node_id[\s\S]*?setWorkspace\('workflow'\)[\s\S]*?setCanvasTab\('workflow'\)[\s\S]*?setSelectedTaskTemplateId\(issue\.template_id\)[\s\S]*?setIsTaskDetailModalOpen\(true\)/,
+  '阻断项应优先定位现存画布节点，节点缺失时打开对应 Task 模板',
+);
+assert.match(
+  benchSource,
   /status === 'invalid'[\s\S]*?status === 'unavailable'[\s\S]*?onRetryDispatchPreflight[\s\S]*?重新检查/,
   '预检失败或暂不可用时应提供明确的重新检查入口',
 );

@@ -767,11 +767,32 @@
 }
 
 .scheduler-bench__dispatch-readiness li {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
   color: #7f1d1d;
   font-size: 11px;
+}
+
+.scheduler-bench__dispatch-issue {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 3px 4px;
+  text-align: left;
+}
+
+.scheduler-bench__dispatch-issue:hover,
+.scheduler-bench__dispatch-issue:focus-visible {
+  background: rgba(220, 38, 38, 0.08);
+  outline: none;
+}
+
+.scheduler-bench__dispatch-issue:focus-visible {
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.18);
 }
 
 .scheduler-bench__dispatch-issue-content {

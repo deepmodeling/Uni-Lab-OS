@@ -87,6 +87,12 @@ import {
 } from './taskLogSession';
 import { TASK_EXECUTION_POLL_INTERVAL_MS } from './taskPolling';
 import {
+  currentTaskDispatchReadiness,
+  preflightTaskDispatch,
+  TaskDispatchPreflightHttpError,
+  type TaskDispatchReadiness,
+} from './taskDispatchPreflight';
+import {
   createEmptyTaskTestMemory,
   generateSampleIds,
   loadTaskTestMemory,
@@ -834,6 +840,7 @@ function App() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [workflowName, setWorkflowName] = useState('szlab_canvas_workflow');
   const [workflow, setWorkflow] = useState<WorkflowJson | null>(null);
+  const [builtWorkflowSemanticKey, setBuiltWorkflowSemanticKey] = useState('');
   const [message, setMessage] = useState('');
   const [canvasToast, setCanvasToast] = useState('');
   const [draftReady, setDraftReady] = useState(false);
@@ -912,6 +919,10 @@ function App() {
   const [taskExecutionStatus, setTaskExecutionStatus] = useState<TaskExecutionStatus>(
     createTaskExecutionStatus(),
   );
+  const [taskDispatchReadiness, setTaskDispatchReadiness] = useState<TaskDispatchReadiness>({
+    status: 'stale',
+    key: '',
+  });
   const [showOpcSimulatorDialog, setShowOpcSimulatorDialog] = useState(false);
   const [showOpcSimulatorReferenceDialog, setShowOpcSimulatorReferenceDialog] = useState(false);
   const [showOpcSimulatorSpecDialog, setShowOpcSimulatorSpecDialog] = useState(false);
@@ -1176,6 +1187,56 @@ function App() {
   const opcChanges = useMemo(() => collectOpcChanges(logEvents), [logEvents]);
   const draftKey = useMemo(() => workflowDraftKey(workflowName, nodes, edges), [workflowName, nodes, edges]);
   const executionPlan = useMemo(() => createExecutionPlan(nodes, edges, startNodeId), [edges, nodes, startNodeId]);
+  const taskWorkflowSemanticKey = useMemo(() => JSON.stringify({
+    name: workflowName,
+    startNodeId: executionPlan.startNodeId,
+    nodes: executionPlan.executableNodes.map((node) => ({
+      id: node.id,
+      deviceId: node.data.deviceId,
+      method: node.data.method,
+      params: node.data.params,
+      opcVariables: node.data.opcVariables,
+    })),
+    edges: executionPlan.executableEdges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+    })),
+  }), [executionPlan, workflowName]);
+  const hasTaskWorkspaceVersion = taskWorkspaceVersion !== null;
+  const taskDispatchPreflightKey = useMemo(() => JSON.stringify({
+    workflowPath: taskWorkspacePath,
+    taskWorkflowSemanticKey,
+    builtWorkflowSemanticKey,
+    workflow,
+    templates: taskTemplates.map((template) => ({
+      id: template.id,
+      nodeIds: template.nodeIds,
+    })),
+    scheduledTemplateIds,
+    instances: taskInstances.map((instance) => ({
+      id: instance.id,
+      templateId: instance.templateId,
+      status: instance.status,
+      executionCursor: instance.executionCursor,
+    })),
+    opcConnected: Boolean(taskOpcStatus?.connected),
+  }), [
+    builtWorkflowSemanticKey,
+    scheduledTemplateIds,
+    taskInstances,
+    taskOpcStatus?.connected,
+    taskTemplates,
+    taskWorkspacePath,
+    taskWorkflowSemanticKey,
+    workflow,
+  ]);
+  const visibleTaskDispatchReadiness = useMemo(
+    () => currentTaskDispatchReadiness(
+      taskDispatchReadiness,
+      taskDispatchPreflightKey,
+    ),
+    [taskDispatchPreflightKey, taskDispatchReadiness],
+  );
   const renderedEdges = useMemo(() => {
     const executableEdgeEndpoints = new Set(
       executionPlan.executableEdges.map((edge) => JSON.stringify([edge.source, edge.target])),
@@ -2344,6 +2405,7 @@ function App() {
     if (!executionPlan.executableNodes.length) {
       throw new Error('当前没有可执行节点，请调整起始节点或禁用状态');
     }
+    const semanticKey = taskWorkflowSemanticKey;
     const request = createWorkflowRequest(workflowName, executionPlan.executableNodes, executionPlan.executableEdges);
     const response = await fetch('/api/workflow/build-graph', {
       method: 'POST',
@@ -2355,9 +2417,10 @@ function App() {
       throw new Error(payload.detail || '生成 workflow 失败');
     }
     setWorkflow(payload);
+    setBuiltWorkflowSemanticKey(semanticKey);
     setMessage('');
     return payload as WorkflowJson;
-  }, [executionPlan.executableEdges, executionPlan.executableNodes, workflowName]);
+  }, [executionPlan.executableEdges, executionPlan.executableNodes, taskWorkflowSemanticKey, workflowName]);
 
   const generateOpcSimulatorProfile = useCallback(async () => {
     if (opcSimulatorGenerateInFlightRef.current) return;
@@ -3107,6 +3170,103 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [draftKey, nodes.length, startNodeId]);
 
+  useEffect(() => {
+    if (workspace !== 'tasks') return;
+    const key = taskDispatchPreflightKey;
+    if (isSchedulerRunning || isTaskExecutionDraining) {
+      setTaskDispatchReadiness({
+        status: 'stale',
+        key,
+        message: '调度运行中，暂停后将重新验证派发条件',
+      });
+      return;
+    }
+    if (isTaskWorkspaceLoading || !hasTaskWorkspaceVersion) {
+      setTaskDispatchReadiness({
+        status: 'stale',
+        key,
+        message: '等待 Task 工作区加载完成',
+      });
+      return;
+    }
+    if (!workflow || builtWorkflowSemanticKey !== taskWorkflowSemanticKey) {
+      setTaskDispatchReadiness({
+        status: 'stale',
+        key,
+        message: '等待当前流程构建完成',
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    setTaskDispatchReadiness({ status: 'validating', key });
+    const timer = window.setTimeout(() => {
+      const run = async () => {
+        let expectedVersion = taskWorkspaceVersionRef.current;
+        if (expectedVersion === null) return;
+        try {
+          let result;
+          try {
+            result = await preflightTaskDispatch({
+              workflowPath: taskWorkspacePath,
+              expectedVersion,
+              workflow: workflow as Record<string, unknown>,
+              signal: controller.signal,
+            });
+          } catch (error) {
+            if (!(error instanceof TaskDispatchPreflightHttpError) || error.status !== 409) {
+              throw error;
+            }
+            const latest = await taskApiRef.current.getWorkspace(
+              taskWorkspacePath,
+              controller.signal,
+            );
+            expectedVersion = latest.version;
+            result = await preflightTaskDispatch({
+              workflowPath: taskWorkspacePath,
+              expectedVersion,
+              workflow: workflow as Record<string, unknown>,
+              signal: controller.signal,
+            });
+            if (!controller.signal.aborted) applyTaskWorkspace(latest);
+          }
+          if (controller.signal.aborted) return;
+          setTaskDispatchReadiness({
+            status: result.valid ? 'ready' : 'invalid',
+            key,
+            result,
+          });
+        } catch (error) {
+          if (
+            controller.signal.aborted
+            || (error instanceof DOMException && error.name === 'AbortError')
+          ) return;
+          setTaskDispatchReadiness({
+            status: 'unavailable',
+            key,
+            message: error instanceof Error ? error.message : '派发预检失败',
+          });
+        }
+      };
+      void run();
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    applyTaskWorkspace,
+    builtWorkflowSemanticKey,
+    hasTaskWorkspaceVersion,
+    isSchedulerRunning,
+    isTaskExecutionDraining,
+    isTaskWorkspaceLoading,
+    taskDispatchPreflightKey,
+    taskWorkspacePath,
+    taskWorkflowSemanticKey,
+    workspace,
+  ]);
+
   const runWorkflow = async () => {
     try {
       const builtWorkflow = await buildWorkflow();
@@ -3640,6 +3800,7 @@ function App() {
       {workspace === 'tasks' && (
         <TaskSchedulerBench
           environment={taskExecutionEnvironment}
+          dispatchReadiness={visibleTaskDispatchReadiness}
           events={taskEvents}
           isRunning={isSchedulerRunning}
           isTransitioning={isSchedulerTransitioning}

@@ -6,6 +6,10 @@ import {
   stripAutomaticallyManagedActionParameters,
 } from './automaticActionParameters';
 import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
+import {
+  taskDispatchReadinessLabel,
+  type TaskDispatchReadiness,
+} from './taskDispatchPreflight';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import {
   countTaskErrorStates,
@@ -155,6 +159,7 @@ type Props = {
   rememberedParameterCount: number;
   isRunning: boolean;
   isTransitioning: boolean;
+  dispatchReadiness: TaskDispatchReadiness;
   environment: 'simulated' | 'real';
   selectedTaskId: string | null;
   onSampleCountChange: (value: number) => void;
@@ -364,6 +369,17 @@ export function TaskSchedulerBench(props: Props) {
   const editingS09Parameters = editingNodes.some((node) => node.method === 'add_liquid_with_reusable_tip');
   const allTemplatesSelected = props.templates.length > 0
     && props.templates.every((template) => props.scheduledTemplateIds.includes(template.id));
+  const dispatchReadinessDescription = props.dispatchReadiness.message || (
+    props.dispatchReadiness.status === 'validating'
+      ? '正在核对 Task 模板、可执行流程、设备和动作。'
+      : props.dispatchReadiness.status === 'ready'
+        ? '当前 Task 与可执行 workflow 匹配。'
+        : props.dispatchReadiness.status === 'invalid'
+          ? '请修复以下阻断项后重新派发。'
+          : props.dispatchReadiness.status === 'unavailable'
+            ? '暂时无法确认当前流程是否可以安全派发。'
+            : '流程或 Task 内容变化后会自动重新验证。'
+  );
 
   React.useEffect(() => {
     if (isFollowingLogs && logContainerRef.current) {
@@ -570,6 +586,32 @@ export function TaskSchedulerBench(props: Props) {
                 </button>
                 <button className="scheduler-btn scheduler-btn--danger" onClick={props.onClear} type="button">清空队列</button>
               </div>
+            </div>
+            <div
+              aria-live="polite"
+              className={`scheduler-bench__dispatch-readiness ${props.dispatchReadiness.status}`}
+              role={props.dispatchReadiness.status === 'invalid' ? 'alert' : 'status'}
+            >
+              <div>
+                <i aria-hidden="true" />
+                <span>
+                  <strong>{taskDispatchReadinessLabel(props.dispatchReadiness)}</strong>
+                  <small>{dispatchReadinessDescription}</small>
+                </span>
+              </div>
+              {Boolean(props.dispatchReadiness.result?.errors.length) && (
+                <ul>
+                  {props.dispatchReadiness.result?.errors.map((issue, index) => (
+                    <li key={`${issue.code}:${issue.template_id}:${issue.node_id}:${index}`}>
+                      <code>{issue.code}</code>
+                      <span>{issue.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {Boolean(props.dispatchReadiness.result?.warnings.length) && (
+                <p>另有 {props.dispatchReadiness.result?.warnings.length} 项警告，不阻止派发。</p>
+              )}
             </div>
             <div className="scheduler-bench__queue-wrap">
             <table className="scheduler-bench__queue"><thead><tr><th>样品</th><th>当前 Task</th><th>状态</th><th>等待原因</th></tr></thead><tbody>{props.tasks.map((task) => {

@@ -642,6 +642,125 @@
   gap: 6px;
 }
 
+.scheduler-bench__dispatch-readiness {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+  color: #475569;
+  padding: 9px 16px;
+}
+
+.scheduler-bench__dispatch-readiness > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.scheduler-bench__dispatch-readiness i {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 0 3px #e2e8f0;
+}
+
+.scheduler-bench__dispatch-readiness span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.scheduler-bench__dispatch-readiness strong {
+  color: #334155;
+  font-size: 12px;
+}
+
+.scheduler-bench__dispatch-readiness small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.scheduler-bench__dispatch-readiness.validating {
+  background: var(--blue-bg);
+}
+
+.scheduler-bench__dispatch-readiness.validating i {
+  background: var(--blue);
+  box-shadow: 0 0 0 3px #dbeafe;
+  animation: scheduler-readiness-pulse 900ms ease-in-out infinite alternate;
+}
+
+.scheduler-bench__dispatch-readiness.ready {
+  background: var(--green-bg);
+}
+
+.scheduler-bench__dispatch-readiness.ready i {
+  background: var(--green);
+  box-shadow: 0 0 0 3px #dcfce7;
+}
+
+.scheduler-bench__dispatch-readiness.ready strong { color: #166534; }
+
+.scheduler-bench__dispatch-readiness.invalid {
+  background: var(--red-bg);
+}
+
+.scheduler-bench__dispatch-readiness.invalid i {
+  background: var(--red);
+  box-shadow: 0 0 0 3px #fee2e2;
+}
+
+.scheduler-bench__dispatch-readiness.invalid strong { color: #991b1b; }
+
+.scheduler-bench__dispatch-readiness.unavailable {
+  background: var(--amber-bg);
+}
+
+.scheduler-bench__dispatch-readiness.unavailable i {
+  background: var(--amber);
+  box-shadow: 0 0 0 3px #fef3c7;
+}
+
+.scheduler-bench__dispatch-readiness.unavailable strong { color: #92400e; }
+
+.scheduler-bench__dispatch-readiness ul {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.scheduler-bench__dispatch-readiness li {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  color: #7f1d1d;
+  font-size: 11px;
+}
+
+.scheduler-bench__dispatch-readiness code {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: rgba(220, 38, 38, 0.09);
+  color: #991b1b;
+  padding: 1px 4px;
+  font-size: 10px;
+}
+
+.scheduler-bench__dispatch-readiness p {
+  margin: 6px 0 0 18px;
+  color: #92400e;
+  font-size: 10px;
+}
+
+@keyframes scheduler-readiness-pulse {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+
 .scheduler-bench table { width: 100%; border-collapse: collapse; }
 
 .scheduler-bench__queue-wrap {

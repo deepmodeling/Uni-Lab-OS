@@ -135,10 +135,27 @@ def iter_opc_wait_logs(*sources: Any) -> list[dict[str, Any]]:
             for item in drain() or []:
                 if not isinstance(item, dict):
                     continue
-                message = item.get("message")
-                if message:
-                    entries.append({"message": str(message), "detail": item.get("detail") or {}})
+                entry = _normalize_opc_wait_log(item)
+                if entry is not None:
+                    entries.append(entry)
     return entries
+
+
+def _normalize_opc_wait_log(event: dict[str, Any]) -> dict[str, Any] | None:
+    message = event.get("message")
+    if not message:
+        return None
+    detail = dict(event.get("detail") or {})
+    if event.get("phase") and not detail.get("phase"):
+        detail["phase"] = event["phase"]
+    level = str(event.get("level") or "info").strip().lower()
+    if (
+        detail.get("type") == "opc_wait"
+        and detail.get("phase") == "finish"
+        and detail.get("success") is False
+    ):
+        level = "error"
+    return {"message": str(message), "level": level, "detail": detail}
 
 
 def bind_opc_wait_logger(logger: WorkflowLogger, *sources: Any) -> Callable[[], None]:
@@ -147,9 +164,13 @@ def bind_opc_wait_logger(logger: WorkflowLogger, *sources: Any) -> Callable[[], 
     def write_wait_event(event: dict[str, Any]) -> None:
         if not isinstance(event, dict):
             return
-        message = event.get("message")
-        if message:
-            logger.log(str(message), detail=event.get("detail") or {})
+        entry = _normalize_opc_wait_log(event)
+        if entry is not None:
+            logger.log(
+                entry["message"],
+                level=entry["level"],
+                detail=entry["detail"],
+            )
 
     seen_source_ids: set[int] = set()
     for source in sources:
@@ -255,9 +276,96 @@ def snapshot_opc_state(plc: Any, variable_names: list[str]) -> dict[str, Any]:
     if not variable_names:
         return {}
     try:
-        return plc.get_variables(variable_names, use_cache=False)
+        snapshot = plc.get_variables(variable_names, use_cache=False)
     except Exception as exc:
-        return {name: {"success": False, "error": str(exc)} for name in variable_names}
+        message = str(exc).strip() or exc.__class__.__name__
+        return {
+            name: {
+                "success": False,
+                "error": message,
+                "exception_type": exc.__class__.__name__,
+            }
+            for name in variable_names
+        }
+    if isinstance(snapshot, dict):
+        return snapshot
+    return {
+        name: {
+            "success": False,
+            "error": f"变量读取接口返回无效类型: {type(snapshot).__name__}",
+        }
+        for name in variable_names
+    }
+
+
+def opc_snapshot_failures(
+    snapshot: dict[str, Any],
+    variable_names: list[str] | None = None,
+    *,
+    plc: Any = None,
+) -> list[dict[str, Any]]:
+    """提取 OPC 快照中的明确读取失败，并保留变量定位信息。"""
+    failures: list[dict[str, Any]] = []
+    names = variable_names if variable_names is not None else list(snapshot)
+    for name in names:
+        item = snapshot.get(name)
+        if name not in snapshot:
+            error = "读取结果未返回该变量"
+            exception_type = ""
+        elif not isinstance(item, dict):
+            continue
+        elif item.get("success") is not False and "value" in item:
+            continue
+        else:
+            error = str(
+                item.get("error") or item.get("message") or "变量读取失败"
+            )
+            exception_type = str(item.get("exception_type") or "")
+        try:
+            display_name, node_id = get_opc_variable_metadata(plc, name)
+        except Exception:
+            display_name, node_id = name, None
+        failure = {
+            "name": name,
+            "display_name": display_name,
+            "node_id": node_id,
+            "error": error,
+        }
+        if exception_type:
+            failure["exception_type"] = exception_type
+        failures.append(failure)
+    return failures
+
+
+def log_opc_snapshot_failures(
+    logger: WorkflowLogger,
+    snapshot: dict[str, Any],
+    variable_names: list[str],
+    *,
+    phase: str,
+    plc: Any = None,
+) -> list[dict[str, Any]]:
+    failures = opc_snapshot_failures(snapshot, variable_names, plc=plc)
+    if not failures:
+        return []
+    phase_label = {
+        "sampling_before": "动作前",
+        "sampling_live": "动作中",
+        "sampling_after": "动作后",
+    }.get(phase, phase)
+    logger.log(
+        f"OPC 状态读取失败（{phase_label}）："
+        f"{len(failures)}/{len(variable_names)} 个变量失败",
+        level="error",
+        detail={
+            "type": "opc_snapshot_read_failed",
+            "phase": phase,
+            "failed_count": len(failures),
+            "variable_count": len(variable_names),
+            "failures": failures,
+        },
+    )
+    return failures
 
 
 def format_opc_variable_label(plc: Any, variable_name: str) -> str:
@@ -675,6 +783,13 @@ def run_nodes(
                 f"OPC状态采样: {len(before)} 个变量",
                 detail={"before": format_snapshot_detail(before, snapshot_client)},
             )
+        log_opc_snapshot_failures(
+            logger,
+            before,
+            snapshot_variables,
+            phase="sampling_before",
+            plc=snapshot_client,
+        )
         unbind_wait_logger = bind_opc_wait_logger(logger, default_plc, device, snapshot_client)
         try:
             result = getattr(device, method_name)(**node.param)
@@ -687,13 +802,24 @@ def run_nodes(
                 f"OPC状态变化: {len(diff_detail['changes'])}/{len(before)} 个变量变化",
                 detail=diff_detail,
             )
+        log_opc_snapshot_failures(
+            logger,
+            after,
+            snapshot_variables,
+            phase="sampling_after",
+            plc=snapshot_client,
+        )
         for action_log in iter_action_logs(result):
             logger.log(
                 action_log["message"],
                 detail={"node_uuid": node.uuid, "action_log": action_log.get("detail")},
             )
         for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
-            logger.log(wait_log["message"], detail=wait_log.get("detail"))
+            logger.log(
+                wait_log["message"],
+                level=wait_log.get("level", "info"),
+                detail=wait_log.get("detail"),
+            )
         if isinstance(result, dict) and result.get("display_message"):
             logger.log(str(result["display_message"]))
         failure = find_action_failure(result)

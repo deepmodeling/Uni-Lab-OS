@@ -102,6 +102,23 @@ def test_task_execution_log_contract_prefers_structured_fields_and_maps_legacy_l
         "phase": "finish",
     }
 
+    failed_opc_wait = workflow_ui._task_execution_log_contract(
+        "OPC 变量等待完成 ready == True: success=False, error=offline",
+        level="info",
+        detail={
+            "type": "opc_wait",
+            "phase": "finish",
+            "success": False,
+            "error": "offline",
+        },
+    )
+    assert failed_opc_wait == {
+        "category": "opc",
+        "level": "error",
+        "code": "opc_wait_read_failed",
+        "phase": "finish",
+    }
+
     legacy_error = workflow_ui._task_execution_log_contract(
         "节点执行失败: timeout",
         level="info",
@@ -2268,6 +2285,68 @@ def test_run_node_with_live_opc_sampling_emits_opc_wait_events(tmp_path):
     assert wait_events[1]["detail"]["phase"] == "finish"
 
 
+def test_run_node_with_live_opc_sampling_marks_failed_wait_as_error():
+    class FailedWaitDevice:
+        def run(self):
+            return {"success": True}
+
+        @staticmethod
+        def drain_opc_wait_events():
+            return [
+                {
+                    "phase": "finish",
+                    "message": (
+                        "OPC 变量等待完成 ready == True: "
+                        "success=False, last_value=None, error=offline"
+                    ),
+                    "detail": {
+                        "type": "opc_wait",
+                        "phase": "finish",
+                        "variable": "ready",
+                        "expected": True,
+                        "success": False,
+                        "last_value": None,
+                        "error": "offline",
+                    },
+                }
+            ]
+
+    device = FailedWaitDevice()
+    events = []
+    runtime_config = run_workflow_local.RuntimeConfig(
+        path=Path("runtime.json"),
+        device_factory=run_workflow_local.RuntimeDeviceFactoryConfig(),
+        opc_snapshot=run_workflow_local.RuntimeOpcSnapshotConfig(),
+    )
+
+    _run_node_with_live_opc_sampling(
+        WorkflowNode(
+            uuid="failed-wait",
+            name="run",
+            device_name="device",
+            method="run",
+            param={},
+            legacy_route_compatible=False,
+        ),
+        {"device": device},
+        action_callable=device.run,
+        logger=WorkflowLogger(
+            writer=lambda message, **kwargs: events.append(
+                {"message": message, **kwargs}
+            )
+        ),
+        runtime_config=runtime_config,
+    )
+
+    failed_wait = next(
+        event
+        for event in events
+        if (event.get("detail") or {}).get("type") == "opc_wait"
+    )
+    assert failed_wait["level"] == "error"
+    assert failed_wait["detail"]["success"] is False
+
+
 def test_run_node_with_live_opc_sampling_emits_nested_client_wait_events(tmp_path):
     config_path = tmp_path / "runtime.json"
     config_path.write_text(
@@ -2640,12 +2719,17 @@ def test_task_opc_connect_distributes_registry_without_reading_all_plc_variables
     assert distributions == [({"szlab_poly_plc": fake_plc}, "task-flow.json", False)]
 
 
-def test_task_opc_connect_returns_clear_backend_failure(monkeypatch):
+def test_task_opc_connect_returns_clear_backend_failure(monkeypatch, tmp_path):
     def fail_connect(self, **_kwargs):
         raise ValueError("PLC 连接失败：认证被拒绝")
 
     monkeypatch.setattr(WorkflowRunManager, "connect_task_opc", fail_connect)
-    app = create_app("stack_s05_s06")
+    app = create_app(
+        "stack_s05_s06",
+        run_history_store=RunHistoryStore(
+            tmp_path, session_id="opc-connect-error"
+        ),
+    )
     endpoint = next(
         route.endpoint
         for route in app.routes
@@ -2671,6 +2755,15 @@ def test_task_opc_connect_returns_clear_backend_failure(monkeypatch):
             "registered_variables": [],
         },
     }
+    get_logs = _route_endpoint(app, "/api/task-execution/logs", "GET")
+    entries = asyncio.run(
+        get_logs(task_workspace_path="task-flow.json")
+    )["entries"]
+    assert len(entries) == 1
+    assert entries[0]["category"] == "opc"
+    assert entries[0]["level"] == "error"
+    assert entries[0]["code"] == "opc_connection_failed"
+    assert entries[0]["phase"] == "connecting"
 
 
 def test_task_opc_poll_delegates_to_manager(monkeypatch):

@@ -91,9 +91,11 @@ from scripts.run_workflow_local import (
     ignore_opcua_token_time_drift,
     iter_action_logs,
     iter_opc_wait_logs,
+    log_opc_snapshot_failures,
     load_workflow_nodes,
     load_runtime_config,
     node_method,
+    opc_snapshot_failures,
     route_node_device,
     run_nodes,
     snapshot_opc_state,
@@ -839,20 +841,33 @@ def _task_execution_log_contract(
     detail_type = detail.get("type") if isinstance(detail, dict) else None
     has_result = isinstance(detail, dict) and "result" in detail
     result_failure = find_action_failure(detail["result"]) if has_result else None
+    opc_wait_failure = False
+    if isinstance(detail, dict):
+        opc_wait_failure = (
+            detail_type == "opc_wait"
+            and detail.get("phase") == "finish"
+            and detail.get("success") is False
+        )
     if result_failure is not None and not category:
         inferred_category = "result"
         normalized_level = "error"
-    inferred_code = (
-        "action_returned_failure"
-        if result_failure is not None
-        else str(detail_type)
-        if isinstance(detail_type, str) and detail_type.strip()
-        else {
+    if opc_wait_failure and not category:
+        inferred_category = "opc"
+        normalized_level = "error"
+    if result_failure is not None:
+        inferred_code = "action_returned_failure"
+    elif opc_wait_failure:
+        inferred_code = (
+            "opc_wait_read_failed" if detail.get("error") else "opc_wait_failed"
+        )
+    elif isinstance(detail_type, str) and detail_type.strip():
+        inferred_code = str(detail_type)
+    else:
+        inferred_code = {
             "action_result": "action_result",
             "error": "action_log_error",
             "node": "action_log",
         }.get(inferred, inferred)
-    )
     detail_phase = detail.get("phase") if isinstance(detail, dict) else None
     return {
         "category": str(category or inferred_category).strip().lower(),
@@ -926,18 +941,43 @@ def _run_node_with_live_opc_sampling(
             f"OPC状态采样: {len(before)} 个变量",
             detail={"before": format_snapshot_detail(before, snapshot_client)},
         )
+    log_opc_snapshot_failures(
+        logger,
+        before,
+        snapshot_variables,
+        phase="sampling_before",
+        plc=snapshot_client,
+    )
 
     stop_sampling = threading.Event()
     last_snapshot = dict(before)
-    sampling_errors: list[Exception] = []
+    active_live_failure_signature: tuple[tuple[str, str], ...] = ()
     skip_parallel_sampling = (
         bool(runtime_config.device_factory.devices) and snapshot_client is device
     )
 
     def sample_live_changes() -> None:
-        nonlocal last_snapshot
+        nonlocal active_live_failure_signature, last_snapshot
         while not stop_sampling.wait(sample_interval):
             current = snapshot_opc_state(snapshot_client, snapshot_variables)
+            failures = opc_snapshot_failures(
+                current,
+                snapshot_variables,
+                plc=snapshot_client,
+            )
+            failure_signature = tuple(
+                (str(item.get("name") or ""), str(item.get("error") or ""))
+                for item in failures
+            )
+            if failure_signature and failure_signature != active_live_failure_signature:
+                log_opc_snapshot_failures(
+                    logger,
+                    current,
+                    snapshot_variables,
+                    phase="sampling_live",
+                    plc=snapshot_client,
+                )
+            active_live_failure_signature = failure_signature
             diff_detail = build_snapshot_diff_detail(
                 last_snapshot, current, plc=snapshot_client
             )
@@ -989,15 +1029,24 @@ def _run_node_with_live_opc_sampling(
             f"OPC状态变化: {len(diff_detail['changes'])}/{len(before)} 个变量变化",
             detail=diff_detail,
         )
-    if sampling_errors:
-        logger.log(f"OPC实时采样异常: {sampling_errors[-1]}", level="warning")
+    log_opc_snapshot_failures(
+        logger,
+        after,
+        snapshot_variables,
+        phase="sampling_after",
+        plc=snapshot_client,
+    )
     for action_log in iter_action_logs(result):
         logger.log(
             action_log["message"],
             detail={"action_log": action_log.get("detail")},
         )
     for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
-        logger.log(wait_log["message"], detail=wait_log.get("detail"))
+        logger.log(
+            wait_log["message"],
+            level=wait_log.get("level", "info"),
+            detail=wait_log.get("detail"),
+        )
     failure = find_action_failure(result)
     if isinstance(result, dict):
         status_text = "成功" if failure is None else "失败"
@@ -1057,6 +1106,9 @@ class WorkflowRunManager:
         self._task_action_log_store = TaskActionLogStore()
         self._active_scheduler_error_keys: dict[
             str, set[tuple[str, str, str, str, str]]
+        ] = {}
+        self._active_opc_error_keys: dict[
+            tuple[str, str], tuple[str, str]
         ] = {}
         self._run_history_store = run_history_store or RunHistoryStore()
         self._task_execution_coordinator = TaskExecutionCoordinator(
@@ -1126,9 +1178,13 @@ class WorkflowRunManager:
             )
         ):
             try:
+                error_category = {
+                    "schedule": "scheduler_error",
+                    "opc": "opc_error",
+                }.get(contract["category"], "action_error")
                 self._run_history_store.record_incident(
                     category=(
-                        "action_error"
+                        error_category
                         if normalized_level in {"error", "critical"}
                         else "action_alarm"
                     ),
@@ -1144,6 +1200,8 @@ class WorkflowRunManager:
                     sample_id=str(context.get("sample_id") or ""),
                     node_id=str(context.get("node_id") or ""),
                     execution_id=str(context.get("execution_id") or ""),
+                    device_id=str(context.get("device_id") or ""),
+                    action_name=str(context.get("action_name") or ""),
                     phase=contract["phase"] or "动作执行中",
                     detail=detail,
                 )
@@ -1324,6 +1382,45 @@ class WorkflowRunManager:
                 },
                 record_incident=False,
             )
+
+    def _update_task_opc_error(
+        self,
+        *,
+        workflow_path: str,
+        operation: str,
+        code: str = "",
+        message: str = "",
+        phase: str = "polling",
+        device_id: str = "",
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """发布 OPC 错误状态；同一操作连续失败时只写一次。"""
+        state_key = (workflow_path, operation)
+        error_key = (str(code or ""), str(message or ""))
+        with self._lock:
+            previous = self._active_opc_error_keys.get(state_key)
+            if not code:
+                self._active_opc_error_keys.pop(state_key, None)
+                return
+            if previous == error_key:
+                return
+            self._active_opc_error_keys[state_key] = error_key
+        self._append_task_action_log(
+            {
+                "workflow_path": workflow_path,
+                "device_id": device_id,
+            },
+            message or code,
+            level="error",
+            category="opc",
+            code=code,
+            phase=phase,
+            detail={
+                "type": code,
+                "operation": operation,
+                **(detail or {}),
+            },
+        )
 
     def list_task_action_logs(
         self,
@@ -1627,7 +1724,6 @@ class WorkflowRunManager:
         workflow_path: str,
     ) -> dict[str, Any]:
         """通过既有 PLC 设备工厂连接 Task 页面请求的 OPC runtime。"""
-        del workflow_path
         normalized_url = opcua_url.strip()
         if not normalized_url:
             raise ValueError("请填写 OPC UA URL")
@@ -1656,17 +1752,42 @@ class WorkflowRunManager:
             str(csv_path or ""),
             no_subscription,
         )
-        return self._get_or_create_devices(
-            device_key,
-            {
-                "graph_file": graph_file,
-                "opcua_url": normalized_url,
-                "csv_path": csv_path,
-                "use_subscription": False if no_subscription else None,
-                "runtime_config": self._runtime_config,
-            },
-            lambda message: None,
+        try:
+            devices = self._get_or_create_devices(
+                device_key,
+                {
+                    "graph_file": graph_file,
+                    "opcua_url": normalized_url,
+                    "csv_path": csv_path,
+                    "use_subscription": False if no_subscription else None,
+                    "runtime_config": self._runtime_config,
+                },
+                lambda message: None,
+            )
+        except Exception as exc:
+            self._update_task_opc_error(
+                workflow_path=workflow_path,
+                operation="connect",
+                code="opc_connection_failed",
+                message=_task_opc_connect_error_message(
+                    exc, opcua_url=normalized_url
+                ),
+                phase="connecting",
+                device_id=(
+                    self._runtime_config.device_factory.plc_device_id
+                    or "szlab_poly_plc"
+                ),
+                detail={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+            raise
+        self._update_task_opc_error(
+            workflow_path=workflow_path,
+            operation="connect",
         )
+        return devices
 
     def _get_or_create_devices(
         self,
@@ -1796,18 +1917,52 @@ class WorkflowRunManager:
         plc_device_id = (
             self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
         )
+
+        def finish(
+            result: dict[str, Any],
+            *,
+            code: str = "",
+            detail: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            self._update_task_opc_error(
+                workflow_path=workflow_path,
+                operation="registration",
+                code=code,
+                message=str(result.get("message") or code),
+                phase="registering",
+                device_id=plc_device_id,
+                detail=detail,
+            )
+            return result
+
         plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
         registered = getattr(plc, "registered_variables", None)
         get_variables = getattr(plc, "get_variables", None)
         if not callable(registered):
-            return {
-                "distributed": False,
-                "message": "当前运行时未提供可分发的 PLC 注册变量",
-            }
-        variable_names = list(registered())
+            return finish(
+                {
+                    "distributed": False,
+                    "message": "当前运行时未提供可分发的 PLC 注册变量",
+                },
+                code="opc_registration_unsupported",
+            )
+        try:
+            variable_names = list(registered())
+        except Exception as exc:
+            return finish(
+                {"distributed": False, "message": str(exc)},
+                code="opc_registration_failed",
+                detail={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
         variable_aliases = self._registered_plc_variable_aliases(plc)
         if not variable_names:
-            return {"distributed": False, "message": "PLC 尚未注册任何变量"}
+            return finish(
+                {"distributed": False, "message": "PLC 尚未注册任何变量"},
+                code="opc_registration_empty",
+            )
         try:
             registration = self._task_snapshot_publisher.register(
                 workflow_path=workflow_path,
@@ -1816,23 +1971,60 @@ class WorkflowRunManager:
                 registered_variables=variable_names,
                 variable_aliases=variable_aliases,
             )
-            if not read_snapshot:
-                return {"distributed": True, "variable_count": 0}
-            if not callable(get_variables):
-                return {
+        except Exception as exc:
+            message = str(exc).strip() or type(exc).__name__
+            return finish(
+                {"distributed": False, "message": message},
+                code="opc_registration_failed",
+                detail={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+        if not read_snapshot:
+            return finish({"distributed": True, "variable_count": 0})
+        if not callable(get_variables):
+            return finish(
+                {
                     "distributed": False,
                     "message": "当前运行时未提供 PLC 变量读取接口",
-                }
-            condition_variables = self._template_condition_variables(
-                registration, plc_device_id, variable_names, variable_aliases
+                },
+                code="opc_sampling_unsupported",
             )
-            if not condition_variables:
-                return {"distributed": True, "variable_count": 0}
-            values = extract_registered_opc_values(
-                get_variables(condition_variables, use_cache=False)
+        condition_variables = self._template_condition_variables(
+            registration, plc_device_id, variable_names, variable_aliases
+        )
+        if not condition_variables:
+            return finish({"distributed": True, "variable_count": 0})
+        try:
+            snapshot = get_variables(condition_variables, use_cache=False)
+        except Exception as exc:
+            message = str(exc).strip() or type(exc).__name__
+            return finish(
+                {"distributed": False, "message": message},
+                code="opc_condition_snapshot_failed",
+                detail={
+                    "variables": condition_variables,
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
             )
-            if not values:
-                return {"distributed": False, "message": "模板条件变量当前均无法读取"}
+        failures = opc_snapshot_failures(
+            snapshot,
+            condition_variables,
+            plc=plc,
+        )
+        values = extract_registered_opc_values(snapshot)
+        if not values:
+            return finish(
+                {
+                    "distributed": False,
+                    "message": "模板条件变量当前均无法读取",
+                },
+                code="opc_condition_snapshot_failed",
+                detail={"failures": failures},
+            )
+        try:
             self._task_snapshot_publisher.publish_snapshot(
                 workflow_path=workflow_path,
                 expected_version=int(registration["version"]),
@@ -1840,8 +2032,24 @@ class WorkflowRunManager:
                 values=values,
             )
         except Exception as exc:
-            return {"distributed": False, "message": str(exc)}
-        return {"distributed": True, "variable_count": len(values)}
+            message = str(exc).strip() or type(exc).__name__
+            return finish(
+                {"distributed": False, "message": message},
+                code="opc_snapshot_publish_failed",
+                detail={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+        result = {"distributed": True, "variable_count": len(values)}
+        if failures:
+            result["message"] = "部分模板条件变量无法读取"
+            return finish(
+                result,
+                code="opc_condition_snapshot_partial",
+                detail={"failures": failures},
+            )
+        return finish(result)
 
     def poll_task_opc(self, *, workflow_path: str) -> dict[str, Any]:
         """按当前非终态 Task 的条件读取 PLC，并分发最小快照。"""
@@ -1850,31 +2058,79 @@ class WorkflowRunManager:
         plc_device_id = (
             self._runtime_config.device_factory.plc_device_id or "szlab_poly_plc"
         )
+
+        def finish(
+            result: dict[str, Any],
+            *,
+            code: str = "",
+            detail: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            self._update_task_opc_error(
+                workflow_path=workflow_path,
+                operation="poll",
+                code=code,
+                message=str(result.get("message") or code),
+                phase="polling",
+                device_id=plc_device_id,
+                detail=detail,
+            )
+            return result
+
         plc = devices.get(plc_device_id) or devices.get("szlab_poly_plc")
         if plc is None or not bool(getattr(plc, "client", None)):
-            return {"success": False, "active": False, "message": "Task OPC 尚未连接"}
+            return finish(
+                {
+                    "success": False,
+                    "active": False,
+                    "message": "Task OPC 尚未连接",
+                },
+                code="opc_not_connected",
+            )
         registered = getattr(plc, "registered_variables", None)
         get_variables = getattr(plc, "get_variables", None)
         if not callable(registered) or not callable(get_variables):
-            return {
-                "success": False,
-                "active": False,
-                "message": "当前 PLC 不支持按需变量采样",
-            }
-        variable_names = list(registered())
-        workspace_response = self._task_snapshot_publisher.get_workspace(
-            workflow_path=workflow_path
-        )
+            return finish(
+                {
+                    "success": False,
+                    "active": False,
+                    "message": "当前 PLC 不支持按需变量采样",
+                },
+                code="opc_sampling_unsupported",
+            )
+        try:
+            variable_names = list(registered())
+            workspace_response = self._task_snapshot_publisher.get_workspace(
+                workflow_path=workflow_path
+            )
+        except Exception as exc:
+            message = str(exc).strip() or type(exc).__name__
+            return finish(
+                {"success": False, "active": False, "message": message},
+                code="opc_poll_failed",
+                detail={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
         workspace = workspace_response.get("workspace")
         if not isinstance(workspace, dict):
-            return {"success": False, "active": False, "message": "Task 工作区内容无效"}
+            return finish(
+                {
+                    "success": False,
+                    "active": False,
+                    "message": "Task 工作区内容无效",
+                },
+                code="opc_workspace_invalid",
+            )
         active = any(
             isinstance(instance, dict)
             and instance.get("status") not in {"completed", "failed", "cancelled"}
             for instance in workspace.get("task_instances", [])
         )
         if not active:
-            return {"success": True, "active": False, "variable_count": 0}
+            return finish(
+                {"success": True, "active": False, "variable_count": 0}
+            )
         condition_variables = self._active_task_condition_variables(
             workspace,
             plc_device_id,
@@ -1889,26 +2145,50 @@ class WorkflowRunManager:
             include_running_outputs=False,
         )
         if not condition_variables:
-            return {"success": True, "active": True, "variable_count": 0}
-        try:
-            values = extract_registered_opc_values(
-                get_variables(condition_variables, use_cache=False)
+            return finish(
+                {"success": True, "active": True, "variable_count": 0}
             )
+        try:
+            snapshot = get_variables(condition_variables, use_cache=False)
+            failures = opc_snapshot_failures(
+                snapshot,
+                condition_variables,
+                plc=plc,
+            )
+            values = extract_registered_opc_values(snapshot)
         except Exception as exc:
+            message = str(exc).strip() or type(exc).__name__
+            detail = {
+                "variables": condition_variables,
+                "exception_type": type(exc).__name__,
+                "message": str(exc),
+            }
             if input_variables:
-                return {"success": False, "active": True, "message": str(exc)}
-            return {
-                "success": True,
-                "active": True,
-                "variable_count": 0,
-                "message": f"Task 输出状态采样失败：{exc}",
-            }
+                return finish(
+                    {"success": False, "active": True, "message": message},
+                    code="opc_input_snapshot_failed",
+                    detail=detail,
+                )
+            return finish(
+                {
+                    "success": True,
+                    "active": True,
+                    "variable_count": 0,
+                    "message": f"Task 输出状态采样失败：{message}",
+                },
+                code="opc_output_snapshot_failed",
+                detail=detail,
+            )
         if any(variable not in values for variable in input_variables):
-            return {
-                "success": False,
-                "active": True,
-                "message": "当前 Task 条件变量均无法读取",
-            }
+            return finish(
+                {
+                    "success": False,
+                    "active": True,
+                    "message": "当前 Task 条件变量均无法读取",
+                },
+                code="opc_input_snapshot_failed",
+                detail={"failures": failures},
+            )
         output_variables = [
             variable
             for variable in condition_variables
@@ -1918,22 +2198,42 @@ class WorkflowRunManager:
             variable not in values for variable in output_variables
         )
         if not values:
-            return {
-                "success": True,
-                "active": True,
-                "variable_count": 0,
-                "message": "当前 Task 输出状态变量均无法读取",
-            }
-        self._task_snapshot_publisher.publish_snapshot(
-            workflow_path=workflow_path,
-            expected_version=int(workspace_response["version"]),
-            plc_device_id=plc_device_id,
-            values=values,
-        )
+            return finish(
+                {
+                    "success": True,
+                    "active": True,
+                    "variable_count": 0,
+                    "message": "当前 Task 输出状态变量均无法读取",
+                },
+                code="opc_output_snapshot_failed",
+                detail={"failures": failures},
+            )
+        try:
+            self._task_snapshot_publisher.publish_snapshot(
+                workflow_path=workflow_path,
+                expected_version=int(workspace_response["version"]),
+                plc_device_id=plc_device_id,
+                values=values,
+            )
+        except Exception as exc:
+            message = str(exc).strip() or type(exc).__name__
+            return finish(
+                {"success": False, "active": True, "message": message},
+                code="opc_snapshot_publish_failed",
+                detail={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
         result = {"success": True, "active": True, "variable_count": len(values)}
         if missing_output:
             result["message"] = "部分 Task 输出状态变量无法读取"
-        return result
+            return finish(
+                result,
+                code="opc_output_snapshot_partial",
+                detail={"failures": failures},
+            )
+        return finish(result)
 
     @staticmethod
     def _template_condition_variables(
@@ -3034,9 +3334,24 @@ def create_app(
                 "task_orchestration": distribution,
             }
         except Exception as exc:
+            error_message = _task_opc_connect_error_message(
+                exc, opcua_url=opcua_url
+            )
+            manager._update_task_opc_error(
+                workflow_path=workspace_path,
+                operation="connect",
+                code="opc_connection_failed",
+                message=error_message,
+                phase="connecting",
+                device_id=plc_device_id,
+                detail={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
             return {
                 "success": False,
-                "message": _task_opc_connect_error_message(exc, opcua_url=opcua_url),
+                "message": error_message,
                 "plc": {
                     "device_id": plc_device_id,
                     "connected": False,
@@ -3056,7 +3371,27 @@ def create_app(
         try:
             return manager.poll_task_opc(workflow_path=workspace_path)
         except Exception as exc:
-            return {"success": False, "active": False, "message": str(exc)}
+            error_message = str(exc).strip() or type(exc).__name__
+            manager._update_task_opc_error(
+                workflow_path=workspace_path,
+                operation="poll",
+                code="opc_poll_failed",
+                message=error_message,
+                phase="polling",
+                device_id=(
+                    runtime_config.device_factory.plc_device_id
+                    or "szlab_poly_plc"
+                ),
+                detail={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+            return {
+                "success": False,
+                "active": False,
+                "message": error_message,
+            }
 
     @app.post("/api/task-execution/tick", response_class=JSONResponse)
     async def run_task_execution_tick(

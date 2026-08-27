@@ -5,7 +5,12 @@ import sqlite3
 import pytest
 import scripts.workflow_ui as workflow_ui
 from scripts.run_history_store import RunHistoryStore, infer_station
-from scripts.run_workflow_local import WorkflowNode
+from scripts.run_workflow_local import (
+    RuntimeConfig,
+    RuntimeDeviceFactoryConfig,
+    RuntimeOpcSnapshotConfig,
+    WorkflowNode,
+)
 from scripts.workflow_ui import WorkflowRunManager, _load_preset_runtime_config, load_preset
 
 
@@ -688,4 +693,167 @@ def test_scheduler_cycle_exception_flows_to_task_error_log_without_spam(tmp_path
     assert entries[0]["detail"]["diagnostic"]["exception_type"] == (
         "TimeoutError"
     )
+    manager.shutdown()
+
+
+def test_action_opc_snapshot_failures_are_structured_errors(tmp_path):
+    store = RunHistoryStore(tmp_path, session_id="run-opc-snapshot-error")
+    runtime_config = RuntimeConfig(
+        path=tmp_path / "runtime.json",
+        device_factory=RuntimeDeviceFactoryConfig(),
+        opc_snapshot=RuntimeOpcSnapshotConfig(
+            action_variables={"run": ["ready"]}
+        ),
+    )
+    manager = WorkflowRunManager(
+        load_preset("szlab_robot_action_workflow"),
+        runtime_config,
+        run_history_store=store,
+    )
+
+    class OfflineDevice:
+        @staticmethod
+        def get_variables(_names, use_cache=False):
+            assert use_cache is False
+            return {"ready": {"success": False, "error": "offline"}}
+
+        @staticmethod
+        def run():
+            return {"success": True}
+
+    device = OfflineDevice()
+    result = manager._run_task_action_node(
+        WorkflowNode(
+            uuid="opc-node",
+            name="run",
+            device_name="device",
+            method="run",
+            param={},
+            legacy_route_compatible=False,
+        ),
+        {"device": device},
+        device.run,
+        {
+            "workflow_path": "main-process.json",
+            "instance_id": "instance-opc",
+            "sample_id": "sample-opc",
+            "template_id": "template-opc",
+            "node_id": "opc-node",
+            "execution_id": "execution-opc",
+            "device_id": "device",
+            "action_name": "run",
+        },
+    )
+
+    assert result[0]["result"] == {"success": True}
+    entries = manager.list_task_action_logs(
+        workflow_path="main-process.json"
+    )["entries"]
+    failures = [
+        entry
+        for entry in entries
+        if entry["code"] == "opc_snapshot_read_failed"
+    ]
+    assert [entry["phase"] for entry in failures] == [
+        "sampling_before",
+        "sampling_after",
+    ]
+    assert all(entry["category"] == "opc" for entry in failures)
+    assert all(entry["level"] == "error" for entry in failures)
+    assert failures[0]["detail"]["failures"][0]["name"] == "ready"
+    assert failures[0]["detail"]["failures"][0]["error"] == "offline"
+
+    incidents = store.incident_ledger("run-opc-snapshot-error")["incidents"]
+    assert len(incidents) == 2
+    assert all(incident["category"] == "opc_error" for incident in incidents)
+    manager.shutdown()
+
+
+def test_task_opc_poll_error_is_deduplicated_until_recovery(tmp_path):
+    store = RunHistoryStore(tmp_path, session_id="run-opc-poll-error")
+    preset = load_preset("stack_s05_s06")
+    manager = WorkflowRunManager(
+        preset,
+        _load_preset_runtime_config(preset),
+        run_history_store=store,
+    )
+
+    class FakePLC:
+        client = object()
+        failed = True
+
+        @staticmethod
+        def registered_variables():
+            return ["ready"]
+
+        def get_variables(self, names, use_cache=False):
+            assert names == ["ready"]
+            assert use_cache is False
+            if self.failed:
+                return {"ready": {"success": False, "error": "offline"}}
+            return {"ready": {"success": True, "value": True}}
+
+    class FakePublisher:
+        @staticmethod
+        def get_workspace(**_kwargs):
+            return {
+                "version": 7,
+                "workspace": {
+                    "templates": [
+                        {
+                            "id": "template-1",
+                            "input_triggers": [
+                                {
+                                    "kind": "opc",
+                                    "config": {
+                                        "plc_device_id": "szlab_poly_plc",
+                                        "variable": "ready",
+                                        "value": True,
+                                    },
+                                }
+                            ],
+                            "output_triggers": [],
+                        }
+                    ],
+                    "task_instances": [
+                        {"template_id": "template-1", "status": "waiting"}
+                    ],
+                },
+            }
+
+        @staticmethod
+        def publish_snapshot(**_kwargs):
+            return None
+
+    plc = FakePLC()
+    manager._cached_devices = {"szlab_poly_plc": plc}
+    manager._task_snapshot_publisher = FakePublisher()
+
+    first = manager.poll_task_opc(workflow_path="main-process.json")
+    second = manager.poll_task_opc(workflow_path="main-process.json")
+    plc.failed = False
+    recovered = manager.poll_task_opc(workflow_path="main-process.json")
+    plc.failed = True
+    repeated = manager.poll_task_opc(workflow_path="main-process.json")
+
+    assert first == second == repeated == {
+        "success": False,
+        "active": True,
+        "message": "当前 Task 条件变量均无法读取",
+    }
+    assert recovered == {
+        "success": True,
+        "active": True,
+        "variable_count": 1,
+    }
+    entries = manager.list_task_action_logs(
+        workflow_path="main-process.json"
+    )["entries"]
+    assert len(entries) == 2
+    assert [entry["code"] for entry in entries] == [
+        "opc_input_snapshot_failed",
+        "opc_input_snapshot_failed",
+    ]
+    assert all(entry["category"] == "opc" for entry in entries)
+    assert all(entry["level"] == "error" for entry in entries)
     manager.shutdown()

@@ -967,6 +967,28 @@
   color: var(--blue-text);
 }
 
+.scheduler-bench__error-filters {
+  padding-top: 0;
+  background: #f8fafc;
+}
+
+.scheduler-bench__error-filters button b {
+  margin-left: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scheduler-bench__error-filters button.active[data-error-state='active'] {
+  border-color: #fca5a5;
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.scheduler-bench__error-filters button.active[data-error-state='recovered'] {
+  border-color: #86efac;
+  background: var(--green-bg);
+  color: var(--green);
+}
+
 .scheduler-bench__log {
   flex: 1;
   min-height: 120px;

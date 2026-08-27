@@ -8,11 +8,14 @@ import {
 import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import {
+  countTaskErrorStates,
   formatTaskLogMetadata,
+  filterTaskErrorLines,
   filterTaskLogLines,
   isTaskLogRecovery,
   taskLogCategoryLabel,
   taskLogPhaseLabel,
+  type TaskErrorStateFilter,
   type TaskLogCategory,
   type TaskLogLine,
 } from './taskLogSession';
@@ -302,6 +305,7 @@ export function TaskSchedulerBench(props: Props) {
   const [parameterDraft, setParameterDraft] = React.useState<Record<string, Record<string, unknown>>>({});
   const [s09TipStatus, setS09TipStatus] = React.useState<S09TipStatus | null>(null);
   const [logFilter, setLogFilter] = React.useState<TaskLogCategory>('all');
+  const [errorStateFilter, setErrorStateFilter] = React.useState<TaskErrorStateFilter>('all');
   const [isFollowingLogs, setIsFollowingLogs] = React.useState(true);
   const [timingNowMs, setTimingNowMs] = React.useState(() => Date.now());
   const logContainerRef = React.useRef<HTMLDivElement>(null);
@@ -344,7 +348,10 @@ export function TaskSchedulerBench(props: Props) {
     ),
     [props.tasks, props.templates, props.actionNodes, timingNowMs],
   );
-  const visibleLogLines = filterTaskLogLines(props.logLines, logFilter);
+  const visibleLogLines = logFilter === 'error'
+    ? filterTaskErrorLines(props.logLines, errorStateFilter)
+    : filterTaskLogLines(props.logLines, logFilter);
+  const errorStateCounts = countTaskErrorStates(props.logLines);
   const editingTemplate = props.templates.find((template) => template.id === editingTask?.templateId);
   const editingNodes: ResolvedActionNode[] = editingTemplate
     ? resolveTemplateNodes(editingTemplate.nodeIds, props.actionNodes)
@@ -664,6 +671,11 @@ export function TaskSchedulerBench(props: Props) {
               ['result', '结果'],
               ['error', '错误'],
             ] as const).map(([filter, label]) => <button className={logFilter === filter ? 'active' : ''} key={filter} onClick={() => setLogFilter(filter)} type="button">{label}</button>)}</div>
+            {logFilter === 'error' && <div className="scheduler-bench__filters scheduler-bench__error-filters" role="group" aria-label="错误状态筛选">{([
+              ['all', '全部错误', errorStateCounts.total],
+              ['active', '当前异常', errorStateCounts.active],
+              ['recovered', '已恢复', errorStateCounts.recovered],
+            ] as const).map(([filter, label, count]) => <button aria-pressed={errorStateFilter === filter} className={errorStateFilter === filter ? 'active' : ''} data-error-state={filter} key={filter} onClick={() => setErrorStateFilter(filter)} type="button">{label} <b>{count}</b></button>)}</div>}
             <div className="scheduler-bench__log" onScroll={(event) => {
               const element = event.currentTarget;
               setIsFollowingLogs(element.scrollHeight - element.scrollTop - element.clientHeight < 12);
@@ -703,7 +715,7 @@ export function TaskSchedulerBench(props: Props) {
               })}
               {!visibleLogLines.length && <div>本次启动后暂无匹配日志。</div>}
             </div>
-            <div className="scheduler-bench__log-foot">本次启动后 {props.logLines.length} 条{logFilter === 'all' ? '' : ` · 当前分类 ${visibleLogLines.length} 条`} · {isFollowingLogs ? '自动滚动' : '滚动已暂停'}</div>
+            <div className="scheduler-bench__log-foot">本次启动后 {props.logLines.length} 条{logFilter === 'all' ? '' : ` · 当前筛选 ${visibleLogLines.length} 条`} · {isFollowingLogs ? '自动滚动' : '滚动已暂停'}</div>
           </section>
           <section className="scheduler-bench__panel scheduler-bench__detail">
             <div className="scheduler-bench__detail-tabs"><button className="active" type="button">选中 Task 条件</button></div>

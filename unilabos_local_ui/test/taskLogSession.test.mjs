@@ -21,6 +21,8 @@ async function importTypeScriptModule(path) {
 
 const {
   buildTaskLogLines,
+  countTaskErrorStates,
+  filterTaskErrorLines,
   filterTaskLogLines,
   formatTaskLogMetadata,
   isTaskLogRecovery,
@@ -205,6 +207,9 @@ assert.deepEqual(
   filterTaskLogLines(lifecycleLines, 'error').map((line) => line.errorState),
   ['recovered', 'recovered', 'active'],
 );
+assert.deepEqual(filterTaskErrorLines(lifecycleLines, 'active').map((line) => line.seq), [14]);
+assert.deepEqual(filterTaskErrorLines(lifecycleLines, 'recovered').map((line) => line.seq), [10, 12]);
+assert.deepEqual(countTaskErrorStates(lifecycleLines), { total: 3, active: 1, recovered: 2 });
 assert.equal(lifecycleLines[0].recoveredAt, 3200);
 assert.equal(lifecycleLines[0].recoveredByLineId, 'action:11');
 assert.equal(lifecycleLines[2].recoveredAt, 3400);
@@ -293,7 +298,12 @@ const schedulerSource = await readFile(new URL('../src/TaskSchedulerBench.tsx', 
 assert.match(schedulerSource, /logLines: TaskLogLine\[\];/);
 assert.match(schedulerSource, /logError: string;/);
 assert.match(schedulerSource, /const \[logFilter, setLogFilter\] = React\.useState<TaskLogCategory>\('all'\);/);
+assert.match(schedulerSource, /const \[errorStateFilter, setErrorStateFilter\] = React\.useState<TaskErrorStateFilter>\('all'\);/);
 assert.match(schedulerSource, /filterTaskLogLines\(props\.logLines, logFilter\)/);
+assert.match(schedulerSource, /filterTaskErrorLines\(props\.logLines, errorStateFilter\)/);
+assert.match(schedulerSource, /countTaskErrorStates\(props\.logLines\)/);
+assert.match(schedulerSource, /\['active', '当前异常', errorStateCounts\.active\]/);
+assert.match(schedulerSource, /\['recovered', '已恢复', errorStateCounts\.recovered\]/);
 assert.match(schedulerSource, /formatTaskLogMetadata\(line\)/, '导出日志必须包含 code 和 phase');
 assert.match(schedulerSource, /taskLogCategoryLabel\(line\.category\)/);
 assert.match(schedulerSource, /taskLogPhaseLabel\(line\.phase\)/);
@@ -313,6 +323,7 @@ assert.match(schedulerStyles, /\.scheduler-bench__log-line\.result/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.code/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.active-error/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.recovered/);
+assert.match(schedulerStyles, /\.scheduler-bench__error-filters/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.pending,\s*\.scheduler-bench__state\.waiting \{ background: #f1f5f9; color: #475569; \}/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.running \{ background: var\(--amber-bg\); color: var\(--amber\); \}/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.completed \{ background: var\(--green-bg\); color: var\(--green\); \}/);

@@ -1,6 +1,7 @@
 import type { TaskExecutionLogCategory } from './taskActionLog';
 
 export type TaskLogCategory = 'all' | TaskExecutionLogCategory | 'error';
+export type TaskErrorStateFilter = 'all' | 'active' | 'recovered';
 
 export type TaskLogLine = {
   id: string;
@@ -266,4 +267,24 @@ export function filterTaskLogLines(lines: TaskLogLine[], category: TaskLogCatego
   if (category === 'all') return lines;
   if (category === 'error') return lines.filter((line) => line.isError);
   return lines.filter((line) => line.executionCategory === category);
+}
+
+export function filterTaskErrorLines(
+  lines: TaskLogLine[],
+  state: TaskErrorStateFilter,
+) {
+  const errors = filterTaskLogLines(lines, 'error');
+  if (state === 'all') return errors;
+  return errors.filter((line) => line.errorState === state);
+}
+
+export function countTaskErrorStates(lines: TaskLogLine[]) {
+  const counts = { total: 0, active: 0, recovered: 0 };
+  for (const line of lines) {
+    if (!line.isError) continue;
+    counts.total += 1;
+    if (line.errorState === 'recovered') counts.recovered += 1;
+    else counts.active += 1;
+  }
+  return counts;
 }

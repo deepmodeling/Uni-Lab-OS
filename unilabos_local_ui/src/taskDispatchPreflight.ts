@@ -139,6 +139,41 @@ export function canStartTaskDispatch(readiness: TaskDispatchReadiness) {
   return readiness.status === 'ready' && readiness.result?.valid === true;
 }
 
+export function taskDispatchIssueResolution(issue: TaskDispatchPreflightIssue) {
+  const template = issue.template_name || issue.template_id || '对应 Task';
+  const node = issue.node_id || '对应动作节点';
+  const device = issue.device_id || '对应设备';
+  const action = issue.action_name || '对应动作';
+  if (issue.code === 'task_dispatch_scope_empty') {
+    return '先选择至少一个 Task 模板，并生成或保留待派发的 Task 实例。';
+  }
+  if (issue.code === 'workspace_recovery_required') {
+    return '先使用“重置并复用”清除失败暂停，再重新检查。';
+  }
+  if (issue.code === 'task_template_missing') {
+    return '删除引用该模板的残留 Task，或重新创建对应模板。';
+  }
+  if (issue.code === 'task_template_empty') {
+    return `在 Task「${template}」中至少选择一个当前流程动作节点。`;
+  }
+  if (issue.code === 'task_node_missing') {
+    return `将动作节点「${node}」加入当前可执行 workflow，或从 Task「${template}」中移除该引用。`;
+  }
+  if (issue.code === 'task_node_not_executable') {
+    return `启用动作节点「${node}」，并确认它位于当前起始节点可达的执行路径中。`;
+  }
+  if (issue.code === 'task_node_invalid') {
+    return `修正动作节点「${node}」的重复 ID、设备或动作配置。`;
+  }
+  if (issue.code === 'task_device_missing') {
+    return `确认设备「${device}」已注册并可用，再重新检查。`;
+  }
+  if (issue.code === 'task_action_unsupported') {
+    return `为设备「${device}」选择受支持的动作；当前动作是「${action}」。`;
+  }
+  return '根据阻断信息修正 Task、流程或设备配置后重新检查。';
+}
+
 export function taskDispatchButtonTitle(readiness: TaskDispatchReadiness) {
   if (canStartTaskDispatch(readiness)) return '预检已通过，可以开始派发';
   if (readiness.status === 'validating') return '正在验证派发条件，请稍候';

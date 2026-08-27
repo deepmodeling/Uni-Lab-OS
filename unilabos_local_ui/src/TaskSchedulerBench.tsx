@@ -9,6 +9,7 @@ import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import {
   canStartTaskDispatch,
   taskDispatchButtonTitle,
+  taskDispatchIssueResolution,
   taskDispatchReadinessLabel,
   type TaskDispatchReadiness,
 } from './taskDispatchPreflight';
@@ -647,7 +648,10 @@ export function TaskSchedulerBench(props: Props) {
                   {props.dispatchReadiness.result?.errors.map((issue, index) => (
                     <li key={`${issue.code}:${issue.template_id}:${issue.node_id}:${index}`}>
                       <code>{issue.code}</code>
-                      <span>{issue.message}</span>
+                      <div className="scheduler-bench__dispatch-issue-content">
+                        <span>{issue.message}</span>
+                        <small>处理建议：{taskDispatchIssueResolution(issue)}</small>
+                      </div>
                     </li>
                   ))}
                 </ul>

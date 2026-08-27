@@ -23,6 +23,7 @@ const {
   currentTaskDispatchReadiness,
   preflightTaskDispatch,
   taskDispatchButtonTitle,
+  taskDispatchIssueResolution,
   taskDispatchReadinessLabel,
 } = await import(tempFile);
 
@@ -135,6 +136,27 @@ assert.match(
   taskDispatchButtonTitle({ status: 'invalid', key: 'key', result: invalidResult }),
   /预检未通过.*动作节点不在当前 workflow/,
 );
+assert.match(
+  taskDispatchIssueResolution(issue),
+  /将动作节点.*task-node.*加入当前可执行 workflow.*样品处理/,
+  '节点缺失应明确提示修复 workflow 或 Task 引用',
+);
+for (const code of [
+  'task_dispatch_scope_empty',
+  'workspace_recovery_required',
+  'task_template_missing',
+  'task_template_empty',
+  'task_node_missing',
+  'task_node_not_executable',
+  'task_node_invalid',
+  'task_device_missing',
+  'task_action_unsupported',
+]) {
+  assert.ok(
+    taskDispatchIssueResolution({ ...issue, code }).length > 10,
+    `${code} 应提供可执行的修复建议`,
+  );
+}
 
 const mainSource = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const benchSource = await readFile(
@@ -169,6 +191,11 @@ assert.match(
   benchSource,
   /scheduler-bench__dispatch-readiness[\s\S]*?taskDispatchReadinessLabel[\s\S]*?result\?\.errors\.map/,
   'Task 页面应展示派发准备状态和结构化阻断项',
+);
+assert.match(
+  benchSource,
+  /处理建议[\s\S]*?taskDispatchIssueResolution\(issue\)/,
+  '每个结构化阻断项都应展示对应修复建议',
 );
 assert.match(
   benchSource,

@@ -774,6 +774,21 @@
   font-size: 11px;
 }
 
+.scheduler-bench__dispatch-issue-content {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.scheduler-bench__dispatch-issue-content > span {
+  display: block;
+}
+
+.scheduler-bench__dispatch-issue-content > small {
+  color: #64748b;
+  line-height: 1.35;
+}
+
 .scheduler-bench__dispatch-readiness code {
   flex: 0 0 auto;
   border-radius: 4px;

@@ -7,7 +7,11 @@ import {
 } from './automaticActionParameters';
 import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
-import type { TaskLogCategory, TaskLogLine } from './taskLogSession';
+import {
+  filterTaskLogLines,
+  type TaskLogCategory,
+  type TaskLogLine,
+} from './taskLogSession';
 import {
   buildSampleProcessRows,
   buildExecutionTimingSummaries,
@@ -336,7 +340,7 @@ export function TaskSchedulerBench(props: Props) {
     ),
     [props.tasks, props.templates, props.actionNodes, timingNowMs],
   );
-  const visibleLogLines = props.logLines.filter((line) => logFilter === 'all' || line.category === logFilter);
+  const visibleLogLines = filterTaskLogLines(props.logLines, logFilter);
   const editingTemplate = props.templates.find((template) => template.id === editingTask?.templateId);
   const editingNodes: ResolvedActionNode[] = editingTemplate
     ? resolveTemplateNodes(editingTemplate.nodeIds, props.actionNodes)
@@ -668,7 +672,7 @@ export function TaskSchedulerBench(props: Props) {
                   actionById,
                   actionByTemplateNodeId,
                 );
-                return <div className={`scheduler-bench__log-line ${line.category}`} key={line.id}>
+                return <div className={`scheduler-bench__log-line ${line.category}${line.isError ? ' error' : ''}`} key={line.id}>
                   {context && <div className="scheduler-bench__log-context">
                     {context.sampleLabel && <span title={`sample_id: ${line.sampleId || ''}`}>样品 · {context.sampleLabel}</span>}
                     {context.taskLabel && <span title={`instance_id: ${line.instanceId || ''}`}>Task · {context.taskLabel}</span>}

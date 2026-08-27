@@ -5,7 +5,8 @@ export type TaskLogCategory = 'all' | TaskExecutionLogCategory | 'error';
 export type TaskLogLine = {
   id: string;
   timestamp: number;
-  category: Exclude<TaskLogCategory, 'all'>;
+  category: TaskExecutionLogCategory;
+  isError: boolean;
   level: string;
   message: string;
   detail?: Record<string, unknown>;
@@ -112,7 +113,8 @@ export function buildTaskLogLines({
       return {
         id: `event:${event.id || `${event.kind}:${event.timestamp}`}`,
         timestamp: event.timestamp,
-        category: eventIsError ? 'error' as const : executionCategory,
+        category: executionCategory,
+        isError: eventIsError,
         executionCategory,
         level,
         code: event.code,
@@ -138,7 +140,8 @@ export function buildTaskLogLines({
       return {
         id: `action:${entry.seq}`,
         timestamp: entry.timestamp,
-        category: entryIsError ? 'error' as const : executionCategory,
+        category: executionCategory,
+        isError: entryIsError,
         executionCategory,
         level: entry.level,
         code: entry.code,
@@ -159,5 +162,7 @@ export function buildTaskLogLines({
 }
 
 export function filterTaskLogLines(lines: TaskLogLine[], category: TaskLogCategory) {
-  return category === 'all' ? lines : lines.filter((line) => line.category === category);
+  if (category === 'all') return lines;
+  if (category === 'error') return lines.filter((line) => line.isError);
+  return lines.filter((line) => line.executionCategory === category);
 }

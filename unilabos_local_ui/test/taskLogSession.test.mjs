@@ -49,7 +49,8 @@ const logLines = buildTaskLogLines({
   session: { startedAt: 2000, actionAfterSeq: 3 },
 });
 
-assert.deepEqual(logLines.map((line) => line.category), ['schedule', 'action', 'opc', 'result', 'error']);
+assert.deepEqual(logLines.map((line) => line.category), ['schedule', 'action', 'opc', 'result', 'action']);
+assert.deepEqual(logLines.map((line) => line.isError), [false, false, false, false, true]);
 assert.equal(filterTaskLogLines(logLines, 'all').length, 5);
 assert.equal(filterTaskLogLines(logLines, 'opc').length, 1);
 assert.equal(filterTaskLogLines(logLines, 'result').length, 1);
@@ -103,13 +104,82 @@ const structuredLines = buildTaskLogLines({
   ],
   session: { startedAt: 2000, actionAfterSeq: 7 },
 });
-assert.deepEqual(structuredLines.map((line) => line.category), ['action', 'error']);
+assert.deepEqual(structuredLines.map((line) => line.category), ['action', 'result']);
+assert.deepEqual(structuredLines.map((line) => line.isError), [false, true]);
 assert.deepEqual(structuredLines.map((line) => line.executionCategory), ['action', 'result']);
 assert.equal(structuredLines[0].code, 'action_progress');
 assert.equal(structuredLines[0].phase, 'executing');
 assert.equal(structuredLines[0].templateId, 'template-1');
 assert.equal(structuredLines[0].deviceId, 'device-1');
 assert.equal(structuredLines[0].actionName, 'move');
+
+const lifecycleLines = buildTaskLogLines({
+  events: [],
+  actionEntries: [
+    {
+      seq: 10,
+      timestamp: 3100,
+      category: 'schedule',
+      level: 'error',
+      code: 'unsupported_action',
+      phase: 'dispatching',
+      message: '不支持的 Task 动作节点',
+      detail: {},
+      instance_id: 'inst-1',
+      sample_id: 'Sample A',
+      node_id: 'node-1',
+      execution_id: 'exec-1',
+    },
+    {
+      seq: 11,
+      timestamp: 3200,
+      category: 'schedule',
+      level: 'info',
+      code: 'scheduler_error_recovered',
+      phase: 'recovered',
+      message: '调度错误已恢复：不支持的 Task 动作节点',
+      detail: { original_code: 'unsupported_action' },
+      instance_id: 'inst-1',
+      sample_id: 'Sample A',
+      node_id: 'node-1',
+      execution_id: 'exec-1',
+    },
+    {
+      seq: 12,
+      timestamp: 3300,
+      category: 'opc',
+      level: 'error',
+      code: 'opc_poll_failed',
+      phase: 'polling',
+      message: 'OPC 轮询失败',
+      detail: {},
+      instance_id: '',
+      sample_id: '',
+      node_id: '',
+      execution_id: '',
+    },
+    {
+      seq: 13,
+      timestamp: 3400,
+      category: 'opc',
+      level: 'info',
+      code: 'opc_error_recovered',
+      phase: 'recovered',
+      message: 'OPC 轮询采样已恢复：OPC 轮询失败',
+      detail: { original_code: 'opc_poll_failed' },
+      instance_id: '',
+      sample_id: '',
+      node_id: '',
+      execution_id: '',
+    },
+  ],
+  session: { startedAt: 3000, actionAfterSeq: 9 },
+});
+assert.deepEqual(lifecycleLines.map((line) => line.category), ['schedule', 'schedule', 'opc', 'opc']);
+assert.deepEqual(lifecycleLines.map((line) => line.isError), [true, false, true, false]);
+assert.deepEqual(filterTaskLogLines(lifecycleLines, 'schedule').map((line) => line.seq), [10, 11]);
+assert.deepEqual(filterTaskLogLines(lifecycleLines, 'opc').map((line) => line.seq), [12, 13]);
+assert.deepEqual(filterTaskLogLines(lifecycleLines, 'error').map((line) => line.seq), [10, 12]);
 
 const requestedAfterSeqs = [];
 const pages = new Map([
@@ -187,6 +257,7 @@ const schedulerSource = await readFile(new URL('../src/TaskSchedulerBench.tsx', 
 assert.match(schedulerSource, /logLines: TaskLogLine\[\];/);
 assert.match(schedulerSource, /logError: string;/);
 assert.match(schedulerSource, /const \[logFilter, setLogFilter\] = React\.useState<TaskLogCategory>\('all'\);/);
+assert.match(schedulerSource, /filterTaskLogLines\(props\.logLines, logFilter\)/);
 assert.match(schedulerSource, /\['result', '结果'\][\s\S]*?\['error', '错误'\]/);
 assert.match(schedulerSource, /function taskLogContext\(/, '日志展示必须解析样品、Task 与 Action 上下文');
 assert.match(schedulerSource, /scheduler-bench__log-error/, '新版日志面板必须渲染读取错误');

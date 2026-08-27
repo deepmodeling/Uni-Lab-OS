@@ -2844,6 +2844,255 @@ def test_task_execution_tick_delegates_and_returns_cycle_statistics(monkeypatch)
     }
 
 
+def test_task_workflow_fingerprint_is_canonical_and_content_sensitive():
+    first = {
+        "nodes": [{
+            "workflow_node_id": "task-node",
+            "device_id": "device",
+            "method": "run",
+            "params": {"speed": 10},
+        }],
+        "edges": [],
+    }
+    reordered = {
+        "edges": [],
+        "nodes": [{
+            "params": {"speed": 10},
+            "method": "run",
+            "device_id": "device",
+            "workflow_node_id": "task-node",
+        }],
+    }
+    changed = {
+        **first,
+        "nodes": [{**first["nodes"][0], "params": {"speed": 20}}],
+    }
+
+    fingerprint = workflow_ui._task_workflow_fingerprint(first)
+
+    assert fingerprint.startswith("sha256:")
+    assert fingerprint == workflow_ui._task_workflow_fingerprint(reordered)
+    assert fingerprint != workflow_ui._task_workflow_fingerprint(changed)
+
+
+def test_workflow_manager_preflight_returns_version_fingerprint_and_errors(
+    tmp_path,
+):
+    class FakeDevice:
+        def run(self):
+            return None
+
+    class FakeSnapshotPublisher:
+        def __init__(self):
+            self.response = {
+                "version": 7,
+                "workspace": {
+                    "templates": [{
+                        "id": "template-1",
+                        "name": "样品处理",
+                        "node_ids": ["task-node"],
+                    }],
+                    "scheduled_template_ids": ["template-1"],
+                    "task_instances": [],
+                    "pause_reason": None,
+                },
+            }
+
+        def get_workspace(self, *, workflow_path):
+            assert workflow_path == "task-flow.json"
+            return self.response
+
+    workflow = {
+        "nodes": [{
+            "workflow_node_id": "task-node",
+            "device_id": "device",
+            "method": "run",
+            "params": {},
+        }],
+        "edges": [],
+    }
+    preset = load_preset("szlab_robot_action_workflow")
+    manager = WorkflowRunManager(
+        preset,
+        _load_preset_runtime_config(preset),
+        run_history_store=RunHistoryStore(tmp_path, session_id="preflight"),
+    )
+    manager._task_snapshot_publisher = FakeSnapshotPublisher()
+    manager._cached_devices = {"device": FakeDevice()}
+    try:
+        valid = manager.preflight_task_dispatch(
+            workflow_path="task-flow.json",
+            expected_version=7,
+            workflow_payload=workflow,
+        )
+        missing = manager.preflight_task_dispatch(
+            workflow_path="task-flow.json",
+            expected_version=7,
+            workflow_payload={"nodes": [], "edges": []},
+        )
+    finally:
+        manager.shutdown()
+
+    assert valid == {
+        "valid": True,
+        "errors": [],
+        "warnings": [],
+        "workspace_version": 7,
+        "workflow_fingerprint": workflow_ui._task_workflow_fingerprint(workflow),
+    }
+    assert missing["valid"] is False
+    assert missing["errors"][0]["code"] == "task_node_missing"
+    assert missing["workspace_version"] == 7
+
+
+def test_workflow_manager_preflight_rejects_stale_workspace_version(
+    tmp_path,
+):
+    class FakeSnapshotPublisher:
+        def get_workspace(self, *, workflow_path):
+            assert workflow_path == "task-flow.json"
+            return {"version": 8, "workspace": {}}
+
+    preset = load_preset("szlab_robot_action_workflow")
+    manager = WorkflowRunManager(
+        preset,
+        _load_preset_runtime_config(preset),
+        run_history_store=RunHistoryStore(tmp_path, session_id="preflight-conflict"),
+    )
+    manager._task_snapshot_publisher = FakeSnapshotPublisher()
+    try:
+        with pytest.raises(TaskApiConflict) as caught:
+            manager.preflight_task_dispatch(
+                workflow_path="task-flow.json",
+                expected_version=7,
+                workflow_payload={"nodes": [], "edges": []},
+            )
+    finally:
+        manager.shutdown()
+
+    assert caught.value.code == "version_conflict"
+    assert "expected=7, actual=8" in str(caught.value)
+
+
+def test_task_execution_preflight_endpoint_delegates_and_returns_result(
+    monkeypatch,
+):
+    workflow = {"nodes": [], "edges": []}
+
+    def fake_preflight(
+        self, *, workflow_path, expected_version, workflow_payload
+    ):
+        assert workflow_path == "task-flow.json"
+        assert expected_version == 7
+        assert workflow_payload is workflow
+        return {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+            "workspace_version": 7,
+            "workflow_fingerprint": "sha256:valid",
+        }
+
+    monkeypatch.setattr(
+        WorkflowRunManager,
+        "preflight_task_dispatch",
+        fake_preflight,
+    )
+    app = create_app("szlab_robot_action_workflow")
+    endpoint = _route_endpoint(app, "/api/task-execution/preflight", "POST")
+
+    response = asyncio.run(endpoint({
+        "task_workspace_path": "task-flow.json",
+        "expected_version": 7,
+        "workflow": workflow,
+    }))
+
+    assert response["valid"] is True
+    assert response["workflow_fingerprint"] == "sha256:valid"
+
+
+def test_task_execution_preflight_endpoint_returns_structured_422(monkeypatch):
+    result = {
+        "valid": False,
+        "errors": [{"code": "task_node_missing", "node_id": "task-node"}],
+        "warnings": [],
+        "workspace_version": 7,
+        "workflow_fingerprint": "sha256:invalid",
+    }
+    monkeypatch.setattr(
+        WorkflowRunManager,
+        "preflight_task_dispatch",
+        lambda self, **kwargs: result,
+    )
+    app = create_app("szlab_robot_action_workflow")
+    endpoint = _route_endpoint(app, "/api/task-execution/preflight", "POST")
+
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(endpoint({
+            "task_workspace_path": "task-flow.json",
+            "expected_version": 7,
+            "workflow": {"nodes": [], "edges": []},
+        }))
+
+    assert caught.value.status_code == 422
+    assert caught.value.detail == result
+
+
+def test_task_execution_preflight_endpoint_maps_version_conflict_to_409(
+    monkeypatch,
+):
+    def conflict(self, **kwargs):
+        raise TaskApiConflict("version_conflict", "workspace changed")
+
+    monkeypatch.setattr(
+        WorkflowRunManager,
+        "preflight_task_dispatch",
+        conflict,
+    )
+    app = create_app("szlab_robot_action_workflow")
+    endpoint = _route_endpoint(app, "/api/task-execution/preflight", "POST")
+
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(endpoint({
+            "task_workspace_path": "task-flow.json",
+            "expected_version": 7,
+            "workflow": {"nodes": [], "edges": []},
+        }))
+
+    assert caught.value.status_code == 409
+    assert caught.value.detail == {
+        "code": "version_conflict",
+        "message": "workspace changed",
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"expected_version": 7, "workflow": {}},
+        {"task_workspace_path": "task-flow.json", "workflow": {}},
+        {
+            "task_workspace_path": "task-flow.json",
+            "expected_version": True,
+            "workflow": {},
+        },
+        {
+            "task_workspace_path": "task-flow.json",
+            "expected_version": 7,
+        },
+    ],
+)
+def test_task_execution_preflight_endpoint_rejects_incomplete_request(payload):
+    app = create_app("szlab_robot_action_workflow")
+    endpoint = _route_endpoint(app, "/api/task-execution/preflight", "POST")
+
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(endpoint(payload))
+
+    assert caught.value.status_code == 422
+    assert caught.value.detail["code"] == "preflight_request_invalid"
+
+
 def test_task_execution_timings_endpoint_persists_entries(monkeypatch):
     captured = {}
 

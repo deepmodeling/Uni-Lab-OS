@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import csv
 import errno
+import hashlib
 import io
 import json
 import logging
@@ -60,6 +61,7 @@ from scripts.run_history_store import RunHistoryStore
 from scripts.task_execution_coordinator import (
     TaskApiConflict,
     TaskExecutionCoordinator,
+    validate_task_dispatch_preflight,
     workflow_nodes_from_payload,
 )
 from scripts.szlab_task_opc_simulator import DEFAULT_URL as DEFAULT_OPC_SIMULATOR_URL
@@ -1097,6 +1099,22 @@ def _run_node_with_live_opc_sampling(
     return [output]
 
 
+def _task_workflow_fingerprint(payload: dict[str, Any]) -> str:
+    """为预检使用的 workflow 快照生成稳定指纹。"""
+    workflow = payload.get("data", payload)
+    try:
+        canonical = json.dumps(
+            workflow,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("workflow 内容无法生成稳定指纹") from exc
+    return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
+
+
 class WorkflowRunManager:
     def __init__(
         self,
@@ -1634,6 +1652,46 @@ class WorkflowRunManager:
         """只返回 Task 页面已经连接的设备，避免 tick 隐式重连。"""
         with self._lock:
             return dict(self._cached_devices)
+
+    def preflight_task_dispatch(
+        self,
+        *,
+        workflow_path: str,
+        expected_version: int,
+        workflow_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """使用当前工作区和 workflow 快照检查 Task 是否允许派发。"""
+        if type(expected_version) is not int or expected_version < 0:
+            raise ValueError("expected_version 必须是非负整数")
+        workflow_nodes = workflow_nodes_from_payload(workflow_payload)
+        workflow_fingerprint = _task_workflow_fingerprint(workflow_payload)
+        response = self._task_snapshot_publisher.get_workspace(
+            workflow_path=workflow_path
+        )
+        actual_version = response.get("version")
+        if type(actual_version) is not int:
+            raise RuntimeError("Task 排程服务未返回有效工作区版本")
+        if actual_version != expected_version:
+            raise TaskApiConflict(
+                "version_conflict",
+                (
+                    "Task 工作区版本已变化: "
+                    f"expected={expected_version}, actual={actual_version}"
+                ),
+            )
+        workspace = response.get("workspace")
+        if not isinstance(workspace, dict):
+            raise RuntimeError("Task 排程服务未返回有效工作区")
+        result = validate_task_dispatch_preflight(
+            workspace,
+            workflow_nodes,
+            self._task_execution_devices(),
+        )
+        return {
+            **result.as_dict(),
+            "workspace_version": actual_version,
+            "workflow_fingerprint": workflow_fingerprint,
+        }
 
     def run_task_execution_cycle(
         self,
@@ -3472,6 +3530,66 @@ def create_app(
                 "active": False,
                 "message": error_message,
             }
+
+    @app.post("/api/task-execution/preflight", response_class=JSONResponse)
+    async def preflight_task_dispatch(
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        workspace_path = str(payload.get("task_workspace_path") or "").strip()
+        workflow_payload = payload.get("workflow")
+        expected_version = payload.get("expected_version")
+        if not workspace_path:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "preflight_request_invalid",
+                    "message": "缺少当前 workflow 路径",
+                },
+            )
+        if type(expected_version) is not int or expected_version < 0:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "preflight_request_invalid",
+                    "message": "expected_version 必须是非负整数",
+                },
+            )
+        if not isinstance(workflow_payload, dict):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "preflight_request_invalid",
+                    "message": "缺少当前 workflow JSON",
+                },
+            )
+        try:
+            result = await asyncio.to_thread(
+                manager.preflight_task_dispatch,
+                workflow_path=workspace_path,
+                expected_version=expected_version,
+                workflow_payload=workflow_payload,
+            )
+        except TaskApiConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": str(exc)},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "workflow_invalid", "message": str(exc)},
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "preflight_failed",
+                    "message": str(exc).strip() or type(exc).__name__,
+                },
+            ) from exc
+        if not result.get("valid"):
+            raise HTTPException(status_code=422, detail=result)
+        return result
 
     @app.post("/api/task-execution/tick", response_class=JSONResponse)
     async def run_task_execution_tick(

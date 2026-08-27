@@ -181,6 +181,18 @@ export class TaskExecutionCycleCancelledError extends Error {
   }
 }
 
+export class TaskExecutionPreflightRejectedError extends Error {
+  readonly code = 'task_dispatch_preflight_failed';
+
+  constructor(
+    message: string,
+    readonly preflight: unknown,
+  ) {
+    super(message);
+    this.name = 'TaskExecutionPreflightRejectedError';
+  }
+}
+
 export class TaskOrchestrationBusinessError extends Error {
   constructor(
     message: string,
@@ -452,7 +464,9 @@ type TaskExecutionCycleOptions = {
 type BackendResult = {
   success?: boolean;
   active?: boolean | number;
+  code?: string;
   message?: string;
+  preflight?: unknown;
   in_flight?: number;
   claimed?: number;
   completed?: number;
@@ -553,6 +567,12 @@ async function requestExecutionBackend(
     if (!response.ok || !result?.success) {
       const message = result?.message || '后端返回无效响应';
       const status = response.ok ? '' : `（HTTP ${response.status}）`;
+      if (result?.code === 'task_dispatch_preflight_failed') {
+        throw new TaskExecutionPreflightRejectedError(
+          `${failureLabel}：${message}${status}`,
+          result.preflight,
+        );
+      }
       throw new Error(`${failureLabel}：${message}${status}`);
     }
     return result;
@@ -819,6 +839,7 @@ type TaskExecutionControllerOptions = {
   pauseScheduler: (workflowPath: string, expectedVersion: number) => Promise<ApiWorkspaceResponse>;
   onStatus: (status: TaskExecutionStatus) => void;
   onError: (message: string) => void;
+  onPreflightRejected?: (preflight: unknown, message: string) => void;
   onDrainingChange?: (draining: boolean) => void;
 };
 
@@ -829,6 +850,7 @@ export function createTaskExecutionController({
   pauseScheduler,
   onStatus,
   onError,
+  onPreflightRejected,
   onDrainingChange,
 }: TaskExecutionControllerOptions) {
   type Generation = {
@@ -995,6 +1017,31 @@ export function createTaskExecutionController({
         if (error instanceof TaskExecutionCycleCancelledError) return false;
         const message = error instanceof Error ? error.message : 'Task 执行循环失败';
         fatalError = message;
+        if (
+          generation.mode === 'active'
+          && error instanceof TaskExecutionPreflightRejectedError
+        ) {
+          onPreflightRejected?.(error.preflight, message);
+          try {
+            const pausedWorkspace = await pauseScheduler(
+              options.workflowPath,
+              lastWorkspace?.version ?? options.expectedVersion,
+            );
+            finishPausedTransition(generation, pausedWorkspace, 'failed');
+            onError(message);
+            return false;
+          } catch (pauseError) {
+            if (pauseError instanceof TaskExecutionCycleCancelledError) return false;
+            const pauseMessage = pauseError instanceof Error
+              ? pauseError.message
+              : '未知错误';
+            stopGeneration(generation);
+            onDrainingChange?.(false);
+            onStatus(createTaskExecutionStatus(lastTick, lastWorkspace, 'failed'));
+            onError(`${message}；自动暂停失败：${pauseMessage}`);
+            return false;
+          }
+        }
         if (generation.mode === 'harvest') {
           stopGeneration(generation);
           onDrainingChange?.(false);

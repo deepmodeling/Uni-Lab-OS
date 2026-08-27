@@ -89,6 +89,7 @@ import { TASK_EXECUTION_POLL_INTERVAL_MS } from './taskPolling';
 import {
   canStartTaskDispatch,
   currentTaskDispatchReadiness,
+  isTaskDispatchPreflightResult,
   preflightTaskDispatch,
   TaskDispatchPreflightHttpError,
   type TaskDispatchReadiness,
@@ -970,6 +971,7 @@ function App() {
   const taskRequestQueueRef = useRef<Promise<void>>(Promise.resolve());
   const taskSchedulerTransitionRef = useRef(false);
   const taskExecutionControllerRef = useRef<ReturnType<typeof createTaskExecutionController> | null>(null);
+  const taskDispatchPreflightKeyRef = useRef('');
   const opcSimulatorClientRef = useRef(createOpcSimulatorClient());
   const ownedOpcSimulatorRunIdRef = useRef<string | null>(null);
   const opcSimulatorStatusRef = useRef<OpcSimulatorStatus | null>(null);
@@ -1080,6 +1082,17 @@ function App() {
       ),
       onStatus: setTaskExecutionStatus,
       onError: setTaskServiceError,
+      onPreflightRejected: (preflight, errorMessage) => {
+        setTaskExecutionWorkflow(null);
+        if (!isTaskDispatchPreflightResult(preflight)) return;
+        setTaskDispatchReadiness({
+          status: 'invalid',
+          key: taskDispatchPreflightKeyRef.current,
+          result: preflight,
+          message: `服务端派发前复核未通过，已停止自动派发。${errorMessage}`,
+          source: 'dispatch',
+        });
+      },
       onDrainingChange: setIsTaskExecutionDraining,
     });
   }
@@ -1238,6 +1251,7 @@ function App() {
     ),
     [taskDispatchPreflightKey, taskDispatchReadiness],
   );
+  taskDispatchPreflightKeyRef.current = taskDispatchPreflightKey;
   const renderedEdges = useMemo(() => {
     const executableEdgeEndpoints = new Set(
       executionPlan.executableEdges.map((edge) => JSON.stringify([edge.source, edge.target])),
@@ -3184,10 +3198,18 @@ function App() {
     if (workspace !== 'tasks') return;
     const key = taskDispatchPreflightKey;
     if (isSchedulerRunning || isTaskExecutionDraining) {
-      setTaskDispatchReadiness({
-        status: 'stale',
-        key,
-        message: '调度运行中，暂停后将重新验证派发条件',
+      setTaskDispatchReadiness((current) => {
+        const visible = currentTaskDispatchReadiness(current, key);
+        if (
+          isTaskExecutionDraining
+          && visible.status === 'invalid'
+          && visible.source === 'dispatch'
+        ) return current;
+        return {
+          status: 'stale',
+          key,
+          message: '调度运行中，暂停后将重新验证派发条件',
+        };
       });
       return;
     }
@@ -3245,6 +3267,7 @@ function App() {
             status: result.valid ? 'ready' : 'invalid',
             key,
             result,
+            source: 'automatic',
           });
         } catch (error) {
           if (

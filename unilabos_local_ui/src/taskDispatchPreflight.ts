@@ -26,6 +26,7 @@ export type TaskDispatchReadiness = {
   key: string;
   result?: TaskDispatchPreflightResult;
   message?: string;
+  source?: 'automatic' | 'dispatch';
 };
 
 export class TaskDispatchPreflightHttpError extends Error {
@@ -50,7 +51,9 @@ function isIssue(value: unknown): value is TaskDispatchPreflightIssue {
     && typeof issue.phase === 'string';
 }
 
-function isResult(value: unknown): value is TaskDispatchPreflightResult {
+export function isTaskDispatchPreflightResult(
+  value: unknown,
+): value is TaskDispatchPreflightResult {
   if (!value || typeof value !== 'object') return false;
   const result = value as Record<string, unknown>;
   return typeof result.valid === 'boolean'
@@ -90,9 +93,9 @@ export async function preflightTaskDispatch(options: {
   });
   const payload = await response.json().catch(() => null) as unknown;
   const detail = errorDetail(payload);
-  const resultCandidate = isResult(payload)
+  const resultCandidate = isTaskDispatchPreflightResult(payload)
     ? payload
-    : isResult(detail)
+    : isTaskDispatchPreflightResult(detail)
       ? detail
       : null;
   if (response.status === 422 && resultCandidate) return resultCandidate;

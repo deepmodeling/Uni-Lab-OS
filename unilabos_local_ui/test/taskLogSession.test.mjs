@@ -22,7 +22,7 @@ async function importTypeScriptModule(path) {
 const { buildTaskLogLines, filterTaskLogLines } = await importTypeScriptModule(
   new URL('../src/taskLogSession.ts', import.meta.url),
 );
-const { fetchAllTaskActionLogs } = await importTypeScriptModule(
+const { fetchAllTaskActionLogs, mergeTaskActionLogs } = await importTypeScriptModule(
   new URL('../src/taskActionLog.ts', import.meta.url),
 );
 
@@ -62,6 +62,14 @@ assert.deepEqual(requestedAfterSeqs, [0, 2, 4]);
 assert.deepEqual(pagedLogs.entries.map((entry) => entry.seq), [1, 2, 3, 4, 5]);
 assert.equal(pagedLogs.next_after_seq, 5);
 assert.equal(pagedLogs.latest_seq, 5);
+
+const completeFrontendHistory = mergeTaskActionLogs(
+  [],
+  Array.from({ length: 2105 }, (_, index) => ({ seq: index + 1 })),
+);
+assert.equal(completeFrontendHistory.length, 2105);
+assert.equal(completeFrontendHistory[0].seq, 1);
+assert.equal(completeFrontendHistory.at(-1).seq, 2105);
 
 const mainSource = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 assert.match(

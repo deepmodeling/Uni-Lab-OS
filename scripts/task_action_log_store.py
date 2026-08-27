@@ -6,8 +6,6 @@ import threading
 import time
 from typing import Any
 
-MAX_ENTRIES_PER_EXECUTION = 200
-
 
 class TaskActionLogStore:
     """按 workflow 存储 Task Action 日志，供 workflow_ui 查询。"""
@@ -45,9 +43,7 @@ class TaskActionLogStore:
             next_seq = self._seq_by_workflow.get(workflow_path, 0) + 1
             self._seq_by_workflow[workflow_path] = next_seq
             record["seq"] = next_seq
-            entries = self._entries_by_workflow.setdefault(workflow_path, [])
-            entries.append(record)
-            self._trim_execution_entries(entries, execution_id)
+            self._entries_by_workflow.setdefault(workflow_path, []).append(record)
             return next_seq
 
     def latest_seq(self, workflow_path: str) -> int:
@@ -81,15 +77,3 @@ class TaskActionLogStore:
             "has_more": len(page) < len(filtered),
             "entries": page,
         }
-
-    @staticmethod
-    def _trim_execution_entries(
-        entries: list[dict[str, Any]],
-        execution_id: str,
-    ) -> None:
-        same = [item for item in entries if item.get("execution_id") == execution_id]
-        overflow = len(same) - MAX_ENTRIES_PER_EXECUTION
-        if overflow <= 0:
-            return
-        remove_ids = {id(item) for item in same[:overflow]}
-        entries[:] = [item for item in entries if id(item) not in remove_ids]

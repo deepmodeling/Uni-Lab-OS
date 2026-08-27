@@ -64,3 +64,25 @@ def test_task_action_log_store_pages_from_oldest_unread_entry():
     assert final["next_after_seq"] == 5
     assert final["has_more"] is False
     assert [entry["seq"] for entry in final["entries"]] == [5]
+
+
+def test_task_action_log_store_keeps_complete_execution_history():
+    store = TaskActionLogStore()
+    for index in range(250):
+        store.append(
+            workflow_path="demo.json",
+            instance_id="inst-a",
+            node_id="node-1",
+            execution_id="exec-1",
+            sample_id="Sample A",
+            level="info",
+            message=f"日志 {index + 1}",
+        )
+
+    payload = store.list_since(
+        "demo.json", after_seq=0, instance_id="inst-a", limit=500
+    )
+    assert payload["latest_seq"] == 250
+    assert payload["next_after_seq"] == 250
+    assert payload["has_more"] is False
+    assert [entry["seq"] for entry in payload["entries"]] == list(range(1, 251))

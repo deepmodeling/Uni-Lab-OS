@@ -171,8 +171,7 @@ export function mergeTaskActionLogs(
     bySeq.set(entry.seq, entry);
   }
   return Array.from(bySeq.values())
-    .sort((left, right) => left.seq - right.seq)
-    .slice(-2000);
+    .sort((left, right) => left.seq - right.seq);
 }
 
 export function groupTaskActionLogsByNode(

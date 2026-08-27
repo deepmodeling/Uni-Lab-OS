@@ -126,6 +126,18 @@ def test_task_execution_log_contract_prefers_structured_fields_and_maps_legacy_l
         "phase": "executing",
     }
 
+    returned_failure = workflow_ui._task_execution_log_contract(
+        "动作结果: {'success': False}",
+        level="info",
+        detail={"result": {"success": False, "message": "设备拒绝执行"}},
+    )
+    assert returned_failure == {
+        "category": "result",
+        "level": "error",
+        "code": "action_returned_failure",
+        "phase": "executing",
+    }
+
 
 def test_ai4c_preset_csv_matches_default_opc_namespace():
     preset = load_preset("ai4c")
@@ -2102,39 +2114,46 @@ def test_real_node_runner_wrappers_preserve_recursive_false_results():
         method="bare_false",
         legacy_route_compatible=False,
     )
-    helper_output = _run_node_with_live_opc_sampling(
-        helper_node,
-        {"device": device},
-        action_callable=device.bare_false,
-        logger=WorkflowLogger(writer=lambda *_args, **_kwargs: None),
-        runtime_config=runtime_config,
+    messages = []
+    logger = WorkflowLogger(
+        writer=lambda message, **_kwargs: messages.append(message)
     )
-    tuple_output = run_nodes(
-        [
-            WorkflowNode(
-                uuid="tuple-false",
-                name="auto-tuple_false",
-                device_name="device",
-                param={},
-            )
-        ],
-        {"device": device},
-        logger=WorkflowLogger(writer=lambda *_args, **_kwargs: None),
-        runtime_config=runtime_config,
-    )
-    nested_output = run_nodes(
-        [
-            WorkflowNode(
-                uuid="nested-false",
-                name="auto-nested_false",
-                device_name="device",
-                param={},
-            )
-        ],
-        {"device": device},
-        logger=WorkflowLogger(writer=lambda *_args, **_kwargs: None),
-        runtime_config=runtime_config,
-    )
+    with pytest.raises(workflow_ui.ActionReturnedFailure) as bare_failure:
+        _run_node_with_live_opc_sampling(
+            helper_node,
+            {"device": device},
+            action_callable=device.bare_false,
+            logger=logger,
+            runtime_config=runtime_config,
+        )
+    with pytest.raises(workflow_ui.ActionReturnedFailure) as tuple_failure:
+        run_nodes(
+            [
+                WorkflowNode(
+                    uuid="tuple-false",
+                    name="auto-tuple_false",
+                    device_name="device",
+                    param={},
+                )
+            ],
+            {"device": device},
+            logger=logger,
+            runtime_config=runtime_config,
+        )
+    with pytest.raises(workflow_ui.ActionReturnedFailure) as nested_failure:
+        run_nodes(
+            [
+                WorkflowNode(
+                    uuid="nested-false",
+                    name="auto-nested_false",
+                    device_name="device",
+                    param={},
+                )
+            ],
+            {"device": device},
+            logger=logger,
+            runtime_config=runtime_config,
+        )
     normal_output = run_nodes(
         [
             WorkflowNode(
@@ -2149,9 +2168,14 @@ def test_real_node_runner_wrappers_preserve_recursive_false_results():
         runtime_config=runtime_config,
     )
 
-    assert _false_result(helper_output) is not None
-    assert _false_result(tuple_output) is not None
-    assert _false_result(nested_output) is not None
+    assert bare_failure.value.failure is False
+    assert tuple_failure.value.failure == (False, "failed")
+    assert nested_failure.value.failure == {"success": False}
+    result_messages = [
+        message for message in messages if message.startswith("动作结果")
+    ]
+    assert len(result_messages) == 3
+    assert result_messages[0] == "动作结果：失败 · False"
     assert _false_result(normal_output) is None
 
 

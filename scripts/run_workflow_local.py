@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
+from scripts.task_action_result import ActionReturnedFailure, find_action_failure
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SZLAB_DIR = REPO_ROOT / "tests" / "szlab_poly_studio"
@@ -694,6 +696,7 @@ def run_nodes(
             logger.log(wait_log["message"], detail=wait_log.get("detail"))
         if isinstance(result, dict) and result.get("display_message"):
             logger.log(str(result["display_message"]))
+        failure = find_action_failure(result)
         logger.log(f"动作结果: {result}", detail={"result": result})
         results.append(
             {
@@ -706,8 +709,12 @@ def run_nodes(
                 "result": result,
             }
         )
-        if isinstance(result, dict) and result.get("success") is False:
-            raise RuntimeError(f"动作失败: {device_name}.{method_name}: {result}")
+        if failure is not None:
+            raise ActionReturnedFailure(
+                device_id=device_name,
+                action_name=method_name,
+                failure=failure,
+            )
 
     return results
 

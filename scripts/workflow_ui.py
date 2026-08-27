@@ -55,6 +55,7 @@ from scripts.opc_simulator_process_manager import (
     UnsafeSimulatorUrlConfirmationRequired,
 )
 from scripts.task_action_log_store import TaskActionLogStore
+from scripts.task_action_result import ActionReturnedFailure, find_action_failure
 from scripts.run_history_store import RunHistoryStore
 from scripts.task_execution_coordinator import (
     TaskApiConflict,
@@ -836,8 +837,15 @@ def _task_execution_log_contract(
     if legacy_error and normalized_level not in {"error", "critical"}:
         normalized_level = "error"
     detail_type = detail.get("type") if isinstance(detail, dict) else None
+    has_result = isinstance(detail, dict) and "result" in detail
+    result_failure = find_action_failure(detail["result"]) if has_result else None
+    if result_failure is not None and not category:
+        inferred_category = "result"
+        normalized_level = "error"
     inferred_code = (
-        str(detail_type)
+        "action_returned_failure"
+        if result_failure is not None
+        else str(detail_type)
         if isinstance(detail_type, str) and detail_type.strip()
         else {
             "action_result": "action_result",
@@ -990,14 +998,17 @@ def _run_node_with_live_opc_sampling(
         )
     for wait_log in iter_opc_wait_logs(default_plc, device, snapshot_client):
         logger.log(wait_log["message"], detail=wait_log.get("detail"))
+    failure = find_action_failure(result)
     if isinstance(result, dict):
-        status_text = "成功" if result.get("success") is not False else "失败"
+        status_text = "成功" if failure is None else "失败"
         summary = f"动作结果：{status_text}"
         display_message = result.get("display_message")
         if display_message:
             logger.log(str(display_message))
         elif result.get("message"):
             summary = f"{summary} · {result['message']}"
+    elif failure is not None:
+        summary = f"动作结果：失败 · {result}"
     else:
         summary = f"动作结果：{result}"
     logger.log(summary, detail={"result": result})
@@ -1011,8 +1022,12 @@ def _run_node_with_live_opc_sampling(
         "opc_after": after,
         "result": result,
     }
-    if isinstance(result, dict) and result.get("success") is False:
-        raise RuntimeError(f"动作失败: {device_name}.{method_name}: {result}")
+    if failure is not None:
+        raise ActionReturnedFailure(
+            device_id=device_name,
+            action_name=method_name,
+            failure=failure,
+        )
     return [output]
 
 
@@ -1057,6 +1072,7 @@ class WorkflowRunManager:
         category: str = "",
         code: str = "",
         phase: str = "",
+        record_incident: bool = True,
     ) -> None:
         contract = _task_execution_log_contract(
             message,
@@ -1093,21 +1109,27 @@ class WorkflowRunManager:
                 node_id=str(context.get("node_id") or ""),
                 execution_id=str(context.get("execution_id") or ""),
                 sample_id=str(context.get("sample_id") or ""),
-                level=level,
+                level=contract["level"],
                 message=message,
                 detail=detail,
             )
         except Exception:
             # 持久化失败不得影响 Action 执行
             _LOGGER.exception("Task Action 日志持久化失败")
-        normalized_level = str(level).lower()
-        if normalized_level in {"warning", "error", "critical"} or any(
-            keyword in message for keyword in ("报警", "告警")
+        normalized_level = contract["level"]
+        if record_incident and (
+            normalized_level in {"warning", "error", "critical"} or any(
+                keyword in message for keyword in ("报警", "告警")
+            )
         ):
             try:
                 self._run_history_store.record_incident(
-                    category="action_alarm",
-                    code="action_log_alarm",
+                    category=(
+                        "action_error"
+                        if normalized_level in {"error", "critical"}
+                        else "action_alarm"
+                    ),
+                    code=contract["code"] or "action_log_alarm",
                     severity=(
                         normalized_level
                         if normalized_level in {"warning", "error", "critical"}
@@ -1119,7 +1141,7 @@ class WorkflowRunManager:
                     sample_id=str(context.get("sample_id") or ""),
                     node_id=str(context.get("node_id") or ""),
                     execution_id=str(context.get("execution_id") or ""),
-                    phase="动作执行中",
+                    phase=contract["phase"] or "动作执行中",
                     detail=detail,
                 )
             except Exception:
@@ -1166,6 +1188,27 @@ class WorkflowRunManager:
                 runtime_config=self._runtime_config,
             )
         except Exception as exc:
+            returned_failure = isinstance(exc, ActionReturnedFailure)
+            traceback_text = traceback.format_exc()
+            if not returned_failure:
+                exception_type = type(exc).__name__
+                exception_text = str(exc).strip()
+                self._append_task_action_log(
+                    context,
+                    f"Action 执行失败：{exception_type}"
+                    + (f"：{exception_text}" if exception_text else ""),
+                    level="error",
+                    category="action",
+                    code="action_exception",
+                    phase="executing",
+                    detail={
+                        "type": "action_exception",
+                        "exception_type": exception_type,
+                        "message": exception_text,
+                        "traceback": traceback_text,
+                    },
+                    record_incident=False,
+                )
             try:
                 self._run_history_store.record_action_finish(
                     execution_id=execution_id,
@@ -1173,23 +1216,27 @@ class WorkflowRunManager:
                     error={
                         "type": type(exc).__name__,
                         "message": str(exc),
-                        "traceback": traceback.format_exc(),
-                    },
-                )
-                self._run_history_store.record_incident(
-                    category="action_error",
-                    code="action_failed",
-                    severity="error",
-                    message=str(exc),
-                    execution_id=execution_id,
-                    phase="动作执行中",
-                    detail={
-                        "type": type(exc).__name__,
-                        "traceback": traceback.format_exc(),
+                        "traceback": traceback_text,
                     },
                 )
             except Exception:
                 pass
+            if not returned_failure:
+                try:
+                    self._run_history_store.record_incident(
+                        category="action_error",
+                        code="action_failed",
+                        severity="error",
+                        message=str(exc),
+                        execution_id=execution_id,
+                        phase="动作执行中",
+                        detail={
+                            "type": type(exc).__name__,
+                            "traceback": traceback_text,
+                        },
+                    )
+                except Exception:
+                    pass
             raise
         try:
             self._run_history_store.record_action_finish(

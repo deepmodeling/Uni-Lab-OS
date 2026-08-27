@@ -494,11 +494,82 @@ def test_task_action_error_is_recorded_with_sample_station_and_time(
             },
         )
 
-    incident = store.incident_ledger("run-error")["incidents"][0]
+    entries = manager.list_task_action_logs(
+        workflow_path="main-process.json"
+    )["entries"]
+    assert len(entries) == 1
+    assert entries[0]["category"] == "action"
+    assert entries[0]["level"] == "error"
+    assert entries[0]["code"] == "action_exception"
+    assert entries[0]["phase"] == "executing"
+    assert entries[0]["message"] == (
+        "Action 执行失败：RuntimeError：S08 工站报警中"
+    )
+    assert entries[0]["detail"]["exception_type"] == "RuntimeError"
+
+    incidents = store.incident_ledger("run-error")["incidents"]
+    assert len(incidents) == 1
+    incident = incidents[0]
     assert incident["code"] == "action_failed"
     assert incident["sample_id"] == "sample-8"
     assert incident["instance_id"] == "instance-8"
     assert incident["station"] == "S08"
     assert incident["first_seen_at"] == 5_000
     assert incident["message"] == "S08 工站报警中"
+    manager.shutdown()
+
+
+def test_task_action_false_result_is_logged_once_as_failed_result(tmp_path):
+    store = RunHistoryStore(tmp_path, session_id="run-failed-result")
+    preset = load_preset("szlab_robot_action_workflow")
+    manager = WorkflowRunManager(
+        preset,
+        _load_preset_runtime_config(preset),
+        run_history_store=store,
+    )
+    node = WorkflowNode(
+        uuid="failed-node",
+        name="fail_action",
+        device_name="device",
+        method="fail_action",
+        param={},
+        legacy_route_compatible=False,
+    )
+
+    class FailedDevice:
+        def fail_action(self):
+            return {"success": False, "message": "目标工位被占用"}
+
+    device = FailedDevice()
+    with pytest.raises(workflow_ui.ActionReturnedFailure):
+        manager._run_task_action_node(
+            node,
+            {"device": device},
+            device.fail_action,
+            {
+                "workflow_path": "main-process.json",
+                "instance_id": "instance-failed",
+                "sample_id": "sample-failed",
+                "template_id": "template-failed",
+                "node_id": "failed-node",
+                "execution_id": "execution-failed",
+                "device_id": "device",
+                "action_name": "fail_action",
+            },
+        )
+
+    entries = manager.list_task_action_logs(
+        workflow_path="main-process.json"
+    )["entries"]
+    assert len(entries) == 2
+    result_entries = [entry for entry in entries if entry["category"] == "result"]
+    assert len(result_entries) == 1
+    assert result_entries[0]["level"] == "error"
+    assert result_entries[0]["code"] == "action_returned_failure"
+    assert result_entries[0]["message"] == "动作结果：失败 · 目标工位被占用"
+    assert not any(entry["code"] == "action_exception" for entry in entries)
+
+    incidents = store.incident_ledger("run-failed-result")["incidents"]
+    assert len(incidents) == 1
+    assert incidents[0]["code"] == "action_returned_failure"
     manager.shutdown()

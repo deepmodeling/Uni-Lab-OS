@@ -14,6 +14,7 @@ from scripts.run_workflow_local import (
     node_method,
     workflow_node_from_mapping,
 )
+from scripts.task_action_result import find_action_failure
 from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.sensors import (
     s04_allow_var,
     s04_material_sensor_var,
@@ -1444,43 +1445,7 @@ def _false_result(
     *,
     _allow_bare_false: bool = True,
 ) -> Any | None:
-    if _allow_bare_false and type(value) is bool:
-        return value if value is False else None
-    if isinstance(value, dict):
-        if value.get("success") is False:
-            return value
-        if "result" in value:
-            failure = _false_result(
-                value["result"],
-                _allow_bare_false=True,
-            )
-            if failure is not None:
-                return failure
-        for key, nested in value.items():
-            if key == "result":
-                continue
-            failure = _false_result(
-                nested,
-                _allow_bare_false=False,
-            )
-            if failure is not None:
-                return failure
-    if isinstance(value, (list, tuple)):
-        if (
-            _allow_bare_false
-            and value
-            and type(value[0]) is bool
-            and value[0] is False
-        ):
-            return value
-        for item in value:
-            failure = _false_result(
-                item,
-                _allow_bare_false=False,
-            )
-            if failure is not None:
-                return failure
-    return None
+    return find_action_failure(value, _allow_bare_false=_allow_bare_false)
 
 
 def _json_safe(value: Any) -> Any:

@@ -71,9 +71,16 @@ class TaskActionLogStore:
             if int(item.get("seq", 0)) > after_seq
             and (not instance_id or item.get("instance_id") == instance_id)
         ]
-        if limit > 0:
-            filtered = filtered[-limit:]
-        return {"latest_seq": latest, "entries": filtered}
+        page = filtered[:limit] if limit > 0 else filtered
+        next_after_seq = (
+            int(page[-1].get("seq", after_seq)) if page else int(after_seq)
+        )
+        return {
+            "latest_seq": latest,
+            "next_after_seq": next_after_seq,
+            "has_more": len(page) < len(filtered),
+            "entries": page,
+        }
 
     @staticmethod
     def _trim_execution_entries(

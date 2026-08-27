@@ -2939,6 +2939,8 @@ def create_app(
                 "success": False,
                 "message": "缺少当前 workflow 路径",
                 "latest_seq": 0,
+                "next_after_seq": max(0, int(after_seq)),
+                "has_more": False,
                 "entries": [],
             }
         try:
@@ -2953,6 +2955,8 @@ def create_app(
                 "success": False,
                 "message": str(exc),
                 "latest_seq": 0,
+                "next_after_seq": max(0, int(after_seq)),
+                "has_more": False,
                 "entries": [],
             }
 

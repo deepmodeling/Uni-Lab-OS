@@ -22,6 +22,9 @@ async function importTypeScriptModule(path) {
 const { buildTaskLogLines, filterTaskLogLines } = await importTypeScriptModule(
   new URL('../src/taskLogSession.ts', import.meta.url),
 );
+const { fetchAllTaskActionLogs } = await importTypeScriptModule(
+  new URL('../src/taskActionLog.ts', import.meta.url),
+);
 
 const logLines = buildTaskLogLines({
   events: [
@@ -40,6 +43,25 @@ assert.deepEqual(logLines.map((line) => line.category), ['schedule', 'action', '
 assert.equal(filterTaskLogLines(logLines, 'all').length, 4);
 assert.equal(filterTaskLogLines(logLines, 'opc').length, 1);
 assert.equal(filterTaskLogLines(logLines, 'error').length, 1);
+
+const requestedAfterSeqs = [];
+const pages = new Map([
+  [0, { latest_seq: 5, next_after_seq: 2, has_more: true, entries: [{ seq: 1 }, { seq: 2 }] }],
+  [2, { latest_seq: 5, next_after_seq: 4, has_more: true, entries: [{ seq: 3 }, { seq: 4 }] }],
+  [4, { latest_seq: 5, next_after_seq: 5, has_more: false, entries: [{ seq: 5 }] }],
+]);
+const pagedLogs = await fetchAllTaskActionLogs(async (url) => {
+  const afterSeq = Number(new URL(url, 'http://localhost').searchParams.get('after_seq'));
+  requestedAfterSeqs.push(afterSeq);
+  return {
+    ok: true,
+    json: async () => ({ success: true, ...pages.get(afterSeq) }),
+  };
+}, 'demo.json');
+assert.deepEqual(requestedAfterSeqs, [0, 2, 4]);
+assert.deepEqual(pagedLogs.entries.map((entry) => entry.seq), [1, 2, 3, 4, 5]);
+assert.equal(pagedLogs.next_after_seq, 5);
+assert.equal(pagedLogs.latest_seq, 5);
 
 const mainSource = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 assert.match(
@@ -75,6 +97,11 @@ assert.match(
   mainSource,
   /if \(!isTaskLogBootstrapped \|\| !taskLogBootstrappedRef\.current\) \{\s*setTaskServiceError\('Task 日志正在初始化，请稍后重试'\);\s*return;\s*\}[\s\S]*?setTaskLogSession\(/,
   'cursor 初始化完成前不得启动新的 Task 日志会话',
+);
+assert.match(
+  mainSource,
+  /const result = await fetchAllTaskActionLogs\(fetch, taskWorkspacePath,[\s\S]*?taskLogAfterSeqRef\.current = result\.next_after_seq;/,
+  '轮询必须拉完所有分页，并且只按实际收到的 next_after_seq 推进 cursor',
 );
 
 const schedulerSource = await readFile(new URL('../src/TaskSchedulerBench.tsx', import.meta.url), 'utf8');

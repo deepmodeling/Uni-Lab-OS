@@ -74,6 +74,7 @@ import {
 import {
   buildTaskProcessLogLines,
   buildTaskVariableRows,
+  fetchAllTaskActionLogs,
   fetchTaskActionLogs,
   groupTaskActionLogsByNode,
   mergeTaskActionLogs,
@@ -1411,7 +1412,7 @@ function App() {
       if (inFlight) return;
       inFlight = true;
       try {
-        const result = await fetchTaskActionLogs(fetch, taskWorkspacePath, {
+        const result = await fetchAllTaskActionLogs(fetch, taskWorkspacePath, {
           afterSeq: taskLogAfterSeqRef.current,
         });
         if (cancelled) return;
@@ -1419,8 +1420,8 @@ function App() {
         if (result.entries.length) {
           setTaskActionLogs((previous) => mergeTaskActionLogs(previous, result.entries));
         }
-        if (result.latest_seq >= taskLogAfterSeqRef.current) {
-          taskLogAfterSeqRef.current = result.latest_seq;
+        if (result.next_after_seq >= taskLogAfterSeqRef.current) {
+          taskLogAfterSeqRef.current = result.next_after_seq;
         }
       } catch {
         if (!cancelled) setTaskLogError('日志暂不可用');
@@ -1445,7 +1446,7 @@ function App() {
       return;
     }
     let cancelled = false;
-    void fetchTaskActionLogs(fetch, taskWorkspacePath, {
+    void fetchAllTaskActionLogs(fetch, taskWorkspacePath, {
       afterSeq: 0,
       instanceId: selectedTaskInstanceId,
     })

@@ -205,10 +205,16 @@ export async function fetchTaskActionLogs(
   fetcher: typeof fetch,
   workflowPath: string,
   options: { afterSeq?: number; instanceId?: string } = {},
-): Promise<{ latest_seq: number; entries: TaskActionLogEntry[] }> {
+): Promise<{
+  latest_seq: number;
+  next_after_seq: number;
+  has_more: boolean;
+  entries: TaskActionLogEntry[];
+}> {
+  const requestedAfterSeq = options.afterSeq ?? 0;
   const params = new URLSearchParams({
     task_workspace_path: workflowPath,
-    after_seq: String(options.afterSeq ?? 0),
+    after_seq: String(requestedAfterSeq),
   });
   if (options.instanceId) {
     params.set('instance_id', options.instanceId);
@@ -217,14 +223,51 @@ export async function fetchTaskActionLogs(
   const payload = await response.json() as {
     success?: boolean;
     latest_seq?: number;
+    next_after_seq?: number;
+    has_more?: boolean;
     entries?: TaskActionLogEntry[];
     message?: string;
   };
   if (!response.ok || !payload.success) {
     throw new Error(payload.message || 'Task 日志不可用');
   }
+  const entries = Array.isArray(payload.entries) ? payload.entries : [];
+  const lastEntrySeq = entries.length ? Number(entries[entries.length - 1].seq) : requestedAfterSeq;
+  const nextAfterSeq = Number(payload.next_after_seq ?? lastEntrySeq);
+  const hasMore = payload.has_more === true;
+  if (hasMore && nextAfterSeq <= requestedAfterSeq) {
+    throw new Error('Task 日志分页游标未推进');
+  }
   return {
     latest_seq: Number(payload.latest_seq || 0),
-    entries: Array.isArray(payload.entries) ? payload.entries : [],
+    next_after_seq: nextAfterSeq,
+    has_more: hasMore,
+    entries,
   };
+}
+
+export async function fetchAllTaskActionLogs(
+  fetcher: typeof fetch,
+  workflowPath: string,
+  options: { afterSeq?: number; instanceId?: string } = {},
+): Promise<{
+  latest_seq: number;
+  next_after_seq: number;
+  entries: TaskActionLogEntry[];
+}> {
+  let afterSeq = options.afterSeq ?? 0;
+  let latestSeq = afterSeq;
+  const entries: TaskActionLogEntry[] = [];
+  while (true) {
+    const page = await fetchTaskActionLogs(fetcher, workflowPath, {
+      ...options,
+      afterSeq,
+    });
+    latestSeq = Math.max(latestSeq, page.latest_seq);
+    entries.push(...page.entries);
+    afterSeq = page.next_after_seq;
+    if (!page.has_more) {
+      return { latest_seq: latestSeq, next_after_seq: afterSeq, entries };
+    }
+  }
 }

@@ -8,7 +8,11 @@ import {
 import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import {
+  formatTaskLogMetadata,
   filterTaskLogLines,
+  isTaskLogRecovery,
+  taskLogCategoryLabel,
+  taskLogPhaseLabel,
   type TaskLogCategory,
   type TaskLogLine,
 } from './taskLogSession';
@@ -390,7 +394,7 @@ export function TaskSchedulerBench(props: Props) {
           : '',
       ].filter(Boolean).join(' ');
       const sequence = line.seq === undefined ? '' : ` #${line.seq}`;
-      return `${new Date(line.timestamp).toLocaleString('zh-CN', { hour12: false })}${sequence} [${line.category}] [${line.level}]${contextText ? ` ${contextText}` : ''} ${line.message}`;
+      return `${new Date(line.timestamp).toLocaleString('zh-CN', { hour12: false })}${sequence} ${formatTaskLogMetadata(line)}${contextText ? ` ${contextText}` : ''} ${line.message}`;
     }).join('\n');
     void navigator.clipboard?.writeText(text).catch(() => undefined);
     const link = document.createElement('a');
@@ -672,13 +676,23 @@ export function TaskSchedulerBench(props: Props) {
                   actionById,
                   actionByTemplateNodeId,
                 );
+                const isRecovery = isTaskLogRecovery(line);
                 return <div className={`scheduler-bench__log-line ${line.category}${line.isError ? ' error' : ''}`} key={line.id}>
                   {context && <div className="scheduler-bench__log-context">
                     {context.sampleLabel && <span title={`sample_id: ${line.sampleId || ''}`}>样品 · {context.sampleLabel}</span>}
                     {context.taskLabel && <span title={`instance_id: ${line.instanceId || ''}`}>Task · {context.taskLabel}</span>}
                     {context.actionLabel && <span title={`node_id: ${line.nodeId || ''}\nexecution_id: ${line.executionId || ''}`}>Action · {context.actionLabel}</span>}
                   </div>}
-                  <div>{line.seq === undefined ? null : <span className="scheduler-bench__log-sequence">#{line.seq}</span>} <time>{new Date(line.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}</time> [{line.level}] {line.message}</div>
+                  <div className="scheduler-bench__log-content">
+                    {line.seq === undefined ? null : <span className="scheduler-bench__log-sequence">#{line.seq}</span>}
+                    <time>{new Date(line.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}</time>
+                    <span className="scheduler-bench__log-meta category" title={`category: ${line.category}`}>{taskLogCategoryLabel(line.category)}</span>
+                    <span className={`scheduler-bench__log-meta level ${line.level.toLowerCase()}`}>{line.level.toUpperCase()}</span>
+                    {line.code && <code className="scheduler-bench__log-meta code" title={`code: ${line.code}`}>{line.code}</code>}
+                    {line.phase && !isRecovery && <span className="scheduler-bench__log-meta phase" title={`phase: ${line.phase}`}>{taskLogPhaseLabel(line.phase)}</span>}
+                    {isRecovery && <span className="scheduler-bench__log-meta recovered" title={`phase: ${line.phase || 'recovered'}`}>已恢复</span>}
+                    <span className="scheduler-bench__log-message">{line.message}</span>
+                  </div>
                   {line.detail && Object.keys(line.detail).length ? <details>
                     <summary>详情</summary>
                     <pre>{JSON.stringify(line.detail, null, 2)}</pre>

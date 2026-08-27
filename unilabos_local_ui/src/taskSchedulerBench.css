@@ -1000,6 +1000,34 @@
 
 .scheduler-bench__log-sequence { color: #94a3b8; }
 
+.scheduler-bench__log-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.scheduler-bench__log-meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 17px;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  background: #1e293b;
+  color: #cbd5e1;
+  font: 9px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  padding: 2px 5px;
+}
+
+.scheduler-bench__log-meta.category { color: #bfdbfe; }
+.scheduler-bench__log-meta.level.error,
+.scheduler-bench__log-meta.level.critical { border-color: #7f1d1d; background: #450a0a; color: #fecaca; }
+.scheduler-bench__log-meta.level.warning { border-color: #78350f; background: #451a03; color: #fde68a; }
+.scheduler-bench__log-meta.code { color: #e2e8f0; }
+.scheduler-bench__log-meta.phase { color: #c4b5fd; }
+.scheduler-bench__log-meta.recovered { border-color: #14532d; background: #052e16; color: #86efac; }
+.scheduler-bench__log-message { margin-left: 2px; }
+
 .scheduler-bench__log-line details { margin: 5px 0 0 54px; }
 .scheduler-bench__log-line summary { color: #94a3b8; cursor: pointer; }
 .scheduler-bench__log-line pre {

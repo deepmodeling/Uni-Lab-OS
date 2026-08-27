@@ -65,6 +65,54 @@ export type TaskLogSession = {
   actionAfterSeq: number;
 };
 
+const TASK_LOG_CATEGORY_LABELS: Record<TaskExecutionLogCategory, string> = {
+  schedule: '调度',
+  action: 'Action',
+  opc: 'OPC',
+  result: '结果',
+};
+
+const TASK_LOG_PHASE_LABELS: Record<string, string> = {
+  preparing: '准备',
+  executing: '执行',
+  completed: '完成',
+  scheduling: '调度循环',
+  dispatching: '派发',
+  connecting: '连接',
+  registering: '注册',
+  polling: '轮询',
+  sampling_before: '动作前采样',
+  sampling_live: '动作中采样',
+  sampling_after: '动作后采样',
+  start: '开始',
+  finish: '结束',
+  recovered: '已恢复',
+};
+
+export function taskLogCategoryLabel(category: TaskExecutionLogCategory) {
+  return TASK_LOG_CATEGORY_LABELS[category];
+}
+
+export function taskLogPhaseLabel(phase: string | undefined) {
+  if (!phase) return '';
+  return TASK_LOG_PHASE_LABELS[phase] || phase;
+}
+
+export function isTaskLogRecovery(line: Pick<TaskLogLine, 'code' | 'phase'>) {
+  return line.phase === 'recovered' || Boolean(line.code?.endsWith('_recovered'));
+}
+
+export function formatTaskLogMetadata(
+  line: Pick<TaskLogLine, 'category' | 'level' | 'code' | 'phase'>,
+) {
+  return [
+    `category=${line.category}`,
+    `level=${line.level.toLowerCase()}`,
+    line.code ? `code=${line.code}` : '',
+    line.phase ? `phase=${line.phase}` : '',
+  ].filter(Boolean).map((item) => `[${item}]`).join(' ');
+}
+
 function isErrorLevel(level: string) {
   return ['ERROR', 'CRITICAL'].includes(level.toUpperCase());
 }

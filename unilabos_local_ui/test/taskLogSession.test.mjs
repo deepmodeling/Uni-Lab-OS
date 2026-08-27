@@ -19,7 +19,14 @@ async function importTypeScriptModule(path) {
   return import(tempFile);
 }
 
-const { buildTaskLogLines, filterTaskLogLines } = await importTypeScriptModule(
+const {
+  buildTaskLogLines,
+  filterTaskLogLines,
+  formatTaskLogMetadata,
+  isTaskLogRecovery,
+  taskLogCategoryLabel,
+  taskLogPhaseLabel,
+} = await importTypeScriptModule(
   new URL('../src/taskLogSession.ts', import.meta.url),
 );
 const { fetchAllTaskActionLogs, mergeTaskActionLogs } = await importTypeScriptModule(
@@ -180,6 +187,14 @@ assert.deepEqual(lifecycleLines.map((line) => line.isError), [true, false, true,
 assert.deepEqual(filterTaskLogLines(lifecycleLines, 'schedule').map((line) => line.seq), [10, 11]);
 assert.deepEqual(filterTaskLogLines(lifecycleLines, 'opc').map((line) => line.seq), [12, 13]);
 assert.deepEqual(filterTaskLogLines(lifecycleLines, 'error').map((line) => line.seq), [10, 12]);
+assert.equal(taskLogCategoryLabel(lifecycleLines[0].category), '调度');
+assert.equal(taskLogPhaseLabel(lifecycleLines[0].phase), '派发');
+assert.equal(isTaskLogRecovery(lifecycleLines[0]), false);
+assert.equal(isTaskLogRecovery(lifecycleLines[1]), true);
+assert.equal(
+  formatTaskLogMetadata(lifecycleLines[0]),
+  '[category=schedule] [level=error] [code=unsupported_action] [phase=dispatching]',
+);
 
 const requestedAfterSeqs = [];
 const pages = new Map([
@@ -258,6 +273,10 @@ assert.match(schedulerSource, /logLines: TaskLogLine\[\];/);
 assert.match(schedulerSource, /logError: string;/);
 assert.match(schedulerSource, /const \[logFilter, setLogFilter\] = React\.useState<TaskLogCategory>\('all'\);/);
 assert.match(schedulerSource, /filterTaskLogLines\(props\.logLines, logFilter\)/);
+assert.match(schedulerSource, /formatTaskLogMetadata\(line\)/, '导出日志必须包含 code 和 phase');
+assert.match(schedulerSource, /taskLogCategoryLabel\(line\.category\)/);
+assert.match(schedulerSource, /taskLogPhaseLabel\(line\.phase\)/);
+assert.match(schedulerSource, /isTaskLogRecovery\(line\)/);
 assert.match(schedulerSource, /\['result', '结果'\][\s\S]*?\['error', '错误'\]/);
 assert.match(schedulerSource, /function taskLogContext\(/, '日志展示必须解析样品、Task 与 Action 上下文');
 assert.match(schedulerSource, /scheduler-bench__log-error/, '新版日志面板必须渲染读取错误');
@@ -268,6 +287,8 @@ assert.doesNotMatch(schedulerSource, /变量历史/);
 const schedulerStyles = await readFile(new URL('../src/taskSchedulerBench.css', import.meta.url), 'utf8');
 assert.match(schedulerStyles, /\.scheduler-bench__log-context/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-line\.result/);
+assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.code/);
+assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.recovered/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.pending,\s*\.scheduler-bench__state\.waiting \{ background: #f1f5f9; color: #475569; \}/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.running \{ background: var\(--amber-bg\); color: var\(--amber\); \}/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.completed \{ background: var\(--green-bg\); color: var\(--green\); \}/);

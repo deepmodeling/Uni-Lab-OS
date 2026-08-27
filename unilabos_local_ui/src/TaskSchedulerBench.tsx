@@ -180,6 +180,7 @@ type Props = {
   onDownloadSelectedTemplates: () => void;
   onDeleteSelectedTemplates: () => void;
   onToggleRun: () => void;
+  onRetryDispatchPreflight: () => void;
   onAdvance: () => void;
   onSelectTask: (task: Task) => void;
   onUpdateTaskParameters: (
@@ -653,6 +654,15 @@ export function TaskSchedulerBench(props: Props) {
               )}
               {Boolean(props.dispatchReadiness.result?.warnings.length) && (
                 <p>另有 {props.dispatchReadiness.result?.warnings.length} 项警告，不阻止派发。</p>
+              )}
+              {(props.dispatchReadiness.status === 'invalid'
+                || props.dispatchReadiness.status === 'unavailable') && (
+                <button
+                  className="scheduler-btn scheduler-btn--ghost scheduler-bench__dispatch-retry"
+                  disabled={props.isRunning || props.isTransitioning}
+                  onClick={props.onRetryDispatchPreflight}
+                  type="button"
+                >重新检查</button>
               )}
             </div>
             <div className="scheduler-bench__queue-wrap">

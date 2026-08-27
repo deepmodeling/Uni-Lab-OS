@@ -789,6 +789,11 @@
   font-size: 10px;
 }
 
+.scheduler-bench__dispatch-retry {
+  align-self: flex-start;
+  margin-top: 10px;
+}
+
 @keyframes scheduler-readiness-pulse {
   from { opacity: 0.45; }
   to { opacity: 1; }

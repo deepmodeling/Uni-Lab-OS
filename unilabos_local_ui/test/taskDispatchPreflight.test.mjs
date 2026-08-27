@@ -157,6 +157,11 @@ assert.match(
 );
 assert.match(
   mainSource,
+  /retryTaskDispatchPreflight = useCallback[\s\S]*?setTaskDispatchPreflightRevision\(\(current\) => current \+ 1\)[\s\S]*?taskDispatchPreflightRevision,/,
+  '手动重试应使同一份派发内容重新进入自动预检',
+);
+assert.match(
+  mainSource,
   /builtWorkflow = await buildWorkflow\(\)[\s\S]*?开始派发前正在执行最终确认[\s\S]*?finalPreflight = await runTaskDispatchPreflight\(builtWorkflow\)[\s\S]*?if \(!finalPreflight\.valid\)[\s\S]*?return;[\s\S]*?setTaskExecutionWorkflow\(builtWorkflow\)[\s\S]*?const version = finalPreflight\.workspace_version/,
   '点击开始派发后必须使用刚构建的 workflow 最终预检，并绑定通过时的 workspace 版本',
 );
@@ -164,6 +169,11 @@ assert.match(
   benchSource,
   /scheduler-bench__dispatch-readiness[\s\S]*?taskDispatchReadinessLabel[\s\S]*?result\?\.errors\.map/,
   'Task 页面应展示派发准备状态和结构化阻断项',
+);
+assert.match(
+  benchSource,
+  /status === 'invalid'[\s\S]*?status === 'unavailable'[\s\S]*?onRetryDispatchPreflight[\s\S]*?重新检查/,
+  '预检失败或暂不可用时应提供明确的重新检查入口',
 );
 assert.match(
   benchSource,

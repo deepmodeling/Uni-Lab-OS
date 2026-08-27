@@ -926,6 +926,7 @@ function App() {
     status: 'stale',
     key: '',
   });
+  const [taskDispatchPreflightRevision, setTaskDispatchPreflightRevision] = useState(0);
   const [showOpcSimulatorDialog, setShowOpcSimulatorDialog] = useState(false);
   const [showOpcSimulatorReferenceDialog, setShowOpcSimulatorReferenceDialog] = useState(false);
   const [showOpcSimulatorSpecDialog, setShowOpcSimulatorSpecDialog] = useState(false);
@@ -3048,6 +3049,18 @@ function App() {
     performTaskSchedulerPause,
   ), [performTaskSchedulerPause]);
 
+  const retryTaskDispatchPreflight = useCallback(() => {
+    if (isSchedulerRunning || isTaskExecutionDraining || isSchedulerTransitioning) return;
+    setTaskDispatchReadiness({
+      status: 'stale',
+      key: taskDispatchPreflightKeyRef.current,
+      message: '正在重新发起派发预检',
+      source: 'automatic',
+    });
+    setTaskServiceError('');
+    setTaskDispatchPreflightRevision((current) => current + 1);
+  }, [isSchedulerRunning, isSchedulerTransitioning, isTaskExecutionDraining]);
+
   const handleTaskSchedulerToggle = useCallback(() => runTaskSchedulerTransition(
     taskSchedulerTransitionRef,
     setIsSchedulerTransitioning,
@@ -3346,6 +3359,7 @@ function App() {
     isTaskWorkspaceLoading,
     runTaskDispatchPreflight,
     taskDispatchPreflightKey,
+    taskDispatchPreflightRevision,
     taskWorkflowSemanticKey,
     workspace,
   ]);
@@ -3891,6 +3905,7 @@ function App() {
           onAdvance={advanceTaskSchedule}
           onClear={clearTaskQueue}
           onResetProgress={resetTaskQueueProgress}
+          onRetryDispatchPreflight={retryTaskDispatchPreflight}
           resetProgressDisabled={
             !taskInstances.length
             || isTaskWorkspaceLoading

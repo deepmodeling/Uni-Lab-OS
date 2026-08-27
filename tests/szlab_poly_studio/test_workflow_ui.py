@@ -2974,6 +2974,171 @@ def test_workflow_manager_preflight_rejects_stale_workspace_version(
     assert "expected=7, actual=8" in str(caught.value)
 
 
+def test_workflow_manager_execution_cycle_hard_gates_invalid_preflight(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeDevice:
+        def run(self):
+            return None
+
+    class FakeSnapshotPublisher:
+        def get_workspace(self, *, workflow_path):
+            assert workflow_path == "task-flow.json"
+            return {
+                "version": 9,
+                "workspace": {
+                    "scheduler_paused": False,
+                    "pause_reason": None,
+                    "templates": [{
+                        "id": "template-1",
+                        "name": "样品处理",
+                        "node_ids": ["task-node"],
+                    }],
+                    "scheduled_template_ids": ["template-1"],
+                    "task_instances": [{
+                        "id": "instance-1",
+                        "template_id": "template-1",
+                        "status": "running",
+                    }],
+                },
+            }
+
+    preset = load_preset("szlab_robot_action_workflow")
+    manager = WorkflowRunManager(
+        preset,
+        _load_preset_runtime_config(preset),
+        run_history_store=RunHistoryStore(tmp_path, session_id="hard-gate"),
+    )
+    manager._task_snapshot_publisher = FakeSnapshotPublisher()
+    manager._cached_devices = {"device": FakeDevice()}
+    cycle_calls = []
+    published = []
+
+    def fake_cycle(**kwargs):
+        cycle_calls.append(kwargs)
+        return {
+            "success": True,
+            "active": 1,
+            "in_flight": 1,
+            "claimed": 0,
+            "completed": 1,
+            "failed": 0,
+            "diagnostics": [],
+        }
+
+    monkeypatch.setattr(manager._task_execution_coordinator, "cycle", fake_cycle)
+    monkeypatch.setattr(
+        manager,
+        "_publish_task_scheduler_errors",
+        lambda **kwargs: published.append(kwargs),
+    )
+    try:
+        result = manager.run_task_execution_cycle(
+            workflow_path="task-flow.json",
+            workflow_payload={
+                "nodes": [{
+                    "workflow_node_id": "standalone-node",
+                    "device_id": "device",
+                    "method": "run",
+                    "params": {},
+                }],
+                "edges": [],
+            },
+        )
+    finally:
+        manager.shutdown()
+
+    assert result["success"] is False
+    assert result["code"] == "task_dispatch_preflight_failed"
+    assert result["claimed"] == 0
+    assert result["completed"] == 1
+    assert result["message"].startswith("派发预检未通过：")
+    assert result["preflight"]["workspace_version"] == 9
+    assert result["preflight"]["errors"][0]["code"] == "task_node_missing"
+    assert result["diagnostics"][0]["instance_id"] == "instance-1"
+    assert result["diagnostics"][0]["immediate"] is True
+    assert cycle_calls[0]["harvest_only"] is True
+    assert published[0]["diagnostics"] == result["diagnostics"]
+
+
+def test_workflow_manager_execution_cycle_dispatches_after_server_preflight(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeDevice:
+        def run(self):
+            return None
+
+    class FakeSnapshotPublisher:
+        def get_workspace(self, *, workflow_path):
+            assert workflow_path == "task-flow.json"
+            return {
+                "version": 3,
+                "workspace": {
+                    "scheduler_paused": False,
+                    "pause_reason": None,
+                    "templates": [{
+                        "id": "template-1",
+                        "node_ids": ["task-node"],
+                    }],
+                    "scheduled_template_ids": ["template-1"],
+                    "task_instances": [],
+                },
+            }
+
+    preset = load_preset("szlab_robot_action_workflow")
+    manager = WorkflowRunManager(
+        preset,
+        _load_preset_runtime_config(preset),
+        run_history_store=RunHistoryStore(tmp_path, session_id="hard-gate-valid"),
+    )
+    manager._task_snapshot_publisher = FakeSnapshotPublisher()
+    manager._cached_devices = {"device": FakeDevice()}
+    cycle_calls = []
+
+    def fake_cycle(**kwargs):
+        cycle_calls.append(kwargs)
+        return {
+            "success": True,
+            "active": 1,
+            "in_flight": 0,
+            "claimed": 1,
+            "completed": 0,
+            "failed": 0,
+            "diagnostics": [],
+        }
+
+    monkeypatch.setattr(manager._task_execution_coordinator, "cycle", fake_cycle)
+    monkeypatch.setattr(
+        manager,
+        "_publish_task_scheduler_errors",
+        lambda **_kwargs: None,
+    )
+    try:
+        result = manager.run_task_execution_cycle(
+            workflow_path="task-flow.json",
+            workflow_payload={
+                "nodes": [{
+                    "workflow_node_id": "task-node",
+                    "device_id": "device",
+                    "method": "run",
+                    "params": {},
+                }],
+                "edges": [],
+            },
+        )
+    finally:
+        manager.shutdown()
+
+    assert result["success"] is True
+    assert result["claimed"] == 1
+    assert cycle_calls[0]["harvest_only"] is False
+    assert [node.uuid for node in cycle_calls[0]["workflow_nodes"]] == [
+        "task-node"
+    ]
+
+
 def test_task_execution_preflight_endpoint_delegates_and_returns_result(
     monkeypatch,
 ):

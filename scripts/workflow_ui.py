@@ -1663,6 +1663,21 @@ class WorkflowRunManager:
         """使用当前工作区和 workflow 快照检查 Task 是否允许派发。"""
         if type(expected_version) is not int or expected_version < 0:
             raise ValueError("expected_version 必须是非负整数")
+        result, _ = self._evaluate_task_dispatch_preflight(
+            workflow_path=workflow_path,
+            workflow_payload=workflow_payload,
+            expected_version=expected_version,
+        )
+        return result
+
+    def _evaluate_task_dispatch_preflight(
+        self,
+        *,
+        workflow_path: str,
+        workflow_payload: dict[str, Any],
+        expected_version: int | None = None,
+    ) -> tuple[dict[str, Any], list[WorkflowNode]]:
+        """基于服务端最新工作区执行预检，并返回本次解析的节点快照。"""
         workflow_nodes = workflow_nodes_from_payload(workflow_payload)
         workflow_fingerprint = _task_workflow_fingerprint(workflow_payload)
         response = self._task_snapshot_publisher.get_workspace(
@@ -1671,7 +1686,7 @@ class WorkflowRunManager:
         actual_version = response.get("version")
         if type(actual_version) is not int:
             raise RuntimeError("Task 排程服务未返回有效工作区版本")
-        if actual_version != expected_version:
+        if expected_version is not None and actual_version != expected_version:
             raise TaskApiConflict(
                 "version_conflict",
                 (
@@ -1687,11 +1702,14 @@ class WorkflowRunManager:
             workflow_nodes,
             self._task_execution_devices(),
         )
-        return {
-            **result.as_dict(),
-            "workspace_version": actual_version,
-            "workflow_fingerprint": workflow_fingerprint,
-        }
+        return (
+            {
+                **result.as_dict(),
+                "workspace_version": actual_version,
+                "workflow_fingerprint": workflow_fingerprint,
+            },
+            workflow_nodes,
+        )
 
     def run_task_execution_cycle(
         self,
@@ -1705,11 +1723,75 @@ class WorkflowRunManager:
             raise TypeError("harvest_only 必须为 bool")
         if not harvest_only and not isinstance(workflow_payload, dict):
             raise ValueError("缺少当前 workflow JSON")
-        workflow_nodes = (
-            []
-            if harvest_only
-            else workflow_nodes_from_payload(workflow_payload)
-        )
+        preflight_result: dict[str, Any] | None = None
+        if harvest_only:
+            workflow_nodes: list[WorkflowNode] = []
+        else:
+            preflight_result, workflow_nodes = (
+                self._evaluate_task_dispatch_preflight(
+                    workflow_path=workflow_path,
+                    workflow_payload=workflow_payload,
+                )
+            )
+            if not preflight_result.get("valid"):
+                # 已在途动作仍需正常收割终态，但预检失败后绝不认领新动作。
+                stats = self._task_execution_coordinator.cycle(
+                    workflow_path=workflow_path,
+                    workflow_nodes=workflow_nodes,
+                    harvest_only=True,
+                )
+                errors = preflight_result.get("errors")
+                issues = errors if isinstance(errors, list) else []
+                diagnostics: list[dict[str, Any]] = []
+                for issue in issues:
+                    if not isinstance(issue, dict):
+                        continue
+                    diagnostic = dict(issue)
+                    instance_ids = issue.get("instance_ids")
+                    resolved_instance_ids = (
+                        [str(item) for item in instance_ids if str(item)]
+                        if isinstance(instance_ids, list)
+                        else []
+                    )
+                    if resolved_instance_ids:
+                        diagnostic["instance_id"] = resolved_instance_ids[0]
+                    diagnostic["immediate"] = True
+                    diagnostic["detail"] = {
+                        **(
+                            issue.get("detail")
+                            if isinstance(issue.get("detail"), dict)
+                            else {}
+                        ),
+                        "instance_ids": resolved_instance_ids,
+                    }
+                    diagnostics.append(diagnostic)
+                existing_diagnostics = stats.get("diagnostics")
+                stats["diagnostics"] = [
+                    *(
+                        existing_diagnostics
+                        if isinstance(existing_diagnostics, list)
+                        else []
+                    ),
+                    *diagnostics,
+                ]
+                first_message = next(
+                    (
+                        str(item.get("message") or "").strip()
+                        for item in issues
+                        if isinstance(item, dict)
+                        and str(item.get("message") or "").strip()
+                    ),
+                    "存在派发阻断项",
+                )
+                stats["success"] = False
+                stats["code"] = "task_dispatch_preflight_failed"
+                stats["message"] = f"派发预检未通过：{first_message}"
+                stats["preflight"] = preflight_result
+                self._publish_task_scheduler_errors(
+                    workflow_path=workflow_path,
+                    diagnostics=stats["diagnostics"],
+                )
+                return stats
         try:
             stats = self._task_execution_coordinator.cycle(
                 workflow_path=workflow_path,

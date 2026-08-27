@@ -22,6 +22,7 @@ async function importTypeScriptModule(path) {
 const {
   buildTaskLogLines,
   countTaskErrorStates,
+  countTaskLogCategories,
   filterTaskErrorLines,
   filterTaskLogLines,
   formatTaskLogMetadata,
@@ -210,6 +211,15 @@ assert.deepEqual(
 assert.deepEqual(filterTaskErrorLines(lifecycleLines, 'active').map((line) => line.seq), [14]);
 assert.deepEqual(filterTaskErrorLines(lifecycleLines, 'recovered').map((line) => line.seq), [10, 12]);
 assert.deepEqual(countTaskErrorStates(lifecycleLines), { total: 3, active: 1, recovered: 2 });
+assert.deepEqual(countTaskLogCategories(lifecycleLines), {
+  all: 5,
+  schedule: 2,
+  action: 0,
+  opc: 3,
+  result: 0,
+  error: 3,
+  activeErrors: 1,
+});
 assert.equal(lifecycleLines[0].recoveredAt, 3200);
 assert.equal(lifecycleLines[0].recoveredByLineId, 'action:11');
 assert.equal(lifecycleLines[2].recoveredAt, 3400);
@@ -302,6 +312,9 @@ assert.match(schedulerSource, /const \[errorStateFilter, setErrorStateFilter\] =
 assert.match(schedulerSource, /filterTaskLogLines\(props\.logLines, logFilter\)/);
 assert.match(schedulerSource, /filterTaskErrorLines\(props\.logLines, errorStateFilter\)/);
 assert.match(schedulerSource, /countTaskErrorStates\(props\.logLines\)/);
+assert.match(schedulerSource, /countTaskLogCategories\(props\.logLines\)/);
+assert.match(schedulerSource, /logCategoryCounts\.activeErrors/);
+assert.match(schedulerSource, /未恢复/);
 assert.match(schedulerSource, /\['active', '当前异常', errorStateCounts\.active\]/);
 assert.match(schedulerSource, /\['recovered', '已恢复', errorStateCounts\.recovered\]/);
 assert.match(schedulerSource, /formatTaskLogMetadata\(line\)/, '导出日志必须包含 code 和 phase');
@@ -310,7 +323,7 @@ assert.match(schedulerSource, /taskLogPhaseLabel\(line\.phase\)/);
 assert.match(schedulerSource, /isTaskLogRecovery\(line\)/);
 assert.match(schedulerSource, /line\.errorState === 'active'/);
 assert.match(schedulerSource, /line\.errorState === 'recovered'/);
-assert.match(schedulerSource, /\['result', '结果'\][\s\S]*?\['error', '错误'\]/);
+assert.match(schedulerSource, /\['result', '结果', logCategoryCounts\.result\][\s\S]*?\['error', '错误', logCategoryCounts\.error\]/);
 assert.match(schedulerSource, /function taskLogContext\(/, '日志展示必须解析样品、Task 与 Action 上下文');
 assert.match(schedulerSource, /scheduler-bench__log-error/, '新版日志面板必须渲染读取错误');
 assert.match(schedulerSource, /navigator\.clipboard\?\.writeText/);
@@ -324,6 +337,7 @@ assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.code/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.active-error/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.recovered/);
 assert.match(schedulerStyles, /\.scheduler-bench__error-filters/);
+assert.match(schedulerStyles, /button\[data-active-errors='true'\]/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.pending,\s*\.scheduler-bench__state\.waiting \{ background: #f1f5f9; color: #475569; \}/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.running \{ background: var\(--amber-bg\); color: var\(--amber\); \}/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.completed \{ background: var\(--green-bg\); color: var\(--green\); \}/);

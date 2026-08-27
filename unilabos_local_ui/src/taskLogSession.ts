@@ -288,3 +288,22 @@ export function countTaskErrorStates(lines: TaskLogLine[]) {
   }
   return counts;
 }
+
+export function countTaskLogCategories(lines: TaskLogLine[]) {
+  const counts = {
+    all: lines.length,
+    schedule: 0,
+    action: 0,
+    opc: 0,
+    result: 0,
+    error: 0,
+    activeErrors: 0,
+  };
+  for (const line of lines) {
+    counts[line.executionCategory] += 1;
+    if (!line.isError) continue;
+    counts.error += 1;
+    if (line.errorState !== 'recovered') counts.activeErrors += 1;
+  }
+  return counts;
+}

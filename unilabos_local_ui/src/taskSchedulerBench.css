@@ -961,10 +961,37 @@
   padding: 4px 10px;
 }
 
+.scheduler-bench__filters button b {
+  min-width: 14px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 4px;
+}
+
+.scheduler-bench__filters button em {
+  color: var(--red);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.scheduler-bench__filters button[data-active-errors='true'] {
+  border-color: #fca5a5;
+  color: var(--red);
+}
+
 .scheduler-bench__filters button.active {
   border-color: #93c5fd;
   background: var(--blue-bg);
   color: var(--blue-text);
+}
+
+.scheduler-bench__filters button.active[data-active-errors='true'] {
+  border-color: #f87171;
+  background: var(--red-bg);
+  color: var(--red);
 }
 
 .scheduler-bench__error-filters {

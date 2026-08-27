@@ -9,6 +9,7 @@ import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import type { OpcSimulatorStatus } from './opcSimulatorProfile';
 import {
   countTaskErrorStates,
+  countTaskLogCategories,
   formatTaskLogMetadata,
   filterTaskErrorLines,
   filterTaskLogLines,
@@ -352,6 +353,7 @@ export function TaskSchedulerBench(props: Props) {
     ? filterTaskErrorLines(props.logLines, errorStateFilter)
     : filterTaskLogLines(props.logLines, logFilter);
   const errorStateCounts = countTaskErrorStates(props.logLines);
+  const logCategoryCounts = countTaskLogCategories(props.logLines);
   const editingTemplate = props.templates.find((template) => template.id === editingTask?.templateId);
   const editingNodes: ResolvedActionNode[] = editingTemplate
     ? resolveTemplateNodes(editingTemplate.nodeIds, props.actionNodes)
@@ -664,13 +666,13 @@ export function TaskSchedulerBench(props: Props) {
             <div className="scheduler-bench__log-head"><button className="scheduler-bench__follow" onClick={() => setIsFollowingLogs((value) => !value)} type="button">● {isFollowingLogs ? '正在跟随最新日志' : '已暂停自动跟随'}</button><button onClick={exportLogs} type="button">导出</button></div>
             {props.logError && <div className="scheduler-bench__log-error" role="alert">日志读取异常：{props.logError}</div>}
             <div className="scheduler-bench__filters">{([
-              ['all', '全部'],
-              ['schedule', '调度'],
-              ['action', 'Action'],
-              ['opc', 'OPC'],
-              ['result', '结果'],
-              ['error', '错误'],
-            ] as const).map(([filter, label]) => <button className={logFilter === filter ? 'active' : ''} key={filter} onClick={() => setLogFilter(filter)} type="button">{label}</button>)}</div>
+              ['all', '全部', logCategoryCounts.all],
+              ['schedule', '调度', logCategoryCounts.schedule],
+              ['action', 'Action', logCategoryCounts.action],
+              ['opc', 'OPC', logCategoryCounts.opc],
+              ['result', '结果', logCategoryCounts.result],
+              ['error', '错误', logCategoryCounts.error],
+            ] as const).map(([filter, label, count]) => <button className={logFilter === filter ? 'active' : ''} data-active-errors={filter === 'error' && logCategoryCounts.activeErrors > 0 ? 'true' : undefined} key={filter} onClick={() => setLogFilter(filter)} type="button"><span>{label}</span><b>{count}</b>{filter === 'error' && logCategoryCounts.activeErrors > 0 && <em>{logCategoryCounts.activeErrors} 未恢复</em>}</button>)}</div>
             {logFilter === 'error' && <div className="scheduler-bench__filters scheduler-bench__error-filters" role="group" aria-label="错误状态筛选">{([
               ['all', '全部错误', errorStateCounts.total],
               ['active', '当前异常', errorStateCounts.active],

@@ -7,6 +7,7 @@ import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from enum import StrEnum
 from typing import Any, Callable, Iterable
 
 from scripts.run_workflow_local import (
@@ -44,6 +45,70 @@ from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import
 
 
 logger = logging.getLogger(__name__)
+
+
+class TaskDispatchPreflightCode(StrEnum):
+    """Task 派发前固定使用的结构化检查错误码。"""
+
+    EMPTY_SCOPE = "task_dispatch_scope_empty"
+    RECOVERY_REQUIRED = "workspace_recovery_required"
+    TEMPLATE_MISSING = "task_template_missing"
+    TEMPLATE_EMPTY = "task_template_empty"
+    NODE_MISSING = "task_node_missing"
+    NODE_NOT_EXECUTABLE = "task_node_not_executable"
+    NODE_INVALID = "task_node_invalid"
+    DEVICE_MISSING = "task_device_missing"
+    ACTION_UNSUPPORTED = "task_action_unsupported"
+
+
+@dataclass(frozen=True)
+class TaskDispatchPreflightIssue:
+    """单个 Task 派发阻断项；字段可直接进入调度日志契约。"""
+
+    code: TaskDispatchPreflightCode
+    message: str
+    template_id: str = ""
+    template_name: str = ""
+    node_id: str = ""
+    device_id: str = ""
+    action_name: str = ""
+    instance_ids: tuple[str, ...] = ()
+    detail: dict[str, Any] | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "category": "dispatch_preflight",
+            "code": self.code.value,
+            "message": self.message,
+            "severity": "error",
+            "phase": "preflight",
+            "template_id": self.template_id,
+            "template_name": self.template_name,
+            "node_id": self.node_id,
+            "device_id": self.device_id,
+            "action_name": self.action_name,
+            "instance_ids": list(self.instance_ids),
+            "detail": dict(self.detail or {}),
+        }
+
+
+@dataclass(frozen=True)
+class TaskDispatchPreflightResult:
+    """Task 派发预检结果。"""
+
+    errors: tuple[TaskDispatchPreflightIssue, ...] = ()
+    warnings: tuple[TaskDispatchPreflightIssue, ...] = ()
+
+    @property
+    def valid(self) -> bool:
+        return not self.errors
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "valid": self.valid,
+            "errors": [item.as_dict() for item in self.errors],
+            "warnings": [item.as_dict() for item in self.warnings],
+        }
 
 
 class TaskApiConflict(RuntimeError):
@@ -124,6 +189,184 @@ def workflow_nodes_from_payload(payload: dict[str, Any]) -> list[WorkflowNode]:
     if not isinstance(nodes, list):
         raise ValueError("workflow nodes 必须是数组")
     return [workflow_node_from_mapping(item) for item in nodes]
+
+
+_PREFLIGHT_ACTIVE_INSTANCE_STATUSES = frozenset(
+    {"waiting", "pending", "running"}
+)
+
+
+def validate_task_dispatch_preflight(
+    workspace: dict[str, Any],
+    workflow_nodes: Iterable[WorkflowNode],
+    devices: dict[str, Any],
+) -> TaskDispatchPreflightResult:
+    """检查本次 Task 派发范围与实际 workflow、设备动作是否一致。"""
+    if not isinstance(workspace, dict):
+        raise TypeError("workspace 必须是对象")
+    if not isinstance(devices, dict):
+        raise TypeError("devices 必须是对象")
+
+    nodes_by_id: dict[str, WorkflowNode] = {}
+    duplicate_node_ids: set[str] = set()
+    for node in workflow_nodes:
+        if not isinstance(node, WorkflowNode):
+            raise TypeError("workflow_nodes 必须包含 WorkflowNode")
+        if node.uuid in nodes_by_id:
+            duplicate_node_ids.add(node.uuid)
+        nodes_by_id[node.uuid] = node
+
+    templates = {
+        str(template.get("id") or ""): template
+        for template in workspace.get("templates", [])
+        if isinstance(template, dict) and str(template.get("id") or "")
+    }
+    active_instances = [
+        instance
+        for instance in workspace.get("task_instances", [])
+        if isinstance(instance, dict)
+        and instance.get("status") in _PREFLIGHT_ACTIVE_INSTANCE_STATUSES
+    ]
+    instance_ids_by_template: dict[str, list[str]] = {}
+    for instance in active_instances:
+        template_id = str(instance.get("template_id") or "")
+        instance_id = str(instance.get("id") or "")
+        if template_id:
+            instance_ids_by_template.setdefault(template_id, [])
+            if instance_id:
+                instance_ids_by_template[template_id].append(instance_id)
+
+    target_template_ids: list[str] = []
+
+    def add_target(template_id: Any) -> None:
+        resolved = str(template_id or "")
+        if resolved and resolved not in target_template_ids:
+            target_template_ids.append(resolved)
+
+    for template_id in workspace.get("scheduled_template_ids", []):
+        add_target(template_id)
+    for instance in active_instances:
+        add_target(instance.get("template_id"))
+
+    errors: list[TaskDispatchPreflightIssue] = []
+    if workspace.get("pause_reason") is not None:
+        errors.append(TaskDispatchPreflightIssue(
+            code=TaskDispatchPreflightCode.RECOVERY_REQUIRED,
+            message="Task 工作区存在失败暂停，需先执行显式恢复",
+            detail={"pause_reason": workspace.get("pause_reason")},
+        ))
+    if not target_template_ids:
+        errors.append(TaskDispatchPreflightIssue(
+            code=TaskDispatchPreflightCode.EMPTY_SCOPE,
+            message="当前没有已排程模板或可继续派发的 Task 实例",
+        ))
+
+    for template_id in target_template_ids:
+        template = templates.get(template_id)
+        instance_ids = tuple(instance_ids_by_template.get(template_id, []))
+        if template is None:
+            errors.append(TaskDispatchPreflightIssue(
+                code=TaskDispatchPreflightCode.TEMPLATE_MISSING,
+                message=f"派发范围引用了不存在的 Task 模板: {template_id}",
+                template_id=template_id,
+                instance_ids=instance_ids,
+            ))
+            continue
+        template_name = str(template.get("name") or template_id)
+        raw_node_ids = template.get("node_ids")
+        node_ids = raw_node_ids if isinstance(raw_node_ids, list) else []
+        if not node_ids:
+            errors.append(TaskDispatchPreflightIssue(
+                code=TaskDispatchPreflightCode.TEMPLATE_EMPTY,
+                message=f"Task「{template_name}」没有可派发的动作节点",
+                template_id=template_id,
+                template_name=template_name,
+                instance_ids=instance_ids,
+            ))
+            continue
+
+        for raw_node_id in node_ids:
+            node_id = str(raw_node_id or "")
+            node = nodes_by_id.get(node_id)
+            common = {
+                "template_id": template_id,
+                "template_name": template_name,
+                "node_id": node_id,
+                "instance_ids": instance_ids,
+            }
+            if node is None:
+                errors.append(TaskDispatchPreflightIssue(
+                    code=TaskDispatchPreflightCode.NODE_MISSING,
+                    message=(
+                        f"Task「{template_name}」引用的动作节点不在当前 "
+                        f"workflow 中: {node_id or '<empty>'}"
+                    ),
+                    **common,
+                ))
+                continue
+            if node_id in duplicate_node_ids:
+                errors.append(TaskDispatchPreflightIssue(
+                    code=TaskDispatchPreflightCode.NODE_INVALID,
+                    message=(
+                        f"Task「{template_name}」引用了 ID 重复的动作节点: "
+                        f"{node_id}"
+                    ),
+                    detail={"reason": "duplicate_workflow_node_id"},
+                    **common,
+                ))
+                continue
+            if node.disabled:
+                errors.append(TaskDispatchPreflightIssue(
+                    code=TaskDispatchPreflightCode.NODE_NOT_EXECUTABLE,
+                    message=(
+                        f"Task「{template_name}」的动作节点当前不可执行: "
+                        f"{node_id}"
+                    ),
+                    device_id=node.device_name,
+                    detail={"reason": "disabled"},
+                    **common,
+                ))
+                continue
+            try:
+                action_name = node_method(node)
+            except ValueError as exc:
+                errors.append(TaskDispatchPreflightIssue(
+                    code=TaskDispatchPreflightCode.NODE_INVALID,
+                    message=(
+                        f"Task「{template_name}」的动作节点配置无效: "
+                        f"{node_id}"
+                    ),
+                    device_id=node.device_name,
+                    detail={"reason": str(exc)},
+                    **common,
+                ))
+                continue
+            device = devices.get(node.device_name)
+            if device is None:
+                errors.append(TaskDispatchPreflightIssue(
+                    code=TaskDispatchPreflightCode.DEVICE_MISSING,
+                    message=(
+                        f"Task「{template_name}」的动作设备不可用: "
+                        f"{node.device_name}"
+                    ),
+                    device_id=node.device_name,
+                    action_name=action_name,
+                    **common,
+                ))
+                continue
+            if not callable(getattr(device, action_name, None)):
+                errors.append(TaskDispatchPreflightIssue(
+                    code=TaskDispatchPreflightCode.ACTION_UNSUPPORTED,
+                    message=(
+                        f"Task「{template_name}」的设备不支持动作: "
+                        f"{node.device_name}.{action_name}"
+                    ),
+                    device_id=node.device_name,
+                    action_name=action_name,
+                    **common,
+                ))
+
+    return TaskDispatchPreflightResult(errors=tuple(errors))
 
 
 def _continuation_device_owners(

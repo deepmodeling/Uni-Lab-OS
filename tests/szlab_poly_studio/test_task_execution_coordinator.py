@@ -17,6 +17,7 @@ from scripts.run_workflow_local import (
 )
 from scripts.task_execution_coordinator import (
     TaskApiConflict,
+    TaskDispatchPreflightCode,
     TaskExecutionCoordinator,
     _atomic_start_signal_conditions,
     _atomic_task_start_trigger_satisfied,
@@ -25,6 +26,7 @@ from scripts.task_execution_coordinator import (
     _temporary_s08_trigger_satisfied,
     _temporary_s09_trigger_satisfied,
     deterministic_execution_id,
+    validate_task_dispatch_preflight,
     workflow_nodes_from_payload,
 )
 from scripts.workflow_ui import ActionSpec, DEFAULT_PRESET, build_graph_workflow
@@ -825,6 +827,153 @@ def test_execution_id_is_deterministic_and_cursor_sensitive():
     assert first == deterministic_execution_id("instance-1", 2, "node-3")
     assert first != deterministic_execution_id("instance-1", 3, "node-3")
     assert first != deterministic_execution_id("instance-2", 2, "node-3")
+
+
+def test_dispatch_preflight_error_codes_are_stable():
+    assert {item.value for item in TaskDispatchPreflightCode} == {
+        "task_dispatch_scope_empty",
+        "workspace_recovery_required",
+        "task_template_missing",
+        "task_template_empty",
+        "task_node_missing",
+        "task_node_not_executable",
+        "task_node_invalid",
+        "task_device_missing",
+        "task_action_unsupported",
+    }
+
+
+def test_dispatch_preflight_accepts_matching_active_task():
+    workspace = _workspace_response()["workspace"]
+
+    result = validate_task_dispatch_preflight(
+        workspace,
+        [_node("node_001_pick_from_s03", "submit_pick_from_s03")],
+        _devices(),
+    )
+
+    assert result.valid is True
+    assert result.as_dict() == {
+        "valid": True,
+        "errors": [],
+        "warnings": [],
+    }
+
+
+def test_dispatch_preflight_reports_task_node_missing_before_dispatch():
+    workspace = _workspace_response(node_ids=["task-action"])["workspace"]
+    workspace["templates"][0]["name"] = "样品处理"
+
+    result = validate_task_dispatch_preflight(
+        workspace,
+        [_node("standalone-action", "run")],
+        _devices(),
+    )
+
+    assert result.valid is False
+    assert [item.code for item in result.errors] == [
+        TaskDispatchPreflightCode.NODE_MISSING
+    ]
+    assert result.errors[0].template_id == "template-1"
+    assert result.errors[0].template_name == "样品处理"
+    assert result.errors[0].node_id == "task-action"
+    assert result.errors[0].instance_ids == ("instance-1",)
+    assert result.errors[0].as_dict()["category"] == "dispatch_preflight"
+    assert result.errors[0].as_dict()["phase"] == "preflight"
+
+
+def test_dispatch_preflight_checks_scheduled_template_without_active_instance():
+    workspace = _workspace_response()["workspace"]
+    workspace["scheduled_template_ids"] = ["template-1"]
+    workspace["task_instances"] = []
+
+    result = validate_task_dispatch_preflight(
+        workspace,
+        [_node("node_001_pick_from_s03", "submit_pick_from_s03")],
+        _devices(),
+    )
+
+    assert result.valid is True
+
+
+def test_dispatch_preflight_ignores_inactive_historical_template():
+    workspace = _workspace_response()["workspace"]
+    workspace["templates"].append({
+        "id": "historical-template",
+        "name": "历史模板",
+        "node_ids": ["deleted-node"],
+    })
+
+    result = validate_task_dispatch_preflight(
+        workspace,
+        [_node("node_001_pick_from_s03", "submit_pick_from_s03")],
+        _devices(),
+    )
+
+    assert result.valid is True
+
+
+@pytest.mark.parametrize(
+    ("node", "devices", "expected_code"),
+    [
+        (
+            replace(_node("node_001_pick_from_s03", "run"), disabled=True),
+            {"device": FakeActionDevice()},
+            TaskDispatchPreflightCode.NODE_NOT_EXECUTABLE,
+        ),
+        (
+            WorkflowNode(
+                uuid="node_001_pick_from_s03",
+                name="invalid",
+                device_name="device",
+                param={},
+                legacy_route_compatible=False,
+            ),
+            {"device": FakeActionDevice()},
+            TaskDispatchPreflightCode.NODE_INVALID,
+        ),
+        (
+            _node("node_001_pick_from_s03", "run", "missing-device"),
+            {},
+            TaskDispatchPreflightCode.DEVICE_MISSING,
+        ),
+        (
+            _node("node_001_pick_from_s03", "run"),
+            {"device": object()},
+            TaskDispatchPreflightCode.ACTION_UNSUPPORTED,
+        ),
+    ],
+)
+def test_dispatch_preflight_separates_action_readiness_errors(
+    node, devices, expected_code
+):
+    result = validate_task_dispatch_preflight(
+        _workspace_response()["workspace"],
+        [node],
+        devices,
+    )
+
+    assert [item.code for item in result.errors] == [expected_code]
+
+
+def test_dispatch_preflight_rejects_empty_scope_and_failed_pause():
+    workspace = _workspace_response()["workspace"]
+    workspace["task_instances"] = [{
+        "id": "completed-instance",
+        "template_id": "template-1",
+        "status": "completed",
+    }]
+    workspace["pause_reason"] = {
+        "code": "action_failed",
+        "message": "首动作失败",
+    }
+
+    result = validate_task_dispatch_preflight(workspace, [], {})
+
+    assert [item.code for item in result.errors] == [
+        TaskDispatchPreflightCode.RECOVERY_REQUIRED,
+        TaskDispatchPreflightCode.EMPTY_SCOPE,
+    ]
 
 
 def test_claim_submits_action_once_and_tick_returns_without_waiting():

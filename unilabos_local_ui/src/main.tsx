@@ -87,6 +87,7 @@ import {
 } from './taskLogSession';
 import { TASK_EXECUTION_POLL_INTERVAL_MS } from './taskPolling';
 import {
+  canStartTaskDispatch,
   currentTaskDispatchReadiness,
   preflightTaskDispatch,
   TaskDispatchPreflightHttpError,
@@ -2248,8 +2249,12 @@ function App() {
   }, [mutateTaskWorkspace, persistTaskTestMemory, taskWorkspacePath]);
 
   const advanceTaskSchedule = useCallback(() => {
+    if (!canStartTaskDispatch(visibleTaskDispatchReadiness)) {
+      showCanvasToast('派发预检尚未通过，请先处理阻断项');
+      return;
+    }
     void mutateTaskWorkspace((version) => taskApiRef.current.advance(taskWorkspacePath, version));
-  }, [mutateTaskWorkspace, taskWorkspacePath]);
+  }, [mutateTaskWorkspace, showCanvasToast, taskWorkspacePath, visibleTaskDispatchReadiness]);
 
   const clearTaskQueue = useCallback(() => {
     if (!taskInstances.length) {
@@ -3006,6 +3011,10 @@ function App() {
         await performTaskSchedulerPause();
         return;
       }
+      if (!canStartTaskDispatch(visibleTaskDispatchReadiness)) {
+        setTaskServiceError('派发预检尚未通过，请先处理阻断项');
+        return;
+      }
       if (!isTaskLogBootstrapped || !taskLogBootstrappedRef.current) {
         setTaskServiceError('Task 日志正在初始化，请稍后重试');
         return;
@@ -3066,6 +3075,7 @@ function App() {
     isTaskExecutionDraining,
     performTaskSchedulerPause,
     taskWorkspacePath,
+    visibleTaskDispatchReadiness,
   ]);
 
   const shouldRunTaskExecutionLoop = (
@@ -3378,8 +3388,9 @@ function App() {
           </dl>
         ) : (
           <TaskSchedulerHeaderActions
+            dispatchReadiness={visibleTaskDispatchReadiness}
             environment={taskExecutionEnvironment}
-            isRunning={isSchedulerRunning}
+            isRunning={isSchedulerRunning || isTaskExecutionDraining}
             isTransitioning={isSchedulerTransitioning}
             onConnectOpc={() => void connectTaskOpc()}
             onEnvironmentChange={(environment) => {
@@ -3802,7 +3813,7 @@ function App() {
           environment={taskExecutionEnvironment}
           dispatchReadiness={visibleTaskDispatchReadiness}
           events={taskEvents}
-          isRunning={isSchedulerRunning}
+          isRunning={isSchedulerRunning || isTaskExecutionDraining}
           isTransitioning={isSchedulerTransitioning}
           onAdvance={advanceTaskSchedule}
           onClear={clearTaskQueue}

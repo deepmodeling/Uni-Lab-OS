@@ -19,8 +19,10 @@ const tempFile = join(tempDir, 'taskDispatchPreflight.mjs');
 await writeFile(tempFile, transpiled.outputText, 'utf8');
 const {
   TaskDispatchPreflightHttpError,
+  canStartTaskDispatch,
   currentTaskDispatchReadiness,
   preflightTaskDispatch,
+  taskDispatchButtonTitle,
   taskDispatchReadinessLabel,
 } = await import(tempFile);
 
@@ -115,10 +117,32 @@ assert.equal(
   taskDispatchReadinessLabel({ status: 'invalid', key: 'key', result: invalidResult }),
   '派发准备失败 · 1 项',
 );
+assert.equal(
+  canStartTaskDispatch({ status: 'ready', key: 'key', result: validResult }),
+  true,
+  '只有服务端明确返回 valid 的 ready 状态才允许开始派发',
+);
+for (const readiness of [
+  { status: 'stale', key: 'key' },
+  { status: 'validating', key: 'key' },
+  { status: 'invalid', key: 'key', result: invalidResult },
+  { status: 'unavailable', key: 'key' },
+  { status: 'ready', key: 'key', result: invalidResult },
+]) {
+  assert.equal(canStartTaskDispatch(readiness), false);
+}
+assert.match(
+  taskDispatchButtonTitle({ status: 'invalid', key: 'key', result: invalidResult }),
+  /预检未通过.*动作节点不在当前 workflow/,
+);
 
 const mainSource = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const benchSource = await readFile(
   new URL('../src/TaskSchedulerBench.tsx', import.meta.url),
+  'utf8',
+);
+const benchStyles = await readFile(
+  new URL('../src/taskSchedulerBench.css', import.meta.url),
   'utf8',
 );
 assert.match(
@@ -130,4 +154,19 @@ assert.match(
   benchSource,
   /scheduler-bench__dispatch-readiness[\s\S]*?taskDispatchReadinessLabel[\s\S]*?result\?\.errors\.map/,
   'Task 页面应展示派发准备状态和结构化阻断项',
+);
+assert.match(
+  benchSource,
+  /disabled=\{props\.isTransitioning \|\| \(!props\.isRunning && !dispatchReady\)\}[\s\S]*?开始派发/,
+  '开始派发按钮在非运行状态下必须等待预检通过',
+);
+assert.match(
+  benchStyles,
+  /\.scheduler-btn--dispatch-blocked[\s\S]*?\.scheduler-btn--dispatch-ready/,
+  '预检通过后的派发按钮应获得绿色 ready 样式',
+);
+assert.match(
+  mainSource,
+  /if \(!canStartTaskDispatch\(visibleTaskDispatchReadiness\)\) \{[\s\S]*?派发预检尚未通过/,
+  '派发事件处理函数本身也必须拒绝绕过按钮的调用',
 );

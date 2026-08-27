@@ -131,3 +131,20 @@ export function taskDispatchReadinessLabel(readiness: TaskDispatchReadiness) {
   if (readiness.status === 'unavailable') return '派发预检暂不可用';
   return '等待派发预检';
 }
+
+export function canStartTaskDispatch(readiness: TaskDispatchReadiness) {
+  return readiness.status === 'ready' && readiness.result?.valid === true;
+}
+
+export function taskDispatchButtonTitle(readiness: TaskDispatchReadiness) {
+  if (canStartTaskDispatch(readiness)) return '预检已通过，可以开始派发';
+  if (readiness.status === 'validating') return '正在验证派发条件，请稍候';
+  if (readiness.status === 'invalid') {
+    const firstError = readiness.result?.errors[0]?.message;
+    return firstError ? `预检未通过：${firstError}` : '预检未通过，请先修复阻断项';
+  }
+  if (readiness.status === 'unavailable') {
+    return readiness.message || '派发预检暂不可用，请稍后重试';
+  }
+  return readiness.message || '等待流程与 Task 内容完成预检';
+}

@@ -121,6 +121,39 @@
   color: #ffffff;
 }
 
+.scheduler-btn--dispatch-blocked,
+.scheduler-btn--dispatch-blocked:disabled {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #64748b;
+  opacity: 1;
+}
+
+.scheduler-btn--dispatch-ready {
+  border-color: #15803d;
+  background: var(--green);
+  color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.12);
+}
+
+.scheduler-btn--dispatch-ready:hover:not(:disabled) {
+  border-color: #166534;
+  background: #15803d;
+  color: #ffffff;
+}
+
+.scheduler-btn--dispatch-active {
+  border-color: #1d4ed8;
+  background: var(--blue);
+  color: #ffffff;
+}
+
+.scheduler-btn--dispatch-active:hover:not(:disabled) {
+  border-color: #1e40af;
+  background: #1d4ed8;
+  color: #ffffff;
+}
+
 .scheduler-btn--accent {
   border-color: #0ea5e9;
   background: #0ea5e9;

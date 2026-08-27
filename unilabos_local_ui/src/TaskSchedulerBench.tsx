@@ -7,6 +7,8 @@ import {
 } from './automaticActionParameters';
 import type { TaskProcessLogLine, TaskVariableRow } from './taskActionLog';
 import {
+  canStartTaskDispatch,
+  taskDispatchButtonTitle,
   taskDispatchReadinessLabel,
   type TaskDispatchReadiness,
 } from './taskDispatchPreflight';
@@ -247,6 +249,7 @@ type HeaderActionsProps = Pick<
   | 'environment'
   | 'isRunning'
   | 'isTransitioning'
+  | 'dispatchReadiness'
   | 'onEnvironmentChange'
   | 'onOpenSimulator'
   | 'onStartSimulator'
@@ -262,6 +265,12 @@ type HeaderActionsProps = Pick<
 
 export function TaskSchedulerHeaderActions(props: HeaderActionsProps) {
   const [isOpcConnectionOpen, setIsOpcConnectionOpen] = React.useState(false);
+  const dispatchReady = canStartTaskDispatch(props.dispatchReadiness);
+  const dispatchButtonState = props.isRunning
+    ? 'active'
+    : dispatchReady
+      ? 'ready'
+      : 'blocked';
 
   return (
     <>
@@ -288,7 +297,15 @@ export function TaskSchedulerHeaderActions(props: HeaderActionsProps) {
             <i className={props.opcConnected ? 'online' : ''} aria-hidden="true" />
             {props.opcConnected ? 'OPC 已连接' : '配置 OPC 连接'}
           </button>
-          <button className="scheduler-btn scheduler-btn--primary" disabled={props.isTransitioning} onClick={props.onToggleRun} type="button">
+          <button
+            aria-describedby="task-dispatch-readiness"
+            className={`scheduler-btn scheduler-btn--dispatch scheduler-btn--dispatch-${dispatchButtonState}`}
+            data-dispatch-state={dispatchButtonState}
+            disabled={props.isTransitioning || (!props.isRunning && !dispatchReady)}
+            onClick={props.onToggleRun}
+            title={props.isRunning ? '暂停后续 Task 派发' : taskDispatchButtonTitle(props.dispatchReadiness)}
+            type="button"
+          >
             {props.isRunning ? '暂停派发' : '开始派发'}
           </button>
         </div>
@@ -369,6 +386,15 @@ export function TaskSchedulerBench(props: Props) {
   const editingS09Parameters = editingNodes.some((node) => node.method === 'add_liquid_with_reusable_tip');
   const allTemplatesSelected = props.templates.length > 0
     && props.templates.every((template) => props.scheduledTemplateIds.includes(template.id));
+  const dispatchReady = canStartTaskDispatch(props.dispatchReadiness);
+  const dispatchButtonState = props.isRunning
+    ? 'active'
+    : dispatchReady
+      ? 'ready'
+      : 'blocked';
+  const dispatchButtonTitle = props.isRunning
+    ? '暂停后续 Task 派发'
+    : taskDispatchButtonTitle(props.dispatchReadiness);
   const dispatchReadinessDescription = props.dispatchReadiness.message || (
     props.dispatchReadiness.status === 'validating'
       ? '正在核对 Task 模板、可执行流程、设备和动作。'
@@ -573,8 +599,23 @@ export function TaskSchedulerBench(props: Props) {
             <div className="scheduler-bench__queue-actions">
               <span>共 {props.tasks.length} 个 Task · {props.isRunning ? '正在派发' : '当前未派发'}</span>
               <div className="scheduler-bench__queue-buttons">
-                <button className="scheduler-btn scheduler-btn--ghost" onClick={props.onAdvance} type="button">调度一步</button>
-                <button className="scheduler-btn scheduler-btn--primary" onClick={props.onToggleRun} type="button">{props.isRunning ? '暂停后续派发' : '开始派发'}</button>
+                <button
+                  aria-describedby="task-dispatch-readiness"
+                  className="scheduler-btn scheduler-btn--ghost"
+                  disabled={props.isRunning || props.isTransitioning || !dispatchReady}
+                  onClick={props.onAdvance}
+                  title={dispatchReady ? '仅派发下一个可执行 Task' : taskDispatchButtonTitle(props.dispatchReadiness)}
+                  type="button"
+                >调度一步</button>
+                <button
+                  aria-describedby="task-dispatch-readiness"
+                  className={`scheduler-btn scheduler-btn--dispatch scheduler-btn--dispatch-${dispatchButtonState}`}
+                  data-dispatch-state={dispatchButtonState}
+                  disabled={props.isTransitioning || (!props.isRunning && !dispatchReady)}
+                  onClick={props.onToggleRun}
+                  title={dispatchButtonTitle}
+                  type="button"
+                >{props.isRunning ? '暂停后续派发' : '开始派发'}</button>
                 <button
                   className="scheduler-btn scheduler-btn--ghost"
                   disabled={props.resetProgressDisabled}
@@ -590,6 +631,7 @@ export function TaskSchedulerBench(props: Props) {
             <div
               aria-live="polite"
               className={`scheduler-bench__dispatch-readiness ${props.dispatchReadiness.status}`}
+              id="task-dispatch-readiness"
               role={props.dispatchReadiness.status === 'invalid' ? 'alert' : 'status'}
             >
               <div>

@@ -878,6 +878,7 @@ function App() {
   const [taskActionLogs, setTaskActionLogs] = useState<TaskActionLogEntry[]>([]);
   const [taskLogError, setTaskLogError] = useState('');
   const [taskLogSession, setTaskLogSession] = useState<TaskLogSession | null>(null);
+  const [isTaskLogBootstrapped, setIsTaskLogBootstrapped] = useState(false);
   const taskLogAfterSeqRef = useRef(0);
   const taskLogBootstrappedRef = useRef(false);
   const [isSchedulerRunning, setIsSchedulerRunning] = useState(false);
@@ -1380,6 +1381,7 @@ function App() {
     if (workspace !== 'tasks') return;
     let cancelled = false;
     taskLogBootstrappedRef.current = false;
+    setIsTaskLogBootstrapped(false);
     setTaskActionLogs([]);
     setTaskLogError('');
     void fetchTaskActionLogs(fetch, taskWorkspacePath, { afterSeq: 0 })
@@ -1387,11 +1389,13 @@ function App() {
         if (cancelled) return;
         taskLogAfterSeqRef.current = result.latest_seq;
         taskLogBootstrappedRef.current = true;
+        setIsTaskLogBootstrapped(true);
       })
       .catch(() => {
         if (cancelled) return;
         taskLogAfterSeqRef.current = 0;
         taskLogBootstrappedRef.current = true;
+        setIsTaskLogBootstrapped(true);
         setTaskLogError('日志暂不可用');
       });
     return () => {
@@ -1400,30 +1404,44 @@ function App() {
     };
   }, [taskWorkspacePath, workspace]);
   useEffect(() => {
-    if (workspace !== 'tasks' || !taskLogBootstrappedRef.current) return;
-    const poll = () => {
-      void fetchTaskActionLogs(fetch, taskWorkspacePath, {
-        afterSeq: taskLogAfterSeqRef.current,
-      })
-        .then((result) => {
-          setTaskLogError('');
-          if (result.entries.length) {
-            setTaskActionLogs((previous) => mergeTaskActionLogs(previous, result.entries));
-          }
-          if (result.latest_seq >= taskLogAfterSeqRef.current) {
-            taskLogAfterSeqRef.current = result.latest_seq;
-          }
-        })
-        .catch(() => {
-          setTaskLogError('日志暂不可用');
+    if (workspace !== 'tasks' || !isTaskLogBootstrapped || !taskLogBootstrappedRef.current) return;
+    let cancelled = false;
+    let inFlight = false;
+    const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const result = await fetchTaskActionLogs(fetch, taskWorkspacePath, {
+          afterSeq: taskLogAfterSeqRef.current,
         });
+        if (cancelled) return;
+        setTaskLogError('');
+        if (result.entries.length) {
+          setTaskActionLogs((previous) => mergeTaskActionLogs(previous, result.entries));
+        }
+        if (result.latest_seq >= taskLogAfterSeqRef.current) {
+          taskLogAfterSeqRef.current = result.latest_seq;
+        }
+      } catch {
+        if (!cancelled) setTaskLogError('日志暂不可用');
+      } finally {
+        inFlight = false;
+      }
     };
-    poll();
-    const timer = window.setInterval(poll, 1000);
-    return () => window.clearInterval(timer);
-  }, [taskWorkspacePath, workspace]);
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isTaskLogBootstrapped, taskWorkspacePath, workspace]);
   useEffect(() => {
-    if (workspace !== 'tasks' || !selectedTaskInstanceId || !taskLogBootstrappedRef.current) {
+    if (
+      workspace !== 'tasks'
+      || !selectedTaskInstanceId
+      || !isTaskLogBootstrapped
+      || !taskLogBootstrappedRef.current
+    ) {
       return;
     }
     let cancelled = false;
@@ -1445,7 +1463,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedTaskInstanceId, taskWorkspacePath, workspace]);
+  }, [isTaskLogBootstrapped, selectedTaskInstanceId, taskWorkspacePath, workspace]);
   const connectTaskOpc = useCallback(async () => {
     const url = taskOpcUrl.trim();
     if (!url) {
@@ -2902,6 +2920,10 @@ function App() {
         await performTaskSchedulerPause();
         return;
       }
+      if (!isTaskLogBootstrapped || !taskLogBootstrappedRef.current) {
+        setTaskServiceError('Task 日志正在初始化，请稍后重试');
+        return;
+      }
       taskExecutionControllerRef.current?.pause();
       setTaskExecutionWorkflow(null);
       setTaskExecutionStatus(createTaskExecutionStatus());
@@ -2953,6 +2975,7 @@ function App() {
   ), [
     applyTaskWorkspace,
     buildWorkflow,
+    isTaskLogBootstrapped,
     isSchedulerRunning,
     isTaskExecutionDraining,
     performTaskSchedulerPause,

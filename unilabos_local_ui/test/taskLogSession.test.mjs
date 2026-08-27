@@ -51,6 +51,31 @@ assert.match(
   /setTaskLogSession\(\{\s*startedAt: Date\.now\(\),\s*actionAfterSeq: taskLogAfterSeqRef\.current,\s*\}\);[\s\S]*?const plannedWorkspace = await taskApiRef\.current\.plan\(/,
   'Task 日志会话必须在 plan/advance 前建立，避免漏掉首条调度事件',
 );
+assert.match(
+  mainSource,
+  /const \[isTaskLogBootstrapped, setIsTaskLogBootstrapped\] = useState\(false\);/,
+  'Action 日志初始化完成状态必须进入 React 状态链路',
+);
+assert.match(
+  mainSource,
+  /taskLogBootstrappedRef\.current = true;\s*setIsTaskLogBootstrapped\(true\);/,
+  'cursor 初始化完成后必须触发轮询 effect 重新执行',
+);
+assert.match(
+  mainSource,
+  /if \(workspace !== 'tasks' \|\| !isTaskLogBootstrapped \|\| !taskLogBootstrappedRef\.current\) return;[\s\S]*?let cancelled = false;\s*let inFlight = false;/,
+  'Action 日志轮询必须等待初始化，并防止重叠请求和陈旧响应写回',
+);
+assert.match(
+  mainSource,
+  /\}, \[isTaskLogBootstrapped, taskWorkspacePath, workspace\]\);/,
+  '初始化状态变化必须重新触发 Action 日志轮询',
+);
+assert.match(
+  mainSource,
+  /if \(!isTaskLogBootstrapped \|\| !taskLogBootstrappedRef\.current\) \{\s*setTaskServiceError\('Task 日志正在初始化，请稍后重试'\);\s*return;\s*\}[\s\S]*?setTaskLogSession\(/,
+  'cursor 初始化完成前不得启动新的 Task 日志会话',
+);
 
 const schedulerSource = await readFile(new URL('../src/TaskSchedulerBench.tsx', import.meta.url), 'utf8');
 assert.match(schedulerSource, /logLines: TaskLogLine\[\];/);

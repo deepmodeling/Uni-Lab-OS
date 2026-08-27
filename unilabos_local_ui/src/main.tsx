@@ -92,6 +92,7 @@ import {
   isTaskDispatchPreflightResult,
   preflightTaskDispatch,
   TaskDispatchPreflightHttpError,
+  type TaskDispatchPreflightResult,
   type TaskDispatchReadiness,
 } from './taskDispatchPreflight';
 import {
@@ -2441,6 +2442,36 @@ function App() {
     return payload as WorkflowJson;
   }, [executionPlan.executableEdges, executionPlan.executableNodes, taskWorkflowSemanticKey, workflowName]);
 
+  const runTaskDispatchPreflight = useCallback(async (
+    workflowPayload: WorkflowJson,
+    signal?: AbortSignal,
+  ) => {
+    let expectedVersion = taskWorkspaceVersionRef.current;
+    if (expectedVersion === null) throw new Error('Task 工作区尚未加载');
+    try {
+      return await preflightTaskDispatch({
+        workflowPath: taskWorkspacePath,
+        expectedVersion,
+        workflow: workflowPayload as Record<string, unknown>,
+        signal,
+      });
+    } catch (error) {
+      if (!(error instanceof TaskDispatchPreflightHttpError) || error.status !== 409) {
+        throw error;
+      }
+    }
+    const latest = await taskApiRef.current.getWorkspace(taskWorkspacePath, signal);
+    expectedVersion = latest.version;
+    const result = await preflightTaskDispatch({
+      workflowPath: taskWorkspacePath,
+      expectedVersion,
+      workflow: workflowPayload as Record<string, unknown>,
+      signal,
+    });
+    if (!signal?.aborted) applyTaskWorkspace(latest);
+    return result;
+  }, [applyTaskWorkspace, taskWorkspacePath]);
+
   const generateOpcSimulatorProfile = useCallback(async () => {
     if (opcSimulatorGenerateInFlightRef.current) return;
     if (!scheduledOpcTemplateIds.length) return;
@@ -3044,12 +3075,54 @@ function App() {
         setTaskServiceError(error instanceof Error ? error.message : '构建 Task workflow 失败');
         return;
       }
-      setTaskExecutionWorkflow(builtWorkflow);
-      const version = taskWorkspaceVersionRef.current;
-      if (version === null) {
-        setTaskServiceError('Task 工作区尚未加载');
+      const preflightKey = taskDispatchPreflightKeyRef.current;
+      setTaskDispatchReadiness({
+        status: 'validating',
+        key: preflightKey,
+        message: '开始派发前正在执行最终确认',
+        source: 'dispatch',
+      });
+      let finalPreflight: TaskDispatchPreflightResult;
+      try {
+        finalPreflight = await runTaskDispatchPreflight(builtWorkflow);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '派发最终确认失败';
+        setTaskDispatchReadiness({
+          status: 'unavailable',
+          key: taskDispatchPreflightKeyRef.current,
+          message: errorMessage,
+          source: 'dispatch',
+        });
+        setTaskServiceError(errorMessage);
         return;
       }
+      if (taskDispatchPreflightKeyRef.current !== preflightKey) {
+        setTaskDispatchReadiness({
+          status: 'stale',
+          key: taskDispatchPreflightKeyRef.current,
+          message: '最终确认期间派发内容已变化，请等待重新预检',
+          source: 'dispatch',
+        });
+        setTaskServiceError('最终确认期间派发内容已变化，请重新确认');
+        return;
+      }
+      setTaskDispatchReadiness({
+        status: finalPreflight.valid ? 'ready' : 'invalid',
+        key: preflightKey,
+        result: finalPreflight,
+        message: finalPreflight.valid
+          ? '开始派发前最终确认通过'
+          : '开始派发前最终确认未通过',
+        source: 'dispatch',
+      });
+      if (!finalPreflight.valid) {
+        setTaskServiceError(
+          finalPreflight.errors[0]?.message || '派发最终确认未通过',
+        );
+        return;
+      }
+      setTaskExecutionWorkflow(builtWorkflow);
+      const version = finalPreflight.workspace_version;
       // 会话边界必须早于 plan/advance，否则首条 scheduled 事件会被过滤。
       setTaskLogSession({
         startedAt: Date.now(),
@@ -3088,6 +3161,7 @@ function App() {
     isSchedulerRunning,
     isTaskExecutionDraining,
     performTaskSchedulerPause,
+    runTaskDispatchPreflight,
     taskWorkspacePath,
     visibleTaskDispatchReadiness,
   ]);
@@ -3234,34 +3308,11 @@ function App() {
     setTaskDispatchReadiness({ status: 'validating', key });
     const timer = window.setTimeout(() => {
       const run = async () => {
-        let expectedVersion = taskWorkspaceVersionRef.current;
-        if (expectedVersion === null) return;
         try {
-          let result;
-          try {
-            result = await preflightTaskDispatch({
-              workflowPath: taskWorkspacePath,
-              expectedVersion,
-              workflow: workflow as Record<string, unknown>,
-              signal: controller.signal,
-            });
-          } catch (error) {
-            if (!(error instanceof TaskDispatchPreflightHttpError) || error.status !== 409) {
-              throw error;
-            }
-            const latest = await taskApiRef.current.getWorkspace(
-              taskWorkspacePath,
-              controller.signal,
-            );
-            expectedVersion = latest.version;
-            result = await preflightTaskDispatch({
-              workflowPath: taskWorkspacePath,
-              expectedVersion,
-              workflow: workflow as Record<string, unknown>,
-              signal: controller.signal,
-            });
-            if (!controller.signal.aborted) applyTaskWorkspace(latest);
-          }
+          const result = await runTaskDispatchPreflight(
+            workflow,
+            controller.signal,
+          );
           if (controller.signal.aborted) return;
           setTaskDispatchReadiness({
             status: result.valid ? 'ready' : 'invalid',
@@ -3288,14 +3339,13 @@ function App() {
       controller.abort();
     };
   }, [
-    applyTaskWorkspace,
     builtWorkflowSemanticKey,
     hasTaskWorkspaceVersion,
     isSchedulerRunning,
     isTaskExecutionDraining,
     isTaskWorkspaceLoading,
+    runTaskDispatchPreflight,
     taskDispatchPreflightKey,
-    taskWorkspacePath,
     taskWorkflowSemanticKey,
     workspace,
   ]);

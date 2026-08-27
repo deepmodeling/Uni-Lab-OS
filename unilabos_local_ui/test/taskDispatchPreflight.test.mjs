@@ -147,8 +147,18 @@ const benchStyles = await readFile(
 );
 assert.match(
   mainSource,
-  /setTaskDispatchReadiness\(\{ status: 'validating', key \}\)[\s\S]*?preflightTaskDispatch\([\s\S]*?error\.status !== 409[\s\S]*?getWorkspace\([\s\S]*?preflightTaskDispatch\(/,
+  /const runTaskDispatchPreflight = useCallback[\s\S]*?preflightTaskDispatch\([\s\S]*?error\.status !== 409[\s\S]*?getWorkspace\([\s\S]*?preflightTaskDispatch\(/,
+  '预检调用应统一在 workspace 版本冲突时刷新后重试一次',
+);
+assert.match(
+  mainSource,
+  /setTaskDispatchReadiness\(\{ status: 'validating', key \}\)[\s\S]*?runTaskDispatchPreflight\(\s*workflow,/,
   '语义变化后应自动预检，并在 workspace 版本冲突时刷新后重试一次',
+);
+assert.match(
+  mainSource,
+  /builtWorkflow = await buildWorkflow\(\)[\s\S]*?开始派发前正在执行最终确认[\s\S]*?finalPreflight = await runTaskDispatchPreflight\(builtWorkflow\)[\s\S]*?if \(!finalPreflight\.valid\)[\s\S]*?return;[\s\S]*?setTaskExecutionWorkflow\(builtWorkflow\)[\s\S]*?const version = finalPreflight\.workspace_version/,
+  '点击开始派发后必须使用刚构建的 workflow 最终预检，并绑定通过时的 workspace 版本',
 );
 assert.match(
   benchSource,

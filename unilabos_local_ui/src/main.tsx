@@ -344,14 +344,24 @@ function taskTriggerLogLabel(trigger: unknown) {
 }
 
 function taskEventText(event: ApiWorkspaceEvent, fallbackTriggers: unknown[] = []) {
-  const timestamp = new Date(event.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
   const satisfiedTriggers = event.payload.satisfied_triggers;
   if (event.kind === 'scheduled') {
     const triggers = Array.isArray(satisfiedTriggers) ? satisfiedTriggers : fallbackTriggers;
     const conditions = triggers.map(taskTriggerLogLabel).join('、');
-    return `${timestamp} 已派发：${conditions || '无额外输入条件'}`;
+    return `已派发：${conditions || '无额外输入条件'}`;
   }
-  return `${timestamp} ${event.kind}`;
+  const labels: Record<string, string> = {
+    opc_snapshot: 'OPC 快照已更新',
+    output: '输出条件已记录',
+    completed: 'Task 已完成',
+    template_deleted: 'Task 模板已删除',
+    templates_deleted: 'Task 模板已批量删除',
+    scheduled_templates_updated: '待排 Task 模板已更新',
+    instances_cleared: 'Task 队列已清空',
+    instances_progress_reset: 'Task 进度已重置',
+    instance_parameters_updated: 'Task 参数已更新',
+  };
+  return labels[event.kind] || event.kind;
 }
 
 function taskWaitingText(reason?: ApiWaitingReason) {
@@ -385,9 +395,17 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
   }>;
 } {
   const templateById = new Map(response.workspace.templates.map((template) => [template.id, template]));
+  const instanceById = new Map(response.workspace.task_instances.map((instance) => [instance.id, instance]));
   const taskEventRecords = response.workspace.events.map((event) => ({
+    id: event.id,
     kind: event.kind,
     timestamp: event.timestamp,
+    instanceId: event.instance_id || undefined,
+    sampleId: event.instance_id ? instanceById.get(event.instance_id)?.sample_id : undefined,
+    templateId: event.template_id || undefined,
+    nodeId: typeof event.payload.node_id === 'string' ? event.payload.node_id : undefined,
+    executionId: typeof event.payload.execution_id === 'string' ? event.payload.execution_id : undefined,
+    detail: event.payload,
     text: taskEventText(
       event,
       event.template_id
@@ -3722,6 +3740,7 @@ function App() {
           opcUrl={taskOpcUrl}
           processLines={selectedTaskProcessLines}
           logLines={taskLogLines}
+          logError={taskLogError}
           variableRows={selectedTaskVariableRows}
           waitingReasons={taskWaitingReasons}
         />

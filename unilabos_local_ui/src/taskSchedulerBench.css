@@ -935,6 +935,14 @@
 
 .scheduler-bench__log-head .scheduler-bench__follow { color: var(--green); text-decoration: none; }
 
+.scheduler-bench__log-error {
+  border-bottom: 1px solid #7f1d1d;
+  background: #450a0a;
+  color: #fecaca;
+  font-size: 11px;
+  padding: 8px 16px;
+}
+
 .scheduler-bench__filters {
   display: flex;
   flex-wrap: wrap;
@@ -974,6 +982,24 @@
   border-bottom: 1px solid #1e293b;
 }
 
+.scheduler-bench__log-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+.scheduler-bench__log-context span {
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: #1e293b;
+  color: #cbd5e1;
+  font-size: 9px;
+  padding: 1px 6px;
+}
+
+.scheduler-bench__log-sequence { color: #94a3b8; }
+
 .scheduler-bench__log-line details { margin: 5px 0 0 54px; }
 .scheduler-bench__log-line summary { color: #94a3b8; cursor: pointer; }
 .scheduler-bench__log-line pre {
@@ -988,6 +1014,8 @@
 }
 
 .scheduler-bench__log .scheduler-bench__log-line.opc { color: #7dd3fc; }
+
+.scheduler-bench__log .scheduler-bench__log-line.result { color: #86efac; }
 
 .scheduler-bench__log .scheduler-bench__log-line.error { color: #fca5a5; }
 

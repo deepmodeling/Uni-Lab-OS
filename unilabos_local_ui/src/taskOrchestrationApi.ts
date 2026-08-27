@@ -49,6 +49,7 @@ export type ApiTaskInstance = {
 };
 
 export type ApiWorkspaceEvent = {
+  id?: string;
   kind: string;
   timestamp: number;
   instance_id: string | null;

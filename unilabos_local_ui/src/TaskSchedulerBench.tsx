@@ -182,6 +182,7 @@ type Props = {
   processLines: TaskProcessLogLine[];
   variableRows: TaskVariableRow[];
   logLines: TaskLogLine[];
+  logError: string;
   actionNodes: ActionNode[];
 };
 
@@ -200,6 +201,28 @@ function sampleRowStatusLabel(status: SampleProcessRowStatus) {
   if (status === 'failed') return '失败';
   if (status === 'cancelled') return '已取消';
   return '排队';
+}
+
+function taskLogContext(
+  line: TaskLogLine,
+  taskById: Map<string, Task>,
+  templateById: Map<string, Template>,
+  actionById: Map<string, ActionNode>,
+  actionByTemplateNodeId: Map<string, ActionNode>,
+) {
+  const task = line.instanceId ? taskById.get(line.instanceId) : undefined;
+  const templateId = line.templateId || task?.templateId;
+  const template = templateId ? templateById.get(templateId) : undefined;
+  const action = line.nodeId
+    ? actionById.get(line.nodeId)
+      || (templateId ? actionByTemplateNodeId.get(`${templateId}:${line.nodeId}`) : undefined)
+    : undefined;
+  if (!line.sampleId && !task && !templateId && !line.nodeId && !line.executionId) return null;
+  return {
+    sampleLabel: line.sampleId || task?.sample,
+    taskLabel: template?.name || templateId,
+    actionLabel: action?.label || action?.method || line.nodeId,
+  };
 }
 
 type HeaderActionsProps = Pick<
@@ -276,6 +299,29 @@ export function TaskSchedulerBench(props: Props) {
   const logContainerRef = React.useRef<HTMLDivElement>(null);
   const selected = props.tasks.find((task) => task.id === props.selectedTaskId) || props.tasks[0];
   const selectedTemplate = props.templates.find((template) => template.id === selected?.templateId);
+  const taskById = React.useMemo(
+    () => new Map(props.tasks.map((task) => [task.id, task])),
+    [props.tasks],
+  );
+  const templateById = React.useMemo(
+    () => new Map(props.templates.map((template) => [template.id, template])),
+    [props.templates],
+  );
+  const actionById = React.useMemo(
+    () => new Map(props.actionNodes.map((action) => [action.id, action])),
+    [props.actionNodes],
+  );
+  const actionByTemplateNodeId = React.useMemo(() => {
+    const resolvedActions = new Map<string, ActionNode>();
+    for (const template of props.templates) {
+      for (const resolved of resolveTemplateNodes(template.nodeIds, props.actionNodes)) {
+        if (resolved.node) {
+          resolvedActions.set(`${template.id}:${resolved.templateNodeId}`, resolved.node);
+        }
+      }
+    }
+    return resolvedActions;
+  }, [props.actionNodes, props.templates]);
   const hasRunningTasks = props.tasks.some((task) => task.status === 'running');
   const sampleProcessRows = React.useMemo(
     () => buildSampleProcessRows(props.tasks, props.templates, timingNowMs),
@@ -324,9 +370,24 @@ export function TaskSchedulerBench(props: Props) {
   }, [editingTask?.id, editingS09Parameters]);
 
   const exportLogs = () => {
-    const text = visibleLogLines.map((line) => (
-      `${new Date(line.timestamp).toLocaleString('zh-CN', { hour12: false })} [${line.category}] [${line.level}] ${line.message}`
-    )).join('\n');
+    const text = visibleLogLines.map((line) => {
+      const context = taskLogContext(
+        line,
+        taskById,
+        templateById,
+        actionById,
+        actionByTemplateNodeId,
+      );
+      const contextText = [
+        context?.sampleLabel ? `[样品 ${context.sampleLabel}; sample_id=${line.sampleId || ''}]` : '',
+        context?.taskLabel ? `[Task ${context.taskLabel}; instance_id=${line.instanceId || ''}]` : '',
+        context?.actionLabel
+          ? `[Action ${context.actionLabel}; node_id=${line.nodeId || ''}; execution_id=${line.executionId || ''}]`
+          : '',
+      ].filter(Boolean).join(' ');
+      const sequence = line.seq === undefined ? '' : ` #${line.seq}`;
+      return `${new Date(line.timestamp).toLocaleString('zh-CN', { hour12: false })}${sequence} [${line.category}] [${line.level}]${contextText ? ` ${contextText}` : ''} ${line.message}`;
+    }).join('\n');
     void navigator.clipboard?.writeText(text).catch(() => undefined);
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
@@ -586,27 +647,43 @@ export function TaskSchedulerBench(props: Props) {
           <section className="scheduler-bench__panel">
             <PanelHead title="运行日志" sub="调度、Action 与 OPC 条件的实时输出" badge="实时" />
             <div className="scheduler-bench__log-head"><button className="scheduler-bench__follow" onClick={() => setIsFollowingLogs((value) => !value)} type="button">● {isFollowingLogs ? '正在跟随最新日志' : '已暂停自动跟随'}</button><button onClick={exportLogs} type="button">导出</button></div>
+            {props.logError && <div className="scheduler-bench__log-error" role="alert">日志读取异常：{props.logError}</div>}
             <div className="scheduler-bench__filters">{([
               ['all', '全部'],
               ['schedule', '调度'],
               ['action', 'Action'],
               ['opc', 'OPC'],
-              ['error', '动作结果'],
+              ['result', '结果'],
+              ['error', '错误'],
             ] as const).map(([filter, label]) => <button className={logFilter === filter ? 'active' : ''} key={filter} onClick={() => setLogFilter(filter)} type="button">{label}</button>)}</div>
             <div className="scheduler-bench__log" onScroll={(event) => {
               const element = event.currentTarget;
               setIsFollowingLogs(element.scrollHeight - element.scrollTop - element.clientHeight < 12);
             }} ref={logContainerRef}>
-              {visibleLogLines.map((line) => <div className={`scheduler-bench__log-line ${line.category}`} key={line.id}>
-                <div><time>{new Date(line.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}</time> [{line.level}] {line.message}</div>
-                {line.detail && Object.keys(line.detail).length ? <details>
-                  <summary>详情</summary>
-                  <pre>{JSON.stringify(line.detail, null, 2)}</pre>
-                </details> : null}
-              </div>)}
+              {visibleLogLines.map((line) => {
+                const context = taskLogContext(
+                  line,
+                  taskById,
+                  templateById,
+                  actionById,
+                  actionByTemplateNodeId,
+                );
+                return <div className={`scheduler-bench__log-line ${line.category}`} key={line.id}>
+                  {context && <div className="scheduler-bench__log-context">
+                    {context.sampleLabel && <span title={`sample_id: ${line.sampleId || ''}`}>样品 · {context.sampleLabel}</span>}
+                    {context.taskLabel && <span title={`instance_id: ${line.instanceId || ''}`}>Task · {context.taskLabel}</span>}
+                    {context.actionLabel && <span title={`node_id: ${line.nodeId || ''}\nexecution_id: ${line.executionId || ''}`}>Action · {context.actionLabel}</span>}
+                  </div>}
+                  <div>{line.seq === undefined ? null : <span className="scheduler-bench__log-sequence">#{line.seq}</span>} <time>{new Date(line.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}</time> [{line.level}] {line.message}</div>
+                  {line.detail && Object.keys(line.detail).length ? <details>
+                    <summary>详情</summary>
+                    <pre>{JSON.stringify(line.detail, null, 2)}</pre>
+                  </details> : null}
+                </div>;
+              })}
               {!visibleLogLines.length && <div>本次启动后暂无匹配日志。</div>}
             </div>
-            <div className="scheduler-bench__log-foot">本次启动后 {visibleLogLines.length} 条 · {isFollowingLogs ? '自动滚动' : '滚动已暂停'}</div>
+            <div className="scheduler-bench__log-foot">本次启动后 {props.logLines.length} 条{logFilter === 'all' ? '' : ` · 当前分类 ${visibleLogLines.length} 条`} · {isFollowingLogs ? '自动滚动' : '滚动已暂停'}</div>
           </section>
           <section className="scheduler-bench__panel scheduler-bench__detail">
             <div className="scheduler-bench__detail-tabs"><button className="active" type="button">选中 Task 条件</button></div>

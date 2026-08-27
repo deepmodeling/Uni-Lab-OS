@@ -368,6 +368,31 @@ def log_opc_snapshot_failures(
     return failures
 
 
+def log_opc_snapshot_recovery(
+    logger: WorkflowLogger,
+    failures: list[dict[str, Any]],
+    *,
+    phase: str,
+) -> None:
+    """在一段连续 OPC 读取失败结束时补一条恢复事件。"""
+    if not failures:
+        return
+    phase_label = {
+        "sampling_live": "动作中",
+        "sampling_after": "动作后",
+    }.get(phase, phase)
+    logger.log(
+        f"OPC 状态读取已恢复（{phase_label}）："
+        f"{len(failures)} 个变量恢复读取",
+        detail={
+            "type": "opc_snapshot_recovered",
+            "phase": phase,
+            "recovered_count": len(failures),
+            "recovered_failures": failures,
+        },
+    )
+
+
 def format_opc_variable_label(plc: Any, variable_name: str) -> str:
     """显示为 Browser 友好的中文名 + 代码英文名 + NodeId。"""
     chinese_name, node_id = get_opc_variable_metadata(plc, variable_name)
@@ -783,7 +808,7 @@ def run_nodes(
                 f"OPC状态采样: {len(before)} 个变量",
                 detail={"before": format_snapshot_detail(before, snapshot_client)},
             )
-        log_opc_snapshot_failures(
+        before_failures = log_opc_snapshot_failures(
             logger,
             before,
             snapshot_variables,
@@ -802,13 +827,19 @@ def run_nodes(
                 f"OPC状态变化: {len(diff_detail['changes'])}/{len(before)} 个变量变化",
                 detail=diff_detail,
             )
-        log_opc_snapshot_failures(
+        after_failures = log_opc_snapshot_failures(
             logger,
             after,
             snapshot_variables,
             phase="sampling_after",
             plc=snapshot_client,
         )
+        if before_failures and not after_failures:
+            log_opc_snapshot_recovery(
+                logger,
+                before_failures,
+                phase="sampling_after",
+            )
         for action_log in iter_action_logs(result):
             logger.log(
                 action_log["message"],

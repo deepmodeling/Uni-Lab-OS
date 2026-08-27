@@ -92,6 +92,7 @@ from scripts.run_workflow_local import (
     iter_action_logs,
     iter_opc_wait_logs,
     log_opc_snapshot_failures,
+    log_opc_snapshot_recovery,
     load_workflow_nodes,
     load_runtime_config,
     node_method,
@@ -941,7 +942,7 @@ def _run_node_with_live_opc_sampling(
             f"OPC状态采样: {len(before)} 个变量",
             detail={"before": format_snapshot_detail(before, snapshot_client)},
         )
-    log_opc_snapshot_failures(
+    active_snapshot_failures = log_opc_snapshot_failures(
         logger,
         before,
         snapshot_variables,
@@ -951,13 +952,16 @@ def _run_node_with_live_opc_sampling(
 
     stop_sampling = threading.Event()
     last_snapshot = dict(before)
-    active_live_failure_signature: tuple[tuple[str, str], ...] = ()
+    active_live_failure_signature = tuple(
+        (str(item.get("name") or ""), str(item.get("error") or ""))
+        for item in active_snapshot_failures
+    )
     skip_parallel_sampling = (
         bool(runtime_config.device_factory.devices) and snapshot_client is device
     )
 
     def sample_live_changes() -> None:
-        nonlocal active_live_failure_signature, last_snapshot
+        nonlocal active_live_failure_signature, active_snapshot_failures, last_snapshot
         while not stop_sampling.wait(sample_interval):
             current = snapshot_opc_state(snapshot_client, snapshot_variables)
             failures = opc_snapshot_failures(
@@ -977,6 +981,13 @@ def _run_node_with_live_opc_sampling(
                     phase="sampling_live",
                     plc=snapshot_client,
                 )
+            elif active_snapshot_failures and not failure_signature:
+                log_opc_snapshot_recovery(
+                    logger,
+                    active_snapshot_failures,
+                    phase="sampling_live",
+                )
+            active_snapshot_failures = failures
             active_live_failure_signature = failure_signature
             diff_detail = build_snapshot_diff_detail(
                 last_snapshot, current, plc=snapshot_client
@@ -1029,13 +1040,19 @@ def _run_node_with_live_opc_sampling(
             f"OPC状态变化: {len(diff_detail['changes'])}/{len(before)} 个变量变化",
             detail=diff_detail,
         )
-    log_opc_snapshot_failures(
+    after_failures = log_opc_snapshot_failures(
         logger,
         after,
         snapshot_variables,
         phase="sampling_after",
         plc=snapshot_client,
     )
+    if active_snapshot_failures and not after_failures:
+        log_opc_snapshot_recovery(
+            logger,
+            active_snapshot_failures,
+            phase="sampling_after",
+        )
     for action_log in iter_action_logs(result):
         logger.log(
             action_log["message"],
@@ -1104,12 +1121,10 @@ class WorkflowRunManager:
         self._sensor_event_plc: Any = None
         self._task_snapshot_publisher = TaskOrchestrationSnapshotPublisher()
         self._task_action_log_store = TaskActionLogStore()
-        self._active_scheduler_error_keys: dict[
-            str, set[tuple[str, str, str, str, str]]
+        self._active_scheduler_errors: dict[
+            str, dict[tuple[str, str, str, str, str], dict[str, Any]]
         ] = {}
-        self._active_opc_error_keys: dict[
-            tuple[str, str], tuple[str, str]
-        ] = {}
+        self._active_opc_errors: dict[tuple[str, str], dict[str, Any]] = {}
         self._run_history_store = run_history_store or RunHistoryStore()
         self._task_execution_coordinator = TaskExecutionCoordinator(
             task_client=self._task_snapshot_publisher,
@@ -1317,10 +1332,9 @@ class WorkflowRunManager:
     ) -> None:
         """把新出现的调度错误发布到统一日志，并抑制连续 tick 重复。"""
         items = diagnostics if isinstance(diagnostics, list) else []
-        keyed_items: list[
-            tuple[tuple[str, str, str, str, str], dict[str, Any]]
-        ] = []
-        current_keys: set[tuple[str, str, str, str, str]] = set()
+        current_items: dict[
+            tuple[str, str, str, str, str], dict[str, Any]
+        ] = {}
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -1334,24 +1348,52 @@ class WorkflowRunManager:
                 str(item.get("code") or "scheduler_error"),
                 str(item.get("message") or ""),
             )
-            current_keys.add(key)
-            keyed_items.append((key, item))
+            current_items.setdefault(key, item)
 
         with self._lock:
-            previous_keys = self._active_scheduler_error_keys.get(
-                workflow_path, set()
+            previous_items = self._active_scheduler_errors.get(
+                workflow_path, {}
             )
-            new_keys = current_keys - previous_keys
-            if current_keys:
-                self._active_scheduler_error_keys[workflow_path] = current_keys
+            new_keys = current_items.keys() - previous_items.keys()
+            recovered_keys = previous_items.keys() - current_items.keys()
+            if current_items:
+                self._active_scheduler_errors[workflow_path] = current_items
             else:
-                self._active_scheduler_error_keys.pop(workflow_path, None)
+                self._active_scheduler_errors.pop(workflow_path, None)
 
-        emitted: set[tuple[str, str, str, str, str]] = set()
-        for key, item in keyed_items:
-            if key not in new_keys or key in emitted:
+        for key in recovered_keys:
+            item = previous_items[key]
+            original_code = str(item.get("code") or "scheduler_error")
+            original_message = str(item.get("message") or original_code)
+            self._append_task_action_log(
+                {
+                    "workflow_path": workflow_path,
+                    "instance_id": str(item.get("instance_id") or ""),
+                    "sample_id": str(item.get("sample_id") or ""),
+                    "template_id": str(item.get("template_id") or ""),
+                    "node_id": str(item.get("node_id") or ""),
+                    "execution_id": str(item.get("execution_id") or ""),
+                    "device_id": str(item.get("device_id") or ""),
+                    "action_name": str(item.get("action_name") or ""),
+                },
+                f"调度错误已恢复：{original_message}",
+                level="info",
+                category="schedule",
+                code="scheduler_error_recovered",
+                phase="recovered",
+                detail={
+                    "type": "scheduler_error_recovered",
+                    "original_code": original_code,
+                    "original_message": original_message,
+                    "original_phase": str(item.get("phase") or "dispatching"),
+                    "diagnostic_category": str(item.get("category") or ""),
+                },
+                record_incident=False,
+            )
+
+        for key, item in current_items.items():
+            if key not in new_keys:
                 continue
-            emitted.add(key)
             code = str(item.get("code") or "scheduler_error")
             message = str(item.get("message") or code)
             self._append_task_action_log(
@@ -1394,17 +1436,55 @@ class WorkflowRunManager:
         device_id: str = "",
         detail: dict[str, Any] | None = None,
     ) -> None:
-        """发布 OPC 错误状态；同一操作连续失败时只写一次。"""
+        """发布 OPC 错误状态，并在连续失败结束时补一条恢复日志。"""
         state_key = (workflow_path, operation)
         error_key = (str(code or ""), str(message or ""))
         with self._lock:
-            previous = self._active_opc_error_keys.get(state_key)
+            previous = self._active_opc_errors.get(state_key)
             if not code:
-                self._active_opc_error_keys.pop(state_key, None)
+                self._active_opc_errors.pop(state_key, None)
+            elif previous and previous.get("error_key") == error_key:
                 return
-            if previous == error_key:
+            else:
+                self._active_opc_errors[state_key] = {
+                    "error_key": error_key,
+                    "code": code,
+                    "message": message or code,
+                    "phase": phase,
+                    "device_id": device_id,
+                    "detail": dict(detail or {}),
+                }
+        if not code:
+            if previous is None:
                 return
-            self._active_opc_error_keys[state_key] = error_key
+            operation_label = {
+                "connect": "连接",
+                "registration": "注册与初始采样",
+                "poll": "轮询采样",
+            }.get(operation, operation)
+            original_code = str(previous.get("code") or "opc_error")
+            original_message = str(previous.get("message") or original_code)
+            self._append_task_action_log(
+                {
+                    "workflow_path": workflow_path,
+                    "device_id": str(previous.get("device_id") or device_id),
+                },
+                f"OPC {operation_label}已恢复：{original_message}",
+                level="info",
+                category="opc",
+                code="opc_error_recovered",
+                phase="recovered",
+                detail={
+                    "type": "opc_error_recovered",
+                    "operation": operation,
+                    "original_code": original_code,
+                    "original_message": original_message,
+                    "original_phase": str(previous.get("phase") or phase),
+                    "original_detail": previous.get("detail") or {},
+                },
+                record_incident=False,
+            )
+            return
         self._append_task_action_log(
             {
                 "workflow_path": workflow_path,

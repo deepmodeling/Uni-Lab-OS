@@ -636,11 +636,16 @@ def test_scheduler_errors_flow_to_task_logs_once_until_recovered(tmp_path):
     entries = manager.list_task_action_logs(
         workflow_path="main-process.json"
     )["entries"]
-    assert len(entries) == 2
-    assert [entry["category"] for entry in entries] == ["schedule", "schedule"]
-    assert [entry["level"] for entry in entries] == ["error", "error"]
+    assert len(entries) == 3
+    assert [entry["category"] for entry in entries] == [
+        "schedule",
+        "schedule",
+        "schedule",
+    ]
+    assert [entry["level"] for entry in entries] == ["error", "info", "error"]
     assert [entry["code"] for entry in entries] == [
         "unsupported_action",
+        "scheduler_error_recovered",
         "unsupported_action",
     ]
     assert entries[0]["phase"] == "dispatching"
@@ -651,6 +656,8 @@ def test_scheduler_errors_flow_to_task_logs_once_until_recovered(tmp_path):
         "immediate": True,
         "diagnostic": {"reason": "method_not_found"},
     }
+    assert entries[1]["phase"] == "recovered"
+    assert entries[1]["detail"]["original_code"] == "unsupported_action"
     manager.shutdown()
 
 
@@ -769,6 +776,77 @@ def test_action_opc_snapshot_failures_are_structured_errors(tmp_path):
     manager.shutdown()
 
 
+def test_action_opc_snapshot_failure_emits_recovery_after_success(tmp_path):
+    store = RunHistoryStore(tmp_path, session_id="run-opc-snapshot-recovery")
+    runtime_config = RuntimeConfig(
+        path=tmp_path / "runtime.json",
+        device_factory=RuntimeDeviceFactoryConfig(),
+        opc_snapshot=RuntimeOpcSnapshotConfig(
+            action_variables={"run": ["ready"]}
+        ),
+    )
+    manager = WorkflowRunManager(
+        load_preset("szlab_robot_action_workflow"),
+        runtime_config,
+        run_history_store=store,
+    )
+
+    class RecoveringDevice:
+        reads = 0
+
+        @classmethod
+        def get_variables(cls, _names, use_cache=False):
+            assert use_cache is False
+            cls.reads += 1
+            if cls.reads == 1:
+                return {"ready": {"success": False, "error": "offline"}}
+            return {"ready": {"success": True, "value": True}}
+
+        @staticmethod
+        def run():
+            return {"success": True}
+
+    device = RecoveringDevice()
+    manager._run_task_action_node(
+        WorkflowNode(
+            uuid="opc-recovery-node",
+            name="run",
+            device_name="device",
+            method="run",
+            param={},
+            legacy_route_compatible=False,
+        ),
+        {"device": device},
+        device.run,
+        {
+            "workflow_path": "main-process.json",
+            "instance_id": "instance-opc-recovery",
+            "node_id": "opc-recovery-node",
+            "execution_id": "execution-opc-recovery",
+            "device_id": "device",
+            "action_name": "run",
+        },
+    )
+
+    entries = manager.list_task_action_logs(
+        workflow_path="main-process.json"
+    )["entries"]
+    opc_entries = [
+        entry
+        for entry in entries
+        if entry["code"]
+        in {"opc_snapshot_read_failed", "opc_snapshot_recovered"}
+    ]
+    assert [entry["code"] for entry in opc_entries] == [
+        "opc_snapshot_read_failed",
+        "opc_snapshot_recovered",
+    ]
+    assert [entry["level"] for entry in opc_entries] == ["error", "info"]
+    assert opc_entries[1]["phase"] == "sampling_after"
+    assert opc_entries[1]["detail"]["recovered_failures"][0]["name"] == "ready"
+    manager.shutdown()
+
+
 def test_task_opc_poll_error_is_deduplicated_until_recovery(tmp_path):
     store = RunHistoryStore(tmp_path, session_id="run-opc-poll-error")
     preset = load_preset("stack_s05_s06")
@@ -849,11 +927,17 @@ def test_task_opc_poll_error_is_deduplicated_until_recovery(tmp_path):
     entries = manager.list_task_action_logs(
         workflow_path="main-process.json"
     )["entries"]
-    assert len(entries) == 2
+    assert len(entries) == 3
     assert [entry["code"] for entry in entries] == [
         "opc_input_snapshot_failed",
+        "opc_error_recovered",
         "opc_input_snapshot_failed",
     ]
     assert all(entry["category"] == "opc" for entry in entries)
-    assert all(entry["level"] == "error" for entry in entries)
+    assert [entry["level"] for entry in entries] == ["error", "info", "error"]
+    assert entries[1]["phase"] == "recovered"
+    assert entries[1]["detail"]["operation"] == "poll"
+    assert entries[1]["detail"]["original_code"] == (
+        "opc_input_snapshot_failed"
+    )
     manager.shutdown()

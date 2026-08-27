@@ -48,7 +48,8 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /const plannedWorkspace = await taskApiRef\.current\.plan\([\s\S]*?applyTaskWorkspace\(plannedWorkspace\);[\s\S]*?setTaskLogSession\(\{\s*startedAt: Date\.now\(\),\s*actionAfterSeq: taskLogAfterSeqRef\.current,\s*\}\)/,
+  /setTaskLogSession\(\{\s*startedAt: Date\.now\(\),\s*actionAfterSeq: taskLogAfterSeqRef\.current,\s*\}\);[\s\S]*?const plannedWorkspace = await taskApiRef\.current\.plan\(/,
+  'Task 日志会话必须在 plan/advance 前建立，避免漏掉首条调度事件',
 );
 
 const schedulerSource = await readFile(new URL('../src/TaskSchedulerBench.tsx', import.meta.url), 'utf8');

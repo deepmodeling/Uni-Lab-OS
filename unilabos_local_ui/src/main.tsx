@@ -2919,6 +2919,11 @@ function App() {
         setTaskServiceError('Task 工作区尚未加载');
         return;
       }
+      // 会话边界必须早于 plan/advance，否则首条 scheduled 事件会被过滤。
+      setTaskLogSession({
+        startedAt: Date.now(),
+        actionAfterSeq: taskLogAfterSeqRef.current,
+      });
       try {
         const hasRunningPeer = taskInstancesRef.current.some(
           (instance) => instance.status === 'running',
@@ -2935,10 +2940,6 @@ function App() {
           plannedWorkspace.version,
         );
         applyTaskWorkspace(advancedWorkspace);
-        setTaskLogSession({
-          startedAt: Date.now(),
-          actionAfterSeq: taskLogAfterSeqRef.current,
-        });
       } catch (error) {
         const message = taskApiErrorMessage(error);
         try {

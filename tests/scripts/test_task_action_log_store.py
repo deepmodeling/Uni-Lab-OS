@@ -12,6 +12,12 @@ def test_task_action_log_store_append_and_query():
         level="info",
         message="开始",
         detail={"type": "opc_wait"},
+        category="opc",
+        code="opc_wait",
+        phase="waiting",
+        template_id="template-a",
+        device_id="plc-a",
+        action_name="wait_until",
     )
     second = store.append(
         workflow_path="demo.json",
@@ -29,7 +35,38 @@ def test_task_action_log_store_append_and_query():
     assert payload["next_after_seq"] == 1
     assert payload["has_more"] is False
     assert len(payload["entries"]) == 1
-    assert payload["entries"][0]["instance_id"] == "inst-a"
+    entry = payload["entries"][0]
+    assert entry["instance_id"] == "inst-a"
+    assert entry["category"] == "opc"
+    assert entry["level"] == "info"
+    assert entry["code"] == "opc_wait"
+    assert entry["phase"] == "waiting"
+    assert entry["template_id"] == "template-a"
+    assert entry["device_id"] == "plc-a"
+    assert entry["action_name"] == "wait_until"
+
+
+def test_task_action_log_store_normalizes_legacy_contract_defaults():
+    store = TaskActionLogStore()
+    store.append(
+        workflow_path="demo.json",
+        instance_id="inst-a",
+        node_id="node-1",
+        execution_id="exec-1",
+        sample_id="Sample A",
+        level="UNKNOWN",
+        category="UNKNOWN",
+        message="旧日志",
+    )
+
+    entry = store.list_since("demo.json")["entries"][0]
+    assert entry["category"] == "action"
+    assert entry["level"] == "info"
+    assert entry["code"] == ""
+    assert entry["phase"] == ""
+    assert entry["template_id"] == ""
+    assert entry["device_id"] == ""
+    assert entry["action_name"] == ""
 
 
 def test_task_action_log_store_pages_from_oldest_unread_entry():

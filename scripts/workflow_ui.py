@@ -811,6 +811,49 @@ def _infer_log_category(
     return "workflow"
 
 
+def _task_execution_log_contract(
+    message: str,
+    *,
+    level: str,
+    detail: dict[str, Any] | None,
+    category: str = "",
+    code: str = "",
+    phase: str = "",
+) -> dict[str, str]:
+    """把现有 Workflow 日志兼容转换为统一的 Task 执行日志协议。"""
+    inferred = _infer_log_category(message, scope="node", detail=detail)
+    inferred_category = {
+        "opc": "opc",
+        "opc_sample": "opc",
+        "opc_change": "opc",
+        "opc_wait": "opc",
+        "action_result": "result",
+    }.get(inferred, "action")
+    normalized_level = str(level or "info").strip().lower()
+    legacy_error = not category and re.search(
+        r"失败|错误|error|failed", message, flags=re.IGNORECASE
+    )
+    if legacy_error and normalized_level not in {"error", "critical"}:
+        normalized_level = "error"
+    detail_type = detail.get("type") if isinstance(detail, dict) else None
+    inferred_code = (
+        str(detail_type)
+        if isinstance(detail_type, str) and detail_type.strip()
+        else {
+            "action_result": "action_result",
+            "error": "action_log_error",
+            "node": "action_log",
+        }.get(inferred, inferred)
+    )
+    detail_phase = detail.get("phase") if isinstance(detail, dict) else None
+    return {
+        "category": str(category or inferred_category).strip().lower(),
+        "level": normalized_level,
+        "code": str(code or inferred_code).strip(),
+        "phase": str(phase or detail_phase or "executing").strip(),
+    }
+
+
 def _run_node_with_live_opc_sampling(
     node: WorkflowNode,
     devices: dict[str, Any],
@@ -1011,7 +1054,18 @@ class WorkflowRunManager:
         *,
         level: str = "info",
         detail: dict[str, Any] | None = None,
+        category: str = "",
+        code: str = "",
+        phase: str = "",
     ) -> None:
+        contract = _task_execution_log_contract(
+            message,
+            level=level,
+            detail=detail,
+            category=category,
+            code=code,
+            phase=phase,
+        )
         try:
             self._task_action_log_store.append(
                 workflow_path=str(context.get("workflow_path") or ""),
@@ -1019,7 +1073,13 @@ class WorkflowRunManager:
                 node_id=str(context.get("node_id") or ""),
                 execution_id=str(context.get("execution_id") or ""),
                 sample_id=str(context.get("sample_id") or ""),
-                level=level,
+                template_id=str(context.get("template_id") or ""),
+                device_id=str(context.get("device_id") or ""),
+                action_name=str(context.get("action_name") or ""),
+                category=contract["category"],
+                level=contract["level"],
+                code=contract["code"],
+                phase=contract["phase"],
                 message=message,
                 detail=detail,
             )

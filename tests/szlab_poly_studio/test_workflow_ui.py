@@ -73,6 +73,60 @@ def test_load_ai4c_preset():
     assert "pick_well_plate_from_loading_rack" in preset.actions
 
 
+def test_task_execution_log_contract_prefers_structured_fields_and_maps_legacy_logs(
+):
+    structured = workflow_ui._task_execution_log_contract(
+        "文本中出现 OPC 和失败也不得覆盖结构化分类",
+        level="warning",
+        detail={},
+        category="result",
+        code="action_returned_failure",
+        phase="completed",
+    )
+    assert structured == {
+        "category": "result",
+        "level": "warning",
+        "code": "action_returned_failure",
+        "phase": "completed",
+    }
+
+    legacy_opc = workflow_ui._task_execution_log_contract(
+        "Robot_Home 条件满足",
+        level="info",
+        detail={"type": "opc_wait", "phase": "finish"},
+    )
+    assert legacy_opc == {
+        "category": "opc",
+        "level": "info",
+        "code": "opc_wait",
+        "phase": "finish",
+    }
+
+    legacy_error = workflow_ui._task_execution_log_contract(
+        "节点执行失败: timeout",
+        level="info",
+        detail={},
+    )
+    assert legacy_error == {
+        "category": "action",
+        "level": "error",
+        "code": "action_log_error",
+        "phase": "executing",
+    }
+
+    legacy_opc_error = workflow_ui._task_execution_log_contract(
+        "OPC 变量读取失败",
+        level="info",
+        detail={},
+    )
+    assert legacy_opc_error == {
+        "category": "opc",
+        "level": "error",
+        "code": "opc",
+        "phase": "executing",
+    }
+
+
 def test_ai4c_preset_csv_matches_default_opc_namespace():
     preset = load_preset("ai4c")
     runtime_config = _load_preset_runtime_config(preset)

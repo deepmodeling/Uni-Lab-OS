@@ -1161,6 +1161,9 @@ class TaskExecutionCoordinator:
                             "node_id": node_id,
                             "execution_id": execution_id,
                             "sample_id": str(instance.get("sample_id") or ""),
+                            "template_id": str(instance.get("template_id") or ""),
+                            "device_id": node.device_name,
+                            "action_name": method_name,
                         },
                     )
                 except Exception as exc:

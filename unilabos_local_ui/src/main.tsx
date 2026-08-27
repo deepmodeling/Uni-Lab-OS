@@ -405,6 +405,10 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
     templateId: event.template_id || undefined,
     nodeId: typeof event.payload.node_id === 'string' ? event.payload.node_id : undefined,
     executionId: typeof event.payload.execution_id === 'string' ? event.payload.execution_id : undefined,
+    category: 'schedule' as const,
+    level: 'info',
+    code: event.kind,
+    phase: 'scheduling',
     detail: event.payload,
     text: taskEventText(
       event,

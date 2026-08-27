@@ -1,3 +1,7 @@
+export type TaskExecutionLogCategory = 'schedule' | 'action' | 'opc' | 'result';
+
+export type TaskExecutionLogLevel = 'debug' | 'info' | 'warning' | 'error' | 'critical';
+
 export type TaskActionLogEntry = {
   seq: number;
   timestamp: number;
@@ -5,7 +9,13 @@ export type TaskActionLogEntry = {
   node_id: string;
   execution_id: string;
   sample_id: string;
+  template_id?: string;
+  device_id?: string;
+  action_name?: string;
+  category?: TaskExecutionLogCategory;
   level: string;
+  code?: string;
+  phase?: string;
   message: string;
   detail: Record<string, unknown>;
 };

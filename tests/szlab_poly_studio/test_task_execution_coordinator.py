@@ -861,6 +861,36 @@ def test_claim_submits_action_once_and_tick_returns_without_waiting():
     coordinator.shutdown()
 
 
+def test_action_runner_receives_complete_log_context():
+    response = _workspace_response()
+    response["workspace"]["task_instances"][0]["sample_id"] = "Sample A"
+    client = FakeTaskClient(response)
+    received_context = {}
+    finished = threading.Event()
+
+    def runner(node, _devices, _action_callable, context):
+        received_context.update(context)
+        finished.set()
+        return [{"success": True}]
+
+    coordinator = _coordinator(client, runner)
+    coordinator.cycle(
+        workflow_path=WORKFLOW_PATH,
+        workflow_nodes=[_node("node_001_pick_from_s03", "submit_pick_from_s03")],
+    )
+
+    assert finished.wait(timeout=1)
+    assert received_context["workflow_path"] == WORKFLOW_PATH
+    assert received_context["instance_id"] == "instance-1"
+    assert received_context["sample_id"] == "Sample A"
+    assert received_context["template_id"] == "template-1"
+    assert received_context["node_id"] == "node_001_pick_from_s03"
+    assert received_context["device_id"] == "device"
+    assert received_context["action_name"] == "submit_pick_from_s03"
+    assert received_context["execution_id"].startswith("task-action-")
+    coordinator.shutdown()
+
+
 def test_s04_stirring_dispatches_different_positions_concurrently():
     instances = []
     for instance_id, position in (("sample-a-stir", 1), ("sample-b-stir", 2)):

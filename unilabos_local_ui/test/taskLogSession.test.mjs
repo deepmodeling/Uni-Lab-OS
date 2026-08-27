@@ -63,6 +63,54 @@ assert.equal(logLines[1].seq, 4);
 assert.equal(logLines[1].nodeId, 'node-1');
 assert.equal(logLines[1].executionId, 'exec-1');
 
+const structuredLines = buildTaskLogLines({
+  events: [],
+  actionEntries: [
+    {
+      seq: 8,
+      timestamp: 2900,
+      category: 'action',
+      level: 'info',
+      code: 'action_progress',
+      phase: 'executing',
+      message: '字段名包含 OPC 和失败，但这是普通进度',
+      detail: {},
+      instance_id: 'inst-1',
+      sample_id: 'Sample A',
+      template_id: 'template-1',
+      node_id: 'node-1',
+      execution_id: 'exec-1',
+      device_id: 'device-1',
+      action_name: 'move',
+    },
+    {
+      seq: 9,
+      timestamp: 3000,
+      category: 'result',
+      level: 'error',
+      code: 'action_returned_failure',
+      phase: 'completed',
+      message: '动作返回 false',
+      detail: { success: false },
+      instance_id: 'inst-1',
+      sample_id: 'Sample A',
+      template_id: 'template-1',
+      node_id: 'node-1',
+      execution_id: 'exec-1',
+      device_id: 'device-1',
+      action_name: 'move',
+    },
+  ],
+  session: { startedAt: 2000, actionAfterSeq: 7 },
+});
+assert.deepEqual(structuredLines.map((line) => line.category), ['action', 'error']);
+assert.deepEqual(structuredLines.map((line) => line.executionCategory), ['action', 'result']);
+assert.equal(structuredLines[0].code, 'action_progress');
+assert.equal(structuredLines[0].phase, 'executing');
+assert.equal(structuredLines[0].templateId, 'template-1');
+assert.equal(structuredLines[0].deviceId, 'device-1');
+assert.equal(structuredLines[0].actionName, 'move');
+
 const requestedAfterSeqs = [];
 const pages = new Map([
   [0, { latest_seq: 5, next_after_seq: 2, has_more: true, entries: [{ seq: 1 }, { seq: 2 }] }],
@@ -149,8 +197,8 @@ assert.doesNotMatch(schedulerSource, /变量历史/);
 const schedulerStyles = await readFile(new URL('../src/taskSchedulerBench.css', import.meta.url), 'utf8');
 assert.match(schedulerStyles, /\.scheduler-bench__log-context/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-line\.result/);
-assert.match(schedulerStyles, /\.scheduler-bench__state\.pending, \.scheduler-bench__state\.waiting \{ background: #edf1f3; color: #51626e; \}/);
-assert.match(schedulerStyles, /\.scheduler-bench__state\.running \{ background: #fff4df; color: #92510d; \}/);
-assert.match(schedulerStyles, /\.scheduler-bench__state\.completed \{ background: #e7f6ef; color: #198564; \}/);
-assert.match(schedulerStyles, /\.scheduler-bench__state\.failed \{ background: #fff0ee; color: #b54138; \}/);
-assert.match(schedulerStyles, /\.scheduler-bench__state\.cancelled \{ background: repeating-linear-gradient/);
+assert.match(schedulerStyles, /\.scheduler-bench__state\.pending,\s*\.scheduler-bench__state\.waiting \{ background: #f1f5f9; color: #475569; \}/);
+assert.match(schedulerStyles, /\.scheduler-bench__state\.running \{ background: var\(--amber-bg\); color: var\(--amber\); \}/);
+assert.match(schedulerStyles, /\.scheduler-bench__state\.completed \{ background: var\(--green-bg\); color: var\(--green\); \}/);
+assert.match(schedulerStyles, /\.scheduler-bench__state\.failed \{ background: var\(--red-bg\); color: var\(--red\); \}/);
+assert.match(schedulerStyles, /\.scheduler-bench__state\.cancelled \{\s*background: repeating-linear-gradient/);

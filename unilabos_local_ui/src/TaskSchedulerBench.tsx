@@ -690,6 +690,8 @@ export function TaskSchedulerBench(props: Props) {
                     <span className={`scheduler-bench__log-meta level ${line.level.toLowerCase()}`}>{line.level.toUpperCase()}</span>
                     {line.code && <code className="scheduler-bench__log-meta code" title={`code: ${line.code}`}>{line.code}</code>}
                     {line.phase && !isRecovery && <span className="scheduler-bench__log-meta phase" title={`phase: ${line.phase}`}>{taskLogPhaseLabel(line.phase)}</span>}
+                    {line.errorState === 'active' && <span className="scheduler-bench__log-meta active-error">当前异常</span>}
+                    {line.errorState === 'recovered' && <span className="scheduler-bench__log-meta recovered" title={`恢复时间: ${new Date(line.recoveredAt || line.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}`}>后来已恢复</span>}
                     {isRecovery && <span className="scheduler-bench__log-meta recovered" title={`phase: ${line.phase || 'recovered'}`}>已恢复</span>}
                     <span className="scheduler-bench__log-message">{line.message}</span>
                   </div>

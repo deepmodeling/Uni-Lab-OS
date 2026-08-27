@@ -179,21 +179,42 @@ const lifecycleLines = buildTaskLogLines({
       node_id: '',
       execution_id: '',
     },
+    {
+      seq: 14,
+      timestamp: 3500,
+      category: 'opc',
+      level: 'error',
+      code: 'opc_poll_failed',
+      phase: 'polling',
+      message: 'OPC 轮询再次失败',
+      detail: {},
+      instance_id: '',
+      sample_id: '',
+      node_id: '',
+      execution_id: '',
+    },
   ],
   session: { startedAt: 3000, actionAfterSeq: 9 },
 });
-assert.deepEqual(lifecycleLines.map((line) => line.category), ['schedule', 'schedule', 'opc', 'opc']);
-assert.deepEqual(lifecycleLines.map((line) => line.isError), [true, false, true, false]);
+assert.deepEqual(lifecycleLines.map((line) => line.category), ['schedule', 'schedule', 'opc', 'opc', 'opc']);
+assert.deepEqual(lifecycleLines.map((line) => line.isError), [true, false, true, false, true]);
 assert.deepEqual(filterTaskLogLines(lifecycleLines, 'schedule').map((line) => line.seq), [10, 11]);
-assert.deepEqual(filterTaskLogLines(lifecycleLines, 'opc').map((line) => line.seq), [12, 13]);
-assert.deepEqual(filterTaskLogLines(lifecycleLines, 'error').map((line) => line.seq), [10, 12]);
+assert.deepEqual(filterTaskLogLines(lifecycleLines, 'opc').map((line) => line.seq), [12, 13, 14]);
+assert.deepEqual(filterTaskLogLines(lifecycleLines, 'error').map((line) => line.seq), [10, 12, 14]);
+assert.deepEqual(
+  filterTaskLogLines(lifecycleLines, 'error').map((line) => line.errorState),
+  ['recovered', 'recovered', 'active'],
+);
+assert.equal(lifecycleLines[0].recoveredAt, 3200);
+assert.equal(lifecycleLines[0].recoveredByLineId, 'action:11');
+assert.equal(lifecycleLines[2].recoveredAt, 3400);
 assert.equal(taskLogCategoryLabel(lifecycleLines[0].category), '调度');
 assert.equal(taskLogPhaseLabel(lifecycleLines[0].phase), '派发');
 assert.equal(isTaskLogRecovery(lifecycleLines[0]), false);
 assert.equal(isTaskLogRecovery(lifecycleLines[1]), true);
 assert.equal(
   formatTaskLogMetadata(lifecycleLines[0]),
-  '[category=schedule] [level=error] [code=unsupported_action] [phase=dispatching]',
+  '[category=schedule] [level=error] [code=unsupported_action] [phase=dispatching] [state=recovered] [recovered_at=3200]',
 );
 
 const requestedAfterSeqs = [];
@@ -277,6 +298,8 @@ assert.match(schedulerSource, /formatTaskLogMetadata\(line\)/, '导出日志必�
 assert.match(schedulerSource, /taskLogCategoryLabel\(line\.category\)/);
 assert.match(schedulerSource, /taskLogPhaseLabel\(line\.phase\)/);
 assert.match(schedulerSource, /isTaskLogRecovery\(line\)/);
+assert.match(schedulerSource, /line\.errorState === 'active'/);
+assert.match(schedulerSource, /line\.errorState === 'recovered'/);
 assert.match(schedulerSource, /\['result', '结果'\][\s\S]*?\['error', '错误'\]/);
 assert.match(schedulerSource, /function taskLogContext\(/, '日志展示必须解析样品、Task 与 Action 上下文');
 assert.match(schedulerSource, /scheduler-bench__log-error/, '新版日志面板必须渲染读取错误');
@@ -288,6 +311,7 @@ const schedulerStyles = await readFile(new URL('../src/taskSchedulerBench.css', 
 assert.match(schedulerStyles, /\.scheduler-bench__log-context/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-line\.result/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.code/);
+assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.active-error/);
 assert.match(schedulerStyles, /\.scheduler-bench__log-meta\.recovered/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.pending,\s*\.scheduler-bench__state\.waiting \{ background: #f1f5f9; color: #475569; \}/);
 assert.match(schedulerStyles, /\.scheduler-bench__state\.running \{ background: var\(--amber-bg\); color: var\(--amber\); \}/);

@@ -7,6 +7,9 @@ export type TaskLogLine = {
   timestamp: number;
   category: TaskExecutionLogCategory;
   isError: boolean;
+  errorState?: 'active' | 'recovered';
+  recoveredAt?: number;
+  recoveredByLineId?: string;
   level: string;
   message: string;
   detail?: Record<string, unknown>;
@@ -103,14 +106,62 @@ export function isTaskLogRecovery(line: Pick<TaskLogLine, 'code' | 'phase'>) {
 }
 
 export function formatTaskLogMetadata(
-  line: Pick<TaskLogLine, 'category' | 'level' | 'code' | 'phase'>,
+  line: Pick<
+    TaskLogLine,
+    'category' | 'level' | 'code' | 'phase' | 'errorState' | 'recoveredAt'
+  >,
 ) {
   return [
     `category=${line.category}`,
     `level=${line.level.toLowerCase()}`,
     line.code ? `code=${line.code}` : '',
     line.phase ? `phase=${line.phase}` : '',
+    line.errorState ? `state=${line.errorState}` : '',
+    line.recoveredAt !== undefined ? `recovered_at=${line.recoveredAt}` : '',
   ].filter(Boolean).map((item) => `[${item}]`).join(' ');
+}
+
+function recoveryOriginalCode(line: TaskLogLine) {
+  const originalCode = line.detail?.original_code;
+  if (typeof originalCode === 'string' && originalCode) return originalCode;
+  if (line.code === 'opc_snapshot_recovered') return 'opc_snapshot_read_failed';
+  return '';
+}
+
+function recoveryMatchesError(errorLine: TaskLogLine, recoveryLine: TaskLogLine) {
+  if (errorLine.executionCategory !== recoveryLine.executionCategory) return false;
+  const originalCode = recoveryOriginalCode(recoveryLine);
+  if (!originalCode || errorLine.code !== originalCode) return false;
+  const contextKeys = [
+    'instanceId',
+    'nodeId',
+    'executionId',
+    'deviceId',
+    'actionName',
+  ] as const;
+  return contextKeys.every((key) => {
+    const recoveryValue = recoveryLine[key];
+    return !recoveryValue || errorLine[key] === recoveryValue;
+  });
+}
+
+function linkTaskLogRecoveries(lines: TaskLogLine[]) {
+  for (const line of lines) {
+    if (line.isError) line.errorState = 'active';
+    if (!isTaskLogRecovery(line)) continue;
+    const errorLine = [...lines]
+      .reverse()
+      .find((candidate) => (
+        candidate.timestamp <= line.timestamp
+        && candidate.errorState === 'active'
+        && recoveryMatchesError(candidate, line)
+      ));
+    if (!errorLine) continue;
+    errorLine.errorState = 'recovered';
+    errorLine.recoveredAt = line.timestamp;
+    errorLine.recoveredByLineId = line.id;
+  }
+  return lines;
 }
 
 function isErrorLevel(level: string) {
@@ -206,7 +257,9 @@ export function buildTaskLogLines({
         actionName: entry.action_name,
       };
     });
-  return [...eventLines, ...actionLines].sort((left, right) => left.timestamp - right.timestamp);
+  return linkTaskLogRecoveries(
+    [...eventLines, ...actionLines].sort((left, right) => left.timestamp - right.timestamp),
+  );
 }
 
 export function filterTaskLogLines(lines: TaskLogLine[], category: TaskLogCategory) {

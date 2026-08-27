@@ -1025,6 +1025,7 @@
 .scheduler-bench__log-meta.level.warning { border-color: #78350f; background: #451a03; color: #fde68a; }
 .scheduler-bench__log-meta.code { color: #e2e8f0; }
 .scheduler-bench__log-meta.phase { color: #c4b5fd; }
+.scheduler-bench__log-meta.active-error { border-color: #7f1d1d; background: #450a0a; color: #fecaca; }
 .scheduler-bench__log-meta.recovered { border-color: #14532d; background: #052e16; color: #86efac; }
 .scheduler-bench__log-message { margin-left: 2px; }
 

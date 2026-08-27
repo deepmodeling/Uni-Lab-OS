@@ -72,32 +72,45 @@ def _append_diagnostic(
     severity: str = "warning",
     category: str = "dispatch_stall",
     detail: dict[str, Any] | None = None,
+    phase: str = "等待派发",
+    execution_id: str = "",
+    template_id: str = "",
+    device_id: str = "",
+    action_name: str = "",
 ) -> None:
     diagnostics = stats.setdefault("diagnostics", [])
     if not isinstance(diagnostics, list):
         return
-    action_name = ""
+    resolved_action_name = action_name
     if node is not None:
         try:
-            action_name = node_method(node)
+            resolved_action_name = node_method(node)
         except ValueError:
-            action_name = ""
-    diagnostics.append(
-        {
-            "category": category,
-            "code": code,
-            "message": message,
-            "severity": severity,
-            "immediate": immediate,
-            "phase": "等待派发",
-            "instance_id": str((instance or {}).get("id") or ""),
-            "sample_id": str((instance or {}).get("sample_id") or ""),
-            "node_id": node_id or (node.uuid if node is not None else ""),
-            "device_id": node.device_name if node is not None else "",
-            "action_name": action_name,
-            "detail": detail or {},
-        }
+            resolved_action_name = action_name
+    diagnostic = {
+        "category": category,
+        "code": code,
+        "message": message,
+        "severity": severity,
+        "immediate": immediate,
+        "phase": phase,
+        "instance_id": str((instance or {}).get("id") or ""),
+        "sample_id": str((instance or {}).get("sample_id") or ""),
+        "node_id": node_id or (node.uuid if node is not None else ""),
+        "device_id": (
+            node.device_name if node is not None else str(device_id or "")
+        ),
+        "action_name": resolved_action_name,
+        "detail": detail or {},
+    }
+    if execution_id:
+        diagnostic["execution_id"] = execution_id
+    resolved_template_id = template_id or str(
+        (instance or {}).get("template_id") or ""
     )
+    if resolved_template_id:
+        diagnostic["template_id"] = resolved_template_id
+    diagnostics.append(diagnostic)
 
 
 def workflow_nodes_from_payload(payload: dict[str, Any]) -> list[WorkflowNode]:
@@ -694,6 +707,9 @@ class _InFlightAction:
     execution_id: str
     device_name: str
     concurrency_key: str
+    sample_id: str = ""
+    template_id: str = ""
+    action_name: str = ""
     result_summary: Any = None
     outcome_prepared: bool = False
     error: dict[str, str] | None = None
@@ -706,6 +722,10 @@ class _PendingTerminalReport:
     node_id: str
     execution_id: str
     error: dict[str, str]
+    sample_id: str = ""
+    template_id: str = ""
+    device_id: str = ""
+    action_name: str = ""
     retryable: bool = True
     report_error: str | None = None
 
@@ -1086,6 +1106,9 @@ class TaskExecutionCoordinator:
                         immediate=True,
                         severity="error",
                         category="dispatch_error",
+                        phase="dispatching",
+                        execution_id=execution_id,
+                        template_id=str(instance.get("template_id") or ""),
                     )
                     claimed_response = self._claim(
                         current_response,
@@ -1111,6 +1134,10 @@ class TaskExecutionCoordinator:
                                     f"不支持的 Task 动作节点: {node_id}"
                                 ),
                             },
+                            sample_id=str(instance.get("sample_id") or ""),
+                            template_id=str(instance.get("template_id") or ""),
+                            device_id=node.device_name if node is not None else "",
+                            action_name=method_name,
                         ),
                         expected_version=int(current_response["version"]),
                         stats=stats,
@@ -1178,6 +1205,9 @@ class TaskExecutionCoordinator:
                         immediate=True,
                         severity="error",
                         category="dispatch_error",
+                        phase="dispatching",
+                        execution_id=execution_id,
+                        template_id=str(instance.get("template_id") or ""),
                     )
                     pending = _PendingTerminalReport(
                         workflow_path=workflow_path,
@@ -1188,6 +1218,10 @@ class TaskExecutionCoordinator:
                             "code": "action_dispatch_failed",
                             "message": str(exc),
                         },
+                        sample_id=str(instance.get("sample_id") or ""),
+                        template_id=str(instance.get("template_id") or ""),
+                        device_id=node.device_name,
+                        action_name=method_name,
                     )
                     self._submit_terminal_report(
                         pending,
@@ -1203,6 +1237,9 @@ class TaskExecutionCoordinator:
                     execution_id=execution_id,
                     device_name=node.device_name,
                     concurrency_key=concurrency_key,
+                    sample_id=str(instance.get("sample_id") or ""),
+                    template_id=str(instance.get("template_id") or ""),
+                    action_name=method_name,
                 )
 
             self._update_activity_stats(stats, workflow_path=workflow_path)
@@ -1231,6 +1268,31 @@ class TaskExecutionCoordinator:
             )
             pending.report_error = str(exc)
             self._pending_terminal_reports[pending.execution_id] = pending
+            _append_diagnostic(
+                stats,
+                instance={
+                    "id": pending.instance_id,
+                    "sample_id": pending.sample_id,
+                    "template_id": pending.template_id,
+                },
+                code="terminal_report_failed",
+                message=f"动作终态上报失败：{type(exc).__name__}：{exc}",
+                node_id=pending.node_id,
+                immediate=True,
+                severity="error",
+                category="dispatch_error",
+                phase="reporting",
+                execution_id=pending.execution_id,
+                template_id=pending.template_id,
+                device_id=pending.device_id,
+                action_name=pending.action_name,
+                detail={
+                    "retryable": pending.retryable,
+                    "terminal_error": pending.error,
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
             if not pending.retryable:
                 stats["success"] = False
             return False
@@ -1241,7 +1303,7 @@ class TaskExecutionCoordinator:
 
     def _retry_pending_terminal_report(
         self,
-        stats: dict[str, int | bool],
+        stats: dict[str, Any],
         *,
         workflow_path: str | None = None,
     ) -> bool:
@@ -1264,6 +1326,34 @@ class TaskExecutionCoordinator:
             )
         except Exception as exc:
             pending.report_error = str(exc)
+            _append_diagnostic(
+                stats,
+                instance={
+                    "id": pending.instance_id,
+                    "sample_id": pending.sample_id,
+                    "template_id": pending.template_id,
+                },
+                code="terminal_report_retry_failed",
+                message=(
+                    "读取 Task 工作区失败，无法重试动作终态上报："
+                    f"{type(exc).__name__}：{exc}"
+                ),
+                node_id=pending.node_id,
+                immediate=True,
+                severity="error",
+                category="dispatch_error",
+                phase="reporting",
+                execution_id=pending.execution_id,
+                template_id=pending.template_id,
+                device_id=pending.device_id,
+                action_name=pending.action_name,
+                detail={
+                    "retryable": True,
+                    "terminal_error": pending.error,
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
             return True
         self._submit_terminal_report(
             pending,
@@ -1293,7 +1383,7 @@ class TaskExecutionCoordinator:
         *,
         workflow_path: str,
         workspace: dict[str, Any],
-        stats: dict[str, int | bool],
+        stats: dict[str, Any],
     ) -> bool:
         """失败关闭服务端有记录但本进程无法证明正在执行的动作。"""
         for instance in workspace.get("task_instances", []):
@@ -1305,6 +1395,20 @@ class TaskExecutionCoordinator:
                 continue
             node_id = str(state.get("active_node_id") or "")
             stats["active"] = int(stats["active"]) + 1
+            message = "服务端存在活动执行但本地无对应 future，无法安全恢复"
+            _append_diagnostic(
+                stats,
+                instance=instance,
+                code="orphaned_execution",
+                message=message,
+                node_id=node_id,
+                immediate=True,
+                severity="error",
+                category="dispatch_error",
+                phase="recovering",
+                execution_id=execution_id,
+                template_id=str(instance.get("template_id") or ""),
+            )
             self._submit_terminal_report(
                 _PendingTerminalReport(
                     workflow_path=workflow_path,
@@ -1313,10 +1417,10 @@ class TaskExecutionCoordinator:
                     execution_id=execution_id,
                     error={
                         "code": "orphaned_execution",
-                        "message": (
-                            "服务端存在活动执行但本地无对应 future，无法安全恢复"
-                        ),
+                        "message": message,
                     },
+                    sample_id=str(instance.get("sample_id") or ""),
+                    template_id=str(instance.get("template_id") or ""),
                 ),
                 expected_version=int(response["version"]),
                 stats=stats,
@@ -1348,7 +1452,7 @@ class TaskExecutionCoordinator:
                 return None
             raise
 
-    def _harvest_completed(self, stats: dict[str, int | bool]) -> None:
+    def _harvest_completed(self, stats: dict[str, Any]) -> None:
         for execution_id, action in list(self._in_flight.items()):
             if not action.future.done():
                 continue
@@ -1368,7 +1472,34 @@ class TaskExecutionCoordinator:
                         result=action.result_summary,
                         release_resources=[],
                     )
-                except Exception:
+                except Exception as exc:
+                    _append_diagnostic(
+                        stats,
+                        instance={
+                            "id": action.instance_id,
+                            "sample_id": action.sample_id,
+                            "template_id": action.template_id,
+                        },
+                        code="terminal_report_failed",
+                        message=(
+                            "动作成功终态上报失败："
+                            f"{type(exc).__name__}：{exc}"
+                        ),
+                        node_id=action.node_id,
+                        immediate=True,
+                        severity="error",
+                        category="dispatch_error",
+                        phase="reporting",
+                        execution_id=execution_id,
+                        template_id=action.template_id,
+                        device_id=action.device_name,
+                        action_name=action.action_name,
+                        detail={
+                            "terminal_status": "succeeded",
+                            "exception_type": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                    )
                     continue
                 stats["completed"] = int(stats["completed"]) + 1
             else:
@@ -1384,7 +1515,35 @@ class TaskExecutionCoordinator:
                         execution_id=execution_id,
                         error=action.error,
                     )
-                except Exception:
+                except Exception as exc:
+                    _append_diagnostic(
+                        stats,
+                        instance={
+                            "id": action.instance_id,
+                            "sample_id": action.sample_id,
+                            "template_id": action.template_id,
+                        },
+                        code="terminal_report_failed",
+                        message=(
+                            "动作失败终态上报失败："
+                            f"{type(exc).__name__}：{exc}"
+                        ),
+                        node_id=action.node_id,
+                        immediate=True,
+                        severity="error",
+                        category="dispatch_error",
+                        phase="reporting",
+                        execution_id=execution_id,
+                        template_id=action.template_id,
+                        device_id=action.device_name,
+                        action_name=action.action_name,
+                        detail={
+                            "terminal_status": "failed",
+                            "action_error": action.error,
+                            "exception_type": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                    )
                     continue
                 stats["failed"] = int(stats["failed"]) + 1
             self._reported_execution_ids.add(execution_id)

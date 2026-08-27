@@ -1055,6 +1055,9 @@ class WorkflowRunManager:
         self._sensor_event_plc: Any = None
         self._task_snapshot_publisher = TaskOrchestrationSnapshotPublisher()
         self._task_action_log_store = TaskActionLogStore()
+        self._active_scheduler_error_keys: dict[
+            str, set[tuple[str, str, str, str, str]]
+        ] = {}
         self._run_history_store = run_history_store or RunHistoryStore()
         self._task_execution_coordinator = TaskExecutionCoordinator(
             task_client=self._task_snapshot_publisher,
@@ -1248,6 +1251,80 @@ class WorkflowRunManager:
             pass
         return result
 
+    def _publish_task_scheduler_errors(
+        self,
+        *,
+        workflow_path: str,
+        diagnostics: Any,
+    ) -> None:
+        """把新出现的调度错误发布到统一日志，并抑制连续 tick 重复。"""
+        items = diagnostics if isinstance(diagnostics, list) else []
+        keyed_items: list[
+            tuple[tuple[str, str, str, str, str], dict[str, Any]]
+        ] = []
+        current_keys: set[tuple[str, str, str, str, str]] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            level = str(item.get("severity") or "warning").strip().lower()
+            if level not in {"error", "critical"}:
+                continue
+            key = (
+                str(item.get("instance_id") or ""),
+                str(item.get("node_id") or ""),
+                str(item.get("execution_id") or ""),
+                str(item.get("code") or "scheduler_error"),
+                str(item.get("message") or ""),
+            )
+            current_keys.add(key)
+            keyed_items.append((key, item))
+
+        with self._lock:
+            previous_keys = self._active_scheduler_error_keys.get(
+                workflow_path, set()
+            )
+            new_keys = current_keys - previous_keys
+            if current_keys:
+                self._active_scheduler_error_keys[workflow_path] = current_keys
+            else:
+                self._active_scheduler_error_keys.pop(workflow_path, None)
+
+        emitted: set[tuple[str, str, str, str, str]] = set()
+        for key, item in keyed_items:
+            if key not in new_keys or key in emitted:
+                continue
+            emitted.add(key)
+            code = str(item.get("code") or "scheduler_error")
+            message = str(item.get("message") or code)
+            self._append_task_action_log(
+                {
+                    "workflow_path": workflow_path,
+                    "instance_id": str(item.get("instance_id") or ""),
+                    "sample_id": str(item.get("sample_id") or ""),
+                    "template_id": str(item.get("template_id") or ""),
+                    "node_id": str(item.get("node_id") or ""),
+                    "execution_id": str(item.get("execution_id") or ""),
+                    "device_id": str(item.get("device_id") or ""),
+                    "action_name": str(item.get("action_name") or ""),
+                },
+                message,
+                level=str(item.get("severity") or "error"),
+                category="schedule",
+                code=code,
+                phase=str(item.get("phase") or "dispatching"),
+                detail={
+                    "type": "scheduler_diagnostic",
+                    "diagnostic_category": str(item.get("category") or ""),
+                    "immediate": bool(item.get("immediate")),
+                    "diagnostic": (
+                        item.get("detail")
+                        if isinstance(item.get("detail"), dict)
+                        else {}
+                    ),
+                },
+                record_incident=False,
+            )
+
     def list_task_action_logs(
         self,
         *,
@@ -1405,6 +1482,28 @@ class WorkflowRunManager:
                 harvest_only=harvest_only,
             )
         except Exception as exc:
+            traceback_text = traceback.format_exc()
+            self._publish_task_scheduler_errors(
+                workflow_path=workflow_path,
+                diagnostics=[
+                    {
+                        "category": "scheduler_error",
+                        "code": "execution_cycle_failed",
+                        "severity": "error",
+                        "immediate": True,
+                        "phase": "scheduling",
+                        "message": (
+                            f"调度循环失败：{type(exc).__name__}"
+                            + (f"：{exc}" if str(exc) else "")
+                        ),
+                        "detail": {
+                            "exception_type": type(exc).__name__,
+                            "message": str(exc),
+                            "traceback": traceback_text,
+                        },
+                    }
+                ],
+            )
             try:
                 self._run_history_store.record_incident(
                     category="scheduler_error",
@@ -1415,12 +1514,16 @@ class WorkflowRunManager:
                     phase="排程循环",
                     detail={
                         "type": type(exc).__name__,
-                        "traceback": traceback.format_exc(),
+                        "traceback": traceback_text,
                     },
                 )
             except Exception:
                 pass
             raise
+        self._publish_task_scheduler_errors(
+            workflow_path=workflow_path,
+            diagnostics=stats.get("diagnostics"),
+        )
         if not harvest_only:
             try:
                 self._run_history_store.observe_scheduler_cycle(

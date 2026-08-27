@@ -1090,6 +1090,10 @@ def test_succeed_transport_failure_retries_without_failing_or_rerunning():
     assert first_report["completed"] == 0
     assert first_report["failed"] == 0
     assert first_report["in_flight"] == 1
+    assert [item["code"] for item in first_report["diagnostics"]] == [
+        "terminal_report_failed"
+    ]
+    assert first_report["diagnostics"][0]["phase"] == "reporting"
     assert second_report["completed"] == 1
     assert client.succeed_attempts == 2
     assert client.succeeded[0]["result"] == [
@@ -1119,6 +1123,13 @@ def test_submit_failure_is_reported_synchronously_and_pauses():
     assert result["claimed"] == 1
     assert result["failed"] == 1
     assert result["in_flight"] == 0
+    assert [item["code"] for item in result["diagnostics"]] == [
+        "action_dispatch_failed"
+    ]
+    assert result["diagnostics"][0]["phase"] == "dispatching"
+    assert result["diagnostics"][0]["execution_id"].startswith(
+        "task-action-"
+    )
     assert client.failed[0]["error"] == {
         "code": "action_dispatch_failed",
         "message": "executor unavailable",
@@ -1439,6 +1450,7 @@ def test_paused_workspace_does_not_claim():
             "device_id": "",
             "action_name": "",
             "detail": {"status": 0},
+            "template_id": "template-1",
         }
     ]
 
@@ -1540,6 +1552,11 @@ def test_restart_fails_orphaned_server_execution_without_repeating_action():
     assert client.claims == []
     assert calls == []
     assert result["failed"] == 1
+    assert [item["code"] for item in result["diagnostics"]] == [
+        "orphaned_execution"
+    ]
+    assert result["diagnostics"][0]["execution_id"] == execution_id
+    assert result["diagnostics"][0]["phase"] == "recovering"
     assert client.failed == [{
         "workflow_path": WORKFLOW_PATH,
         "expected_version": 7,
@@ -1878,6 +1895,10 @@ def test_terminal_report_response_loss_retries_idempotently():
     )
 
     assert first["in_flight"] == 1
+    assert [item["code"] for item in first["diagnostics"]] == [
+        "unsupported_action",
+        "terminal_report_failed",
+    ]
     assert recovered["in_flight"] == 0
     assert recovered["failed"] == 1
     assert len(client.fail_attempts) == 2
@@ -1919,6 +1940,11 @@ def test_non_retryable_terminal_conflict_is_retained_and_marks_failure():
         assert result["active"] == 1
         assert result["in_flight"] == 1
         assert result["failed"] == 0
+    assert [item["code"] for item in first["diagnostics"]] == [
+        "unsupported_action",
+        "terminal_report_failed",
+    ]
+    assert first["diagnostics"][1]["detail"]["retryable"] is False
     assert client.fail_attempts == 1
     assert len(coordinator._pending_terminal_reports) == 1
 

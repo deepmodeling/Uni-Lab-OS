@@ -573,3 +573,119 @@ def test_task_action_false_result_is_logged_once_as_failed_result(tmp_path):
     assert len(incidents) == 1
     assert incidents[0]["code"] == "action_returned_failure"
     manager.shutdown()
+
+
+def test_scheduler_errors_flow_to_task_logs_once_until_recovered(tmp_path):
+    store = RunHistoryStore(tmp_path, session_id="run-scheduler-error")
+    preset = load_preset("szlab_robot_action_workflow")
+    manager = WorkflowRunManager(
+        preset,
+        _load_preset_runtime_config(preset),
+        run_history_store=store,
+    )
+    manager._task_execution_coordinator.shutdown()
+    diagnostic = {
+        "category": "dispatch_error",
+        "code": "unsupported_action",
+        "message": "不支持的 Task 动作节点: unknown-node",
+        "severity": "error",
+        "immediate": True,
+        "phase": "dispatching",
+        "instance_id": "instance-1",
+        "sample_id": "sample-1",
+        "template_id": "template-1",
+        "node_id": "unknown-node",
+        "execution_id": "execution-1",
+        "device_id": "missing-device",
+        "action_name": "missing-action",
+        "detail": {"reason": "method_not_found"},
+    }
+
+    class FakeCoordinator:
+        def __init__(self):
+            self.calls = 0
+
+        def cycle(self, **_kwargs):
+            self.calls += 1
+            diagnostics = [] if self.calls == 3 else [dict(diagnostic)]
+            return {
+                "success": True,
+                "active": 1,
+                "in_flight": 0,
+                "claimed": 0,
+                "completed": 0,
+                "failed": 0,
+                "diagnostics": diagnostics,
+            }
+
+        def shutdown(self):
+            return {"success": True, "in_flight": 0}
+
+    manager._task_execution_coordinator = FakeCoordinator()
+    for _index in range(4):
+        manager.run_task_execution_cycle(
+            workflow_path="main-process.json",
+            workflow_payload={"nodes": []},
+        )
+
+    entries = manager.list_task_action_logs(
+        workflow_path="main-process.json"
+    )["entries"]
+    assert len(entries) == 2
+    assert [entry["category"] for entry in entries] == ["schedule", "schedule"]
+    assert [entry["level"] for entry in entries] == ["error", "error"]
+    assert [entry["code"] for entry in entries] == [
+        "unsupported_action",
+        "unsupported_action",
+    ]
+    assert entries[0]["phase"] == "dispatching"
+    assert entries[0]["execution_id"] == "execution-1"
+    assert entries[0]["detail"] == {
+        "type": "scheduler_diagnostic",
+        "diagnostic_category": "dispatch_error",
+        "immediate": True,
+        "diagnostic": {"reason": "method_not_found"},
+    }
+    manager.shutdown()
+
+
+def test_scheduler_cycle_exception_flows_to_task_error_log_without_spam(tmp_path):
+    store = RunHistoryStore(tmp_path, session_id="run-cycle-error")
+    preset = load_preset("szlab_robot_action_workflow")
+    manager = WorkflowRunManager(
+        preset,
+        _load_preset_runtime_config(preset),
+        run_history_store=store,
+    )
+    manager._task_execution_coordinator.shutdown()
+
+    class RaisingCoordinator:
+        def cycle(self, **_kwargs):
+            raise TimeoutError("Task 服务连接超时")
+
+        def shutdown(self):
+            return {"success": True, "in_flight": 0}
+
+    manager._task_execution_coordinator = RaisingCoordinator()
+    for _index in range(2):
+        with pytest.raises(TimeoutError, match="Task 服务连接超时"):
+            manager.run_task_execution_cycle(
+                workflow_path="main-process.json",
+                workflow_payload={"nodes": []},
+            )
+
+    entries = manager.list_task_action_logs(
+        workflow_path="main-process.json"
+    )["entries"]
+    assert len(entries) == 1
+    assert entries[0]["category"] == "schedule"
+    assert entries[0]["level"] == "error"
+    assert entries[0]["code"] == "execution_cycle_failed"
+    assert entries[0]["phase"] == "scheduling"
+    assert entries[0]["message"] == (
+        "调度循环失败：TimeoutError：Task 服务连接超时"
+    )
+    assert entries[0]["detail"]["diagnostic"]["exception_type"] == (
+        "TimeoutError"
+    )
+    manager.shutdown()

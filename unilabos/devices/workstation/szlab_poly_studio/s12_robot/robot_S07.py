@@ -27,7 +27,10 @@ class SzlabRobotS07Mixin:
     def _resolve_s071_place_position(self, position: str) -> str:
         if str(position).strip().lower() != "auto":
             return str(position)
-        while True:
+        started_at = time.monotonic()
+        while time.monotonic() - started_at < self.wait_timeout:
+            if self._plc_alarm_active():
+                raise RuntimeError("PLC 报警已中止 S071 空位等待")
             read_errors: list[str] = []
             for candidate, sensor in S07Sensors.POWDER_CONTAINER_BY_POSITION.items():
                 try:
@@ -40,6 +43,7 @@ class SzlabRobotS07Mixin:
             if read_errors:
                 raise RuntimeError(f"无法确定 S071 空位: {'; '.join(read_errors)}")
             time.sleep(self.poll_interval)
+        raise TimeoutError("等待 S071 空位超时")
 
     def _run_s071_place(self, position: str = "1-1") -> dict[str, Any]:
         position = self._resolve_s071_place_position(position)

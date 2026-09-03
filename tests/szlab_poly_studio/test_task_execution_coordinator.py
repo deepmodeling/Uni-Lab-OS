@@ -1719,6 +1719,39 @@ def test_restart_fails_orphaned_server_execution_without_repeating_action():
     }]
 
 
+def test_harvest_only_recovers_orphaned_execution_after_backend_restart():
+    instance = _workspace_response()["workspace"]["task_instances"][0]
+    execution_id = deterministic_execution_id(
+        instance["id"], 0, "node_001_pick_from_s03"
+    )
+    instance["execution_state"] = {
+        "cursor": 0,
+        "records": [{
+            "node_id": "node_001_pick_from_s03",
+            "execution_id": execution_id,
+            "status": "running",
+            "resources": ["robot"],
+        }],
+        "active_execution_id": execution_id,
+        "active_node_id": "node_001_pick_from_s03",
+    }
+    client = FakeTaskClient(_workspace_response(instances=[instance]))
+    calls = []
+    coordinator = _coordinator(client, lambda *_: calls.append(1))
+
+    result = coordinator.cycle(
+        workflow_path=WORKFLOW_PATH,
+        workflow_nodes=[],
+        harvest_only=True,
+    )
+
+    assert result["claimed"] == 0
+    assert result["failed"] == 1
+    assert calls == []
+    assert result["diagnostics"][0]["code"] == "orphaned_execution"
+    assert client.failed[0]["execution_id"] == execution_id
+
+
 def test_orphaned_execution_conflict_waits_then_retries_next_tick():
     instance = _workspace_response()["workspace"]["task_instances"][0]
     execution_id = deterministic_execution_id(

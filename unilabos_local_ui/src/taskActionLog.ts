@@ -38,10 +38,44 @@ export type TaskProcessLogLine = {
   message: string;
 };
 
+type StructuredActionError = {
+  code?: unknown;
+  error_code?: unknown;
+  error_title?: unknown;
+  message?: unknown;
+  plc_address?: unknown;
+  recovery?: unknown;
+  station?: unknown;
+};
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+function structuredActionError(detail: Record<string, unknown>): StructuredActionError | null {
+  const candidates = [detail.reported_failure, detail.result];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+    const value = candidate as StructuredActionError;
+    if (value.error_code || value.code || value.error_title || value.recovery || value.plc_address) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function structuredErrorMessage(error: StructuredActionError): string {
+  const code = error.error_code || error.code;
+  const fields = [
+    code ? `报错码：${String(code)}` : '',
+    error.station ? `工站：${String(error.station)}` : '',
+    error.plc_address ? `PLC 地址：${String(error.plc_address)}` : '',
+    error.error_title ? `错误：${String(error.error_title)}` : '',
+    error.recovery ? `处理建议：${String(error.recovery)}` : '',
+  ].filter(Boolean);
+  return fields.join(' · ');
 }
 
 function opcWaitPhaseLabel(phase: string | undefined): string {
@@ -158,18 +192,31 @@ export function buildTaskVariableRows(entries: TaskActionLogEntry[]): TaskVariab
 }
 
 export function buildTaskProcessLogLines(entries: TaskActionLogEntry[]): TaskProcessLogLine[] {
-  return entries
-    .filter((entry) => {
+  return entries.flatMap((entry) => {
       const detail = entry.detail || {};
-      return detail.type !== 'opc_wait';
-    })
-    .map((entry) => ({
+      if (detail.type === 'opc_wait') return [];
+      const lines: TaskProcessLogLine[] = [{
       seq: entry.seq,
       timestamp: entry.timestamp,
       nodeId: entry.node_id,
       level: entry.level,
       message: entry.message,
-    }));
+      }];
+      const structured = structuredActionError(detail);
+      if (structured) {
+        const message = structuredErrorMessage(structured);
+        if (message) {
+          lines.push({
+            seq: entry.seq,
+            timestamp: entry.timestamp,
+            nodeId: entry.node_id,
+            level: 'error',
+            message,
+          });
+        }
+      }
+      return lines;
+    });
 }
 
 export function mergeTaskActionLogs(

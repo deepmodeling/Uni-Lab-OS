@@ -157,6 +157,7 @@ export type TaskActionExecutionRecord = {
   status: 'pending' | 'running' | 'succeeded' | 'failed';
   startedAt?: number;
   finishedAt?: number;
+  error?: Record<string, unknown> | null;
 };
 
 export type TaskActionAttemptTiming = TaskActionExecutionRecord & {

@@ -40,6 +40,10 @@ from unilabos.devices.workstation.szlab_poly_studio.sensor import (
     wait_variable_equal,
     wait_variable_true,
 )
+from unilabos.devices.workstation.szlab_poly_studio.error_codes import (
+    PLC_ALARM_MAP,
+    read_active_plc_alarms,
+)
 from unilabos.devices.workstation.szlab_poly_studio.stack_status import build_stack_status
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.utils.log import logger
@@ -194,6 +198,8 @@ class SZLabPolyPLCDevice(BaseClient):
         auto_reconnect: bool = True,
         reconnect_attempts: int = 3,
         reconnect_interval: float = 1.0,
+        mixing_wait_timeout: float = 300.0,
+        mixing_alarm_poll_interval: float = 0.5,
         stack_sensor_layout_path: Optional[str] = None,
         ignore_opcua_token_time_drift: bool = False,
         *args,
@@ -228,6 +234,12 @@ class SZLabPolyPLCDevice(BaseClient):
         self._auto_reconnect = bool(auto_reconnect)
         self._reconnect_attempts = max(int(reconnect_attempts), 1)
         self._reconnect_interval = max(float(reconnect_interval), 0.0)
+        configured_wait_timeout = os.environ.get("UNILABOS_MIXING_WAIT_TIMEOUT")
+        self.mixing_wait_timeout = max(
+            float(configured_wait_timeout) if configured_wait_timeout else float(mixing_wait_timeout),
+            0.1,
+        )
+        self.mixing_alarm_poll_interval = max(float(mixing_alarm_poll_interval), 0.1)
         self._fallback_node_id_prefix = fallback_node_id_prefix
         self._opcua_object_name = opcua_object_name
         self._opcua_browse_depth = int(opcua_browse_depth)
@@ -254,6 +266,20 @@ class SZLabPolyPLCDevice(BaseClient):
             **dict(node_id_map or {}),
             **dict(opcua_node_id_map or {}),
         }
+        # 报警位来自 PLC 导出的《报错信息.csv》。将符号变量加入 OPC UA
+        # 发现列表，确保未单独配置 NodeId 时仍可通过浏览找到这些报警节点。
+        for alarm in PLC_ALARM_MAP.values():
+            parent_name = alarm.variable_name.split(".NO[", 1)[0]
+            root_name = parent_name.split("[", 1)[0]
+            register_name = alarm.address.split(".", 1)[0]
+            for alarm_name in (
+                alarm.variable_name,
+                parent_name,
+                root_name,
+                register_name,
+            ):
+                if alarm_name not in variable_names:
+                    variable_names.append(alarm_name)
         for name in explicit_node_id_map:
             if name not in variable_names:
                 variable_names.append(name)
@@ -795,6 +821,59 @@ class SZLabPolyPLCDevice(BaseClient):
         return self.read_variable(node_name, use_cache=use_cache)
 
     @not_action
+    def read_mixing_alarms(self, stations: set[str] | None = None) -> List[Dict[str, Any]]:
+        """读取当前为 ON 的已知 Mixing PLC 报警位。"""
+        return [
+            {
+                "code": alarm.code,
+                "error_code": alarm.code,
+                "station": alarm.station,
+                "title": alarm.title,
+                "plc_address": alarm.address,
+                "plc_variable": alarm.variable_name,
+                "recovery": alarm.recovery,
+            }
+            for alarm in read_active_plc_alarms(self, stations=stations)
+        ]
+
+    @not_action
+    def clear_last_wait_alarm(self) -> None:
+        """清除当前执行线程上一次中止 PLC 等待的报警。"""
+        self._opc_wait_tls.last_wait_alarm = None
+        self._opc_wait_tls.last_alarm_poll_at = 0.0
+
+    @not_action
+    def get_last_wait_alarm(self, *, clear: bool = False) -> Dict[str, Any] | None:
+        alarm = getattr(self._opc_wait_tls, "last_wait_alarm", None)
+        if clear:
+            self._opc_wait_tls.last_wait_alarm = None
+        return dict(alarm) if isinstance(alarm, dict) else None
+
+    @not_action
+    def _mixing_wait_should_abort(self) -> bool:
+        """等待循环中发现任一 Mixing PLC 报警时立即要求调用方结束等待。"""
+        now = time.monotonic()
+        last_poll_at = float(getattr(self._opc_wait_tls, "last_alarm_poll_at", 0.0))
+        if now - last_poll_at < self.mixing_alarm_poll_interval:
+            return bool(getattr(self._opc_wait_tls, "last_wait_alarm", None))
+        self._opc_wait_tls.last_alarm_poll_at = now
+        alarms = self.read_mixing_alarms()
+        if not alarms:
+            return False
+        self._opc_wait_tls.last_wait_alarm = alarms[0]
+        return True
+
+    @action(description="读取当前为 ON 的 Mixing PLC 报警位及对应 UniLab 报错码")
+    def get_active_mixing_alarms(self) -> Dict[str, Any]:
+        alarms = self.read_mixing_alarms()
+        return {
+            "success": True,
+            "alarm_count": len(alarms),
+            "has_alarm": bool(alarms),
+            "alarms": alarms,
+        }
+
+    @not_action
     def write(self, node_name: str, value: Any) -> None:
         self.write_variable(node_name, value)
 
@@ -830,8 +909,9 @@ class SZLabPolyPLCDevice(BaseClient):
         interval: float = 1.0,
         timeout: float | None = None,
     ) -> bool:
+        effective_timeout = self.mixing_wait_timeout if timeout is None else timeout
         return wait_variable_equal(
-            self, node_name, expected, interval=interval, timeout=timeout
+            self, node_name, expected, interval=interval, timeout=effective_timeout
         )
 
     @not_action
@@ -841,8 +921,9 @@ class SZLabPolyPLCDevice(BaseClient):
         interval: float = 1.0,
         timeout: float | None = None,
     ) -> bool:
+        effective_timeout = self.mixing_wait_timeout if timeout is None else timeout
         return wait_variable_true(
-            self, node_name, interval=interval, timeout=timeout
+            self, node_name, interval=interval, timeout=effective_timeout
         )
 
     @not_action
@@ -851,12 +932,15 @@ class SZLabPolyPLCDevice(BaseClient):
         conditions: Dict[str, bool],
         interval: float = 0.2,
         context: str | None = None,
+        timeout: float | None = None,
     ) -> tuple[bool, Dict[str, Any]]:
+        effective_timeout = self.mixing_wait_timeout if timeout is None else timeout
         return wait_sensor_conditions(
             self,
             conditions,
             interval=interval,
             context=context,
+            timeout=effective_timeout,
         )
 
     @not_action

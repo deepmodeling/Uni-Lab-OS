@@ -145,6 +145,9 @@ class SensorBase:
                 if last_value == expected:
                     success = True
                     return True
+                abort_check = getattr(reader, "_mixing_wait_should_abort", None)
+                if callable(abort_check) and abort_check():
+                    return False
                 time.sleep(interval)
             return False
         except Exception as exc:
@@ -187,6 +190,7 @@ class SensorBase:
         *,
         interval: float = 0.2,
         context: str | None = None,
+        timeout: float | None = None,
     ) -> tuple[bool, Dict[str, Any]]:
         if not conditions:
             return True, {}
@@ -205,7 +209,7 @@ class SensorBase:
                 max_workers=len(variable_names),
                 thread_name_prefix="sensor-check",
             ) as executor:
-                while True:
+                while timeout is None or time.monotonic() - started_at < timeout:
                     futures = {
                         variable_name: executor.submit(
                             reader.read_variable,
@@ -241,7 +245,11 @@ class SensorBase:
                     if all(last_values[name] == expected for name, expected in conditions.items()):
                         success = True
                         return True, last_values
+                    abort_check = getattr(reader, "_mixing_wait_should_abort", None)
+                    if callable(abort_check) and abort_check():
+                        return False, last_values
                     time.sleep(interval)
+                return False, last_values
         except Exception as exc:
             error = str(exc)
             raise
@@ -371,10 +379,12 @@ def wait_sensor_conditions(
     *,
     interval: float = 0.2,
     context: str | None = None,
+    timeout: float | None = None,
 ) -> tuple[bool, Dict[str, Any]]:
     return SensorBase.wait_conditions(
         reader,
         conditions,
         interval=interval,
         context=context,
+        timeout=timeout,
     )

@@ -6000,6 +6000,46 @@ code {
   overflow: hidden;
 }
 
+.task-process-log-error {
+  border-left: 3px solid #dc2626;
+  border-radius: 3px;
+  padding: 4px 6px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-weight: 700;
+  white-space: normal;
+}
+
+.task-persistent-alarm {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 2px solid #dc4444;
+  border-radius: 10px;
+  background: #fff0f0;
+  color: #8b1515;
+}
+
+.task-persistent-alarm h3 { margin: 0; }
+
+.task-persistent-alarm button {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #e27a7a;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-queue-error-summary {
+  color: #b3261e;
+  font-weight: 700;
+}
+
 .task-debug-bench .task-log-column {
   grid-column: 3;
   grid-row: 1;

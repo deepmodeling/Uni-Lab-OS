@@ -52,6 +52,7 @@ class SZLabS07SolidAdditionDevice:
         poll_interval: float = 0.2,
         balance_poll_interval: float = 2.0,
         balance_record_interval: float = 0.2,
+        wait_timeout: float = 300.0,
         balance_history_dir: str | None = None,
         enable_balance_history: bool = True,
         *args,
@@ -61,6 +62,7 @@ class SZLabS07SolidAdditionDevice:
         self.poll_interval = poll_interval
         self.balance_poll_interval = max(float(balance_poll_interval), float(poll_interval))
         self.balance_record_interval = max(float(balance_record_interval), float(poll_interval))
+        self.wait_timeout = max(float(wait_timeout), 0.1)
         self.balance_history_dir = Path(balance_history_dir or DEFAULT_BALANCE_HISTORY_DIR)
         self.enable_balance_history = bool(enable_balance_history)
         self._plc_gateway: Any = None
@@ -184,7 +186,14 @@ class SZLabS07SolidAdditionDevice:
             next_balance_record = started
             next_balance_publish = started
             process_complete = 0
-            while True:
+            while time.monotonic() - started < self.wait_timeout:
+                abort_check = getattr(self._plc(), "_mixing_wait_should_abort", None)
+                if callable(abort_check) and abort_check():
+                    return {
+                        "success": False,
+                        "message": "PLC 报警已中止 S07 注粉工艺等待",
+                        "process_type": PROCESS_DOSE_POWDER,
+                    }
                 process_complete = int(self._read_plc_variable(NODE_PROCESS_COMPLETE) or 0)
                 if process_complete == PROCESS_DOSE_POWDER:
                     break
@@ -212,6 +221,12 @@ class SZLabS07SolidAdditionDevice:
                             next_balance_publish = now + self.balance_poll_interval
                     next_balance_record = now + self.balance_record_interval
                 time.sleep(self.poll_interval)
+            else:
+                return {
+                    "success": False,
+                    "message": "等待 S07 注粉工艺完成超时",
+                    "process_type": PROCESS_DOSE_POWDER,
+                }
             try:
                 balance_reading = float(self._read_plc_variable(NODE_BALANCE_READING))
                 balance_sample_count += 1

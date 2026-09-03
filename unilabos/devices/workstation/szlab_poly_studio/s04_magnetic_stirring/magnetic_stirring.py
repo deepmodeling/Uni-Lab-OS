@@ -49,12 +49,14 @@ class SzlabMixerMagneticStirrerDevice:
         plc_device_id: str = "szlab_poly_plc",
         use_plc_gateway: bool = False,
         opcua_node_id_map: dict[str, str] | None = None,
+        wait_timeout: float = 300.0,
         **kwargs,
     ):
         self.url = url
         self.plc_device_id = plc_device_id
         self._plc_gateway = None
         self._status = "Idle"
+        self.wait_timeout = max(float(wait_timeout), 0.1)
         self._last_position = 0
         self._last_mode = 0
         client_kwargs: dict[str, Any] = {
@@ -190,7 +192,13 @@ class SzlabMixerMagneticStirrerDevice:
         if callable(waiter):
             return waiter(variable, expected, interval=1.0)
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
-        return wait_variable_equal(reader, variable, expected, interval=1.0)
+        return wait_variable_equal(
+            reader,
+            variable,
+            expected,
+            interval=1.0,
+            timeout=self.wait_timeout,
+        )
 
     @action(auto_prefix=True, description="执行 S04 磁搅加工")
     def run_stirring(

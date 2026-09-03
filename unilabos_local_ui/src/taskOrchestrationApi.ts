@@ -26,6 +26,7 @@ export type ApiNodeExecutionRecord = {
   status: 'pending' | 'running' | 'succeeded' | 'failed';
   started_at: number | null;
   finished_at: number | null;
+  error?: Record<string, unknown> | null;
 };
 
 export type ApiTaskInstance = {

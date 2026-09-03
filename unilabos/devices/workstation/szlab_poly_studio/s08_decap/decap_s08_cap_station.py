@@ -229,6 +229,7 @@ class SZLabS08CapStationDevice:
         username: str | None = None,
         password: str | None = None,
         poll_interval: float = 0.2,
+        wait_timeout: float = 300.0,
         require_station_ready: bool = True,
         require_station_status: bool = False,
         validate_cap_constraints: bool = False,
@@ -246,6 +247,7 @@ class SZLabS08CapStationDevice:
         del kwargs
         self.url = url
         self.poll_interval = poll_interval
+        self.wait_timeout = max(float(wait_timeout), 0.1)
         self.require_station_ready = require_station_ready
         self.plc_device_id = plc_device_id
         self._plc_gateway: Any = None
@@ -362,7 +364,11 @@ class SZLabS08CapStationDevice:
                 ok = bool(waiter(node_name, expected, interval=interval))
             else:
                 ok = False
-                while True:
+                started_at = time.monotonic()
+                while time.monotonic() - started_at < self.wait_timeout:
+                    abort_check = getattr(plc, "_mixing_wait_should_abort", None)
+                    if callable(abort_check) and abort_check():
+                        break
                     if self._read_variable(node_name) == expected:
                         ok = True
                         break
@@ -424,7 +430,12 @@ class SZLabS08CapStationDevice:
             return ok
 
         last_seen: int | None = None
-        while True:
+        started_at = time.monotonic()
+        while time.monotonic() - started_at < self.wait_timeout:
+            abort_check = getattr(plc, "_mixing_wait_should_abort", None)
+            if callable(abort_check) and abort_check():
+                self._last_process_complete_seen = last_seen
+                return False
             try:
                 last_seen = self._read_process_complete_int()
             except Exception as exc:
@@ -435,6 +446,8 @@ class SZLabS08CapStationDevice:
                 logger.info(f"✓ {desc}")
                 return True
             time.sleep(interval)
+        self._last_process_complete_seen = last_seen
+        return False
 
     @not_action
     def _process_complete_wait_message(self, expected: int, task_label: str) -> str:

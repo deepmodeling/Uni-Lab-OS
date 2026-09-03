@@ -57,6 +57,12 @@ from scripts.opc_simulator_process_manager import (
 )
 from scripts.task_action_log_store import TaskActionLogStore
 from scripts.task_action_result import ActionReturnedFailure, find_action_failure
+from unilabos.devices.workstation.szlab_poly_studio.error_codes import (
+    enrich_mixing_failure,
+    enrich_with_plc_alarm,
+    plc_alarm_for_address,
+    read_active_plc_alarms,
+)
 from scripts.run_history_store import RunHistoryStore
 from scripts.task_execution_coordinator import (
     TaskApiConflict,
@@ -1015,6 +1021,9 @@ def _run_node_with_live_opc_sampling(
     unbind_wait_logger = bind_opc_wait_logger(
         logger, default_plc, device, snapshot_client
     )
+    clear_wait_alarm = getattr(default_plc, "clear_last_wait_alarm", None)
+    if callable(clear_wait_alarm):
+        clear_wait_alarm()
     try:
         result = action_callable(**node.param)
     finally:
@@ -1067,6 +1076,41 @@ def _run_node_with_live_opc_sampling(
             detail=wait_log.get("detail"),
         )
     failure = find_action_failure(result)
+    reported_failure = failure
+    if failure is not None:
+        enriched_failure = enrich_mixing_failure(
+            failure,
+            device_id=device_name,
+        )
+        get_wait_alarm = getattr(default_plc, "get_last_wait_alarm", None)
+        wait_alarm_data = get_wait_alarm(clear=True) if callable(get_wait_alarm) else None
+        wait_alarm = (
+            plc_alarm_for_address(str(wait_alarm_data.get("plc_address") or ""))
+            if isinstance(wait_alarm_data, dict)
+            else None
+        )
+        active_alarms = [] if wait_alarm is not None else read_active_plc_alarms(
+            default_plc,
+            stations=(
+                {str(enriched_failure["station"])}
+                if enriched_failure and enriched_failure.get("station")
+                else None
+            ),
+        )
+        if wait_alarm is not None:
+            reported_failure = enrich_with_plc_alarm(
+                enriched_failure or failure,
+                alarm=wait_alarm,
+            )
+        elif active_alarms:
+            reported_failure = enrich_with_plc_alarm(
+                enriched_failure or failure,
+                alarm=active_alarms[0],
+            )
+        elif enriched_failure is not None:
+            reported_failure = enriched_failure
+        if result is failure:
+            result = reported_failure
     if isinstance(result, dict):
         status_text = "成功" if failure is None else "失败"
         summary = f"动作结果：{status_text}"
@@ -1079,7 +1123,10 @@ def _run_node_with_live_opc_sampling(
         summary = f"动作结果：失败 · {result}"
     else:
         summary = f"动作结果：{result}"
-    logger.log(summary, detail={"result": result})
+    result_detail = {"result": result}
+    if reported_failure is not None and result is not reported_failure:
+        result_detail["reported_failure"] = reported_failure
+    logger.log(summary, detail=result_detail)
 
     output = {
         "uuid": node.uuid,
@@ -1090,11 +1137,11 @@ def _run_node_with_live_opc_sampling(
         "opc_after": after,
         "result": result,
     }
-    if failure is not None:
+    if reported_failure is not None:
         raise ActionReturnedFailure(
             device_id=device_name,
             action_name=method_name,
-            failure=failure,
+            failure=reported_failure,
         )
     return [output]
 

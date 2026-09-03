@@ -82,12 +82,14 @@ class SzlabMixerPipettingStationDevice:
         opcua_node_id_map: dict[str, str] | None = None,
         tip_reuse_state_path: str = str(DEFAULT_TIP_REUSE_STATE_PATH),
         tip_max_use_count: int = 20,
+        wait_timeout: float = 300.0,
         **kwargs,
     ):
         self.url = url
         self.plc_device_id = plc_device_id
         self._plc_gateway = None
         self._status = "Idle"
+        self.wait_timeout = max(float(wait_timeout), 0.1)
         self._bindings: dict[int, str] = {}
         self._last_process: dict[str, Any] = {}
         self._tip_reuse_state = ReusableTipStateStore(
@@ -187,10 +189,15 @@ class SzlabMixerPipettingStationDevice:
             return target.wait_equal(name, expected, interval=interval)
         if hasattr(target, "wait_variable_equal"):
             return target.wait_variable_equal(name, expected, interval=interval)
-        while True:
+        started_at = time.monotonic()
+        while time.monotonic() - started_at < self.wait_timeout:
+            abort_check = getattr(target, "_mixing_wait_should_abort", None)
+            if callable(abort_check) and abort_check():
+                return False
             if self._read_variable(name, use_cache=False) == expected:
                 return True
             time.sleep(interval)
+        return False
 
     @not_action
     def _wait_process_done(self, process: int) -> bool:
@@ -249,6 +256,7 @@ class SzlabMixerPipettingStationDevice:
                 conditions,
                 interval=0.2,
                 context=context,
+                timeout=self.wait_timeout,
             )
         return {
             "success": bool(success),

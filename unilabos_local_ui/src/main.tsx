@@ -457,6 +457,7 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
         status: record.status,
         startedAt: record.started_at ?? undefined,
         finishedAt: record.finished_at ?? undefined,
+        error: record.error ?? null,
       })),
       nodeParameters: instance.payload?.node_parameters || {},
     })),
@@ -1332,6 +1333,43 @@ function App() {
   const selectedTaskProcessLines = useMemo(
     () => selectedTaskLogSections.flatMap((section) => buildTaskProcessLogLines(section.entries)),
     [selectedTaskLogSections],
+  );
+  const selectedTaskPersistentErrors = useMemo(
+    () => (selectedTaskInstance?.actionRecords || [])
+      .filter((record) => record.status === 'failed' && record.error)
+      .map((record) => {
+        const error = record.error || {};
+        const code = String(error.error_code || error.code || 'action_failed');
+        return {
+          executionId: record.executionId,
+          nodeId: record.nodeId,
+          code,
+          station: error.station ? String(error.station) : '',
+          plcAddress: error.plc_address ? String(error.plc_address) : '',
+          title: String(error.error_title || error.message || 'Action 执行失败'),
+          recovery: error.recovery ? String(error.recovery) : '',
+        };
+      }),
+    [selectedTaskInstance],
+  );
+  const taskPersistentAlarms = useMemo(
+    () => taskInstances.flatMap((task) => task.actionRecords
+      .filter((record) => record.status === 'failed' && record.error)
+      .map((record) => {
+        const error = record.error || {};
+        return {
+          key: `${task.id}-${record.executionId}`,
+          taskId: task.id,
+          templateId: task.templateId,
+          sample: task.sample,
+          code: String(error.error_code || error.code || 'action_failed'),
+          station: error.station ? String(error.station) : '',
+          plcAddress: error.plc_address ? String(error.plc_address) : '',
+          title: String(error.error_title || error.message || 'Action 执行失败'),
+          recovery: error.recovery ? String(error.recovery) : '',
+        };
+      })),
+    [taskInstances],
   );
   const taskLogLines = useMemo(
     () => taskLogSession
@@ -4542,6 +4580,31 @@ function App() {
                   {' · '}failed {taskExecutionStatus.tick.failed}
                 </span>
               </div>
+              {taskPersistentAlarms.length > 0 && (
+                <section aria-live="assertive" className="task-persistent-alarm" role="alert">
+                  <h3>设备运行报错</h3>
+                  {taskPersistentAlarms.map((error) => (
+                    <button
+                      key={error.key}
+                      onClick={() => {
+                        setSelectedTaskInstanceId(error.taskId);
+                        setSelectedTaskTemplateId(error.templateId);
+                        setTaskLogTab('action');
+                      }}
+                      type="button"
+                    >
+                      <strong>报错码：{error.code}</strong>
+                      <span>
+                        {error.sample}
+                        {error.station ? ` · 工站：${error.station}` : ''}
+                        {error.plcAddress ? ` · PLC 地址：${error.plcAddress}` : ''}
+                      </span>
+                      <span>错误：{error.title}</span>
+                      {error.recovery ? <span>处理建议：{error.recovery}</span> : null}
+                    </button>
+                  ))}
+                </section>
+              )}
               <div className="task-queue-table-head" aria-hidden="true">
                 <span>样品</span>
                 <span>当前 Task</span>
@@ -4577,6 +4640,9 @@ function App() {
                     .sort((left, right) => left.order - right.order);
                   const queueIndex = sampleQueue.findIndex((item) => item.id === task.id);
                   const canReorder = !isSchedulerRunning && (task.status === 'waiting' || task.status === 'pending');
+                  const persistentError = task.actionRecords.find(
+                    (record) => record.status === 'failed' && record.error,
+                  )?.error;
                   return (
                     <article className={`task-queue-card ${state}`} key={task.id}>
                       <div>
@@ -4584,6 +4650,13 @@ function App() {
                         <span>{task.startedAt
                           ? `运行记录：${new Date(task.startedAt).toLocaleTimeString('zh-CN', { hour12: false })}`
                           : statusDetail}</span>
+                        {persistentError ? (
+                          <span className="task-queue-error-summary">
+                            报错码：{String(persistentError.error_code || persistentError.code || 'action_failed')}
+                            {persistentError.plc_address ? ` · PLC：${String(persistentError.plc_address)}` : ''}
+                            {persistentError.error_title ? ` · ${String(persistentError.error_title)}` : ''}
+                          </span>
+                        ) : null}
                       </div>
                       <div className="task-queue-actions">
                         <button
@@ -4722,6 +4795,18 @@ function App() {
                 {!selectedTaskInstance && (
                   <div className="task-empty">未选择 Task 实例。</div>
                 )}
+                {selectedTaskPersistentErrors.map((error) => (
+                  <div
+                    className="task-process-log-error"
+                    key={`persistent-error-${error.executionId}`}
+                  >
+                    <strong>报错码：{error.code}</strong>
+                    {error.station ? ` · 工站：${error.station}` : ''}
+                    {error.plcAddress ? ` · PLC 地址：${error.plcAddress}` : ''}
+                    {` · 错误：${error.title}`}
+                    {error.recovery ? ` · 处理建议：${error.recovery}` : ''}
+                  </div>
+                ))}
                 {selectedTaskInstance && selectedTaskLogSections.map((section) => {
                   const variableRows = buildTaskVariableRows(section.entries);
                   const processLines = buildTaskProcessLogLines(section.entries);
@@ -4759,7 +4844,12 @@ function App() {
                       {processLines.length ? (
                         <div className="task-process-log-list">
                           {processLines.map((line) => (
-                            <div key={`${line.seq}-${line.message}`}>
+                            <div
+                              className={line.level === 'error' || line.level === 'critical'
+                                ? 'task-process-log-error'
+                                : undefined}
+                              key={`${line.seq}-${line.message}`}
+                            >
                               {new Date(line.timestamp).toLocaleTimeString()}
                               {' · '}
                               {line.message}
@@ -4770,7 +4860,7 @@ function App() {
                     </div>
                   );
                 })}
-                {selectedTaskInstance && !selectedTaskLogSections.length && (
+                {selectedTaskInstance && !selectedTaskLogSections.length && !selectedTaskPersistentErrors.length && (
                   <div className="task-empty">该工艺尚未产生运行日志，派发 Action 后会在此显示。</div>
                 )}
               </section>}

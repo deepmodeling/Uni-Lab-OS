@@ -16,6 +16,11 @@ from scripts.run_workflow_local import (
     workflow_node_from_mapping,
 )
 from scripts.task_action_result import find_action_failure
+from unilabos.devices.workstation.szlab_poly_studio.error_codes import (
+    enrich_mixing_failure,
+    enrich_with_plc_alarm,
+    read_active_plc_alarms,
+)
 from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.sensors import (
     s04_allow_var,
     s04_material_sensor_var,
@@ -955,7 +960,8 @@ class _InFlightAction:
     action_name: str = ""
     result_summary: Any = None
     outcome_prepared: bool = False
-    error: dict[str, str] | None = None
+    error: dict[str, Any] | None = None
+    plc_alarm_reader: Any = None
 
 
 @dataclass
@@ -1044,6 +1050,10 @@ class TaskExecutionCoordinator:
             "failed": 0,
         }
         with self._lock:
+            had_local_execution = any(
+                action.workflow_path == workflow_path
+                for action in self._in_flight.values()
+            )
             self._harvest_completed(stats)
             self._retry_pending_terminal_report(stats)
             self._update_activity_stats(stats)
@@ -1088,7 +1098,7 @@ class TaskExecutionCoordinator:
                     stats, workflow_path=workflow_path
                 )
                 return stats
-            if harvest_only:
+            if harvest_only and had_local_execution:
                 self._update_activity_stats(
                     stats, workflow_path=workflow_path
                 )
@@ -1103,6 +1113,24 @@ class TaskExecutionCoordinator:
                 workflow_path=workflow_path
             )
             workspace = _workspace_from_response(response)
+            # 进程重启后，本地 future 会丢失，但 Task 服务仍可能保留
+            # active_execution_id。排空模式也必须检查并失败关闭这种孤立动作，
+            # 否则前端会永久显示 running 且不会产生任何失败日志。
+            if harvest_only:
+                if self._recover_orphaned_execution(
+                    response,
+                    workflow_path=workflow_path,
+                    workspace=workspace,
+                    stats=stats,
+                ):
+                    self._update_activity_stats(
+                        stats, workflow_path=workflow_path
+                    )
+                    return stats
+                self._update_activity_stats(
+                    stats, workflow_path=workflow_path
+                )
+                return stats
             if workspace.get("scheduler_paused") or workspace.get("pause_reason"):
                 pause_reason = workspace.get("pause_reason")
                 reason = pause_reason if isinstance(pause_reason, dict) else {}
@@ -1483,6 +1511,7 @@ class TaskExecutionCoordinator:
                     sample_id=str(instance.get("sample_id") or ""),
                     template_id=str(instance.get("template_id") or ""),
                     action_name=method_name,
+                    plc_alarm_reader=devices.get("szlab_poly_plc"),
                 )
 
             self._update_activity_stats(stats, workflow_path=workflow_path)
@@ -1800,13 +1829,44 @@ class TaskExecutionCoordinator:
             summary = _json_safe(result)
             failure = _false_result(summary)
             if failure is not None:
+                enriched = enrich_mixing_failure(
+                    failure,
+                    device_id=action.device_name,
+                )
+                active_alarms = read_active_plc_alarms(
+                    action.plc_alarm_reader,
+                    stations={enriched["station"]} if enriched and enriched.get("station") else None,
+                )
+                if active_alarms:
+                    action.error = enrich_with_plc_alarm(
+                        enriched or failure,
+                        alarm=active_alarms[0],
+                    )
+                    return
+                if enriched is not None:
+                    action.error = enriched
+                    return
                 raise RuntimeError(f"动作返回 success=false: {failure}")
             action.result_summary = summary
         except Exception as exc:
-            action.error = {
+            base_error = {
+                "success": False,
                 "code": "action_failed",
                 "message": str(exc),
             }
+            action.error = enrich_mixing_failure(
+                base_error,
+                device_id=action.device_name,
+            ) or base_error
+            active_alarms = read_active_plc_alarms(
+                action.plc_alarm_reader,
+                stations={action.error["station"]} if action.error.get("station") else None,
+            )
+            if active_alarms:
+                action.error = enrich_with_plc_alarm(
+                    action.error,
+                    alarm=active_alarms[0],
+                )
 
     def _instance_is_in_flight(self, instance_id: str) -> bool:
         return any(

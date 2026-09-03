@@ -78,7 +78,7 @@ jobs:
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: steps.should_build.outputs.should_build == 'true'
         with:
           ref: ${{ github.event.inputs.branch || github.event.workflow_run.head_sha || github.ref }}

@@ -1193,6 +1193,50 @@ def test_szlab_robot_action_workflow_flow_matches_requested_synthesis_route():
     assert actions[-1]["params"] == {"position": 1}
 
 
+def test_szlab_robot_action_workflow_photos_before_and_after_density():
+    workflow = json.loads(
+        Path("szlab_robot_action_workflow.json").read_text(encoding="utf-8")
+    )
+    actions = [item["action"] for item in workflow["rules"][0]["actions"]]
+    node_ids = [action["workflow_node_id"] for action in actions]
+    actions_by_node_id = {
+        action["workflow_node_id"]: action
+        for action in actions
+    }
+
+    assert [action["index"] for action in actions] == list(range(1, 31))
+    assert len(node_ids) == len(set(node_ids))
+    assert node_ids[11:18] == [
+        "w04_run_stirring_s04",
+        "w06_pick_beaker_s04",
+        "w06_place_beaker_s05",
+        "w06_take_photo_s05",
+        "w06_pick_beaker_s05_for_density",
+        "w05_place_beaker_s09_for_density",
+        "w05_measure_density_s09",
+    ]
+    assert node_ids[21:27] == [
+        "w06_pick_beaker_s09_after_density",
+        "w06_place_beaker_s05_after_density",
+        "w06_take_photo_s05_after_density",
+        "w07_pick_beaker_s05_after_density",
+        "w07_pour_beaker_s08",
+        "w07_place_beaker_s11",
+    ]
+    assert (
+        actions_by_node_id["w06_take_photo_s05"]["params"][
+            "trigger_dissolution_detection"
+        ]
+        is True
+    )
+    assert (
+        actions_by_node_id["w06_take_photo_s05_after_density"]["params"][
+            "trigger_dissolution_detection"
+        ]
+        is False
+    )
+
+
 def test_ai4c_runtime_device_classes_are_importable():
     if find_spec("rclpy") is None:
         pytest.skip("rclpy 未安装，跳过依赖 ROS2 的 AI4C 设备类导入检查")

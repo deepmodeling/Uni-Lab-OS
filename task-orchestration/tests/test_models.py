@@ -1,5 +1,8 @@
 """Pydantic DTO contract tests."""
 
+import json
+from pathlib import Path
+
 from task_orchestration import models
 from task_orchestration.models import (
     OpcSnapshotRequest,
@@ -99,6 +102,64 @@ def test_template_rejects_invalid_dependencies(dependencies):
             name="Current",
             dependencies=dependencies,
         )
+
+
+def test_szlab_workspace_defines_eighteen_task_dependency_graph():
+    project_root = Path(__file__).resolve().parents[2]
+    sidecar = json.loads(
+        (
+            project_root
+            / "task-orchestration"
+            / "szlab_robot_action_workflow.json.task-workspace.json"
+        ).read_text(encoding="utf-8")
+    )
+    response = models.VersionedWorkspaceResponse.model_validate(sidecar)
+    templates = response.workspace.templates
+    template_ids = [template.id for template in templates]
+
+    assert len(templates) == 18
+    assert response.workspace.scheduled_template_ids == template_ids
+    assert [
+        [(dependency.template_id, dependency.node_id) for dependency in template.dependencies]
+        for template in templates
+    ] == [
+        [],
+        [(template_ids[0], None)],
+        [(template_ids[1], None)],
+        [(template_ids[2], None)],
+        [(template_ids[3], None)],
+        [(template_ids[4], None)],
+        [(template_ids[5], None)],
+        [(template_ids[6], None)],
+        [(template_ids[7], None)],
+        [(template_ids[8], None)],
+        [(template_ids[9], None)],
+        [(template_ids[10], None)],
+        [(template_ids[10], None)],
+        [(template_ids[12], None)],
+        [(template_ids[11], None)],
+        [(template_ids[13], None), (template_ids[14], None)],
+        [(template_ids[15], "w07_pour_beaker_s08")],
+        [(template_ids[15], None), (template_ids[16], None)],
+    ]
+    assert templates[15].node_ids == [
+        "w07_pick_beaker_s05_after_density",
+        "w07_pour_beaker_s08",
+        "w07_place_beaker_s11",
+    ]
+
+    workflow = json.loads(
+        (project_root / "szlab_robot_action_workflow.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    workflow_node_ids = [
+        item["action"]["workflow_node_id"]
+        for item in workflow["rules"][0]["actions"]
+    ]
+    assert [node_id for template in templates for node_id in template.node_ids] == (
+        workflow_node_ids
+    )
 
 
 def test_action_resource_compatibility_fields_accept_ignored_contents():

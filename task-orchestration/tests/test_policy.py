@@ -1,5 +1,8 @@
 """FIFO 资源调度策略测试。"""
 
+import json
+from pathlib import Path
+
 from task_orchestration.models import TaskDependency, TaskInstance, Template
 from task_orchestration.policy import FifoResourcePolicy
 
@@ -377,6 +380,133 @@ def test_node_dependency_waits_until_target_action_finishes():
         "dependency_template_id": "pour",
         "dependency_node_id": "pour",
     }
+
+
+def test_szlab_eighteen_task_flow_reaches_both_parallel_branches():
+    project_root = Path(__file__).resolve().parents[2]
+    sidecar = json.loads(
+        (
+            project_root
+            / "task-orchestration"
+            / "szlab_robot_action_workflow.json.task-workspace.json"
+        ).read_text(encoding="utf-8")
+    )
+    templates = [
+        Template.model_validate(item)
+        for item in sidecar["workspace"]["templates"]
+    ]
+    instances = [
+        _instance(
+            f"sample-a-task-{index:02d}",
+            template.id,
+            "sample-a",
+            index,
+        )
+        for index, template in enumerate(templates, start=1)
+    ]
+    policy = FifoResourcePolicy()
+
+    def ready_instance_ids() -> list[str]:
+        result = policy.select(
+            templates,
+            instances,
+            available_resources=set(),
+            condition_satisfied_instance_ids={
+                instance.id
+                for instance in instances
+                if instance.status == "pending"
+            },
+        )
+        return result.startable_instance_ids
+
+    def replace_instance(
+        index: int,
+        status: str,
+        *,
+        execution_state: dict | None = None,
+    ) -> None:
+        current = instances[index]
+        instances[index] = _instance(
+            current.id,
+            current.template_id,
+            current.sample_id,
+            current.order,
+            status=status,
+            execution_state=execution_state,
+        )
+
+    for index in range(11):
+        assert ready_instance_ids() == [instances[index].id]
+        replace_instance(index, "completed")
+
+    assert ready_instance_ids() == [instances[11].id, instances[12].id]
+
+    replace_instance(11, "running")
+    replace_instance(12, "completed")
+    assert ready_instance_ids() == [instances[13].id]
+    replace_instance(13, "completed")
+    assert ready_instance_ids() == []
+
+    replace_instance(11, "completed")
+    assert ready_instance_ids() == [instances[14].id]
+    replace_instance(14, "completed")
+    assert ready_instance_ids() == [instances[15].id]
+
+    replace_instance(
+        15,
+        "running",
+        execution_state={
+            "cursor": 1,
+            "records": [
+                {
+                    "node_id": "w07_pick_beaker_s05_after_density",
+                    "attempt": 1,
+                    "execution_id": "pick-beaker-1",
+                    "status": "succeeded",
+                    "started_at": 1,
+                    "finished_at": 2,
+                }
+            ],
+        },
+    )
+    assert ready_instance_ids() == []
+
+    replace_instance(
+        15,
+        "running",
+        execution_state={
+            "cursor": 2,
+            "records": [
+                {
+                    "node_id": "w07_pick_beaker_s05_after_density",
+                    "attempt": 1,
+                    "execution_id": "pick-beaker-1",
+                    "status": "succeeded",
+                    "started_at": 1,
+                    "finished_at": 2,
+                },
+                {
+                    "node_id": "w07_pour_beaker_s08",
+                    "attempt": 1,
+                    "execution_id": "pour-beaker-1",
+                    "status": "succeeded",
+                    "started_at": 3,
+                    "finished_at": 4,
+                },
+            ],
+        },
+    )
+    assert ready_instance_ids() == [instances[16].id]
+    assert templates[15].node_ids[instances[15].execution_state.cursor] == (
+        "w07_place_beaker_s11"
+    )
+
+    replace_instance(16, "running")
+    assert ready_instance_ids() == []
+    replace_instance(15, "completed")
+    assert ready_instance_ids() == []
+    replace_instance(16, "completed")
+    assert ready_instance_ids() == [instances[17].id]
 
 
 def test_reports_missing_dependency_template_node_and_instance():

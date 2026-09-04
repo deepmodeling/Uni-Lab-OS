@@ -430,7 +430,7 @@ _S072_PICK_NODE_IDS = frozenset(
 )
 _S09_INBOUND_START_NODE_IDS = frozenset({
     "w03_pick_beaker_s06",
-    "w06_pick_beaker_s04",
+    "w06_pick_beaker_s05_for_density",
 })
 _S09_PLACE_NODE_IDS = frozenset({
     "w03_place_beaker_s09",
@@ -453,7 +453,7 @@ _S08_PLACE_NODE_IDS = frozenset({"w05_place_sample_vial_s08"})
 _S08_OCCUPIED_REQUIRED_NODE_IDS = frozenset(
     {
         "w05_open_sample_vial_s08",
-        "w07_pick_beaker_s05",
+        "w07_pick_beaker_s05_after_density",
         "w07_pour_beaker_s08",
         "w07_close_sample_vial_s08",
         "w07_pick_sample_vial_s08",

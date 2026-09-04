@@ -73,23 +73,6 @@ class FifoResourcePolicy:
         waiting_reasons: dict[str, WaitingReason] = {}
 
         for instance in candidates:
-            predecessor_order = self._unfinished_predecessor_order(
-                instance,
-                all_instances,
-            )
-            if predecessor_order is not None:
-                waiting_reasons[instance.id] = WaitingReason(
-                    code="sample_order_pending",
-                    context={
-                        "sample_id": instance.sample_id,
-                        "predecessor_order": predecessor_order,
-                    },
-                    message=(
-                        f"等待样品 {instance.sample_id} 的 order {predecessor_order} 完成"
-                    ),
-                )
-                continue
-
             template = template_by_id.get(instance.template_id)
             if template is None:
                 waiting_reasons[instance.id] = WaitingReason(
@@ -99,12 +82,138 @@ class FifoResourcePolicy:
                 )
                 continue
 
+            dependency_reason = self._dependency_waiting_reason(
+                instance,
+                template,
+                template_by_id,
+                all_instances,
+            )
+            if dependency_reason is not None:
+                waiting_reasons[instance.id] = dependency_reason
+                continue
+
             startable_instance_ids.append(instance.id)
 
         return SchedulingResult(
             startable_instance_ids=startable_instance_ids,
             waiting_reasons=waiting_reasons,
         )
+
+    @classmethod
+    def _dependency_waiting_reason(
+        cls,
+        instance: TaskInstance,
+        template: Template,
+        template_by_id: dict[str, Template],
+        all_instances: Iterable[TaskInstance],
+    ) -> WaitingReason | None:
+        if template.dependencies is None:
+            predecessor_order = cls._unfinished_predecessor_order(
+                instance,
+                all_instances,
+            )
+            if predecessor_order is None:
+                return None
+            return WaitingReason(
+                code="sample_order_pending",
+                context={
+                    "sample_id": instance.sample_id,
+                    "predecessor_order": predecessor_order,
+                },
+                message=(
+                    f"等待样品 {instance.sample_id} 的 order "
+                    f"{predecessor_order} 完成"
+                ),
+            )
+
+        for dependency in template.dependencies:
+            dependency_template = template_by_id.get(dependency.template_id)
+            if dependency_template is None:
+                return WaitingReason(
+                    code="task_dependency_template_missing",
+                    context={
+                        "dependency_template_id": dependency.template_id,
+                    },
+                    message=f"前置 Task 模板不存在：{dependency.template_id}",
+                )
+            if (
+                dependency.node_id is not None
+                and dependency.node_id not in dependency_template.node_ids
+            ):
+                return WaitingReason(
+                    code="task_dependency_node_missing",
+                    context={
+                        "dependency_template_id": dependency.template_id,
+                        "dependency_node_id": dependency.node_id,
+                    },
+                    message=(
+                        f"前置 Task {dependency.template_id} 不包含动作 "
+                        f"{dependency.node_id}"
+                    ),
+                )
+
+            predecessor = cls._latest_predecessor_instance(
+                instance,
+                dependency.template_id,
+                all_instances,
+            )
+            if predecessor is None:
+                return WaitingReason(
+                    code="task_dependency_instance_missing",
+                    context={
+                        "sample_id": instance.sample_id,
+                        "dependency_template_id": dependency.template_id,
+                    },
+                    message=(
+                        f"样品 {instance.sample_id} 缺少前置 Task "
+                        f"{dependency.template_id}"
+                    ),
+                )
+
+            if dependency.node_id is None:
+                if predecessor.status == "completed":
+                    continue
+                return WaitingReason(
+                    code="task_dependency_pending",
+                    context={
+                        "dependency_instance_id": predecessor.id,
+                        "dependency_template_id": dependency.template_id,
+                        "dependency_status": predecessor.status,
+                    },
+                    message=f"等待前置 Task {dependency.template_id} 完成",
+                )
+
+            node_index = dependency_template.node_ids.index(dependency.node_id)
+            if predecessor.execution_state.cursor > node_index:
+                continue
+            return WaitingReason(
+                code="task_dependency_node_pending",
+                context={
+                    "dependency_instance_id": predecessor.id,
+                    "dependency_template_id": dependency.template_id,
+                    "dependency_node_id": dependency.node_id,
+                },
+                message=(
+                    f"等待前置 Task {dependency.template_id} 的动作 "
+                    f"{dependency.node_id} 完成"
+                ),
+            )
+        return None
+
+    @staticmethod
+    def _latest_predecessor_instance(
+        instance: TaskInstance,
+        dependency_template_id: str,
+        all_instances: Iterable[TaskInstance],
+    ) -> TaskInstance | None:
+        matching = [
+            other
+            for other in all_instances
+            if other.sample_id == instance.sample_id
+            and other.template_id == dependency_template_id
+            and other.order < instance.order
+        ]
+        return max(matching, key=lambda other: other.order, default=None)
 
     @staticmethod
     def _unfinished_predecessor_order(

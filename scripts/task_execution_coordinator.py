@@ -1050,10 +1050,6 @@ class TaskExecutionCoordinator:
             "failed": 0,
         }
         with self._lock:
-            had_local_execution = any(
-                action.workflow_path == workflow_path
-                for action in self._in_flight.values()
-            )
             self._harvest_completed(stats)
             self._retry_pending_terminal_report(stats)
             self._update_activity_stats(stats)
@@ -1090,6 +1086,10 @@ class TaskExecutionCoordinator:
             "diagnostics": [],
         }
         with self._lock:
+            had_local_execution = any(
+                action.workflow_path == workflow_path
+                for action in self._in_flight.values()
+            )
             self._harvest_completed(stats)
             if self._retry_pending_terminal_report(
                 stats, workflow_path=workflow_path

@@ -9,7 +9,7 @@ from unilabos.devices.workstation.szlab_poly_studio.sensor import S04Sensors
 
 S04_PLACE_TASK_NUMBER = 7
 S04_PICK_TASK_NUMBER = 8
-S04_POSITION_RANGE = range(1, 7)
+S04_POSITION_RANGE = range(1, 5)
 S04_POSITION_VARIABLE = "S04取放料编号"
 S04_SENSOR_BY_POSITION = S04Sensors.MATERIAL_BY_POSITION
 
@@ -18,7 +18,7 @@ class SzlabRobotS04Mixin:
     def _validate_s04_position(self, position: int) -> int:
         position = int(position)
         if position not in S04_POSITION_RANGE:
-            raise ValueError("磁搅位置必须在 1-6 范围内")
+            raise ValueError("磁搅位置必须在 1-4 范围内")
         return position
 
     def _s04_sensor_variable(self, position: int) -> str:

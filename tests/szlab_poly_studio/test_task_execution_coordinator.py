@@ -676,7 +676,7 @@ def test_s06_to_s09_waits_until_at_least_one_s04_position_is_available():
         if item.uuid == "w03_pick_beaker_s06"
     )
     values = _atomic_start_signal_conditions(node)
-    for position in range(1, 7):
+    for position in range(1, 5):
         values[f"传感器状态_上位机[2].NO[{position + 9}]"] = True
         values[f"S04{position}准备信号"] = True
 

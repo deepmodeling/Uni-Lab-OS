@@ -545,8 +545,8 @@ def _resolve_sample_s04_position(
             if recorded_position is not None
             else int(params.get("position", 1))
         )
-        if position not in range(1, 7):
-            raise ValueError("磁搅位置必须在 1-6 范围内")
+        if position not in range(1, 5):
+            raise ValueError("磁搅位置必须在 1-4 范围内")
         candidates.append((peer_order, str(peer.get("id") or ""), position))
     return max(candidates)[2] if candidates else None
 
@@ -559,7 +559,7 @@ def _find_free_s04_position(devices: dict[str, Any]) -> int | None:
         return None
 
     read_errors: list[str] = []
-    for position in range(1, 7):
+    for position in range(1, 5):
         try:
             if bool(_read_trigger_variable(plc, s04_material_sensor_var(position))):
                 continue
@@ -780,7 +780,7 @@ _ATOMIC_START_ACTIVE_CONFLICTS: dict[str, frozenset[str]] = {
     "w03_pick_beaker_s06": frozenset(
         {"w02_add_solvent_s06", "w03_add_liquid_s09"}
     ),
-    # S04 的 1-6 号位独立提供有料与准备信号。其他位置正在磁搅时，
+    # S04 的 1-4 号位独立提供有料与准备信号。其他位置正在磁搅时，
     # 仍应允许向空闲且就绪的位置搬运，因此这里只与 S09 自身加工冲突。
     "w04_pick_beaker_s09": frozenset({"w03_add_liquid_s09"}),
 }

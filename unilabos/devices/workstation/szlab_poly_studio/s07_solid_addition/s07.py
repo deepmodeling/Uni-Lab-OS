@@ -52,7 +52,6 @@ class SZLabS07SolidAdditionDevice:
         poll_interval: float = 0.2,
         balance_poll_interval: float = 2.0,
         balance_record_interval: float = 0.2,
-        wait_timeout: float = 300.0,
         balance_history_dir: str | None = None,
         enable_balance_history: bool = True,
         *args,
@@ -62,7 +61,6 @@ class SZLabS07SolidAdditionDevice:
         self.poll_interval = poll_interval
         self.balance_poll_interval = max(float(balance_poll_interval), float(poll_interval))
         self.balance_record_interval = max(float(balance_record_interval), float(poll_interval))
-        self.wait_timeout = max(float(wait_timeout), 0.1)
         self.balance_history_dir = Path(balance_history_dir or DEFAULT_BALANCE_HISTORY_DIR)
         self.enable_balance_history = bool(enable_balance_history)
         self._plc_gateway: Any = None
@@ -186,7 +184,7 @@ class SZLabS07SolidAdditionDevice:
             next_balance_record = started
             next_balance_publish = started
             process_complete = 0
-            while time.monotonic() - started < self.wait_timeout:
+            while True:
                 abort_check = getattr(self._plc(), "_mixing_wait_should_abort", None)
                 if callable(abort_check) and abort_check():
                     return {

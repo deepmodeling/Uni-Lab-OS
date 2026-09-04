@@ -1648,9 +1648,16 @@ def test_szlab_robot_s04_sensor_mapping_matches_plc_csv_positions():
         2: "传感器状态_上位机[2].NO[11]",
         3: "传感器状态_上位机[2].NO[12]",
         4: "传感器状态_上位机[2].NO[13]",
-        5: "传感器状态_上位机[2].NO[14]",
-        6: "传感器状态_上位机[2].NO[15]",
     }
+
+
+def test_szlab_robot_s04_rejects_unavailable_position_five():
+    device = SzlabMixerRobotDevice()
+
+    result = device.submit_place_to_s04(position=5)
+
+    assert result["success"] is False
+    assert result["message"] == "磁搅位置必须在 1-4 范围内"
 
 
 def test_szlab_robot_task_specs_cover_xlsx_task_numbers_once():

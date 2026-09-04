@@ -338,7 +338,7 @@
           "enforced_by": "TaskExecutionCoordinator + submit_place_to_s04"
         },
         {
-          "condition": "S041准备信号 == true（S04 位置 1 可放料；位置 2..6 对应 S042..S046准备信号）",
+          "condition": "S041准备信号 == true（S04 位置 1 可放料；位置 2..4 对应 S042..S044准备信号）",
           "status": "enforced",
           "enforced_by": "TaskExecutionCoordinator + submit_place_to_s04"
         }

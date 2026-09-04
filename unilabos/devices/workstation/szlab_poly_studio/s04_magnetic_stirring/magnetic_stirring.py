@@ -49,14 +49,12 @@ class SzlabMixerMagneticStirrerDevice:
         plc_device_id: str = "szlab_poly_plc",
         use_plc_gateway: bool = False,
         opcua_node_id_map: dict[str, str] | None = None,
-        wait_timeout: float = 300.0,
         **kwargs,
     ):
         self.url = url
         self.plc_device_id = plc_device_id
         self._plc_gateway = None
         self._status = "Idle"
-        self.wait_timeout = max(float(wait_timeout), 0.1)
         self._last_position = 0
         self._last_mode = 0
         client_kwargs: dict[str, Any] = {
@@ -124,7 +122,7 @@ class SzlabMixerMagneticStirrerDevice:
     def _validate_position(self, position: int) -> int:
         position = int(position)
         if position not in S04_POSITION_RANGE:
-            raise ValueError("磁搅位置必须在 1-6 范围内")
+            raise ValueError("磁搅位置必须在 1-4 范围内")
         return position
 
     @not_action
@@ -197,7 +195,6 @@ class SzlabMixerMagneticStirrerDevice:
             variable,
             expected,
             interval=1.0,
-            timeout=self.wait_timeout,
         )
 
     @action(auto_prefix=True, description="执行 S04 磁搅加工")
@@ -213,7 +210,7 @@ class SzlabMixerMagneticStirrerDevice:
     ) -> dict[str, Any]:
         """
         Args:
-            position[磁搅位置]: 磁搅工位编号，范围 1-6。
+            position[磁搅位置]: 磁搅工位编号，范围 1-4。
             mode[工艺选择]: 1=搅拌，2=加热，3=搅拌+加热。
             speed[磁搅速度]: 磁搅速度设置。
             temperature[磁搅温度]: 磁搅温度设置。

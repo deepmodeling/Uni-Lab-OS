@@ -3,7 +3,7 @@
 from unilabos.devices.workstation.szlab_poly_studio.sensor import S04Sensors
 
 
-S04_POSITION_RANGE = range(1, 7)
+S04_POSITION_RANGE = range(1, 5)
 S04_PROCESS_MODES = {
     1: "搅拌",
     2: "加热",

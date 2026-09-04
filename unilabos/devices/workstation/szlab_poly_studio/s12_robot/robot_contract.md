@@ -81,7 +81,7 @@ Confirmed built-in mappings:
 
 - S02 TIP positions 1-6: `传感器状态_上位机[0].NO[0]` to `[0].NO[5]`.
 - S03 unused beakers/sample vials: mappings from `plc.py` `S3_UNUSED_BEAKER_SENSORS` and `S3_UNUSED_SAMPLE_VIAL_SENSORS`.
-- S04 mixer positions 1-6: `传感器状态_上位机[2].NO[10]` to `[2].NO[15]`.
+- S04 mixer positions 1-4: `传感器状态_上位机[2].NO[10]` to `[2].NO[13]`.
 - S05 photo material sensor: `传感器状态_上位机[3].NO[0]`.
 - S06 material sensor: `传感器状态_上位机[3].NO[1]`.
 - S071 powder container sensors: `传感器状态_上位机[3].NO[8]` to `[3].NO[13]`.

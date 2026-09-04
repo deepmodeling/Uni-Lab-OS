@@ -282,14 +282,14 @@ class S03Sensors(SensorBase):
 class S04Sensors(SensorBase):
     MATERIAL_BY_POSITION: ClassVar[Dict[int, str]] = {
         position: SensorBase.bit(2, position + 9)
-        for position in range(1, 7)
+        for position in range(1, 5)
     }
 
     @classmethod
     def material(cls, position: int) -> str:
         position = int(position)
         if position not in cls.MATERIAL_BY_POSITION:
-            raise ValueError("S04磁搅位置必须在 1-6 范围内")
+            raise ValueError("S04磁搅位置必须在 1-4 范围内")
         return cls.MATERIAL_BY_POSITION[position]
 
 

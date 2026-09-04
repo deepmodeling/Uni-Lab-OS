@@ -502,8 +502,8 @@ _METHOD_PARAM_HELP: dict[tuple[str, str], dict[str, Any]] = {
     ("submit_pick_from_s02", "position"): {"description": "S02 TIP 盒取料位，范围 1–6。"},
     ("submit_place_to_s03", "position"): {"description": "S03 空容器仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
     ("submit_pick_from_s03", "position"): {"description": "S03 空容器仓位，范围 1–18；前端使用“行-列”格式，例如 1-1。"},
-    ("submit_place_to_s04", "position"): {"description": "S04 磁搅工位编号，范围 1–6。"},
-    ("submit_pick_from_s04", "position"): {"description": "S04 磁搅工位编号，范围 1–6。"},
+    ("submit_place_to_s04", "position"): {"description": "S04 磁搅工位编号，范围 1–4。"},
+    ("submit_pick_from_s04", "position"): {"description": "S04 磁搅工位编号，范围 1–4。"},
     ("submit_place_to_s071", "position"): {
         "description": "S071 粉罐仓位，PLC 编号范围 1–6；前端使用“行-列”格式，填 auto 时自动选择空位。"
     },

@@ -53,7 +53,6 @@ class SzlabMixerPhotoShottingDevice:
         dissolution_service_url: str = DEFAULT_DISSOLUTION_SERVICE_URL,
         dissolution_timeout: float = 60.0,
         dissolution_trigger_delay: float = 2.0,
-        wait_timeout: float = 300.0,
         **kwargs,
     ):
         self.url = url
@@ -62,7 +61,6 @@ class SzlabMixerPhotoShottingDevice:
         self.dissolution_service_url = dissolution_service_url.rstrip("/")
         self.dissolution_timeout = dissolution_timeout
         self.dissolution_trigger_delay = max(0.0, float(dissolution_trigger_delay))
-        self.wait_timeout = max(float(wait_timeout), 0.1)
         self._plc_gateway = None
         client_kwargs: dict[str, Any] = {
             "url": url,
@@ -325,7 +323,7 @@ class SzlabMixerPhotoShottingDevice:
         if callable(waiter):
             return waiter(S05_DONE, interval=1.0)
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
-        return wait_variable_true(reader, S05_DONE, interval=1.0, timeout=self.wait_timeout)
+        return wait_variable_true(reader, S05_DONE, interval=1.0)
 
     @not_action
     def _wait_material_present(self) -> bool:
@@ -333,15 +331,14 @@ class SzlabMixerPhotoShottingDevice:
         if callable(waiter):
             return waiter(S05_MATERIAL_SENSOR, interval=1.0)
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
-        return wait_variable_true(reader, S05_MATERIAL_SENSOR, interval=1.0, timeout=self.wait_timeout)
+        return wait_variable_true(reader, S05_MATERIAL_SENSOR, interval=1.0)
 
     @not_action
     def _wait_photo_result_code(self) -> tuple[Any, str]:
         last_code: Any = 0
         last_label = "UNKNOWN"
-        started_at = time.monotonic()
         reader = self._plc_gateway if self._plc_gateway is not None else self._client
-        while time.monotonic() - started_at < self.wait_timeout:
+        while True:
             last_code = self._read_variable(S05_RESULT, use_cache=False)
             last_label = self._result_label(last_code)
             if last_label != "UNKNOWN":
@@ -350,7 +347,6 @@ class SzlabMixerPhotoShottingDevice:
             if callable(abort_check) and abort_check():
                 return last_code, last_label
             time.sleep(1.0)
-        return last_code, last_label
 
     @action(auto_prefix=True, description="执行烧杯姿势拍照检测")
     def take_photo(

@@ -198,7 +198,6 @@ class SZLabPolyPLCDevice(BaseClient):
         auto_reconnect: bool = True,
         reconnect_attempts: int = 3,
         reconnect_interval: float = 1.0,
-        mixing_wait_timeout: float = 300.0,
         mixing_alarm_poll_interval: float = 0.5,
         stack_sensor_layout_path: Optional[str] = None,
         ignore_opcua_token_time_drift: bool = False,
@@ -234,11 +233,6 @@ class SZLabPolyPLCDevice(BaseClient):
         self._auto_reconnect = bool(auto_reconnect)
         self._reconnect_attempts = max(int(reconnect_attempts), 1)
         self._reconnect_interval = max(float(reconnect_interval), 0.0)
-        configured_wait_timeout = os.environ.get("UNILABOS_MIXING_WAIT_TIMEOUT")
-        self.mixing_wait_timeout = max(
-            float(configured_wait_timeout) if configured_wait_timeout else float(mixing_wait_timeout),
-            0.1,
-        )
         self.mixing_alarm_poll_interval = max(float(mixing_alarm_poll_interval), 0.1)
         self._fallback_node_id_prefix = fallback_node_id_prefix
         self._opcua_object_name = opcua_object_name
@@ -909,9 +903,8 @@ class SZLabPolyPLCDevice(BaseClient):
         interval: float = 1.0,
         timeout: float | None = None,
     ) -> bool:
-        effective_timeout = self.mixing_wait_timeout if timeout is None else timeout
         return wait_variable_equal(
-            self, node_name, expected, interval=interval, timeout=effective_timeout
+            self, node_name, expected, interval=interval, timeout=timeout
         )
 
     @not_action
@@ -921,9 +914,8 @@ class SZLabPolyPLCDevice(BaseClient):
         interval: float = 1.0,
         timeout: float | None = None,
     ) -> bool:
-        effective_timeout = self.mixing_wait_timeout if timeout is None else timeout
         return wait_variable_true(
-            self, node_name, interval=interval, timeout=effective_timeout
+            self, node_name, interval=interval, timeout=timeout
         )
 
     @not_action
@@ -934,13 +926,12 @@ class SZLabPolyPLCDevice(BaseClient):
         context: str | None = None,
         timeout: float | None = None,
     ) -> tuple[bool, Dict[str, Any]]:
-        effective_timeout = self.mixing_wait_timeout if timeout is None else timeout
         return wait_sensor_conditions(
             self,
             conditions,
             interval=interval,
             context=context,
-            timeout=effective_timeout,
+            timeout=timeout,
         )
 
     @not_action

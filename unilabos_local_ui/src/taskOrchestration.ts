@@ -14,6 +14,11 @@ export type TriggerCondition = {
   value: string | number | boolean;
 };
 
+export type TaskDependencyModel = {
+  templateId: string;
+  nodeId: string | null;
+};
+
 export type TaskTemplateModel = {
   id: string;
   name: string;
@@ -22,6 +27,7 @@ export type TaskTemplateModel = {
   gates: string[];
   inputTriggers?: TriggerCondition[];
   outputTriggers?: TriggerCondition[];
+  dependencies?: TaskDependencyModel[] | null;
 };
 
 export type TaskNodeDescriptor = {
@@ -628,6 +634,7 @@ export function createTaskTemplateDraft(
     gates: [],
     inputTriggers: [],
     outputTriggers: [],
+    dependencies: null,
   };
 }
 

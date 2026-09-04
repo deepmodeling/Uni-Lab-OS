@@ -9,6 +9,11 @@ export type ApiTrigger = {
   };
 };
 
+export type ApiTaskDependency = {
+  template_id: string;
+  node_id?: string | null;
+};
+
 export type ApiTemplate = {
   id: string;
   name: string;
@@ -17,6 +22,7 @@ export type ApiTemplate = {
   resources: string[];
   input_triggers: ApiTrigger[];
   output_triggers: ApiTrigger[];
+  dependencies?: ApiTaskDependency[] | null;
 };
 
 export type ApiNodeExecutionRecord = {
@@ -339,7 +345,7 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
       workflowPath: string,
       expectedVersion: number,
       templateId: string,
-      patch: Pick<Partial<ApiTemplate>, 'name' | 'input_triggers' | 'output_triggers'>,
+      patch: Pick<Partial<ApiTemplate>, 'name' | 'input_triggers' | 'output_triggers' | 'dependencies'>,
     ) => request(`/templates/${encodeURIComponent(templateId)}`, {
       method: 'PATCH',
       body: JSON.stringify({

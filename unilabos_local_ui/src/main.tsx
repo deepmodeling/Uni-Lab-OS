@@ -130,7 +130,7 @@ import {
   taskLocalWaitingReason,
   updateScheduledTemplateDraft,
 } from './taskOrchestration';
-import type { TaskActionExecutionRecord, TriggerCondition } from './taskOrchestration';
+import type { TaskActionExecutionRecord, TaskDependencyModel, TriggerCondition } from './taskOrchestration';
 import {
   createTaskExecutionController,
   createTaskExecutionStatus,
@@ -297,6 +297,7 @@ type TaskTemplate = {
   gates: string[];
   inputTriggers: TriggerCondition[];
   outputTriggers: TriggerCondition[];
+  dependencies: TaskDependencyModel[] | null;
 };
 type CsvVariable = {
   name: string;
@@ -440,6 +441,12 @@ function taskWorkspaceFromApi(response: ApiWorkspaceResponse): TaskWorkspaceStat
       gates: [],
       inputTriggers: template.input_triggers.map(fromApiTrigger),
       outputTriggers: template.output_triggers.map(fromApiTrigger),
+      dependencies: template.dependencies == null
+        ? null
+        : template.dependencies.map((dependency) => ({
+            templateId: dependency.template_id,
+            nodeId: dependency.node_id ?? null,
+          })),
     })),
     taskInstances: response.workspace.task_instances.map((instance) => ({
       id: instance.id,
@@ -1230,6 +1237,7 @@ function App() {
     templates: taskTemplates.map((template) => ({
       id: template.id,
       nodeIds: template.nodeIds,
+      dependencies: template.dependencies,
     })),
     scheduledTemplateIds,
     instances: taskInstances.map((instance) => ({
@@ -2111,6 +2119,12 @@ function App() {
         resources: [],
         input_triggers: [],
         output_triggers: [],
+        dependencies: draft.dependencies == null
+          ? null
+          : draft.dependencies.map((dependency) => ({
+              template_id: dependency.templateId,
+              node_id: dependency.nodeId,
+            })),
       });
       return response;
     });
@@ -2417,6 +2431,12 @@ function App() {
         resources: template.resources,
         input_triggers: template.inputTriggers.map(taskTriggerForExport),
         output_triggers: template.outputTriggers.map(taskTriggerForExport),
+        dependencies: template.dependencies == null
+          ? null
+          : template.dependencies.map((dependency) => ({
+              template_id: dependency.templateId,
+              node_id: dependency.nodeId,
+            })),
       })),
     });
     showCanvasToast(isSingle ? '已下载 Task 模板' : `已下载 ${templates.length} 个 Task 模板`);
@@ -2582,6 +2602,12 @@ function App() {
             resources: template.resources,
             input_triggers: [],
             output_triggers: [],
+            dependencies: template.dependencies == null
+              ? null
+              : template.dependencies.map((dependency) => ({
+                  template_id: dependency.templateId,
+                  node_id: dependency.nodeId,
+                })),
           })),
           scheduled_template_ids: scheduledOpcTemplateIds,
           action_catalog: actionCatalog,

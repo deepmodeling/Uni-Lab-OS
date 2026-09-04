@@ -228,8 +228,8 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /schema: 'unilabos\.task-templates'[\s\S]*?source_workflow_path[\s\S]*?input_triggers[\s\S]*?output_triggers/,
-  '模板下载 JSON 必须携带版本、来源、节点和触发条件',
+  /schema: 'unilabos\.task-templates'[\s\S]*?source_workflow_path[\s\S]*?input_triggers[\s\S]*?output_triggers[\s\S]*?dependencies/,
+  '模板下载 JSON 必须携带版本、来源、节点、触发条件和依赖关系',
 );
 assert.match(
   mainSource,
@@ -2313,6 +2313,7 @@ assert.deepEqual(
     gates: [],
     inputTriggers: [],
     outputTriggers: [],
+    dependencies: null,
   },
   '未连接 PLC 时不应推断 Task 条件',
 );
@@ -2345,6 +2346,7 @@ assert.deepEqual(
     gates: [],
     inputTriggers: [],
     outputTriggers: [],
+    dependencies: null,
   },
   'Task 模板不再维护输入/输出触发条件，统一在 OPC 模拟配置',
 );
@@ -3112,8 +3114,8 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /node_ids: draft\.nodeIds,\s*resources: \[\],\s*input_triggers: \[\],\s*output_triggers: \[\]/,
-  '创建 Task API payload 应始终提交空的输入/输出条件',
+  /node_ids: draft\.nodeIds,\s*resources: \[\],\s*input_triggers: \[\],\s*output_triggers: \[\],\s*dependencies: draft\.dependencies == null[\s\S]*?template_id: dependency\.templateId[\s\S]*?node_id: dependency\.nodeId/,
+  '创建 Task API payload 应提交空的输入/输出条件并保留依赖语义',
 );
 assert.match(
   mainSource,

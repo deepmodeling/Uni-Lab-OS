@@ -1197,6 +1197,34 @@ def test_szlab_photoshotting_schedules_dissolution_without_blocking(monkeypatch)
     }
 
 
+def test_szlab_photoshotting_can_skip_dissolution_detection(monkeypatch):
+    class FakePlcGateway:
+        def wait_variable_true(self, name, interval=1.0):
+            return True
+
+        def read_variable(self, name, use_cache=False):
+            return 1
+
+    device = SzlabMixerPhotoShottingDevice(
+        use_plc_gateway=True,
+        dissolution_service_url="http://inference:8003/",
+    )
+    device.set_plc_gateway(FakePlcGateway())
+    monkeypatch.setattr(
+        device,
+        "_start_dissolution_detection",
+        lambda sample_id: pytest.fail("关闭溶解检测时不应启动异步任务"),
+    )
+
+    result = device.take_photo(
+        sample_id="sample-1",
+        trigger_dissolution_detection=False,
+    )
+
+    assert result["success"] is True
+    assert result["data"]["dissolution_detection_triggered"] is False
+
+
 def test_szlab_photoshotting_waits_before_dissolution_detection(monkeypatch):
     device = SzlabMixerPhotoShottingDevice(
         use_plc_gateway=True,

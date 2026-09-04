@@ -3,6 +3,7 @@
 from task_orchestration import models
 from task_orchestration.models import (
     OpcSnapshotRequest,
+    TaskDependency,
     TaskInstance,
     Template,
     Trigger,
@@ -60,6 +61,44 @@ def test_template_accepts_empty_triggers_and_preserves_legacy_resources():
     assert template.input_triggers == []
     assert template.output_triggers == []
     assert template.resources == ["legacy-robot"]
+
+
+def test_template_distinguishes_legacy_and_explicit_dependencies():
+    legacy = Template(id="legacy", name="Legacy")
+    root = Template(id="root", name="Root", dependencies=[])
+    dependent = Template(
+        id="dependent",
+        name="Dependent",
+        dependencies=[
+            TaskDependency(template_id="root"),
+            TaskDependency(template_id="pour", node_id="pour-done"),
+        ],
+    )
+
+    assert legacy.dependencies is None
+    assert root.dependencies == []
+    assert dependent.model_dump()["dependencies"] == [
+        {"template_id": "root", "node_id": None},
+        {"template_id": "pour", "node_id": "pour-done"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "dependencies",
+    [
+        [{"template_id": " "}],
+        [{"template_id": "previous", "node_id": " "}],
+        [{"template_id": "current"}],
+        [{"template_id": "previous"}, {"template_id": "previous"}],
+    ],
+)
+def test_template_rejects_invalid_dependencies(dependencies):
+    with pytest.raises(ValidationError):
+        Template(
+            id="current",
+            name="Current",
+            dependencies=dependencies,
+        )
 
 
 def test_action_resource_compatibility_fields_accept_ignored_contents():

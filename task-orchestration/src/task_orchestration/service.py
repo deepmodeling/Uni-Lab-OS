@@ -15,6 +15,7 @@ from .models import (
     SchedulingResult,
     PlcRegistration,
     OpcSnapshotState,
+    TaskDependency,
     TaskScheduleEntry,
     TaskInstance,
     Template,
@@ -155,6 +156,7 @@ class WorkspaceService:
         name: str | None = None,
         input_triggers: list[Trigger] | None = None,
         output_triggers: list[Trigger] | None = None,
+        dependencies: list[TaskDependency] | None = None,
     ):
         def operation(workspace: Workspace) -> Workspace:
             template = self._template(workspace, template_id)
@@ -171,8 +173,15 @@ class WorkspaceService:
                 updates["output_triggers"] = self._canonicalize_triggers(
                     workspace, output_triggers, "output"
                 )
+            if dependencies is not None:
+                updates["dependencies"] = dependencies
             updates["resources"] = []
-            replacement = template.model_copy(update=updates)
+            try:
+                replacement = template.validated_copy(update=updates)
+            except ValueError as exc:
+                raise WorkspaceServiceError(
+                    "invalid_task_dependencies", str(exc)
+                ) from exc
             return workspace.model_copy(
                 update={
                     "templates": [

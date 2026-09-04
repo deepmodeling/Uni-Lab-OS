@@ -53,6 +53,20 @@ class Trigger(StrictModel):
         return self
 
 
+class TaskDependency(StrictModel):
+    """Task 启动前必须完成的前置 Task 或其中的指定节点。"""
+
+    template_id: str
+    node_id: str | None = None
+
+    @field_validator("template_id", "node_id")
+    @classmethod
+    def reject_blank_ids(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("task dependency ids must not be blank")
+        return value
+
+
 class Template(StrictModel):
     """由 workflow 节点集合派生的可复用 Task 模板。"""
 
@@ -63,6 +77,25 @@ class Template(StrictModel):
     resources: list[str] = Field(default_factory=list)
     input_triggers: list[Trigger] = Field(default_factory=list)
     output_triggers: list[Trigger] = Field(default_factory=list)
+    dependencies: list[TaskDependency] | None = None
+
+    @model_validator(mode="after")
+    def validate_dependencies(self) -> Template:
+        """None 保留旧串行语义；空列表表示显式无前置 Task。"""
+        if self.dependencies is None:
+            return self
+        keys = [
+            (dependency.template_id, dependency.node_id)
+            for dependency in self.dependencies
+        ]
+        if len(keys) != len(set(keys)):
+            raise ValueError("task dependencies must be unique")
+        if any(
+            dependency.template_id == self.id
+            for dependency in self.dependencies
+        ):
+            raise ValueError("task template must not depend on itself")
+        return self
 
 
 class NodeExecutionRecord(StrictModel):
@@ -548,6 +581,7 @@ class TemplateUpdateRequest(StrictModel):
     name: str | None = None
     input_triggers: list[Trigger] | None = None
     output_triggers: list[Trigger] | None = None
+    dependencies: list[TaskDependency] | None = None
 
 
 class TemplatesDeleteRequest(StrictModel):

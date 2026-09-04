@@ -861,6 +861,70 @@ def test_template_lifecycle_cascades_instances_and_pending_generation(tmp_path):
     assert event["id"] and event["timestamp"] >= 0
 
 
+def test_template_api_persists_task_and_node_dependencies(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    predecessor = client.post(
+        "/templates",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 0,
+            "template": _template("pour"),
+        },
+    )
+    assert predecessor.status_code == 200
+
+    dependent_template = _template("close")
+    dependent_template["dependencies"] = [{"template_id": "pour"}]
+    created = client.post(
+        "/templates",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 1,
+            "template": dependent_template,
+        },
+    )
+    assert created.status_code == 200
+    close_template = next(
+        template
+        for template in created.json()["workspace"]["templates"]
+        if template["id"] == "close"
+    )
+    assert close_template["dependencies"] == [
+        {"template_id": "pour", "node_id": None}
+    ]
+
+    updated = client.patch(
+        "/templates/close",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 2,
+            "dependencies": [
+                {"template_id": "pour", "node_id": "pour-node"}
+            ],
+        },
+    )
+    assert updated.status_code == 200
+    close_template = next(
+        template
+        for template in updated.json()["workspace"]["templates"]
+        if template["id"] == "close"
+    )
+    assert close_template["dependencies"] == [
+        {"template_id": "pour", "node_id": "pour-node"}
+    ]
+
+    rejected = client.patch(
+        "/templates/close",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 3,
+            "dependencies": [{"template_id": "close"}],
+        },
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"]["code"] == "invalid_task_dependencies"
+
+
 def test_delete_templates_is_atomic_and_cascades_related_state(tmp_path):
     client = _client_with_workflow(tmp_path)
     for version, template_id in enumerate(("prepare", "measure")):

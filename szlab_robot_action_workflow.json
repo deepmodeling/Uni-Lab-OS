@@ -31,9 +31,6 @@
         "S08 放样品瓶",
         "S08 开盖",
         "S09 取烧杯",
-        "S05 放烧杯（二次拍照）",
-        "S05 拍照转角度（不判断溶解）",
-        "S05 取烧杯（二次拍照后）",
         "S08 倒料",
         "S11 放烧杯",
         "S08 关盖",
@@ -152,11 +149,17 @@
             "device_id": "szlab_mixer_pipetting_station",
             "method": "add_liquid_with_reusable_tip",
             "params": {
-              "liquid_station_index": 1,
-              "volume": 5000,
+              "liquid_count": 1,
+              "liquid_additions": [
+                {
+                  "liquid_station_index": 1,
+                  "solvent_batch_id": "solvent-batch-001",
+                  "volume": 5000,
+                  "reuse_tip": true
+                }
+              ],
               "volume_unit": "raw",
-              "skip_level_check": false,
-              "solvent_batch_id": "solvent-batch-001"
+              "skip_level_check": false
             }
           }
         },
@@ -341,46 +344,6 @@
         {
           "action": {
             "index": 23,
-            "node": "S05 放烧杯（二次拍照）",
-            "workflow_node_id": "w06_place_beaker_s05_after_density",
-            "device_id": "szlab_mixer_robot",
-            "method": "submit_place_to_s05",
-            "params": {
-              "sample_id": "sample-001"
-            }
-          }
-        },
-        {
-          "action": {
-            "index": 24,
-            "node": "S05 拍照转角度（不判断溶解）",
-            "workflow_node_id": "w06_take_photo_s05_after_density",
-            "device_id": "szlab_s05_photoshotting",
-            "method": "take_photo",
-            "params": {
-              "sample_id": "sample-001",
-              "photo_path": "",
-              "inspection_result": "",
-              "require_material": false,
-              "trigger_dissolution_detection": false
-            }
-          }
-        },
-        {
-          "action": {
-            "index": 25,
-            "node": "S05 取烧杯（二次拍照后）",
-            "workflow_node_id": "w07_pick_beaker_s05_after_density",
-            "device_id": "szlab_mixer_robot",
-            "method": "submit_pick_from_s05",
-            "params": {
-              "sample_id": "sample-001"
-            }
-          }
-        },
-        {
-          "action": {
-            "index": 26,
             "node": "S08 倒料",
             "workflow_node_id": "w07_pour_beaker_s08",
             "device_id": "szlab_mixer_robot",
@@ -392,7 +355,7 @@
         },
         {
           "action": {
-            "index": 27,
+            "index": 24,
             "node": "S11 放烧杯",
             "workflow_node_id": "w07_place_beaker_s11",
             "device_id": "szlab_mixer_robot",
@@ -405,7 +368,7 @@
         },
         {
           "action": {
-            "index": 28,
+            "index": 25,
             "node": "S08 关盖",
             "workflow_node_id": "w07_close_sample_vial_s08",
             "device_id": "szlab_s08_cap_station",
@@ -421,7 +384,7 @@
         },
         {
           "action": {
-            "index": 29,
+            "index": 26,
             "node": "S08 取样品瓶",
             "workflow_node_id": "w07_pick_sample_vial_s08",
             "device_id": "szlab_mixer_robot",
@@ -434,7 +397,7 @@
         },
         {
           "action": {
-            "index": 30,
+            "index": 27,
             "node": "S11 放样品瓶",
             "workflow_node_id": "w07_place_sample_vial_s11",
             "device_id": "szlab_mixer_robot",

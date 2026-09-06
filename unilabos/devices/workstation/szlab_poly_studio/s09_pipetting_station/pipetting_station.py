@@ -961,7 +961,7 @@ class SzlabMixerPipettingStationDevice:
             "logs": logs,
         }
 
-    @action(auto_prefix=True, description="按 S09 溶剂批次和液体工位复用 TIP 执行加液")
+    @action(auto_prefix=True, description="按配置复用或一次性使用 S09 加液 TIP")
     def add_liquid_with_reusable_tip(
         self,
         liquid_station_index: int = 1,
@@ -969,6 +969,7 @@ class SzlabMixerPipettingStationDevice:
         volume: int | float = 1,
         volume_unit: str = "raw",
         skip_level_check: bool = False,
+        reuse_tip: bool = True,
         liquid_count: int = 1,
         liquid_additions: list[dict[str, Any]] | None = None,
         initialize_tip_inventory: bool = False,
@@ -993,6 +994,7 @@ class SzlabMixerPipettingStationDevice:
                         volume=float(addition["volume"]),
                         volume_unit=volume_unit,
                         skip_level_check=skip_level_check,
+                        reuse_tip=bool(addition["reuse_tip"]),
                     )
                 except (KeyError, TypeError, ValueError) as exc:
                     return {
@@ -1032,11 +1034,14 @@ class SzlabMixerPipettingStationDevice:
         solvent_key = f"S09-STATION-{liquid_station_index}:BATCH:{solvent_batch_id}"
         with self._tip_reuse_execution_lock:
             try:
-                tip = self._tip_reuse_state.prepare_tip(
-                    solvent_key,
-                    required_cycles=required_cycles,
-                    liquid_station_index=liquid_station_index,
-                )
+                if reuse_tip:
+                    tip = self._tip_reuse_state.prepare_tip(
+                        solvent_key,
+                        required_cycles=required_cycles,
+                        liquid_station_index=liquid_station_index,
+                    )
+                else:
+                    tip = self._tip_reuse_state.prepare_single_use_tip()
             except Exception as exc:
                 return {"success": False, "message": str(exc)}
 
@@ -1044,6 +1049,8 @@ class SzlabMixerPipettingStationDevice:
                 "solvent_key": solvent_key,
                 "solvent_batch_id": solvent_batch_id,
                 "liquid_station_index": liquid_station_index,
+                "reuse_tip": reuse_tip,
+                "single_use": not reuse_tip,
                 "tip_index": int(tip["tip_index"]),
                 "take_tip_box_index": int(tip["current_box"]),
                 "release_tip_box_index": 2,
@@ -1057,12 +1064,26 @@ class SzlabMixerPipettingStationDevice:
             try:
                 precheck = self._wait_material_conditions(conditions, phase="workflow_pre")
             except Exception as exc:
+                if not reuse_tip:
+                    try:
+                        self._tip_reuse_state.release_single_use_tip_reservation(
+                            liquid_tip_tracking["tip_index"]
+                        )
+                    except Exception as tracking_exc:
+                        liquid_tip_tracking["tracking_error"] = str(tracking_exc)
                 return {
                     "success": False,
                     "message": f"S09 加液物料传感器读取失败: {exc}",
                     "tip_reuse": liquid_tip_tracking,
                 }
             if not precheck["success"]:
+                if not reuse_tip:
+                    try:
+                        self._tip_reuse_state.release_single_use_tip_reservation(
+                            liquid_tip_tracking["tip_index"]
+                        )
+                    except Exception as tracking_exc:
+                        liquid_tip_tracking["tracking_error"] = str(tracking_exc)
                 return {
                     "success": False,
                     "status": "rejected",
@@ -1111,12 +1132,33 @@ class SzlabMixerPipettingStationDevice:
                         and (step.get("data") or {}).get("process") == 6
                         for step in steps
                     )
-                    if take_tip_succeeded and not release_tip_succeeded:
+                    if not reuse_tip:
                         try:
-                            unknown_tip = self._tip_reuse_state.mark_active_tip_unknown(solvent_key)
+                            if not take_tip_succeeded:
+                                tracked_tip = (
+                                    self._tip_reuse_state.release_single_use_tip_reservation(
+                                        liquid_tip_tracking["tip_index"]
+                                    )
+                                )
+                            elif release_tip_succeeded:
+                                tracked_tip = self._tip_reuse_state.consume_single_use_tip(
+                                    liquid_tip_tracking["tip_index"]
+                                )
+                            else:
+                                tracked_tip = self._tip_reuse_state.mark_single_use_tip_unknown(
+                                    liquid_tip_tracking["tip_index"]
+                                )
+                            liquid_tip_tracking["status"] = tracked_tip["status"]
+                        except Exception as tracking_exc:
+                            liquid_tip_tracking["tracking_error"] = str(tracking_exc)
+                    elif take_tip_succeeded and not release_tip_succeeded:
+                        try:
+                            unknown_tip = self._tip_reuse_state.mark_active_tip_unknown(
+                                solvent_key
+                            )
                             liquid_tip_tracking["status"] = unknown_tip["status"]
-                        except Exception as exc:
-                            liquid_tip_tracking["tracking_error"] = str(exc)
+                        except Exception as tracking_exc:
+                            liquid_tip_tracking["tracking_error"] = str(tracking_exc)
                     return {
                         "success": False,
                         "message": result.get("message", step_name),
@@ -1126,18 +1168,28 @@ class SzlabMixerPipettingStationDevice:
                     }
 
             try:
-                updated_tip = self._tip_reuse_state.record_tip_use(
-                    solvent_key,
-                    cycles=required_cycles,
-                )
+                if reuse_tip:
+                    updated_tip = self._tip_reuse_state.record_tip_use(
+                        solvent_key,
+                        cycles=required_cycles,
+                    )
+                else:
+                    updated_tip = self._tip_reuse_state.consume_single_use_tip(
+                        liquid_tip_tracking["tip_index"]
+                    )
             except Exception as exc:
                 try:
-                    self._tip_reuse_state.mark_active_tip_unknown(solvent_key)
+                    if reuse_tip:
+                        self._tip_reuse_state.mark_active_tip_unknown(solvent_key)
+                    else:
+                        self._tip_reuse_state.mark_single_use_tip_unknown(
+                            liquid_tip_tracking["tip_index"]
+                        )
                 except Exception:
                     pass
                 return {
                     "success": False,
-                    "message": f"S09 加液已完成，但可复用 TIP 状态更新失败: {exc}",
+                    "message": f"S09 加液已完成，但 TIP 状态更新失败: {exc}",
                     "steps": steps,
                     "logs": logs,
                     "tip_reuse": liquid_tip_tracking,
@@ -1145,10 +1197,12 @@ class SzlabMixerPipettingStationDevice:
 
             tip_reuse = {
                 **liquid_tip_tracking,
+                "status": updated_tip["status"],
                 "current_box": updated_tip["current_box"],
                 "use_count": updated_tip["use_count"],
-                "max_use_count": self._tip_reuse_state.max_use_count,
             }
+            if reuse_tip:
+                tip_reuse["max_use_count"] = self._tip_reuse_state.max_use_count
 
             return {
                 "success": True,

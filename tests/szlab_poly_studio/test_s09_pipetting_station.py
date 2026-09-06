@@ -342,6 +342,54 @@ def test_s09_reuses_bound_tip_without_allocating_density_tips(tmp_path):
     assert device.get_reusable_tip_status()["data"]["last_operation"] is None
 
 
+def test_s09_can_use_single_use_tip_without_changing_reusable_binding(tmp_path):
+    client = PseudoSzlabS09OpcUaClient({"S09液体瓶1剩余液量": 100.0})
+    device = make_pipetting_device(
+        client,
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory()
+
+    reusable = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=1,
+        reuse_tip=True,
+    )
+    first_single_use = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=1,
+        reuse_tip=False,
+    )
+    second_single_use = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=1,
+        reuse_tip=False,
+    )
+    reused = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=1,
+        reuse_tip=True,
+    )
+    status = device.get_reusable_tip_status()["data"]
+
+    assert [
+        result["data"]["tip_reuse"]["tip_index"]
+        for result in (reusable, first_single_use, second_single_use, reused)
+    ] == [1, 2, 3, 1]
+    assert first_single_use["data"]["tip_reuse"]["reuse_tip"] is False
+    assert first_single_use["data"]["tip_reuse"]["single_use"] is True
+    assert status["tips"]["2"]["status"] == "exhausted"
+    assert status["tips"]["3"]["status"] == "exhausted"
+    assert (
+        status["solvents"]["S09-STATION-1:BATCH:batch-a"]["active_tip_index"]
+        == 1
+    )
+
+
 def test_s09_reusable_tip_action_allocates_by_batch_and_station(tmp_path):
     client = PseudoSzlabS09OpcUaClient(
         {
@@ -415,7 +463,11 @@ def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
     def fake_run_process(*, process, **_kwargs):
         if process == 5:
             return {"success": True, "data": {"process": 5}}
-        return {"success": False, "message": "吸液失败", "data": {"process": process}}
+        return {
+            "success": False,
+            "message": "吸液失败",
+            "data": {"process": process},
+        }
 
     monkeypatch.setattr(device, "run_process", fake_run_process)
 
@@ -431,6 +483,68 @@ def test_s09_reusable_tip_action_quarantines_tip_after_uncertain_take(
     assert status["tips"]["1"]["status"] == "unknown"
     assert status["tips"]["2"]["status"] == "unused"
     assert status["solvents"]["S09-STATION-1:BATCH:batch-a"]["status"] == "unknown"
+
+
+def test_s09_single_use_tip_is_released_when_take_does_not_start(
+    tmp_path,
+    monkeypatch,
+):
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory()
+
+    monkeypatch.setattr(
+        device,
+        "run_process",
+        lambda **_kwargs: {"success": False, "message": "取 TIP 失败"},
+    )
+
+    result = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=10,
+        reuse_tip=False,
+    )
+    status = device.get_reusable_tip_status()["data"]
+
+    assert result["success"] is False
+    assert result["tip_reuse"]["status"] == "unused"
+    assert status["tips"]["1"]["status"] == "unused"
+
+
+def test_s09_single_use_tip_is_quarantined_after_uncertain_take(
+    tmp_path,
+    monkeypatch,
+):
+    device = make_pipetting_device(
+        tip_reuse_state_path=str(tmp_path / "tip_state.json"),
+    )
+    device.initialize_reusable_tip_inventory()
+
+    def fake_run_process(*, process, **_kwargs):
+        if process == 5:
+            return {"success": True, "data": {"process": 5}}
+        return {
+            "success": False,
+            "message": "吸液失败",
+            "data": {"process": process},
+        }
+
+    monkeypatch.setattr(device, "run_process", fake_run_process)
+
+    result = device.add_liquid_with_reusable_tip(
+        liquid_station_index=1,
+        solvent_batch_id="batch-a",
+        volume=10,
+        reuse_tip=False,
+    )
+    status = device.get_reusable_tip_status()["data"]
+
+    assert result["success"] is False
+    assert result["tip_reuse"]["status"] == "unknown"
+    assert status["tips"]["1"]["status"] == "unknown"
+    assert status["solvents"] == {}
 
 
 def test_s09_reusable_tip_action_does_not_reserve_a_density_tip(tmp_path):
@@ -549,14 +663,32 @@ def test_s09_multiple_liquids_only_run_addition_processes(tmp_path):
     result = device.add_liquid_with_reusable_tip(
         liquid_count=2,
         liquid_additions=[
-            {"liquid_station_index": 1, "solvent_batch_id": "water", "volume": 1},
-            {"liquid_station_index": 2, "solvent_batch_id": "ethanol", "volume": 2},
+            {
+                "liquid_station_index": 1,
+                "solvent_batch_id": "water",
+                "volume": 1,
+                "reuse_tip": True,
+            },
+            {
+                "liquid_station_index": 2,
+                "solvent_batch_id": "ethanol",
+                "volume": 2,
+                "reuse_tip": False,
+            },
         ],
     )
 
     assert result["success"] is True
     assert result["data"]["liquid_count"] == 2
     assert result["message"] == "S09 已完成 2 次加液"
+    assert (
+        result["data"]["liquid_results"][0]["data"]["tip_reuse"]["reuse_tip"]
+        is True
+    )
+    assert (
+        result["data"]["liquid_results"][1]["data"]["tip_reuse"]["reuse_tip"]
+        is False
+    )
     assert [step["data"]["process"] for item in result["data"]["liquid_results"] for step in item["steps"]] == [
         5, 7, 8, 6,
         5, 7, 8, 6,

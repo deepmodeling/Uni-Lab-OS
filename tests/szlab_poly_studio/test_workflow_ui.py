@@ -955,6 +955,11 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         "volume",
         "volume_unit",
         "skip_level_check",
+        "reuse_tip",
+        "liquid_count",
+        "liquid_additions",
+        "initialize_tip_inventory",
+        "initial_used_tip_count",
     ]
     density_snapshot = collect_snapshot_variables(
         "measure_density",

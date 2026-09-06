@@ -104,7 +104,7 @@ def test_template_rejects_invalid_dependencies(dependencies):
         )
 
 
-def test_szlab_workspace_defines_eighteen_task_dependency_graph():
+def test_szlab_workspace_defines_seventeen_task_dependency_graph():
     project_root = Path(__file__).resolve().parents[2]
     sidecar = json.loads(
         (
@@ -117,7 +117,7 @@ def test_szlab_workspace_defines_eighteen_task_dependency_graph():
     templates = response.workspace.templates
     template_ids = [template.id for template in templates]
 
-    assert len(templates) == 18
+    assert len(templates) == 17
     assert response.workspace.scheduled_template_ids == template_ids
     assert [
         [(dependency.template_id, dependency.node_id) for dependency in template.dependencies]
@@ -137,13 +137,12 @@ def test_szlab_workspace_defines_eighteen_task_dependency_graph():
         [(template_ids[10], None)],
         [(template_ids[10], None)],
         [(template_ids[12], None)],
-        [(template_ids[11], None)],
-        [(template_ids[13], None), (template_ids[14], None)],
-        [(template_ids[15], "w07_pour_beaker_s08")],
-        [(template_ids[15], None), (template_ids[16], None)],
+        [(template_ids[13], None), (template_ids[11], None)],
+        [(template_ids[14], "w07_pour_beaker_s08")],
+        [(template_ids[14], None), (template_ids[15], None)],
     ]
-    assert templates[15].node_ids == [
-        "w07_pick_beaker_s05_after_density",
+    assert templates[14].node_ids == [
+        "w06_pick_beaker_s09_after_density",
         "w07_pour_beaker_s08",
         "w07_place_beaker_s11",
     ]

@@ -231,29 +231,11 @@
         ]
       },
       {
-        "id": "task_f_b087e3046afc4bcfb460c380848412ed",
-        "name": "密度后回 S05 旋转拍照（不判断溶解）",
+        "id": "task_g_84ba71f7736749a2bf3c7cac7a1548ee",
+        "name": "S09 取烧杯、S08 倒液并放到 S11",
         "workflow_path": "szlab_robot_action_workflow.json",
         "node_ids": [
           "w06_pick_beaker_s09_after_density",
-          "w06_place_beaker_s05_after_density",
-          "w06_take_photo_s05_after_density"
-        ],
-        "resources": [],
-        "input_triggers": [],
-        "output_triggers": [],
-        "dependencies": [
-          {
-            "template_id": "task_c_2bfd4697cf5d459ba36b78371135a3b9"
-          }
-        ]
-      },
-      {
-        "id": "task_g_84ba71f7736749a2bf3c7cac7a1548ee",
-        "name": "S05 取烧杯、S08 倒液并放到 S11",
-        "workflow_path": "szlab_robot_action_workflow.json",
-        "node_ids": [
-          "w07_pick_beaker_s05_after_density",
           "w07_pour_beaker_s08",
           "w07_place_beaker_s11"
         ],
@@ -265,7 +247,7 @@
             "template_id": "task_e_5fbb2f3ca4ec48858235973f215790d1"
           },
           {
-            "template_id": "task_f_b087e3046afc4bcfb460c380848412ed"
+            "template_id": "task_c_2bfd4697cf5d459ba36b78371135a3b9"
           }
         ]
       },
@@ -324,7 +306,6 @@
       "task_c_2bfd4697cf5d459ba36b78371135a3b9",
       "task_d_da41b87829a24cbba9262ff288433bc9",
       "task_e_5fbb2f3ca4ec48858235973f215790d1",
-      "task_f_b087e3046afc4bcfb460c380848412ed",
       "task_g_84ba71f7736749a2bf3c7cac7a1548ee",
       "task_h_340aaf8e2e49421da313ee156f2f03da",
       "task_i_f24ab4e3b41a45d7a27ab12db94a878c"

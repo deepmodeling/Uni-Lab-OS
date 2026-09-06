@@ -382,7 +382,7 @@ def test_node_dependency_waits_until_target_action_finishes():
     }
 
 
-def test_szlab_eighteen_task_flow_reaches_both_parallel_branches():
+def test_szlab_seventeen_task_flow_reaches_both_parallel_branches():
     project_root = Path(__file__).resolve().parents[2]
     sidecar = json.loads(
         (
@@ -449,17 +449,15 @@ def test_szlab_eighteen_task_flow_reaches_both_parallel_branches():
 
     replace_instance(11, "completed")
     assert ready_instance_ids() == [instances[14].id]
-    replace_instance(14, "completed")
-    assert ready_instance_ids() == [instances[15].id]
 
     replace_instance(
-        15,
+        14,
         "running",
         execution_state={
             "cursor": 1,
             "records": [
                 {
-                    "node_id": "w07_pick_beaker_s05_after_density",
+                    "node_id": "w06_pick_beaker_s09_after_density",
                     "attempt": 1,
                     "execution_id": "pick-beaker-1",
                     "status": "succeeded",
@@ -472,13 +470,13 @@ def test_szlab_eighteen_task_flow_reaches_both_parallel_branches():
     assert ready_instance_ids() == []
 
     replace_instance(
-        15,
+        14,
         "running",
         execution_state={
             "cursor": 2,
             "records": [
                 {
-                    "node_id": "w07_pick_beaker_s05_after_density",
+                    "node_id": "w06_pick_beaker_s09_after_density",
                     "attempt": 1,
                     "execution_id": "pick-beaker-1",
                     "status": "succeeded",
@@ -496,17 +494,17 @@ def test_szlab_eighteen_task_flow_reaches_both_parallel_branches():
             ],
         },
     )
-    assert ready_instance_ids() == [instances[16].id]
-    assert templates[15].node_ids[instances[15].execution_state.cursor] == (
+    assert ready_instance_ids() == [instances[15].id]
+    assert templates[14].node_ids[instances[14].execution_state.cursor] == (
         "w07_place_beaker_s11"
     )
 
-    replace_instance(16, "running")
+    replace_instance(15, "running")
+    assert ready_instance_ids() == []
+    replace_instance(14, "completed")
     assert ready_instance_ids() == []
     replace_instance(15, "completed")
-    assert ready_instance_ids() == []
-    replace_instance(16, "completed")
-    assert ready_instance_ids() == [instances[17].id]
+    assert ready_instance_ids() == [instances[16].id]
 
 
 def test_reports_missing_dependency_template_node_and_instance():

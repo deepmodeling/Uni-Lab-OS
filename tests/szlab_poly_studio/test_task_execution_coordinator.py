@@ -269,13 +269,13 @@ def test_s08_occupied_station_only_allows_owner_until_pick_succeeds():
         workspace,
         instance_id="sample-a-pour",
         sample_id="sample-a",
-        node_id="w07_pick_beaker_s05_after_density",
+        node_id="w06_pick_beaker_s09_after_density",
     )
     assert not _temporary_s08_trigger_satisfied(
         workspace,
         instance_id="sample-b-pour",
         sample_id="sample-b",
-        node_id="w07_pick_beaker_s05_after_density",
+        node_id="w06_pick_beaker_s09_after_density",
     )
     assert not _temporary_s08_trigger_satisfied(
         workspace,

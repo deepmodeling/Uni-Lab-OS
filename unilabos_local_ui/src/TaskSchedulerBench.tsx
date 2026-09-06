@@ -94,13 +94,14 @@ type LiquidAddition = {
   liquid_station_index: number | string;
   solvent_batch_id: string;
   volume: number | string;
+  reuse_tip: boolean;
 };
 
 const S07_POWDER_PARAMETERS = new Set([
   'coarse_position', 'fine_position', 'target_weight', 'recipe_name', 'params_json', 'powder_count', 'powder_additions',
 ]);
 const S09_LIQUID_PARAMETERS = new Set([
-  'liquid_station_index', 'solvent_batch_id', 'volume', 'liquid_count', 'liquid_additions',
+  'liquid_station_index', 'solvent_batch_id', 'volume', 'reuse_tip', 'liquid_count', 'liquid_additions',
   'initialize_tip_inventory', 'initial_used_tip_count',
 ]);
 
@@ -147,9 +148,10 @@ function liquidAdditionsFromValues(values: Record<string, unknown>): LiquidAddit
     liquid_station_index: Number(values.liquid_station_index ?? 1),
     solvent_batch_id: String(values.solvent_batch_id ?? ''),
     volume: Number(values.volume ?? 1),
+    reuse_tip: true,
   }];
   const count = Math.max(1, Math.floor(Number(values.liquid_count) || 1));
-  while (additions.length < count) additions.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
+  while (additions.length < count) additions.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '', reuse_tip: true });
   return additions;
 }
 
@@ -923,7 +925,7 @@ export function TaskSchedulerBench(props: Props) {
                         <input disabled={!parametersEditable} min={1} onChange={(event) => {
                           const count = Math.max(1, Math.floor(Number(event.target.value) || 1));
                           const next = additions.slice(0, count);
-                          while (next.length < count) next.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
+                          while (next.length < count) next.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '', reuse_tip: true });
                           updateLiquidAdditions(node.templateNodeId, next);
                         }} step={1} type="number" value={additions.length} />
                       </label>
@@ -941,6 +943,12 @@ export function TaskSchedulerBench(props: Props) {
                               ? { ...item, [field]: event.target.value } : item))}
                             step={field === 'liquid_station_index' ? 1 : 'any'} type={type} value={String(addition[field] ?? '')} />
                         </label>)}
+                        <label>
+                          <span>复用此液体 TIP · 取消勾选时使用新 TIP</span>
+                          <input checked={addition.reuse_tip} disabled={!parametersEditable}
+                            onChange={(event) => updateLiquidAdditions(node.templateNodeId, additions.map((item, index) => index === additionIndex
+                              ? { ...item, reuse_tip: event.target.checked } : item))} type="checkbox" />
+                        </label>
                       </fieldset>)}
                       <label>
                         <span>执行前初始化 TIP 库存 · 会覆盖当前 TIP 使用和绑定记录</span>

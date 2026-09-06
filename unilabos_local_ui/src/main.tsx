@@ -182,6 +182,7 @@ type CanvasLiquidAddition = {
   liquid_station_index: number | string;
   solvent_batch_id: string;
   volume: number | string;
+  reuse_tip: boolean;
 };
 
 type CanvasS09TipStatus = {
@@ -200,7 +201,7 @@ const CANVAS_S07_POWDER_PARAMETERS = new Set([
   'coarse_position', 'fine_position', 'target_weight', 'recipe_name', 'params_json', 'powder_count', 'powder_additions',
 ]);
 const CANVAS_S09_LIQUID_PARAMETERS = new Set([
-  'liquid_station_index', 'solvent_batch_id', 'volume', 'liquid_count', 'liquid_additions',
+  'liquid_station_index', 'solvent_batch_id', 'volume', 'reuse_tip', 'liquid_count', 'liquid_additions',
   'initialize_tip_inventory', 'initial_used_tip_count',
 ]);
 
@@ -240,9 +241,10 @@ function canvasLiquidAdditions(params: Record<string, unknown>): CanvasLiquidAdd
     liquid_station_index: Number(params.liquid_station_index ?? 1),
     solvent_batch_id: String(params.solvent_batch_id ?? ''),
     volume: Number(params.volume ?? 1),
+    reuse_tip: true,
   }];
   const count = Math.max(1, Math.floor(Number(params.liquid_count) || 1));
-  while (additions.length < count) additions.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
+  while (additions.length < count) additions.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '', reuse_tip: true });
   return additions;
 }
 
@@ -5146,7 +5148,7 @@ function App() {
                       <input min={1} onChange={(event) => {
                         const count = Math.max(1, Math.floor(Number(event.currentTarget.value) || 1));
                         const next = additions.slice(0, count);
-                        while (next.length < count) next.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '' });
+                        while (next.length < count) next.push({ liquid_station_index: 1, solvent_batch_id: '', volume: '', reuse_tip: true });
                         updateAdditions(next);
                       }} step={1} type="number" value={additions.length} />
                       <small>本次加液动作需要依次加入的液体数量。</small>
@@ -5170,6 +5172,12 @@ function App() {
                           }}
                           step={field === 'liquid_station_index' ? 1 : 'any'} type={type} value={String(addition[field] ?? '')} />
                       </label>)}
+                      <label><span className="param-label">复用此液体 TIP</span>
+                        <input checked={addition.reuse_tip}
+                          onChange={(event) => updateAdditions(additions.map((item, index) => index === additionIndex
+                            ? { ...item, reuse_tip: event.currentTarget.checked } : item))} type="checkbox" />
+                        <small>勾选时复用同工位、同溶剂批次绑定的 TIP；取消勾选时使用新 TIP。</small>
+                      </label>
                     </fieldset>)}
                     <label><span className="param-label">执行前初始化 TIP 库存</span>
                       <input checked={Boolean(editingNode.data.params.initialize_tip_inventory)}

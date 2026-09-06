@@ -925,6 +925,74 @@ def test_template_api_persists_task_and_node_dependencies(tmp_path):
     assert rejected.json()["detail"]["code"] == "invalid_task_dependencies"
 
 
+def test_template_dependency_hot_update_applies_during_active_run(tmp_path):
+    client = _client_with_workflow(tmp_path)
+    workspace = {
+        "workflow_path": "demo.json",
+        "templates": [
+            _template("transfer", input_triggers=[], output_triggers=[]),
+            _template("density", input_triggers=[], output_triggers=[]),
+            _template("vial", input_triggers=[], output_triggers=[]),
+        ],
+        "task_instances": [
+            {
+                "id": "sample-a-transfer",
+                "template_id": "transfer",
+                "status": "completed",
+                "sample_id": "Sample A",
+                "order": 0,
+                "started_at": 1,
+                "finished_at": 2,
+                "execution_state": {"cursor": 1},
+            },
+            {
+                "id": "sample-a-density",
+                "template_id": "density",
+                "status": "running",
+                "sample_id": "Sample A",
+                "order": 1,
+                "started_at": 3,
+            },
+            {
+                "id": "sample-a-vial",
+                "template_id": "vial",
+                "status": "pending",
+                "sample_id": "Sample A",
+                "order": 2,
+            },
+        ],
+        "scheduler_paused": False,
+    }
+    saved = client.put(
+        "/workspaces",
+        json={"expected_version": 0, "workspace": workspace},
+    )
+    assert saved.status_code == 200
+
+    updated = client.patch(
+        "/templates/vial",
+        json={
+            "workflow_path": "demo.json",
+            "expected_version": 1,
+            "dependencies": [{"template_id": "transfer"}],
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["workspace"]["scheduler_paused"] is False
+
+    advanced = client.post(
+        "/schedule:advance",
+        json={"workflow_path": "demo.json", "expected_version": 2},
+    )
+    assert advanced.status_code == 200
+    instances = {
+        item["id"]: item
+        for item in advanced.json()["workspace"]["task_instances"]
+    }
+    assert instances["sample-a-density"]["status"] == "running"
+    assert instances["sample-a-vial"]["status"] == "running"
+
+
 def test_delete_templates_is_atomic_and_cascades_related_state(tmp_path):
     client = _client_with_workflow(tmp_path)
     for version, template_id in enumerate(("prepare", "measure")):

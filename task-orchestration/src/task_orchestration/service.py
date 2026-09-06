@@ -158,6 +158,8 @@ class WorkspaceService:
         output_triggers: list[Trigger] | None = None,
         dependencies: list[TaskDependency] | None = None,
     ):
+        """热更新共享模板；未启动实例在下一轮调度采用新的依赖。"""
+
         def operation(workspace: Workspace) -> Workspace:
             template = self._template(workspace, template_id)
             updates = {}

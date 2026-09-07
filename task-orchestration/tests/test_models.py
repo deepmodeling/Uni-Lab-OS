@@ -119,6 +119,24 @@ def test_szlab_workspace_defines_seventeen_task_dependency_graph():
 
     assert len(templates) == 17
     assert response.workspace.scheduled_template_ids == template_ids
+    s04_to_s05 = next(
+        template
+        for template in templates
+        if template.node_ids == [
+            "w06_pick_beaker_s04",
+            "w06_place_beaker_s05",
+        ]
+    )
+    assert [trigger.model_dump(mode="json") for trigger in s04_to_s05.input_triggers] == [
+        {
+            "kind": "opc",
+            "config": {
+                "plc_device_id": "szlab_poly_plc",
+                "variable": "传感器状态_上位机[3].NO[0]",
+                "value": False,
+            },
+        }
+    ]
     assert [
         [(dependency.template_id, dependency.node_id) for dependency in template.dependencies]
         for template in templates

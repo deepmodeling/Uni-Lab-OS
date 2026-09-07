@@ -140,7 +140,16 @@
           "w06_place_beaker_s05"
         ],
         "resources": [],
-        "input_triggers": [],
+        "input_triggers": [
+          {
+            "kind": "opc",
+            "config": {
+              "plc_device_id": "szlab_poly_plc",
+              "variable": "传感器状态_上位机[3].NO[0]",
+              "value": false
+            }
+          }
+        ],
         "output_triggers": [],
         "dependencies": [
           {

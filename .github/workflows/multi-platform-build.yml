@@ -199,7 +199,7 @@ jobs:
 
       - name: Upload conda package artifacts
         if: steps.should_build.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: conda-package-${{ matrix.ros_distro }}-${{ matrix.platform }}
           path: conda-packages-temp

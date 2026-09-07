@@ -176,6 +176,7 @@ type Props = {
   onClear: () => void;
   onResetProgress: () => void;
   resetProgressDisabled: boolean;
+  resetProgressRecoveryRequired: boolean;
   onClearTemplates: () => void;
   clearTemplatesDisabled: boolean;
   templateActionsDisabled: boolean;
@@ -626,10 +627,16 @@ export function TaskSchedulerBench(props: Props) {
                   className="scheduler-btn scheduler-btn--ghost"
                   disabled={props.resetProgressDisabled}
                   onClick={props.onResetProgress}
-                  title={props.resetProgressDisabled ? '请先暂停派发并等待当前动作完成' : '保留 Task、顺序和参数，仅清除执行进度'}
+                  title={
+                    props.resetProgressDisabled
+                      ? '请先暂停派发'
+                      : props.resetProgressRecoveryRequired
+                        ? '确认真机动作已停止且 Task OPC 已断开后，清除残留执行并重置'
+                        : '保留 Task、顺序和参数，仅清除执行进度'
+                  }
                   type="button"
                 >
-                  重置并复用
+                  {props.resetProgressRecoveryRequired ? '清除残留并复用' : '重置并复用'}
                 </button>
                 <button className="scheduler-btn scheduler-btn--danger" onClick={props.onClear} type="button">清空队列</button>
               </div>

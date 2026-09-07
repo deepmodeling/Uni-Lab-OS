@@ -2382,11 +2382,17 @@ function App() {
 
   const resetTaskQueueProgress = useCallback(() => {
     if (!taskInstancesRef.current.length) return;
-    if (isSchedulerRunning || isTaskExecutionDraining || hasActiveServerExecution) {
-      showCanvasToast('请先暂停派发并等待当前动作完成');
+    if (isSchedulerRunning) {
+      showCanvasToast('请先暂停派发');
       return;
     }
-    if (!window.confirm(
+    const recoveryRequired = isTaskExecutionDraining || hasActiveServerExecution;
+    if (recoveryRequired) {
+      const confirmation = window.prompt(
+        '检测到残留在途动作。只有确认真机动作已停止且 Task OPC 已断开后才能恢复。请输入“已停止并断开”继续：',
+      );
+      if (confirmation?.trim() !== '已停止并断开') return;
+    } else if (!window.confirm(
       `将当前 ${taskInstancesRef.current.length} 个 Task 全部恢复为未派发状态；Task、样品顺序和参数保持不变。是否继续？`,
     )) {
       return;
@@ -2395,10 +2401,63 @@ function App() {
     setTaskExecutionWorkflow(null);
     setTaskExecutionStatus(createTaskExecutionStatus());
     setSelectedTaskInstanceId(null);
-    void mutateTaskWorkspace((version) => taskApiRef.current.resetInstancesProgress(
-      taskWorkspacePath,
-      version,
-    ));
+    if (!recoveryRequired) {
+      void mutateTaskWorkspace((version) => taskApiRef.current.resetInstancesProgress(
+        taskWorkspacePath,
+        version,
+      ));
+      return;
+    }
+    void runTaskSchedulerTransition(
+      taskSchedulerTransitionRef,
+      setIsSchedulerTransitioning,
+      async () => {
+        let resetSucceeded = false;
+        await mutateTaskWorkspace(async () => {
+          let latest = await taskApiRef.current.getWorkspace(taskWorkspacePath);
+          if (!latest.workspace.scheduler_paused) {
+            throw new Error('服务端仍在派发，请先暂停后再清除残留动作');
+          }
+          const activeExecutions = latest.workspace.task_instances.flatMap((instance) => {
+            const nodeId = instance.execution_state?.active_node_id;
+            const executionId = instance.execution_state?.active_execution_id;
+            if (!nodeId || !executionId) return [];
+            const hasRunningRecord = (instance.execution_state?.records || []).some(
+              (record) => (
+                record.node_id === nodeId
+                && record.execution_id === executionId
+                && record.status === 'running'
+              ),
+            );
+            if (!hasRunningRecord) {
+              throw new Error(`Task ${instance.sample_id} 的残留动作记录不一致，未执行强制清除`);
+            }
+            return [{ instanceId: instance.id, nodeId, executionId }];
+          });
+          for (const execution of activeExecutions) {
+            latest = await taskApiRef.current.failAction(
+              taskWorkspacePath,
+              latest.version,
+              execution.instanceId,
+              execution.nodeId,
+              execution.executionId,
+              {
+                type: 'ManualRecovery',
+                code: 'manual_stale_action_clear',
+                message: '用户在前端确认真机动作已停止且 Task OPC 已断开；清除残留执行并重置复用',
+              },
+            );
+          }
+          const response = await taskApiRef.current.resetInstancesProgress(
+            taskWorkspacePath,
+            latest.version,
+          );
+          resetSucceeded = true;
+          return response;
+        });
+        if (resetSucceeded) showCanvasToast('已清除残留执行，Task 已重置并可复用');
+      },
+    );
   }, [
     hasActiveServerExecution,
     isSchedulerRunning,
@@ -3279,7 +3338,11 @@ function App() {
     || hasActiveServerExecution
   );
   useEffect(() => {
-    if (!shouldRunTaskExecutionLoop || (!isTaskExecutionDraining && !hasActiveServerExecution && !taskExecutionWorkflow)) return;
+    if (
+      isSchedulerTransitioning
+      || !shouldRunTaskExecutionLoop
+      || (!isTaskExecutionDraining && !hasActiveServerExecution && !taskExecutionWorkflow)
+    ) return;
     const controller = taskExecutionControllerRef.current;
     if (!controller) return;
     if (!controller.isRunning()) controller.start();
@@ -3293,6 +3356,7 @@ function App() {
     return () => window.clearInterval(timer);
   }, [
     hasActiveServerExecution,
+    isSchedulerTransitioning,
     isTaskExecutionDraining,
     shouldRunTaskExecutionLoop,
     taskExecutionWorkflow,
@@ -4001,13 +4065,12 @@ function App() {
           onInspectDispatchIssue={inspectTaskDispatchIssue}
           onResetProgress={resetTaskQueueProgress}
           onRetryDispatchPreflight={retryTaskDispatchPreflight}
+          resetProgressRecoveryRequired={isTaskExecutionDraining || hasActiveServerExecution}
           resetProgressDisabled={
             !taskInstances.length
             || isTaskWorkspaceLoading
             || isSchedulerRunning
             || isSchedulerTransitioning
-            || isTaskExecutionDraining
-            || hasActiveServerExecution
             || taskMutationInFlightCount > 0
           }
           onClearTemplates={clearTaskTemplates}

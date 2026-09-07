@@ -406,6 +406,23 @@ export function createTaskOrchestrationClient(options: ClientOptions = {}) {
         expected_version: expectedVersion,
       }))
     ),
+    failAction: (
+      workflowPath: string,
+      expectedVersion: number,
+      instanceId: string,
+      nodeId: string,
+      executionId: string,
+      error: Record<string, unknown>,
+    ) => (
+      request('/actions:fail', body({
+        workflow_path: workflowPath,
+        expected_version: expectedVersion,
+        instance_id: instanceId,
+        node_id: nodeId,
+        execution_id: executionId,
+        error,
+      }))
+    ),
     moveInstance: (workflowPath: string, expectedVersion: number, instanceId: string, order: number) => (
       request(`/instances/${encodeURIComponent(instanceId)}:move`, body({
         workflow_path: workflowPath,

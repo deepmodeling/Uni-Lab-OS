@@ -10,13 +10,18 @@ const benchSource = await readFile(new URL('../src/TaskSchedulerBench.tsx', impo
 
 assert.match(
   benchSource,
-  /暂停后续派发[\s\S]*?重置并复用[\s\S]*?清空队列/,
+  /暂停后续派发[\s\S]*?清除残留并复用[\s\S]*?清空队列/,
   '重置并复用入口必须位于暂停和清空之间',
 );
 assert.match(
   mainSource,
-  /const resetTaskQueueProgress = useCallback[\s\S]*?hasActiveServerExecution[\s\S]*?resetInstancesProgress/,
-  '存在活动动作时必须阻止重置，并使用独立原子接口',
+  /const resetTaskQueueProgress = useCallback[\s\S]*?已停止并断开[\s\S]*?failAction[\s\S]*?resetInstancesProgress/,
+  '存在残留动作时必须强确认，先标记失败再重置',
+);
+assert.doesNotMatch(
+  mainSource,
+  /resetProgressDisabled=\{[\s\S]{0,300}(?:isTaskExecutionDraining|hasActiveServerExecution)/,
+  '服务端已暂停时，残留动作不应永久锁死恢复入口',
 );
 
 const transpiled = ts.transpileModule(apiSource, {
@@ -57,4 +62,25 @@ assert.equal(requests[0].url, 'http://scheduler.test/api/v1/instances:reset-prog
 assert.deepEqual(
   JSON.parse(requests[0].init.body),
   { workflow_path: '/tmp/demo.json', expected_version: 5 },
+);
+
+await client.failAction(
+  '/tmp/demo.json',
+  6,
+  'instance-1',
+  'node-1',
+  'execution-1',
+  { code: 'manual_stale_action_clear' },
+);
+assert.equal(requests[1].url, 'http://scheduler.test/api/v1/actions:fail');
+assert.deepEqual(
+  JSON.parse(requests[1].init.body),
+  {
+    workflow_path: '/tmp/demo.json',
+    expected_version: 6,
+    instance_id: 'instance-1',
+    node_id: 'node-1',
+    execution_id: 'execution-1',
+    error: { code: 'manual_stale_action_clear' },
+  },
 );

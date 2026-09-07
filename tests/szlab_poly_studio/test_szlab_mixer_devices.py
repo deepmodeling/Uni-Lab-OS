@@ -1610,7 +1610,12 @@ def test_szlab_robot_gripper_check_wraps_pick_and_place(
     before_variable = GRIPPER_POSITION_VARIABLES.get(before_position, before_position)
     after_variable = GRIPPER_POSITION_VARIABLES.get(after_position, after_position)
     gateway = FakeGripperRobotPlcGateway(
-        sensor_values={station_sensor: station_value, "S041准备信号": True},
+        sensor_values={
+            station_sensor: station_value,
+            "S041准备信号": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        },
         gripper_before={GRIPPER_STATUS_VARIABLE: 1, before_variable: True},
         gripper_after={GRIPPER_STATUS_VARIABLE: 1, after_variable: True},
     )
@@ -1627,7 +1632,11 @@ def test_szlab_robot_gripper_check_wraps_pick_and_place(
 
 def test_szlab_robot_gripper_drop_rejects_action_before_writing():
     gateway = FakeGripperRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        },
         gripper_before={GRIPPER_STATUS_VARIABLE: 3, GRIPPER_ORIGIN_VARIABLE: True},
         gripper_after={},
     )
@@ -1667,7 +1676,11 @@ def test_szlab_robot_task_specs_cover_xlsx_task_numbers_once():
 
 def test_szlab_robot_s04_pick_requires_material_and_resets_pc_to_plc_variables():
     gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        },
         completion_values=[8],
     )
     device = SzlabMixerRobotDevice()
@@ -1869,7 +1882,13 @@ def test_opc_wait_event_writer_is_thread_local():
 
 
 def test_szlab_robot_s04_pick_rejects_empty_position_without_writing_task():
-    gateway = FakeRobotPlcGateway(sensor_values={"传感器状态_上位机[2].NO[10]": False})
+    gateway = FakeRobotPlcGateway(
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": False,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        }
+    )
     device = SzlabMixerRobotDevice()
     device.set_plc_gateway(gateway)
 
@@ -1881,10 +1900,42 @@ def test_szlab_robot_s04_pick_rejects_empty_position_without_writing_task():
     assert gateway.writes == []
 
 
+@pytest.mark.parametrize(
+    ("s05_occupied", "s05_ready", "blocked_variable"),
+    [
+        (True, True, "传感器状态_上位机[3].NO[0]"),
+        (False, False, "S05准备信号"),
+    ],
+)
+def test_szlab_robot_s04_pick_waits_for_s05_destination_before_writing_task(
+    s05_occupied,
+    s05_ready,
+    blocked_variable,
+):
+    gateway = FakeRobotPlcGateway(
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": s05_occupied,
+            "S05准备信号": s05_ready,
+        }
+    )
+    device = SzlabMixerRobotDevice()
+    device.set_plc_gateway(gateway)
+
+    result = device.submit_pick_from_s04(position=1)
+
+    assert result["success"] is False
+    assert result["message"] == "S04 pick 前置传感器状态等待失败"
+    assert result["sensor_precheck"]["mismatches"][blocked_variable]["actual"] is not None
+    assert gateway.writes == []
+
+
 def test_szlab_robot_does_not_use_unrelated_transfer_sensors():
     gateway = FakeRobotPlcGateway(
         sensor_values={
             "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
             "传感器状态_上位机[3].NO[6]": True,
         }
     )
@@ -1913,6 +1964,8 @@ def test_szlab_robot_reports_verification_failed_without_resubmitting_task():
     gateway = NoTransitionGateway(
         sensor_values={
             "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
         }
     )
     device = SzlabMixerRobotDevice()
@@ -1940,7 +1993,11 @@ def test_szlab_robot_waits_until_task_params_read_back_nonzero():
             return super().read_variable(name, use_cache=use_cache)
 
     gateway = ZeroReadbackGateway(
-        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        },
     )
     device = SzlabMixerRobotDevice()
     device.set_plc_gateway(gateway)
@@ -2435,7 +2492,11 @@ def test_szlab_robot_s09_density_beaker_reuses_pick_place_tasks_with_product_typ
 
 def test_szlab_robot_waits_for_home_signal_before_pc_to_plc_write():
     gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        },
         home_value=False,
     )
     original_wait = gateway.wait_variable_equal
@@ -2459,7 +2520,11 @@ def test_szlab_robot_waits_for_home_signal_before_pc_to_plc_write():
 
 def test_szlab_robot_can_skip_only_home_signal(monkeypatch):
     gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        },
         home_value=False,
     )
     device = SzlabMixerRobotDevice()
@@ -2506,7 +2571,11 @@ def test_szlab_robot_can_skip_configured_sensor_precheck(monkeypatch):
 
 def test_szlab_robot_resets_written_pc_to_plc_variables_after_completion_wait_failure():
     gateway = FakeRobotPlcGateway(
-        sensor_values={"传感器状态_上位机[2].NO[10]": True},
+        sensor_values={
+            "传感器状态_上位机[2].NO[10]": True,
+            "传感器状态_上位机[3].NO[0]": False,
+            "S05准备信号": True,
+        },
         completion_values=[0],
     )
     device = SzlabMixerRobotDevice()

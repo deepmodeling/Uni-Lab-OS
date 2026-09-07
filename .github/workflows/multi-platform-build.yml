@@ -116,7 +116,7 @@ jobs:
         shell: bash -l {0}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # 如果是 workflow_run 触发，使用触发 CI Check 的 commit
           ref: ${{ github.event.workflow_run.head_sha || github.event.release.tag_name || github.ref }}

@@ -132,6 +132,14 @@ ATOMIC_START_NODES = [
         legacy_route_compatible=False,
     ),
     WorkflowNode(
+        uuid="w06_pick_beaker_s04",
+        name="S04 取烧杯",
+        device_name="szlab_mixer_robot",
+        method="submit_pick_from_s04",
+        param={"position": 1},
+        legacy_route_compatible=False,
+    ),
+    WorkflowNode(
         uuid="w05_pick_sample_vial_s03",
         name="S03 取样品瓶",
         device_name="szlab_mixer_robot",
@@ -510,7 +518,7 @@ def test_same_sample_s04_position_reads_wrapped_runtime_place_result():
 
 
 @pytest.mark.parametrize("node", ATOMIC_START_NODES, ids=lambda node: node.uuid)
-def test_first_eight_atomic_tasks_require_all_start_signals(node):
+def test_atomic_tasks_require_all_start_signals(node):
     conditions = _atomic_start_signal_conditions(node)
     plc_values = dict(conditions)
     expected_reads = set(conditions)
@@ -539,6 +547,26 @@ def test_first_eight_atomic_tasks_require_all_start_signals(node):
         {"task_instances": []},
         node=node,
         devices={"szlab_poly_plc": FakeTriggerPlc(blocked_values)},
+    )
+
+
+def test_s04_to_s05_waits_while_s05_is_occupied():
+    node = next(
+        item for item in ATOMIC_START_NODES
+        if item.uuid == "w06_pick_beaker_s04"
+    )
+    conditions = _atomic_start_signal_conditions(node)
+
+    assert conditions == {
+        "传感器状态_上位机[2].NO[10]": True,
+        "传感器状态_上位机[3].NO[0]": False,
+        "S05准备信号": True,
+    }
+    conditions["传感器状态_上位机[3].NO[0]"] = True
+    assert not _atomic_task_start_trigger_satisfied(
+        {"task_instances": []},
+        node=node,
+        devices={"szlab_poly_plc": FakeTriggerPlc(conditions)},
     )
 
 

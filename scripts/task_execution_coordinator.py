@@ -27,6 +27,9 @@ from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.sensor
     s04_ready_var,
     s04_status_var,
 )
+from unilabos.devices.workstation.szlab_poly_studio.s05_photoshotting.sensors import (
+    S05_READY,
+)
 from unilabos.devices.workstation.szlab_poly_studio.s06_pump.sensors import (
     ADDITION_BEAKER_SENSOR,
     S06_ALLOW_PROCESS_VAR,
@@ -45,6 +48,7 @@ from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensor
     s09_remaining_volume_var,
 )
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import (
+    S05_MATERIAL_SENSOR,
     product_slot_sensor,
 )
 
@@ -876,6 +880,13 @@ def _atomic_start_signal_conditions(
             s04_material_sensor_var(position): True,
             s04_status_var(position): 1,
             s04_allow_var(position): True,
+        }
+    if node.uuid == "w06_pick_beaker_s04":
+        position = int(params.get("position", 1))
+        return {
+            s04_material_sensor_var(position): True,
+            S05_MATERIAL_SENSOR: False,
+            S05_READY: True,
         }
     if node.uuid == "w05_pick_sample_vial_s03":
         position = params.get("position", "1-1")

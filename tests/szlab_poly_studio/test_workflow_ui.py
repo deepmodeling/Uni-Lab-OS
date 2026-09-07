@@ -899,7 +899,11 @@ def test_szlab_robot_action_workflow_preset_includes_s03_to_s07_devices():
         preset.debug_config["skip_robot_precheck_variables"]
         == robot_action_preset.debug_config["skip_robot_precheck_variables"]
     )
-    assert preset.debug_config["env"]["SKIP_SENSOR_PRECHECK"] == "1"
+    assert "SKIP_SENSOR_PRECHECK" not in preset.debug_config.get("env", {})
+    assert (
+        "传感器状态_上位机[3].NO[0]"
+        not in preset.debug_config["skip_robot_precheck_variables"]
+    )
     assert runtime_config.device_factory.devices == {
         "szlab_poly_plc": "unilabos.devices.workstation.szlab_poly_studio.plc.SZLabPolyPLCDevice",
         "szlab_mixer_robot": "unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot.SzlabMixerRobotDevice",
@@ -1143,7 +1147,7 @@ def test_szlab_robot_action_workflow_does_not_auto_apply_debug_sensor_skips(monk
     assert "SKIP_ROBOT_PRECHECK_VARIABLES" not in os.environ
 
 
-def test_szlab_robot_action_workflow_explicit_debug_skips_s03_pick_sensor_gate(
+def test_szlab_robot_action_workflow_explicit_debug_keeps_sensor_gates_enabled(
     monkeypatch,
 ):
     from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import (
@@ -1155,11 +1159,34 @@ def test_szlab_robot_action_workflow_explicit_debug_skips_s03_pick_sensor_gate(
     apply_preset_debug_config("szlab_robot_action_workflow")
 
     device = SzlabMixerRobotDevice(auto_connect=False)
+    device._read_variable = lambda *_args, **_kwargs: False
     result = device._ensure_sensor_gate(
-        "传感器状态_上位机[0].NO[6]", True, "S03 取料源位必须有物料"
+        "传感器状态_上位机[3].NO[0]", True, "S05 必须有物料"
     )
 
-    assert result is None
+    assert result is not None
+    assert result["actual"] is False
+
+
+def test_s05_material_gate_cannot_be_skipped_by_debug_environment(monkeypatch):
+    from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot import (
+        SzlabMixerRobotDevice,
+    )
+
+    monkeypatch.setenv("SKIP_SENSOR_PRECHECK", "1")
+    monkeypatch.setenv(
+        "SKIP_ROBOT_PRECHECK_VARIABLES",
+        "传感器状态_上位机[3].NO[0]",
+    )
+    device = SzlabMixerRobotDevice(auto_connect=False)
+    device._read_variable = lambda *_args, **_kwargs: True
+
+    result = device._ensure_sensor_gate(
+        "传感器状态_上位机[3].NO[0]", False, "S05 放料目标位必须为空"
+    )
+
+    assert result is not None
+    assert result["actual"] is True
 
 
 def test_szlab_robot_action_workflow_flow_matches_requested_synthesis_route():

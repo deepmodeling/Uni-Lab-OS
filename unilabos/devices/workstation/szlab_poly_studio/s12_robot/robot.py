@@ -12,6 +12,7 @@ from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_tasks import
     ROBOT_TASK_NUMBER_VARIABLE,
     ROBOT_WRITE_ALLOWED_VARIABLE,
     ROBOT_WRITE_DONE_VARIABLE,
+    S05_MATERIAL_SENSOR,
 )
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S01 import SzlabRobotS01Mixin
 from unilabos.devices.workstation.szlab_poly_studio.s12_robot.robot_S02 import SzlabRobotS02Mixin
@@ -36,6 +37,9 @@ GRIPPER_POSITION_VARIABLES = {
     "liquid_reagent_100ml": "Robot_夹爪.液体试剂瓶100ml位",
     "solid_powder": "Robot_夹爪.固体粉末位",
 }
+
+# S05 是单工位，错误放料会直接造成叠料；即使在调试模式也不能绕过该门禁。
+_NON_SKIPPABLE_ROBOT_SENSOR_VARIABLES = frozenset({S05_MATERIAL_SENSOR})
 
 
 @device(
@@ -136,7 +140,10 @@ class SzlabMixerRobotDevice(
 
     @not_action
     def _ensure_sensor_gate(self, sensor_variable: str, expected: bool, message: str) -> dict[str, Any] | None:
-        if os.environ.get("SKIP_SENSOR_PRECHECK") == "1":
+        if (
+            os.environ.get("SKIP_SENSOR_PRECHECK") == "1"
+            and sensor_variable not in _NON_SKIPPABLE_ROBOT_SENSOR_VARIABLES
+        ):
             return None
         if not sensor_variable:
             return {"success": False, "message": "缺少精确传感器变量，不能执行机器人取放料动作"}
@@ -160,7 +167,10 @@ class SzlabMixerRobotDevice(
         *,
         phase: str,
     ) -> dict[str, Any]:
-        if os.environ.get("SKIP_SENSOR_PRECHECK") == "1":
+        if (
+            os.environ.get("SKIP_SENSOR_PRECHECK") == "1"
+            and not _NON_SKIPPABLE_ROBOT_SENSOR_VARIABLES.intersection(conditions)
+        ):
             return {
                 "success": True,
                 "phase": phase,
@@ -402,6 +412,8 @@ class SzlabMixerRobotDevice(
 
     @not_action
     def _should_skip_robot_precheck_variable(self, variable_name: str) -> bool:
+        if variable_name in _NON_SKIPPABLE_ROBOT_SENSOR_VARIABLES:
+            return False
         raw_variables = os.environ.get("SKIP_ROBOT_PRECHECK_VARIABLES", "")
         skipped_variables = {
             item.strip()

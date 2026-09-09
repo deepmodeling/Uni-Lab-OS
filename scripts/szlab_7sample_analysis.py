@@ -336,8 +336,12 @@ def svg_chart(path: Path, title: str, labels: list[str], target: list[float], ac
     low, high = (min(values), max(values)) if values else (0.0, 1.0)
     padding = max((high - low) * 0.12, abs(high) * 0.02, 1e-6)
     low, high = low - padding, high + padding
-    x = lambda i: left + (plot_w * i / max(len(labels) - 1, 1))
-    y = lambda value: top + plot_h * (high - value) / (high - low)
+
+    def x(i):
+        return left + (plot_w * i / max(len(labels) - 1, 1))
+
+    def y(value):
+        return top + plot_h * (high - value) / (high - low)
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="white"/>',

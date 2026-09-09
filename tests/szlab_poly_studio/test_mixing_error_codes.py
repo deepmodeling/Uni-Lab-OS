@@ -185,8 +185,6 @@ def test_sensor_wait_returns_false_on_timeout():
     assert values == {"S05准备信号": False}
 
 
-
-
 def test_falls_back_to_raw_d_word_and_enriches_failure():
     class Reader:
         def read_variable(self, name, use_cache=False):

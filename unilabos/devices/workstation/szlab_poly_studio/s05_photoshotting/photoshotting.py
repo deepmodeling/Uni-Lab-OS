@@ -412,7 +412,7 @@ class SzlabMixerPhotoShottingDevice:
                 "success": False,
                 "message": f"S05 拍照检测 {result_label}",
                 "data": data,
-        }
+            }
         if trigger_dissolution_detection:
             data["dissolution_detection_triggered"] = self._start_dissolution_detection(
                 sample_id

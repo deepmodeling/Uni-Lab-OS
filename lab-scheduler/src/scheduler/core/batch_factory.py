@@ -100,7 +100,10 @@ def make_batch_scheduler(base_cls: type[SchedulerBase]) -> type[SchedulerBase]:
             ))
 
         def _schedule_ready_tasks(self):
-            ready = self._collect_ready()
+            # Device lock is a hard gate for both batch and normal actions.
+            # Busy-device nodes remain ready in their DAG and are retried
+            # after the next completion event.
+            ready = self._filter_ready_by_device_lock(self._collect_ready())
 
             # 分离: 批处理设备 vs 普通设备
             batch_by_type: dict[str, list] = defaultdict(list)

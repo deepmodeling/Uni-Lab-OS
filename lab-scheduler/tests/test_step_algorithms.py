@@ -201,3 +201,43 @@ class TestHeuristicAlgorithms:
         scheduler.schedule()
         util = scheduler.get_device_utilization()
         assert isinstance(util, dict)
+
+    def test_device_lock_is_checked_before_priority(self):
+        """A busy device does not let an urgent step block another device.
+
+        The initial A step is dispatched first, then an urgent A step and a
+        low-priority B step are submitted while A is locked.  B must start at
+        t=0; urgent A remains ready and starts only after A is released.
+        """
+        pool = build_device_pool([{"type": "A", "count": 1}, {"type": "B", "count": 1}])
+        scheduler = get_algorithm("Realtime")(pool)
+
+        running = _make_dag(
+            task_id="running", priority=1.0,
+            steps=[{"step_id": "running-s1", "machine_type": "A", "duration": 10}],
+            deps=[],
+        )
+        scheduler.add_batch(running, submit_time=0)
+        scheduler._schedule_ready_tasks()
+
+        urgent = _make_dag(
+            task_id="urgent", priority=3.0,
+            steps=[{"step_id": "urgent-s1", "machine_type": "A", "duration": 5}],
+            deps=[],
+        )
+        background = _make_dag(
+            task_id="background", priority=0.1,
+            steps=[{"step_id": "background-s1", "machine_type": "B", "duration": 2}],
+            deps=[],
+        )
+        scheduler.add_batch(urgent, submit_time=0)
+        scheduler.add_batch(background, submit_time=0)
+        scheduler._schedule_ready_tasks()
+
+        by_task = {item.task_id: item for item in scheduler.completed}
+        assert by_task["background"].start == 0
+        assert "urgent" not in by_task
+
+        results = scheduler.schedule()
+        by_task = {item.task_id: item for item in results}
+        assert by_task["urgent"].start == 10

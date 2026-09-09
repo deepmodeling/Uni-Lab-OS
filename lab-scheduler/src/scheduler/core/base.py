@@ -72,6 +72,28 @@ class SchedulerBase(ABC):
         """获取一个可用设备实例 ID, 无可用时返回 None."""
         return self.device_pool.get_available(machine_type, self.current_time)
 
+    def _filter_ready_by_device_lock(
+        self,
+        ready: list[tuple[int, str, StepNode]],
+    ) -> list[tuple[int, str, StepNode]]:
+        """Return ready nodes whose device lock can be acquired *now*.
+
+        Device availability is a hard admission gate, not another priority
+        score.  A node whose device type is currently busy is therefore
+        excluded from this dispatch round before any priority/heuristic
+        ordering is applied.  The node itself remains ``ready`` in its DAG;
+        it is reconsidered after the next completion event releases a device.
+
+        The check is intentionally non-mutating.  The actual lock acquisition
+        still happens in ``_do_allocate`` and every algorithm re-checks the
+        device immediately before allocation, which also handles two ready
+        nodes competing for the last instance of a device type in one round.
+        """
+        return [
+            item for item in ready
+            if self._get_device(item[2].machine_type) is not None
+        ]
+
     def _get_earliest_device(self, machine_type: str) -> tuple[str, int] | None:
         """获取最早可用的设备实例及其可用时间."""
         return self.device_pool.get_earliest(machine_type)

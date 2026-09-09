@@ -46,7 +46,7 @@ def list_algorithms() -> list[str]:
 @register_algorithm("Greedy")
 class GreedyScheduler(SchedulerBase):
     def _schedule_ready_tasks(self) -> None:
-        ready = self._collect_ready()
+        ready = self._filter_ready_by_device_lock(self._collect_ready())
         # 排序: 批次优先级降序, 时长升序
         scored = []
         for batch_idx, node_id, node in ready:
@@ -99,7 +99,7 @@ class CriticalPathScheduler(SchedulerBase):
         return dist
 
     def _schedule_ready_tasks(self) -> None:
-        ready = self._collect_ready()
+        ready = self._filter_ready_by_device_lock(self._collect_ready())
         scored = []
         for batch_idx, node_id, node in ready:
             priority = self.batches[batch_idx].weight
@@ -121,7 +121,7 @@ class WeightedCriticalPathScheduler(CriticalPathScheduler):
     """与 CriticalPath 相同, 但排序时将权重乘以关键路径长度."""
 
     def _schedule_ready_tasks(self) -> None:
-        ready = self._collect_ready()
+        ready = self._filter_ready_by_device_lock(self._collect_ready())
         scored = []
         for batch_idx, node_id, node in ready:
             priority = self.batches[batch_idx].weight
@@ -146,7 +146,7 @@ class DynamicPriorityScheduler(SchedulerBase):
         return len(dag.children.get(node_id, []))
 
     def _schedule_ready_tasks(self) -> None:
-        ready = self._collect_ready()
+        ready = self._filter_ready_by_device_lock(self._collect_ready())
         heap = []
         for batch_idx, node_id, node in ready:
             batch_priority = self.batches[batch_idx].weight
@@ -173,7 +173,7 @@ class MultiObjectiveScheduler(SchedulerBase):
         return base_score * (2**batch_priority)
 
     def _schedule_ready_tasks(self) -> None:
-        ready = self._collect_ready()
+        ready = self._filter_ready_by_device_lock(self._collect_ready())
         scored = []
         for batch_idx, node_id, node in ready:
             priority = self.batches[batch_idx].weight
@@ -197,7 +197,7 @@ class MultiObjectiveScheduler(SchedulerBase):
 @register_algorithm("Realtime")
 class RealtimeScheduler(SchedulerBase):
     def _schedule_ready_tasks(self) -> None:
-        ready = self._collect_ready()
+        ready = self._filter_ready_by_device_lock(self._collect_ready())
         scored = []
         for batch_idx, node_id, node in ready:
             priority = self.batches[batch_idx].weight
@@ -232,7 +232,7 @@ class HybridCriticalityScheduler(SchedulerBase):
         return criticality, deadline
 
     def _schedule_ready_tasks(self) -> None:
-        ready = self._collect_ready()
+        ready = self._filter_ready_by_device_lock(self._collect_ready())
         critical: list[tuple] = []
         non_critical: list[tuple] = []
 

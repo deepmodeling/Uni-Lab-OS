@@ -846,15 +846,24 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def _mixing_wait_should_abort(self) -> bool:
         """等待循环中发现任一 Mixing PLC 报警时立即要求调用方结束等待。"""
+        # Some lightweight test/fake readers are created with ``object.__new__``
+        # and intentionally skip the full PLC constructor.  Such readers do
+        # not have alarm polling state, so they must behave as alarm-free
+        # rather than failing the unrelated sensor wait itself.
+        wait_tls = getattr(self, "_opc_wait_tls", None)
+        poll_interval = getattr(self, "mixing_alarm_poll_interval", None)
+        if wait_tls is None or poll_interval is None:
+            return False
+
         now = time.monotonic()
-        last_poll_at = float(getattr(self._opc_wait_tls, "last_alarm_poll_at", 0.0))
-        if now - last_poll_at < self.mixing_alarm_poll_interval:
-            return bool(getattr(self._opc_wait_tls, "last_wait_alarm", None))
-        self._opc_wait_tls.last_alarm_poll_at = now
+        last_poll_at = float(getattr(wait_tls, "last_alarm_poll_at", 0.0))
+        if now - last_poll_at < poll_interval:
+            return bool(getattr(wait_tls, "last_wait_alarm", None))
+        wait_tls.last_alarm_poll_at = now
         alarms = self.read_mixing_alarms()
         if not alarms:
             return False
-        self._opc_wait_tls.last_wait_alarm = alarms[0]
+        wait_tls.last_wait_alarm = alarms[0]
         return True
 
     @action(description="读取当前为 ON 的 Mixing PLC 报警位及对应 UniLab 报错码")

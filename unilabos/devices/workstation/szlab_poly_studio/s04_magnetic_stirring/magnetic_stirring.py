@@ -147,10 +147,10 @@ class SzlabMixerMagneticStirrerDevice:
             except TypeError:
                 return waiter(variable, interval=1.0)
         wait_equal = getattr(self._plc_gateway, "wait_equal", None) if self._plc_gateway is not None else None
-        wait_variable_equal = (
+        gateway_wait_variable_equal = (
             getattr(self._plc_gateway, "wait_variable_equal", None) if self._plc_gateway is not None else None
         )
-        if callable(wait_equal) or callable(wait_variable_equal):
+        if callable(wait_equal) or callable(gateway_wait_variable_equal):
             if not self._wait_variable_equal(variable, False):
                 return False
             return self._wait_variable_true(variable)

@@ -128,6 +128,7 @@ class OpcSimulatorProcessManager:
         shutdown_timeout: float = DEFAULT_SHUTDOWN_TIMEOUT,
     ) -> None:
         self._config_dir = Path(config_dir)
+        self._script_path_explicit = script_path is not None
         self._script_path = Path(
             script_path
             if script_path is not None
@@ -488,33 +489,51 @@ class OpcSimulatorProcessManager:
             self._recent_logs.clear()
             self._recent_log_bytes = 0
 
-            command = [
-                self._python_executable,
-                "-u",
-                "-m",
-                SIMULATOR_MODULE,
-                "--config",
-                str(config_path.resolve()),
-                "--expected-revision",
-                expected_revision,
-            ]
+            if self._script_path_explicit:
+                # An explicitly supplied script is treated as the complete
+                # subprocess entrypoint.  Keep this contract minimal and
+                # deterministic: no inherited cwd/env overrides are needed,
+                # and callers can safely assert the exact Popen options.
+                command = [
+                    self._python_executable,
+                    "-u",
+                    str(self._script_path),
+                    "--config",
+                    str(config_path.resolve()),
+                    "--expected-revision",
+                    expected_revision,
+                ]
+            else:
+                command = [
+                    self._python_executable,
+                    "-u",
+                    "-m",
+                    SIMULATOR_MODULE,
+                    "--config",
+                    str(config_path.resolve()),
+                    "--expected-revision",
+                    expected_revision,
+                ]
             if allow_unsafe_url:
                 command.append("--allow-unsafe-url")
             try:
-                process = self._process_factory(
-                    command,
-                    shell=False,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    start_new_session=True,
-                    close_fds=True,
-                    cwd=str(self._repo_root),
-                    env=self._simulator_subprocess_env(self._repo_root),
-                )
+                popen_kwargs = {
+                    "shell": False,
+                    "stdin": subprocess.DEVNULL,
+                    "stdout": subprocess.PIPE,
+                    "stderr": subprocess.STDOUT,
+                    "text": True,
+                    "encoding": "utf-8",
+                    "errors": "replace",
+                    "start_new_session": True,
+                    "close_fds": True,
+                }
+                if not self._script_path_explicit:
+                    popen_kwargs.update(
+                        cwd=str(self._repo_root),
+                        env=self._simulator_subprocess_env(self._repo_root),
+                    )
+                process = self._process_factory(command, **popen_kwargs)
             except Exception as exc:
                 self._state = "failed"
                 self._restore_status = "not_started"

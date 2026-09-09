@@ -33,6 +33,11 @@ from scripts.workflow_ui import ActionSpec, DEFAULT_PRESET, build_graph_workflow
 from unilabos.devices.workstation.szlab_poly_studio.s09_pipetting_station.sensors import (
     S09_TIP_BOX_SENSORS,
 )
+from unilabos.devices.workstation.szlab_poly_studio.s04_magnetic_stirring.sensors import (
+    s04_allow_var,
+    s04_material_sensor_var,
+    s04_status_var,
+)
 
 
 WORKFLOW_PATH = "task-flow.json"
@@ -1118,7 +1123,17 @@ def test_s04_stirring_dispatches_different_positions_concurrently():
     coordinator = _coordinator(
         client,
         runner,
-        devices={"szlab_s04_magnetic_stirring": FakeActionDevice()},
+        devices={
+            "szlab_s04_magnetic_stirring": FakeActionDevice(),
+            "szlab_poly_plc": FakeTriggerPlc({
+                s04_material_sensor_var(1): True,
+                s04_status_var(1): 1,
+                s04_allow_var(1): True,
+                s04_material_sensor_var(2): True,
+                s04_status_var(2): 1,
+                s04_allow_var(2): True,
+            }),
+        },
     )
     result = coordinator.cycle(
         workflow_path=WORKFLOW_PATH,

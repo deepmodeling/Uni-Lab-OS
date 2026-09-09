@@ -135,7 +135,7 @@ def _scalar_to_data_type(value: Any) -> str:
     observed = _scalar_type(value)
     if observed in _VALID_PROFILE_DATA_TYPES:
         return observed
-    return "bool"
+    return "unknown"
 
 
 def _infer_variable_direction(name: str, *, source: str) -> str:
@@ -171,7 +171,7 @@ def _infer_variable_data_type(
         if "工艺完成" in name:
             return "int"
         return "bool"
-    return "bool"
+    return "unknown"
 
 
 def _strict_text_alias(
@@ -1076,26 +1076,40 @@ def generate_opc_simulator_draft(
     variable_catalog: Any = None,
 ) -> dict[str, Any]:
     """根据本次已排 Task 生成 schema v2 draft，不猜测冲突配置。"""
+    raw_variable_catalog = variable_catalog
+    # Reject bounded-complexity violations before filtering or building the
+    # workflow node map.  Filtering itself needs that map and must not amplify
+    # an oversized template/node association payload first.
+    validate_payload_limits(
+        workflow=workflow,
+        templates=templates,
+        action_catalog=action_catalog,
+    )
     variable_catalog = filter_variable_catalog(
-        variable_catalog,
+        raw_variable_catalog,
         workflow=workflow,
         templates=templates,
         scheduled_template_ids=scheduled_template_ids,
         action_catalog=action_catalog,
     )
-    validate_payload_limits(
-        workflow=workflow,
-        templates=templates,
-        action_catalog=action_catalog,
-        variable_catalog=variable_catalog,
-    )
+    validate_payload_limits(variable_catalog=variable_catalog)
     errors: dict[str, None] = {}
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > MAX_IDENTIFIER_LENGTH:
         _error(errors, "name")
     action_catalog_by_key, ambiguous_action_keys = _action_catalog_map(
         action_catalog, errors
     )
-    variable_types = _variable_type_catalog(variable_catalog, errors)
+    all_variable_types = _variable_type_catalog(raw_variable_catalog, errors)
+    filtered_variable_names = {
+        str(item.get("name") or "").strip()
+        for item in variable_catalog
+        if isinstance(item, dict)
+    }
+    variable_types = {
+        variable: definition
+        for variable, definition in all_variable_types.items()
+        if variable in filtered_variable_names
+    }
     raw_templates = templates if isinstance(templates, list) else []
     templates_by_id: dict[str, tuple[int, dict[str, Any]]] = {}
     ambiguous_template_ids: set[str] = set()
@@ -1328,6 +1342,7 @@ def generate_opc_simulator_draft(
 
     variables: list[dict[str, Any]] = []
     conflicting_variables: set[str] = set()
+    unresolved_type_conflicts: set[str] = set()
     if len(variable_order) > MAX_COLLECTION_ITEMS:
         raise ProfileLimitError(["profile.variables"])
     for variable in variable_order:
@@ -1355,6 +1370,14 @@ def generate_opc_simulator_draft(
             type(value) is not type(inputs[0][0]) or value != inputs[0][0]
             for value, _ in inputs[1:]
         )
+        observation_sources = {source for source, _, _ in observations}
+        # Conflicting input conditions still have a useful type: use the
+        # first observed input type while omitting an ambiguous initial value.
+        # A conflict involving an output cannot be resolved safely because it
+        # would also determine an automatic PLC write.
+        input_only_conflict = observation_sources == {"task_input"}
+        if type_conflict and not input_only_conflict:
+            unresolved_type_conflicts.add(variable)
         if type_conflict or input_conflict:
             conflicting_variables.add(variable)
             if catalog_conflict and catalog_definition is not None:
@@ -1369,19 +1392,19 @@ def generate_opc_simulator_draft(
                         _error(errors, path)
         source = "task_input" if inputs else "task_output"
         observed_value = observations[0][1]
-        data_type = _infer_variable_data_type(
-            variable,
-            source=source,
-            catalog_type=(
-                catalog_type
-                if catalog_type is not None and variable not in conflicting_variables
-                else None
-            ),
-            observed_value=(
-                observed_value
-                if len(types) == 1 and variable not in conflicting_variables
-                else None
-            ),
+        data_type = (
+            "unknown"
+            if variable in unresolved_type_conflicts
+            else _infer_variable_data_type(
+                variable,
+                source=source,
+                catalog_type=None if catalog_conflict else catalog_type,
+                observed_value=(
+                    observed_value
+                    if len(types) == 1 or input_only_conflict
+                    else None
+                ),
+            )
         )
         definition: dict[str, Any] = {
             "name": variable,

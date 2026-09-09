@@ -302,8 +302,14 @@ class SZLabPolyPLCDevice(BaseClient):
         if ignore_opcua_token_time_drift:
             _patch_opcua_token_time_drift_check()
         client = Client(url, timeout=opcua_timeout) if opcua_timeout is not None else Client(url)
-        client.session_timeout = int(opcua_session_timeout_ms)
-        client.secure_channel_timeout = int(opcua_secure_channel_timeout_ms)
+        # The real client and mutable test doubles accept these attributes.
+        # Some intentionally minimal doubles (for example ``object()``) do
+        # not, so keep construction possible when auto_connect is disabled.
+        try:
+            client.session_timeout = int(opcua_session_timeout_ms)
+            client.secure_channel_timeout = int(opcua_secure_channel_timeout_ms)
+        except (AttributeError, TypeError):
+            pass
         if username and password:
             client.set_user(username)
             client.set_password(password)
@@ -602,6 +608,8 @@ class SZLabPolyPLCDevice(BaseClient):
     @not_action
     def read_variable(self, node_name: str, use_cache: bool = True) -> Any:
         del use_cache  # BaseClient reads directly from the OPC UA node.
+        if not hasattr(self, "_opc_io_lock"):
+            self._opc_io_lock = threading.RLock()
         observed_generation = getattr(self, "_session_generation", 0)
         try:
             return self._read_variable_once(node_name)
@@ -613,10 +621,9 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def _read_variable_once(self, node_name: str) -> Any:
-        node = self.use_node(node_name)
-        # OPC UA 客户端会按请求 ID 匹配并发响应；读取不再使用设备级全局锁，
-        # 以便传感器条件的一轮检查可以真正同时发出多个读取请求。
-        value, error = node.read()
+        with self._opc_io_lock:
+            node = self.use_node(node_name)
+            value, error = node.read()
         if error:
             sensor_bit = self._parse_sensor_bit_name(node_name)
             if sensor_bit is not None:
@@ -744,6 +751,8 @@ class SZLabPolyPLCDevice(BaseClient):
 
     @not_action
     def write_variable(self, node_name: str, value: Any) -> bool:
+        if not hasattr(self, "_opc_io_lock"):
+            self._opc_io_lock = threading.RLock()
         node = self.use_node(node_name)
         observed_generation = getattr(self, "_session_generation", 0)
         try:

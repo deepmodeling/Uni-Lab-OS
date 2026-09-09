@@ -631,6 +631,7 @@ def test_scheduler_errors_flow_to_task_logs_once_until_recovered(tmp_path):
         manager.run_task_execution_cycle(
             workflow_path="main-process.json",
             workflow_payload={"nodes": []},
+            harvest_only=True,
         )
 
     entries = manager.list_task_action_logs(
@@ -684,6 +685,7 @@ def test_scheduler_cycle_exception_flows_to_task_error_log_without_spam(tmp_path
             manager.run_task_execution_cycle(
                 workflow_path="main-process.json",
                 workflow_payload={"nodes": []},
+                harvest_only=True,
             )
 
     entries = manager.list_task_action_logs(

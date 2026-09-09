@@ -1118,7 +1118,7 @@ def test_single_sample_workflow_uses_internal_s09_balance_read_and_correct_robot
     assert [action["index"] for action in actions] == list(range(1, len(actions) + 1))
     assert methods.count("read_s07_balance") == 0
     assert methods.count("read_balance") == 0
-    assert methods[10:18] == [
+    assert methods[6:14] == [
         "submit_pick_from_s072",
         "submit_place_to_s071",
         "submit_pick_from_s071_and_rotate_to_feed",
@@ -1217,8 +1217,8 @@ def test_szlab_robot_action_workflow_flow_matches_requested_synthesis_route():
     assert actions[2]["params"]["recipe_name"] == "default"
     assert actions[5]["params"] == {
         "process": 3,
-        "volume_pump_1": 1,
-        "volume_pump_2": 1,
+        "volume": 1,
+        "skip_level_check": True,
     }
     assert actions[8]["params"]["position"] == 1
     assert actions[8]["params"]["mode"] == 3
@@ -1827,6 +1827,7 @@ def test_workflow_ui_main_uses_build_parser_and_preserves_cli_options(
             "open_browser": False,
             "preset_name": "szlab_mixer",
             "runtime_config": load_runtime_config(runtime_config),
+            "timing_enabled": False,
         }
     ]
 
@@ -7016,6 +7017,11 @@ def test_opc_profile_save_api_maps_pretty_oversize_to_422_without_file(
     monkeypatch,
 ):
     monkeypatch.setattr(workflow_ui, "OPC_SIMULATOR_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        workflow_ui,
+        "migrate_legacy_opc_profiles",
+        lambda *_args, **_kwargs: [],
+    )
     app = create_app("szlab_robot_action_workflow")
     save = _route_endpoint(
         app, "/api/opc-simulator/profiles/{file_name}", "PUT"

@@ -964,6 +964,7 @@ class TrackedWriter:
                     )
                     self._logger.warning(message)
                     skipped.append(name)
+                    errors.append(message)
                     continue
                 self._adapter.write(name, self._originals[name])
                 restored.append(name)

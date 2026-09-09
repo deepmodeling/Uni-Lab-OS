@@ -1861,7 +1861,6 @@ class TaskExecutionCoordinator:
             action.result_summary = summary
         except Exception as exc:
             base_error = {
-                "success": False,
                 "code": "action_failed",
                 "message": str(exc),
             }

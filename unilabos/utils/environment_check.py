@@ -6,6 +6,7 @@
 import argparse
 import importlib
 import locale
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from unilabos.utils.banner_print import print_status
+from unilabos.utils.log import logger
 
 
 # ---------------------------------------------------------------------------
@@ -141,21 +143,33 @@ def _install_packages(
 
         for installer in installers:
             cmd = _install_command(installer, pkg, upgrade, is_chinese)
+            logger.trace(f"[install]{(' [' + label + ']') if label else ''} exec: {' '.join(cmd)}")
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                 if result.returncode == 0:
                     print_status(f"✓ {pkg} {action_word}成功 (via {installer})", "success")
+                    logger.trace(
+                        f"[install] ok: {pkg} via {installer} (rc=0)\n"
+                        f"{(result.stdout or '').strip()[-2000:]}"
+                    )
                     pkg_installed = True
                     break
 
                 last_error = result.stderr.strip().split("\n")[-1] if result.stderr else "unknown error"
                 print_status(f"× {pkg} {action_word}失败 (via {installer}): {last_error}", "warning")
+                logger.trace(
+                    f"[install] fail: {pkg} via {installer} (rc={result.returncode})\n"
+                    f"STDOUT:\n{(result.stdout or '').strip()[-2000:]}\n"
+                    f"STDERR:\n{(result.stderr or '').strip()[-2000:]}"
+                )
             except subprocess.TimeoutExpired:
                 last_error = "timeout after 300s"
                 print_status(f"× {pkg} {action_word}超时 (via {installer}, 300s)", "warning")
+                logger.trace(f"[install] timeout: {pkg} via {installer} (300s) cmd={' '.join(cmd)}")
             except Exception as e:
                 last_error = str(e)
                 print_status(f"× {pkg} {action_word}异常 (via {installer}): {e}", "warning")
+                logger.trace(f"[install] error: {pkg} via {installer}: {e!r} cmd={' '.join(cmd)}")
 
         if not pkg_installed:
             print_status(f"× {pkg} {action_word}失败: {last_error}", "error")
@@ -171,6 +185,59 @@ def _install_packages(
 # ---------------------------------------------------------------------------
 # requirements.txt 安装（可多次调用）
 # ---------------------------------------------------------------------------
+
+def _requirement_import_name(requirement: str) -> str:
+    """从 PEP 508 依赖声明取用于 import 探测的模块名（hyphen→underscore）。
+
+    git+/URL/本地路径无法可靠探测，返回空串，由调用方当作"必须交给安装器"处理。
+    正则只取首段分发名，天然覆盖 ~= != === >= 等各种约束、extras 与环境标记。
+    """
+    s = requirement.strip()
+    if s.startswith(("git+", "http://", "https://", "file:", "-", ".", "/")):
+        return ""
+    match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)", s)
+    return (match.group(1) if match else "").replace("-", "_")
+
+
+def install_requirements_list(reqs: List[str], label: str = "") -> bool:
+    """
+    检查一组 PEP 508 依赖声明（按 import 名探测缺失）并安装缺失项。
+
+    requirements.txt 与社区包 pyproject [project].dependencies 共用这套缺失检测 + 安装逻辑
+    （uv 优先回退 pip，中文 locale 自动走清华源）。
+
+    Returns:
+        True if all ok, False if any install failed.
+    """
+    reqs = [str(r).strip() for r in (reqs or []) if str(r).strip()]
+    if not reqs:
+        return True
+
+    tag = label or "deps"
+    logger.trace(f"[{tag}] 依赖解析输入 ({len(reqs)}): {reqs}")
+    missing: List[str] = []
+    for req in reqs:
+        pkg_import = _requirement_import_name(req)
+        if not pkg_import:
+            missing.append(req)  # git/URL/本地路径无法探测，始终交给安装器
+            continue
+        try:
+            importlib.import_module(pkg_import)
+        except ImportError:
+            missing.append(req)
+
+    if not missing:
+        print_status(f"[{tag}] ✓ 依赖检查通过 ({len(reqs)} 个包)", "success")
+        logger.trace(f"[{tag}] 全部依赖已满足，无需安装: {reqs}")
+        return True
+
+    print_status(f"[{tag}] 缺失 {len(missing)} 个依赖: {', '.join(missing)}", "warning")
+    logger.trace(f"[{tag}] 待安装缺失依赖 ({len(missing)}): {missing}")
+    ok = _install_packages(missing, label=tag)
+    # 运行时新装的包必须刷新 import 缓存：进程启动时 FileFinder 已缓存各 site-packages
+    importlib.invalidate_caches()
+    return ok
+
 
 def install_requirements_txt(req_path: str | Path, label: str = "") -> bool:
     """
@@ -197,24 +264,7 @@ def install_requirements_txt(req_path: str | Path, label: str = "") -> bool:
             if line and not line.startswith("#") and not line.startswith("-"):
                 reqs.append(line)
 
-    if not reqs:
-        return True
-
-    missing: List[str] = []
-    for req in reqs:
-        pkg_import = req.split(">=")[0].split("==")[0].split("<")[0].split("[")[0].split(">")[0].strip()
-        pkg_import = pkg_import.replace("-", "_")
-        try:
-            importlib.import_module(pkg_import)
-        except ImportError:
-            missing.append(req)
-
-    if not missing:
-        print_status(f"[{tag}] ✓ 依赖检查通过 ({len(reqs)} 个包)", "success")
-        return True
-
-    print_status(f"[{tag}] 缺失 {len(missing)} 个依赖: {', '.join(missing)}", "warning")
-    return _install_packages(missing, label=tag)
+    return install_requirements_list(reqs, label=tag)
 
 
 def check_device_package_requirements(devices_dirs: list[str]) -> bool:

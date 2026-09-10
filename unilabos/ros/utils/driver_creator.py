@@ -46,14 +46,22 @@ class DeviceClassCreator(Generic[T]):
         self.resource_tracker = resource_tracker
 
     def attach_resource(self):
-        """
-        附加资源到设备类实例
+        """把需要物理跟踪的子资源附加到设备类实例。
+
+        只承担库存（Inventory）与库位（Site）投影的
+        ``config["logical_mount"]`` 资源不会进入设备驱动。
+
+        Returns:
+            无返回值；需要附着的资源写入当前设备资源跟踪器。
         """
         if self.device_instance is not None:
             for c in self.children:
-                if c.res_content.type != "device":
-                    res = ResourceTreeSet([ResourceTreeInstance(c)]).to_plr_resources()[0]
-                    self.resource_tracker.add_resource(res)
+                if c.res_content.type == "device":
+                    continue
+                if c.res_content.config.get("logical_mount") is True:
+                    continue
+                res = ResourceTreeSet([ResourceTreeInstance(c)]).to_plr_resources()[0]
+                self.resource_tracker.add_resource(res)
 
     def create_instance(self, data: Dict[str, Any]) -> T:
         """

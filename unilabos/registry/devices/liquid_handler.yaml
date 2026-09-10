@@ -626,6 +626,16 @@ liquid_handler:
               $defs:
                 ResourceDict:
                   properties:
+                    barcode:
+                      default: ''
+                      description: Material barcode
+                      title: Barcode
+                      type: string
+                    barcode_symbology:
+                      default: ''
+                      description: Barcode symbology / 码制
+                      title: Barcode Symbology
+                      type: string
                     class:
                       description: Resource class name
                       title: Class
@@ -962,6 +972,16 @@ liquid_handler:
               $defs:
                 ResourceDict:
                   properties:
+                    barcode:
+                      default: ''
+                      description: Material barcode
+                      title: Barcode
+                      type: string
+                    barcode_symbology:
+                      default: ''
+                      description: Barcode symbology / 码制
+                      title: Barcode Symbology
+                      type: string
                     class:
                       description: Resource class name
                       title: Class
@@ -9376,6 +9396,16 @@ liquid_handler.prcxi:
               $defs:
                 ResourceDict:
                   properties:
+                    barcode:
+                      default: ''
+                      description: Material barcode
+                      title: Barcode
+                      type: string
+                    barcode_symbology:
+                      default: ''
+                      description: Barcode symbology / 码制
+                      title: Barcode Symbology
+                      type: string
                     class:
                       description: Resource class name
                       title: Class

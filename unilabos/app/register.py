@@ -1,18 +1,15 @@
-import time
 from typing import Any, Dict, Optional, Tuple
 
 from unilabos.utils.log import logger
 from unilabos.utils.tools import normalize_json as _normalize_device
 
 
-def register_devices_and_resources(lab_registry, gather_only=False) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
-    """
-    注册设备和资源到服务器（仅支持HTTP）
-    """
+def collect_devices_and_resources(
+    lab_registry: Any,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """从同一个 Registry 快照收集设备模板和器材模板。"""
 
-    from unilabos.app.web.client import http_client
-
-    logger.info("[UniLab Register] 开始注册设备和资源...")
+    logger.info("[UniLab Register] 开始收集设备和资源模板...")
 
     devices_to_register = {}
     for device_info in lab_registry.obtain_registry_device_info():
@@ -24,49 +21,17 @@ def register_devices_and_resources(lab_registry, gather_only=False) -> Optional[
         resources_to_register[resource_info["id"]] = resource_info
         logger.trace(f"[UniLab Register] 收集资源: {resource_info['id']}")
 
+    return devices_to_register, resources_to_register
+
+
+def register_devices_and_resources(
+    lab_registry: Any, gather_only: bool = False
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """兼容旧收集调用；常驻 Edge 不再拥有模板写入口。"""
+
+    templates = collect_devices_and_resources(lab_registry)
     if gather_only:
-        return devices_to_register, resources_to_register
-
-    if devices_to_register:
-        try:
-            start_time = time.time()
-            response = http_client.resource_registry(
-                {"resources": list(devices_to_register.values())},
-                tag="device_registry",
-            )
-            cost_time = time.time() - start_time
-            res_data = response.json() if response.status_code == 200 else {}
-            skipped = res_data.get("data", {}).get("skipped", False)
-            if skipped:
-                logger.info(
-                    f"[UniLab Register] 设备注册跳过（内容未变化）"
-                    f" {len(devices_to_register)} 个 {cost_time:.3f}s"
-                )
-            elif response.status_code in [200, 201]:
-                logger.info(f"[UniLab Register] 成功注册 {len(devices_to_register)} 个设备 {cost_time:.3f}s")
-            else:
-                logger.error(f"[UniLab Register] 设备注册失败: {response.status_code}, {response.text} {cost_time:.3f}s")
-        except Exception as e:
-            logger.error(f"[UniLab Register] 设备注册异常: {e}")
-
-    if resources_to_register:
-        try:
-            start_time = time.time()
-            response = http_client.resource_registry(
-                {"resources": list(resources_to_register.values())},
-                tag="resource_registry",
-            )
-            cost_time = time.time() - start_time
-            res_data = response.json() if response.status_code == 200 else {}
-            skipped = res_data.get("data", {}).get("skipped", False)
-            if skipped:
-                logger.info(
-                    f"[UniLab Register] 资源注册跳过（内容未变化）"
-                    f" {len(resources_to_register)} 个 {cost_time:.3f}s"
-                )
-            elif response.status_code in [200, 201]:
-                logger.info(f"[UniLab Register] 成功注册 {len(resources_to_register)} 个资源 {cost_time:.3f}s")
-            else:
-                logger.error(f"[UniLab Register] 资源注册失败: {response.status_code}, {response.text} {cost_time:.3f}s")
-        except Exception as e:
-            logger.error(f"[UniLab Register] 资源注册异常: {e}")
+        return templates
+    raise RuntimeError(
+        "startup registry upload has been removed; run the independent template-sync job"
+    )

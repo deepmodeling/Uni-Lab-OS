@@ -42,7 +42,7 @@
 
 ### 1.1 工作站核心架构
 
-```{mermaid}
+```mermaid
 graph TB
     subgraph "工作站模板组成"
         WB[WorkstationBase<br/>工作流状态管理]
@@ -77,7 +77,7 @@ graph TB
 
 ### 1.2 外部系统对接关系
 
-```{mermaid}
+```mermaid
 graph LR
     subgraph "Uni-Lab-OS工作站"
         WS[WorkstationBase + ROS2WorkstationNode]
@@ -118,7 +118,7 @@ graph LR
 
 ### 1.3 具体实现示例
 
-```{mermaid}
+```mermaid
 graph TB
     subgraph "工作站基类"
         BASE[WorkstationBase<br/>抽象基类]
@@ -164,7 +164,7 @@ graph TB
 
 ## 2. 类关系图
 
-```{mermaid}
+```mermaid
 classDiagram
     class WorkstationBase {
         <<abstract>>
@@ -307,7 +307,7 @@ classDiagram
 
 ## 3. 工作站启动时序图
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant APP as Application
     participant WS as WorkstationBase
@@ -360,7 +360,7 @@ sequenceDiagram
 
 ## 4. 工作流执行时序图（Protocol 模式）
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant CLIENT as 客户端
     participant ROS as ROS2WorkstationNode
@@ -412,7 +412,7 @@ sequenceDiagram
 
 ## 5. HTTP 报送处理时序图
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant EXT as 外部工作站/LIMS
     participant HTTP as HTTPService
@@ -455,7 +455,7 @@ sequenceDiagram
 
 ## 6. 错误处理时序图
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant DEV as 子设备/外部系统
     participant ROS as ROS2WorkstationNode

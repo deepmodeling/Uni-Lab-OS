@@ -1,0 +1,75 @@
+{
+    "nodes": [
+        {
+            "id": "test_action",
+            "name": "测试动作设备",
+            "children": [
+                "echo_sample_1",
+                "echo_sample_2"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "test_action",
+            "position": {
+                "x": 300,
+                "y": 200,
+                "z": 0
+            },
+            "config": {},
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "echo_sample_1",
+            "name": "echo_sample_1",
+            "children": [],
+            "parent": "test_action",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 180,
+                "y": 360,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 100.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "echo_liquid_1",
+                        "volume": 10.0,
+                        "concentration": 1.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "echo_sample_2",
+            "name": "echo_sample_2",
+            "children": [],
+            "parent": "test_action",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 420,
+                "y": 360,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 100.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "echo_liquid_2",
+                        "volume": 20.0,
+                        "concentration": 2.0
+                    }
+                ]
+            }
+        }
+    ],
+    "links": []
+}

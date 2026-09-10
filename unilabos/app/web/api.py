@@ -27,6 +27,7 @@ from unilabos.app.model import (
     JobData,
 )
 from unilabos.app.web.utils.host_utils import get_host_node_info
+from unilabos.app.web.device_catalog import project_device_catalog
 from unilabos.registry.registry import lab_registry
 from unilabos.utils.type_check import NoAliasDumper
 
@@ -243,7 +244,23 @@ async def broadcast_status_page_data():
 @api.websocket("/ws/device_status")
 async def websocket_device_status(websocket: WebSocket):
     """WebSocket端点，用于实时获取设备状态"""
-    await websocket.accept()
+    from unilabos.utils.tracing import extract_trace_context, span
+
+    carrier = {
+        key: value
+        for key in ("traceparent", "tracestate")
+        if (value := websocket.query_params.get(key))
+    }
+    with span(
+        "WS CONNECT /api/v1/ws/device_status",
+        attributes={
+            "http.route": "/api/v1/ws/device_status",
+            "network.protocol.name": "websocket",
+        },
+        kind="server",
+        parent_context=extract_trace_context(carrier),
+    ):
+        await websocket.accept()
     active_connections.add(websocket)
     try:
         while True:
@@ -1240,7 +1257,19 @@ def get_devices():
     if not isok:
         return Resp(code=RespCode.ErrorHostNotInit, message=str(data))
 
-    return Resp(data=dict(data))
+    online_ok, online_data = get_online_devices()
+    online_devices = (
+        online_data.get("online_devices", {})
+        if online_ok and isinstance(online_data, dict)
+        else {}
+    )
+    return Resp(
+        data=project_device_catalog(
+            resources=data,
+            registry_devices=lab_registry.obtain_registry_device_info(),
+            online_devices=online_devices,
+        )
+    )
 
 
 @api.get("/online-devices", summary="Online devices list", response_model=Resp)

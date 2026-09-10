@@ -1,0 +1,6 @@
+[project]
+name = "external-variant-package"
+version = "0.1.0"
+
+[tool.unilabos.registry]
+paths = ["unilabos_registry"]

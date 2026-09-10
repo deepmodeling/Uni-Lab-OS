@@ -147,7 +147,7 @@ class MyWorkstation(WorkstationBase):
 
 ```
 hardware_interface = d.ros_node_instance._hardware_interface
-# → {"name": "hardware_interface", "read": "send_command", "write": "send_command"}
+# → {"name": "hardware_interface", "read": "read_data", "write": "send_command", "extra_info": []}
 ```
 
 1. 取 `name` 字段对应的属性值：`name_value = getattr(driver, hardware_interface["name"])`
@@ -167,58 +167,143 @@ hardware_interface = d.ros_node_instance._hardware_interface
 from unilabos.registry.decorators import HardwareInterface
 
 HardwareInterface(
-    name="hardware_interface",   # __init__ 中接收通信实例的属性名
-    read="send_command",         # 通信设备上暴露的读方法名
-    write="send_command",        # 通信设备上暴露的写方法名
-    extra_info=["list_ports"],   # 可选：额外暴露的方法
+    name="hardware_interface",   # 【属性名】存放"目标通信设备 id"的属性名
+    read="read_data",            # 【方法名】本设备"读"原语方法名
+    write="send_command",        # 【方法名】本设备"写"原语方法名
+    extra_info=["slave_id"],     # 【属性名列表】随每次读写注入给通信设备的属性（见示例 3）
 )
 ```
 
-**`name` 字段的含义**：对应设备类 `__init__` 中，用于保存通信实例的**属性名**。系统据此知道要替换哪个属性。大部分设备直接用 `"hardware_interface"`，也可以自定义（如 `"io_device_port"`）。
+务必分清 **属性名** 与 **方法名**：
 
-### 示例 1：泵（name="hardware_interface"）
+| 字段 | 是什么 | 作用 |
+|------|--------|------|
+| `name` | **属性名** | 系统读 `getattr(self, name)` 的"值"判断该设备要连哪个通信设备（`None`=自己是端点；字符串=指向某通信设备 id） |
+| `read` / `write` | **方法名** | 指定读/写两个原语方法的名字 |
+| `extra_info` | **属性名列表** | 转发读写时，从使用方实例读取这些属性的值，按 `属性名=值` 作为关键字参数注入给通信设备的读写函数 |
+
+#### 默认值：方法名用约定名时可整段省略
+
+不在 `@device` 写 `hardware_interface` 时，系统使用默认值（见 `unilabos/ros/initialize_device.py`）：
+
+```python
+{"name": "hardware_interface", "write": "send_command", "read": "read_data", "extra_info": []}
+```
+
+因此：**只要读写方法就叫 `send_command` / `read_data`，并用 `self.hardware_interface` 存目标 id，就完全不用写 `hardware_interface=`。** 仅当方法名不同（如 `tx`/`rx`、`read_io_coil`/`write_io_coil`）时才需显式声明。
+
+#### 两类角色对照
+
+| | `name` 指向的属性值 | `read`/`write` | `__init__` 里要做 |
+|---|---|---|---|
+| **通信端点**（id 以 `serial_`/`io_` 开头） | `None` | 必须对应**真实 IO** 方法（或用默认名省略声明） | `self.hardware_interface = None`，保证自己不被反向代理 |
+| **使用方** | `"<通信设备 id>"`（字符串） | 指定**自身要被替换**的两个方法名 | `self.hardware_interface = "<通信设备 id>"`，并提供读写占位实现 |
+
+> 通信端点的 `name` 值对外无意义（没有任何代码读它），它只决定"自己会不会被当成使用方"。所以通信端点推荐直接省略 `hardware_interface=`，只 `self.hardware_interface = None` 即可。
+
+#### 运行时替换机制（代理本身不带额外内容）
+
+`ROS2WorkstationNode` 第二轮对使用方执行 `setattr` 替换（`workstation.py: _setup_hardware_proxy`）：
+
+- 使用方自身的 `read`/`write` 方法被替换成**转发闭包**，闭包内部调用**通信设备实例**的对应方法；
+- 替换上去的是普通函数，**不绑定使用方的 self**——闭包捕获的是通信设备的绑定方法，所以方法内部 `self` 始终是通信设备。因此读写共享的是**通信设备那一份状态**；
+- 转发时**参数原样透传**，只额外注入 `extra_info` 声明的关键字参数（调用方显式传的同名参数优先级更高）。
+
+### 示例 1：泵（方法名用默认名，可省略 hardware_interface）
+
+```python
+from unilabos.registry.decorators import device
+
+@device(id="my_pump", category=["pump_and_valve"])
+class MyPump:
+    def __init__(self, port=None, address="1", **kwargs):
+        self.hardware_interface = port  # 图文件 config 里填 "port": "serial_pump"
+        self.address = address
+
+    def send_command(self, command: str):   # 默认 write 名（被代理后实际转发到 serial 的 send_command）
+        ...
+
+    def read_data(self):                     # 默认 read 名
+        ...
+```
+
+### 示例 2：电磁阀（自定义属性名 + 自定义方法名，需显式声明）
 
 ```python
 from unilabos.registry.decorators import device, HardwareInterface
 
 @device(
-    id="my_pump",
-    category=["pump_and_valve"],
-    hardware_interface=HardwareInterface(
-        name="hardware_interface",
-        read="send_command",
-        write="send_command",
-    ),
-)
-class MyPump:
-    def __init__(self, port=None, address="1", **kwargs):
-        # name="hardware_interface" → 系统替换 self.hardware_interface
-        self.hardware_interface = port  # 初始为字符串 "serial_pump"，启动后被替换为 Serial 实例
-        self.address = address
-
-    def send_command(self, command: str):
-        full_command = f"/{self.address}{command}\r\n"
-        self.hardware_interface.write(bytearray(full_command, "ascii"))
-        return self.hardware_interface.read_until(b"\n")
-```
-
-### 示例 2：电磁阀（name="io_device_port"，自定义属性名）
-
-```python
-@device(
     id="solenoid_valve",
     category=["pump_and_valve"],
     hardware_interface=HardwareInterface(
-        name="io_device_port",       # 自定义属性名 → 系统替换 self.io_device_port
+        name="io_device_port",       # 自定义属性名 → self.io_device_port
         read="read_io_coil",
         write="write_io_coil",
     ),
 )
 class SolenoidValve:
     def __init__(self, io_device_port: str = None, **kwargs):
-        # name="io_device_port" → 图文件 config 中用 "io_device_port": "io_board_1"
-        self.io_device_port = io_device_port  # 初始为字符串，系统替换为 Modbus 实例
+        # 图文件 config 中用 "io_device_port": "io_board_1"
+        self.io_device_port = io_device_port
+    def read_io_coil(self): ...
+    def write_io_coil(self, coil, value): ...
 ```
+
+### 示例 3：Modbus 从站 id（extra_info 注入每设备固有参数）
+
+多个 Modbus 设备共享同一条总线，但各自 `slave_id` 不同。用 `extra_info` 声明要随读写带过去的属性，系统转发时会自动以 `slave_id=<本设备的值>` 注入给总线读写函数（值在**每次调用时**实时读取）：
+
+```python
+from unilabos.registry.decorators import device, HardwareInterface, action, not_action
+
+# 使用方：声明 extra_info=["slave_id"]，并在实例上保存 slave_id
+@device(
+    id="modbus_sensor",
+    category=["sensor"],
+    hardware_interface=HardwareInterface(
+        name="hardware_interface",
+        read="read_io_coil",
+        write="write_io_coil",
+        extra_info=["slave_id"],          # ← 关键：把 self.slave_id 随读写注入给总线
+    ),
+)
+class ModbusSensor:
+    def __init__(self, port="io_modbus_bus", slave_id=3, **kwargs):
+        self.hardware_interface = port    # 指向通信端点 id（io_ 开头）
+        self.slave_id = slave_id          # ← 会被注入给总线读写
+    @not_action
+    def read_io_coil(self, coil): ...     # 占位，运行时被替换为总线实现(自动带上 slave_id)
+    @not_action
+    def write_io_coil(self, coil, value): ...
+    @action(description="写一个线圈再读回")
+    def probe(self, coil: int = 0, value: int = 1):
+        self.write_io_coil(coil, value)   # 实际 → bus.write_io_coil(coil, value, slave_id=self.slave_id)
+        return self.read_io_coil(coil)    # 实际 → bus.read_io_coil(coil, slave_id=self.slave_id)
+
+# 通信端点：用了非默认方法名 → 必须显式声明 hardware_interface（否则代理会回退到
+# 默认名 send_command/read_data 而报 AttributeError）。读写函数还要能接收 slave_id。
+@device(
+    id="io_modbus_bus",
+    category=["communication_devices"],
+    hardware_interface=HardwareInterface(
+        name="hardware_interface",
+        read="read_io_coil",
+        write="write_io_coil",
+    ),
+)
+class ModbusBus:
+    def __init__(self, **kwargs):
+        self.hardware_interface = None     # 端点自身不被代理
+    def write_io_coil(self, coil, value, slave_id=None): ...  # 收到 slave_id=3
+    def read_io_coil(self, coil, slave_id=None): ...
+```
+
+要点：
+- `extra_info` 写的是**属性名**（`"slave_id"`），不是方法名；
+- 以 `属性名=值` 作为**关键字参数**注入，故通信端点读写函数签名要带 `slave_id=...`；
+- **通信端点用非默认方法名时必须显式声明 `hardware_interface`**（指向真实读写方法名），否则代理回退到默认名 `send_command`/`read_data` 会报 `AttributeError`；框架会打印清晰错误并跳过该绑定而非崩整站，但需补声明后才生效；
+- 通信端点也可声明 `extra_info`（与使用方取并集），但值始终从**使用方实例**读取；
+- 完整可运行示例见 `device_package_workstation_demo`（`mock_modbus_bus.py` + `modbus_sensor.py`）。
 
 ### Serial 通信设备（class="serial"）
 
@@ -317,6 +402,8 @@ class ROS2SerialNode(BaseROS2DeviceNode):
   ]
 }
 ```
+
+> **代理绑定与 `links` 无关**：`hardware_interface` 代理只依据"子设备 config 中指向通信设备 id 的字符串值"（如 `"port": "serial_pump"`）建立，不读取 `links`。`links` 仅用于资源拓扑展示，可按需省略——例如 `device_package_workstation_demo` 的图文件 `links` 就是空的。
 
 ### 通信协议速查
 

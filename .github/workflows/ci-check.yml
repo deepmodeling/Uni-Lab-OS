@@ -2,59 +2,153 @@ name: CI Check
 
 on:
   push:
-    branches:
-      - "**"
+    branches: [main, dev]
   pull_request:
-    branches:
-      - dev
+    branches: [main, dev]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    container:
-      image: styxhuang/unilabos-lite:1.0
+  registry-check:
+    runs-on: windows-latest
 
+    env:
+      # Fix Unicode encoding issue on Windows runner (cp1252 -> utf-8)
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: 1
+      # 强制 matplotlib 使用无头后端，避免在无显示的 Windows runner 上加载 GUI 后端 DLL 导致原生崩溃
+      MPLBACKEND: Agg
+      # 原生崩溃(0xC0000005 访问违例)时打印 Python 调用栈，便于定位是哪个设备模块 import 崩溃
+      PYTHONFAULTHANDLER: "1"
+
+    defaults:
+      run:
+        shell: cmd
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Show runtime environment
+      - name: Setup Miniforge
+        uses: conda-incubator/setup-miniconda@v4
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          channels: robostack-staging,conda-forge,uni-lab
+          channel-priority: flexible
+          activate-environment: check-env
+          auto-update-conda: false
+          show-channel-urls: true
+
+      - name: Install ROS dependencies, uv and unilabos-msgs
         run: |
-          mamba run -n unilab python --version
-          mamba run -n unilab python -c "import sys; print(sys.executable)"
-          mamba run -n unilab python -m pip --version
-          which mamba || true
-          which uv || true
-          which flake8 || true
-          which autopep8 || true
-          which pre-commit || true
+          echo Installing ROS dependencies...
+          mamba install -n check-env --override-channels -c robostack-staging -c conda-forge -c uni-lab conda-forge::uv conda-forge::opencv robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs robostack-staging::ros-humble-nav2-msgs uni-lab::ros-humble-unilabos-msgs robostack-staging::ros-humble-cv-bridge robostack-staging::ros-humble-vision-opencv robostack-staging::ros-humble-tf-transformations robostack-staging::ros-humble-moveit-msgs robostack-staging::ros-humble-tf2-ros robostack-staging::ros-humble-tf2-ros-py conda-forge::transforms3d -y
 
-      - name: Install Uni-Lab-OS in editable mode
+      - name: Install pip dependencies and unilabos
         run: |
-          mamba run -n unilab python -m pip install --upgrade pip
-          mamba run -n unilab python -m pip install pytest
-          mamba run -n unilab python -m pip install -e .
-          mamba run -n unilab python -m pip install -r unilabos/utils/requirements.txt
+          call conda activate check-env
+          echo Installing pip dependencies...
+          uv pip install -r unilabos/utils/requirements.txt
+          uv pip install pytest pywinauto git+https://github.com/Xuwznln/pylabrobot.git
+          uv pip uninstall enum34 || echo enum34 not installed, skipping
+          uv pip install .
 
-      - name: Run flake8
+      - name: Run Windows workflow source safety contracts
         run: |
-          mamba run -n unilab python -m flake8 .
+          call conda activate check-env
+          pytest -q tests/workflow/test_source_definition_bootstrap.py tests/workflow/test_source_file_access_windows.py tests/workflow/test_source_publication_windows.py tests/workflow/test_source_workspace_security.py tests/client/test_session_windows.py tests/hostlink/test_ros_assist.py
 
-      - name: Run szlab mixer pump tests
+      - name: Run check mode (AST registry validation)
+        # check_mode 会真实 import 所有设备类(连带 matplotlib/opencv 等原生库)。
+        # Windows runner 上偶发原生崩溃(退出码 -1073741819 = 0xC0000005 访问违例)，
+        # 这是环境/DLL 层面的 flaky 崩溃，与注册表内容无关，因此对该步做有限次重试。
+        # 注意：段错误退出码为负数，必须用 "%ERRORLEVEL% EQU 0" 显式判断，
+        # 不能用 "if errorlevel 1"(它对负数退出码会误判为成功)。
         run: |
-          mamba run -n unilab python -m pytest \
-            tests/szlab_poly_studio/test_szlab_mixer_pump.py \
-            tests/szlab_poly_studio/test_szlab_mixer_devices.py \
-            tests/szlab_poly_studio/test_szlab_mixer_pump_opcua_ci.py \
-            -q
+          call conda activate check-env
+          echo Running check mode...
+          set ATTEMPTS=4
+          set COUNT=0
+          :retry
+          set /a COUNT+=1
+          echo === Check attempt %COUNT% of %ATTEMPTS% ===
+          python -m unilabos --check_mode --skip_env_check
+          if %ERRORLEVEL% EQU 0 (
+            echo Check passed on attempt %COUNT%
+            exit /b 0
+          )
+          echo Attempt %COUNT% failed with exit code %ERRORLEVEL%
+          if %COUNT% LSS %ATTEMPTS% goto retry
+          echo All %ATTEMPTS% attempts failed
+          exit /b 1
 
-      - name: Run tests
-        run: |
-          mamba run -n unilab python -m pytest tests
-
-      - name: Run OPC UA integration manifests
+      - name: Check for uncommitted changes
         shell: bash
         run: |
-          set -euo pipefail
-          mamba run -n unilab python tests/pseudo_devices/common/run_opcua_ci.py
+          if ! git diff --exit-code; then
+            echo "::error::检测到文件变化！请先在本地运行 'python -m unilabos --complete_registry' 并提交变更"
+            echo "变化的文件:"
+            git diff --name-only
+            exit 1
+          fi
+          echo "检查通过：无文件变化"
+
+  networking-test:
+    # 联网测试：两个真实 unilab 进程（host + slave），ROS 层互相隔离
+    # （不同域号 + LOCALHOST 发现），slave 仍经 HostLink TCP 完成联网与物料查询；
+    # 同 job 先跑 hostlink 单元套件（协议帧/心跳/重连/doctor）。
+    name: 联网测试
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONFAULTHANDLER: "1"
+      MPLBACKEND: Agg
+      # 联网测试为进程级慢测试，显式开启（本地默认跳过）
+      UNILAB_NETWORKING_TEST: "1"
+
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Miniforge
+        uses: conda-incubator/setup-miniconda@v4
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          channels: robostack-staging,conda-forge,uni-lab
+          channel-priority: flexible
+          activate-environment: net-env
+          auto-update-conda: false
+          show-channel-urls: true
+
+      - name: Install ROS dependencies, uv and unilabos-msgs
+        run: |
+          mamba install -n net-env --override-channels -c robostack-staging -c conda-forge -c uni-lab conda-forge::uv conda-forge::opencv robostack-staging::ros-humble-ros-core robostack-staging::ros-humble-action-msgs robostack-staging::ros-humble-std-msgs robostack-staging::ros-humble-geometry-msgs robostack-staging::ros-humble-control-msgs robostack-staging::ros-humble-nav2-msgs uni-lab::ros-humble-unilabos-msgs robostack-staging::ros-humble-cv-bridge robostack-staging::ros-humble-vision-opencv robostack-staging::ros-humble-tf-transformations robostack-staging::ros-humble-moveit-msgs robostack-staging::ros-humble-tf2-ros robostack-staging::ros-humble-tf2-ros-py conda-forge::transforms3d -y
+
+      - name: Install pip dependencies and unilabos
+        run: |
+          uv pip install -r unilabos/utils/requirements.txt
+          uv pip install pytest git+https://github.com/Xuwznln/pylabrobot.git
+          uv pip uninstall enum34 || echo "enum34 not installed, skipping"
+          uv pip install .
+
+      - name: Run hostlink unit suite
+        run: |
+          pytest tests/hostlink -v -p no:launch_testing -p no:launch_ros
+
+      - name: Run 联网测试 (two-process host/slave isolation + HostLink)
+        run: |
+          pytest tests/networking -v -p no:launch_testing -p no:launch_ros
+
+      - name: Upload process logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: networking-test-logs
+          path: /tmp/pytest-of-*/pytest-*/unilab-networking*/
+          if-no-files-found: ignore

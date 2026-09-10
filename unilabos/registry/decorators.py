@@ -83,6 +83,13 @@ class NodeType(str, Enum):
     MANUAL_CONFIRM = "manual_confirm"
 
 
+class ExecutorKind(str, Enum):
+    """动作执行器类别（供设备包声明调度/传输适配器语义）。"""
+
+    MATERIAL_TRANSFER = "material_transfer"
+    PROCESS = "process"
+
+
 # ---------------------------------------------------------------------------
 # Device / Resource Handle (设备/资源级别端口, 序列化时包含 io_type)
 # ---------------------------------------------------------------------------
@@ -250,14 +257,16 @@ def device(
     id_meta: Optional[Dict[str, Dict[str, Any]]] = None,
     category: Optional[List[str]] = None,
     description: str = "",
-    display_name: str = "",
     displayname: str = "",
+    display_name: str = "",
     icon: str = "",
     version: str = "1.0.0",
     handles: Optional[List[_DeviceHandleBase]] = None,
     model: Optional[Dict[str, Any]] = None,
     device_type: str = "python",
     hardware_interface: Optional[HardwareInterface] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    available_sites: Optional[List[Dict[str, Any]]] = None,
 ):
     """
     设备类装饰器
@@ -271,7 +280,7 @@ def device(
     Args:
         id: 单设备时的注册表唯一标识
         ids: 多设备时的 id 列表，与 id_meta 配合使用
-        id_meta: 每个 device_id 的覆盖元数据 (handles/description/icon/model)
+        id_meta: 每个 device_id 的覆盖元数据 (handles/description/icon/model/metadata)
         category: 设备分类标签列表 (必填)
         description: 设备描述
         displayname: 人类可读的设备显示名称，缺失时默认使用 id
@@ -282,6 +291,8 @@ def device(
         model: 可选的 3D 模型配置
         device_type: 设备实现类型 ("python" / "ros2")
         hardware_interface: 硬件通信接口 (HardwareInterface)
+        metadata: 设备扩展元数据，如供应商、规格、容量、孔位数等
+        available_sites: 设备提供的局部库位描述（兼容设备包扩展合同）。
     """
     # Resolve device ids
     if ids is not None:
@@ -309,13 +320,15 @@ def device(
     base_meta = {
         "category": category,
         "description": description,
-        "display_name": resolved_display_name,
+        "displayname": resolved_display_name,
         "icon": icon,
         "version": version,
         "handles": _device_handles_to_list(handles),
         "model": model,
         "device_type": device_type,
         "hardware_interface": (hardware_interface.model_dump(exclude_none=True) if hardware_interface else None),
+        "metadata": dict(metadata or {}),
+        "available_sites": list(available_sites or []),
     }
 
     def decorator(cls):
@@ -357,6 +370,13 @@ def action(
     parent: bool = False,
     node_type: Optional["NodeType"] = None,
     feedback_interval: Optional[float] = None,
+    action_name: Optional[str] = None,
+    displayname: str = "",
+    error_policy: Optional[Dict[str, Any]] = None,
+    estimate_duration_fixed: Optional[float] = 60.0,
+    estimate_duration_express: str = "",
+    executor_kind: Any = None,
+    resource_contract: Optional[Dict[str, Any]] = None,
 ):
     """
     动作方法装饰器
@@ -375,6 +395,8 @@ def action(
     Args:
         action_type: ROS Action 消息类型 (如 EmptyIn, SendCmd, HeatChill).
                      不传/默认 = UniLabJsonCommand (非 auto).
+        action_name: 对外暴露的动作名。None 表示使用被装饰的方法名。
+        displayname: 人类可读的动作显示名。为空时回退为实际 action_name。
         goal: Goal 字段映射 (ROS字段名 -> 设备参数名).
               protocol 模式下可留空，系统自动生成 identity 映射.
         feedback: Feedback 字段映射
@@ -389,25 +411,56 @@ def action(
         parent: 若为 True，当方法参数为空 (*args, **kwargs) 时，通过 MRO 从父类获取真实方法参数
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
+        error_policy: 按异常类名匹配审批选项的策略。结构见
+                      unilabos.registry.action_policy.ErrorPolicy。
+        estimate_duration_fixed: 预计时长兜底值（秒），默认 60 秒；None 表示不提供兜底
+        estimate_duration_express: 根据动作入参计算预计时长的中缀表达式
+        executor_kind: 可选执行器类别；仅作为注册表元数据保留。
+        resource_contract: 可选资源转移合同；仅作为注册表元数据保留。
+
+    Returns:
+        把方法标记为规范动作合同（ActionContract）的装饰器。
     """
 
     def decorator(func: F) -> F:
+        """把动作元数据附加到原始设备方法。
+
+        Args:
+            func: 需要注册为规范动作（Action）的设备方法。
+
+        Returns:
+            保留原函数签名和元数据的包装函数。
+        """
+
         import asyncio as _asyncio
 
         if _asyncio.iscoroutinefunction(func):
             @wraps(func)
             async def wrapper(*args, **kwargs):
+                """透明调用异步设备动作，并保留注册表元数据。"""
+
                 return await func(*args, **kwargs)
         else:
             @wraps(func)
             def wrapper(*args, **kwargs):
+                """透明调用同步设备动作，并保留注册表元数据。"""
+
                 return func(*args, **kwargs)
 
         # action_type 为哨兵值 => 用户没传, 视为 None (UniLabJsonCommand)
         resolved_type = None if action_type is _ACTION_TYPE_UNSET else action_type
+        if estimate_duration_fixed is not None:
+            if not isinstance(estimate_duration_fixed, (int, float)):
+                raise TypeError("estimate_duration_fixed 必须是秒数或 None")
+            if estimate_duration_fixed < 0:
+                raise ValueError("estimate_duration_fixed 不能小于 0")
+        if not isinstance(estimate_duration_express, str):
+            raise TypeError("estimate_duration_express 必须是字符串")
 
         meta = {
             "action_type": resolved_type,
+            "action_name": action_name,
+            "displayname": displayname,
             "goal": goal or {},
             "feedback": feedback or {},
             "result": result or {},
@@ -419,18 +472,64 @@ def action(
             "description": description,
             "auto_prefix": auto_prefix,
             "parent": parent,
+            "estimate_duration_fixed": estimate_duration_fixed,
+            "estimate_duration_express": estimate_duration_express,
+            "executor_kind": (
+                executor_kind.value
+                if isinstance(executor_kind, Enum)
+                else executor_kind
+            ),
+            "resource_contract": resource_contract,
         }
         if feedback_interval is not None:
             meta["feedback_interval"] = feedback_interval
         if node_type is not None:
             meta["node_type"] = node_type.value if isinstance(node_type, NodeType) else str(node_type)
+        normalized_error_policy = None
+        if error_policy:
+            from unilabos.registry.action_policy import normalize_error_policy
+
+            normalized_error_policy = normalize_error_policy(error_policy)
+            meta["error_policy"] = normalized_error_policy
         wrapper._action_registry_meta = meta  # type: ignore[attr-defined]
+        wrapper._action_error_policy = normalized_error_policy  # type: ignore[attr-defined]
+        wrapper._action_contract_kind = "typed"  # type: ignore[attr-defined]
 
         # 设置 _is_always_free 保持与旧 @always_free 装饰器兼容
         if always_free:
             wrapper._is_always_free = True  # type: ignore[attr-defined]
 
         return wrapper  # type: ignore[return-value]
+
+    return decorator
+
+
+def legacy_action(*args: Any, **kwargs: Any):
+    """声明只供遗留设备传输层使用、不可成为规范工作流权威的动作。
+
+    Args:
+        args: 原 ``action`` 装饰器的兼容位置参数。
+        kwargs: 原 ``action`` 装饰器的兼容关键字参数；不再接受字符串物料锁声明。
+
+    Returns:
+        具有遗留动作标记的设备方法装饰器。
+    """
+
+    typed_decorator = action(*args, **kwargs)
+
+    def decorator(func: F) -> F:
+        """把设备方法明确标记为遗留动作。
+
+        Args:
+            func: 仍需通过旧设备传输合同执行的方法。
+
+        Returns:
+            带遗留动作标记的包装函数。
+        """
+
+        wrapped = typed_decorator(func)
+        wrapped._action_contract_kind = "legacy"  # type: ignore[attr-defined]
+        return wrapped
 
     return decorator
 
@@ -454,11 +553,13 @@ def resource(
     id: str,
     category: List[str],
     description: str = "",
+    displayname: str = "",
     icon: str = "",
     version: str = "1.0.0",
     handles: Optional[List[_DeviceHandleBase]] = None,
     model: Optional[Dict[str, Any]] = None,
     class_type: str = "pylabrobot",
+    metadata: Optional[Dict[str, Any]] = None,
 ):
     """
     资源类/函数装饰器
@@ -469,11 +570,13 @@ def resource(
         id: 注册表唯一标识 (必填, 不可重复)
         category: 资源分类标签列表 (必填)
         description: 资源描述
+        displayname: 人类可读的资源显示名称，缺失时默认使用 id
         icon: 图标路径
         version: 版本号
         handles: 端口列表 (InputHandle / OutputHandle)
         model: 可选的 3D 模型配置
         class_type: 资源实现类型 ("python" / "pylabrobot" / "unilabos")
+        metadata: 物料扩展元数据，如供应商、规格、容量、孔位数等
     """
 
     def decorator(obj):
@@ -481,11 +584,13 @@ def resource(
             "resource_id": id,
             "category": category,
             "description": description,
+            "displayname": displayname,
             "icon": icon,
             "version": version,
             "handles": _device_handles_to_list(handles),
             "model": model,
             "class_type": class_type,
+            "metadata": dict(metadata or {}),
         }
         obj._resource_registry_meta = meta
 
@@ -518,14 +623,14 @@ def get_device_meta(cls, device_id: Optional[str] = None) -> Optional[Dict[str, 
     overrides = id_meta[device_id]
     result = dict(base)
     result["device_id"] = device_id
-    for key in ["handles", "description", "display_name", "displayname", "icon", "model"]:
+    for key in ["handles", "description", "displayname", "icon", "model", "metadata"]:
         if key in overrides:
             val = overrides[key]
             if key == "handles" and isinstance(val, list):
                 # handles 必须是 Handle 对象列表
                 result[key] = [h.to_registry_dict() for h in val]
-            elif key == "displayname":
-                result["display_name"] = val
+            elif key == "metadata" and isinstance(val, dict):
+                result[key] = {**(base.get("metadata") or {}), **val}
             else:
                 result[key] = val
     return result

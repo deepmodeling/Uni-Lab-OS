@@ -121,6 +121,17 @@ class ResourceDictType(TypedDict):
     data: Dict[str, Any]
     extra: Dict[str, Any]
     machine_name: str
+    barcode: str
+    barcode_symbology: str
+    liquids: Optional[List[Any]]
+    liquid_history: Optional[List[Any]]
+    unknown_counter: Optional[int]
+
+
+# 液体状态（fork VolumeTracker.serialize()）中属于物质面的键：由漏斗从 data 提升为根字段，
+# 表化映射 liquids↔current_substance、liquid_history↔substance_history、unknown_counter 随
+# 历史持久化；max_volume/thing 是规格面/冗余，留在 data。见 unilab-edge-ui/docs/protocol/cloud-mapping.md §6。
+TRACKER_STATE_KEYS = ("liquids", "liquid_history", "unknown_counter")
 
 
 # 统一的资源字典模型，parent 自动序列化为 parent_uuid，children 不序列化
@@ -143,6 +154,20 @@ class ResourceDict(BaseModel):
     data: Dict[str, Any] = Field(description="Resource data, eg: container liquid data")
     extra: Dict[str, Any] = Field(description="Extra data, eg: slot index")
     machine_name: str = Field(description="Machine this resource belongs to", default="")
+    # 由pylabrobot序列化到config，由 get_resource_instance_from_dict 统一提升到此根字段并移出 config
+    barcode: str = Field(description="Material barcode", default="")  #
+    # 条码码制（PLR Barcode.symbology，如 "Code 128"）；与 barcode 一同从 config 提升，回写时组装回 PLR Barcode dict
+    barcode_symbology: str = Field(description="Barcode symbology / 码制", default="")
+    # 液体状态（PLR Container.serialize_state() = fork VolumeTracker.serialize()）落在 data 中，
+    # 由 get_resource_instance_from_dict 统一把物质面三键提升到根字段并移出 data（TRACKER_STATE_KEYS）；
+    # None 表示非容器/无液体状态（区别于空容器的 []/0）。回 PLR 时经 assemble_tracker_state 组装还原。
+    # liquids=当前组成（history 的派生值）；liquid_history=只追加增量记账（事实源，(name,+v) 加液、
+    # (None,-v) 按比例移除）；unknown_counter=UnknownN 命名计数器（不随历史持久化会导致重放重号）。
+    liquids: Optional[List[Any]] = Field(description="Container current liquids [(name|None, volume), ...]", default=None)
+    liquid_history: Optional[List[Any]] = Field(
+        description="Container liquid event history [(name|None, ±volume), ...]", default=None
+    )
+    unknown_counter: Optional[int] = Field(description="UnknownN naming counter for unnamed liquids", default=None)
 
     @field_serializer("parent_uuid")
     def _serialize_parent(self, parent_uuid: Optional["ResourceDict"]):
@@ -180,6 +205,29 @@ class ResourceDict(BaseModel):
     def is_root_node(self) -> bool:
         """判断资源是否为根节点"""
         return self.parent is None
+
+
+# ResourceDict 全部根级键（含别名 schema/class）。graphio 标准化白名单由此派生：
+# 新增根字段自动进入白名单，杜绝「加字段忘白名单、被搬进 config」一类漂移。
+# 守护测试：tests/resources/test_tracker_state_promotion.py::TestRootFieldContract
+RESOURCE_ROOT_FIELDS: tuple = tuple(
+    field.serialization_alias or field.alias or field_name
+    for field_name, field in ResourceDict.model_fields.items()
+)
+
+
+def assemble_tracker_state(res: "ResourceDict") -> Dict[str, Any]:
+    """把根字段液体状态组装回完整 PLR serialize_state 形态（与漏斗提升方向对称）。
+
+    根字段为 None（非容器）时不注入对应键，避免向 Plate/TipSpot 等无液体
+    追踪的资源状态里塞入未知键。
+    """
+    data = dict(res.data)
+    for state_key in TRACKER_STATE_KEYS:
+        root_val = getattr(res, state_key)
+        if root_val is not None:
+            data[state_key] = root_val
+    return data
 
 
 class GraphData(BaseModel):
@@ -229,6 +277,26 @@ class ResourceDictInstance(object):
             content["data"] = {}
         if not content.get("extra"):  # MagicCode
             content["extra"] = {}
+        # 条码：老物料把 barcode 落在 config 中（PLR serialize 的位置），而根字段可能为空。
+        # 统一在此漏斗里提升到根字段并移出 config：根字段已有值则以根字段为准、仅清理 config。
+        # 原生 PLR Barcode 对象序列化为 {data, symbology, position_on_resource}：data→barcode、symbology→barcode_symbology
+        # （position_on_resource 不在 ResourceDict 保留）；自定义 Bottle 则 barcode 直接是字符串。
+        config_barcode = content["config"].pop("barcode", None)
+        if isinstance(config_barcode, dict):
+            if not content.get("barcode"):
+                content["barcode"] = config_barcode.get("data", "")
+            if not content.get("barcode_symbology"):
+                content["barcode_symbology"] = config_barcode.get("symbology", "")
+        elif config_barcode and not content.get("barcode"):
+            content["barcode"] = config_barcode
+        # 液体状态：容器把 VolumeTracker.serialize() 落在 data 中（PLR serialize_state 的位置）。
+        # 与 barcode 同范式在此漏斗提升物质面三键到根字段并移出 data：根字段已有值则以根字段为准、
+        # 仅清理 data；data 无此键（非容器）则根字段保持 None。max_volume/thing 留在 data（规格面/冗余）。
+        for state_key in TRACKER_STATE_KEYS:
+            state_val = content["data"].pop(state_key, None)
+            if state_val is not None and content.get(state_key) is None:
+                # noinspection PyTypedDict
+                content[state_key] = state_val
         if "position" in content:
             pose = content.get("pose", {})
             if "position" not in pose:
@@ -252,12 +320,21 @@ class ResourceDictInstance(object):
             raise err
 
     def get_plr_nested_dict(self) -> Dict[str, Any]:
-        """获取资源实例的嵌套字典表示"""
+        """获取资源实例的嵌套字典表示（barcode 对齐 PLR serialize 形式）"""
         res_dict = self.res_content.model_dump(by_alias=True)
         res_dict["children"] = {child.res_content.id: child.get_plr_nested_dict() for child in self.children}
         res_dict["parent"] = self.res_content.parent_instance_name
         res_dict["position"] = self.res_content.pose.position.model_dump()
         del res_dict["pose"]
+        barcode = res_dict.pop("barcode", "")
+        symbology = res_dict.pop("barcode_symbology", "")
+        res_dict["barcode"] = (
+            {"data": barcode, "symbology": symbology or "", "position_on_resource": "front"} if barcode else None
+        )
+        # 液体状态根字段组装回 data（PLR serialize_state 完整形态），根键不保留在嵌套 dict 中
+        res_dict["data"] = assemble_tracker_state(self.res_content)
+        for state_key in TRACKER_STATE_KEYS:
+            res_dict.pop(state_key, None)
         return res_dict
 
 
@@ -554,29 +631,57 @@ class ResourceTreeSet(object):
         return cls(trees)
 
     def to_plr_resources(self, skip_devices=True) -> List["PLRResource"]:
-        """
-        将 ResourceTreeSet 转换为 PLR 资源列表
+        """将资源树集合转换为 PLR 资源列表。
+
+        Args:
+            skip_devices: 是否跳过只表示设备根节点的资源树。
 
         Returns:
-            List[PLRResource]: PLR 资源实例列表
+            保留资源身份、层级和跟踪状态的 PLR 资源实例列表。
+
+        Raises:
+            ValueError: 资源类型无法安全投影为 PLR 类型时抛出。
         """
         register()
         from pylabrobot.resources import Resource as PLRResource
         from pylabrobot.utils.object_parsing import find_subclass
+        from unilabos.resources.itemized_carrier import ItemizedCarrier
 
         # 类型映射
         TYPE_MAP = {
+            "resource": "Resource",
             "plate": "Plate",
             "well": "Well",
             "deck": "Deck",
             "container": "RegularContainer",
             "tip_spot": "TipSpot",
+            # 仓库（Warehouse）的库存（Inventory）/库位（Site）元数据不属于
+            # PLR 构造合同；需要进入驱动的普通仓库只降级为通用 Resource。
+            "warehouse": "Resource",
+        }
+        # 通用 PLR Resource 的完整入站合同；仓库自己的库存（Inventory）与
+        # 库位（Site）布局继续由公共物料图持有，不进入设备动作资源。
+        GENERIC_RESOURCE_KEYS = {
+            "name",
+            "type",
+            "size_x",
+            "size_y",
+            "size_z",
+            "location",
+            "rotation",
+            "category",
+            "model",
+            "barcode",
+            "preferred_pickup_location",
+            "children",
+            "parent_name",
         }
 
         def collect_node_data(node: ResourceDictInstance, name_to_uuid: dict, all_states: dict, name_to_extra: dict):
             """一次遍历收集 name_to_uuid, all_states 和 name_to_extra"""
             name_to_uuid[node.res_content.name] = node.res_content.uuid
-            all_states[node.res_content.name] = node.res_content.data
+            # 液体状态从根字段组装回完整 serialize_state 形态，load_all_state 才能恢复 tracker
+            all_states[node.res_content.name] = assemble_tracker_state(node.res_content)
             name_to_extra[node.res_content.name] = node.res_content.extra
             name_to_extra[node.res_content.name][FRONTEND_POSE_EXTRA] = node.res_content.pose.extra
             name_to_extra[node.res_content.name][EXTRA_CLASS] = node.res_content.klass
@@ -584,16 +689,41 @@ class ResourceTreeSet(object):
                 collect_node_data(child, name_to_uuid, all_states, name_to_extra)
 
         def node_to_plr_dict(node: ResourceDictInstance, has_model: bool):
-            """转换节点为 PLR 字典格式"""
+            """把一个资源树节点转换为 PLR 构造字典。
+
+            参数：``node`` 是待恢复的资源节点，``has_model`` 决定是否保留模型
+            字段。返回：过滤库存（Inventory）/库位（Site）私有配置后的 PLR
+            字典。异常：节点字段缺失或类型非法时由资源模型访问原样传播。
+            """
             res = node.res_content
             plr_type = TYPE_MAP.get(res.type, res.type)
             if res.type not in TYPE_MAP:
                 logger.warning(f"未知类型 {res.type}")
 
+            # 反序列化方向：把根字段 barcode/barcode_symbology 组装回 config 的 barcode
+            # （PLR Barcode dict {data, symbology, position_on_resource}），与
+            # get_resource_instance_from_dict 从 config 读取的逻辑对称；position 未保留，默认兜底。
+            config = dict(res.config)
+            # 只有公开支持库位（Site）反查的离散载架接收 ``sites[]``；普通 PLR
+            # 资源仍剥离部署声明，避免把库存元数据泄漏给不认识该参数的构造器。
+            target_type = str(config.get("type") or plr_type)
+            target_class = find_subclass(target_type, PLRResource)
+            if target_class is None or not issubclass(target_class, ItemizedCarrier):
+                config.pop("sites", None)
+            if res.type == "deck":
+                # setup 只控制部署包工作台类的首次构造；恢复通用 PLR Deck 时
+                # 子资源已由 children 提供，不能再次执行初始化或传入未知参数。
+                config.pop("setup", None)
+            if res.barcode:
+                config["barcode"] = {
+                    "data": res.barcode,
+                    "symbology": res.barcode_symbology or "",
+                    "position_on_resource": "front",
+                }
             d = {
-                **res.config,
+                **config,
                 "name": res.name,
-                "type": res.config.get("type", plr_type),
+                "type": target_type,
                 "size_x": res.pose.size.width,
                 "size_y": res.pose.size.height,
                 "size_z": res.pose.size.depth,
@@ -610,6 +740,14 @@ class ResourceTreeSet(object):
             }
             if has_model:
                 d["model"] = res.config.get("model", None)
+            if plr_type == "Resource":
+                # 每个通用资源节点都只保留 PLR Resource 构造合同；在递归构造
+                # 阶段过滤，才能覆盖仓库、自定义资源及其嵌套子资源。
+                d = {
+                    key: value
+                    for key, value in d.items()
+                    if key in GENERIC_RESOURCE_KEYS
+                }
             return d
 
         plr_resources = []
@@ -911,7 +1049,7 @@ class ResourceTreeSet(object):
 
         return self
 
-    def dump(self, old_position=False) -> List[List[Dict[str, Any]]]:
+    def dump(self, old_position=False) -> List[List[ResourceDictType]]:
         """
         将 ResourceTreeSet 序列化为嵌套列表格式
 

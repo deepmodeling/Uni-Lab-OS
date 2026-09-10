@@ -87,7 +87,17 @@ class ColoredFormatter(logging.Formatter):
         module_path = f"{record.name}.{filename}"
         func_line = f"{record.funcName}:{record.lineno}"
         thread_part = f" [{record.threadName}]" if self.show_thread else ""
-        return f"{thread_part} [{func_line}] [{module_path}]"
+        trace_part = ""
+        try:
+            # 延迟导入避免 logging 初始化与 tracing 可选依赖形成环。
+            from unilabos.utils.tracing import current_trace_ids
+
+            trace_id, span_id = current_trace_ids()
+            if trace_id:
+                trace_part = f" [trace_id={trace_id} span_id={span_id}]"
+        except Exception:  # noqa: BLE001 - 日志格式化不得因观测失败
+            pass
+        return f"{thread_part}{trace_part} [{func_line}] [{module_path}]"
 
     def format(self, record):
         # 检查是否有自定义堆栈信息
@@ -292,6 +302,8 @@ def configure_comm_logger(working_dir=None, loglevel=None):
 
     # 移除旧 handler，支持重启重复调用
     for handler in comm_logger.handlers[:]:
+        if getattr(handler, "_unilabos_otel_handler", False):
+            continue
         comm_logger.removeHandler(handler)
         handler.close()
 
@@ -322,6 +334,14 @@ def configure_comm_logger(working_dir=None, loglevel=None):
             ws_lib_logger.removeHandler(_comm_file_handler)
         ws_lib_logger.addHandler(file_handler)
         _comm_file_handler = file_handler
+
+    # tracing 可能早于或晚于通信 logger 初始化；两种顺序都要接入同一 OTLP handler。
+    try:
+        from unilabos.utils.tracing import attach_active_otel_log_handler
+
+        attach_active_otel_log_handler(comm_logger)
+    except Exception:
+        pass
 
     comm_logger.info(f"[CommLogger] 通信日志已初始化，文件: {log_filepath}")
     return log_filepath

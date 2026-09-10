@@ -1,0 +1,444 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: uni-lab-demo-edge-config
+  namespace: xiongyanfei
+  labels:
+    app.kubernetes.io/name: uni-lab-demo-edge
+    app.kubernetes.io/part-of: uni-lab-demo
+data:
+  local_config.py: |
+    class BasicConfig:
+        disable_browser = True
+        log_level = "INFO"
+        machine_name = "demo-edge-a"
+
+    class HostLinkConfig:
+        enable = False
+
+  instance_bootstrap.json: |
+    {
+      "nodes": [
+        {
+          "id": "heater_01",
+          "name": "模拟加热台",
+          "type": "device",
+          "class": "virtual_heatchill",
+          "parent": null,
+          "children": [],
+          "barcode": "DEV-HEATER-XYF-01",
+          "position": {"x": 100, "y": 100, "z": 0},
+          "config": {"port": "MOCK"},
+          "data": {
+            "current_temperature": 25.0,
+            "target_temperature": 25.0,
+            "status": "Idle",
+            "is_heating": false,
+            "heating_power": 0.0,
+            "max_temperature": 300.0
+          }
+        },
+        {
+          "id": "pump_01",
+          "name": "模拟注射泵",
+          "type": "device",
+          "class": "virtual_transfer_pump",
+          "parent": null,
+          "children": [],
+          "barcode": "DEV-PUMP-XYF-01",
+          "position": {"x": 500, "y": 100, "z": 0},
+          "config": {"port": "MOCK"},
+          "data": {
+            "status": "Idle",
+            "current_device": "pump_01",
+            "pump_state": "Stopped",
+            "flow_rate": 0.0,
+            "target_flow_rate": 0.0,
+            "pressure": 0.0,
+            "total_volume": 0.0
+          }
+        },
+        {
+          "id": "hplc_plate_01",
+          "name": "HPLC 样品板",
+          "type": "resource",
+          "class": "hplc_plate",
+          "parent": null,
+          "children": [],
+          "barcode": "INS-HPLC-PLATE-XYF-01",
+          "position": {"x": 900, "y": 100, "z": 0},
+          "config": {},
+          "data": {}
+        }
+      ],
+      "links": []
+    }
+  demo_devices.json: |
+    {
+      "nodes": [
+        {
+          "id": "heater_01",
+          "name": "模拟加热台",
+          "type": "device",
+          "class": "virtual_heatchill",
+          "parent": null,
+          "children": [],
+          "barcode": "DEV-HEATER-XYF-01",
+          "position": {"x": 100, "y": 100, "z": 0},
+          "config": {"port": "MOCK"},
+          "data": {
+            "current_temperature": 25.0,
+            "target_temperature": 25.0,
+            "status": "Idle",
+            "is_heating": false,
+            "heating_power": 0.0,
+            "max_temperature": 300.0
+          }
+        },
+        {
+          "id": "pump_01",
+          "name": "模拟注射泵",
+          "type": "device",
+          "class": "virtual_transfer_pump",
+          "parent": null,
+          "children": [],
+          "barcode": "DEV-PUMP-XYF-01",
+          "position": {"x": 500, "y": 100, "z": 0},
+          "config": {"port": "MOCK"},
+          "data": {
+            "status": "Idle",
+            "current_device": "pump_01",
+            "pump_state": "Stopped",
+            "flow_rate": 0.0,
+            "target_flow_rate": 0.0,
+            "pressure": 0.0,
+            "total_volume": 0.0
+          }
+        }
+      ],
+      "links": []
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: uni-lab-demo-template-sync
+  namespace: xiongyanfei
+  labels:
+    app.kubernetes.io/name: uni-lab-demo-template-sync
+    app.kubernetes.io/part-of: uni-lab-demo
+spec:
+  backoffLimit: 20
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: uni-lab-demo-template-sync
+        app.kubernetes.io/part-of: uni-lab-demo
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 57439
+        runAsGroup: 57439
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: template-sync
+          image: uni-lab-demo-edge:manual-confirm-20260803-1
+          imagePullPolicy: Never
+          args:
+            - unilab
+            - --config
+            - /etc/unilabos/local_config.py
+            - --working_dir
+            - /work
+            - --addr
+            - http://uni-lab-demo-backend:8080/api/v1
+            - template-sync
+          env:
+            - name: UNILAB_TEMPLATE_SYNC_DEVELOPER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: uni-lab-demo-secrets
+                  key: developer-api-key
+            - name: UNILABOS_OTELCONFIG_ENABLED
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: http://signoz-otel:4317
+            - name: OTEL_EXPORTER_OTLP_TRACES_INSECURE
+              value: "true"
+            - name: OTEL_SERVICE_NAME
+              value: uni-lab-edge-template-sync
+            - name: OTEL_SERVICE_VERSION
+              value: manual-confirm-20260803-1
+            - name: OTEL_DEPLOYMENT_ENVIRONMENT
+              value: demo
+            - name: OTEL_TRACES_SAMPLER
+              value: always_on
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/unilabos
+              readOnly: true
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: config
+          configMap:
+            name: uni-lab-demo-edge-config
+        - name: work
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: uni-lab-demo-instance-sync
+  namespace: xiongyanfei
+  labels:
+    app.kubernetes.io/name: uni-lab-demo-instance-sync
+    app.kubernetes.io/part-of: uni-lab-demo
+spec:
+  backoffLimit: 20
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: uni-lab-demo-instance-sync
+        app.kubernetes.io/part-of: uni-lab-demo
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 57439
+        runAsGroup: 57439
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: instance-sync
+          image: uni-lab-demo-edge:manual-confirm-20260803-1
+          imagePullPolicy: Never
+          args:
+            - unilab
+            - --graph
+            - /etc/unilabos/instance_bootstrap.json
+            - --config
+            - /etc/unilabos/local_config.py
+            - --working_dir
+            - /work
+            - --addr
+            - http://uni-lab-demo-backend:8080/api/v1
+            - instance-sync
+          env:
+            - name: UNILAB_INSTANCE_SYNC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: uni-lab-demo-secrets
+                  key: instance-api-key
+            - name: UNILABOS_OTELCONFIG_ENABLED
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: http://signoz-otel:4317
+            - name: OTEL_EXPORTER_OTLP_TRACES_INSECURE
+              value: "true"
+            - name: OTEL_SERVICE_NAME
+              value: uni-lab-edge-instance-sync
+            - name: OTEL_SERVICE_VERSION
+              value: manual-confirm-20260803-1
+            - name: OTEL_DEPLOYMENT_ENVIRONMENT
+              value: demo
+            - name: OTEL_TRACES_SAMPLER
+              value: always_on
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/unilabos
+              readOnly: true
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: config
+          configMap:
+            name: uni-lab-demo-edge-config
+        - name: work
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uni-lab-demo-edge-data
+  namespace: xiongyanfei
+  labels:
+    app.kubernetes.io/name: uni-lab-demo-edge
+    app.kubernetes.io/part-of: uni-lab-demo
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uni-lab-demo-edge
+  namespace: xiongyanfei
+  labels:
+    app.kubernetes.io/name: uni-lab-demo-edge
+    app.kubernetes.io/part-of: uni-lab-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: uni-lab-demo-edge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: uni-lab-demo-edge
+        app.kubernetes.io/part-of: uni-lab-demo
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 57439
+        runAsGroup: 57439
+        fsGroup: 57439
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-resource-bootstrap
+          image: uni-lab-demo-edge:manual-confirm-20260803-1
+          imagePullPolicy: Never
+          args:
+            - unilab
+            - --graph
+            - /etc/unilabos/instance_bootstrap.json
+            - --config
+            - /etc/unilabos/local_config.py
+            - --working_dir
+            - /tmp/unilabos
+            - --addr
+            - http://uni-lab-demo-backend:8080/api/v1
+            - instance-sync
+            - --check_only
+          env:
+            - name: UNILABOS_OTELCONFIG_ENABLED
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: http://signoz-otel:4317
+            - name: OTEL_EXPORTER_OTLP_TRACES_INSECURE
+              value: "true"
+            - name: OTEL_SERVICE_NAME
+              value: uni-lab-edge-bootstrap-check
+            - name: OTEL_SERVICE_VERSION
+              value: manual-confirm-20260803-1
+            - name: OTEL_DEPLOYMENT_ENVIRONMENT
+              value: demo
+            - name: OTEL_TRACES_SAMPLER
+              value: always_on
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/unilabos
+              readOnly: true
+      containers:
+        - name: edge
+          image: uni-lab-demo-edge:manual-confirm-20260803-1
+          imagePullPolicy: Never
+          args:
+            - unilab
+            - --graph
+            - /etc/unilabos/demo_devices.json
+            - --config
+            - /etc/unilabos/local_config.py
+            - --working_dir
+            - /data
+            - --backend
+            - ros
+            - --app_bridges
+            - fastapi
+            - --port
+            - "8002"
+            - --disable_browser
+            - --visual
+            - disable
+          env:
+            - name: UNILABOS_OTELCONFIG_ENABLED
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: http://signoz-otel:4317
+            - name: OTEL_EXPORTER_OTLP_TRACES_INSECURE
+              value: "true"
+            - name: OTEL_SERVICE_NAME
+              value: uni-lab-edge
+            - name: OTEL_SERVICE_VERSION
+              value: manual-confirm-20260803-1
+            - name: OTEL_DEPLOYMENT_ENVIRONMENT
+              value: demo
+            - name: OTEL_TRACES_SAMPLER
+              value: always_on
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: edge.key=demo-edge-a,k8s.namespace.name=xiongyanfei
+            - name: ROS_DOMAIN_ID
+              value: "78"
+            - name: ROS_LOCALHOST_ONLY
+              value: "0"
+          ports:
+            - name: http
+              containerPort: 8002
+          startupProbe:
+            httpGet:
+              path: /status
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: http
+            periodSeconds: 10
+            failureThreshold: 6
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: http
+            periodSeconds: 30
+            failureThreshold: 5
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/unilabos
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: uni-lab-demo-edge-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: uni-lab-demo-edge-data

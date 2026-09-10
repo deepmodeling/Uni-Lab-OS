@@ -546,25 +546,62 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
     def _setup_hardware_proxy(
         self, device: ROS2DeviceNode, communication_device: ROS2DeviceNode, read_method, write_method
     ):
-        """为设备设置硬件接口代理"""
-        # extra_info = [getattr(device.driver_instance, info) for info in communication_device.ros_node_instance._hardware_interface.get("extra_info", [])]
-        write_func = getattr(
-            communication_device.driver_instance, communication_device.ros_node_instance._hardware_interface["write"]
-        )
-        read_func = getattr(
-            communication_device.driver_instance, communication_device.ros_node_instance._hardware_interface["read"]
-        )
+        """为设备设置硬件接口代理。
+
+        把 ``device`` 的读/写方法替换为转发到 ``communication_device`` 真实读写函数的闭包，
+        从而让多个设备共享同一个通信端点。
+
+        若 ``device`` 或通信端的 hardware_interface 声明了 ``extra_info``（一组属性名），
+        转发时会从 ``device`` 实例上实时读取这些属性的值，并以 ``属性名=值`` 的形式作为
+        关键字参数注入给通信设备的读写函数（典型用途：Modbus 从站 id、寄存器地址等每个
+        设备固有、但需要交给共享通信端的参数）。调用方显式传入的同名关键字参数优先级更高。
+        """
+        comm_hw = communication_device.ros_node_instance._hardware_interface
+        comm_instance = communication_device.driver_instance
+        comm_id = getattr(comm_instance, "device_id", comm_hw.get("name"))
+        write_name = comm_hw.get("write")
+        read_name = comm_hw.get("read")
+        # 用默认值 getattr 避免端点方法名配错时直接崩溃整站；缺失则给出清晰提示并跳过该方向
+        write_func = getattr(comm_instance, write_name, None) if write_name else None
+        read_func = getattr(comm_instance, read_name, None) if read_name else None
+        if write_name and write_func is None:
+            self.lab_logger().error(
+                f"[硬件代理] 通信设备 {comm_id} 没有 write 方法 '{write_name}'，无法为使用方建立写代理；"
+                f"请在该通信设备的 @device(hardware_interface=...) 中把 write 指向真实方法名"
+            )
+        if read_name and read_func is None:
+            self.lab_logger().error(
+                f"[硬件代理] 通信设备 {comm_id} 没有 read 方法 '{read_name}'，无法为使用方建立读代理；"
+                f"请在该通信设备的 @device(hardware_interface=...) 中把 read 指向真实方法名"
+            )
+
+        # extra_info：需要随读写一起注入的额外参数名（使用方与通信端声明取并集），值从使用方实例读取
+        device_hw = device.ros_node_instance._hardware_interface
+        driver_instance = device.driver_instance
+        display_id = getattr(driver_instance, "device_id", read_method or write_method)
+        extra_names: List[str] = []
+        for name in [*(device_hw.get("extra_info") or []), *(comm_hw.get("extra_info") or [])]:
+            if name in extra_names:
+                continue
+            if hasattr(driver_instance, name):
+                extra_names.append(name)
+            else:
+                self.lab_logger().warning(
+                    f"[硬件代理] 子设备 {display_id} 的 extra_info 声明了属性 '{name}'，"
+                    f"但其实例上不存在该属性，转发时将忽略该参数"
+                )
+
+        def _extra_kwargs() -> Dict[str, Any]:
+            return {name: getattr(driver_instance, name) for name in extra_names}
 
         def _read(*args, **kwargs):
-            return read_func(*args, **kwargs)
+            return read_func(*args, **{**_extra_kwargs(), **kwargs})
 
         def _write(*args, **kwargs):
-            return write_func(*args, **kwargs)
+            return write_func(*args, **{**_extra_kwargs(), **kwargs})
 
-        if read_method:
-            # bound_read = MethodType(_read, device.driver_instance)
-            setattr(device.driver_instance, read_method, _read)
+        if read_method and read_func is not None:
+            setattr(driver_instance, read_method, _read)
 
-        if write_method:
-            # bound_write = MethodType(_write, device.driver_instance)
-            setattr(device.driver_instance, write_method, _write)
+        if write_method and write_func is not None:
+            setattr(driver_instance, write_method, _write)

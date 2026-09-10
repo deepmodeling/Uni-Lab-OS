@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 package_name = 'unilabos'
 
@@ -7,7 +7,11 @@ setup(
     version='0.11.3',
     packages=find_packages(),
     include_package_data=True,
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'jsonschema>=4.18',
+        'rfc8785>=0.1.4,<0.2',
+    ],
     zip_safe=True,
     author="The unilabos developers",
     maintainer='Junhan Chang, Xuwznln',

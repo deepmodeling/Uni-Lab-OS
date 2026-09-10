@@ -221,10 +221,10 @@ Laboratory A    Laboratory B
 
 ```bash
 # 实验室A
-unilab --ak your_ak --sk your_sk --upload_registry
+unilab --ak your_ak --sk your_sk template-sync
 
 # 实验室B
-unilab --ak your_ak --sk your_sk --upload_registry
+unilab --ak your_ak --sk your_sk template-sync
 ```
 
 ---
@@ -247,11 +247,11 @@ unilab --ak your_ak --sk your_sk --upload_registry
 #### 2. 启动主节点
 
 ```bash
-# 基本启动
-unilab --ak your_ak --sk your_sk -g host.json
+# 基本启动：Host 微后端监听全部 Slave
+unilab --ak your_ak --sk your_sk -g host.json --hostlink_addr 0.0.0.0:7302
 
 # 带云端集成
-unilab --ak your_ak --sk your_sk -g host.json --upload_registry
+unilab --ak your_ak --sk your_sk -g host.json
 
 # 指定端口
 unilab --ak your_ak --sk your_sk -g host.json --port 8002
@@ -297,11 +297,13 @@ ros2 service list | grep host_node
 #### 2. 启动从节点
 
 ```bash
-# 基本从节点启动
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave
+# 基本从节点启动（默认等待 Host 握手和 ROS 配置下发）
+unilab --ak your_ak --sk your_sk -g slave1.json --is_slave \
+  --hostlink_addr <host_ip>:7302
 
 # 指定不同端口（如果多个从节点在同一台机器）
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --port 8003 \
+  --hostlink_addr <host_ip>:7302
 
 # 跳过等待主节点（独立测试）
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --slave_no_host
@@ -318,6 +320,31 @@ ros2 topic echo /liquid_handler_1/status
 ```
 
 ### 跨节点通信
+
+#### 工作流调度与结果回收
+
+Host 的 Edge 微后端是工作流与全部 Slave 连接的所有者。完整执行链路如下：
+
+```text
+微前端 POST /api/v1/workflows
+  -> EdgeScheduler 解析 DAG / handle
+  -> JobExecutionBackend 串行化 device+action 队列
+  -> HostNode 创建/选择 ROS ActionClient
+  -> ROS2 / DDS 定向组网
+  -> 拥有该 device_id 的 Slave ROS device wrapper 执行
+  -> ROS Action result 回到 HostNode
+  -> DAG 写入上游 ret_value
+  -> source handle gjson 读取 / target handle sjson 注入
+  -> 下游 job 或工作流终态
+  -> workflow_history.db 持久化
+```
+
+Slave 的 HostLink hello 使用启动图内全局唯一 `device_ids` 做控制面身份，但 HostLink
+在线状态不等于动作就绪。HostLink 默认下发与自身相同数字端口的 Fast DDS Discovery
+Server UDP endpoint；Slave 初始化设备后再经 ROS `/node_info_update` 报送动作映射，
+HostNode 主动创建匹配客户端。只有 ROS endpoint 匹配成功才对调度器声明在线。
+Discovery Server 不可用时保留原 ROS 发现策略；若最终仍找不到 Action，Job 明确失败，
+不会由 HostLink 偷偷执行同一真实设备动作。
 
 #### 资源访问
 
@@ -513,7 +540,8 @@ ros2 node list  # 查看在线节点
    echo $ROS_DOMAIN_ID
    ```
 
-3. 使用`--slave_no_host`测试：
+3. 仅为隔离故障，使用 `--slave_no_host` 验证 Slave 能否按本地 ROS 配置启动
+   （HostLink 仍会后台重连；生产拓扑不要常规使用）：
    ```bash
    unilab --ak your_ak --sk your_sk -g slave.json --is_slave --slave_no_host
    ```

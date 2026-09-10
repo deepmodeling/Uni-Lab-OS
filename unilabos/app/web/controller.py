@@ -369,7 +369,8 @@ def get_online_devices() -> Tuple[bool, Dict[str, Any]]:
             else:
                 device_id = device_key
 
-            # 获取设备详细信息
+            # Online means the HostNode ROS graph has registered this device;
+            # a HostLink TCP heartbeat alone is intentionally insufficient.
             device_info = registered_devices.get(device_id, {})
             machine_name = host_node.device_machine_names.get(device_id, "未知")
 
@@ -379,6 +380,7 @@ def get_online_devices() -> Tuple[bool, Dict[str, Any]]:
                 "machine_name": machine_name,
                 "uuid": device_info.get("uuid", "") if device_info else "",
                 "node_name": device_info.get("node_name", "") if device_info else "",
+                "transport": "ros",
             }
 
         return True, {

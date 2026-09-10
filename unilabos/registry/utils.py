@@ -18,6 +18,7 @@ from msgcenterpy.instances.typed_dict_instance import TypedDictMessageInstance
 
 from unilabos.utils.cls_creator import import_class
 from unilabos.registry.decorators import Side, DataSource, normalize_enum_value
+from unilabos.registry.placeholder_type import PLACEHOLDER_RESOURCES, PLACEHOLDER_DEVICES
 
 _logger = logging.getLogger(__name__)
 
@@ -29,6 +30,13 @@ _logger = logging.getLogger(__name__)
 
 class ROSMsgNotFound(Exception):
     pass
+
+
+def resolve_registry_displayname(displayname: Optional[str], entry_id: str) -> str:
+    """注册表 displayname：显式为空时回退为 entry id。"""
+    if displayname:
+        return displayname
+    return entry_id
 
 
 # ---------------------------------------------------------------------------
@@ -483,9 +491,9 @@ def detect_placeholder_keys(params: list) -> Dict[str, str]:
     for p in params:
         ptype = p.get("type", "")
         if "ResourceSlot" in str(ptype):
-            result[p["name"]] = "unilabos_resources"
+            result[p["name"]] = PLACEHOLDER_RESOURCES
         elif "DeviceSlot" in str(ptype):
-            result[p["name"]] = "unilabos_devices"
+            result[p["name"]] = PLACEHOLDER_DEVICES
     return result
 
 

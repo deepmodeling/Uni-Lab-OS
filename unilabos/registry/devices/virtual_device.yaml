@@ -826,8 +826,8 @@ virtual_filter:
             sample_id: ''
             type: ''
           stir: false
-          stir_speed: 0.0
-          temp: 0.0
+          stir_speed: 300.0
+          temp: 25.0
           vessel:
             category: ''
             children: []
@@ -1470,10 +1470,10 @@ virtual_heatchill:
           purpose: ''
           reflux_solvent: ''
           stir: false
-          stir_speed: 0.0
-          temp: 0.0
+          stir_speed: 300.0
+          temp: 25.0
           temp_spec: ''
-          time: ''
+          time: '1'
           time_spec: ''
           vessel:
             category: ''
@@ -1654,7 +1654,7 @@ virtual_heatchill:
           vessel: vessel
         goal_default:
           purpose: ''
-          temp: 0.0
+          temp: 25.0
           vessel:
             category: ''
             children: []
@@ -5678,7 +5678,7 @@ virtual_transfer_pump:
           max_velocity: max_velocity
           position: position
         goal_default:
-          max_velocity: 0.0
+          max_velocity: 5.0
           position: 0.0
         handles: {}
         placeholder_keys: {}
@@ -5763,7 +5763,7 @@ virtual_transfer_pump:
           time: 0.0
           to_vessel: ''
           viscous: false
-          volume: 0.0
+          volume: 1.0
         handles: {}
         placeholder_keys: {}
         result:

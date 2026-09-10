@@ -229,6 +229,96 @@ from unilabos.registry.decorators import not_action, always_free
 @always_free         # 标记为不受排队限制（查询类操作）
 ```
 
+### @subscribe — 订阅 **其它设备** 的 topic（跨设备状态联动）
+
+让 driver 方法成为某个 topic 的订阅回调，节点初始化时自动扫描并创建订阅者。典型用途：**监听其它设备的状态 → 做判断 → 触发控制**。与 `@topic_config`（发布状态）互为收发两端。
+
+> ⚠️ `@subscribe` **只用于跨设备订阅**（订阅别的设备的状态）。订阅本设备自己的状态没有意义——直接在方法里读 getter 即可（例如派生状态用 `@property @topic_config` getter 当场算出来），不要自订阅自己。
+
+```python
+from unilabos.utils.decorator import subscribe  # 必须从这里导入：AST 扫描据此把它排除出 action
+
+# 订阅目标两种等价写法（仅跨设备）：
+@subscribe("/devices/pump_1/pressure")                   # 1) 绝对路径（必须以 / 开头）
+@subscribe(device_id="pump_1", status_name="pressure")   # 2) 拆分写法（推荐，可读性好；两者都必填）
+
+@subscribe(
+    device_id="sub_reporter",      # 目标设备 id（对端节点 id，必填）
+    status_name="counter",         # 目标状态名（topic 末段，必填）
+    # msg_type=Int32,              # 通常不用写，框架自动识别（见下）
+    qos=10,                        # QoS 深度，默认 10
+    trigger_when_change=True,      # 默认 False；True 时仅值变化才触发回调（去抖 / 边沿触发）
+    retry_interval=10.0,           # 重试周期(秒)，仅自定义间隔用；不写默认 10s（见下）
+)
+def on_counter(self, value) -> None:           # 首参 = 收到的值（经 convert_from_ros_msg 转换）
+    self.logger.info(f"收到 counter={value}")
+```
+
+**回调收到的值**统一经 `convert_from_ros_msg` 转换：`std_msgs` 这类基础消息直接得到原生值（如 `Int32 -> int`），复合消息得到递归转换后的 dict（与 `@topic_config` 发布、`call_device_action` 结果解析等通道一致）。框架不再做额外解包，拿到什么由消息类型决定。
+
+**msg_type 自动识别（通常不用写）**，优先级：显式传入 > 运行时 ROS 图中发布者声明的类型 > 回调首参类型注解。
+
+**重试建立（默认就有，无需 `msg_type`）**：不受 host / slave 启动先后影响：
+
+- 发布者还没起时按周期重试解析类型，**不设上限一直重试直到订上**；周期默认 10s，`retry_interval` 只用于自定义间隔；
+- **一旦订上即停止重试**，之后只管订阅、不再判活 / 轮询（断线重连交给 DDS 自动完成，真出问题等报错暴露）。
+
+要点：
+
+- `@subscribe` 回调**不会**被注册成 action（AST 扫描自动跳过），不需要再加 `@not_action`。
+- 用 `retry_interval` 自动识别类型时，回调首参**不要**加 Python 内置类型注解（如 `value: int`），否则会被当成 `msg_type`。
+- 订阅的 `device_id` 必须与实验图（graph）里对端节点 id 一致。
+- 拆分写法 `device_id` 与 `status_name` 都必填；只想读自己的状态请用 getter，不要 `@subscribe`。
+
+---
+
+## 跨设备调用其它设备的动作（call_device_action）
+
+设备在 `post_init` 拿到 `self._ros_node` 后，可用 `call_device_action` 直接调用**其它设备**的动作并拿到结果（常与 `@subscribe` 配合：监听到条件 → 调用对端动作，形成闭环）。
+
+```python
+import json
+from unilabos.utils.exception import DeviceActionError
+
+@not_action
+def post_init(self, ros_node: BaseROS2DeviceNode) -> None:
+    self._ros_node = ros_node
+
+def _react(self):
+    # 入参永远传 dict；通道自动判定，序列化由 call_device_action 内部完成
+    try:
+        reply = self._ros_node.call_device_action(
+            "sub_reporter",            # 目标设备 id（带不带 /devices/ 前缀都行）
+            "stop_counting",           # 目标动作名（auto- 前缀会自动去掉）
+            {"reason": "reached"},     # 入参 dict（需可 json 序列化）
+            server_wait_timeout=5.0,   # 等目标动作服务就绪超时（秒）
+        )
+        self.logger.info(f"远端返回: {reply}")
+    except DeviceActionError as ex:    # 服务不可用 / 被拒 / 超时 / 远端 success=False 都会抛
+        self.logger.warning(f"调用失败: {ex}")
+
+    # 原生动作（目标声明了 action_type）会被自动探测并走原生通道；也可显式指定强制走原生、跳过探测：
+    from unilabos_msgs.action import SendCmd  # 示例，换成目标动作的真实类型
+    res = self._ros_node.call_device_action(
+        "heater_1", "heat", {"temperature": 60}, action_type=SendCmd
+    )
+
+# 若动作入参是前端传来的 JSON 字符串，自己 json.loads 成 dict 再调用：
+def call_peer(self, target_device: str, function_name: str, function_args: str = "{}") -> dict:
+    kwargs = json.loads(function_args) if function_args else {}
+    return self._ros_node.call_device_action(target_device, function_name, kwargs)
+```
+
+- **同步版** `call_device_action(...)`：阻塞当前线程，适合在**同步 action**（线程池执行）里调用其它设备。
+- **异步版** `await self._ros_node.call_device_action_async(...)`：不阻塞，适合在 **async action**（rclpy executor 上执行）里调用。
+- **通道自动判定（与 host_node `send_goal` 一致）**：框架从 ROS 图探测目标动作——
+  - 目标为该动作暴露了**专用原生 action server**（即声明了 `action_type`、非 `UniLabJsonCommand`/`auto-` 动作）→ 走原生通道 `/devices/<id>/<action_name>`，按 Goal 字段"对应发"（`convert_to_ros_msg`），返回结果消息转的 dict。
+  - 否则 → 走 serial JSON 指令通道 `_execute_driver_command`，把入参包成 json 命令 `str dumps` 过去、结果 json 解析回来，返回远端 `return_value`（通常是 dict）。
+  - 可显式传 `action_type=<某 ROS Action 类型>` 强制走原生通道并跳过探测。
+- 入参 `action_kwargs` **必须是 dict**（`None` 视为 `{}`）；序列化（dump）统一由 `call_device_action` 内部按通道完成——调用方**不要自己 `json.dumps`**。若入参来自前端 JSON 字符串，先 `json.loads` 成 dict 再传。
+- **结果解析两通道统一**（与 host_node `get_result_callback` 一致）：先 `convert_from_ros_msg` 把 ROS 结果消息**转成 dict**，再看是否带 `return_info`——带的（serial / UniLab `@action`）解析出真正的 `return_value` 返回；纯原生 action 返回整份结果 dict。所以**拿到的恒为 dict / python 值**，不用自己再解析 ROS 消息。
+- 失败统一抛 `unilabos.utils.exception.DeviceActionError`，按需 try/except 转成本设备的业务处理。
+
 ---
 
 ## 设备模板
@@ -474,3 +564,7 @@ unilab --check_mode --skip_env_check
 - async 方法中使用 `time.sleep()`：应使用 `await self._ros_node.sleep(seconds)`。
 - 硬编码串口响应索引：RS-485 响应前可能有噪声字节，应先定位帧头。
 - 把硬件寄存器单位暴露给用户：对外使用物理单位，驱动内部做 scale 转换。
+- `@subscribe` 从错误模块导入：必须 `from unilabos.utils.decorator import subscribe`，否则 AST 扫描不认、回调会被误注册成 action。
+- 用了 `@subscribe(retry_interval=...)` 自动识别类型，却给回调首参加了 `value: int` 这类注解：会被当成 msg_type，去掉注解即可。
+- 跨设备 `@subscribe` / `call_device_action` 的目标 `device_id` 与实验图里对端节点 id 不一致：订阅订不上、调用找不到服务。
+- 在 `__init__` 里就用 `self._ros_node`：它要到 `post_init` 才注入，`call_device_action` 等只能在 `post_init` 之后调用。

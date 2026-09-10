@@ -101,15 +101,30 @@ class PRCXI9300Deck(Deck):
     _DEFAULT_SITE_SIZE = {"width": 128.0, "height": 86, "depth": 0}
     _DEFAULT_CONTENT_TYPE = ["plate", "tip_rack", "plates", "tip_racks", "tube_rack", "adaptor"]
 
+    @property
+    def sites(self):
+        sites_out = []
+        for i, site in enumerate(self._sites):
+            occupied = self._get_site_resource(i)
+            sites_out.append({
+                "label": site["label"],
+                "visible": site.get("visible", True),
+                "occupied_by": occupied.name if occupied is not None else None,
+                "position": site["position"],
+                "size": site["size"],
+                "content_type": site["content_type"],
+            })
+        return sites_out
+
     def __init__(self, name: str, size_x: float, size_y: float, size_z: float,
                  sites: Optional[List[Dict[str, Any]]] = None, **kwargs):
         super().__init__(size_x, size_y, size_z, name)
         if sites is not None:
-            self.sites: List[Dict[str, Any]] = [dict(s) for s in sites]
+            self._sites: List[Dict[str, Any]] = [dict(s) for s in sites]
         else:
-            self.sites = []
+            self._sites = []
             for i, (x, y, z) in enumerate(self._DEFAULT_SITE_POSITIONS):
-                self.sites.append({
+                self._sites.append({
                     "label": f"T{i + 1}",
                     "visible": True,
                     "position": {"x": x, "y": y, "z": z},
@@ -122,7 +137,7 @@ class PRCXI9300Deck(Deck):
         )
 
     def _get_site_location(self, idx: int) -> Coordinate:
-        pos = self.sites[idx]["position"]
+        pos = self._sites[idx]["position"]
         return Coordinate(pos["x"], pos["y"], pos["z"])
 
     def _get_site_resource(self, idx: int) -> Optional[Resource]:
@@ -172,18 +187,7 @@ class PRCXI9300Deck(Deck):
 
     def serialize(self) -> dict:
         data = super().serialize()
-        sites_out = []
-        for i, site in enumerate(self.sites):
-            occupied = self._get_site_resource(i)
-            sites_out.append({
-                "label": site["label"],
-                "visible": site.get("visible", True),
-                "occupied_by": occupied.name if occupied is not None else None,
-                "position": site["position"],
-                "size": site["size"],
-                "content_type": site["content_type"],
-            })
-        data["sites"] = sites_out
+        data["sites"] = self.sites
         return data
 
 

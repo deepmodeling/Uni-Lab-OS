@@ -1,0 +1,839 @@
+{
+  "command_variants": [
+    {
+      "action_id": "template.upsert",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-template-upsert",
+        "expected_version": 3,
+        "payload": {
+          "name": "Water",
+          "spec": {
+            "storage_class": "ambient"
+          },
+          "template_id": "tpl-1"
+        },
+        "type": "inventory.template.upsert"
+      }
+    },
+    {
+      "action_id": "template.delete",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-template-delete",
+        "expected_version": 3,
+        "payload": {
+          "template_id": "tpl-1"
+        },
+        "type": "inventory.template.delete"
+      }
+    },
+    {
+      "action_id": "lot.inbound",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-lot-inbound",
+        "payload": {
+          "kind": "lot",
+          "lot_id": "lot-1",
+          "quantity": 100,
+          "template_id": "tpl-1",
+          "unit": "mL"
+        },
+        "type": "inventory.inbound",
+        "warehouse_zone_id": "zone-a"
+      }
+    },
+    {
+      "action_id": "lot.adjust",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-lot-adjust",
+        "expected_version": 3,
+        "payload": {
+          "lot_id": "lot-1",
+          "new_total": 95,
+          "reason": "cycle count"
+        },
+        "type": "material.adjust"
+      }
+    },
+    {
+      "action_id": "instance.inbound",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-instance-inbound",
+        "payload": {
+          "barcode": "BC-1",
+          "edge_uuid": "mi-1",
+          "kind": "instance",
+          "template_id": "tpl-1"
+        },
+        "type": "inventory.inbound"
+      }
+    },
+    {
+      "action_id": "instance.deploy",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-instance-deploy",
+        "expected_version": 3,
+        "payload": {
+          "edge_uuid": "mi-1",
+          "parent_uuid": "deck-1",
+          "slot_id": "A1"
+        },
+        "type": "material.deploy"
+      }
+    },
+    {
+      "action_id": "instance.move",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-instance-move",
+        "expected_version": 3,
+        "payload": {
+          "edge_uuid": "mi-1",
+          "parent_uuid": "deck-2",
+          "slot_id": "B2"
+        },
+        "type": "material.move"
+      }
+    },
+    {
+      "action_id": "instance.set_parent",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-instance-parent",
+        "expected_version": 3,
+        "payload": {
+          "edge_uuid": "mi-1",
+          "parent_uuid": ""
+        },
+        "type": "material.set_parent"
+      }
+    },
+    {
+      "action_id": "instance.detach",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-instance-detach",
+        "expected_version": 3,
+        "payload": {
+          "edge_uuid": "mi-1"
+        },
+        "type": "material.detach"
+      }
+    },
+    {
+      "action_id": "instance.consume",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-instance-consume",
+        "expected_version": 3,
+        "payload": {
+          "edge_uuid": "mi-1"
+        },
+        "type": "material.consume"
+      }
+    },
+    {
+      "action_id": "instance.discard",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-instance-discard",
+        "expected_version": 3,
+        "payload": {
+          "edge_uuid": "mi-1",
+          "reason": "damaged"
+        },
+        "type": "material.discard"
+      }
+    },
+    {
+      "action_id": "content.set",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-content-set",
+        "expected_version": 3,
+        "payload": {
+          "edge_uuid": "mi-1",
+          "state": {
+            "substance": "water",
+            "volume_ml": 5
+          }
+        },
+        "type": "material.content.set"
+      }
+    },
+    {
+      "action_id": "content.clear",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-content-clear",
+        "expected_version": 3,
+        "payload": {
+          "edge_uuid": "mi-1"
+        },
+        "type": "material.content.clear"
+      }
+    },
+    {
+      "action_id": "reservation.reserve",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-reservation-reserve",
+        "payload": {
+          "node_requirements": {
+            "node-1": [
+              {
+                "lot_id": "lot-1",
+                "quantity": 10
+              }
+            ]
+          },
+          "workflow_id": "wf-1"
+        },
+        "type": "inventory.reserve"
+      }
+    },
+    {
+      "action_id": "reservation.release",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-reservation-release",
+        "payload": {
+          "node_id": "node-1",
+          "reason": "cancelled",
+          "workflow_id": "wf-1"
+        },
+        "type": "inventory.release"
+      }
+    },
+    {
+      "action_id": "reservation.consume",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-reservation-consume",
+        "payload": {
+          "node_id": "node-1",
+          "parent_uuid": "deck-1",
+          "slot_id": "A1",
+          "workflow_id": "wf-1"
+        },
+        "type": "inventory.consume"
+      }
+    },
+    {
+      "action_id": "reservation.quarantine",
+      "request": {
+        "actor": "operator:contract",
+        "command_id": "cmd-reservation-quarantine",
+        "payload": {
+          "node_id": "node-1",
+          "reason": "failed run",
+          "workflow_id": "wf-1"
+        },
+        "type": "inventory.quarantine"
+      }
+    }
+  ],
+  "fixture_version": 1,
+  "ledger_outbox_trace": {
+    "cloud_event": {
+      "aggregate_id": "tpl-contract",
+      "aggregate_type": "template",
+      "aggregate_version": 1,
+      "causation_id": "cmd-success",
+      "edge_id": "edge-contract",
+      "event_id": "event-contract",
+      "event_type": "template.created",
+      "lab_id": "lab-contract",
+      "occurred_at": 1784840000000,
+      "payload": {
+        "category": "reagent",
+        "name": "Water",
+        "spec": {
+          "storage_class": "ambient"
+        }
+      },
+      "sequence": 1,
+      "span_id": "0123456789abcdef",
+      "trace_id": "0123456789abcdef0123456789abcdef",
+      "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+      "tracestate": "vendor=contract"
+    },
+    "ledger_entry": {
+      "actor": "operator:contract",
+      "aggregate_id": "tpl-contract",
+      "aggregate_type": "template",
+      "causation_id": "cmd-success",
+      "delta_json": "{\"name\": \"Water\", \"category\": \"reagent\", \"spec\": {\"storage_class\": \"ambient\"}}",
+      "ledger_id": 1,
+      "occurred_at": 1784840000000,
+      "op_type": "template.created",
+      "reason": "",
+      "span_id": "0123456789abcdef",
+      "trace_id": "0123456789abcdef0123456789abcdef"
+    },
+    "outbox_row": {
+      "aggregate_id": "tpl-contract",
+      "aggregate_type": "template",
+      "aggregate_version": 1,
+      "causation_id": "cmd-success",
+      "edge_id": "edge-contract",
+      "event_id": "event-contract",
+      "event_type": "template.created",
+      "lab_id": "lab-contract",
+      "occurred_at": 1784840000000,
+      "payload_json": "{\"name\": \"Water\", \"category\": \"reagent\", \"spec\": {\"storage_class\": \"ambient\"}}",
+      "sequence": 1,
+      "span_id": "0123456789abcdef",
+      "trace_id": "0123456789abcdef0123456789abcdef",
+      "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+      "tracestate": "vendor=contract"
+    }
+  },
+  "operations": [
+    {
+      "method": "POST",
+      "path": "/api/v1/inventory/commands",
+      "request_model": "InventoryCommand",
+      "responses": {
+        "200": "InventoryCommandResult",
+        "409": "InventoryCommandResult",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/commands/processed",
+      "request_model": null,
+      "responses": {
+        "200": "ProcessedCommandListResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/contents",
+      "request_model": null,
+      "responses": {
+        "200": "ContentListResponse"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/health",
+      "request_model": null,
+      "responses": {
+        "200": "InventoryHealthResponse"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/instances",
+      "request_model": null,
+      "responses": {
+        "200": "InstanceListResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/instances/{edge_uuid}",
+      "request_model": null,
+      "responses": {
+        "200": "InstanceDetailResponse",
+        "404": "ErrorResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/ledger",
+      "request_model": null,
+      "responses": {
+        "200": "LedgerListResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/lots",
+      "request_model": null,
+      "responses": {
+        "200": "LotListResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/lots/{lot_id}",
+      "request_model": null,
+      "responses": {
+        "200": "InventoryLotResponse",
+        "404": "ErrorResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/outbox/backlog",
+      "request_model": null,
+      "responses": {
+        "200": "OutboxBacklogResponse"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/outbox/events",
+      "request_model": null,
+      "responses": {
+        "200": "OutboxListResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/relations",
+      "request_model": null,
+      "responses": {
+        "200": "RelationListResponse"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/reservations",
+      "request_model": null,
+      "responses": {
+        "200": "ReservationListResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/reservations/{reservation_id}",
+      "request_model": null,
+      "responses": {
+        "200": "InventoryReservationResponse",
+        "404": "ErrorResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/snapshot",
+      "request_model": null,
+      "responses": {
+        "200": "InventorySnapshotResponse"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/sync/cursors",
+      "request_model": null,
+      "responses": {
+        "200": "SyncCursorListResponse"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/templates",
+      "request_model": null,
+      "responses": {
+        "200": "TemplateListResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/templates/{template_id}",
+      "request_model": null,
+      "responses": {
+        "200": "ResourceTemplateResponse",
+        "404": "ErrorResponse",
+        "422": "HTTPValidationError"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inventory/workflows/{workflow_id}/reservations",
+      "request_model": null,
+      "responses": {
+        "200": "WorkflowReservationListResponse",
+        "422": "HTTPValidationError"
+      }
+    }
+  ],
+  "replay": {
+    "first_response": {
+      "body": {
+        "command_id": "cmd-replay",
+        "result": {
+          "batch_no": "",
+          "created_at": 1784840000000,
+          "expiry": "",
+          "lot_id": "lot-replay",
+          "quantity_available": 7.0,
+          "quantity_reserved": 0.0,
+          "quantity_total": 7.0,
+          "quarantined": 0,
+          "template_id": "tpl-replay",
+          "unit": "",
+          "version": 1,
+          "warehouse_zone_id": "zone-contract"
+        },
+        "status": "completed"
+      },
+      "status": 200
+    },
+    "replay_response": {
+      "body": {
+        "command_id": "cmd-replay",
+        "replayed": true,
+        "result": {
+          "batch_no": "",
+          "created_at": 1784840000000,
+          "expiry": "",
+          "lot_id": "lot-replay",
+          "quantity_available": 7.0,
+          "quantity_reserved": 0.0,
+          "quantity_total": 7.0,
+          "quarantined": 0,
+          "template_id": "tpl-replay",
+          "unit": "",
+          "version": 1,
+          "warehouse_zone_id": "zone-contract"
+        },
+        "status": "completed"
+      },
+      "status": 200
+    },
+    "request": {
+      "actor": "operator:contract",
+      "command_id": "cmd-replay",
+      "payload": {
+        "kind": "lot",
+        "lot_id": "lot-replay",
+        "quantity": 7,
+        "template_id": "tpl-replay"
+      },
+      "type": "inventory.inbound",
+      "warehouse_zone_id": "zone-contract"
+    }
+  },
+  "responses": {
+    "contents": {
+      "body": {
+        "contents": [
+          {
+            "instance_uuid": "mi-contract",
+            "state_json": "{\"substance\": \"water\", \"volume_ml\": 5}",
+            "version": 1
+          }
+        ]
+      },
+      "status": 200
+    },
+    "outbox_backlog": {
+      "body": {
+        "acked_sequence": 0,
+        "max_sequence": 6
+      },
+      "status": 200
+    },
+    "outbox_events": {
+      "body": {
+        "events": [
+          {
+            "aggregate_id": "tpl-contract",
+            "aggregate_type": "template",
+            "aggregate_version": 1,
+            "causation_id": "cmd-success",
+            "edge_id": "edge-contract",
+            "event_id": "event-contract",
+            "event_type": "template.created",
+            "lab_id": "lab-contract",
+            "occurred_at": 1784840000000,
+            "payload_json": "{\"name\": \"Water\", \"category\": \"reagent\", \"spec\": {\"storage_class\": \"ambient\"}}",
+            "sequence": 1,
+            "span_id": "0123456789abcdef",
+            "trace_id": "0123456789abcdef0123456789abcdef",
+            "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+            "tracestate": "vendor=contract"
+          },
+          {
+            "aggregate_id": "lot-contract",
+            "aggregate_type": "lot",
+            "aggregate_version": 1,
+            "causation_id": "seed-lot",
+            "edge_id": "edge-contract",
+            "event_id": "event-contract-2",
+            "event_type": "lot.created",
+            "lab_id": "lab-contract",
+            "occurred_at": 1784840000000,
+            "payload_json": "{\"template_id\": \"tpl-contract\", \"quantity\": 20, \"unit\": \"mL\", \"batch_no\": \"\", \"expiry\": \"\", \"quantity_total\": 20.0, \"quantity_available\": 20.0}",
+            "sequence": 2,
+            "span_id": "",
+            "trace_id": "",
+            "traceparent": "",
+            "tracestate": ""
+          },
+          {
+            "aggregate_id": "mi-contract",
+            "aggregate_type": "instance",
+            "aggregate_version": 1,
+            "causation_id": "seed-instance",
+            "edge_id": "edge-contract",
+            "event_id": "event-contract-3",
+            "event_type": "instance.registered",
+            "lab_id": "lab-contract",
+            "occurred_at": 1784840000000,
+            "payload_json": "{\"template_id\": \"tpl-contract\", \"lot_id\": \"lot-contract\", \"barcode\": \"BC-CONTRACT\", \"legacy_cloud_id\": \"\", \"parent_uuid\": \"rack-contract\", \"slot_id\": \"A1\"}",
+            "sequence": 3,
+            "span_id": "",
+            "trace_id": "",
+            "traceparent": "",
+            "tracestate": ""
+          },
+          {
+            "aggregate_id": "mi-contract",
+            "aggregate_type": "content",
+            "aggregate_version": 1,
+            "causation_id": "seed-content",
+            "edge_id": "edge-contract",
+            "event_id": "event-contract-4",
+            "event_type": "content.updated",
+            "lab_id": "lab-contract",
+            "occurred_at": 1784840000000,
+            "payload_json": "{\"state\": {\"substance\": \"water\", \"volume_ml\": 5}}",
+            "sequence": 4,
+            "span_id": "",
+            "trace_id": "",
+            "traceparent": "",
+            "tracestate": ""
+          },
+          {
+            "aggregate_id": "lot-contract",
+            "aggregate_type": "lot",
+            "aggregate_version": 2,
+            "causation_id": "seed-reservation",
+            "edge_id": "edge-contract",
+            "event_id": "event-contract-5",
+            "event_type": "lot.reserved",
+            "lab_id": "lab-contract",
+            "occurred_at": 1784840000000,
+            "payload_json": "{\"workflow_id\": \"wf-contract\", \"node_id\": \"node-contract\", \"quantity\": 3, \"quantity_available\": 17.0, \"quantity_reserved\": 3.0}",
+            "sequence": 5,
+            "span_id": "",
+            "trace_id": "",
+            "traceparent": "",
+            "tracestate": ""
+          },
+          {
+            "aggregate_id": "rsv-contract",
+            "aggregate_type": "reservation",
+            "aggregate_version": 1,
+            "causation_id": "seed-reservation",
+            "edge_id": "edge-contract",
+            "event_id": "event-contract-6",
+            "event_type": "reservation.created",
+            "lab_id": "lab-contract",
+            "occurred_at": 1784840000000,
+            "payload_json": "{\"workflow_id\": \"wf-contract\", \"node_id\": \"node-contract\", \"attempt\": 1, \"amounts\": {\"lots\": {\"lot-contract\": 3.0}, \"instances\": []}}",
+            "sequence": 6,
+            "span_id": "",
+            "trace_id": "",
+            "traceparent": "",
+            "tracestate": ""
+          }
+        ]
+      },
+      "status": 200
+    },
+    "processed_commands": {
+      "body": {
+        "commands": [
+          {
+            "command_id": "cmd-success",
+            "processed_at": 1784840000000,
+            "result_json": "{\"template_id\": \"tpl-contract\", \"name\": \"Water\", \"category\": \"reagent\", \"spec_json\": \"{\\\"storage_class\\\": \\\"ambient\\\"}\", \"version\": 1}",
+            "status": "completed"
+          }
+        ]
+      },
+      "status": 200
+    },
+    "relations": {
+      "body": {
+        "relations": [
+          {
+            "child_uuid": "mi-contract",
+            "parent_uuid": "rack-contract",
+            "slot_id": "A1",
+            "version": 1
+          }
+        ]
+      },
+      "status": 200
+    },
+    "snapshot": {
+      "body": {
+        "contents": [
+          {
+            "instance_uuid": "mi-contract",
+            "state_json": "{\"substance\": \"water\", \"volume_ml\": 5}",
+            "version": 1
+          }
+        ],
+        "instances": [
+          {
+            "barcode": "BC-CONTRACT",
+            "edge_uuid": "mi-contract",
+            "legacy_cloud_id": "",
+            "lot_id": "lot-contract",
+            "parent_uuid": "rack-contract",
+            "status": "warehouse",
+            "template_id": "tpl-contract",
+            "version": 1
+          }
+        ],
+        "lots": [
+          {
+            "batch_no": "",
+            "created_at": 1784840000000,
+            "expiry": "",
+            "lot_id": "lot-contract",
+            "quantity_available": 17.0,
+            "quantity_reserved": 3.0,
+            "quantity_total": 20.0,
+            "quarantined": 0,
+            "template_id": "tpl-contract",
+            "unit": "mL",
+            "version": 2,
+            "warehouse_zone_id": "zone-cold"
+          }
+        ],
+        "relations": [
+          {
+            "child_uuid": "mi-contract",
+            "parent_uuid": "rack-contract",
+            "slot_id": "A1",
+            "version": 1
+          }
+        ],
+        "reservations": [
+          {
+            "amounts_json": "{\"lots\": {\"lot-contract\": 3.0}, \"instances\": []}",
+            "attempt": 1,
+            "created_at": 1784840000000,
+            "node_id": "node-contract",
+            "reservation_id": "rsv-contract",
+            "status": "active",
+            "version": 1,
+            "workflow_id": "wf-contract"
+          }
+        ],
+        "snapshot_sequence": 6,
+        "templates": [
+          {
+            "category": "reagent",
+            "name": "Water",
+            "spec_json": "{\"storage_class\": \"ambient\"}",
+            "template_id": "tpl-contract",
+            "version": 1
+          }
+        ]
+      },
+      "status": 200
+    },
+    "sync_cursors": {
+      "body": {
+        "cursors": []
+      },
+      "status": 200
+    }
+  },
+  "scope": "Edge Local Inventory REST; Cloud event is backend-only trace evidence",
+  "successful_command": {
+    "request": {
+      "actor": "operator:contract",
+      "command_id": "cmd-success",
+      "expected_version": 0,
+      "payload": {
+        "category": "reagent",
+        "name": "Water",
+        "spec": {
+          "storage_class": "ambient"
+        },
+        "template_id": "tpl-contract"
+      },
+      "type": "inventory.template.upsert"
+    },
+    "response": {
+      "body": {
+        "command_id": "cmd-success",
+        "result": {
+          "category": "reagent",
+          "name": "Water",
+          "spec_json": "{\"storage_class\": \"ambient\"}",
+          "template_id": "tpl-contract",
+          "version": 1
+        },
+        "status": "completed"
+      },
+      "status": 200
+    }
+  },
+  "validation_error": {
+    "request": {
+      "actor": "operator:contract",
+      "command_id": "cmd-validation",
+      "payload": {
+        "kind": "lot",
+        "quantity": 0,
+        "template_id": "tpl-invalid"
+      },
+      "type": "inventory.inbound"
+    },
+    "response": {
+      "body": {
+        "detail": [
+          {
+            "loc": [
+              "body",
+              "inventory.inbound",
+              "payload",
+              "quantity"
+            ],
+            "msg": "Input should be greater than 0",
+            "type": "greater_than"
+          }
+        ]
+      },
+      "status": 422
+    }
+  },
+  "version_conflict": {
+    "request": {
+      "actor": "operator:contract",
+      "command_id": "cmd-version-conflict",
+      "expected_version": 1,
+      "payload": {
+        "edge_uuid": "mi-version",
+        "parent_uuid": "rack-b"
+      },
+      "type": "material.move"
+    },
+    "response": {
+      "body": {
+        "command_id": "cmd-version-conflict",
+        "error": "expected version 1, current 2",
+        "error_code": "version_conflict",
+        "status": "rejected"
+      },
+      "status": 409
+    }
+  }
+}

@@ -12,6 +12,7 @@ Virtual Workbench Device - 模拟工作台设备
 注意: 调用来自线程池, 使用 threading.Lock 进行同步
 """
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from unilabos.registry.decorators import (
     NodeType,
     action,
     device,
+    legacy_action,
     not_action,
     topic_config,
 )
@@ -122,7 +124,7 @@ class HeatingStation:
 
 @device(
     id="virtual_workbench",
-    display_name="虚拟工作台",
+    displayname="虚拟工作台",
     category=["virtual_device"],
     description="Virtual Workbench with 1 robotic arm and 3 heating stations for concurrent material processing",
 )
@@ -197,6 +199,9 @@ class VirtualWorkbench:
         # 任务追踪
         self._active_tasks: Dict[str, Dict[str, Any]] = {}
         self._tasks_lock = Lock()
+
+        # 本地订阅演示: 自增计数器与其派生状态
+        self._start_time: float = time.time()
 
         # 处理其他kwargs参数
         skip_keys = {"arm_operation_time", "heating_time", "num_heating_stations"}
@@ -319,7 +324,46 @@ class VirtualWorkbench:
         self._update_data_status(f"机械臂已释放 (完成: {task})")
         self.logger.info(f"机械臂已释放 (完成: {task})")
 
-    @action(
+    # ============ 本地派生状态演示: 直接用 getter 计算 ============
+
+    @property
+    @topic_config(period=1.0)
+    def counter(self) -> int:
+        """实时增长的计数器(自启动起的秒数)，每秒发布到 /devices/<device_id>/counter。"""
+        return int(time.time() - self._start_time)
+
+    @property
+    @topic_config(period=1.0)
+    def counter_echo(self) -> int:
+        """counter 的派生状态 (= counter * 10)。本设备自己的派生态直接用 getter 计算即可，
+        无需自订阅自己的 topic（@subscribe 仅用于跨设备订阅）。"""
+        return int(time.time() - self._start_time) * 10
+
+    @action(description="跨设备调用演示: 调用目标设备的某个函数并返回其结果")
+    def call_peer(
+        self,
+        target_device: str,
+        function_name: str,
+        function_args: str = "{}",
+    ) -> dict:
+        """
+        演示通过 _ros_node 便捷函数跨设备调用动作（走 serial JSON 指令通道）。
+
+        Args:
+            target_device[目标设备]: 被调用设备的 ID（可带或不带 /devices/ 前缀）。
+            function_name[函数名]: 目标设备上要调用的函数 / 动作名。
+            function_args[入参JSON]: 入参，UI 传来的 JSON 字符串；本动作 json.loads 成 dict 后传给 call_device_action。
+
+        Note:
+            远端执行失败会以 DeviceActionError 在此处 raise，从而让本动作整体失败。
+        """
+        # call_device_action 只接受 dict 入参（序列化由其内部完成）；UI 传来的是 JSON 字符串，这里先解析成 dict
+        kwargs = json.loads(function_args) if function_args else {}
+        # 同步 action 在线程池中执行，使用同步便捷函数即可（阻塞安全）
+        return_value = self._ros_node.call_device_action(target_device, function_name, kwargs)
+        return {"success": True, "target_device": target_device, "function_name": function_name, "return_value": return_value}
+
+    @legacy_action(
         always_free=True,
         node_type=NodeType.MANUAL_CONFIRM,
         placeholder_keys={"assignee_user_ids": "unilabos_manual_confirm"},
@@ -469,7 +513,7 @@ class VirtualWorkbench:
         kwargs.pop("mount_resource_tree")
         return kwargs
 
-    @action(
+    @legacy_action(
         description="转移物料",
         handles=[
             ActionInputHandle(
@@ -522,7 +566,7 @@ class VirtualWorkbench:
         result = await future
         return result
 
-    @action(
+    @legacy_action(
         description="扣电测试启动",
         handles=[
             ActionInputHandle(
@@ -596,7 +640,7 @@ class VirtualWorkbench:
         print(capacity)
         print(battery_system)
 
-    @action(
+    @legacy_action(
         auto_prefix=True,
         description="批量准备物料 - 虚拟起始节点, 生成A1-A5物料, 输出5个handle供后续节点使用",
         handles=[
@@ -650,7 +694,7 @@ class VirtualWorkbench:
             ],
         }
 
-    @action(
+    @legacy_action(
         auto_prefix=True,
         description="将物料从An位置移动到空闲加热台, 返回分配的加热台ID",
         handles=[
@@ -783,7 +827,7 @@ class VirtualWorkbench:
                 ],
             }
 
-    @action(
+    @legacy_action(
         auto_prefix=True,
         always_free=True,
         description="启动指定加热台的加热程序",
@@ -975,7 +1019,7 @@ class VirtualWorkbench:
             ],
         }
 
-    @action(
+    @legacy_action(
         auto_prefix=True,
         description="将物料从加热台移动到输出位置Cn",
         handles=[

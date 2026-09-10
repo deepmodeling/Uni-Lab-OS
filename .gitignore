@@ -2,6 +2,7 @@ cursor_docs/
 configs/
 temp/
 output/
+deprecated/
 unilabos_data/
 pyrightconfig.json
 .cursorignore

@@ -167,6 +167,8 @@ class VirtualTransferPump:
             # 验证并转换参数
             target_position = float(position)
             velocity = float(max_velocity) if max_velocity is not None else self._max_velocity
+            if velocity <= 0:
+                velocity = self._max_velocity
 
             # 限制位置在有效范围内
             target_position = max(0.0, min(float(self.max_volume), target_position))
@@ -350,7 +352,21 @@ class VirtualTransferPump:
         """排液操作 📤"""
         await self.push_plunger(volume, velocity)
 
-    async def transfer(self, volume: float, aspirate_velocity: float = None, dispense_velocity: float = None):
+    async def transfer(
+        self,
+        volume: float = 0.0,
+        aspirate_velocity: float = None,
+        dispense_velocity: float = None,
+        from_vessel: str = "",
+        to_vessel: str = "",
+        amount: str = "",
+        time: float = 0.0,
+        viscous: bool = False,
+        rinsing_solvent: str = "",
+        rinsing_volume: float = 0.0,
+        rinsing_repeats: int = 0,
+        solid: bool = False,
+    ):
         """转移操作（先吸后排） 🔄"""
         self.logger.info(f"🔄 开始转移操作: {volume:.2f}mL")
 

@@ -17,9 +17,8 @@ unilab --graph <graph.json> --config <config.py> --backend simple  # no ROS2 nee
 
 # Common CLI flags
 unilab --app_bridges websocket fastapi    # communication bridges
-unilab --test_mode                        # simulate hardware, no real execution
+unilab --action_mode simulate             # simulate hardware action results
 unilab --check_mode                       # CI validation of registry imports
-unilab --skip_env_check                   # skip auto-install of dependencies
 unilab --visual rviz|web|disable          # visualization mode
 unilab --is_slave                         # run as slave node
 
@@ -80,6 +79,37 @@ Example device graphs and experiment configs are in `unilabos/test/experiments/`
 - Singleton pattern via `@singleton` decorator (`utils/decorator.py`)
 - Dynamic class loading via `utils/import_manager.py` — device classes resolved at runtime from registry YAML paths
 - CLI argument dashes auto-converted to underscores for consistency
+
+## ResourceDict 根字段（提升字段）新增守则
+
+ResourceDict（`unilabos/resources/resource_tracker.py`）是全系统唯一内存模型。把 PLR
+序列化产物（config/data）中的状态键提升为根字段时（先例：`barcode/barcode_symbology`
+从 config 提升、`liquids/liquid_history/unknown_counter` 从 data 提升），**必须一次性
+覆盖以下全部点位，缺任何一处即在对应通路丢数据**：
+
+1. **模型**：`ResourceDict` 与 `ResourceDictType` 同步加字段；用 `Optional`+`None`
+   区分「无该状态」与「空状态」（`[]`/`0`/`""`）。成组的提升键定义为模块级常量
+   （如 `TRACKER_STATE_KEYS`）并在所有点位引用，禁止散写字符串。
+2. **提升（唯一入口）**：`ResourceDictInstance.get_resource_instance_from_dict` 漏斗内
+   从源命名空间 `pop` → 根字段；根字段已有值则以根为准、仅清理源。所有 dict 输入
+   （图文件、TCP/HTTP JSON、msg 回程）都汇入该漏斗，提升逻辑不得写在别处。
+3. **回装（全部出口）**，与提升方向严格对称：
+   - `ResourceTreeSet.to_plr_resources`（`load_all_state` 前经 `assemble_tracker_state`
+     类函数组装回 serialize_state 形态）；
+   - `get_plr_nested_dict`（PLR 嵌套形态，根键不外泄）；
+   - `unilabos/ros/msgs/message_converter.py` 的 `Resource` msg 转换器（msg 无根字段，
+     进 msg 前把提升键归位回 config/data，参照 `obtain_config_with_barcode` /
+     `obtain_data_with_uuid`）；
+   - `host_node` graph 合并（已存在节点同步刷新根字段，防与 data 双真相漂移）；
+   - `graphio.resource_ulab_to_plr` 老转换器（兼容老/新双形态输入，参照 `state_of`）。
+4. **白名单自动化**：`graphio.canonicalize_nodes_data` 的根键白名单由
+   `RESOURCE_ROOT_FIELDS` 从 `ResourceDict.model_fields` 派生——新增根字段自动生效。
+   **不得改回硬编码清单**。
+5. **守护测试**：在 `tests/resources/test_tracker_state_promotion.py` 为新字段补
+   漏斗提升 / 根字段优先 / None 区分 / dump 幂等 / msg 双形态往返 / PLR round-trip
+   用例；`TestRootFieldContract` 会兜底白名单机制。
+6. **契约登记**：在 `unilab-edge-ui/docs/protocol/cloud-mapping.md` §6 拆装表登记
+   新字段的云端表化归属与拆装规则。
 
 ## Licensing
 

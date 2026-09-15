@@ -1,0 +1,81 @@
+# Keithley SMU Device Configuration Example
+# 
+# This example shows how to configure a Keithley 2400 series SMU
+# in Uni-Lab-OS device registry.
+
+devices:
+  # Keithley 2400 SMU Configuration
+  keithley_2400:
+    type: keithley
+    model: Keithley2400
+    resource: "TCPIP::192.168.1.10::INSTR"
+    timeout: 10
+    reset_on_init: true
+    description: "Keithley 2400 SMU for I-V characterization"
+    
+  # Multiple SMUs for advanced testing
+  keithley_2401:
+    type: keithley
+    model: Keithley2401
+    resource: "TCPIP::192.168.1.11::INSTR"
+    timeout: 10
+    reset_on_init: true
+    description: "Keithley 2401 SMU for gate control"
+    
+  # High-voltage SMU for breakdown testing
+  keithley_2410:
+    type: keithley
+    model: Keithley2410
+    resource: "TCPIP::192.168.1.12::INSTR"
+    timeout: 10
+    reset_on_init: true
+    description: "Keithley 2410 High-voltage SMU"
+    
+  # High-current SMU for battery testing
+  keithley_2460:
+    type: keithley
+    model: Keithley2460
+    resource: "USB::0x05E6::2460::123456::INSTR"
+    timeout: 10
+    reset_on_init: true
+    description: "Keithley 2460 High-current SMU for battery testing"
+
+# Example workflow using Keithley SMU
+workflows:
+  iv_characterization:
+    name: "I-V Characterization"
+    description: "Measure I-V curve using Keithley SMU"
+    devices:
+      - keithley_2400
+    steps:
+      - name: "Initialize SMU"
+        device: keithley_2400
+        action: reset
+        
+      - name: "Configure sweep"
+        device: keithley_2400
+        action: configure_sweep
+        parameters:
+          start: 0.0
+          stop: 5.0
+          steps: 51
+          mode: "VOLTAGE"
+          sweep_type: "LIN"
+          
+      - name: "Set compliance"
+        device: keithley_2400
+        action: set_voltage
+        parameters:
+          voltage: 0.0
+          current_limit: 0.1
+          
+      - name: "Run sweep"
+        device: keithley_2400
+        action: run_sweep
+        output: iv_data
+        
+      - name: "Save results"
+        action: save_data
+        parameters:
+          data: iv_data
+          filename: "iv_curve.csv"

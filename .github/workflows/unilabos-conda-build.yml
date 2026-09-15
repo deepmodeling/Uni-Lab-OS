@@ -148,7 +148,7 @@ jobs:
         shell: bash -l {0}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # 如果是 workflow_run 触发，使用上游 conda 包构建的 commit
           ref: ${{ needs.wait-for-upstream.outputs.source_sha || inputs.source_ref || github.ref }}

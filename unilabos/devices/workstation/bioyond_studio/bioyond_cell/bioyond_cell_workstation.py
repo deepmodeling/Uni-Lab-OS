@@ -22,6 +22,7 @@ from unilabos.devices.workstation.bioyond_studio.bioyond_rpc import BioyondExcep
 # ⚠️ config.py 已废弃 - 所有配置现在从 JSON 文件加载
 # from unilabos.devices.workstation.bioyond_studio.config import API_CONFIG, ...
 from unilabos.devices.workstation.workstation_http_service import WorkstationHTTPService
+from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.resources.bioyond.decks import BioyondElectrolyteDeck, bioyond_electrolyte_deck
 from unilabos.resources.bioyond.YB_warehouse_material import (
     empty_stock_snapshot,
@@ -168,6 +169,20 @@ class BioyondCellWorkstation(BioyondWorkstation):
         # 下一轮会同样看到「物理空」而放行，其 321 必被 LIMS 拒（详见 stack_inquiry_2to1）。
         self._handoff_claim: Optional[Dict[str, Any]] = None
 
+        # ========== 机器人坐标采集（2.43 关节 / 2.44 三轴，后台轮询）==========
+        # 只读两个查询接口，不下发任何动作；缓存形如 {"items": [...], "ts": 秒}，None 表示无可信数据。
+        # debug_mode 下 _post_lims 不发真实请求（只打日志），轮询没有意义还会每秒刷屏，故不启动。
+        self._robot_pos_lock = threading.Lock()
+        self._robot_joint_cache: Optional[Dict[str, Any]] = None
+        self._gantry_pos_cache: Optional[Dict[str, Any]] = None
+        if self.debug_mode:
+            logger.info("debug_mode=True，不启动机器人坐标轮询（坐标属性返回 {}）")
+        else:
+            threading.Thread(
+                target=self._robot_pos_poll_loop, daemon=True, name="bioyond-robot-pos-poller"
+            ).start()
+            logger.info(f"机器人坐标轮询线程已启动（每 {self._ROBOT_POS_PERIOD_S} 秒）")
+
         logger.info(f"✅ BioyondCellWorkstation 初始化完成 (debug_mode={self.debug_mode})")
         logger.info(
             "提示：真机与仿真机 orderCode 可能撞号；finish/进度以 orderCode+orderId 双字段判定。"
@@ -202,6 +217,13 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
     # 5 号自动传递窗物理库位数，电导一轮最多同时测这么多温度点
     _WINDOW_5_CAPACITY = 4
+
+    # ========== 机器人坐标采集（2.43 关节 / 2.44 三轴）==========
+    # 后台轮询间隔 = ROS topic 发布周期。走 LIMS HTTP 查询，比 DUCO 那种本地服务贵，
+    # 故取 1 秒而非 0.5 秒；两者共用同一常量，要改频率只动这一处。
+    _ROBOT_POS_PERIOD_S = 1.0
+    # 连续失败次数达到该阈值后丢弃缓存（置 None），避免对外发布过期坐标
+    _ROBOT_POS_MAX_FAIL = 3
 
     # ========== 场景键 → 配液类 workflowName 关键字（子串匹配）==========
     # ⚠️ 仅用于分场景统计/日志，**不可**用来收窄互锁的阻断范围。
@@ -335,6 +357,22 @@ class BioyondCellWorkstation(BioyondWorkstation):
             logger.error(f"启动 WorkstationHTTPService 失败: {e}", exc_info=True)
 
 
+    def post_init(self, ros_node: ROS2WorkstationNode):
+        # 父类负责 deck 初始化、同步器、各监控线程与 deck 上传，必须先跑完
+        super().post_init(ros_node)
+
+        # 机器人坐标：把发布周期从框架默认 5 秒调到与轮询一致的 _ROBOT_POS_PERIOD_S。
+        # 单独 try 兜住，避免注册表没声明 status_types 时把父类已完成的初始化连带报错。
+        try:
+            for name in ("robot_joint_positions", "gantry_positions"):
+                pub = ros_node._property_publishers.get(name)
+                if pub is not None:
+                    pub.change_frequency(self._ROBOT_POS_PERIOD_S)
+                else:
+                    logger.warning(f"[机器人坐标] 未找到属性发布者 {name}，请检查注册表 status_types 是否已声明")
+        except Exception as e:
+            logger.error(f"[机器人坐标] 调整发布频率失败: {e}")
+
     # ========== 配液/分液进度属性（前端可轮询，对齐扣电站 data_order_completion_percentage）==========
     @property
     def data_formulation_total_count(self) -> int:
@@ -415,6 +453,140 @@ class BioyondCellWorkstation(BioyondWorkstation):
     @property
     def data_dispense_tip_5000uL_count(self) -> int:
         return self._stock_tip_count("dispense_5000uL")
+
+    # ========== 机器人坐标（2.43 关节 / 2.44 三轴，只读轮询缓存）==========
+
+    @staticmethod
+    def _device_list_payload(resp: Any, api_name: str) -> Tuple[List[Any], Optional[float]]:
+        """校验 2.43/2.44 响应，取出 data 数组与服务端时间戳（秒）。
+
+        三种失败都抛 ValueError，交给轮询循环统一记 warning 并计入连续失败：
+        `_post_lims` 自己吞掉网络异常后返回 {"error": ...}；LIMS 业务失败时 code=0
+        且 message 有值；debug_mode 下拿到的是假响应（带 debug 标记）。
+        """
+        if not isinstance(resp, dict):
+            raise ValueError(f"{api_name} 返回体不是对象: {type(resp).__name__}")
+        if resp.get("error"):
+            raise ValueError(f"{api_name} 请求失败: {resp['error']}")
+        if resp.get("debug"):
+            raise ValueError(f"{api_name} 处于 debug_mode，无真实数据")
+        if resp.get("code") != 1:
+            raise ValueError(f"{api_name} code={resp.get('code')}, message={resp.get('message')!r}")
+        data = resp.get("data")
+        if not isinstance(data, list):
+            raise ValueError(f"{api_name} data 不是数组: {type(data).__name__}")
+        # 文档里 timestamp 是毫秒整数，统一换成秒，与扣电站 DUCO 的 ts 口径一致
+        ts_ms = resp.get("timestamp")
+        ts = round(float(ts_ms) / 1000.0, 3) if isinstance(ts_ms, (int, float)) else None
+        return data, ts
+
+    @staticmethod
+    def _axis_values(axes: Any) -> List[float]:
+        """把 [{index, value}, ...] 按 index 升序压成纯数值数组，非法项跳过。
+
+        轴号不保证按顺序返回，且下标含义靠位置表达，所以必须显式按 index 排序。
+        """
+        picked: List[Tuple[int, float]] = []
+        if isinstance(axes, list):
+            for axis in axes:
+                if not isinstance(axis, dict):
+                    continue
+                try:
+                    picked.append((int(axis["index"]), float(axis["value"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
+        return [value for _, value in sorted(picked, key=lambda pair: pair[0])]
+
+    def _fetch_robot_joints(self) -> Dict[str, Any]:
+        """调 2.43 并整形为 {"items": [{frame, joints, extjoints}], "ts": 秒}"""
+        data, ts = self._device_list_payload(self.robot_joint_list_info(), "2.43 robot-joint-list-info")
+        items = [
+            {
+                "frame": item.get("deviceFrameCode"),
+                "joints": self._axis_values(item.get("joints")),
+                "extjoints": self._axis_values(item.get("extjoints")),
+            }
+            for item in data
+            if isinstance(item, dict)
+        ]
+        return {"items": items, "ts": ts}
+
+    def _fetch_gantry_pos(self) -> Dict[str, Any]:
+        """调 2.44 并整形为 {"items": [{frame, x, y, z}], "ts": 秒}"""
+        data, ts = self._device_list_payload(self.gantry_pos_list_info(), "2.44 gantry-pos-list-info")
+        items = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            try:
+                items.append({
+                    "frame": item.get("deviceFrameCode"),
+                    "x": float(item["x"]),
+                    "y": float(item["y"]),
+                    "z": float(item["z"]),
+                })
+            except (KeyError, TypeError, ValueError):
+                continue
+        return {"items": items, "ts": ts}
+
+    def _robot_pos_poll_loop(self) -> None:
+        """后台守护线程：每 _ROBOT_POS_PERIOD_S 秒批量拉一次机器人 / 三轴坐标。
+
+        两个接口各自计连续失败数，互不牵连——一个挂了不该把另一个的坐标也清空。
+        任何异常只记 warning 并保留上一次缓存，绝不向外抛，以免影响建单 / 转运主流程；
+        连续失败达到 _ROBOT_POS_MAX_FAIL 次后认为坐标已不可信，将该缓存置 None。
+        """
+        targets = (
+            ("_robot_joint_cache", "2.43 robot-joint-list-info", self._fetch_robot_joints),
+            ("_gantry_pos_cache", "2.44 gantry-pos-list-info", self._fetch_gantry_pos),
+        )
+        fail_counts = {attr: 0 for attr, _, _ in targets}
+        while True:
+            for attr, api_name, fetch in targets:
+                try:
+                    cache = fetch()
+                    with self._robot_pos_lock:
+                        setattr(self, attr, cache)
+                    fail_counts[attr] = 0
+                except Exception as e:
+                    fail_counts[attr] += 1
+                    if fail_counts[attr] >= self._ROBOT_POS_MAX_FAIL:
+                        with self._robot_pos_lock:
+                            setattr(self, attr, None)
+                    logger.warning(
+                        f"[机器人坐标] {api_name} 读取失败（连续第 {fail_counts[attr]} 次）: {e}"
+                    )
+            time.sleep(self._ROBOT_POS_PERIOD_S)
+
+    # 返回类型必须是 str：Host 状态回调只接受标量，list/dict 会被框架强转为 String，语义不可靠。
+
+    @property
+    def robot_joint_positions(self) -> str:
+        """2.43 各机器人关节坐标，JSON 字符串；无数据时返回 "{}"
+
+        形如 {"robots": [{"frame": -1, "joints": [四轴], "extjoints": [扩增轴...]}], "ts": 秒}
+
+        ⚠️ extjoints 长度按机器人实际配置变化，**不可**固定按下标取。实测现场
+        （172.16.28.128:44389）frame -1/-16 回 2 个（夹爪 + 导轨），而 -12/-14 只回 1 个。
+        下游要认某根轴，必须结合 frame 判断，而不是假定 extjoints[1] 就是导轨。
+        """
+        with self._robot_pos_lock:
+            cache = self._robot_joint_cache
+        if not cache:
+            return "{}"
+        return json.dumps({"robots": cache["items"], "ts": cache["ts"]})
+
+    @property
+    def gantry_positions(self) -> str:
+        """2.44 各三轴机器人坐标，JSON 字符串；无数据时返回 "{}"
+
+        形如 {"gantries": [{"frame": 3, "x": .., "y": .., "z": ..}], "ts": 秒}
+        """
+        with self._robot_pos_lock:
+            cache = self._gantry_pos_cache
+        if not cache:
+            return "{}"
+        return json.dumps({"gantries": cache["items"], "ts": cache["ts"]})
 
     # http报送服务，返回数据部分
     def process_step_finish_report(self, report_request):
@@ -7257,6 +7429,30 @@ class BioyondCellWorkstation(BioyondWorkstation):
         互锁门控用的 `_query_scheduler_status` 只取 schedulerStatus 一个字段。
         """
         return self._post_lims("/api/lims/scheduler/scheduler-status")
+
+    # 2.43 批量查询机器人坐标
+    def robot_joint_list_info(self) -> Dict[str, Any]:
+        """
+        2.43 批量查询机器人坐标
+
+        请求体只包含 apiKey 和 requestTime，返回原始响应，其中 data 为对象数组，每项：
+        deviceFrameCode（设备 Framecode）、joints（四轴关节，index 轴号 / value 位置）、
+        extjoints（扩增关节，如夹爪、导轨，同样 index / value）。
+        extjoints 个数随机器人配置变化（实测有的回 2 个、有的只回 1 个），不可假定固定长度。
+        后台轮询用的 `_fetch_robot_joints` 会把它整形成 robot_joint_positions 属性。
+        """
+        return self._post_lims("/api/lims/device/robot-joint-list-info")
+
+    # 2.44 批量查询三轴机器人坐标
+    def gantry_pos_list_info(self) -> Dict[str, Any]:
+        """
+        2.44 批量查询三轴机器人坐标
+
+        请求体只包含 apiKey 和 requestTime，返回原始响应，其中 data 为对象数组，每项：
+        deviceFrameCode（设备 Framecode）与 x / y / z 三个坐标。
+        后台轮询用的 `_fetch_gantry_pos` 会把它整形成 gantry_positions 属性。
+        """
+        return self._post_lims("/api/lims/device/gantry-pos-list-info")
 
     def scheduler_start_and_auto_feeding(
         self,

@@ -2173,6 +2173,8 @@ bioyond_cell:
       data_prep_tip_1000uL_count: int
       data_prep_tip_50uL_count: int
       data_dispense_tip_5000uL_count: int
+      robot_joint_positions: str
+      gantry_positions: str
     type: python
   config_info: []
   description: ''
@@ -2358,6 +2360,10 @@ bioyond_cell:
           type: integer
         data_dispense_tip_5000uL_count:
           type: integer
+        robot_joint_positions:
+          type: string
+        gantry_positions:
+          type: string
       required:
       - device_id
       type: object

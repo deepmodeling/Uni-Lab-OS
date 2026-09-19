@@ -25,6 +25,22 @@ class _RpcHandler(BaseHTTPRequestHandler):
             result = {"entity_id": args["entity_id"], "tcp_pose": [1, 2, 3, 0, 0, 0]}
         elif op == "get_joint_states":
             result = {"joint_1": 1.0}
+        elif op == "list_joint_controls":
+            result = [{"name": "arm1_joint"}]
+        elif op == "get_joint_control_state":
+            result = {"status": "ready"}
+        elif op == "plan_joint_targets":
+            result = {"plan_id": "plan_0001", "targets": args["targets"], "options": args["options"]}
+        elif op == "check_joint_plan":
+            result = {"plan_id": args["plan_id"], "safe": True}
+        elif op == "execute_joint_plan":
+            result = {"plan_id": args["plan_id"], "ok": True}
+        elif op == "stop_joint_motion":
+            result = {"ok": True, "code": "stopped"}
+        elif op == "set_collision_check_enabled":
+            result = {"collision_check_enabled": bool(args["enabled"])}
+        elif op == "apply_stable_drive_settings":
+            result = {"ok": True, "code": "stable_drive_applied"}
         elif op == "attach_rigid_body":
             result = "beaker"
         elif op == "render":
@@ -62,12 +78,32 @@ def test_isaac_bridge_forwards_backend_methods_over_http():
         backend.set_command("arm", {"type": "move_j"})
         observation = backend.get_observation("arm")
         joints = backend.get_joint_states("arm")
+        joint_controls = backend.list_joint_controls()
+        joint_state = backend.get_joint_control_state()
+        joint_plan = backend.plan_joint_targets({"arm1_joint": 10.0}, {"max_revolute_step_deg": 5.0})
+        joint_check = backend.check_joint_plan("plan_0001")
+        joint_execute = backend.execute_joint_plan("plan_0001")
+        joint_stop = backend.stop_joint_motion()
+        collision_mode = backend.set_collision_check_enabled(False)
+        stable_drive = backend.apply_stable_drive_settings()
         body_id = backend.attach_rigid_body("beaker", "beaker.usd", {"xyz": [0, 0, 0]})
         backend.apply_wrench("arm", {"force": [1, 0, 0]})
         image = backend.render("/World/Camera", 320, 240)
 
         assert observation["entity_id"] == "arm"
         assert joints == {"joint_1": 1.0}
+        assert joint_controls == [{"name": "arm1_joint"}]
+        assert joint_state == {"status": "ready"}
+        assert joint_plan == {
+            "plan_id": "plan_0001",
+            "targets": {"arm1_joint": 10.0},
+            "options": {"max_revolute_step_deg": 5.0},
+        }
+        assert joint_check == {"plan_id": "plan_0001", "safe": True}
+        assert joint_execute == {"plan_id": "plan_0001", "ok": True}
+        assert joint_stop == {"ok": True, "code": "stopped"}
+        assert collision_mode == {"collision_check_enabled": False}
+        assert stable_drive == {"ok": True, "code": "stable_drive_applied"}
         assert body_id == "beaker"
         assert image == b"png-bytes"
         assert [call["op"] for call in _RpcHandler.calls] == [
@@ -77,6 +113,14 @@ def test_isaac_bridge_forwards_backend_methods_over_http():
             "set_command",
             "get_observation",
             "get_joint_states",
+            "list_joint_controls",
+            "get_joint_control_state",
+            "plan_joint_targets",
+            "check_joint_plan",
+            "execute_joint_plan",
+            "stop_joint_motion",
+            "set_collision_check_enabled",
+            "apply_stable_drive_settings",
             "attach_rigid_body",
             "apply_wrench",
             "render",

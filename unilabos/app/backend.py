@@ -1,17 +1,87 @@
 from __future__ import annotations
 
+import atexit
+import signal
 import threading
+from pathlib import Path
 
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.sim.backends.factory import build_physics_backend
+from unilabos.sim.backends.isaac.managed import ManagedIsaacWorker, ManagedIsaacWorkerConfig
 from unilabos.sim.runtime import RuntimeServices, configure_runtime
 from unilabos.utils import logger
 
 
 _runtime_services: RuntimeServices | None = None
+_managed_isaac_worker: ManagedIsaacWorker | None = None
+_managed_isaac_shutdown_registered = False
+
+
+def _stop_managed_isaac_worker() -> None:
+    global _managed_isaac_worker
+    if _managed_isaac_worker is not None:
+        _managed_isaac_worker.stop()
+        _managed_isaac_worker = None
+
+
+def _register_managed_isaac_shutdown() -> None:
+    global _managed_isaac_shutdown_registered
+    if _managed_isaac_shutdown_registered:
+        return
+    atexit.register(_stop_managed_isaac_worker)
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        previous_handler = signal.getsignal(signum)
+
+        def _handler(signum, frame, previous_handler=previous_handler):
+            _stop_managed_isaac_worker()
+            if callable(previous_handler):
+                previous_handler(signum, frame)
+                return
+            if previous_handler == signal.SIG_IGN:
+                return
+            raise SystemExit(128 + signum)
+
+        signal.signal(signum, _handler)
+    _managed_isaac_shutdown_registered = True
+
+
+def _start_managed_isaac_if_requested(kwargs: dict) -> ManagedIsaacWorker | None:
+    global _managed_isaac_worker
+    if not kwargs.get("isaac_managed", False):
+        return None
+    if kwargs.get("physics", "none") != "isaac":
+        raise ValueError("--isaac_managed requires --physics isaac")
+    if _managed_isaac_worker is not None:
+        _stop_managed_isaac_worker()
+
+    config = ManagedIsaacWorkerConfig(
+        enabled=True,
+        host=kwargs.get("isaac_host", "127.0.0.1"),
+        port=int(kwargs.get("isaac_port", 8091)),
+        scene=kwargs.get("physics_scene"),
+        camera=kwargs.get("isaac_camera", "/World/Camera"),
+        headless=bool(kwargs.get("isaac_headless", True)),
+        joint_control_ui=bool(kwargs.get("isaac_joint_control_ui", False)),
+        rpc_timeout_s=float(kwargs.get("isaac_rpc_timeout_s", 600.0)),
+        start_timeout_s=float(kwargs.get("isaac_start_timeout", 120.0)),
+        conda_env=kwargs.get("isaac_conda_env"),
+        conda_executable=kwargs.get("isaac_conda_executable", "conda"),
+        python_executable=kwargs.get("isaac_python", "python"),
+        log_path=kwargs.get("isaac_log_path"),
+        repo_root=Path.cwd(),
+    )
+    worker = ManagedIsaacWorker(config)
+    worker.start()
+    _managed_isaac_worker = worker
+    _register_managed_isaac_shutdown()
+    if not kwargs.get("physics_endpoint"):
+        kwargs["physics_endpoint"] = worker.endpoint
+    logger.info(f"Managed Isaac worker started at {worker.endpoint}")
+    return worker
 
 
 def _initialize_runtime_for_backend(backend: str, kwargs: dict) -> RuntimeServices:
+    managed_worker = _start_managed_isaac_if_requested(kwargs)
     mode = kwargs.get("mode", "real")
     sim_rate = kwargs.get("sim_rate", 1.0)
     sim_paused = kwargs.get("sim_paused", False)
@@ -19,12 +89,17 @@ def _initialize_runtime_for_backend(backend: str, kwargs: dict) -> RuntimeServic
     physics_endpoint = kwargs.get("physics_endpoint")
     physics_scene = kwargs.get("physics_scene")
     physics_timeout = float(kwargs.get("physics_timeout", 120.0))
-    physics = build_physics_backend(
-        physics_name,
-        endpoint=physics_endpoint,
-        scene=physics_scene,
-        timeout=physics_timeout,
-    )
+    try:
+        physics = build_physics_backend(
+            physics_name,
+            endpoint=physics_endpoint,
+            scene=physics_scene,
+            timeout=physics_timeout,
+        )
+    except Exception:
+        if managed_worker is not None:
+            _stop_managed_isaac_worker()
+        raise
     start_sim_services = backend == "ros" and not kwargs.get("disable_sim_services", False)
     services = configure_runtime(
         mode=mode,

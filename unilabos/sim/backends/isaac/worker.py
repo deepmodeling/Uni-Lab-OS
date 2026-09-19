@@ -9,6 +9,7 @@ import zlib
 from dataclasses import dataclass, field
 from typing import Any
 
+from unilabos.sim.backends.isaac.joint_control import DEFAULT_MVPPKUSHENGKE_JOINTS, JointControlService, JointSpec
 from unilabos.sim.backends.isaac.worker_http import ThreadingHTTPServer, make_handler
 
 
@@ -54,6 +55,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--headless", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--warmup-steps", type=int, default=2)
     parser.add_argument("--rpc-timeout-s", type=float, default=600.0)
+    parser.add_argument("--joint-control-ui", action="store_true", default=False)
     return parser.parse_args(argv)
 
 
@@ -129,6 +131,27 @@ class IsaacWorkerState:
             )
         if op == "get_joint_states":
             return self.controller.get_joint_states(str(args["body_id"]))
+        if op == "list_joint_controls":
+            return _to_rpc_result(self.controller.list_joint_controls())
+        if op == "get_joint_control_state":
+            return _to_rpc_result(self.controller.get_joint_control_state())
+        if op == "plan_joint_targets":
+            return _to_rpc_result(
+                self.controller.plan_joint_targets(
+                    dict(args.get("targets") or {}),
+                    dict(args.get("options") or {}),
+                )
+            )
+        if op == "check_joint_plan":
+            return _to_rpc_result(self.controller.check_joint_plan(str(args["plan_id"])))
+        if op == "execute_joint_plan":
+            return _to_rpc_result(self.controller.execute_joint_plan(str(args["plan_id"])))
+        if op == "stop_joint_motion":
+            return _to_rpc_result(self.controller.stop_joint_motion())
+        if op == "set_collision_check_enabled":
+            return _to_rpc_result(self.controller.set_collision_check_enabled(bool(args.get("enabled"))))
+        if op == "apply_stable_drive_settings":
+            return _to_rpc_result(self.controller.apply_stable_drive_settings())
         if op == "apply_wrench":
             return self.controller.apply_wrench(str(args["body_id"]), dict(args.get("wrench") or {}))
         if op == "render":
@@ -137,13 +160,31 @@ class IsaacWorkerState:
         raise ValueError(f"Unsupported Isaac worker op: {op}")
 
 
+def _to_rpc_result(value: Any) -> Any:
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    if isinstance(value, list):
+        return [_to_rpc_result(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _to_rpc_result(item) for key, item in value.items()}
+    return value
+
+
 class IsaacController:
-    def __init__(self, headless: bool, camera: str, robot_prim: str | None, warmup_steps: int = 2):
+    def __init__(
+        self,
+        headless: bool,
+        camera: str,
+        robot_prim: str | None,
+        warmup_steps: int = 2,
+        joint_control_ui: bool = False,
+    ):
         from isaacsim import SimulationApp
 
         self.app = SimulationApp({"headless": bool(headless)})
         self.camera = camera
         self.robot_prim = robot_prim
+        self.joint_control_ui = bool(joint_control_ui)
         self.scene_path: str | None = None
         self.commands: dict[str, dict[str, Any]] = {}
         self.observations: dict[str, dict[str, Any]] = {}
@@ -155,6 +196,12 @@ class IsaacController:
         self._stage = None
         self._last_dt = 0.0
         self._rgb_annotators: dict[tuple[str, int, int], Any] = {}
+        self._joint_control_service: JointControlService | None = None
+        self._joint_control_window: Any = None
+        self._joint_control_models: dict[str, Any] = {}
+        self._joint_control_status_model: Any = None
+        self._collision_mode_model: Any = None
+        self._init_ui_action_queue()
         for _ in range(max(0, int(warmup_steps))):
             self.app.update()
 
@@ -179,6 +226,13 @@ class IsaacController:
         for _ in range(2):
             self.app.update()
         self._stage = omni.usd.get_context().get_stage()
+        self._joint_control_service = None
+        try:
+            self.apply_stable_drive_settings()
+        except Exception as exc:
+            print(f"[isaac worker] stable drive auto-apply failed: {exc}", flush=True)
+        if self.joint_control_ui:
+            self._create_joint_control_ui()
 
     def get_observation(self, entity_id: str) -> dict[str, Any]:
         observation = dict(self.observations.get(entity_id, {}))
@@ -218,10 +272,35 @@ class IsaacController:
     def get_joint_states(self, body_id: str) -> dict[str, float]:
         return dict(self.joint_states.get(body_id, {}))
 
+    def list_joint_controls(self) -> list[dict[str, Any]]:
+        return [spec.to_dict() for spec in self._get_joint_control_service().list_joints()]
+
+    def get_joint_control_state(self) -> dict[str, Any]:
+        return self._get_joint_control_service().get_joint_control_state()
+
+    def plan_joint_targets(self, targets: dict[str, float], options: dict[str, Any] | None = None):
+        return self._get_joint_control_service().plan_joint_targets(targets, options)
+
+    def check_joint_plan(self, plan_id: str):
+        return self._get_joint_control_service().check_joint_plan(plan_id)
+
+    def execute_joint_plan(self, plan_id: str):
+        return self._get_joint_control_service().execute_joint_plan(plan_id)
+
+    def stop_joint_motion(self):
+        return self._get_joint_control_service().stop_joint_motion()
+
+    def set_collision_check_enabled(self, enabled: bool):
+        return self._get_joint_control_service().set_collision_check_enabled(bool(enabled))
+
+    def apply_stable_drive_settings(self):
+        return self._get_joint_control_service().apply_stable_drive_settings()
+
     def apply_wrench(self, body_id: str, wrench: dict[str, Any]) -> None:
         self.wrenches.append((str(body_id), dict(wrench)))
 
     def idle(self) -> None:
+        self._process_ui_actions()
         self.app.update()
 
     def render(self, camera: str, width: int, height: int) -> bytes:
@@ -236,6 +315,186 @@ class IsaacController:
 
     def close(self) -> None:
         self.app.close()
+
+    def _get_joint_control_service(self) -> JointControlService:
+        if self._joint_control_service is None:
+            self._joint_control_service = JointControlService(_IsaacJointControlAdapter(self))
+        return self._joint_control_service
+
+    def _collision_mode_text(self) -> str:
+        state = self.get_joint_control_state()
+        if bool(state.get("collision_check_enabled", True)):
+            return "Collision: ON - Check required"
+        return "Collision: OFF - Execute bypasses contact checks"
+
+    def _create_joint_control_ui(self) -> None:
+        try:
+            import omni.ui as ui
+
+            service = self._get_joint_control_service()
+            self._joint_control_window = ui.Window("UniLab Joint Control", width=460, height=620)
+            self._joint_control_models = {}
+            self._joint_control_status_model = ui.SimpleStringModel("Ready")
+            self._collision_mode_model = ui.SimpleStringModel(self._collision_mode_text())
+            with self._joint_control_window.frame:
+                with ui.VStack(spacing=6):
+                    ui.Label("UniLab Joint Control", height=24)
+                    ui.Label(f"Scene: {self.scene_path or 'not loaded'}", height=20)
+                    ui.Label("", model=self._collision_mode_model, height=24)
+                    ui.Label("", model=self._joint_control_status_model, height=20)
+                    for spec in service.list_joints():
+                        current = service.get_joint_control_state()["positions"].get(spec.name, 0.0)
+                        with ui.HStack(height=28):
+                            ui.Label(spec.name, width=120)
+                            model = ui.SimpleFloatModel(float(current))
+                            self._joint_control_models[spec.name] = model
+                            ui.FloatSlider(model=model, min=float(spec.lower_limit), max=float(spec.upper_limit))
+                            ui.Label(spec.unit, width=36)
+                    with ui.HStack(height=32):
+                        ui.Button("Plan", clicked_fn=self._ui_plan_joint_targets)
+                        ui.Button("Check", clicked_fn=self._ui_check_last_joint_plan)
+                        ui.Button("Execute", clicked_fn=self._ui_execute_last_joint_plan)
+                    with ui.HStack(height=32):
+                        ui.Button("Stop", clicked_fn=self._ui_stop_joint_motion)
+                        ui.Button("Reset Targets", clicked_fn=self._ui_reset_joint_targets)
+                    with ui.HStack(height=32):
+                        ui.Button("Collision ON/OFF", clicked_fn=self._ui_toggle_collision_check)
+                        ui.Button("Apply Stable Drive", clicked_fn=self._ui_apply_stable_drive)
+        except Exception as exc:
+            print(f"[isaac worker] joint control UI unavailable: {exc}", flush=True)
+
+    def _ui_targets(self) -> dict[str, float]:
+        targets = {}
+        for name, model in self._joint_control_models.items():
+            if hasattr(model, "get_value_as_float"):
+                targets[name] = float(model.get_value_as_float())
+            else:
+                targets[name] = float(model.as_float)
+        return targets
+
+    def _ui_set_status(self, text: str) -> None:
+        if self._joint_control_status_model is not None:
+            try:
+                self._joint_control_status_model.set_value(str(text))
+            except Exception:
+                pass
+
+    def _ui_set_collision_mode(self) -> None:
+        model = getattr(self, "_collision_mode_model", None)
+        if model is not None:
+            try:
+                model.set_value(self._collision_mode_text())
+            except Exception:
+                pass
+
+    def _init_ui_action_queue(self) -> None:
+        self._ui_action_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+    def _enqueue_ui_action(self, label: str, action: Any) -> None:
+        self._ui_set_status(f"{label} queued")
+        self._ui_action_queue.put((str(label), action))
+
+    def _process_ui_actions(self) -> bool:
+        processed = False
+        while True:
+            try:
+                label, action = self._ui_action_queue.get_nowait()
+            except queue.Empty:
+                return processed
+            try:
+                self._ui_set_status(f"{label} running")
+                action()
+            except Exception as exc:
+                self._ui_set_status(f"{label} failed: {exc}")
+            finally:
+                self._ui_action_queue.task_done()
+            processed = True
+
+    def _ui_last_plan_id(self) -> str | None:
+        state = self.get_joint_control_state()
+        last_plan = state.get("last_plan") or {}
+        return last_plan.get("plan_id")
+
+    def _ui_plan_joint_targets(self) -> None:
+        self._enqueue_ui_action("Plan", self._ui_plan_joint_targets_now)
+
+    def _ui_plan_joint_targets_now(self) -> None:
+        try:
+            plan = self.plan_joint_targets(self._ui_targets())
+            self._ui_set_status(f"Planned {plan.plan_id}: {len(plan.waypoints)} waypoints")
+        except Exception as exc:
+            self._ui_set_status(f"Plan failed: {exc}")
+
+    def _ui_check_last_joint_plan(self) -> None:
+        self._enqueue_ui_action("Check", self._ui_check_last_joint_plan_now)
+
+    def _ui_check_last_joint_plan_now(self) -> None:
+        try:
+            plan_id = self._ui_last_plan_id()
+            if not plan_id:
+                self._ui_set_status("No plan to check")
+                return
+            result = self.check_joint_plan(plan_id)
+            self._ui_set_status(f"Check {result.code}: {result.message}")
+        except Exception as exc:
+            self._ui_set_status(f"Check failed: {exc}")
+
+    def _ui_execute_last_joint_plan(self) -> None:
+        self._enqueue_ui_action("Execute", self._ui_execute_last_joint_plan_now)
+
+    def _ui_execute_last_joint_plan_now(self) -> None:
+        try:
+            plan_id = self._ui_last_plan_id()
+            if not plan_id:
+                self._ui_set_status("No plan to execute")
+                return
+            result = self.execute_joint_plan(plan_id)
+            self._ui_set_status(f"Execute {result.code}: {result.message}")
+        except Exception as exc:
+            self._ui_set_status(f"Execute failed: {exc}")
+
+    def _ui_toggle_collision_check(self) -> None:
+        self._enqueue_ui_action("Collision", self._ui_toggle_collision_check_now)
+
+    def _ui_toggle_collision_check_now(self) -> None:
+        try:
+            state = self.get_joint_control_state()
+            enabled = bool(state.get("collision_check_enabled", True))
+            result = self.set_collision_check_enabled(not enabled)
+            self._ui_set_collision_mode()
+            mode = "ON" if result.get("collision_check_enabled") else "OFF"
+            self._ui_set_status(f"Collision {mode}")
+        except Exception as exc:
+            self._ui_set_status(f"Collision toggle failed: {exc}")
+
+    def _ui_apply_stable_drive(self) -> None:
+        self._enqueue_ui_action("Stable Drive", self._ui_apply_stable_drive_now)
+
+    def _ui_apply_stable_drive_now(self) -> None:
+        try:
+            result = self.apply_stable_drive_settings()
+            self._ui_set_status(f"Stable drive applied: {len(result.get('settings', {}))} joints")
+        except Exception as exc:
+            self._ui_set_status(f"Stable drive failed: {exc}")
+
+    def _ui_stop_joint_motion(self) -> None:
+        self._enqueue_ui_action("Stop", self._ui_stop_joint_motion_now)
+
+    def _ui_stop_joint_motion_now(self) -> None:
+        result = self.stop_joint_motion()
+        self._ui_set_status(result.message)
+
+    def _ui_reset_joint_targets(self) -> None:
+        self._enqueue_ui_action("Reset", self._ui_reset_joint_targets_now)
+
+    def _ui_reset_joint_targets_now(self) -> None:
+        positions = self.get_joint_control_state().get("positions", {})
+        for name, model in self._joint_control_models.items():
+            try:
+                model.set_value(float(positions.get(name, 0.0)))
+            except Exception:
+                pass
+        self._ui_set_status("Targets reset")
 
     def _query_prim_pose(self, entity_id: str) -> dict[str, Any] | None:
         if self._stage is None or not entity_id.startswith("/"):
@@ -345,6 +604,188 @@ class IsaacController:
             self.render_error = f"camera setup failed: {exc}"
 
 
+class _IsaacJointControlAdapter:
+    def __init__(self, controller: IsaacController) -> None:
+        self.controller = controller
+
+    def list_joint_specs(self) -> list[JointSpec]:
+        if self.controller._stage is None:
+            return list(DEFAULT_MVPPKUSHENGKE_JOINTS)
+        return [self._spec_from_stage(default_spec) for default_spec in DEFAULT_MVPPKUSHENGKE_JOINTS]
+
+    def get_joint_positions(self) -> dict[str, float]:
+        positions: dict[str, float] = {}
+        fallback = self.controller.joint_states.get("joint_control", {})
+        for spec in self.list_joint_specs():
+            value = self._get_drive_target(spec)
+            positions[spec.name] = float(fallback.get(spec.name, value))
+        return positions
+
+    def capture_state(self) -> dict[str, float]:
+        return self.get_joint_positions()
+
+    def restore_state(self, state: dict[str, float]) -> None:
+        self.set_joint_targets({str(key): float(value) for key, value in dict(state).items()})
+        self.step_simulation(1)
+
+    def set_joint_targets(self, targets: dict[str, float]) -> None:
+        clean_targets = {str(key): float(value) for key, value in targets.items()}
+        self.controller.joint_states["joint_control"] = dict(clean_targets)
+        if self.controller._stage is None:
+            return
+        specs = {spec.name: spec for spec in self.list_joint_specs()}
+        for name, value in clean_targets.items():
+            spec = specs[name]
+            prim = self.controller._stage.GetPrimAtPath(spec.path)
+            if not prim or not prim.IsValid():
+                raise RuntimeError(f"Joint prim not found: {spec.path}")
+            attr = prim.GetAttribute(f"drive:{spec.drive_axis}:physics:targetPosition")
+            if not attr:
+                from pxr import UsdPhysics
+
+                drive = UsdPhysics.DriveAPI.Apply(prim, spec.drive_axis)
+                attr = drive.CreateTargetPositionAttr()
+            attr.Set(float(value))
+
+    def step_simulation(self, steps: int) -> None:
+        for _ in range(max(0, int(steps))):
+            self.controller.app.update()
+
+    def get_disallowed_contacts(self) -> list[dict[str, Any]]:
+        report = self._read_contact_report()
+        return self._parse_contacts(report)
+
+    def apply_drive_settings(self, settings: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
+        applied: dict[str, dict[str, float]] = {}
+        specs = {spec.name: spec for spec in self.list_joint_specs()}
+        for name, values in settings.items():
+            spec = specs[str(name)]
+            clean_values = {
+                "stiffness": float(values["stiffness"]),
+                "damping": float(values["damping"]),
+                "max_force": float(values["max_force"]),
+            }
+            applied[spec.name] = clean_values
+            if self.controller._stage is None:
+                continue
+            prim = self.controller._stage.GetPrimAtPath(spec.path)
+            if not prim or not prim.IsValid():
+                raise RuntimeError(f"Joint prim not found: {spec.path}")
+            self._set_drive_attr(prim, spec.drive_axis, "stiffness", clean_values["stiffness"])
+            self._set_drive_attr(prim, spec.drive_axis, "damping", clean_values["damping"])
+            self._set_drive_attr(prim, spec.drive_axis, "maxForce", clean_values["max_force"])
+        return applied
+
+    def _spec_from_stage(self, default_spec: JointSpec) -> JointSpec:
+        prim = self.controller._stage.GetPrimAtPath(default_spec.path)
+        if not prim or not prim.IsValid():
+            return default_spec
+        body0 = self._first_target(prim, "physics:body0") or default_spec.body0
+        body1 = self._first_target(prim, "physics:body1") or default_spec.body1
+        lower = self._attr_float(prim, "physics:lowerLimit", default_spec.lower_limit)
+        upper = self._attr_float(prim, "physics:upperLimit", default_spec.upper_limit)
+        drive_axis = "angular" if "Revolute" in prim.GetTypeName() else "linear"
+        joint_type = "revolute" if drive_axis == "angular" else "prismatic"
+        unit = "deg" if drive_axis == "angular" else "m"
+        return JointSpec(
+            name=default_spec.name,
+            path=default_spec.path,
+            joint_type=joint_type,
+            drive_axis=drive_axis,
+            unit=unit,
+            lower_limit=lower,
+            upper_limit=upper,
+            body0=body0,
+            body1=body1,
+        )
+
+    def _get_drive_target(self, spec: JointSpec) -> float:
+        if self.controller._stage is None:
+            return 0.0
+        prim = self.controller._stage.GetPrimAtPath(spec.path)
+        if not prim or not prim.IsValid():
+            return 0.0
+        attr = prim.GetAttribute(f"drive:{spec.drive_axis}:physics:targetPosition")
+        if not attr:
+            return 0.0
+        value = attr.Get()
+        return 0.0 if value is None else float(value)
+
+    def _set_drive_attr(self, prim: Any, drive_axis: str, name: str, value: float) -> None:
+        attr = prim.GetAttribute(f"drive:{drive_axis}:physics:{name}")
+        if not attr:
+            from pxr import UsdPhysics
+
+            drive = UsdPhysics.DriveAPI.Apply(prim, drive_axis)
+            if name == "stiffness":
+                attr = drive.CreateStiffnessAttr()
+            elif name == "damping":
+                attr = drive.CreateDampingAttr()
+            elif name == "maxForce":
+                attr = drive.CreateMaxForceAttr()
+            else:
+                raise RuntimeError(f"Unsupported drive attr: {name}")
+        attr.Set(float(value))
+
+    def _read_contact_report(self) -> Any:
+        try:
+            import omni.physx
+
+            interface = omni.physx.get_physx_simulation_interface()
+            if hasattr(interface, "get_full_contact_report"):
+                return interface.get_full_contact_report()
+            if hasattr(interface, "get_contact_report"):
+                return interface.get_contact_report()
+        except Exception as exc:
+            raise RuntimeError(f"contact report unavailable: {exc}") from exc
+        raise RuntimeError("contact report unavailable: no supported PhysX contact API")
+
+    def _parse_contacts(self, report: Any) -> list[dict[str, Any]]:
+        if report is None:
+            return []
+        if isinstance(report, (list, tuple)):
+            contacts: list[dict[str, Any]] = []
+            for item in report:
+                contacts.extend(self._parse_contacts(item))
+            return contacts
+        headers = getattr(report, "contact_headers", None) or getattr(report, "headers", None)
+        if headers is not None:
+            return self._parse_contacts(headers)
+        body0 = self._object_path(report, ("body0", "actor0", "path0", "prim0"))
+        body1 = self._object_path(report, ("body1", "actor1", "path1", "prim1"))
+        if body0 or body1:
+            return [{"body0": body0 or "", "body1": body1 or ""}]
+        try:
+            if len(report) == 0:
+                return []
+        except Exception:
+            pass
+        if bool(report) is False:
+            return []
+        raise RuntimeError(f"contact report format unsupported: {type(report).__name__}")
+
+    def _first_target(self, prim: Any, rel_name: str) -> str | None:
+        rel = prim.GetRelationship(rel_name)
+        if not rel:
+            return None
+        targets = rel.GetTargets()
+        return str(targets[0]) if targets else None
+
+    def _attr_float(self, prim: Any, attr_name: str, default: float) -> float:
+        attr = prim.GetAttribute(attr_name)
+        if not attr:
+            return float(default)
+        value = attr.Get()
+        return float(default) if value is None else float(value)
+
+    def _object_path(self, item: Any, names: tuple[str, ...]) -> str | None:
+        for name in names:
+            value = getattr(item, name, None)
+            if value:
+                return str(value)
+        return None
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     controller = IsaacController(
@@ -352,6 +793,7 @@ def main(argv: list[str] | None = None) -> int:
         camera=args.camera,
         robot_prim=args.robot_prim,
         warmup_steps=args.warmup_steps,
+        joint_control_ui=args.joint_control_ui,
     )
     if args.scene:
         controller.load_scene(args.scene)

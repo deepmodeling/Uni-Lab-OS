@@ -1,0 +1,23 @@
+{
+  "nodes": [
+    {
+      "id": "SSE_AUTO_SYNTHESIS_STATION",
+      "name": "SSE auto synthesis",
+      "parent": null,
+      "type": "device",
+      "class": "sse_auto_synthesis",
+      "position": {
+        "x": 720.0,
+        "y": 200.0,
+        "z": 0
+      },
+      "config": {
+        "ip": "127.0.0.1",
+        "port": 8091
+      },
+      "data": {},
+      "children": []
+    }
+  ],
+  "links": []
+}

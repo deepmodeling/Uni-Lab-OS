@@ -163,6 +163,10 @@ def flatten_multi_channel_kwargs(
     blow_out_air_volume_before: Any = None,
     delays: Any = None,
     pre_aspirate_from_target: Any = None,
+    dispensing_method: Any = None,
+    hover_below_liquid_level: Any = None,
+    z_start_point_offset_height: Any = None,
+    post_discharge_pause_time_ms: Any = None,
 ) -> Dict[str, Any]:
     """把 v4 抽象层 8 通道形态展开为 8 × M 次单通道顺序操作的入参。
 
@@ -248,5 +252,15 @@ def flatten_multi_channel_kwargs(
         "delays": _expand_per_well(delays, "delays"),
         "pre_aspirate_from_target": _expand_per_well(
             pre_aspirate_from_target, "pre_aspirate_from_target"
+        ),
+        "dispensing_method": _expand_per_well(dispensing_method, "dispensing_method"),
+        "hover_below_liquid_level": _expand_per_well(
+            hover_below_liquid_level, "hover_below_liquid_level"
+        ),
+        "z_start_point_offset_height": _expand_per_well(
+            z_start_point_offset_height, "z_start_point_offset_height"
+        ),
+        "post_discharge_pause_time_ms": _expand_per_well(
+            post_discharge_pause_time_ms, "post_discharge_pause_time_ms"
         ),
     }

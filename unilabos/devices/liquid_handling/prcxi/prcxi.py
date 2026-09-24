@@ -85,6 +85,19 @@ LIQUID_METHOD_NORMAL = "NormalDispense"
 LIQUID_METHOD_WALL_LEFT = "WallContactAfterDispense_Left"
 LIQUID_METHOD_WALL_RIGHT = "WallContactAfterDispense_Right"
 
+# V04 DispenseStep 放液定位方式（与 legacy LiquidDispensingMethod 靠壁枚举无关）。
+V04_DISPENSING_METHODS = frozenset({
+    "DiveToBottom",
+    "BottleNeck",
+    "Offset",
+    "AffterOffset",
+    "YOffset",
+    "YAffterOffset",
+})
+
+# V04 放液方向（与 ceshi.xml / DispensingDirectionEnum 常用值一致，首版透传字符串）。
+V04_DISPENSING_DIRECTIONS = frozenset({"X", "Y"})
+
 # touch_tip 实现模式：native=原生放液后靠壁；software=通用软件式(孔内左右壁各 0 体积 aspirate)；
 # both=两者同时。仅在单次 transfer 的 touch_tip=True 时触发，且仅 9320 有意义。
 TOUCH_TIP_MODES = ("native", "software", "both")
@@ -171,6 +184,38 @@ def _v04_tips_type(step: Dict[str, Any]) -> str:
     if len(numbers) > 1:
         return "Tips8"
     return "Tips1"
+
+
+def _transfer_scalar_first(val: Any) -> Any:
+    if val is None:
+        return None
+    if isinstance(val, (list, tuple)):
+        return val[0] if len(val) else None
+    return val
+
+
+def _legacy_motion_kwargs_from_offset(
+    offset: Optional[Coordinate],
+    z_start: Optional[int],
+) -> Dict[str, Any]:
+    """从 PLR Coordinate / Z 起点高度生成 legacy 运动字段（有值才写入）。"""
+    out: Dict[str, Any] = {}
+    if offset is not None:
+        try:
+            x = float(offset.x)
+            y = float(offset.y)
+            z = float(offset.z)
+        except (AttributeError, TypeError, ValueError):
+            x = y = z = 0.0
+        if x != 0.0:
+            out["XOffset"] = x
+        if y != 0.0:
+            out["YOffset"] = y
+        if z != 0.0:
+            out["ZOffset"] = z
+    if z_start is not None:
+        out["ZStartPointOffsetHeight"] = int(z_start)
+    return out
 
 
 def _v04_position_fields(step: Dict[str, Any], idx: int) -> Dict[str, Any]:
@@ -3060,6 +3105,121 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         ident = f"{getattr(rack, 'model', '') or ''} {type(rack).__name__}".lower()
         return "10ul" in ident
 
+    def _default_well_for_transfer(self, plate: Plate, *, prefer_liquid: bool = False) -> Well:
+        """网页选整板时展开为默认孔：储液槽 A1；源板优先首个有液孔，否则 A1。"""
+        if prefer_liquid:
+            for well in self._plate_wells(plate):
+                tracker = getattr(well, "tracker", None)
+                if tracker is not None:
+                    try:
+                        if float(tracker.get_used_volume()) > 1e-9:
+                            return well
+                    except Exception:
+                        pass
+                    liqs = getattr(tracker, "liquids", None) or []
+                    if liqs:
+                        return well
+        try:
+            return self._safe_get_well(plate, "A1")
+        except Exception:
+            wells = self._plate_wells(plate)
+            if not wells:
+                raise ValueError(
+                    f"transfer_liquid: 板 {getattr(plate, 'name', '?')} 无法解析默认孔位"
+                )
+            return wells[0]
+
+    def _expand_transfer_plates_to_wells(
+        self,
+        items: Sequence[Resource],
+        *,
+        prefer_liquid: bool = False,
+    ) -> List[Container]:
+        """将 sources/targets 中的 Plate 展开为 Well，兼容网页整板选取。"""
+        expanded: List[Container] = []
+        for item in items:
+            if isinstance(item, Plate) and not isinstance(item, Well):
+                well = self._default_well_for_transfer(item, prefer_liquid=prefer_liquid)
+                if hasattr(self, "_ros_node") and self._ros_node is not None:
+                    self._ros_node.lab_logger().info(
+                        f"[PRCXI] transfer_liquid 整板→孔: "
+                        f"{getattr(item, 'name', '?')} → {getattr(well, 'name', '?')}"
+                    )
+                expanded.append(well)
+            else:
+                expanded.append(item)  # type: ignore[arg-type]
+        return expanded
+
+    def _stash_transfer_v04_context(
+        self,
+        *,
+        offsets: Optional[List[Coordinate]] = None,
+        z_start_point_offset_height: Optional[List[Optional[int]]] = None,
+        touch_tip: bool = False,
+        blow_out_air_volume_before: Optional[List[Optional[float]]] = None,
+        suction_method: Optional[str] = None,
+        air_suck_volume: Optional[Union[List[Optional[float]], float]] = None,
+        dispensing_direction: Optional[str] = None,
+        dispensing_air_suck_position: Optional[str] = None,
+        dispensing_complete_z_position: Optional[str] = None,
+        blow_sample_volume: Optional[Union[int, float]] = None,
+        mix_if_tip_touch: Optional[bool] = None,
+        mix_tip_touch_height: Optional[int] = None,
+        mix_tip_touch_offset_x: Optional[int] = None,
+    ) -> None:
+        """单次 transfer_liquid 的 V04 步骤上下文（backend 逐步骤 consume motion / 专有字段）。"""
+        backend = self._unilabos_backend
+        off = _transfer_scalar_first(offsets)
+        coord = off if isinstance(off, Coordinate) else None
+        z_start_raw = _transfer_scalar_first(z_start_point_offset_height)
+        z_start: Optional[int] = None
+        if z_start_raw is not None:
+            try:
+                z_start = int(z_start_raw)
+            except (TypeError, ValueError):
+                z_start = None
+        backend._ctx_transfer_motion = _legacy_motion_kwargs_from_offset(coord, z_start)
+
+        asp_v04: Dict[str, Any] = {}
+        if suction_method is not None and str(suction_method).strip():
+            asp_v04["SuctionMethod"] = str(suction_method).strip()
+        backend._ctx_transfer_aspirate_v04 = asp_v04
+
+        disp_v04: Dict[str, Any] = {}
+        air = _transfer_scalar_first(air_suck_volume)
+        if air is not None:
+            disp_v04["air_suck_volume"] = float(air)
+        if dispensing_direction is not None and str(dispensing_direction).strip():
+            dd = str(dispensing_direction).strip()
+            if dd not in V04_DISPENSING_DIRECTIONS:
+                print(f"[PRCXI][WARN] 未知 DispensingDirection={dd!r}，仍将下发到 V04。")
+            disp_v04["dispensing_direction"] = dd
+        if dispensing_air_suck_position is not None and str(dispensing_air_suck_position).strip():
+            disp_v04["dispensing_air_suck_position"] = str(dispensing_air_suck_position).strip()
+        if dispensing_complete_z_position is not None and str(dispensing_complete_z_position).strip():
+            disp_v04["dispensing_complete_z_position"] = str(dispensing_complete_z_position).strip()
+        rev_before = _transfer_scalar_first(blow_out_air_volume_before)
+        if rev_before is not None:
+            disp_v04["reverse_imbibing"] = float(rev_before)
+        backend._ctx_transfer_dispense_v04 = disp_v04
+
+        mix_v04: Dict[str, Any] = {}
+        if blow_sample_volume is not None:
+            mix_v04["BlowSampleVolume"] = float(blow_sample_volume)
+        if_tip: Optional[bool] = mix_if_tip_touch
+        if if_tip is None and touch_tip:
+            if_tip = True
+        if if_tip is not None:
+            mix_v04["IfTipTouch"] = bool(if_tip)
+        if mix_tip_touch_height is not None:
+            mix_v04["TipTouchHeight"] = int(mix_tip_touch_height)
+        if mix_tip_touch_offset_x is not None:
+            mix_v04["TipTouchOffsetOfX"] = int(mix_tip_touch_offset_x)
+        backend._ctx_transfer_mix_v04 = mix_v04
+
+    def _clear_transfer_v04_context(self) -> None:
+        self._unilabos_backend.clear_transfer_v04_context()
+
     # P1 v5 — 扁平化 helper：实现位于 PLR-free 模块 ``prcxi.flatten_utils``，
     # 这里做薄包装以保留"helper 与 PRCXI 静态方法聚在一起"的设计语义
     # （详见 ``product_designs/protocol_convert/01-multi-channel-flatten.md`` §11.3）。
@@ -3112,6 +3272,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         liquid_height: Optional[List[Optional[float]]] = None,
         blow_out_air_volume: Optional[List[Optional[float]]] = None,
         blow_out_air_volume_before: Optional[List[Optional[float]]] = None,
+        post_air_volume: Optional[List[Optional[float]]] = None,
         spread: Literal["wide", "tight", "custom"] = "wide",
         is_96_well: bool = False,
         mix_stage: Optional[Literal["none", "before", "after", "both"]] = "none",
@@ -3121,7 +3282,123 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         mix_liquid_height: Optional[float] = None,
         delays: Optional[List[int]] = None,
         pre_aspirate_from_target: Optional[float] = None,
+        dispensing_method: Optional[List[Optional[str]]] = None,
+        hover_below_liquid_level: Optional[List[Optional[int]]] = None,
+        z_start_point_offset_height: Optional[List[Optional[int]]] = None,
+        post_discharge_pause_time_ms: Optional[List[Optional[int]]] = None,
         none_keys: List[str] = [],
+        source_slots: Optional[Union[List[int], int]] = None,
+        target_slots: Optional[Union[List[int], int]] = None,
+        tip_rack_slots: Optional[Union[List[int], int]] = None,
+        suction_method: Optional[str] = None,
+        air_suck_volume: Optional[Union[List[Optional[float]], float]] = None,
+        dispensing_direction: Optional[str] = None,
+        dispensing_air_suck_position: Optional[str] = None,
+        dispensing_complete_z_position: Optional[str] = None,
+        blow_sample_volume: Optional[Union[int, float]] = None,
+        mix_if_tip_touch: Optional[bool] = None,
+        mix_tip_touch_height: Optional[int] = None,
+        mix_tip_touch_offset_x: Optional[int] = None,
+        **kwargs: Any,
+    ) -> TransferLiquidReturn:
+        self._stash_transfer_v04_context(
+            offsets=offsets,
+            z_start_point_offset_height=z_start_point_offset_height,
+            touch_tip=touch_tip,
+            blow_out_air_volume_before=blow_out_air_volume_before,
+            suction_method=suction_method,
+            air_suck_volume=air_suck_volume,
+            dispensing_direction=dispensing_direction,
+            dispensing_air_suck_position=dispensing_air_suck_position,
+            dispensing_complete_z_position=dispensing_complete_z_position,
+            blow_sample_volume=blow_sample_volume,
+            mix_if_tip_touch=mix_if_tip_touch,
+            mix_tip_touch_height=mix_tip_touch_height,
+            mix_tip_touch_offset_x=mix_tip_touch_offset_x,
+        )
+        try:
+            return await self._transfer_liquid_impl(
+                sources=sources,
+                targets=targets,
+                tip_racks=tip_racks,
+                use_channels=use_channels,
+                asp_vols=asp_vols,
+                dis_vols=dis_vols,
+                asp_flow_rates=asp_flow_rates,
+                dis_flow_rates=dis_flow_rates,
+                offsets=offsets,
+                touch_tip=touch_tip,
+                liquid_height=liquid_height,
+                blow_out_air_volume=blow_out_air_volume,
+                blow_out_air_volume_before=blow_out_air_volume_before,
+                post_air_volume=post_air_volume,
+                spread=spread,
+                is_96_well=is_96_well,
+                mix_stage=mix_stage,
+                mix_times=mix_times,
+                mix_vol=mix_vol,
+                mix_rate=mix_rate,
+                mix_liquid_height=mix_liquid_height,
+                delays=delays,
+                pre_aspirate_from_target=pre_aspirate_from_target,
+                dispensing_method=dispensing_method,
+                hover_below_liquid_level=hover_below_liquid_level,
+                z_start_point_offset_height=z_start_point_offset_height,
+                post_discharge_pause_time_ms=post_discharge_pause_time_ms,
+                none_keys=none_keys,
+                suction_method=suction_method,
+                air_suck_volume=air_suck_volume,
+                dispensing_direction=dispensing_direction,
+                dispensing_air_suck_position=dispensing_air_suck_position,
+                dispensing_complete_z_position=dispensing_complete_z_position,
+                blow_sample_volume=blow_sample_volume,
+                mix_if_tip_touch=mix_if_tip_touch,
+                mix_tip_touch_height=mix_tip_touch_height,
+                mix_tip_touch_offset_x=mix_tip_touch_offset_x,
+            )
+        finally:
+            self._clear_transfer_v04_context()
+
+    async def _transfer_liquid_impl(
+        self,
+        sources: Sequence[Container],
+        targets: Sequence[Container],
+        tip_racks: Sequence[TipRack],
+        *,
+        use_channels: Optional[List[int]] = None,
+        asp_vols: Union[List[float], float],
+        dis_vols: Union[List[float], float],
+        asp_flow_rates: Optional[List[Optional[float]]] = None,
+        dis_flow_rates: Optional[List[Optional[float]]] = None,
+        offsets: Optional[List[Coordinate]] = None,
+        touch_tip: bool = False,
+        liquid_height: Optional[List[Optional[float]]] = None,
+        blow_out_air_volume: Optional[List[Optional[float]]] = None,
+        blow_out_air_volume_before: Optional[List[Optional[float]]] = None,
+        post_air_volume: Optional[List[Optional[float]]] = None,
+        spread: Literal["wide", "tight", "custom"] = "wide",
+        is_96_well: bool = False,
+        mix_stage: Optional[Literal["none", "before", "after", "both"]] = "none",
+        mix_times: Optional[List[int]] = None,
+        mix_vol: Optional[int] = None,
+        mix_rate: Optional[int] = None,
+        mix_liquid_height: Optional[float] = None,
+        delays: Optional[List[int]] = None,
+        pre_aspirate_from_target: Optional[float] = None,
+        dispensing_method: Optional[List[Optional[str]]] = None,
+        hover_below_liquid_level: Optional[List[Optional[int]]] = None,
+        z_start_point_offset_height: Optional[List[Optional[int]]] = None,
+        post_discharge_pause_time_ms: Optional[List[Optional[int]]] = None,
+        none_keys: List[str] = [],
+        suction_method: Optional[str] = None,
+        air_suck_volume: Optional[Union[List[Optional[float]], float]] = None,
+        dispensing_direction: Optional[str] = None,
+        dispensing_air_suck_position: Optional[str] = None,
+        dispensing_complete_z_position: Optional[str] = None,
+        blow_sample_volume: Optional[Union[int, float]] = None,
+        mix_if_tip_touch: Optional[bool] = None,
+        mix_tip_touch_height: Optional[int] = None,
+        mix_tip_touch_offset_x: Optional[int] = None,
     ) -> TransferLiquidReturn:
         # 必须在 _match_and_create_matrix 之前判断：
         # _match_and_create_matrix 会在首次 transfer 时创建 matrix_id，若在其后判断会恒为「有值」。
@@ -3165,6 +3442,10 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
             self._step_protocol_open = True
         # 远端解析回来的 PLR 实例可能未挂到 self.deck，主动绑定一次，避免 backend 取 plate.parent==None
         self._attach_resources_to_deck_if_needed(list(sources) + list(targets) + list(tip_racks))
+        # 网页/工作流常传整板 uuid；非 96 整板模式下 PLR 需要 Well/Container。
+        if not is_96_well:
+            sources = self._expand_transfer_plates_to_wells(sources, prefer_liquid=True)
+            targets = self._expand_transfer_plates_to_wells(targets, prefer_liquid=False)
         if isinstance(tip_racks[0], TipRack):
             tip_rack = tip_racks[0]
         else:
@@ -3189,6 +3470,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 touch_tip=touch_tip,
                 liquid_height=liquid_height,
                 blow_out_air_volume=blow_out_air_volume,
+                post_air_volume=post_air_volume,
                 spread=spread,
                 mix_stage=mix_stage,
                 mix_times=mix_times,
@@ -3197,6 +3479,11 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 mix_liquid_height=mix_liquid_height,
                 delays=delays,
                 pre_aspirate_from_target=pre_aspirate_from_target,
+                dispensing_method=dispensing_method,
+                hover_below_liquid_level=hover_below_liquid_level,
+                z_start_point_offset_height=z_start_point_offset_height,
+                post_discharge_pause_time_ms=post_discharge_pause_time_ms,
+                blow_out_air_volume_before=blow_out_air_volume_before,
                 none_keys=none_keys,
             )
 
@@ -3264,6 +3551,10 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 blow_out_air_volume_before=blow_out_air_volume_before,
                 delays=delays,
                 pre_aspirate_from_target=pre_aspirate_from_target,
+                dispensing_method=dispensing_method,
+                hover_below_liquid_level=hover_below_liquid_level,
+                z_start_point_offset_height=z_start_point_offset_height,
+                post_discharge_pause_time_ms=post_discharge_pause_time_ms,
             )
             sources = flattened["sources"]
             targets = flattened["targets"]
@@ -3277,6 +3568,10 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
             blow_out_air_volume_before = flattened["blow_out_air_volume_before"]
             delays = flattened["delays"]
             pre_aspirate_from_target = flattened["pre_aspirate_from_target"]
+            dispensing_method = flattened["dispensing_method"]
+            hover_below_liquid_level = flattened["hover_below_liquid_level"]
+            z_start_point_offset_height = flattened["z_start_point_offset_height"]
+            post_discharge_pause_time_ms = flattened["post_discharge_pause_time_ms"]
             if _pip_setting is None:
                 # legacy：让下面的 small-vols heuristic 自由选 [0] / [1]
                 use_channels = None
@@ -3337,6 +3632,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 liquid_height=liquid_height,
                 blow_out_air_volume=blow_out_air_volume,
                 blow_out_air_volume_before=None,
+                post_air_volume=post_air_volume,
                 spread=spread,
                 is_96_well=is_96_well,
                 mix_stage=mix_stage,
@@ -3346,6 +3642,10 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 mix_liquid_height=mix_liquid_height,
                 delays=delays,
                 pre_aspirate_from_target=pre_aspirate_from_target,
+                dispensing_method=dispensing_method,
+                hover_below_liquid_level=hover_below_liquid_level,
+                z_start_point_offset_height=z_start_point_offset_height,
+                post_discharge_pause_time_ms=post_discharge_pause_time_ms,
                 none_keys=none_keys,
             )
             if self.step_mode:
@@ -3472,6 +3772,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         touch_tip: bool = False,
         liquid_height: Optional[List[Optional[float]]] = None,
         blow_out_air_volume: Optional[List[Optional[float]]] = None,
+        post_air_volume: Optional[List[Optional[float]]] = None,
         spread: Literal["wide", "tight", "custom"] = "wide",
         mix_stage: Optional[Literal["none", "before", "after", "both"]] = "none",
         mix_times: Optional[List[int]] = None,
@@ -3480,7 +3781,25 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         mix_liquid_height: Optional[float] = None,
         delays: Optional[List[int]] = None,
         pre_aspirate_from_target: Optional[float] = None,
+        dispensing_method: Optional[List[Optional[str]]] = None,
+        hover_below_liquid_level: Optional[List[Optional[int]]] = None,
+        z_start_point_offset_height: Optional[List[Optional[int]]] = None,
+        post_discharge_pause_time_ms: Optional[List[Optional[int]]] = None,
+        blow_out_air_volume_before: Optional[List[Optional[float]]] = None,
         none_keys: List[str] = [],
+        source_slots: Optional[Union[List[int], int]] = None,
+        target_slots: Optional[Union[List[int], int]] = None,
+        tip_rack_slots: Optional[Union[List[int], int]] = None,
+        suction_method: Optional[str] = None,
+        air_suck_volume: Optional[Union[List[Optional[float]], float]] = None,
+        dispensing_direction: Optional[str] = None,
+        dispensing_air_suck_position: Optional[str] = None,
+        dispensing_complete_z_position: Optional[str] = None,
+        blow_sample_volume: Optional[Union[int, float]] = None,
+        mix_if_tip_touch: Optional[bool] = None,
+        mix_tip_touch_height: Optional[int] = None,
+        mix_tip_touch_offset_x: Optional[int] = None,
+        **kwargs: Any,
     ) -> TransferLiquidReturn:
         """96 孔整板转移路由：选定 96 通道轴 → 板位坐标同步 → 走抽象层整板 96 头 API。
 
@@ -3512,6 +3831,7 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 liquid_height=liquid_height,
                 blow_out_air_volume=blow_out_air_volume,
                 blow_out_air_volume_before=None,
+                post_air_volume=post_air_volume,
                 spread=spread,
                 is_96_well=True,
                 mix_stage=mix_stage,
@@ -3521,6 +3841,10 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
                 mix_liquid_height=mix_liquid_height,
                 delays=delays,
                 pre_aspirate_from_target=pre_aspirate_from_target,
+                dispensing_method=dispensing_method,
+                hover_below_liquid_level=hover_below_liquid_level,
+                z_start_point_offset_height=z_start_point_offset_height,
+                post_discharge_pause_time_ms=post_discharge_pause_time_ms,
                 none_keys=none_keys,
             )
             if self.step_mode:
@@ -3532,6 +3856,171 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
             raise
         finally:
             self._touch_tip_pending = False
+            self._step_protocol_open = False
+
+    async def titration_liquid(
+        self,
+        sources: Sequence[Container],
+        targets: Sequence[Container],
+        tip_racks: Sequence[TipRack],
+        *,
+        use_channels: Optional[List[int]] = None,
+        asp_vols: Union[List[float], float],
+        dis_vols: Union[List[float], float],
+        asp_flow_rates: Optional[List[Optional[float]]] = None,
+        dis_flow_rates: Optional[List[Optional[float]]] = None,
+        offsets: Optional[List[Coordinate]] = None,
+        liquid_height: Optional[List[Optional[float]]] = None,
+        blow_out_air_volume: Optional[List[Optional[float]]] = None,
+        blow_out_air_volume_before: Optional[List[Optional[float]]] = None,
+        post_air_volume: Optional[List[Optional[float]]] = None,
+        repeat_count: int = 1,
+        cycle_delay_s: Union[float, List[float], None] = 0,
+        is_96_well: bool = False,
+        dispensing_method: Optional[List[Optional[str]]] = None,
+        hover_below_liquid_level: Optional[List[Optional[int]]] = None,
+        z_start_point_offset_height: Optional[List[Optional[int]]] = None,
+        post_discharge_pause_time_ms: Optional[List[Optional[int]]] = None,
+        none_keys: List[str] = [],
+        source_slots: Optional[Union[List[int], int]] = None,
+        target_slots: Optional[Union[List[int], int]] = None,
+        tip_rack_slots: Optional[Union[List[int], int]] = None,
+    ) -> TransferLiquidReturn:
+        """滴定/重复移液：一次取枪头、多轮 A→B、一次退枪头。首版仅 96 孔整板路径。"""
+        self._stash_transfer_v04_context(
+            offsets=offsets,
+            z_start_point_offset_height=z_start_point_offset_height,
+            blow_out_air_volume_before=blow_out_air_volume_before,
+        )
+        skip_pipetting_position_recalc = self._should_skip_runtime_position_recalc()
+        if not self._first_transfer_done:
+            self._match_and_create_matrix()
+            self._first_transfer_done = True
+        if self.step_mode:
+            await self.create_protocol(f"titration_liquid{time.time()}")
+        sources = await self._resolve_to_plr_resources(sources)
+        targets = await self._resolve_to_plr_resources(targets)
+        tip_racks = list(await self._resolve_to_plr_resources(tip_racks))
+        self._attach_resources_to_deck_if_needed(list(sources) + list(targets) + list(tip_racks))
+        if len(sources) == 0 and len(targets) == 0:
+            if hasattr(self, "_ros_node") and self._ros_node is not None:
+                try:
+                    self._ros_node.lab_logger().warning(
+                        "titration_liquid 收到空的 sources/targets（占位 / no-op 节点），跳过。"
+                    )
+                except Exception:
+                    pass
+            return TransferLiquidReturn(sources=[], targets=[])
+        if len(tip_racks) == 0:
+            raise ValueError(
+                "titration_liquid requires at least one tip rack, but got empty tip_racks."
+            )
+        if self.step_mode:
+            self._step_protocol_open = True
+        if isinstance(tip_racks[0], TipRack):
+            tip_rack = tip_racks[0]
+        else:
+            tip_rack = tip_racks[0].parent
+
+        if not is_96_well:
+            raise NotImplementedError(
+                "PRCXI titration_liquid 当前仅支持 is_96_well=True；"
+                "单通道 titration 尚未实现。"
+            )
+
+        try:
+            return await self._titration_liquid_96well_route(
+                sources,
+                targets,
+                tip_racks,
+                tip_rack,
+                skip_pipetting_position_recalc,
+                use_channels=use_channels,
+                asp_vols=asp_vols,
+                dis_vols=dis_vols,
+                asp_flow_rates=asp_flow_rates,
+                dis_flow_rates=dis_flow_rates,
+                offsets=offsets,
+                liquid_height=liquid_height,
+                blow_out_air_volume=blow_out_air_volume,
+                blow_out_air_volume_before=blow_out_air_volume_before,
+                post_air_volume=post_air_volume,
+                repeat_count=repeat_count,
+                cycle_delay_s=cycle_delay_s,
+                dispensing_method=dispensing_method,
+                hover_below_liquid_level=hover_below_liquid_level,
+                z_start_point_offset_height=z_start_point_offset_height,
+                post_discharge_pause_time_ms=post_discharge_pause_time_ms,
+                none_keys=none_keys,
+            )
+        finally:
+            self._clear_transfer_v04_context()
+
+    async def _titration_liquid_96well_route(
+        self,
+        sources: Sequence[Container],
+        targets: Sequence[Container],
+        tip_racks: Sequence[TipRack],
+        tip_rack: TipRack,
+        skip_pipetting_position_recalc: bool,
+        *,
+        use_channels: Optional[List[int]] = None,
+        asp_vols: Union[List[float], float],
+        dis_vols: Union[List[float], float],
+        asp_flow_rates: Optional[List[Optional[float]]] = None,
+        dis_flow_rates: Optional[List[Optional[float]]] = None,
+        offsets: Optional[List[Coordinate]] = None,
+        liquid_height: Optional[List[Optional[float]]] = None,
+        blow_out_air_volume: Optional[List[Optional[float]]] = None,
+        blow_out_air_volume_before: Optional[List[Optional[float]]] = None,
+        post_air_volume: Optional[List[Optional[float]]] = None,
+        repeat_count: int = 1,
+        cycle_delay_s: Union[float, List[float], None] = 0,
+        dispensing_method: Optional[List[Optional[str]]] = None,
+        hover_below_liquid_level: Optional[List[Optional[int]]] = None,
+        z_start_point_offset_height: Optional[List[Optional[int]]] = None,
+        post_discharge_pause_time_ms: Optional[List[Optional[int]]] = None,
+        none_keys: List[str] = [],
+    ) -> TransferLiquidReturn:
+        """96 孔滴定路由：选定 96 通道轴 → 板位同步 → 抽象层多轮整板吸放。"""
+        axis96 = self._select_96well_axis()
+        self._unilabos_backend._active_axis = "Left" if axis96 == "left" else "Right"
+        self.tip_height = float(
+            (getattr(self, "_tip_height_by_axis", None) or {}).get(axis96, 0.0) or 0.0
+        )
+        if not skip_pipetting_position_recalc:
+            self._sync_pipetting_positions(sources, targets, tip_rack)
+        try:
+            res = await super().titration_liquid(
+                sources,
+                targets,
+                tip_racks,
+                use_channels=use_channels,
+                asp_vols=asp_vols,
+                dis_vols=dis_vols,
+                asp_flow_rates=asp_flow_rates,
+                dis_flow_rates=dis_flow_rates,
+                offsets=offsets,
+                liquid_height=liquid_height,
+                blow_out_air_volume=blow_out_air_volume,
+                blow_out_air_volume_before=blow_out_air_volume_before,
+                post_air_volume=post_air_volume,
+                repeat_count=repeat_count,
+                cycle_delay_s=cycle_delay_s,
+                is_96_well=True,
+                dispensing_method=dispensing_method,
+                hover_below_liquid_level=hover_below_liquid_level,
+                z_start_point_offset_height=z_start_point_offset_height,
+                post_discharge_pause_time_ms=post_discharge_pause_time_ms,
+                none_keys=none_keys,
+            )
+            if self.step_mode:
+                await self.run_protocol()
+            return res
+        except Exception:
+            await self._cleanup_after_failed_transfer()
+            raise
+        finally:
             self._step_protocol_open = False
 
     async def custom_delay(self, seconds=0, msg=None):
@@ -3587,6 +4076,31 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
             await self.run_protocol()
         return res
 
+    async def mix96(
+        self,
+        plate: Plate,
+        mix_time: int,
+        mix_vol: Optional[int] = None,
+        mix_rate: Optional[float] = None,
+        height_to_bottom: Optional[float] = None,
+        offsets: Optional[Coordinate] = None,
+    ):
+        """96 整板混匀：与 aspirate96/dispense96 一致走 ``is_whole_plate=True`` 的 Blending。"""
+        _own_protocol = self.step_mode and not getattr(self, "_step_protocol_open", False)
+        if _own_protocol:
+            await self.create_protocol(f"mix96{time.time()}")
+        res = await super().mix96(
+            plate,
+            mix_time,
+            mix_vol=mix_vol,
+            mix_rate=mix_rate,
+            height_to_bottom=height_to_bottom,
+            offsets=offsets,
+        )
+        if _own_protocol:
+            await self.run_protocol()
+        return res
+
     def iter_tips(self, tip_racks: Sequence[TipRack]) -> Iterator[Resource]:
         return super().iter_tips(tip_racks)
 
@@ -3613,6 +4127,23 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         **backend_kwargs,
     ):
         use_channels = self._route_axis_and_channels(use_channels)
+        if "post_air_volume" in backend_kwargs:
+            self._unilabos_backend._ctx_post_air_volume = backend_kwargs["post_air_volume"]
+        if "blow_out_air_volume_before" in backend_kwargs:
+            if getattr(self._unilabos_backend.api_client, "is_v04", False):
+                self._unilabos_backend._ctx_reverse_imbibing = backend_kwargs[
+                    "blow_out_air_volume_before"
+                ]
+            else:
+                print(
+                    "[PRCXI][WARN] blow_out_air_volume_before 仅 V04 支持（ReverseImbibing），"
+                    "当前 protocol_version=v03，已忽略。"
+                )
+        if flow_rates and len(flow_rates) > 0 and flow_rates[0] is not None:
+            try:
+                self._unilabos_backend._ctx_suction_speed = float(flow_rates[0])
+            except (TypeError, ValueError):
+                pass
         return await super().aspirate(
             resources,
             vols,
@@ -3653,6 +4184,32 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
         **backend_kwargs,
     ):
         use_channels = self._route_axis_and_channels(use_channels)
+        dispense_opts: Dict[str, Any] = {}
+        for key in (
+            "dispensing_method",
+            "hover_below_liquid_level",
+            "z_start_point_offset_height",
+            "post_discharge_pause_time_ms",
+            "dispense_speed",
+            "air_suck_volume",
+            "dispensing_direction",
+            "dispensing_air_suck_position",
+            "dispensing_complete_z_position",
+        ):
+            if key in backend_kwargs:
+                dispense_opts[key] = backend_kwargs.pop(key)
+        if "blow_out_air_volume_before" in backend_kwargs:
+            if getattr(self._unilabos_backend.api_client, "is_v04", False):
+                rev = backend_kwargs.pop("blow_out_air_volume_before")
+                dispense_opts["reverse_imbibing"] = rev
+        if "dispense_speed" not in dispense_opts and flow_rates and len(flow_rates) > 0:
+            if flow_rates[0] is not None:
+                try:
+                    dispense_opts["dispense_speed"] = int(float(flow_rates[0]))
+                except (TypeError, ValueError):
+                    pass
+        if dispense_opts:
+            self._unilabos_backend._ctx_dispense_options = dispense_opts
         return await super().dispense(
             resources,
             vols,
@@ -3662,6 +4219,88 @@ class PRCXI9300Handler(LiquidHandlerAbstract):
             liquid_height,
             blow_out_air_volume,
             spread,
+            **backend_kwargs,
+        )
+
+    async def aspirate96(
+        self,
+        resource: Union[Plate, Container, List[Well]],
+        volume: float,
+        offset: Coordinate = Coordinate.zero(),
+        flow_rate: Optional[float] = None,
+        liquid_height: Optional[float] = None,
+        blow_out_air_volume: Optional[float] = None,
+        **backend_kwargs,
+    ):
+        if "post_air_volume" in backend_kwargs:
+            self._unilabos_backend._ctx_post_air_volume = backend_kwargs["post_air_volume"]
+        if "blow_out_air_volume_before" in backend_kwargs:
+            if getattr(self._unilabos_backend.api_client, "is_v04", False):
+                self._unilabos_backend._ctx_reverse_imbibing = backend_kwargs[
+                    "blow_out_air_volume_before"
+                ]
+            else:
+                print(
+                    "[PRCXI][WARN] blow_out_air_volume_before 仅 V04 支持（ReverseImbibing），"
+                    "当前 protocol_version=v03，已忽略。"
+                )
+        if flow_rate is not None:
+            try:
+                self._unilabos_backend._ctx_suction_speed = float(flow_rate)
+            except (TypeError, ValueError):
+                pass
+        return await super().aspirate96(
+            resource,
+            volume,
+            offset,
+            flow_rate=flow_rate,
+            liquid_height=liquid_height,
+            blow_out_air_volume=blow_out_air_volume,
+            **backend_kwargs,
+        )
+
+    async def dispense96(
+        self,
+        resource: Union[Plate, Container, List[Well]],
+        volume: float,
+        offset: Coordinate = Coordinate.zero(),
+        flow_rate: Optional[float] = None,
+        liquid_height: Optional[float] = None,
+        blow_out_air_volume: Optional[float] = None,
+        **backend_kwargs,
+    ):
+        dispense_opts: Dict[str, Any] = {}
+        for key in (
+            "dispensing_method",
+            "hover_below_liquid_level",
+            "z_start_point_offset_height",
+            "post_discharge_pause_time_ms",
+            "dispense_speed",
+            "air_suck_volume",
+            "dispensing_direction",
+            "dispensing_air_suck_position",
+            "dispensing_complete_z_position",
+        ):
+            if key in backend_kwargs:
+                dispense_opts[key] = backend_kwargs.pop(key)
+        if "blow_out_air_volume_before" in backend_kwargs:
+            if getattr(self._unilabos_backend.api_client, "is_v04", False):
+                rev = backend_kwargs.pop("blow_out_air_volume_before")
+                dispense_opts["reverse_imbibing"] = rev
+        if "dispense_speed" not in dispense_opts and flow_rate is not None:
+            try:
+                dispense_opts["dispense_speed"] = int(float(flow_rate))
+            except (TypeError, ValueError):
+                pass
+        if dispense_opts:
+            self._unilabos_backend._ctx_dispense_options = dispense_opts
+        return await super().dispense96(
+            resource,
+            volume,
+            offset,
+            flow_rate=flow_rate,
+            liquid_height=liquid_height,
+            blow_out_air_volume=blow_out_air_volume,
             **backend_kwargs,
         )
 
@@ -3918,6 +4557,111 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         # pip_setting 模式下 backend 凭此判轴（而非解码通道下标），避免把右轴下标 [8..15]
         # 透传给 PLR（PLR 只接受 0..channel_num-1）。
         self._active_axis: Optional[str] = None
+        self._pending_post_air_volume = 0.0
+        self._ctx_post_air_volume: Optional[Any] = None
+        self._ctx_dispense_options: Optional[Dict[str, Any]] = None
+        self._ctx_suction_speed: Optional[float] = None
+        self._ctx_reverse_imbibing: Optional[Any] = None
+        self._ctx_transfer_motion: Optional[Dict[str, Any]] = None
+        self._ctx_transfer_aspirate_v04: Optional[Dict[str, Any]] = None
+        self._ctx_transfer_mix_v04: Optional[Dict[str, Any]] = None
+        self._ctx_transfer_dispense_v04: Optional[Dict[str, Any]] = None
+
+    def clear_transfer_v04_context(self) -> None:
+        self._ctx_transfer_motion = None
+        self._ctx_transfer_aspirate_v04 = None
+        self._ctx_transfer_mix_v04 = None
+        self._ctx_transfer_dispense_v04 = None
+
+    def _transfer_motion_legacy(self) -> Dict[str, Any]:
+        raw = getattr(self, "_ctx_transfer_motion", None) or {}
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def _transfer_aspirate_v04_legacy(self) -> Dict[str, Any]:
+        raw = getattr(self, "_ctx_transfer_aspirate_v04", None) or {}
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def _transfer_mix_v04_legacy(self) -> Dict[str, Any]:
+        raw = getattr(self, "_ctx_transfer_mix_v04", None) or {}
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def _transfer_dispense_v04_legacy(self) -> Dict[str, Any]:
+        raw = getattr(self, "_ctx_transfer_dispense_v04", None) or {}
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def _consume_dispense_options(self) -> Dict[str, Any]:
+        opts = getattr(self, "_ctx_dispense_options", None) or {}
+        self._ctx_dispense_options = None
+        merged = dict(opts) if isinstance(opts, dict) else {}
+        merged.update(self._transfer_dispense_v04_legacy())
+        return merged
+
+    def _tapping_hover_step_fields(self, opts: Dict[str, Any]) -> Dict[str, Any]:
+        """把 handler 传入的悬停滴液选项转为 Tapping() 关键字参数。"""
+        out: Dict[str, Any] = {}
+        dm = opts.get("dispensing_method")
+        if dm:
+            dm_str = str(dm).strip()
+            if dm_str not in V04_DISPENSING_METHODS:
+                print(f"[PRCXI][WARN] 未知 DispensingMethod={dm_str!r}，仍将下发到 V04。")
+            out["dispensing_method_v04"] = dm_str
+        hb = opts.get("hover_below_liquid_level")
+        if hb is not None:
+            out["hover_below_liquid_level"] = int(hb)
+        zs = opts.get("z_start_point_offset_height")
+        if zs is not None:
+            out["z_start_point_offset_height"] = int(zs)
+        pause = opts.get("post_discharge_pause_time_ms")
+        if pause is not None:
+            out["post_discharge_pause_time_ms"] = int(pause)
+        speed = opts.get("dispense_speed")
+        if speed is not None:
+            out["dosage_speed"] = int(speed)
+        air = opts.get("air_suck_volume")
+        if air is not None:
+            out["air_suck_volume"] = float(air)
+        dd = opts.get("dispensing_direction")
+        if dd is not None and str(dd).strip():
+            out["dispensing_direction"] = str(dd).strip()
+        dasp = opts.get("dispensing_air_suck_position")
+        if dasp is not None and str(dasp).strip():
+            out["dispensing_air_suck_position"] = str(dasp).strip()
+        dcp = opts.get("dispensing_complete_z_position")
+        if dcp is not None and str(dcp).strip():
+            out["dispensing_complete_z_position"] = str(dcp).strip()
+        rev = opts.get("reverse_imbibing")
+        if rev is not None:
+            out["reverse_imbibing"] = float(rev)
+        return out
+
+    @staticmethod
+    def _first_ctx_volume(val: Any) -> Optional[float]:
+        if val is None:
+            return None
+        item = val[0] if isinstance(val, (list, tuple)) and val else val
+        if item is None:
+            return None
+        try:
+            return float(item)
+        except (TypeError, ValueError):
+            return None
+
+    def _resolve_dosage_speed(
+        self,
+        *,
+        ctx_value: Optional[float] = None,
+        flow_rate_fallback: Any = None,
+    ) -> Optional[int]:
+        """解析吸/放液 legacy ``DosageSpeed``（优先 ctx，其次 PLR op.flow_rate / mix_rate）。"""
+        for candidate in (ctx_value, flow_rate_fallback):
+            parsed = self._first_ctx_volume(candidate)
+            if parsed is None:
+                continue
+            try:
+                return int(parsed)
+            except (TypeError, ValueError):
+                continue
+        return None
 
     @staticmethod
     def _normalize_wait_finish_timeout(value: Optional[float]) -> Optional[float]:
@@ -4586,6 +5330,15 @@ class PRCXI9300Backend(LiquidHandlerBackend):
             hole_row = tipspot_index % ny + 1
 
         assert mix_time > 0
+        safe_liquid_height = 0.0 if height_to_bottom is None else float(height_to_bottom)
+        balance_height = int(min(max(safe_liquid_height, 0), 10))
+        dosage_speed = self._resolve_dosage_speed(
+            ctx_value=getattr(self, "_ctx_suction_speed", None),
+            flow_rate_fallback=mix_rate,
+        )
+        hover_below_liquid_level = (
+            int(min(max(safe_liquid_height, 0), 10)) if safe_liquid_height > 0 else None
+        )
         step = self.api_client.Blending(
             axis=axis,
             dosage=mix_vol,
@@ -4594,9 +5347,50 @@ class PRCXI9300Backend(LiquidHandlerBackend):
             hole_row=hole_row,
             hole_col=hole_col,
             blending_times=mix_time,
-            balance_height=0,
+            balance_height=balance_height,
             plate_or_hole=f"H{hole_col}-{ny},T{PlateNo}",
             hole_numbers="1,2,3,4,5,6,7,8",
+            dosage_speed=dosage_speed,
+            hover_below_liquid_level=hover_below_liquid_level,
+            v04_legacy={**self._transfer_motion_legacy(), **self._transfer_mix_v04_legacy()},
+        )
+        self.steps_todo_list.append(step)
+
+    async def mix96_plate(
+        self,
+        plate: Plate,
+        mix_time: int,
+        mix_vol: Optional[int] = None,
+        *,
+        height_to_bottom: Optional[float] = None,
+        mix_rate: Optional[float] = None,
+    ):
+        """整板混匀：``is_whole_plate=True`` + ``blending_times=mix_time``（与 *96 吸放液同轴/Tips96）。"""
+        PlateNo = self._deck_plate_slot_no(plate, getattr(plate, "parent", None))
+        axis = self._axis_from_channels(None, volume=mix_vol)
+        safe_liquid_height = 0.0 if height_to_bottom is None else float(height_to_bottom)
+        balance_height = int(min(max(safe_liquid_height, 0), 10))
+        dosage_speed = self._resolve_dosage_speed(
+            ctx_value=getattr(self, "_ctx_suction_speed", None),
+            flow_rate_fallback=mix_rate,
+        )
+        hover_below_liquid_level = (
+            int(min(max(safe_liquid_height, 0), 10)) if safe_liquid_height > 0 else None
+        )
+        step = self.api_client.Blending(
+            axis=axis,
+            dosage=int(mix_vol) if mix_vol is not None else 0,
+            plate_no=PlateNo,
+            is_whole_plate=True,
+            hole_row=1,
+            hole_col=1,
+            blending_times=int(mix_time),
+            balance_height=balance_height,
+            plate_or_hole=f"T{PlateNo}",
+            hole_numbers="",
+            dosage_speed=dosage_speed,
+            hover_below_liquid_level=hover_below_liquid_level,
+            v04_legacy={**self._transfer_motion_legacy(), **self._transfer_mix_v04_legacy()},
         )
         self.steps_todo_list.append(step)
 
@@ -4634,29 +5428,58 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         if len(set(volumes)) != 1:
             raise ValueError("All aspirate volumes must be the same. Found different volumes: " + str(volumes))
 
+        liquid_vol = float(volumes[0])
+        post_air = 0.0
+        if liquid_vol > 0:
+            ctx_post = self._first_ctx_volume(getattr(self, "_ctx_post_air_volume", None))
+            if ctx_post is not None:
+                post_air = ctx_post
+                self._ctx_post_air_volume = None
+            elif ops[0].blow_out_air_volume is not None:
+                post_air = float(ops[0].blow_out_air_volume or 0)
+            self._pending_post_air_volume = post_air
+        reverse_imbibing = self._first_ctx_volume(
+            getattr(self, "_ctx_reverse_imbibing", None)
+        )
+        if reverse_imbibing is not None:
+            self._ctx_reverse_imbibing = None
+
         PlateNo = plate_slots[0]
         hole_col = tip_columns[0] + 1
         hole_row = 1
-        assist_fun1 = ""
         if _eff_nc != 8:
             hole_row = tipspot_index % ny + 1
-        if ops[0].blow_out_air_volume is not None:
-            assist_fun1 = f"反向吸液({float(min(max(ops[0].blow_out_air_volume,0),10))}ul)"
         raw_liquid_height = ops[0].liquid_height
         safe_liquid_height = 0.0 if raw_liquid_height is None else float(raw_liquid_height)
 
+        ctx_speed = getattr(self, "_ctx_suction_speed", None)
+        dosage_speed = self._resolve_dosage_speed(
+            ctx_value=ctx_speed,
+            flow_rate_fallback=getattr(ops[0], "flow_rate", None) if ops else None,
+        )
+        self._ctx_suction_speed = None
+
         step = self.api_client.Imbibing(
             axis=axis,
-            dosage=float(volumes[0]),
+            dosage=liquid_vol,
             plate_no=PlateNo,
             is_whole_plate=False,
             hole_row=hole_row,
             hole_col=hole_col,
             blending_times=0,
-            balance_height=int(min(max(safe_liquid_height,0),10)),
+            balance_height=int(min(max(safe_liquid_height, 0), 10)),
             plate_or_hole=f"H{hole_col}-{ny},T{PlateNo}",
             hole_numbers="1,2,3,4,5,6,7,8",
-            assist_fun1=assist_fun1,
+            post_air_volume=post_air if liquid_vol > 0 else 0.0,
+            assist_fun1="",
+            dosage_speed=dosage_speed,
+            hover_below_liquid_level=(
+                int(min(max(safe_liquid_height, 0), 10))
+                if safe_liquid_height > 0
+                else None
+            ),
+            reverse_imbibing=reverse_imbibing,
+            v04_legacy={**self._transfer_motion_legacy(), **self._transfer_aspirate_v04_legacy()},
         )
         self.steps_todo_list.append(step)
 
@@ -4708,6 +5531,14 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         if len(set(volumes)) != 1:
             raise ValueError("All dispense volumes must be the same. Found different volumes: " + str(volumes))
 
+        liquid_vol = float(volumes[0])
+        post_air = float(getattr(self, "_pending_post_air_volume", 0.0) or 0.0)
+        dispense_total = liquid_vol + post_air
+        if ops[0].blow_out_air_volume is not None:
+            blow = float(ops[0].blow_out_air_volume or 0)
+        else:
+            blow = 5.0
+
         PlateNo = plate_slots[0]
         hole_col = tip_columns[0] + 1
 
@@ -4715,29 +5546,40 @@ class PRCXI9300Backend(LiquidHandlerBackend):
         if _eff_nc != 8:
             hole_row = tipspot_index % ny + 1
 
-        assist_fun1 = ""
-        if ops[0].blow_out_air_volume is not None:
-            assist_fun1 = f"吹样({float(min(max(ops[0].blow_out_air_volume,5),10))}ul)"
-        else :
-            assist_fun1 = f"吹样({5.0}ul)"
         raw_liquid_height = ops[0].liquid_height
         safe_liquid_height = 0.0 if raw_liquid_height is None else float(raw_liquid_height)
 
+        dispense_opts = self._consume_dispense_options()
+        hover_fields = self._tapping_hover_step_fields(dispense_opts)
+        if hover_fields.get("hover_below_liquid_level") is None and safe_liquid_height > 0:
+            hover_fields["hover_below_liquid_level"] = int(min(max(safe_liquid_height, 0), 10))
+
+        if hover_fields.get("dosage_speed") is None and getattr(ops[0], "flow_rate", None) is not None:
+            try:
+                hover_fields["dosage_speed"] = int(float(ops[0].flow_rate))
+            except (TypeError, ValueError):
+                pass
+
         step = self.api_client.Tapping(
             axis=axis,
-            dosage=float(volumes[0]),
+            dosage=dispense_total,
             plate_no=PlateNo,
             is_whole_plate=False,
             hole_row=hole_row,
             hole_col=hole_col,
             blending_times=0,
-            balance_height=int(min(max(safe_liquid_height,0),10)),
+            balance_height=int(min(max(safe_liquid_height, 0), 10)),
             plate_or_hole=f"H{hole_col}-{ny},T{PlateNo}",
             hole_numbers="1,2,3,4,5,6,7,8",
-            assist_fun1=assist_fun1,
+            liquid_volume=liquid_vol,
+            blow_volume=blow,
+            assist_fun1="",
             liquid_method=self._resolve_dispense_liquid_method(axis),
+            v04_legacy=self._transfer_motion_legacy(),
+            **hover_fields,
         )
         self.steps_todo_list.append(step)
+        self._pending_post_air_volume = 0.0
 
     def _resolve_dispense_liquid_method(self, axis: str) -> str:
         """按 handler 的 touch_tip 模式/方向决定本次放液的 LiquidDispensingMethod。
@@ -4805,22 +5647,51 @@ class PRCXI9300Backend(LiquidHandlerBackend):
             plate = aspiration.wells[0].parent
         else:
             plate = aspiration.container
+        if isinstance(plate, Well):
+            plate = plate.parent
         PlateNo = self._deck_plate_slot_no(plate, getattr(plate, "parent", None))
         axis = self._axis_from_channels(None, volume=getattr(aspiration, "volume", None))
         raw_liquid_height = getattr(aspiration, "liquid_height", None)
         safe_liquid_height = 0.0 if raw_liquid_height is None else float(raw_liquid_height)
-        assist_fun1 = ""
-        blow = getattr(aspiration, "blow_out_air_volume", None)
-        if blow is not None:
-            assist_fun1 = f"反向吸液({float(min(max(blow, 0), 10))}ul)"
+        liquid_vol = float(aspiration.volume)
+        post_air = 0.0
+        ctx_post = self._first_ctx_volume(getattr(self, "_ctx_post_air_volume", None))
+        if ctx_post is not None:
+            post_air = ctx_post
+            self._ctx_post_air_volume = None
+        else:
+            blow = getattr(aspiration, "blow_out_air_volume", None)
+            if blow is not None:
+                post_air = float(blow or 0)
+        reverse_imbibing = self._first_ctx_volume(
+            getattr(self, "_ctx_reverse_imbibing", None)
+        )
+        if reverse_imbibing is not None:
+            self._ctx_reverse_imbibing = None
+        self._pending_post_air_volume = post_air
+        ctx_speed = getattr(self, "_ctx_suction_speed", None)
+        dosage_speed = self._resolve_dosage_speed(
+            ctx_value=ctx_speed,
+            flow_rate_fallback=getattr(aspiration, "flow_rate", None),
+        )
+        self._ctx_suction_speed = None
         step = self.api_client.Imbibing(
             **self._whole_plate_step_kwargs(
                 PlateNo,
-                dosage=float(aspiration.volume),
+                dosage=liquid_vol,
                 balance_height=int(min(max(safe_liquid_height, 0), 10)),
                 axis=axis,
             ),
-            assist_fun1=assist_fun1,
+            post_air_volume=post_air,
+            assist_fun1="",
+            dosage_speed=dosage_speed,
+            hover_below_liquid_level=(
+                int(min(max(safe_liquid_height, 0), 10))
+                if safe_liquid_height > 0
+                else None
+            ),
+            reverse_imbibing=reverse_imbibing,
+            v04_legacy={**self._transfer_motion_legacy(), **self._transfer_aspirate_v04_legacy()},
         )
         self.steps_todo_list.append(step)
 
@@ -4830,26 +5701,44 @@ class PRCXI9300Backend(LiquidHandlerBackend):
             plate = dispense.wells[0].parent
         else:
             plate = dispense.container
+        if isinstance(plate, Well):
+            plate = plate.parent
         PlateNo = self._deck_plate_slot_no(plate, getattr(plate, "parent", None))
         axis = self._axis_from_channels(None, volume=getattr(dispense, "volume", None))
         raw_liquid_height = getattr(dispense, "liquid_height", None)
         safe_liquid_height = 0.0 if raw_liquid_height is None else float(raw_liquid_height)
-        blow = getattr(dispense, "blow_out_air_volume", None)
-        if blow is not None:
-            assist_fun1 = f"吹样({float(min(max(blow, 5), 10))}ul)"
-        else:
-            assist_fun1 = f"吹样({5.0}ul)"
+        liquid_vol = float(dispense.volume)
+        post_air = float(getattr(self, "_pending_post_air_volume", 0.0) or 0.0)
+        dispense_total = liquid_vol + post_air
+        blow_attr = getattr(dispense, "blow_out_air_volume", None)
+        blow = float(blow_attr) if blow_attr is not None else 5.0
+        dispense_opts = self._consume_dispense_options()
+        hover_fields = self._tapping_hover_step_fields(dispense_opts)
+        if hover_fields.get("hover_below_liquid_level") is None and safe_liquid_height > 0:
+            hover_fields["hover_below_liquid_level"] = int(min(max(safe_liquid_height, 0), 10))
+        if hover_fields.get("dosage_speed") is None:
+            flow_rate = getattr(dispense, "flow_rate", None)
+            if flow_rate is not None:
+                try:
+                    hover_fields["dosage_speed"] = int(float(flow_rate))
+                except (TypeError, ValueError):
+                    pass
         step = self.api_client.Tapping(
             **self._whole_plate_step_kwargs(
                 PlateNo,
-                dosage=float(dispense.volume),
+                dosage=dispense_total,
                 balance_height=int(min(max(safe_liquid_height, 0), 10)),
                 axis=axis,
             ),
-            assist_fun1=assist_fun1,
+            liquid_volume=liquid_vol,
+            blow_volume=blow,
+            assist_fun1="",
             liquid_method=self._resolve_dispense_liquid_method(axis),
+            v04_legacy=self._transfer_motion_legacy(),
+            **hover_fields,
         )
         self.steps_todo_list.append(step)
+        self._pending_post_air_volume = 0.0
 
     async def move_picked_up_resource(self, move: ResourceMove):
         pass

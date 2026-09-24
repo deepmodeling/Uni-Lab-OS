@@ -839,3 +839,29 @@ class TestPrcxiFlattenReservoirIdentityKeep:
         assert calls.count("discard_tips") == 1, (
             f"reservoir identity-keep 应只 drop 1 次 tip，实际 {calls.count('discard_tips')}；calls={calls}"
         )
+
+
+class TestFlattenHoverParams:
+    """96/hover 传参字段在 8 通道扁平化时按 tile-M 规则展开。"""
+
+    def test_dispensing_method_tiles_from_length_8(self) -> None:
+        out = flatten_multi_channel_kwargs(
+            sources=["s"] * 8,
+            targets=["t"] * 8,
+            asp_vols=[1.0] * 8,
+            dis_vols=[1.0] * 8,
+            dispensing_method=["DiveToBottom"] * 8,
+        )
+        assert out["dispensing_method"] == ["DiveToBottom"] * 8
+
+    def test_hover_fields_broadcast_from_length_1(self) -> None:
+        out = flatten_multi_channel_kwargs(
+            sources=["s"] * 16,
+            targets=["t"] * 16,
+            asp_vols=[1.0] * 16,
+            dis_vols=[1.0] * 16,
+            hover_below_liquid_level=[3],
+            post_discharge_pause_time_ms=[50],
+        )
+        assert out["hover_below_liquid_level"] == [3] * 16
+        assert out["post_discharge_pause_time_ms"] == [50] * 16

@@ -9939,28 +9939,45 @@ liquid_handler.prcxi:
         feedback: {}
         goal: {}
         goal_default:
+          air_suck_volume: null
           asp_flow_rates: null
           asp_vols: null
           blow_out_air_volume: null
           blow_out_air_volume_before: null
+          blow_sample_volume: null
           delays: null
           dis_flow_rates: null
           dis_vols: null
+          dispensing_air_suck_position: null
+          dispensing_complete_z_position: null
+          dispensing_direction: null
+          dispensing_method: null
+          hover_below_liquid_level: null
           is_96_well: false
           liquid_height: null
+          mix_if_tip_touch: null
           mix_liquid_height: null
           mix_rate: null
           mix_stage: none
           mix_times: null
+          mix_tip_touch_height: null
+          mix_tip_touch_offset_x: null
           mix_vol: null
           none_keys: []
           offsets: null
+          post_air_volume: null
+          post_discharge_pause_time_ms: null
+          source_slots: null
           sources: null
           spread: wide
+          suction_method: null
+          target_slots: null
           targets: null
+          tip_rack_slots: null
           tip_racks: null
           touch_tip: false
           use_channels: []
+          z_start_point_offset_height: null
         handles:
           input:
           - data_key: sources
@@ -10019,6 +10036,18 @@ liquid_handler.prcxi:
                   items:
                     type: number
                   type: array
+                post_air_volume:
+                  items:
+                    type: number
+                  type: array
+                air_suck_volume:
+                  oneOf:
+                  - type: number
+                  - items:
+                      type: number
+                    type: array
+                blow_sample_volume:
+                  type: number
                 delays:
                   items:
                     type: integer
@@ -10031,6 +10060,54 @@ liquid_handler.prcxi:
                   items:
                     type: number
                   type: array
+                dispensing_method:
+                  items:
+                    type: string
+                  type: array
+                hover_below_liquid_level:
+                  items:
+                    type: integer
+                  type: array
+                z_start_point_offset_height:
+                  items:
+                    type: integer
+                  type: array
+                post_discharge_pause_time_ms:
+                  items:
+                    type: integer
+                  type: array
+                suction_method:
+                  type: string
+                dispensing_direction:
+                  type: string
+                dispensing_air_suck_position:
+                  type: string
+                dispensing_complete_z_position:
+                  type: string
+                mix_if_tip_touch:
+                  type: boolean
+                mix_tip_touch_height:
+                  type: integer
+                mix_tip_touch_offset_x:
+                  type: integer
+                source_slots:
+                  oneOf:
+                  - type: integer
+                  - items:
+                      type: integer
+                    type: array
+                target_slots:
+                  oneOf:
+                  - type: integer
+                  - items:
+                      type: integer
+                    type: array
+                tip_rack_slots:
+                  oneOf:
+                  - type: integer
+                  - items:
+                      type: integer
+                    type: array
                 is_96_well:
                   default: false
                   type: boolean
@@ -10523,6 +10600,191 @@ liquid_handler.prcxi:
           required:
           - goal
           title: transfer_liquid参数
+          type: object
+        type: UniLabJsonCommandAsync
+      titration_liquid:
+        feedback: {}
+        goal: {}
+        goal_default:
+          asp_flow_rates: null
+          asp_vols: null
+          blow_out_air_volume: null
+          blow_out_air_volume_before: null
+          cycle_delay_s: 0
+          dis_flow_rates: null
+          dis_vols: null
+          dispensing_method: null
+          hover_below_liquid_level: null
+          is_96_well: false
+          liquid_height: null
+          none_keys: []
+          offsets: null
+          post_air_volume: null
+          post_discharge_pause_time_ms: null
+          repeat_count: 1
+          source_slots: null
+          sources: null
+          target_slots: null
+          targets: null
+          tip_rack_slots: null
+          tip_racks: null
+          use_channels: []
+          z_start_point_offset_height: null
+        handles:
+          input:
+          - data_key: sources
+            data_source: handle
+            data_type: resource
+            handler_key: sources_identifier
+            label: 待移动液体
+          - data_key: targets
+            data_source: handle
+            data_type: resource
+            handler_key: targets_identifier
+            label: 转移目标
+          - data_key: tip_racks
+            data_source: handle
+            data_type: resource
+            handler_key: tip_rack_identifier
+            label: 枪头盒
+          output:
+          - data_key: sources.@flatten
+            data_source: executor
+            data_type: resource
+            handler_key: sources_out
+            label: 移液后源孔
+          - data_key: targets.@flatten
+            data_source: executor
+            data_type: resource
+            handler_key: targets_out
+            label: 移液后目标孔
+        placeholder_keys:
+          sources: unilabos_resources
+          targets: unilabos_resources
+          tip_racks: unilabos_resources
+        result:
+          return_info: return_info
+          success: success
+        schema:
+          description: 96 孔整板滴定/重复吸放（一次取枪头、多轮 A→B、一次退枪头）
+          properties:
+            feedback: {}
+            goal:
+              additionalProperties: false
+              properties:
+                asp_flow_rates:
+                  items:
+                    type: number
+                  type: array
+                asp_vols:
+                  items:
+                    type: number
+                  type: array
+                blow_out_air_volume:
+                  items:
+                    type: number
+                  type: array
+                blow_out_air_volume_before:
+                  items:
+                    type: number
+                  type: array
+                post_air_volume:
+                  items:
+                    type: number
+                  type: array
+                repeat_count:
+                  default: 1
+                  minimum: 1
+                  type: integer
+                cycle_delay_s:
+                  default: 0
+                  oneOf:
+                  - type: number
+                  - items:
+                      type: number
+                    type: array
+                dis_flow_rates:
+                  items:
+                    type: number
+                  type: array
+                dis_vols:
+                  items:
+                    type: number
+                  type: array
+                dispensing_method:
+                  items:
+                    type: string
+                  type: array
+                hover_below_liquid_level:
+                  items:
+                    type: integer
+                  type: array
+                z_start_point_offset_height:
+                  items:
+                    type: integer
+                  type: array
+                post_discharge_pause_time_ms:
+                  items:
+                    type: integer
+                  type: array
+                is_96_well:
+                  default: false
+                  type: boolean
+                liquid_height:
+                  items:
+                    type: number
+                  type: array
+                none_keys:
+                  default: []
+                  items:
+                    type: string
+                  type: array
+                offsets:
+                  items:
+                    properties:
+                      x:
+                        type: number
+                      y:
+                        type: number
+                      z:
+                        type: number
+                    required:
+                    - x
+                    - y
+                    - z
+                    type: object
+                  type: array
+                sources:
+                  type: array
+                targets:
+                  type: array
+                tip_racks:
+                  type: array
+                use_channels:
+                  items:
+                    type: integer
+                  type: array
+              required:
+              - sources
+              - targets
+              - tip_racks
+              - asp_vols
+              - dis_vols
+              type: object
+            result:
+              properties:
+                sources:
+                  type: array
+                targets:
+                  type: array
+              required:
+              - sources
+              - targets
+              title: TransferLiquidReturn
+              type: object
+          required:
+          - goal
+          title: titration_liquid参数
           type: object
         type: UniLabJsonCommandAsync
     module: unilabos.devices.liquid_handling.prcxi.prcxi:PRCXI9300Handler

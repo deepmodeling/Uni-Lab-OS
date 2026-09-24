@@ -1,0 +1,21 @@
+{
+    "nodes": [
+        {
+            "id": "xyz",
+            "name": "三轴",
+            "children": [],
+            "parent": "laiyu",
+            "type": "device",
+            "class": "SynthonXFlowV2",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "port": "COM5"
+            }
+        }
+    ],
+    "links": []
+}

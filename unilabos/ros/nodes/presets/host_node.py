@@ -1,5 +1,6 @@
 import collections
 import json
+import os
 import threading
 import time
 import traceback
@@ -1394,6 +1395,91 @@ class HostNode(BaseROS2DeviceNode):
         resources = [convert_to_ros_msg(Resource, resource) for resource in r]
         return resources
 
+    def _resource_get_local(self, data: Dict[str, Any]):
+        """Resolve a resource locally before querying the bridge."""
+        queries: List[Dict[str, Any]] = []
+        resource_uuid = data.get("uuid")
+        resource_id = data.get("id")
+
+        if resource_uuid:
+            queries.append({"uuid": resource_uuid})
+
+        if resource_id:
+            queries.append({"id": resource_id})
+            resource_name = resource_id.rstrip("/").split("/")[-1]
+            if resource_name:
+                queries.append({"name": resource_name})
+
+        for query in queries:
+            found_resources = self._resource_tracker.figure_resource(query, try_mode=True)
+            if found_resources:
+                return found_resources[0]
+        return None
+
+    @staticmethod
+    def _resource_dump_local(resource: Any, with_children: bool) -> List[Dict[str, Any]]:
+        if isinstance(resource, dict):
+            raw_data = [dict(resource)]
+        else:
+            raw_data = ResourceTreeSet.from_plr_resources([resource]).dump()[0]
+        if with_children:
+            return raw_data
+
+        resource_uuid = raw_data[0].get("uuid")
+        resource_id = raw_data[0].get("id")
+        return [node for node in raw_data if node.get("uuid") == resource_uuid or node.get("id") == resource_id]
+
+    @staticmethod
+    def _resource_get_from_startup_config(data: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+        startup_config_path = os.path.join(BasicConfig.working_dir, "startup_config.json")
+        if not os.path.exists(startup_config_path):
+            return None
+
+        with open(startup_config_path, "r", encoding="utf-8") as f:
+            startup_data = json.load(f)
+
+        nodes = startup_data.get("data", {}).get("nodes", [])
+        if not nodes:
+            return None
+
+        query_uuid = data.get("uuid")
+        query_id = data.get("id")
+        query_name = query_id.rstrip("/").split("/")[-1] if query_id else None
+
+        target_node = None
+        for node in nodes:
+            if query_uuid and node.get("uuid") == query_uuid:
+                target_node = node
+                break
+            if query_id and node.get("id") == query_id:
+                target_node = node
+                break
+            if query_name and node.get("name") == query_name:
+                target_node = node
+                break
+
+        if target_node is None:
+            return None
+
+        if not data.get("with_children", True):
+            return [target_node]
+
+        target_uuid = target_node.get("uuid")
+        descendants: List[Dict[str, Any]] = []
+        pending = {target_uuid}
+        while pending:
+            current_parent_uuid = pending.pop()
+            for node in nodes:
+                if node not in descendants and (
+                    node.get("uuid") == current_parent_uuid or node.get("parent_uuid") == current_parent_uuid
+                ):
+                    descendants.append(node)
+                    node_uuid = node.get("uuid")
+                    if node_uuid and node_uuid != current_parent_uuid:
+                        pending.add(node_uuid)
+
+        return descendants or [target_node]
+
     def _resource_get_callback(self, request: SerialCommand.Request, response: SerialCommand.Response):
         """
         获取资源回调
@@ -1408,7 +1494,17 @@ class HostNode(BaseROS2DeviceNode):
             from unilabos.app.web import http_client
 
             data = json.loads(request.command)
-            if "uuid" in data and data["uuid"] is not None:
+            local_resource = self._resource_get_local(data)
+            if local_resource is not None:
+                response.response = json.dumps(self._resource_dump_local(local_resource, data.get("with_children", True)))
+                return response
+
+            startup_resource = self._resource_get_from_startup_config(data)
+            if startup_resource is not None:
+                response.response = json.dumps(startup_resource)
+                return response
+
+            if data.get("uuid"):
                 http_req = http_client.resource_tree_get([data["uuid"]], data["with_children"])
             elif "id" in data:
                 http_req = http_client.resource_get(data["id"], data["with_children"])

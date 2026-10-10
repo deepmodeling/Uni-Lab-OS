@@ -565,29 +565,29 @@ class YihuaCoinCellDeck(Deck):
         
         # 正极片（4个洞位，2x2布局）
         zhengji_zip = MagazineHolder_4_Cathode("正极&铝箔弹夹")
-        self.assign_child_resource(zhengji_zip, Coordinate(x=402.0, y=830.0, z=0))
+        self.assign_child_resource(zhengji_zip, Coordinate(x=455.0, y=270.0, z=0))
         
         # 正极壳、平垫片（6个洞位，2x2+2布局）
         zhengjike_zip = MagazineHolder_6_Cathode("正极壳&平垫片弹夹")
-        self.assign_child_resource(zhengjike_zip, Coordinate(x=566.0, y=272.0, z=0))
+        self.assign_child_resource(zhengjike_zip, Coordinate(x=626.0, y=1000.0, z=0))
         
         # 负极壳、弹垫片（6个洞位，2x2+2布局）
         fujike_zip = MagazineHolder_6_Anode("负极壳&弹垫片弹夹")
-        self.assign_child_resource(fujike_zip, Coordinate(x=474.0, y=276.0, z=0))
+        self.assign_child_resource(fujike_zip, Coordinate(x=495.0, y=1000.0, z=0))
         
         # 成品弹夹（6个洞位，3x2布局）
         chengpindanjia_zip = MagazineHolder_6_Battery("成品弹夹")
-        self.assign_child_resource(chengpindanjia_zip, Coordinate(x=260.0, y=156.0, z=0))
+        self.assign_child_resource(chengpindanjia_zip, Coordinate(x=230.0, y=1150.0, z=0))
         
         # ====================================== 物料板 ============================================
         # 创建物料板（料盘carrier）- 4x4布局
         # 负极料盘
         fujiliaopan = MaterialPlate.create_with_holes(name="负极料盘", size_x=120, size_y=100, size_z=10.0)
-        self.assign_child_resource(fujiliaopan, Coordinate(x=708.0, y=794.0, z=0))
+        self.assign_child_resource(fujiliaopan, Coordinate(x=800, y=300.0, z=0))
 
         # 隔膜料盘
         gemoliaopan = MaterialPlate.create_with_holes(name="隔膜料盘", size_x=120, size_y=100, size_z=10.0)
-        self.assign_child_resource(gemoliaopan, Coordinate(x=718.0, y=918.0, z=0))
+        self.assign_child_resource(gemoliaopan, Coordinate(x=800.0, y=150.0, z=0))
         # for i in range(16):
         #     gemopian = ElectrodeSheet(name=f"{gemoliaopan.name}_jipian_{i}", size_x=12, size_y=12, size_z=0.1)
         #     gemoliaopan.children[i].assign_child_resource(gemopian, location=None)
@@ -610,16 +610,16 @@ class YihuaCoinCellDeck(Deck):
         
         # 电解液缓存位 - 6x2布局
         bottle_rack_6x2 = YIHUA_Electrolyte_12VialCarrier(name="bottle_rack_6x2")
-        self.assign_child_resource(bottle_rack_6x2, Coordinate(x=1050.0, y=358.0, z=0))
+        self.assign_child_resource(bottle_rack_6x2, Coordinate(x=1150.0, y=780.0, z=0))
         # 电解液回收位6x2
         bottle_rack_6x2_2 = YIHUA_Electrolyte_12VialCarrier(name="bottle_rack_6x2_2")
-        self.assign_child_resource(bottle_rack_6x2_2, Coordinate(x=914.0, y=358.0, z=0))
+        self.assign_child_resource(bottle_rack_6x2_2, Coordinate(x=1050.0, y=780.0, z=0))
 
         tip_box = TipBox64(name="tip_box_64")
-        self.assign_child_resource(tip_box, Coordinate(x=782.0, y=514.0, z=0))
+        self.assign_child_resource(tip_box, Coordinate(x=890.0, y=680.0, z=0))
 
         waste_tip_box = WasteTipBox(name="waste_tip_box")
-        self.assign_child_resource(waste_tip_box, Coordinate(x=778.0, y=622.0, z=0))
+        self.assign_child_resource(waste_tip_box, Coordinate(x=890.0, y=570.0, z=0))
 
         # 分液瓶板接驳区 - 接收来自 BioyondElectrolyte 侧的完整 Vial Carrier 板
         # 命名 electrolyte_buffer 与 bioyond_cell_workstation.py 中 sites=["electrolyte_buffer"] 对应
@@ -628,7 +628,7 @@ class YihuaCoinCellDeck(Deck):
             direction="z",
             resources=[],
         )
-        self.assign_child_resource(electrolyte_buffer, Coordinate(x=1050.0, y=700.0, z=0))
+        self.assign_child_resource(electrolyte_buffer, Coordinate(x=1150.0, y=750.0, z=0))
 
 
 def yihua_coin_cell_deck(name: str = "coin_cell_deck") -> YihuaCoinCellDeck:

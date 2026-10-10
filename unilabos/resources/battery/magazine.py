@@ -1,10 +1,12 @@
-from typing import Dict, List, Optional, OrderedDict, Union, Callable
+from typing import Any, Dict, List, Optional, OrderedDict, Sequence, Tuple, Union, Callable
 import math
 
 from pylabrobot.resources.coordinate import Coordinate
 from pylabrobot.resources import Resource, ResourceStack, ItemizedResource
 from pylabrobot.resources.carrier import create_homogeneous_resources
+from pylabrobot.resources.volume_tracker import VolumeTracker
 
+from unilabos.utils.log import logger
 from unilabos.resources.battery.electrode_sheet import (
     PositiveCan, PositiveElectrode,
     NegativeCan, NegativeElectrode,
@@ -12,6 +14,16 @@ from unilabos.resources.battery.electrode_sheet import (
     AluminumFoil,
     Battery
 )
+
+
+def _as_count(value: Any) -> int:
+    """余量是件数，向下取整。
+
+    PLC 那边的计数器是 FLOAT32，上料录入的初值常带小数尾数（如正极壳的 .089294），
+    递减只动整数位，于是读数一直拖着这条尾巴。件数不能有小数，且不可多报——
+    132.5 片只能取出 132 片，故一律向下取整而非四舍五入。
+    """
+    return math.floor(float(value))
 
 
 class Magazine(ResourceStack):
@@ -126,6 +138,11 @@ class MagazineHolder(ItemizedResource):
         self.max_sheets_per_hole = max_sheets_per_hole
         self.cross_section_type = cross_section_type
 
+        # 余量展示：极片子节点已不再持久化，改由寄存器读数写进 tracker，
+        # 与配液站载架用同一套 liquids 三元组格式，前端渲染逻辑可复用。
+        self.tracker = VolumeTracker(thing=f"{name}_stock_tracker", max_volume=1e9)
+        self._stock_entries: List[Tuple[str, int, str]] = []
+
     def serialize(self) -> dict:
         return {
             **super().serialize(),
@@ -134,6 +151,59 @@ class MagazineHolder(ItemizedResource):
             "max_sheets_per_hole": self.max_sheets_per_hole,
             "cross_section_type": self.cross_section_type,
         }
+
+    def set_stock(self, entries: Sequence[Tuple[str, float, str]]) -> Dict[str, int]:
+        """整体替换弹夹余量，entries 为 (物料名, 数量, 单位) 三元组，数量按件数向下取整。
+
+        先清历史再写，避免周期刷新把 liquid_history 越堆越长。
+
+        Returns:
+            {物料名: 件数}，仅含零或负的项。依华 PLC 的余量是逐颗递减的计数器，
+            上料时若没录初值就会一路减穿零，此时的负值意味着「自上次复位以来已
+            消耗这么多」，须交调用方告警提醒补设初值。
+        """
+        self._stock_entries = [(str(n), _as_count(q), str(u)) for n, q, u in entries]
+
+        # tracker 承载不了零与负数，只把正数灌进去以保持容量语义可用；
+        # 负值另由 serialize_state 直接送出，不能让它在前端消失。
+        self.tracker.liquid_history.clear()
+        self.tracker._unknown_counter = 0
+        self.tracker.liquids = [item for item in self._stock_entries if item[1] > 0]
+
+        extra = getattr(self, "unilabos_extra", None)
+        if not isinstance(extra, dict):
+            extra = {}
+            self.unilabos_extra = extra
+        extra["stock_remaining"] = {n: q for n, q, _ in self._stock_entries}
+
+        return {n: q for n, q, _ in self._stock_entries if q <= 0}
+
+    def serialize_state(self) -> Dict[str, Any]:
+        data = self.tracker.serialize()
+        if self._stock_entries:
+            # 用原始读数覆盖 tracker 给的 liquids：计数器减穿零后的负值同样要显示，
+            # 那正是「上料没设初值」的唯一现场信号，被过滤掉就只剩一片空白。
+            data["liquids"] = [list(item) for item in self._stock_entries]
+        return data
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """余量特性上线前入库的 state 为 {}，VolumeTracker 对缺键无副作用。"""
+        if not isinstance(state, dict):
+            return
+        try:
+            self.tracker.load_state(state)
+        except Exception as e:
+            # 云端回来的 state 可能是旧版本或已损坏，而余量下一轮采集就会整体重写，
+            # 不值得为它中断整棵资源树的加载
+            logger.warning(f"弹夹 {self.name} 余量 state 解析失败，按空处理: {e}")
+        restored: List[Tuple[str, int, str]] = []
+        for item in state.get("liquids") or []:
+            if isinstance(item, (list, tuple)) and len(item) >= 3:
+                try:
+                    restored.append((str(item[0]), _as_count(item[1]), str(item[2])))
+                except (TypeError, ValueError):
+                    continue
+        self._stock_entries = restored
 
 
 def magazine_factory(

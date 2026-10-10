@@ -6,7 +6,7 @@ Button Battery Assembly Station Resource Classes
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, TypedDict, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union, cast
 
 from pylabrobot.resources.coordinate import Coordinate
 from pylabrobot.resources.container import Container
@@ -629,6 +629,72 @@ class YihuaCoinCellDeck(Deck):
             resources=[],
         )
         self.assign_child_resource(electrolyte_buffer, Coordinate(x=1150.0, y=750.0, z=0))
+
+
+# 弹夹余量映射：弹夹名 → [(展示名, 设备属性名, 单位)]。
+# PLC 只按物料类型给总数，弹夹又是混装的（正极&铝箔弹夹 4 个洞位承载 3 种正极片加铝箔），
+# 洞位与物料的物理对应关系设备侧没给，所以余量挂在弹夹整体上而不下沉到洞位。
+# 成品弹夹两项是「还能再放多少颗」而非「已经有多少颗」，展示名必须带「可容纳」，
+# 否则现场会把它当成已组装数量读。
+# 这些寄存器是每组装一颗减 1 的计数器，上料时不录初值就会一路减到负数，
+# 故读到负值属预期内的现场状态，不可当成采集故障过滤掉。
+COIN_CELL_STOCK_MAP: Dict[str, List[tuple]] = {
+    "正极&铝箔弹夹": [
+        ("10mm正极片", "data_10mm_positive_plate_remaining", "片"),
+        ("12mm正极片", "data_12mm_positive_plate_remaining", "片"),
+        ("16mm正极片", "data_16mm_positive_plate_remaining", "片"),
+        ("铝箔", "data_aluminum_foil_remaining", "片"),
+    ],
+    "正极壳&平垫片弹夹": [
+        ("正极壳", "data_positive_shell_remaining", "个"),
+        ("平垫片", "data_flat_washer_remaining", "片"),
+    ],
+    "负极壳&弹垫片弹夹": [
+        ("负极壳", "data_negative_shell_remaining", "个"),
+        ("弹垫片", "data_spring_washer_remaining", "片"),
+    ],
+    "成品弹夹": [
+        ("成品可容纳", "data_finished_battery_remaining_capacity", "颗"),
+        ("NG槽可容纳", "data_finished_battery_ng_remaining_capacity", "颗"),
+    ],
+}
+
+# 需要向 PLC 取数的属性名，供设备侧按固定顺序采集，避免两处各写一份清单
+COIN_CELL_STOCK_PROPERTIES: List[str] = [
+    prop for entries in COIN_CELL_STOCK_MAP.values() for _, prop, _ in entries
+]
+
+
+def apply_coin_cell_stock_to_deck(
+    deck: Deck, readings: Dict[str, float]
+) -> Tuple[List[str], Dict[str, int]]:
+    """把 {属性名: 读数} 按 COIN_CELL_STOCK_MAP 写进各弹夹 tracker，数量取整为件数。
+
+    Args:
+        deck: 依华扣电台面
+        readings: 设备侧采集到的寄存器读数（FLOAT32），缺失的属性按 0 处理
+
+    Returns:
+        (写不进去的弹夹名, 落不进 tracker 的 {物料名: 件数})。后者是零或负数，
+        余量不该出现这种值，留给调用方告警而不是悄悄丢掉。
+    """
+    failed: List[str] = []
+    dropped: Dict[str, int] = {}
+    for magazine_name, entries in COIN_CELL_STOCK_MAP.items():
+        try:
+            magazine = deck.get_resource(magazine_name)
+        except Exception:
+            failed.append(magazine_name)
+            continue
+        if not hasattr(magazine, "set_stock"):
+            failed.append(magazine_name)
+            continue
+        dropped.update(
+            magazine.set_stock(
+                [(label, float(readings.get(prop) or 0), unit) for label, prop, unit in entries]
+            )
+        )
+    return failed, dropped
 
 
 def yihua_coin_cell_deck(name: str = "coin_cell_deck") -> YihuaCoinCellDeck:

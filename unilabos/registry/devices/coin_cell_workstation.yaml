@@ -965,6 +965,9 @@ coincellassemblyworkstation_device:
         port:
           default: '502'
           type: string
+        stock_refresh_interval:
+          default: 10.0
+          type: number
       required: []
       type: object
     data:

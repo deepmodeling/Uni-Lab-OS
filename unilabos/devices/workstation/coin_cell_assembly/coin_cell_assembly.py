@@ -19,7 +19,12 @@ from unilabos.device_comms.modbus_plc.modbus import DeviceType, Base as ModbusNo
 from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import *
 from unilabos.ros.nodes.base_device_node import ROS2DeviceNode, BaseROS2DeviceNode
 from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
-from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import YihuaCoinCellDeck, yihua_coin_cell_deck
+from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import (
+    YihuaCoinCellDeck,
+    yihua_coin_cell_deck,
+    COIN_CELL_STOCK_PROPERTIES,
+    apply_coin_cell_stock_to_deck,
+)
 from unilabos.resources.graphio import convert_resources_to_type
 from unilabos.utils.log import logger
 import struct
@@ -248,6 +253,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         address: str = "172.16.28.102",
         port: str = "502",
         debug_mode: bool = False,
+        stock_refresh_interval: float = 10.0,
         *args,
         **kwargs):
 
@@ -293,6 +299,15 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         self._elec_use_num = 0  # 每瓶电池数（下单后由 coin_cell_start 更新）
         self._elec_bottle_num = 0  # 电解液瓶数（下单后由 coin_cell_start 更新）
         self._observer_running = False  # 旁观者采集运行标志（与 csv_export_running 分开，避免互相干扰）
+
+        """ 物料余量采集（把 PLC 余量寄存器写到 deck 弹夹上供前端展示） """
+        try:
+            self._stock_refresh_interval = float(stock_refresh_interval or 0)
+        except (TypeError, ValueError):
+            logger.warning(f"stock_refresh_interval={stock_refresh_interval!r} 非法，按 0（不刷新）处理")
+            self._stock_refresh_interval = 0.0
+        self._stock_last_readings: Optional[Dict[str, float]] = None  # 上一轮读数，用于抑制无变化推送
+        self._stock_thread = None
 
         """ DUCO 机械臂状态采集（独立于 Modbus 业务，debug_mode 下同样轮询以便本地验证） """
         self._duco_lock = threading.Lock()  # 保护 _duco_state 的读写
@@ -365,6 +380,57 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             raise RuntimeError(f"Modbus TCP 重连失败（{self._modbus_address}:{self._modbus_port}），请检查设备连接")
         logger.info("[Modbus] 重连成功")
 
+    # ===================== 物料余量采集 ======================
+
+    def _stock_bus_ready(self) -> bool:
+        """连接断开时读寄存器一律返回 0，会被当成「余量耗尽」推到前端，故先确认链路可用。"""
+        if self.debug_mode:
+            return True
+        raw_client = getattr(self._modbus_client_raw, "client", None)
+        return bool(raw_client is not None and raw_client.is_socket_open())
+
+    def _read_stock_readings(self) -> Dict[str, float]:
+        """取一轮余量读数。直接复用已有的寄存器属性，不另开一路 Modbus 访问。"""
+        return {prop: float(getattr(self, prop)) for prop in COIN_CELL_STOCK_PROPERTIES}
+
+    def _apply_stock_to_deck(self) -> Optional[Dict[str, float]]:
+        """读一轮余量写进各弹夹，返回本轮读数；deck 或 Modbus 链路不可用时返回 None。"""
+        if self.deck is None or not self._stock_bus_ready():
+            return None
+        readings = self._read_stock_readings()
+        failed, dropped = apply_coin_cell_stock_to_deck(self.deck, readings)
+        if failed:
+            logger.warning(f"[物料余量] 台面上未找到弹夹，已跳过: {'、'.join(failed)}")
+        if dropped:
+            detail = "、".join(f"{k}={v:g}" for k, v in dropped.items())
+            logger.warning(
+                f"[物料余量] 以下计数为零或负，多半是上料时未录初值、计数器已减穿零"
+                f"（负值绝对值即上次复位以来的消耗量）: {detail}"
+            )
+        return readings
+
+    def _refresh_stock_to_deck(self) -> None:
+        """周期刷新：读数有变化才推 deck，避免每轮都上传整棵资源树。"""
+        readings = self._apply_stock_to_deck()
+        if readings is None or readings == self._stock_last_readings:
+            return
+        self._stock_last_readings = readings
+        if getattr(self, "_ros_node", None) is None:
+            return
+        ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
+            "resources": [self.deck]
+        })
+        logger.info(f"[物料余量] 读数变化，已推送 deck: {json.dumps(readings, ensure_ascii=False)}")
+
+    def _stock_poll_loop(self) -> None:
+        """后台守护线程：定期把 PLC 余量寄存器同步到 deck。异常只记 warning，不影响主流程。"""
+        while True:
+            time.sleep(self._stock_refresh_interval)
+            try:
+                self._refresh_stock_to_deck()
+            except Exception as e:
+                logger.warning(f"[物料余量] 周期刷新异常: {e}")
+
     def post_init(self, ros_node: ROS2WorkstationNode):
         self._ros_node = ros_node
 
@@ -373,9 +439,24 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             logger.info("YihuaCoinCellDeck 无子节点，调用 setup() 初始化")
             self.deck.setup()
 
+        # 先同步刷一轮余量，让下面这次 deck 上传就带上弹夹余量
+        try:
+            self._stock_last_readings = self._apply_stock_to_deck()
+        except Exception as e:
+            logger.warning(f"[物料余量] 首轮采集失败，待周期刷新重试: {e}")
+
         ROS2DeviceNode.run_async_func(self._ros_node.update_resource, True, **{
             "resources": [self.deck]
         })
+
+        if self._stock_refresh_interval > 0:
+            self._stock_thread = threading.Thread(
+                target=self._stock_poll_loop, daemon=True, name="coin-cell-stock-poller"
+            )
+            self._stock_thread.start()
+            logger.info(f"[物料余量] 采集线程已启动，间隔 {self._stock_refresh_interval}s")
+        else:
+            logger.info("[物料余量] stock_refresh_interval=0，不启动周期采集")
 
         # DUCO 机械臂位置：把发布周期从框架默认 5 秒调到与 HTTP 轮询一致的 _DUCO_PERIOD_S
         for name in ("duco_joint_positions", "duco_tcp_pose"):

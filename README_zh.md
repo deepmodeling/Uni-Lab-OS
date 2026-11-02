@@ -1,6 +1,3 @@
-> **v1.0 串行 Task 版本**：Task 按 FIFO 顺序推进，同一 Task 内允许符合依赖和资源约束的并行作业。
-> 构建、配置和验收入口见[串行调度说明](docs/scheduler/release.md)。
-
 <div align="center">
   <img src="docs/logo.png" alt="Uni-Lab Logo" width="200"/>
 </div>
@@ -11,101 +8,103 @@
 
 [English](README.md) | **中文**
 
-[![GitHub Stars](https://img.shields.io/github/stars/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/issues)
-[![GitHub License](https://img.shields.io/github/license/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/issues)
+[![GitHub License](https://img.shields.io/github/license/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/blob/v1.0/LICENSE)
 
-Uni-Lab-OS 是一个用于实验室自动化的综合平台，旨在连接和控制各种实验设备，实现实验流程的自动化和标准化。
+**v1.0** 是 Uni-Lab-OS 的公开串行 Task 版本。标签 [`v1.0`](https://github.com/deepmodeling/Uni-Lab-OS/tree/v1.0) 与分支 `feat/schedule` 指向同一根提交。Python 包与原生串行库的版本都是 **1.0.0**。
 
-## 核心特点
+Uni-Lab-OS 用于连接实验设备并运行实验工作流。本快照的调度器按 FIFO 推进 Task。同一 Task 内，依赖和资源都允许时作业可以并行。暂停保留队首。失败或取消的 Task 必须完成结算，下一 Task 才会前进。设备调用、库存、持久开始许可、人工授权和结果恢复仍由平台负责。
 
-- 多设备集成管理
-- 自动化实验流程
-- 云端连接能力
-- 灵活的配置系统
-- 支持多种实验协议
+构建、配置和已记录的验收见[串行 Task 说明](docs/scheduler/release.md)。
 
-## 文档
+## 本标签包含什么
 
-详细文档可在以下位置找到:
+| 在本快照中 | 不在本快照中 |
+| --- | --- |
+| 开源 FIFO 调度器 `unilab.queue`，以及由 `native/scheduler-queue` 构建的 Rust 库 | CP-SAT 源码、商业动态库和商业构建依赖 |
+| 共用调度协议、插件宿主和独立 worker | 父提交历史。本提交不继承其他仓库的历史 |
+| 驱动该调度器的宿主、工作流、物料与 Edge 代码 | 树内设备驱动。驱动以独立包发布，并使用各自的许可证 |
+| 公开验收套件 [`tests/scheduling`](tests/scheduling) | 旧时间规划算法。相关设置不能用来选择引擎 |
 
-- [在线文档](https://deepmodeling.github.io/Uni-Lab-OS/)
+默认 `UNILABOS_SCHEDULING_ENGINE=queue`。启动时从 `unilabos/scheduling/queue_native/plugin.json` 加载原生库。运行时不会调用编译器，也不会退回 Python 调度算法。`plugin` 通过 `UNILABOS_SCHEDULING_MANIFEST` 加载其他引擎。
 
-## 快速开始
+队列配置是固定的：
 
-### 1. 配置 Conda 环境
+| 键 | 值 |
+| --- | --- |
+| `queue_order` | `fifo` |
+| `paused_task` | `hold` |
+| `failed_task` | `advance_after_settlement` |
+| `canceled_task` | `advance_after_settlement` |
+| `manual_outside_scope` | `reject` |
 
-Uni-Lab-OS 建议使用 `mamba` 管理环境。根据您的需求选择合适的安装包：
+公开 CI 为 [`.github/workflows/public-scheduler.yml`](.github/workflows/public-scheduler.yml)。它在 Linux、macOS 和 Windows 上使用 Python 3.11 构建真实动态库，并运行 `tests/scheduling`。
 
-| 安装包 | 适用场景 | 包含内容 |
-|--------|----------|----------|
-| `unilabos` | **推荐大多数用户** | 完整安装包，开箱即用 |
-| `unilabos-env` | 开发者（可编辑安装） | 仅环境依赖，通过 pip 安装 unilabos |
-| `unilabos-full` | 仿真/可视化 | unilabos + ROS2 桌面版 + Gazebo + MoveIt |
+## 环境
 
-```bash
-# 创建新环境
-mamba create -n unilab python=3.11.14
-mamba activate unilab
+- Python 3.11 或更高版本
+- Rust 稳定版，用于从本树编译串行库
+- 平台链接器（Windows 上为 MSVC）
 
-# 方案 A：标准安装（推荐大多数用户）
-mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
-
-# 方案 B：开发者环境（可编辑模式开发）
-mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
-# 然后安装 unilabos 和依赖：
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
-pip install -e .
-uv pip install -r unilabos/utils/requirements.txt
-
-# 方案 C：完整安装（仿真/可视化）
-mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
-```
-
-**如何选择？**
-- **unilabos**：标准安装，适用于生产部署和日常使用（推荐）
-- **unilabos-env**：开发者使用，支持 `pip install -e .` 可编辑模式，可修改源代码
-- **unilabos-full**：需要仿真（Gazebo）、可视化（rviz2）或 Jupyter Notebook
-
-### 2. 克隆仓库（可选，供开发者使用）
+## 安装
 
 ```bash
-# 克隆仓库（仅开发或查看示例时需要）
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
+git checkout v1.0
+
+python -m pip install -e . pytest wheel packaging
+python native/scheduler-queue/build.py --destination unilabos/scheduling/queue_native
 ```
 
-3. 启动 Uni-Lab 系统
+可编辑安装会提供命令 `unilab`、`unilab-supervisor` 和 `unilab-mcp`。启动队列引擎前，用第二条命令构建串行库。构建 wheel 时会为当前操作系统和 CPU 编译该库并打进 wheel：
 
-请见[文档-启动样例](https://deepmodeling.github.io/Uni-Lab-OS/boot_examples/index.html)
+```bash
+python -m pip wheel . --no-deps -w dist/public
+```
 
-4. 最佳实践
+wheel 标记为 `py3-none-<platform>`。动态库不链接 CPython。若库构建在其他目录，把 `UNILABOS_SCHEDULING_MANIFEST` 指到该目录的 `plugin.json`。构建目标目录必须尚不存在。
 
-请见[最佳实践指南](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html)
+协议清单和 ABI 见 [`unilabos/scheduling/contract/`](unilabos/scheduling/contract/)。库的说明见 [`native/scheduler-queue/README.md`](native/scheduler-queue/README.md)。
 
-## 参考驱动实现
+## 检查构建
 
-我们提供了两个可直接运行的示例设备包，均作为独立 GitHub 仓库维护（由
-[LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) fork 生成）。克隆任一仓库，用
-`--devices <包目录> --external_devices_only` 加载，编写自己的驱动时可启动运行、对照学习：
+```bash
+cargo test --locked --manifest-path native/scheduler_shared/Cargo.toml
+cargo test --locked --manifest-path native/scheduler-queue/Cargo.toml
+UNILAB_TEST_CLEAN_INSTALL=1 python -m pytest -q tests/scheduling
+```
 
-| 示例仓库 | 演示要点 |
-|----------|----------|
-| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo) | 跨设备 `@subscribe` 订阅 + `call_device_action` 远程调用的局域网闭环（hub/sub 双进程） |
-| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo) | `hardware_interface` 代理——同一工作站内多个子设备共享同一通信端点：共享串口（默认 IO 方法名）与 Modbus `extra_info`（按设备注入各自 `slave_id`） |
+`tests/scheduling` 使用真实原生库，覆盖协议边界、FIFO、暂停、结算后推进、幂等、持久会话恢复，以及从已安装 wheel 执行 Task。2026-10-30 的验收记录写在[发行说明](docs/scheduler/release.md)。
 
-每个仓库的 README 都附带分步启动教程及实测输出。底层的通信共享机制见
-[最佳实践指南 §11.5](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html)；
-从零编写新驱动见[添加设备](https://deepmodeling.github.io/Uni-Lab-OS/developer_guide/add_device.html)。
+## 目录
 
-## 消息格式
+| 路径 | 内容 |
+| --- | --- |
+| [`docs/scheduler/release.md`](docs/scheduler/release.md) | 发布范围、构建与验收 |
+| [`native/scheduler-queue/`](native/scheduler-queue/) | FIFO 动态库 |
+| [`native/scheduler_shared/`](native/scheduler_shared/) | 共用的 Rust 协议与语义检查 |
+| [`unilabos/scheduling/`](unilabos/scheduling/) | Python 宿主、队列适配和插件 worker |
+| [`tests/scheduling/`](tests/scheduling/) | 公开版调度验收套件 |
 
-Uni-Lab-OS 使用预构建的 `unilabos_msgs` 进行系统通信。您可以在 [GitHub Releases](https://github.com/deepmodeling/Uni-Lab-OS/releases) 页面找到已构建的版本。
+启动样例和更完整的实验室使用说明见[在线文档](https://deepmodeling.github.io/Uni-Lab-OS/)。
+
+## 示例设备包
+
+本标签不包含设备驱动。下面两个仓库是独立的驱动示例，用 `--devices <pkg> --external_devices_only` 加载：
+
+| 仓库 | 说明 |
+| --- | --- |
+| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo) | 跨设备 `@subscribe`，以及两个进程之间的远程 `call_device_action` |
+| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo) | 多个子设备共用一个通信端点 |
+
+每个仓库的 README 有启动步骤。通信共享机制见[最佳实践 §11.5](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html)。从零写驱动见[添加设备](https://deepmodeling.github.io/Uni-Lab-OS/developer_guide/add_device.html)。
 
 ## 引用
 
-如果您在学术研究中使用 [Uni-Lab-OS](https://arxiv.org/abs/2512.21766)，请引用：
+如果在学术研究中使用 [Uni-Lab-OS](https://arxiv.org/abs/2512.21766)，请引用：
 
 ```bibtex
 @article{gao2025unilabos,
@@ -122,21 +121,10 @@ Uni-Lab-OS 使用预构建的 `unilabos_msgs` 进行系统通信。您可以在 
 
 ## 许可证
 
-本项目采用双许可证结构：
+本快照中的代码为 GPL-3.0。见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
 
-- **主框架**：GPL-3.0 - 详见 [LICENSE](LICENSE)
-- **设备驱动** (`unilabos/devices/`)：深势科技专有许可证
+`setup.py` 不发行 `unilabos.devices`。驱动包使用各自的许可证。该目录存在时，`unilabos/devices/` 适用深势科技专有许可证。
 
-完整许可证说明请参阅 [NOTICE](NOTICE)。
+## 联系
 
-## 项目统计
-
-### Stars 趋势
-
-<a href="https://star-history.com/#dptech-corp/Uni-Lab-OS&Date">
-  <img src="https://api.star-history.com/svg?repos=dptech-corp/Uni-Lab-OS&type=Date" alt="Star History Chart" width="600">
-</a>
-
-## 联系我们
-
-- GitHub Issues: [https://github.com/deepmodeling/Uni-Lab-OS/issues](https://github.com/deepmodeling/Uni-Lab-OS/issues)
+- GitHub Issues: <https://github.com/deepmodeling/Uni-Lab-OS/issues>

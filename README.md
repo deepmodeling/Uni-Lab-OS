@@ -1,7 +1,3 @@
-> **v1.0 serial Task edition**: Tasks advance in FIFO order, with dependency-safe parallel
-> jobs within the current Task. Build, configuration, and validation instructions:
-> [serial scheduler](docs/scheduler/release.md).
-
 <div align="center">
   <img src="docs/logo.png" alt="Uni-Lab Logo" width="200"/>
 </div>
@@ -12,97 +8,84 @@
 
 **English** | [中文](README_zh.md)
 
-[![GitHub Stars](https://img.shields.io/github/stars/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/issues)
-[![GitHub License](https://img.shields.io/github/license/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/issues)
+[![GitHub License](https://img.shields.io/github/license/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/blob/main/LICENSE)
 
-Uni-Lab-OS is a platform for laboratory automation, designed to connect and control various experimental equipment, enabling automation and standardization of experimental workflows.
+Uni-Lab-OS connects laboratory equipment and runs experimental workflows. The public edition ships a serial Task scheduler: Tasks enter a queue and advance in FIFO order (first in, first out). Within the current Task, jobs may run together when their dependencies and resources allow. Pausing holds the head of the queue. A failed or canceled Task must finish settlement before the next Task starts. Device calls, inventory, durable start permission, human authorization, and result recovery remain platform responsibilities.
 
-## Key Features
+The Python package and the native serial library are both version **1.0.0**. Build steps, configuration, and the recorded acceptance run are in the [serial Task note](docs/scheduler/release.md).
 
-- Multi-device integration management
-- Automated experimental workflows
-- Cloud connectivity capabilities
-- Flexible configuration system
-- Support for multiple experimental protocols
+## What's included
+
+| Included | Not included |
+| --- | --- |
+| Open-source FIFO scheduler `unilab.queue` and the Rust library built from `native/scheduler-queue` | CP-SAT (constraint programming SAT) sources, commercial dynamic libraries, and commercial build dependencies |
+| Shared scheduler protocol, plugin host, and independent worker | Private parent history from other repositories |
+| Host, workflow, material, and edge code that drives the scheduler | In-tree device drivers. Drivers ship as separate packages under their own licenses |
+| Public acceptance suite [`tests/scheduling`](tests/scheduling) | The old time-planning algorithm. Those settings do not select an engine |
+
+The default is `UNILABOS_SCHEDULING_ENGINE=queue`. At startup the host loads the native library from `unilabos/scheduling/queue_native/plugin.json`. The runtime does not invoke a compiler and does not fall back to a Python scheduler. Setting the engine to `plugin` loads a different engine from the path in `UNILABOS_SCHEDULING_MANIFEST`.
+
+Queue policy is fixed:
+
+| Key | Value |
+| --- | --- |
+| `queue_order` | `fifo` |
+| `paused_task` | `hold` |
+| `failed_task` | `advance_after_settlement` |
+| `canceled_task` | `advance_after_settlement` |
+| `manual_outside_scope` | `reject` |
+
+Public CI (continuous integration) is [`.github/workflows/public-scheduler.yml`](.github/workflows/public-scheduler.yml). It builds the real library and runs `tests/scheduling` on Linux, macOS, and Windows with Python 3.11.
+
+## Requirements
+
+- Python 3.11 or newer
+- A stable Rust toolchain, to compile the serial library from this tree
+
+## Install
+
+From the repository root:
+
+```bash
+python -m pip install -e . pytest wheel packaging
+python native/scheduler-queue/build.py --destination unilabos/scheduling/queue_native
+```
+
+The editable install provides the console scripts `unilab`, `unilab-supervisor`, and `unilab-mcp`. Build the serial library with the second command before starting the queue engine. A wheel build compiles that library for the current operating system and CPU and packs it into the wheel:
+
+```bash
+python -m pip wheel . --no-deps -w dist/public
+```
+
+The wheel tag is `py3-none-<platform>`. The library does not link against CPython. To use a library built in another directory, set `UNILABOS_SCHEDULING_MANIFEST` to that directory's `plugin.json`. The build destination must not already exist.
+
+Protocol manifest and ABI (application binary interface): [`unilabos/scheduling/contract/`](unilabos/scheduling/contract/). Library details: [`native/scheduler-queue/README.md`](native/scheduler-queue/README.md).
+
+## Check the build
+
+```bash
+cargo test --locked --manifest-path native/scheduler_shared/Cargo.toml
+cargo test --locked --manifest-path native/scheduler-queue/Cargo.toml
+UNILAB_TEST_CLEAN_INSTALL=1 python -m pytest -q tests/scheduling
+```
+
+`tests/scheduling` exercises the real native library: protocol boundaries, FIFO ordering, pause, advance-after-settlement, idempotence, durable session restore, and a Task run from an installed wheel. The acceptance record is in the [release note](docs/scheduler/release.md).
 
 ## Documentation
 
-Detailed documentation can be found at:
+[docs/index.md](docs/index.md) indexes the documentation set. This page does not list those documents. The serial Task note, [docs/scheduler/release.md](docs/scheduler/release.md), is not in that index.
 
-- [Online Documentation](https://deepmodeling.github.io/Uni-Lab-OS/)
+## Repository map
 
-## Quick Start
-
-### 1. Setup Conda Environment
-
-Uni-Lab-OS recommends using `mamba` for environment management. Choose the package that fits your needs:
-
-| Package | Use Case | Contents |
-|---------|----------|----------|
-| `unilabos` | **Recommended for most users** | Complete package, ready to use |
-| `unilabos-env` | Developers (editable install) | Environment only, install unilabos via pip |
-| `unilabos-full` | Simulation/Visualization | unilabos + ROS2 Desktop + Gazebo + MoveIt |
-
-```bash
-# Create new environment
-mamba create -n unilab python=3.11.14
-mamba activate unilab
-
-# Option A: Standard installation (recommended for most users)
-mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
-
-# Option B: For developers (editable mode development)
-mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
-# Then install unilabos and dependencies:
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
-pip install -e .
-uv pip install -r unilabos/utils/requirements.txt
-
-# Option C: Full installation (simulation/visualization)
-mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
-```
-
-**When to use which?**
-- **unilabos**: Standard installation for production deployment and general usage (recommended)
-- **unilabos-env**: For developers who need `pip install -e .` editable mode, modify source code
-- **unilabos-full**: For simulation (Gazebo), visualization (rviz2), and Jupyter notebooks
-
-### 2. Clone Repository (Optional, for developers)
-
-```bash
-# Clone the repository (only needed for development or examples)
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git
-cd Uni-Lab-OS
-```
-
-3. Start Uni-Lab System
-
-Please refer to [Documentation - Boot Examples](https://deepmodeling.github.io/Uni-Lab-OS/boot_examples/index.html)
-
-4. Best Practice
-
-See [Best Practice Guide](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html)
-
-## Reference Driver Implementations
-
-Two runnable example device packages are maintained as standalone GitHub repositories (generated
-from [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate)). Clone either one, load it
-with `--devices <pkg> --external_devices_only`, and read it when writing your own drivers:
-
-| Example repository | Demonstrates |
-|--------------------|--------------|
-| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo) | Cross-device `@subscribe` + remote `call_device_action` LAN closed loop (hub/sub as two processes) |
-| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo) | `hardware_interface` proxy — multiple sub-devices share one communication endpoint: shared serial (default IO method names) and Modbus `extra_info` (per-device `slave_id` injection) |
-
-Each repository README ships a step-by-step launch tutorial with verified output. For the underlying
-communication-sharing mechanism see [Best Practice Guide §11.5](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html);
-to write a new driver from scratch see [Add Device](https://deepmodeling.github.io/Uni-Lab-OS/developer_guide/add_device.html).
-
-## Message Format
-
-Uni-Lab-OS uses pre-built `unilabos_msgs` for system communication. You can find the built versions on the [GitHub Releases](https://github.com/deepmodeling/Uni-Lab-OS/releases) page.
+| Path | What it is |
+| --- | --- |
+| [`native/scheduler-queue/`](native/scheduler-queue/) | FIFO dynamic library |
+| [`native/scheduler_shared/`](native/scheduler_shared/) | Shared Rust protocol and semantic checks |
+| [`unilabos/scheduling/`](unilabos/scheduling/) | Python host, queue adapter, and plugin worker |
+| [`tests/scheduling/`](tests/scheduling/) | Public scheduler acceptance suite |
 
 ## Citation
 
@@ -123,21 +106,10 @@ If you use [Uni-Lab-OS](https://arxiv.org/abs/2512.21766) in academic research, 
 
 ## License
 
-This project uses a dual licensing structure:
+Code in this repository is GPL-3.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-- **Main Framework**: GPL-3.0 - see [LICENSE](LICENSE)
-- **Device Drivers** (`unilabos/devices/`): DP Technology Proprietary License
+`setup.py` does not distribute `unilabos.devices`. Driver packages keep their own license. When that tree is present, `unilabos/devices/` is under the DP Technology proprietary license.
 
-See [NOTICE](NOTICE) for complete licensing details.
+## Contact
 
-## Project Statistics
-
-### Stars Trend
-
-<a href="https://star-history.com/#dptech-corp/Uni-Lab-OS&Date">
-  <img src="https://api.star-history.com/svg?repos=dptech-corp/Uni-Lab-OS&type=Date" alt="Star History Chart" width="600">
-</a>
-
-## Contact Us
-
-- GitHub Issues: [https://github.com/deepmodeling/Uni-Lab-OS/issues](https://github.com/deepmodeling/Uni-Lab-OS/issues)
+- GitHub Issues: <https://github.com/deepmodeling/Uni-Lab-OS/issues>

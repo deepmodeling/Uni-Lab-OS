@@ -46,15 +46,12 @@ Uni-Lab-OS 用于连接实验设备并运行实验工作流。本快照的调度
 
 - Python 3.11 或更高版本
 - Rust 稳定版，用于从本树编译串行库
-- 平台链接器（Windows 上为 MSVC）
 
 ## 安装
 
-```bash
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git
-cd Uni-Lab-OS
-git checkout v1.0
+在仓库根目录执行：
 
+```bash
 python -m pip install -e . pytest wheel packaging
 python native/scheduler-queue/build.py --destination unilabos/scheduling/queue_native
 ```
@@ -77,30 +74,20 @@ cargo test --locked --manifest-path native/scheduler-queue/Cargo.toml
 UNILAB_TEST_CLEAN_INSTALL=1 python -m pytest -q tests/scheduling
 ```
 
-`tests/scheduling` 使用真实原生库，覆盖协议边界、FIFO、暂停、结算后推进、幂等、持久会话恢复，以及从已安装 wheel 执行 Task。2026-10-30 的验收记录写在[发行说明](docs/scheduler/release.md)。
+`tests/scheduling` 使用真实原生库，覆盖协议边界、FIFO、暂停、结算后推进、幂等、持久会话恢复，以及从已安装 wheel 执行 Task。验收记录写在[发行说明](docs/scheduler/release.md)。
+
+## 文档
+
+[docs/index.md](docs/index.md) 是文档集的索引。本页不罗列其中的页面。串行 Task 说明 [docs/scheduler/release.md](docs/scheduler/release.md) 不在这个索引里。
 
 ## 目录
 
 | 路径 | 内容 |
 | --- | --- |
-| [`docs/scheduler/release.md`](docs/scheduler/release.md) | 发布范围、构建与验收 |
 | [`native/scheduler-queue/`](native/scheduler-queue/) | FIFO 动态库 |
 | [`native/scheduler_shared/`](native/scheduler_shared/) | 共用的 Rust 协议与语义检查 |
 | [`unilabos/scheduling/`](unilabos/scheduling/) | Python 宿主、队列适配和插件 worker |
 | [`tests/scheduling/`](tests/scheduling/) | 公开版调度验收套件 |
-
-启动样例和更完整的实验室使用说明见[在线文档](https://deepmodeling.github.io/Uni-Lab-OS/)。
-
-## 示例设备包
-
-本标签不包含设备驱动。下面两个仓库是独立的驱动示例，用 `--devices <pkg> --external_devices_only` 加载：
-
-| 仓库 | 说明 |
-| --- | --- |
-| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo) | 跨设备 `@subscribe`，以及两个进程之间的远程 `call_device_action` |
-| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo) | 多个子设备共用一个通信端点 |
-
-每个仓库的 README 有启动步骤。通信共享机制见[最佳实践 §11.5](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html)。从零写驱动见[添加设备](https://deepmodeling.github.io/Uni-Lab-OS/developer_guide/add_device.html)。
 
 ## 引用
 

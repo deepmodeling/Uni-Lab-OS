@@ -46,15 +46,12 @@ Public CI is [`.github/workflows/public-scheduler.yml`](.github/workflows/public
 
 - Python 3.11 or newer
 - Rust stable, to compile the serial library from this tree
-- A platform linker (MSVC on Windows)
 
 ## Install
 
-```bash
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git
-cd Uni-Lab-OS
-git checkout v1.0
+From the repository root:
 
+```bash
 python -m pip install -e . pytest wheel packaging
 python native/scheduler-queue/build.py --destination unilabos/scheduling/queue_native
 ```
@@ -77,30 +74,20 @@ cargo test --locked --manifest-path native/scheduler-queue/Cargo.toml
 UNILAB_TEST_CLEAN_INSTALL=1 python -m pytest -q tests/scheduling
 ```
 
-`tests/scheduling` exercises the real native library: protocol boundaries, FIFO, pause, advance-after-settlement, idempotence, durable session restore, and a Task run from an installed wheel. The 2026-10-30 acceptance record is in the [release note](docs/scheduler/release.md).
+`tests/scheduling` exercises the real native library: protocol boundaries, FIFO, pause, advance-after-settlement, idempotence, durable session restore, and a Task run from an installed wheel. The acceptance record is in the [release note](docs/scheduler/release.md).
+
+## Documentation
+
+[docs/index.md](docs/index.md) is the index of the documentation set. This page does not list those documents. The serial Task note, [docs/scheduler/release.md](docs/scheduler/release.md), is not in that index.
 
 ## Repository map
 
 | Path | What it is |
 | --- | --- |
-| [`docs/scheduler/release.md`](docs/scheduler/release.md) | Release scope, build, and acceptance |
 | [`native/scheduler-queue/`](native/scheduler-queue/) | FIFO dynamic library |
 | [`native/scheduler_shared/`](native/scheduler_shared/) | Shared Rust protocol and semantic checks |
 | [`unilabos/scheduling/`](unilabos/scheduling/) | Python host, queue adapter, and plugin worker |
 | [`tests/scheduling/`](tests/scheduling/) | Public scheduler acceptance suite |
-
-Boot examples and the longer laboratory guide: [online documentation](https://deepmodeling.github.io/Uni-Lab-OS/).
-
-## Example device packages
-
-Device drivers are not vendored here. These two repositories are standalone driver examples. Load one with `--devices <pkg> --external_devices_only`:
-
-| Repository | What it shows |
-| --- | --- |
-| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo) | Cross-device `@subscribe` and remote `call_device_action` as two processes |
-| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo) | Several sub-devices sharing one communication endpoint |
-
-Each repository README has a launch walkthrough. The communication-sharing mechanism is in [Best Practice §11.5](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html). A driver written from scratch starts at [Add Device](https://deepmodeling.github.io/Uni-Lab-OS/developer_guide/add_device.html).
 
 ## Citation
 

@@ -493,6 +493,7 @@ def stop_process(process: subprocess.Popen[Any]) -> None:
 
     if process.poll() is not None:
         return
+    group: Optional[int] = None
     if os.name == "nt":
         subprocess.run(
             ["taskkill", "/PID", str(process.pid), "/T", "/F"],
@@ -503,7 +504,8 @@ def stop_process(process: subprocess.Popen[Any]) -> None:
     else:
         # _DemoProcesses 用 start_new_session 创建独立进程组，绝不杀测试运行器所在组。
         if os.getpgid(process.pid) == process.pid:
-            os.killpg(process.pid, signal.SIGTERM)
+            group = process.pid
+            os.killpg(group, signal.SIGTERM)
         else:
             process.terminate()
     try:
@@ -511,6 +513,35 @@ def stop_process(process: subprocess.Popen[Any]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=5)
+    if group is not None:
+        _wait_process_group_exit(group)
+
+
+def _process_group_alive(group: int) -> bool:
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_process_group_exit(group: int, timeout: float = 10.0) -> None:
+    """组长退出后 Host 子进程可能还在关库；等整组退出，证据目录才不再变化。"""
+
+    deadline = time.monotonic() + timeout
+    while _process_group_alive(group):
+        if time.monotonic() >= deadline:
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except ProcessLookupError:
+                return
+            deadline = time.monotonic() + 5.0
+            while _process_group_alive(group) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            return
+        time.sleep(0.1)
 
 
 def api_request(port: int, path: str, payload: Optional[dict[str, Any]] = None, *, method: str | None = None) -> Any:

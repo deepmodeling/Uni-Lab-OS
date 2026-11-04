@@ -23,15 +23,34 @@ class HostServerStack:
     host_network: Any = None
 
 
+DEFAULT_DATABASE_ROOT = "~/.unilabos"
+
+
+def configured_database_root(args: Mapping[str, Any]) -> str:
+    """四库根目录：``--server_database_root`` > ``BasicConfig.server_database_root`` > ``~/.unilabos``。
+
+    ``BasicConfig.server_database_root`` 来自配置文件或环境变量
+    ``UNILABOS_BASICCONFIG_SERVER_DATABASE_ROOT``。返回值未展开 ``~``，由路径解析统一处理。
+    """
+
+    for candidate in (args.get("server_database_root"), getattr(BasicConfig, "server_database_root", None)):
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return DEFAULT_DATABASE_ROOT
+
+
 def resolve_database_paths(
     args: Mapping[str, Any], *, working_dir: str | Path
 ) -> ServerDatabasePaths:
-    """解析四库路径并一次性绑定到进程配置。"""
+    """解析四库路径并一次性绑定到进程配置。
 
-    root = str(
-        args.get("server_database_root")
-        or (Path(working_dir).expanduser() / ".unilabos")
-    )
+    ``working_dir`` 保留在签名里供调用方统一传参；数据库位置不从工作目录推导，
+    见 :func:`configured_database_root`。
+    """
+
+    del working_dir
+    root = configured_database_root(args)
     overrides = {
         key: value
         for key, value in {

@@ -184,6 +184,7 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `BasicConfig` | `ak`              | `--ak`              | 实验室访问密钥                   |
 | `BasicConfig` | `sk`              | `--sk`              | 实验室私钥                       |
 | `BasicConfig` | `working_dir`     | `--working_dir`     | 工作目录路径                     |
+| `BasicConfig` | `server_database_root` | `--server_database_root` | 四个数据库所在目录，默认 `~/.unilabos` |
 | `BasicConfig` | `is_host_mode`    | `--is_slave`        | 主站模式（参数为从站模式，取反） |
 | `BasicConfig` | `slave_no_host`   | `--slave_no_host`   | 从站模式下跳过等待主机服务       |
 | `BasicConfig` | `vis_2d_enable`   | `--2d_vis`          | 启用 2D 可视化                   |
@@ -268,6 +269,21 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `frontend_event_max_count` | int | `10000` | 前端失效通知保留条数目标 |
 | `frontend_event_cleanup_interval_seconds` | int | `60` | 保留清理检查间隔（秒） |
 | `frontend_event_cleanup_batch_size` | int | `1000` | 每个清理事务最多删除条数 |
+| `server_database_root`   | str  | `"~/.unilabos"` | 四个数据库所在目录，见下文「数据库位置」 |
+
+#### 数据库位置
+
+微后端的四个 SQLite 数据库（`runtime.db`、`materials.db`、`telemetry.db`、`history.db`）
+放在同一个根目录下，按以下优先级确定：
+
+1. 命令行 `--server_database_root <目录>`（也可写 `--server-database-root`）；
+2. 配置文件 `BasicConfig.server_database_root`，或环境变量 `UNILABOS_BASICCONFIG_SERVER_DATABASE_ROOT`；
+3. 默认 `~/.unilabos`。
+
+数据库位置与工作目录（`local_config.py` 所在目录）无关：同一台机器上的多个实例默认共用
+`~/.unilabos`，需要隔离（例如测试、多套实验台）时请为每个实例单独指定。默认双进程拓扑下，
+调度权威使用根目录本身，Host 子进程使用 `<根目录>/edge`；`--role backend` 使用 `<根目录>/backend`。
+单个数据库文件还可以用 `--runtime_db`、`--materials_db`、`--telemetry_db`、`--history_db` 单独指定。
 
 #### 日志级别选项
 

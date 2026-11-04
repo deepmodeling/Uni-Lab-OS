@@ -156,10 +156,10 @@ def _register_database_arguments(parser: argparse.ArgumentParser) -> None:
     _add(
         group,
         "--server_database_root",
-        default="~/.unilabos",
+        default=None,
         help=(
             "Directory containing runtime/materials/telemetry/history "
-            "SQLite files."
+            "SQLite files (default: BasicConfig.server_database_root, ~/.unilabos)."
         ),
     )
     for database in ("runtime", "materials", "telemetry", "history"):

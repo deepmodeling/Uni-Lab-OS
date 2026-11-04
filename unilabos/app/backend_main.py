@@ -75,10 +75,10 @@ def run_backend_process(
         set_edge_control_service,
     )
     from unilabos.server.services.runtime.registry import get_registry_service
-    from unilabos.server.startup import resolve_database_paths
+    from unilabos.server.startup import configured_database_root, resolve_database_paths
 
     base_root = os.path.expanduser(
-        str(args_dict.get("server_database_root") or os.path.join(working_dir, ".unilabos"))
+        configured_database_root(args_dict)
     )
     if launch_host:
         # 默认拓扑：权威沿用原来的库位置（老数据不搬家），Host 子进程用 <root>/edge。

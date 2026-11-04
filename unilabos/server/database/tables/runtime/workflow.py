@@ -921,8 +921,10 @@ WORKFLOW_TABLES = (
                 (
                     execution_kind = 'workflow'
                     AND workflow_uuid IS NOT NULL
-                    AND idempotency_key IS NULL
-                    AND request_fingerprint = ''
+                    AND (
+                        (idempotency_key IS NULL AND request_fingerprint = '')
+                        OR (idempotency_key IS NOT NULL AND request_fingerprint <> '')
+                    )
                 )
                 OR
                 (

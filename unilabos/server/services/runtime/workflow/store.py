@@ -724,6 +724,8 @@ class WorkflowStore:
         plan_builder: Callable[
             [Dict[str, Any]], Tuple[Dict[str, Any], List[Dict[str, Any]]]
         ],
+        idempotency_key: Optional[str] = None,
+        request_fingerprint: str = "",
     ) -> Dict[str, Any]:
         now = utc_now()
         with self.transaction() as conn:
@@ -738,9 +740,10 @@ class WorkflowStore:
                     uuid, create_time, update_time, deleted_at, description,
                     meta_data, workflow_uuid, status, workflow_snapshot,
                     execution_plan, run_mode, target_node_uuid, control_status,
-                    cleanup_status, trace_context, input, output, error_info
+                    cleanup_status, trace_context, input, output, error_info,
+                    idempotency_key, request_fingerprint
                 ) VALUES (?, ?, ?, NULL, ?, ?, ?, 'pending', ?, ?, ?, ?, ?,
-                          'none', '{}', ?, '{}', '[]')
+                          'none', '{}', ?, '{}', '[]', ?, ?)
                 """,
                 (
                     task_uuid,
@@ -755,6 +758,8 @@ class WorkflowStore:
                     effective_target,
                     control_status,
                     _json(input_value),
+                    idempotency_key,
+                    request_fingerprint if idempotency_key is not None else "",
                 ),
             )
             for spec in jobs:

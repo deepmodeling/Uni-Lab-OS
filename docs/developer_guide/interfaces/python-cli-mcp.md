@@ -49,18 +49,20 @@ for aggregate in client.list_materials(roots_only=True):
 `HTTPWorkflowClient.save_graph` 当前未暴露 site_binding_mode 参数；其 HTTP 默认行为为 resolve。
 浏览器草稿需 preserve 时直接调用 HTTP 接口或使用明确支持该字段的封装，不能传 SDK 未声明的 keyword。
 
-### 已知限制：watch 还未对齐观察端 SSE
+### watch：观察端只订阅 SSE
 
-固定提交的 HTTPWorkflowClient.watch_task 默认从 base_url 推导 `/api/v1/ws/schedule` 并连接 WS。
-CLI 的 `workflow watch` 和 `workflow run --follow` 走同一条路径。
-而当前微后端的该 WS 属于执行 Host 控制面，新连接会替换活动 epoch。
+`HTTPWorkflowClient.watch_task` 订阅 base_url 下的 `/api/v1/events` SSE，收到相关通知后
+经 HTTP 重读任务与 Job；CLI 的 `workflow watch` 和 `workflow run --follow` 走同一条路径。
+它不连接 `/api/v1/ws/schedule`：那是 Host 的执行控制通道，只有一个活动连接，
+观察端接入会替换 Host 的连接并触发重连。
 
-因此 **不要在有活动 Host 的微后端上把默认 watch/--follow 当作安全观察端**。
-本版接入使用 HTTP 查询 + `/api/v1/events` SSE；CLI 可先不加 --follow 提交，再 inspect。
-`--schedule_addr` 或改 URL 本身也不能把现有 WS 客户端变成 SSE 客户端。
-此处是源码审阅发现的契约缺口，本次仅记录，没有修改客户端或用户正在编辑的相关文件。
+- `after=0`（默认）从服务端当前水位开始，不回放历史；`after>0` 作为 `Last-Event-ID` 续传。
+- `stream.reset` 时采用服务端的新水位（可能回退）并重读 HTTP；快照没有变化的通知不重复产出。
+- `schedule_addr` 参数保留但不再使用，传入时给出 `DeprecationWarning`。
 
-authoring 等待是独立的 HTTP 状态等待，不应与 watch_task 的 WS 行为混淆。
+旧版 SDK（0.12.3 及以前）仍会连接控制 WS，不要在有活动 Host 的微后端上用它的 watch/--follow。
+
+authoring 等待是独立的 HTTP 状态等待，不应与 watch_task 的 SSE 订阅混淆。
 
 ## 设备/Workstation 驱动合同
 

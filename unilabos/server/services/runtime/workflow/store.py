@@ -2956,6 +2956,18 @@ class WorkflowStore:
             for row in rows
         ]
 
+    def latest_event_sequence(self) -> int:
+        """当前最新的持久通知序号，空库为 0。
+
+        SSE 首连在发送响应头之前用它固定水位；每次轮询也用它识别超前游标。
+        """
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(sequence), 0) FROM frontend_event"
+            ).fetchone()
+        return int(row[0])
+
     @staticmethod
     def _append_event(
         conn: sqlite3.Connection,

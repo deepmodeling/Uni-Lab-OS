@@ -145,6 +145,7 @@ def test_sse_notice_merges_slow_reader_without_changing_workflow_cursor(monkeypa
 
     workflow = Mock()
     workflow.list_events.return_value = {"items": [{"id": 42, "event": "workflow.task.changed", "data": {"uuid": "t"}}]}
+    workflow.latest_event_sequence.return_value = 42
 
     async def scenario():
         stream = events.runtime_event_stream(Request(), workflow, cursor=41)

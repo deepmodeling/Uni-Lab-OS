@@ -22,9 +22,10 @@
 
 | 项目 | `/api/v1/events` | `/api/v1/materials/events` |
 | --- | --- | --- |
-| 无 Last-Event-ID 首连 | 工作流从事件序号 0 开始 | 固定当前账本末尾，仅推之后变化 |
+| 无 Last-Event-ID 首连 | 固定当前最新序号，先发只含 `id` 的水位帧，仅推之后变化 | 固定当前账本末尾，仅推之后变化 |
 | 持久 SSE id | 工作流事件 id | inventory ledger sequence |
-| 恢复方式 | Last-Event-ID，从该 id 之后重放 | Last-Event-ID，从该 sequence 之后重放 |
+| 恢复方式 | Last-Event-ID，从该 id 之后重放；显式 `0` 回放全部保留历史 | Last-Event-ID，从该 sequence 之后重放 |
+| 游标大于最新序号 | `stream.reset`（`reason: cursor_ahead`，`id` 为新水位），连接保持 | 无 |
 | 非法游标 | Workflow code=1000，HTTP 200 JSON | HTTP 422 |
 | 无事件时 | keepalive 注释；工作流检查约 1 秒，心跳约 15 秒 | keepalive 注释；约 1 秒检查账本 |
 
@@ -83,6 +84,12 @@ function subscribeMaterials(baseUrl, render, reportError) {
 原生 EventSource 的自动重连会维护当前实例的 Last-Event-ID；新建实例不能假设继承旧游标。
 
 ### 工作流通知
+
+订阅语义对齐 v1.0 ADR 0006：通知只表示 REST 状态失效，新页面在 `onopen` 后读 REST，
+不需要回放历史。首连的水位帧（只有 `id: N`，没有 `event` / `data`）只用于断线续传，
+不触发业务刷新。收到 `stream.reset` 时游标可能回退（例如数据库被重置），客户端必须
+重读 REST，不能把它当成某个任务的业务变更；该帧不写入 `frontend_event`。
+需要历史时显式发送 `Last-Event-ID: 0`。
 
 持久事件包括 `workflow.task.changed`、`workflow.node_run.changed`、
 `workflow.node_job.changed`、`workflow.manual_confirmation.changed` 等。

@@ -27,7 +27,7 @@ GRACEFUL_SHUTDOWN_TIMEOUT_S = 5
 RECOMMENDED_FRONTENDS = (
     {
         "name": "OpenLab",
-        "url": "https://xuwznln.github.io/OpenLab-site/",
+        "url": "https://xuwznln.github.io/OpenLabSite/",
         "description": "面向 Uni-Lab OS 微后端的社区实验室前端。",
     },
 )

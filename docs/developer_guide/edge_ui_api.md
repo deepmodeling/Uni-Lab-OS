@@ -82,7 +82,7 @@ OpenLab 用 `pnpm --filter @openlab/protocol openapi:sync` 调用它刷新快照
 
 ## 请求规范
 
-浏览器可调用的 HTTP API 遵循 OpenLab 仓库 `docs/protocol/conventions.md`（规范性文本，
+浏览器可调用的 HTTP API 遵循 [OpenLabSite](https://github.com/Xuwznln/OpenLabSite) 仓库 `docs/protocol/conventions.md`（规范性文本，
 MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端新增或修改路由时必须满足：
 
 - 路径 `/api/v1/<复数 kebab-case 集合>[/{snake_case_uuid}][/<子集合>][/<动词>]`；领域动作用
@@ -165,7 +165,7 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   `max_restarts` 停在 `crashed`；`auto_start` 的进程随 Host 启动拉起、Host 退出时终止；
   受管日志统一经 `GET /api/v1/hostlink/logs?source_id=managed:<id>` 读取。驱动崩溃只影响该子进程，Host 与物料权威不受影响。
   这两组路由只在 Host 上挂载（Backend 返回 404），前端按能力缺失降级。协议细节见
-  OpenLab 仓库 `docs/protocol/driver-packages.md`。
+  [OpenLabSite](https://github.com/Xuwznln/OpenLabSite) 仓库 `docs/protocol/driver-packages.md`。
 - `/api/v1/registry/*`（调度权威所在进程）：条目级注册表版本。与 Workflow Authority
   同归属、同一 `setup_server()` 挂载。Host 启动时按**内容哈希增量**上报（协议对象见
   `unilabos.protocol.runtime.registry`）：先 `GET /registry/digest` 取权威持有的

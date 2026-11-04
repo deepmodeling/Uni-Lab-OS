@@ -158,7 +158,7 @@ Edge connection factory branches on a legacy probe.
 ### 5. Use a custom UI
 
 Uni-Lab is backend-only: an Edge process does not host a SPA. Build or deploy
-your UI separately (OpenLab is one example), and configure its API base URL to
+your UI separately ([OpenLab](https://xuwznln.github.io/OpenLabSite/) is one example), and configure its API base URL to
 the management endpoint:
 
 | Deployment | UI API base URL |

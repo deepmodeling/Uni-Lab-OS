@@ -7,9 +7,13 @@ from unilabos.server.database.layout import (
 )
 from unilabos.server.database.schema import (
     DatabaseIdentityConflict,
+    DatabaseMigrationFailed,
+    DatabaseMigrationRequired,
     DatabaseSpec,
+    Migration,
     TableSpec,
     initialize_database,
+    sql_migration,
 )
 from unilabos.server.database.tables import (
     DATABASE_TABLE_MODELS,
@@ -36,13 +40,17 @@ __all__ = [
     "DATABASE_TABLE_MODELS",
     "DatabaseLayoutConflict",
     "DatabaseIdentityConflict",
+    "DatabaseMigrationFailed",
+    "DatabaseMigrationRequired",
     "DatabaseSpec",
     "HISTORY_DATABASE",
     "MATERIALS_DATABASE",
     "RUNTIME_DATABASE",
     "ServerDatabasePaths",
     "TELEMETRY_DATABASE",
+    "Migration",
     "TableSpec",
     "initialize_database",
+    "sql_migration",
     "validate_distinct_database_paths",
 ]

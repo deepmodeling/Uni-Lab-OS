@@ -69,7 +69,7 @@
 | 部分控制命令缓存仍在内存 | 崩溃恢复检查 durable 执行记录/对账，不承诺全链路 exactly-once |
 | Legacy 只提供显式 factory，当前 CLI 没有 --legacy | 不按历史参数启动；废弃计划与实际适配保留分开记录 |
 | 包卸载 handler 不含完整的关联物料/进程清理编排 | 不把卸载 operation 成功当作实验室数据清空；单独核对关联状态 |
-| schema 不匹配时备份旧库并建立空库，不是自动迁移 | 升级前备份并安排数据迁移/恢复；不可把重建成功当作旧数据已保留在新库中 |
+| 数据库按 `schema_version` 线性迁移；没有迁移路径时开发期四个库都备份后重建，正式发布前 runtime / materials 改为拒绝启动 | 改 DDL 或 contract_version 时把 schema_version +1 并补迁移；`tests/server/test_database_schema_versions.py` 固定各库指纹 |
 
 这些是对固定提交的静态审阅结论，不表示本次已运行并复现每一种故障。
 尤其 watch 所在客户端文件在本地另有未提交编辑，本次文档没有把那些改动算入已发布合同。

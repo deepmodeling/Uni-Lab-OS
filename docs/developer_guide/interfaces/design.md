@@ -99,8 +99,13 @@ HTTP 503 也不能证明数据库没有写入。处理方应核对账本、权�
 身份校验、版本推进、幂等、账本与通知属于业务操作。文件目录叫 service 或 repository 并不能替代这个边界。
 实体自身的版本、命令身份和来源游标用于协调跨库/跨进程变更，不能拿一个库的 sequence 当作全系统事务号。
 
-本版 schema 校验不匹配时，会将旧库及 WAL/SHM 改名保留为 `.bak-时间戳`，再建立空库。
-**这是备份后重建，不是数据自动迁移。** 升级前必须备份并核对恢复/迁移方案，不应带着正在执行的实验直接试升级。
+每个库声明 `schema_version` 和一串线性迁移，库内版本记在 `PRAGMA user_version`。库内版本较低且迁移连续时，
+启动会先备份为 `<file>.pre-v<N>-<时间戳>.bak`，再在一个事务里执行迁移，并与当前声明逐表核对结构，不符就整体回滚。
+改表必须提升 `schema_version` 并补迁移（`tests/server/test_database_schema_versions.py` 固定各库指纹）。
+没有迁移路径时，开发期四个库都改名保留为 `.bak-时间戳` 后重建空库；正式发布前 `runtime.db` 与 `materials.db`
+改为拒绝启动并保留旧库原样（`on_unmigratable="refuse"`），届时 `BasicConfig.database_rebuild_on_mismatch = True`
+可显式允许重建。
+升级前仍建议备份，不应带着正在执行的实验直接试升级。
 实现依据：[数据库初始化策略](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/database/schema.py)。
 
 ## 5. 提醒“哪里变了”，再读取“变成什么”

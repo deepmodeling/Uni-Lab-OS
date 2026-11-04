@@ -363,7 +363,7 @@ class WorkflowService(WorkflowStore):
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
         task_uuid = self.get_workflow_task(task_uuid)["uuid"]
-        if (command_type not in {"step", "resume"} or not idempotency_key.strip()
+        if (command_type not in {"step", "resume", "pause"} or not idempotency_key.strip()
                 or type(expected_revision) is not int or expected_revision < 0):
             raise WorkflowError("invalid_input")
         try:

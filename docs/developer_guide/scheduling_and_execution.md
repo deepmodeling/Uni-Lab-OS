@@ -390,6 +390,8 @@ Backend 必须先更新调度事实，然后下发 `release_failed` 或 replacem
 逐步运行不是 `single_node` 子图或 ad-hoc 单点任务，Task / NodeRun / Job 身份保持不变。
 
 使用 `type="resume"` 从原进度转自动，不中断正在执行的动作，也不重跑成功节点。
+自动运行中的任务可用 `type="pause"` 转为逐步：已下发的动作照常跑完；尚未下发的节点不再派发，
+排队等锁的申请撤回（`lock.owner_canceled`，reason=`task_paused`），放行或恢复后重新申请、排到队尾。
 不提供跳过异常的快捷路径：失败继续由原错误策略处理；retry 追加的新 attempt 也需再次放行。
 同键重传幂等、旧版本及在飞期间重复 step 返回既有业务码 3003（HTTP 200）。
 命令及其 job_uuid / node_run_uuid / target_node_uuid 关联存在既有 workflow_task_command，

@@ -156,7 +156,7 @@ expected_candidate_hash。非空哈希形如 `sha256:` 加 64 个小写十六进
 | GET | `/api/v1/workflow-tasks` | Q: page=1、page_size=20、workflow_uuid?、status=""、cleanup_status="" | 任务分页 |
 | POST | `/api/v1/workflow-tasks` | B: WorkflowTaskCreateRequest | 成功实际 201，data.uuid 为 task 身份；已接受不等于成功终态 |
 | GET | `/api/v1/workflow-tasks/{task_uuid}` | — | 任务快照、进度与 control_revision |
-| POST | `/api/v1/workflow-tasks/{task_uuid}/commands` | B: WorkflowTaskCommandRequest | step/resume 的处理结果；冲突需重新读取任务 |
+| POST | `/api/v1/workflow-tasks/{task_uuid}/commands` | B: WorkflowTaskCommandRequest | step/resume/pause 的处理结果；冲突需重新读取任务 |
 | GET | `/api/v1/workflow-tasks/{task_uuid}/node-runs` | — | 逻辑节点运行集合 |
 | GET | `/api/v1/workflow-node-runs/{run_uuid}` | — | 单个逻辑节点运行及尝试关联 |
 | GET | `/api/v1/workflow-tasks/{task_uuid}/jobs` | — | 该任务的物理尝试集合 |
@@ -174,7 +174,7 @@ run_mode=step 创建暂停任务；single_node 还需 target_node_uuid。设备�
 提供 device_id、action_name、param；可携带 action_type、execution_policy、execution_timeout_seconds、idempotency_key。
 公共可选元数据为 description 和 meta_data。图任务的输入来自图节点，不能用未声明的 task.input 任意覆盖。
 
-WorkflowTaskCommandRequest 三个字段均必填：type=step/resume、expected_revision（严格整数 >=0）、
+WorkflowTaskCommandRequest 三个字段均必填：type=step/resume/pause、expected_revision（严格整数 >=0）、
 idempotency_key（1..200 字符）。expected_revision 取任务的 control_revision，不是工作流 revision。
 ManualConfirmationDecisionRequest 必填 action，可带 confirmed_by、comment、decision_idempotency_key；
 确认人还受该单据的 assignee 约束。完整交互及错误处理见 [运行控制](workflows.md)。

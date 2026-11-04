@@ -1064,7 +1064,7 @@ class WorkflowStore:
         self, task_uuid: str, *, command_type: str,
         expected_revision: int, idempotency_key: str,
     ) -> Dict[str, Any]:
-        """原子受理单点放行 / 转自动；同键重传幂等，旧版本与在飞步进拒绝。"""
+        """原子受理单点放行 / 转自动 / 暂停；同键重传幂等，旧版本与在飞步进拒绝。"""
 
         now = utc_now()
         with self.transaction() as conn:
@@ -1079,9 +1079,11 @@ class WorkflowStore:
                         _load(previous["meta_data"], {}).get("expected_revision") != expected_revision):
                     raise StoreConflict("command idempotency key already used")
                 return task
-            if command_type not in {"step", "resume"}:
+            if command_type not in {"step", "resume", "pause"}:
                 raise StoreConflict("unsupported task command")
-            if task["execution_kind"] != "workflow" or task["run_mode"] != "step":
+            if task["execution_kind"] != "workflow":
+                raise StoreConflict("only workflow tasks accept execution control")
+            if command_type != "pause" and task["run_mode"] != "step":
                 raise StoreConflict("only step workflows accept execution control")
             if task["status"] not in {"pending", "running"}:
                 raise StoreConflict("task is no longer executable")
@@ -1093,6 +1095,10 @@ class WorkflowStore:
                 (task_uuid,),
             ).fetchone() is None:
                 raise StoreConflict("all nodes have already finished")
+            if command_type == "pause":
+                self._apply_pause(conn, task, idempotency_key=idempotency_key,
+                                  expected_revision=expected_revision, now=now)
+                return self.get_task(task_uuid)
             if task["control_status"] not in {"active", "paused"}:
                 raise StoreConflict("task requires intervention or reconciliation")
             if command_type == "step" and task["control_status"] != "paused":
@@ -1127,6 +1133,64 @@ class WorkflowStore:
             self._append_event(conn, event="workflow.task.changed",
                                data={"workflow_task_uuid": task_uuid}, now=now)
             return self.get_task(task_uuid)
+
+    def _apply_pause(
+        self, conn: sqlite3.Connection, task: Dict[str, Any], *,
+        idempotency_key: str, expected_revision: int, now: str,
+    ) -> None:
+        """暂停 = 转单步并关上派发闸门。
+
+        已下发的动作照常跑完、继续持有资源；尚未下发的节点（含排队等锁的）不再派发，
+        之后由 step 逐个放行或 resume 转回自动。等待裁决中的任务记下恢复目标为 paused。
+        """
+
+        task_uuid = task["uuid"]
+        control = task["control_status"]
+        if task["run_mode"] == "step" and control == "paused":
+            raise StoreConflict("task is already paused")
+        if control == "waiting_reconciliation":
+            conn.execute(
+                "UPDATE workflow_task SET run_mode='step', "
+                "reconciliation_resume_control_status='paused', update_time=? WHERE uuid=?",
+                (now, task_uuid),
+            )
+        elif control == "active":
+            # 收回尚未用掉的步进许可；已认领且已下发的那一步照常跑完，完成时转 paused。
+            executing = False
+            for permit in conn.execute(
+                "SELECT uuid, result FROM workflow_task_command WHERE workflow_task_uuid=? "
+                "AND type='step' AND status='pending' AND deleted_at IS NULL",
+                (task_uuid,),
+            ).fetchall():
+                job_uuid = _load(permit["result"], {}).get("job_uuid")
+                if job_uuid:
+                    job = conn.execute(
+                        "SELECT status FROM workflow_node_job WHERE uuid=? AND deleted_at IS NULL",
+                        (job_uuid,),
+                    ).fetchone()
+                    if job is not None and job["status"] != "pending":
+                        executing = True
+                        continue
+                conn.execute(
+                    "UPDATE workflow_task_command SET status='rejected', consumed_at=?, "
+                    "update_time=?, result=json_set(result, '$.revoked_by', 'pause') WHERE uuid=?",
+                    (now, now, permit["uuid"]),
+                )
+            conn.execute(
+                "UPDATE workflow_task SET run_mode='step', control_status=?, update_time=? WHERE uuid=?",
+                ("active" if executing else "paused", now, task_uuid),
+            )
+        else:
+            raise StoreConflict("task requires intervention before it can be paused")
+        conn.execute(
+            "INSERT INTO workflow_task_command(uuid, create_time, update_time, "
+            "workflow_task_uuid, type, idempotency_key, status, meta_data, consumed_at) "
+            "VALUES (?, ?, ?, ?, 'pause', ?, 'succeeded', ?, ?)",
+            (str(uuid4()), now, now, task_uuid, idempotency_key,
+             _json({"expected_revision": expected_revision}), now),
+        )
+        self._append_event(conn, event="workflow.task.changed",
+                           data={"workflow_task_uuid": task_uuid}, now=now)
 
     def claim_task_step(self, task_uuid: str, job_uuid: str) -> bool:
         """在申请动作锁前消费一次许可；一个许可只能绑定一个 attempt。"""

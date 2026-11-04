@@ -177,9 +177,12 @@ class WorkflowTaskCreateRequest(_BackendModel):
 
 
 class WorkflowTaskCommandRequest(_StrictModel):
-    """step 放行一个动作；resume 切回自动。版本与幂等键防止跨页面重复放行。"""
+    """step 放行一个动作；resume 切回自动；pause 转单步并停止派发新动作（已下发的照常跑完）。
 
-    type: Literal["step", "resume"]
+    版本与幂等键防止跨页面重复放行。
+    """
+
+    type: Literal["step", "resume", "pause"]
     expected_revision: int = Field(ge=0, le=_INT64_MAX, strict=True)
     idempotency_key: str = Field(min_length=1, max_length=200)
 

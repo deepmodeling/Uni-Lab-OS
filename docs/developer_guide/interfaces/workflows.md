@@ -145,7 +145,11 @@ Site 绑定只确认身份与范围，不搬动物料，也不预留该 Site；�
 - 动作未完成时继续 step 不能积攒许可；一个许可对应一个 physical attempt。
 - 如果这次失败需要 retry，新的 attempt 仍需要下一次 step。
 - `type="resume"` 切回 normal，继续**同一个 task / DAG**，不是新建 task；执行中也可请求恢复自动。
-- 当前命令类型只有 step/resume；没有在这里实现任意 pause/cancel/retry 命令。
+- `type="pause"` 把自动运行中的任务转为逐步并关上派发闸门：已下发的动作照常跑完、继续持有锁；
+  尚未下发的节点（包括排队等锁的）不再派发，排队申请撤回、让给其它任务，之后由 step 逐个放行或
+  resume 恢复自动。逐步执行中的那一步照常跑完，完成时转 paused；等待裁决的任务裁决后停在 paused。
+  已暂停再 pause、任务已结束时返回 3003。
+- 当前命令类型是 step / resume / pause；取消（cancel）尚未提供公开命令。
 
 重启后的执行状态未知会进入 waiting_reconciliation / execution_unknown 等状态，
 此时不能用 resume 自动重做设备动作，应先核对实际执行结果并处理干预。

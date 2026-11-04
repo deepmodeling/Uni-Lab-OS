@@ -60,7 +60,7 @@
 | OpenAPI 大量响应没有详细 schema | 查业务章及固定版本的 handler / 协议模型；不要生成“返回空对象”的客户端 |
 | OpenAPI 对 Workflow 创建标 200，handler 实际 201 | 接受正确的 2xx，继续检查 code；本手册注明动态状态 |
 | x-openlab-role 与默认双进程实际处理位置不完全一致 | 按 HTTP 章节的实际路由矩阵，不据标签决定安全权限 |
-| 默认 HTTPWorkflowClient.watch_task / CLI --follow 仍用控制 WS | 在活动微后端改用 SSE + HTTP；本次未实现客户端修复 |
+| 0.12.3 及以前的 HTTPWorkflowClient.watch_task / CLI --follow 用控制 WS | 升级 SDK：watch 已改走 `/api/v1/events` SSE + HTTP |
 | HTTPWorkflowClient.save_graph 没有 site_binding_mode 参数 | preserve 草稿用原始 HTTP；默认 SDK 导入是 resolve |
 | 后端没有“工作流 card 待填数字”专用字段/API | 微前端根据必填与未确认绑定计算，不能假定服务已代算 |
 | klass/class_name 仍在部分模型中 | 不宣称字段全面删除；仅禁止用其兜底 PLR config.type |

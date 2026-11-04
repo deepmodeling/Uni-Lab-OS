@@ -1,15 +1,21 @@
-"""当前 Workflow Authority 的 HTTP/WS 客户端。
+"""当前 Workflow Authority 的 HTTP 客户端与 SSE 失效通知订阅。
 
-HTTP 是工作流定义、任务和 Authoring 状态的唯一事实来源。WebSocket
-只作为失效通知：收到相关通知后，本客户端始终重新通过 HTTP 拉取任务正文。
+HTTP 是工作流定义、任务和 Authoring 状态的唯一事实来源。``/api/v1/events``
+SSE 只作为失效通知：收到相关通知后，本客户端始终重新通过 HTTP 拉取任务正文。
+执行控制 WebSocket（``/api/v1/ws/schedule``）只属于 Host，观察端不连接它：
+该通道只有一个活动连接，新连接会替换 Host 的控制连接。
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import queue
+import re
+import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
+import warnings
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager
 from typing import Any, Optional, Protocol
 from uuid import uuid4
@@ -71,20 +77,137 @@ def derive_workflow_websocket_url(
         raise ValueError("workflow WebSocket 地址无效") from error
 
 
+STREAM_RESET_EVENT = "stream.reset"
+_STREAM_CLOSED = object()
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+
+
+def _iter_text_lines(chunks: Iterable[str]) -> Iterator[str]:
+    """按 SSE 规则（CRLF / LF / CR）切行；跨块的 CRLF 不会被拆成两个空行。"""
+
+    buffer = ""
+    for chunk in chunks:
+        buffer += chunk
+        hold = buffer.endswith("\r")
+        parts = _LINE_BREAK.split(buffer[:-1] if hold else buffer)
+        buffer = parts.pop() + ("\r" if hold else "")
+        yield from parts
+
+
+def _parse_sse_lines(lines: Iterable[str]) -> Iterator[dict[str, Any]]:
+    """把 SSE 文本行解析成 ``{"event", "id", "data"}`` 帧。
+
+    注释行与 ``retry`` 忽略；只有 ``id`` 没有 ``data`` 的水位帧照常产出（``data`` 为
+    ``None``）。``id`` 只取本帧自带的值，没有 id 的瞬时通知不会继承上一条的序号。
+    """
+
+    event_name, event_id, data_lines = "", None, []
+    for line in lines:
+        if line == "":
+            if data_lines or event_id is not None:
+                yield {
+                    "event": event_name or "message",
+                    "id": event_id,
+                    "data": "\n".join(data_lines) if data_lines else None,
+                }
+            event_name, event_id, data_lines = "", None, []
+            continue
+        if line.startswith(":"):
+            continue
+        field, _, value = line.partition(":")
+        if value.startswith(" "):
+            value = value[1:]
+        if field == "data":
+            data_lines.append(value)
+        elif field == "event":
+            event_name = value
+        elif field == "id" and "\0" not in value:
+            event_id = value
+
+
+def _sse_frame_notice(frame: Mapping[str, Any]) -> str:
+    """SSE 帧 → watch 循环使用的通知 JSON：``{"action", "id", "data"}``。"""
+
+    try:
+        data = json.loads(frame["data"]) if frame["data"] else {}
+    except json.JSONDecodeError:
+        data = {}
+    try:
+        sequence = int(frame["id"]) if frame["id"] is not None else None
+    except ValueError:
+        sequence = None
+    return json.dumps(
+        {"action": frame["event"], "id": sequence, "data": data if isinstance(data, dict) else {}},
+        ensure_ascii=False,
+    )
+
+
+class _SSENoticeStream(AbstractContextManager["_SSENoticeStream"]):
+    """后台线程读取 ``/api/v1/events``；``recv(timeout)`` 按超时取出下一条通知。"""
+
+    def __init__(self, url: str, headers: Mapping[str, str], timeout: float) -> None:
+        import httpx
+
+        # 读超时由 recv(timeout) 控制；服务端每 15 秒发保活注释，连接本身不设读超时。
+        self._client = httpx.Client(timeout=httpx.Timeout(min(timeout, 20.0), read=None))
+        self._stream = self._client.stream("GET", url, headers=dict(headers))
+        self._entered = False
+        self._queue: "queue.Queue[Any]" = queue.Queue()
+
+    def __enter__(self) -> "_SSENoticeStream":
+        try:
+            response = self._stream.__enter__()
+            self._entered = True
+            response.raise_for_status()
+            if not response.headers.get("content-type", "").startswith("text/event-stream"):
+                # 非法游标时 Workflow Authority 返回 HTTP 200 的 JSON 错误信封。
+                body = response.read().decode("utf-8", "replace")
+                raise WorkflowClientError("watch_rejected", "工作流通知流被拒绝", details=body[:2000])
+        except BaseException:
+            self._close()
+            raise
+        threading.Thread(target=self._pump, args=(response,), name="unilab-workflow-sse", daemon=True).start()
+        return self
+
+    def _pump(self, response: Any) -> None:
+        try:
+            for frame in _parse_sse_lines(_iter_text_lines(response.iter_text())):
+                self._queue.put(_sse_frame_notice(frame))
+        except Exception as error:  # noqa: BLE001 - 交给 recv() 抛给调用方
+            self._queue.put(error)
+        finally:
+            self._queue.put(_STREAM_CLOSED)
+
+    def recv(self, timeout: Optional[float] = None) -> str:
+        try:
+            item = self._queue.get(timeout=timeout)
+        except queue.Empty:
+            raise TimeoutError from None
+        if item is _STREAM_CLOSED:
+            raise ConnectionError("工作流通知流已关闭")
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    def __exit__(self, *_exc: object) -> None:
+        self._close()
+
+    def _close(self) -> None:
+        if self._entered:
+            self._entered = False
+            try:
+                self._stream.__exit__(None, None, None)
+            except Exception:  # noqa: BLE001 - 关闭阶段不覆盖原异常
+                pass
+        self._client.close()
+
+
 def _default_notice_connector(
     url: str,
     headers: Mapping[str, str],
     timeout: float,
 ) -> AbstractContextManager[_NoticeSocket]:
-    from websockets.sync.client import connect
-
-    return connect(
-        url,
-        additional_headers=dict(headers),
-        open_timeout=min(timeout, 20.0),
-        close_timeout=5.0,
-    )
-
+    return _SSENoticeStream(url, headers, timeout)
 
 class HTTPWorkflowClient:
     """共享 Workflow REST API 的窄客户端。"""
@@ -101,10 +224,14 @@ class HTTPWorkflowClient:
         notice_connector: Optional[NoticeConnector] = None,
     ) -> None:
         self.base_url = normalize_workflow_api_url(base_url)
-        self.notification_url = derive_workflow_websocket_url(
-            self.base_url,
-            schedule_addr,
-        )
+        if schedule_addr:
+            warnings.warn(
+                "schedule_addr 已不再使用：watch_task 订阅 base_url 下的 /api/v1/events SSE，"
+                "不再连接执行控制 WebSocket",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        self.notification_url = f"{self.base_url}/events"
         self.timeout = timeout
         self._auth_secret = ""
         if ak and sk:
@@ -316,7 +443,12 @@ class HTTPWorkflowClient:
         timeout: float = 300.0,
         max_events: int = 500,
     ) -> Iterator[dict[str, Any]]:
-        """监听轻通知，并在每次通知后经 HTTP 拉取任务与 Job 正文。"""
+        """订阅 SSE 失效通知，并在每次相关通知后经 HTTP 拉取任务与 Job 正文。
+
+        ``after`` 为 0 时从服务端当前水位开始，不回放历史通知；大于 0 时作为
+        ``Last-Event-ID`` 从该序号之后续传。``stream.reset`` 表示游标失效，水位
+        可能回退，客户端重读 HTTP 校准。快照没有变化的通知不重复产出。
+        """
 
         if after < 0 or timeout <= 0 or max_events < 1:
             raise WorkflowClientError("invalid_input", "watch 参数无效")
@@ -332,9 +464,11 @@ class HTTPWorkflowClient:
             return
 
         deadline = time.monotonic() + timeout
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "text/event-stream", "Cache-Control": "no-cache"}
         if self._auth_secret:
             headers["Authorization"] = f"Lab {self._auth_secret}"
+        if after > 0:
+            headers["Last-Event-ID"] = str(after)
 
         emitted = 0
         try:
@@ -342,8 +476,8 @@ class HTTPWorkflowClient:
                 self.notification_url,
                 headers,
                 timeout,
-            ) as websocket:
-                # 连接建立后再拉一次，封住“首次 HTTP 快照到 WS 订阅”之间的竞态。
+            ) as stream:
+                # 连接建立后再拉一次，封住“首次 HTTP 快照到 SSE 订阅”之间的竞态。
                 synchronized = self.inspect_task(task_uuid)
                 if synchronized != snapshot:
                     snapshot = synchronized
@@ -359,21 +493,30 @@ class HTTPWorkflowClient:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         break
-                    raw_notice = websocket.recv(timeout=remaining)
+                    raw_notice = stream.recv(timeout=remaining)
                     notice = self._decode_notice(raw_notice)
-                    if notice is None or not self._notice_matches_task(
-                        notice,
-                        task_uuid,
-                    ):
+                    if notice is None:
                         continue
                     sequence = self._notice_sequence(notice)
-                    if sequence is not None:
+                    if notice.get("action") == STREAM_RESET_EVENT:
+                        # 游标过期或超前：采用服务端给出的新水位（可能回退）并重读 HTTP。
+                        if sequence is not None:
+                            cursor = sequence
+                    elif not self._notice_matches_task(notice, task_uuid):
+                        # 水位帧与其他任务的通知只推进游标，便于调用方用 after 续传。
+                        if sequence is not None and sequence > cursor:
+                            cursor = sequence
+                        continue
+                    elif sequence is not None:
                         if sequence <= cursor:
                             continue
                         cursor = sequence
 
-                    # WS 内容只触发失效；任务事实固定从 HTTP 重新拉取。
-                    snapshot = self.inspect_task(task_uuid)
+                    # 通知内容只触发失效；任务事实固定从 HTTP 重新拉取。
+                    refreshed = self.inspect_task(task_uuid)
+                    if refreshed == snapshot:
+                        continue
+                    snapshot = refreshed
                     emitted += 1
                     yield {
                         "kind": "task_changed",
@@ -445,6 +588,10 @@ class HTTPWorkflowClient:
 
     @classmethod
     def _notice_sequence(cls, notice: Mapping[str, Any]) -> Optional[int]:
+        # SSE 帧的 id 是持久通知序号，优先于 data 内的业务字段。
+        top = notice.get("id")
+        if isinstance(top, int) and not isinstance(top, bool) and top >= 0:
+            return top
         data = cls._notice_data(notice)
         for key in ("event_sequence", "backend_sequence", "sequence", "id"):
             value = data.get(key)

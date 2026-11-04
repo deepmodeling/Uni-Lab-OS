@@ -219,17 +219,15 @@ class _FakeNoticeContext(AbstractContextManager[_FakeNoticeSocket]):
         return None
 
 
-def test_workflow_watch_uses_ws_only_as_invalidation_then_pulls_http() -> None:
+def test_workflow_watch_uses_sse_only_as_invalidation_then_pulls_http() -> None:
     http = _FakeHTTPClient()
     connections: list[tuple[str, dict[str, str], float]] = []
     forged_notice = json.dumps(
         {
-            "action": "edge_change",
+            "action": "workflow.task.changed",
+            "id": 9,
             "data": {
-                "event_sequence": 9,
-                "event_type": "workflow.task.changed",
-                "aggregate_type": "workflow_task",
-                "aggregate_uuid": "task-1",
+                "workflow_task_uuid": "task-1",
                 "task": {"uuid": "task-1", "status": "forged"},
             },
         }
@@ -252,11 +250,11 @@ def test_workflow_watch_uses_ws_only_as_invalidation_then_pulls_http() -> None:
     ]
     assert all(event["task"]["status"] != "forged" for event in events)
     assert events[-1]["cursor"] == 9
-    # 通知 WS 与 HTTP API 是同一个微后端服务：同 host 同端口。
+    # 观察端只订阅 SSE /api/v1/events，绝不连接 Host 的执行控制 WS。
     assert connections == [
         (
-            "ws://microbackend:8002/api/v1/ws/schedule",
-            {"Accept": "application/json"},
+            "http://microbackend:8002/api/v1/events",
+            {"Accept": "text/event-stream", "Cache-Control": "no-cache", "Last-Event-ID": "8"},
             1,
         )
     ]

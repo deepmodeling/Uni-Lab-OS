@@ -188,6 +188,23 @@ class _FakeChild:
         self._code = 137
 
 
+class _RunningChild(_FakeChild):
+    """一直运行到收到信号：wait 按超时返回，而不是像 _FakeChild 那样立即退出。"""
+
+    def __init__(self) -> None:
+        super().__init__(0)
+        self._exited = threading.Event()
+
+    def wait(self, timeout=None):
+        if not self._exited.wait(timeout):
+            raise subprocess.TimeoutExpired("host", timeout)
+        return self._code
+
+    def send_signal(self, sig):
+        super().send_signal(sig)
+        self._exited.set()
+
+
 def test_host_child_supervisor_relaunches_on_restart_code(monkeypatch: pytest.MonkeyPatch) -> None:
     codes = [supervisor.RESTART_EXIT_CODE, supervisor.RESTART_EXIT_CODE, 0]
     launched: list[dict] = []
@@ -268,12 +285,9 @@ def test_host_child_supervisor_stop_requests_graceful_exit(monkeypatch: pytest.M
 def test_request_stop_signals_child_once_and_stop_only_waits(monkeypatch: pytest.MonkeyPatch) -> None:
     """权威收到停机信号先非阻塞地请 Host 退出；随后的 stop() 不再补发第二个 Ctrl+Break。"""
 
-    fake = _FakeChild(0)
-    fake._code = None
-    started = threading.Event()
+    fake = _RunningChild()
 
     def fake_popen(command, env=None, creationflags=0, **_kwargs):
-        started.set()
         return fake
 
     exit_requested = threading.Event()
@@ -289,7 +303,11 @@ def test_request_stop_signals_child_once_and_stop_only_waits(monkeypatch: pytest
 
     child = supervisor.HostChildSupervisor(["python"])
     child.start()
-    assert started.wait(timeout=2)
+    # Popen 返回后 supervisor 才在锁内记下子进程；等它真正可见再请求停止。
+    deadline = time.monotonic() + 2
+    while not child.alive() and time.monotonic() < deadline:
+        time.sleep(0.001)
+    assert child.alive()
 
     child.request_stop()
     assert exit_requested.is_set()

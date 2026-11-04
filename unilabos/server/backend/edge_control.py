@@ -18,6 +18,7 @@ import uuid
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
+from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.runtime.control import (
     BackendCommandDocument,
@@ -149,6 +150,8 @@ class EdgeControlService:
         # WS 下行通道：线程安全队列，由 API 层的发送协程消费
         self.outgoing: "queue.Queue[dict[str, Any]]" = queue.Queue()
         self._connected = False
+        # 当前 Host 进程身份（连接头 EdgeSession）；变化即上一 Host 进程已退出
+        self._edge_process = ""
 
     # ── Backend → Edge 进程内 HTTP（Edge 不监听端口） ────────────
 
@@ -637,10 +640,11 @@ class EdgeControlService:
 
     # ── WS 连接生命周期（API 层调用） ─────────────────────────
 
-    def attach_connection(self) -> tuple[str, dict[str, Any]]:
+    def attach_connection(self, edge_process: str = "") -> tuple[str, dict[str, Any]]:
         """新 WS 连接：刷新 connection_epoch，返回 (epoch, backend_session 消息)。
 
-        后来者赢：旧连接的发送协程发现 epoch 不匹配后自行退出。
+        后来者赢：旧连接的发送协程发现 epoch 不匹配后自行退出。``edge_process`` 是 Host
+        进程身份；与上一次不同说明 Host 进程重启过，上一进程已开始执行的 job 改为结果未知。
         """
 
         with self._lock:
@@ -648,6 +652,7 @@ class EdgeControlService:
             epoch = self.connection_epoch
             self._connected = True
             self._drain_outgoing()
+            lost = self._take_lost_jobs(str(edge_process or "").strip())
             notice = BackendSessionNotice(
                 session_uuid=self.session_uuid,
                 edge_uuid=self.edge_uuid,
@@ -678,6 +683,11 @@ class EdgeControlService:
                     "data": resend.model_dump(mode="json", exclude_none=True),
                 }
             )
+        if lost:
+            # 回调会落库并开裁决，同样不能阻塞 WS 事件循环
+            threading.Thread(
+                target=self._notify_lost_jobs, args=(lost,), name="EdgeControlLostJobs", daemon=True
+            ).start()
         # attach 在 WS 事件循环线程里被调用；重算等待集合会碰数据库，放到独立线程
         threading.Thread(
             target=self._publish_host_ready, name="EdgeControlHostReady", daemon=True
@@ -686,6 +696,54 @@ class EdgeControlService:
             "action": "backend_session",
             "data": notice.model_dump(mode="json", exclude_none=True),
         }
+
+    def _take_lost_jobs(self, process: str) -> list[str]:
+        """Host 进程换了身份时取出上一进程可能执行到一半的 job（调用方持有 ``_lock``）。
+
+        上一进程已拉取执行命令的 job 可能已在设备上执行、随进程退出而中断，结果无法确认；
+        尚未拉取的命令从未开始，留在待补发集合里照常发给新进程。网络断线重连身份不变，不受影响。
+        """
+
+        previous = self._edge_process
+        if process:
+            self._edge_process = process
+        if not process or not previous or process == previous:
+            return []
+        started = {
+            document.command.job_uuid
+            for command_uuid, document in self._commands.items()
+            if command_uuid in self._fetched and document.command.command_type == "execute_job"
+        }
+        lost = [job_uuid for job_uuid in self._inflight if job_uuid in started]
+        for job_uuid in lost:
+            self._inflight.pop(job_uuid, None)
+            for decision_id in [
+                key for key, item in self._pending_decisions.items() if item["job_uuid"] == job_uuid
+            ]:
+                self._pending_decisions.pop(decision_id, None)
+            for command_uuid in [
+                key for key, document in self._commands.items() if document.command.job_uuid == job_uuid
+            ]:
+                self._commands.pop(command_uuid, None)
+                self._notices.pop(command_uuid, None)
+                self._fetched.discard(command_uuid)
+        return lost
+
+    def _notify_lost_jobs(self, job_uuids: list[str]) -> None:
+        with self._lock:
+            listeners = list(self._listeners)
+        reason = "执行端（Host）进程在动作进行中重启，无法确认设备是否已完成该动作"
+        logger.warning(
+            "[EdgeControl] Host 进程已重启：%d 个执行中的 job 结果未知，转人工裁决：%s",
+            len(job_uuids),
+            ", ".join(job_uuids),
+        )
+        for job_uuid in job_uuids:
+            for listener in listeners:
+                try:
+                    listener(job_uuid, False, None, SUCCESS_TYPE_EXECUTION_UNKNOWN, {"uncertainty_reason": reason})
+                except Exception:  # noqa: BLE001 - 与终态回调一致，互不影响
+                    logger.exception("[EdgeControl] lost job listener 失败")
 
     def detach_connection(self, epoch: str) -> None:
         """断开指定代际的连接；旧代际的 detach 不影响新连接。"""

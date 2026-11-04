@@ -857,8 +857,26 @@ class WorkflowBusinessCoordinator:
         )
 
     def restore(self) -> None:
-        """重启后恢复待决失败；dispatch 必须等 Host/ROS adapter ready。"""
+        """重启后恢复待决失败；dispatch 必须等 Host/ROS adapter ready。
 
+        本进程刚启动：库里仍是 dispatched / running 的 job 属于上一个 Host 进程，动作已随进程
+        中断、结果无法确认，转 execution_unknown 且不重放。调度权威据 Host 身份变化另开人工裁决。
+        """
+
+        for status in ("dispatched", "running"):
+            for job in self.runtime.list_execution_jobs(status=status, limit=1000):
+                try:
+                    self.runtime.transition_execution_job(
+                        job.job_uuid,
+                        ExecutionJobTransition(
+                            expected_version=job.version,
+                            status="execution_unknown",
+                            error_code="host_restarted",
+                            error_summary="Host 进程重启时该动作正在执行，结果无法确认",
+                        ),
+                    )
+                except Exception:  # noqa: BLE001 - 单条失败不阻断启动
+                    logger.exception("[Coordinator] 无法把遗留 job %s 标为 execution_unknown", job.job_uuid)
         restore_error = getattr(self.executor, "restore_action_error_decision", None)
         if callable(restore_error):
             for job in self.runtime.list_execution_jobs(status="terminal_waiting", limit=1000):

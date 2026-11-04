@@ -1927,6 +1927,63 @@ class WorkflowStore:
             ).fetchall()
         return [self._task_row(row) for row in rows]
 
+    def mark_job_execution_unknown(self, job_uuid: str, reason: str) -> bool:
+        """运行中丢失执行端的 attempt 转 execution_unknown，任务进入 ``waiting_reconciliation``。
+
+        与 :meth:`prepare_task_execution` 对在飞 attempt 的处理一致；返回是否发生了转换
+        （attempt 已不在 dispatched / running / cancel_requested 时不改动）。
+        """
+
+        now = utc_now()
+        with self.transaction() as conn:
+            row = conn.execute(
+                """
+                SELECT job.workflow_node_run_uuid AS run_uuid, run.workflow_task_uuid AS task_uuid
+                FROM workflow_node_job AS job
+                JOIN workflow_node_run AS run ON run.uuid = job.workflow_node_run_uuid
+                WHERE job.uuid = ? AND job.deleted_at IS NULL
+                """,
+                (job_uuid,),
+            ).fetchone()
+            if row is None:
+                return False
+            updated = conn.execute(
+                """
+                UPDATE workflow_node_job
+                SET status = 'execution_unknown', uncertainty_reason = ?, update_time = ?
+                WHERE uuid = ? AND deleted_at IS NULL
+                  AND status IN ('dispatched', 'running', 'cancel_requested')
+                """,
+                (reason, now, job_uuid),
+            ).rowcount
+            if not updated:
+                return False
+            self._sync_run_projection(conn, row["run_uuid"], now)
+            conn.execute(
+                """
+                UPDATE workflow_task
+                SET reconciliation_resume_control_status = COALESCE(
+                        reconciliation_resume_control_status, control_status
+                    ),
+                    control_status = 'waiting_reconciliation',
+                    attention_reason = ?, update_time = ?
+                WHERE uuid = ? AND deleted_at IS NULL
+                """,
+                (reason, now, row["task_uuid"]),
+            )
+            task = conn.execute("SELECT status FROM workflow_task WHERE uuid = ?", (row["task_uuid"],)).fetchone()
+            self._append_event(
+                conn,
+                event="workflow.task.changed",
+                data={
+                    "workflow_task_uuid": row["task_uuid"],
+                    "status": task["status"] if task is not None else "running",
+                    "control_status": "waiting_reconciliation",
+                },
+                now=now,
+            )
+        return True
+
     def prepare_task_execution(self, task_uuid: str) -> Dict[str, Any]:
         """认领/恢复任务，并以节点运行终态作为持久 completed cursor。
 

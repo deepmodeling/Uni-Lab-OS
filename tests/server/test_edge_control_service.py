@@ -597,3 +597,59 @@ def test_server_receive_loop_answers_ping_while_business_handler_is_blocked() ->
                 await pump
 
     asyncio.run(scenario())
+
+
+def _wait_for(predicate, timeout: float = 2.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def _notice_for(service: EdgeControlService) -> BackendCommandNotice:
+    return BackendCommandNotice.model_validate(service.outgoing.get_nowait()["data"])
+
+
+def test_host_process_restart_reports_started_jobs_as_unknown() -> None:
+    from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+
+    service = _service()
+    calls: list[tuple] = []
+    service.add_job_finished_listener(lambda *args: calls.append(args))
+    service.attach_connection(edge_process="host-process-1")
+    service.dispatch(_dispatch_payload("job-started", "task-1"))
+    service.dispatch(_dispatch_payload("job-unfetched", "task-2"))
+    started_notice = _notice_for(service)
+    service.get_command_document(started_notice.command_uuid)  # 旧 Host 拉取了第一个 job 的命令
+    unfetched_notice = _notice_for(service)
+
+    service.attach_connection(edge_process="host-process-2")
+
+    assert _wait_for(lambda: calls)
+    ((job_uuid, success, ret_value, suc_type, info),) = calls
+    assert (job_uuid, success, ret_value, suc_type) == ("job-started", False, None, SUCCESS_TYPE_EXECUTION_UNKNOWN)
+    assert "Host" in info["uncertainty_reason"]
+    # 从未被拉取的命令没开始执行：仍在途，并补发给新 Host
+    assert service.active_job_ids() == ["job-unfetched"]
+    resent = _notice_for(service)
+    assert resent.command_uuid == unfetched_notice.command_uuid
+    assert service.get_command_document(started_notice.command_uuid) is None
+
+
+def test_reconnect_of_the_same_host_process_keeps_jobs_in_flight() -> None:
+    service = _service()
+    calls: list[tuple] = []
+    service.add_job_finished_listener(lambda *args: calls.append(args))
+    service.attach_connection(edge_process="host-process-1")
+    service.dispatch(_dispatch_payload())
+    service.get_command_document(_notice_for(service).command_uuid)
+
+    service.attach_connection(edge_process="host-process-1")  # 网络断线重连
+    service.attach_connection()  # 没带身份的连接（旧客户端）也不触发
+
+    assert not _wait_for(lambda: calls, timeout=0.2)
+    assert service.active_job_ids() == ["job-1"]

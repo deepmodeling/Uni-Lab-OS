@@ -14,6 +14,8 @@ SUCCESS_TYPE_NORMAL = "normal"
 SUCCESS_TYPE_SKIP = "skip"
 SUCCESS_TYPE_OPERATOR_INTERVENTION = "operator_intervention"
 SUCCESS_TYPE_CANCELLATION = "cancellation"
+#: 执行端在动作进行中重启、结果无法确认（不是驱动返回的 suc_type，只在调度内部传递）。
+SUCCESS_TYPE_EXECUTION_UNKNOWN = "execution_unknown"
 SuccessType = Literal["normal", "skip", "operator_intervention", "cancellation"]
 
 class FallbackAction(TypedDict):

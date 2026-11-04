@@ -352,3 +352,41 @@ def test_operator_result_replacement_preserves_raw_failure_chain(tmp_path) -> No
     chain = history.replacement_chain(raw.event_uuid)
     assert len(chain) == 2
     assert chain[1].actor_uuid == "operator-1"
+
+
+def test_restore_marks_jobs_left_running_by_a_previous_host_as_unknown(tmp_path) -> None:
+    coordinator, runtime, _history, _executor, data_plane = _coordinator(tmp_path)
+    notice, document = _document(
+        "execute-1", 1, "execute_job", "payload-execute-1", _execute_payload(), job_uuid="job-1"
+    )
+    data_plane.documents["execute-1"] = document
+    coordinator.handle_backend_notice(notice)
+    item = _item()
+    coordinator.publish_job_started(item)
+    coordinator.publish_job_status({"progress": 0.5}, item, "running")
+    assert runtime.get_execution_job("job-1").status == "running"
+
+    # 新的 Host 进程用同一个库启动：遗留的 running job 不重放，标为结果未知
+    restarted, *_rest = _coordinator_on(tmp_path, runtime)
+    restarted.restore()
+
+    job = runtime.get_execution_job("job-1")
+    assert job.status == "execution_unknown"
+
+
+def _coordinator_on(tmp_path, runtime):
+    history = HistoryService(tmp_path / "history-2.db")
+    executor = _Executor()
+    data_plane = _DataPlane()
+    coordinator = WorkflowBusinessCoordinator(
+        runtime,
+        history,
+        executor,
+        endpoint_uuid="hostlink:edge-1",
+        transport="hostlink",
+        host_uuid="edge-1",
+        instance_name="host",
+        data_plane=data_plane,
+    )
+    executor.coordinator = coordinator
+    return coordinator, history, executor, data_plane

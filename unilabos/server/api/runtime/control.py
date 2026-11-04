@@ -159,7 +159,8 @@ async def edge_schedule_socket(websocket: WebSocket) -> None:
         await websocket.close(code=1013, reason="edge control service not ready")
         return
     await websocket.accept()
-    epoch, session_message = service.attach_connection()
+    # EdgeSession 由 Host 控制客户端在进程启动时生成、断线重连不变：用它识别 Host 是否重启过。
+    epoch, session_message = service.attach_connection(edge_process=websocket.headers.get("EdgeSession", ""))
     try:
         await websocket.send_text(json.dumps(session_message, ensure_ascii=False))
         send_lock = asyncio.Lock()

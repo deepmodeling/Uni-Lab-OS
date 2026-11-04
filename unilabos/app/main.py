@@ -297,6 +297,22 @@ def _print_graph_registration(stored: Dict[str, Any]) -> None:
     )
 
 
+def _first_run_confirmed(check_mode: bool) -> bool:
+    """首次启动是否以当前路径作为工作目录（提示为 Y/n，默认「是」）。
+
+    非交互启动（CI、nohup、服务管理器）没有标准输入，``input()`` 会抛 EOFError；
+    此时按默认值处理，而不是让进程崩溃。只有明确输入 n / N 才放弃。
+    """
+
+    if check_mode:
+        return True
+    try:
+        answer = input()
+    except EOFError:
+        return True
+    return answer.strip().lower() != "n"
+
+
 def _runs_local_authority(args_dict: Dict[str, Any]) -> bool:
     """本进程是否应作为「调度权威 + Host 子进程」的权威一侧运行（默认拓扑）。
 
@@ -430,7 +446,7 @@ def main():
         else:
             print_status("未指定config路径，可通过 --config 传入 local_config.py 文件路径", "info")
             print_status(f"您是否为第一次使用？并将当前路径 {working_dir} 作为工作目录？ (Y/n)", "info")
-            if check_mode or input() != "n":
+            if _first_run_confirmed(check_mode):
                 os.makedirs(working_dir, exist_ok=True)
                 config_path = os.path.join(working_dir, "local_config.py")
                 shutil.copy(

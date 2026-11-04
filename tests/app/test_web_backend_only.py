@@ -14,7 +14,7 @@ def test_web_root_is_a_backend_frontend_catalog() -> None:
         assert response.status_code == 200
         assert "Uni-Lab-OS Microbackend" in response.text
         # 内置兜底卡片始终服务端渲染，索引不可达时页面仍有可点的前端入口。
-        assert "https://xuwznln.github.io/OpenLab-site/" in response.text
+        assert "https://xuwznln.github.io/OpenLabSite/" in response.text
         assert "/api/docs" in response.text
         assert "https://deepmodeling.github.io/Uni-Lab-OS/" in response.text
 
@@ -40,7 +40,7 @@ def test_web_root_signposts_backend_when_edge_is_backend_controlled(monkeypatch)
         assert "Uni-Lab-OS Edge 进程" in response.text
         assert "http://127.0.0.1:8081/" in response.text
         # Edge 侧不再宣传社区前端（内置卡片与站点索引都不出现），前端应连接调度权威地址。
-        assert "https://xuwznln.github.io/OpenLab-site/" not in response.text
+        assert "https://xuwznln.github.io/OpenLabSite/" not in response.text
         assert SITE_INDEX_URL not in response.text
         assert 'id="frontends"' not in response.text
         # 设备侧调试入口仍保留。

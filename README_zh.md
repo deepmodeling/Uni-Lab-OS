@@ -150,7 +150,7 @@ legacy 探测分叉。
 ### 5. 使用自定义界面
 
 Uni-Lab 只提供 backend API，Edge 进程不托管 SPA。请单独构建或部署自己的
-前端（OpenLab 是一个示例），并把 API 根地址配置为管理端点：
+前端（[OpenLab](https://xuwznln.github.io/OpenLabSite/) 是一个示例），并把 API 根地址配置为管理端点：
 
 | 部署方式 | 前端 API 根地址 |
 |----------|----------------|

@@ -495,11 +495,13 @@ def test_hostlink_runtime_applies_action_goal_mapping_and_feedback_config() -> N
         context = ActionContext(
             feedback_callback=lambda _action_id, data: feedback.append(data)
         )
+        # 反馈按 0.01s 间隔发布；Windows 计时精度约 15.6ms，50ms 的动作在繁忙 CI 上
+        # 可能一次反馈都来不及发出。给足时长，只验证映射与发布，不卡调度时序。
         assert runtime.call_action(
             "decorated",
             "feedback_action",
             action_context=context,
-            duration=0.05,
+            duration=0.5,
         ) > 0
         assert feedback
         assert feedback[-1]["progress"] > 0

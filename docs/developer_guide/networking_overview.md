@@ -667,7 +667,7 @@ ros2 topic bw /device_status
 
 ```bash
 # 查看日志
-tail -f unilabos_data/logs/unilab.log | grep sync
+tail -f ~/.unilabos/logs/unilab.log | grep sync  # 默认工作目录；自定义时换成 <工作目录>/logs
 ```
 
 **解决**:

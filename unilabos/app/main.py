@@ -402,26 +402,10 @@ def main():
     # 加载配置文件，优先加载config，然后从env读取
     config_path = args_dict.get("config")
 
-    # === 解析 working_dir ===
-    # 规则1: working_dir 传入 → 检测 unilabos_data 子目录，已是则不修改
-    # 规则2: 仅 config_path 传入 → 用其父目录作为 working_dir
-    # 规则4: 两者都传入 → 各用各的，但 working_dir 仍做 unilabos_data 子目录检测
-    raw_working_dir = args_dict.get("working_dir")
-    if raw_working_dir:
-        working_dir = os.path.abspath(raw_working_dir)
-    elif config_path and os.path.exists(config_path):
-        working_dir = os.path.dirname(os.path.abspath(config_path))
-    else:
-        working_dir = os.path.abspath(os.getcwd())
+    # === 解析 working_dir ===（规则见 unilabos/config/working_dir.py；默认 ~/.unilabos）
+    from unilabos.config.working_dir import resolve_working_dir
 
-    # unilabos_data 子目录自动检测
-    if os.path.basename(working_dir) != "unilabos_data":
-        unilabos_data_sub = os.path.join(working_dir, "unilabos_data")
-        if os.path.isdir(unilabos_data_sub):
-            working_dir = unilabos_data_sub
-        elif not raw_working_dir and not (config_path and os.path.exists(config_path)):
-            # 未显式指定路径，默认使用 cwd/unilabos_data
-            working_dir = os.path.abspath(os.path.join(os.getcwd(), "unilabos_data"))
+    working_dir = resolve_working_dir(args_dict.get("working_dir"), config_path)
 
     # === 解析 config_path ===
     if config_path and not os.path.exists(config_path):

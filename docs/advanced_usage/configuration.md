@@ -4,7 +4,7 @@
 
 ## 配置文件概述
 
-Uni-Lab 使用 Python 格式的配置文件（`.py`），默认为 `unilabos_data/local_config.py`。配置文件采用类属性的方式定义各种配置项，比 YAML 或 JSON 提供更多的灵活性，包括支持注释、条件逻辑和复杂数据结构。
+Uni-Lab 使用 Python 格式的配置文件（`.py`），默认为工作目录下的 `local_config.py`（工作目录默认 `~/.unilabos`，见 [工作目录详解](working_directory.md)）。配置文件采用类属性的方式定义各种配置项，比 YAML 或 JSON 提供更多的灵活性，包括支持注释、条件逻辑和复杂数据结构。
 
 ## 获取实验室密钥
 
@@ -278,12 +278,12 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 
 1. 命令行 `--server_database_root <目录>`（也可写 `--server-database-root`）；
 2. 配置文件 `BasicConfig.server_database_root`，或环境变量 `UNILABOS_BASICCONFIG_SERVER_DATABASE_ROOT`；
-3. 默认放在工作目录（`local_config.py` 所在目录，通常是运行位置下的 `unilabos_data/`）的 `database/` 子目录。
+3. 默认放在工作目录（`local_config.py` 所在目录，默认 `~/.unilabos`）的 `database/` 子目录，即 `~/.unilabos/database`。
 
-因此每个工作目录各自一套数据库，在哪里运行就存在哪里。默认双进程拓扑下，调度权威使用根目录本身，
+每个工作目录各自一套数据库；需要多套实验室并存时用 `--working_dir` 区分。默认双进程拓扑下，调度权威使用根目录本身，
 Host 子进程使用 `<根目录>/edge`；`--role backend` 使用 `<根目录>/backend`。
 
-旧版本（0.12.x）默认放在 `~/.unilabos`。升级后，如果工作目录下还没有数据库而 `~/.unilabos` 里有，
+旧版本（0.12.x）默认直接放在 `~/.unilabos` 根下。升级后，如果工作目录下还没有数据库而 `~/.unilabos` 根下有，
 会继续使用旧位置并在启动时提示。迁移方法：停止 unilab，把 `runtime.db`、`materials.db`、`telemetry.db`、
 `history.db`（连同 `-wal` / `-shm` 文件）以及 `edge/`、`backend/` 目录移到 `<工作目录>/database/`；
 或者在 `local_config.py` 里把 `server_database_root` 设为固定目录。
@@ -465,7 +465,7 @@ export UNILABOS_HTTPCONFIG_REMOTE_ADDR="https://leap-lab.test.bohrium.com/api/v1
 系统会自动查找并加载配置文件：
 
 ```bash
-# 直接启动，使用默认的 unilabos_data/local_config.py
+# 直接启动，使用默认工作目录 ~/.unilabos 下的 local_config.py
 unilab --ak your_ak --sk your_sk -g graph.json
 ```
 

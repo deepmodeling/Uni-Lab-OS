@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from typing import Any
 
@@ -363,11 +362,9 @@ def _prepare_command_session(
     from unilabos.client import SessionManager, resolve_address
 
     values = vars(args)
-    working_dir = os.path.abspath(values.get("working_dir") or os.getcwd())
-    if os.path.basename(working_dir) != "unilabos_data":
-        data_dir = os.path.join(working_dir, "unilabos_data")
-        if os.path.isdir(data_dir):
-            working_dir = data_dir
+    from unilabos.config.working_dir import resolve_working_dir
+
+    working_dir = resolve_working_dir(values.get("working_dir"))
 
     address = values.get("address")
     args.address_resolved = resolve_address(address) if address else None

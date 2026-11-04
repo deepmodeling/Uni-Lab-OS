@@ -24,6 +24,7 @@ ARCHIVE_EXCLUDE_DIRS = {
     "build",
     ".pytest_cache",
     "unilabos_data",
+    ".unilabos",
     ".venv",
     "venv",
     "node_modules",

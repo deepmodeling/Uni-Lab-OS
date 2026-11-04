@@ -159,7 +159,7 @@ def _register_database_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Directory containing runtime/materials/telemetry/history "
-            "SQLite files (default: BasicConfig.server_database_root, ~/.unilabos)."
+            "SQLite files (default: BasicConfig.server_database_root, else <working_dir>/database)."
         ),
     )
     for database in ("runtime", "materials", "telemetry", "history"):

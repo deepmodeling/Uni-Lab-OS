@@ -122,7 +122,7 @@ conda activate unilab
 unilab --ak your_ak --sk your_sk
 ```
 
-系统会询问是否创建配置文件，输入 `Y` 确认。配置文件会自动生成在 `./unilabos_data/local_config.py`。
+系统会询问是否创建配置文件，输入 `Y` 确认。配置文件会自动生成在默认工作目录下的 `~/.unilabos/local_config.py`。
 
 更多配置选项请参考 [配置指南](../advanced_usage/configuration.md)。
 
@@ -534,7 +534,7 @@ volume: 50（根据需求填写，默认单位 ml，这里举例 50）
 
 - 运行状态和消息实时显示在底部控制台
 - 如有报错，可点击查看详细信息
-- 查看日志文件：`unilabos_data/logs/unilab.log`
+- 查看日志文件：`<工作目录>/logs/unilab.log`（默认 `~/.unilabos/logs/unilab.log`）
 
 #### 7.9 结果验证
 

@@ -56,9 +56,9 @@ Uni-Lab 的启动过程分为以下几个阶段：
 您可以直接跟随 unilabos 的提示进行，无需查阅本节
 
 - **工作目录设置**：
-  - 如果当前目录以 `unilabos_data` 结尾，则使用当前目录
-  - 否则使用 `当前目录/unilabos_data` 作为工作目录
-  - 可通过 `--working_dir` 指定自定义工作目录
+  - 默认工作目录为 `~/.unilabos`
+  - 当前目录本身名为 `.unilabos` / `unilabos_data`，或其下有这样的子目录时，直接使用它
+  - 可通过 `--working_dir` 指定自定义工作目录（详见 [工作目录详解](../advanced_usage/working_directory.md)）
 
 - **配置文件查找顺序**：
   1. 使用 `--config` 参数指定的配置文件

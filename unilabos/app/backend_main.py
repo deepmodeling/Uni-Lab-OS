@@ -78,7 +78,7 @@ def run_backend_process(
     from unilabos.server.startup import configured_database_root, resolve_database_paths
 
     base_root = os.path.expanduser(
-        configured_database_root(args_dict)
+        configured_database_root(args_dict, working_dir=working_dir)
     )
     if launch_host:
         # 默认拓扑：权威沿用原来的库位置（老数据不搬家），Host 子进程用 <root>/edge。

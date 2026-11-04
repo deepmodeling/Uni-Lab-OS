@@ -1216,9 +1216,9 @@ MATERIALS_DATABASE = DatabaseSpec(
     # v3：material.resource_id 的唯一约束改为只对未删除行生效（部分唯一索引）：
     # 删除是软删除，被删物料的 resource_id 不该永久占坑，否则同名重建一律 409。
     contract_version=3,
-    # 物料是实验室的物理事实：此后的结构或契约变化必须 schema_version +1 并给出迁移，
-    # 没有迁移路径时拒绝启动，不再整库重建。
-    on_unmigratable="refuse",
+    # 物料是实验室的物理事实：结构或契约变化必须 schema_version +1 并给出迁移。
+    # 开发期没有迁移路径时备份后重建；正式发布前改为 "refuse"（拒绝启动、保留旧库）。
+    on_unmigratable="rebuild",
 )
 
 __all__ = [

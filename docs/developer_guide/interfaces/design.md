@@ -101,8 +101,10 @@ HTTP 503 也不能证明数据库没有写入。处理方应核对账本、权�
 
 每个库声明 `schema_version` 和一串线性迁移，库内版本记在 `PRAGMA user_version`。库内版本较低且迁移连续时，
 启动会先备份为 `<file>.pre-v<N>-<时间戳>.bak`，再在一个事务里执行迁移，并与当前声明逐表核对结构，不符就整体回滚。
-没有迁移路径时：`runtime.db` 与 `materials.db` 拒绝启动并保留旧库原样；`telemetry.db` 与 `history.db`
-改名保留为 `.bak-时间戳` 后重建空库。`BasicConfig.database_rebuild_on_mismatch = True` 可在开发期显式允许前两者重建。
+改表必须提升 `schema_version` 并补迁移（`tests/server/test_database_schema_versions.py` 固定各库指纹）。
+没有迁移路径时，开发期四个库都改名保留为 `.bak-时间戳` 后重建空库；正式发布前 `runtime.db` 与 `materials.db`
+改为拒绝启动并保留旧库原样（`on_unmigratable="refuse"`），届时 `BasicConfig.database_rebuild_on_mismatch = True`
+可显式允许重建。
 升级前仍建议备份，不应带着正在执行的实验直接试升级。
 实现依据：[数据库初始化策略](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/database/schema.py)。
 

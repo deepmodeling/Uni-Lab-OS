@@ -32,6 +32,8 @@ def test_schema_changes_come_with_a_version_bump(key: str) -> None:
     assert (spec.schema_version, spec.checksum) == PINNED[key], f"{key} 已升级：请同步更新 PINNED"
 
 
-@pytest.mark.parametrize("key", ["runtime", "materials"])
-def test_authoritative_databases_refuse_without_migration(key: str) -> None:
-    assert DATABASE_SPECS[key].on_unmigratable == "refuse"
+def test_development_policy_rebuilds_without_migration() -> None:
+    """开发期数据可丢：四个库都备份后重建。正式发布前把 runtime / materials 改为 refuse 并更新这里。"""
+    assert {key: spec.on_unmigratable for key, spec in DATABASE_SPECS.items()} == {
+        "runtime": "rebuild", "materials": "rebuild", "telemetry": "rebuild", "history": "rebuild",
+    }

@@ -52,38 +52,16 @@ def _table_set(path) -> set[str]:
         connection.close()
 
 
-@pytest.mark.parametrize("key", ["runtime", "materials"])
-def test_schema_drift_refuses_authoritative_databases(tmp_path, key) -> None:
-    """runtime / materials 指纹漂移且没有迁移路径：拒绝启动，旧库原样保留。"""
-    path = tmp_path / DATABASE_SPECS[key].filename
-    _tamper(path, key)
+def _refusing(key: str):
+    """发布时 runtime / materials 将使用的拒绝策略；开发期默认是 rebuild。"""
+    from dataclasses import replace
 
-    with pytest.raises(DatabaseMigrationRequired, match="拒绝启动"):
-        initialize_database(path, DATABASE_SPECS[key])
-
-    assert "drift_marker" in _table_set(path)
-    assert not list(tmp_path.glob(f"{DATABASE_SPECS[key].filename}.bak-*"))
+    return replace(DATABASE_SPECS[key], on_unmigratable="refuse")
 
 
-def test_schema_drift_rebuild_can_be_allowed_explicitly(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(BasicConfig, "database_rebuild_on_mismatch", True)
-    path = tmp_path / "runtime.db"
-    _tamper(path, "runtime")
-
-    connection = initialize_database(path, DATABASE_SPECS["runtime"])
-    try:
-        row = connection.execute("SELECT database_key, checksum FROM schema_identity").fetchone()
-        assert tuple(row) == ("runtime", DATABASE_SPECS["runtime"].checksum)
-    finally:
-        connection.close()
-    assert "drift_marker" not in _table_set(path)
-    backups = [item for item in tmp_path.glob("runtime.db.bak-*") if not item.name.endswith(("-wal", "-shm"))]
-    assert len(backups) == 1 and "drift_marker" in _table_set(backups[0])
-
-
-@pytest.mark.parametrize("key", ["telemetry", "history"])
-def test_schema_drift_rebuilds_derived_databases(tmp_path, key) -> None:
-    """checksum 不一致时把旧库改名保留（.bak-时间戳）并按当前声明重建。"""
+@pytest.mark.parametrize("key", ["runtime", "materials", "telemetry", "history"])
+def test_schema_drift_rebuilds_during_development(tmp_path, key) -> None:
+    """开发期：指纹漂移且没有迁移路径时把旧库改名保留（.bak-时间戳）并按当前声明重建。"""
     path = tmp_path / DATABASE_SPECS[key].filename
     _tamper(path, key)
 
@@ -99,11 +77,40 @@ def test_schema_drift_rebuilds_derived_databases(tmp_path, key) -> None:
     assert len(backups) == 1 and "drift_marker" in _table_set(backups[0])
 
 
-def test_contract_version_bump_without_migration_is_refused(tmp_path) -> None:
-    """DDL 不变、行内容契约变化（contract_version +1）同样改变指纹：没有迁移就拒绝启动。"""
+@pytest.mark.parametrize("key", ["runtime", "materials"])
+def test_refuse_policy_keeps_the_old_database(tmp_path, key) -> None:
+    """发布后的拒绝策略：指纹漂移且没有迁移路径时拒绝启动，旧库原样保留。"""
+    path = tmp_path / DATABASE_SPECS[key].filename
+    _tamper(path, key)
+
+    with pytest.raises(DatabaseMigrationRequired, match="拒绝启动"):
+        initialize_database(path, _refusing(key))
+
+    assert "drift_marker" in _table_set(path)
+    assert not list(tmp_path.glob(f"{DATABASE_SPECS[key].filename}.bak-*"))
+
+
+def test_refuse_policy_rebuild_can_be_allowed_explicitly(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(BasicConfig, "database_rebuild_on_mismatch", True)
+    path = tmp_path / "runtime.db"
+    _tamper(path, "runtime")
+
+    connection = initialize_database(path, _refusing("runtime"))
+    try:
+        row = connection.execute("SELECT database_key, checksum FROM schema_identity").fetchone()
+        assert tuple(row) == ("runtime", DATABASE_SPECS["runtime"].checksum)
+    finally:
+        connection.close()
+    assert "drift_marker" not in _table_set(path)
+    backups = [item for item in tmp_path.glob("runtime.db.bak-*") if not item.name.endswith(("-wal", "-shm"))]
+    assert len(backups) == 1 and "drift_marker" in _table_set(backups[0])
+
+
+def test_contract_version_bump_without_migration_is_refused_under_refuse_policy(tmp_path) -> None:
+    """DDL 不变、行内容契约变化（contract_version +1）同样改变指纹：拒绝策略下没有迁移就拒绝启动。"""
     from dataclasses import replace
 
-    spec = DATABASE_SPECS["materials"]
+    spec = _refusing("materials")
     previous = replace(spec, contract_version=spec.contract_version - 1)
     assert previous.checksum != spec.checksum
     path = tmp_path / spec.filename
@@ -174,7 +181,7 @@ def test_unidentified_database_is_rebuilt_for_derived_databases(tmp_path) -> Non
         connection.close()
 
 
-def test_unidentified_file_is_not_wiped_as_runtime(tmp_path) -> None:
+def test_refuse_policy_does_not_wipe_unidentified_files(tmp_path) -> None:
     path = tmp_path / "unidentified.db"
     connection = sqlite3.connect(path)
     connection.execute("CREATE TABLE foreign_fact(uuid TEXT PRIMARY KEY)")
@@ -182,7 +189,7 @@ def test_unidentified_file_is_not_wiped_as_runtime(tmp_path) -> None:
     connection.close()
 
     with pytest.raises(DatabaseMigrationRequired, match="schema_identity"):
-        initialize_database(path, DATABASE_SPECS["runtime"])
+        initialize_database(path, _refusing("runtime"))
     assert "foreign_fact" in _table_set(path)
 
 

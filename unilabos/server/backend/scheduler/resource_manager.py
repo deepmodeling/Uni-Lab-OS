@@ -322,6 +322,42 @@ class SchedulerResourceManager:
             self._promote()
             return self._request_record(state)
 
+    def withdraw(self, owner_uuid: str, *, reason: str = "") -> bool:
+        """撤回一条尚未下发的申请：放掉已获得的资源并忘掉这条申请。
+
+        任务暂停时让排队中的 attempt 退出队列（未准入的候选失效），同一 owner 之后可以
+        重新 :meth:`acquire`，排到队尾。牵涉 pending handoff 的申请不撤回，返回 False，
+        按原路径结算。
+        """
+
+        with self._lock:
+            state = self._requests.get(owner_uuid)
+            if state is None:
+                return True
+            for handoff in self._handoffs.values():
+                if handoff.status == "pending" and owner_uuid in {
+                    handoff.value.from_owner_uuid,
+                    handoff.value.to_owner_uuid,
+                }:
+                    return False
+            released = tuple(
+                ownership.identifier
+                for key, ownership in sorted(self._ownerships.items())
+                if ownership.owner_uuid == owner_uuid
+            )
+            for key in self._keys_owned_by(owner_uuid):
+                del self._ownerships[key]
+            self._emit(
+                "lock.owner_canceled",
+                owner_uuid=owner_uuid,
+                identifiers=released,
+                reason=reason,
+            )
+            del self._requests[owner_uuid]
+            self._request_owners.pop(state.value.request_uuid, None)
+            self._promote()
+            return True
+
     def request_for_owner(self, owner_uuid: str) -> SchedulerResourceRequestRecord:
         with self._lock:
             return self._request_record(self._get_request_state(owner_uuid))

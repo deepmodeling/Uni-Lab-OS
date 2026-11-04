@@ -311,6 +311,11 @@ class BackendScheduler:
             if not active:
                 self.submit(task_uuid)
                 return
+            # pause：排队等锁、尚未下发的节点退出队列，等单步 / 恢复后重新申请。
+            try:
+                self._gate_waiting_resource_jobs(task_uuid)
+            except Exception:
+                logger.exception("任务 %s 暂停时撤回排队节点失败", task_uuid)
             for task, node in waiting:
                 try:
                     self._start_node(task, node)
@@ -674,12 +679,13 @@ class BackendScheduler:
         if recovered_status is not None:
             self._open_reconciliation_decision(task, node, spec, recovered_status)
             return
-        if task.get("run_mode") == "step":
-            with self._guard:
-                if not self.workflow.claim_task_step(str(task["uuid"]), spec["current_job_uuid"]):
-                    self._waiting_step_nodes[node.node_id] = (task, node)
-                    return
-                self._waiting_step_nodes.pop(node.node_id, None)
+        # 运行模式以权威为准：起跑时是自动、之后被暂停的任务，捕获的 task 快照已过期。
+        # 判定与登记在同一把锁里，避免与 step / resume 唤醒交错而漏掉这个节点。
+        with self._guard:
+            if self._dispatch_gate_closed(task, spec["current_job_uuid"]):
+                self._waiting_step_nodes[node.node_id] = (task, node)
+                return
+            self._waiting_step_nodes.pop(node.node_id, None)
         args = self._resolve_action_args(node.node_id)
         # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
         # （物料 uuid / lot 与数量）按需求 key 注入同名动作参数，设备拿到的已是具体引用。
@@ -732,9 +738,50 @@ class BackendScheduler:
 
         self._reconcile_resources()
 
+    def _dispatch_gate_closed(self, task: Dict[str, Any], job_uuid: str) -> bool:
+        """任务被暂停 / 单步且这个 attempt 没有许可时返回 True（自动模式恒为 False）。"""
+
+        claim = getattr(self.workflow, "claim_task_step", None)
+        if not callable(claim):
+            return task.get("run_mode") == "step"
+        return not claim(str(task["uuid"]), job_uuid)
+
+    def _park_if_gated(self, task: Dict[str, Any], node: DagNode, job_uuid: str) -> bool:
+        """暂停的任务：排队中的 attempt 退出资源队列，回到等待单步的集合。
+
+        返回 True 表示已停下（不派发）。判定、撤回与登记在同一把锁里，与 step / resume
+        唤醒互斥，不会出现刚登记就错过唤醒的节点。
+        """
+
+        with self._guard:
+            if job_uuid in self._dispatched_jobs:
+                return False
+            if not self._dispatch_gate_closed(task, job_uuid):
+                return False
+            if not self.resources.withdraw(job_uuid, reason="task_paused"):
+                return False
+            self._waiting_resource_jobs.pop(job_uuid, None)
+            self._waiting_step_nodes[node.node_id] = (task, node)
+            return True
+
+    def _gate_waiting_resource_jobs(self, task_uuid: str) -> None:
+        with self._guard:
+            queued = [
+                (job_uuid, task, node)
+                for job_uuid, (task, node) in self._waiting_resource_jobs.items()
+                if str(task["uuid"]) == task_uuid
+            ]
+        for job_uuid, task, node in queued:
+            self._park_if_gated(task, node, job_uuid)
+
     def _dispatch_held_node(self, task: Dict[str, Any], node: DagNode) -> None:
         """下发一个已经持有完整动作/物料集合的节点运行（当前 attempt）。"""
 
+        with self._guard:
+            job_uuid = self._run_specs[node.node_id]["current_job_uuid"]
+        # 排队期间任务可能被暂停：拿到锁也不派发，撤回申请让给别的任务。
+        if self._park_if_gated(task, node, job_uuid):
+            return
         with self._guard:
             spec = self._run_specs[node.node_id]
             job_uuid = spec["current_job_uuid"]

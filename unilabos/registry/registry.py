@@ -25,7 +25,10 @@ from unilabos.registry.action_timeout import (
     normalize_action_timeout,
     normalize_execution_timeout,
 )
-from unilabos.registry.material_locks import normalize_material_parameter_names
+from unilabos.registry.material_locks import (
+    effective_material_lock_parameters,
+    normalize_material_parameter_names,
+)
 from unilabos.registry.decorators import (
     get_device_meta,
     get_action_meta,
@@ -1067,9 +1070,12 @@ class Registry:
             _fb_iv = (action_args or {}).get("feedback_interval", method_info.get("feedback_interval", 1.0))
             entry["feedback_interval"] = _fb_iv
             entry["error_policy"] = (action_args or {}).get("error_policy") or {}
-            entry["materials_need_lock"] = normalize_material_parameter_names(
+            # 未带 @action 的 auto- 动作同样默认独占物料入参
+            entry["materials_need_lock"] = effective_material_lock_parameters(
                 (action_args or {}).get("materials_need_lock"),
-                action_parameter_names=(param["name"] for param in params),
+                params=params,
+                free=(action_args or {}).get("materials_free"),
+                placeholder_keys=(action_args or {}).get("placeholder_keys"),
                 action_name=action_name,
             )
             _apply_action_timeouts(
@@ -1222,11 +1228,11 @@ class Registry:
             _fb_iv = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
             action_entry["feedback_interval"] = _fb_iv
             action_entry["error_policy"] = action_args.get("error_policy") or {}
-            action_entry["materials_need_lock"] = normalize_material_parameter_names(
+            action_entry["materials_need_lock"] = effective_material_lock_parameters(
                 action_args.get("materials_need_lock"),
-                action_parameter_names=(
-                    param["name"] for param in method_params
-                ),
+                params=method_params,
+                free=action_args.get("materials_free"),
+                placeholder_keys=action_args.get("placeholder_keys"),
                 action_name=action_name,
             )
             _apply_action_timeouts(
@@ -1445,7 +1451,7 @@ class Registry:
             return Path(BasicConfig.working_dir) / "registry_cache.pkl"
         return None
 
-    _CACHE_VERSION = 7
+    _CACHE_VERSION = 8  # 8：物料入参默认加锁
     # 同一进程内的缓存文件快照：(mtime_ns, size, data)。AST / YAML / config_info 几个阶段各自
     # 加载一次同一个十几 MB 的 pickle 要几百毫秒；文件没变就复用已加载的对象。
     _config_cache_memo: Optional[Tuple[int, int, dict]] = None
@@ -2288,11 +2294,12 @@ class Registry:
                             "handles": old_cfg.get("handles", []),
                             "placeholder_keys": merged_pk,
                             "error_policy": old_cfg.get("error_policy") or {},
-                            "materials_need_lock": normalize_material_parameter_names(
+                            # 手写 YAML 未写 materials_need_lock 时同样默认独占物料入参
+                            "materials_need_lock": effective_material_lock_parameters(
                                 old_cfg.get("materials_need_lock"),
-                                action_parameter_names=(
-                                    param["name"] for param in v["args"]
-                                ),
+                                params=v["args"],
+                                free=old_cfg.get("materials_free"),
+                                placeholder_keys=old_cfg.get("placeholder_keys"),
                                 action_name=action_key,
                             ),
                         }

@@ -222,6 +222,9 @@ class HostServices:
         display_name="物料出库并挂载",
         description="申请扣减物料并挂载（接收服务端已扣减的单个根物料，挂载到目标设备的目标物料上）",
         always_free=True,
+        # 挂载目标允许只给名字（{"name": ...}），执行时才回权威解析，派发前没有可锁的身份；
+        # 挂载本身由目标设备 RESOURCE_APPEND 串行。出库物料 resource 照常默认加锁。
+        materials_free=["mount_resource"],
         placeholder_keys={
             "resource": PLACEHOLDER_DEDUCT_RESOURCE,
             "device_id": PLACEHOLDER_DEVICES,
@@ -516,6 +519,8 @@ class HostServices:
         display_name="测试物料传递",
         description="诊断动作：回显传入的物料 / 设备 / 样品，用于验证 ResourceSlot、DeviceSlot 与 handle 链路",
         always_free=True,
+        # 只回显、不改变物料：不占用物料锁
+        materials_free=["resource", "resources"],
         handles=[
             ActionInputHandle(
                 key="input_resources",

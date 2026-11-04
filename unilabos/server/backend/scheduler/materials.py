@@ -63,23 +63,38 @@ def extract_material_uuids(value: Any) -> set[str]:
     return set()
 
 
+def _is_absent_material(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (Mapping, list, tuple, set, frozenset)):
+        return len(value) == 0
+    return False
+
+
 def material_uuids_for_parameters(
     parameter_names: Any,
     action_args: Mapping[str, Any],
 ) -> tuple[str, ...]:
-    """解析动作声明引用的全部物料，缺失或非权威身份时拒绝。"""
+    """解析动作要独占的全部物料。
+
+    可选物料入参未传或为空（None / "" / [] / {}）表示没有物料，不加锁；给了值却
+    解析不出物料权威分配的 UUID 时拒绝，不能无锁派发。
+    """
 
     names = normalize_material_parameter_names(parameter_names)
     material_uuids: set[str] = set()
     for name in names:
-        if name not in action_args:
-            raise ValueError(
-                f"materials_need_lock 参数 {name!r} 未出现在 action_args 中"
-            )
-        resolved = extract_material_uuids(action_args[name])
+        value = action_args.get(name)
+        if _is_absent_material(value):
+            continue
+        resolved = extract_material_uuids(value)
         if not resolved:
             raise ValueError(
-                f"materials_need_lock 参数 {name!r} 无法解析权威物料 UUID"
+                f"materials_need_lock 参数 {name!r} 无法解析权威物料 UUID："
+                "物料入参默认加锁，请传带 uuid 的物料引用；确实不需要独占时在 "
+                "@action 里用 materials_free 排除该参数"
             )
         material_uuids.update(resolved)
     return tuple(sorted(material_uuids))

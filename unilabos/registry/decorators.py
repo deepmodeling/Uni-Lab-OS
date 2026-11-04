@@ -394,6 +394,7 @@ def action(
     feedback_interval: Optional[float] = None,
     error_policy: Optional[Dict[str, Any]] = None,
     materials_need_lock: Optional[List[str]] = None,
+    materials_free: Optional[List[str]] = None,
     timeout: Optional[float] = None,
     execution_timeout: Optional[Union[float, str]] = None,
 ):
@@ -431,8 +432,13 @@ def action(
                    不填写时不写入注册表。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
-        materials_need_lock: 本动作执行期间需要独占的物料参数名列表。参数值
-                             必须能解析出由物料权威分配的 UUID。
+        materials_need_lock: 本动作执行期间需要独占的物料参数名列表（最终集合）。
+                             不写时默认独占全部物料入参（ResourceSlot / List[ResourceSlot]，
+                             或 placeholder_keys 标为 unilabos_resources 的入参）；
+                             显式写 [] 表示不锁任何物料。参数值为空（None / 未传）时
+                             不加锁，非空时必须能解析出由物料权威分配的 UUID。
+        materials_free: 默认加锁时要排除的物料参数名（只读、不改变物料的入参）。
+                        不能与 materials_need_lock 同时声明。
         timeout: 硬超时（秒，正数）。到期后执行面协作式取消动作，并以
                  TimeoutException 进入错误决策链；None 表示不限时。
         execution_timeout: 业务软超时。秒数，或引用动作入参的四则运算表达式
@@ -484,13 +490,15 @@ def action(
             normalized_error_policy = normalize_error_policy(error_policy) or {}
         meta["error_policy"] = normalized_error_policy
         from unilabos.registry.material_locks import (
-            normalize_material_parameter_names,
+            effective_material_lock_parameters,
         )
 
         signature_parameters = _inspect.signature(func).parameters
-        meta["materials_need_lock"] = normalize_material_parameter_names(
+        meta["materials_need_lock"] = effective_material_lock_parameters(
             materials_need_lock,
-            action_parameter_names=signature_parameters,
+            params=signature_parameters.values(),
+            free=materials_free,
+            placeholder_keys=placeholder_keys,
             action_name=func.__qualname__,
         )
         from unilabos.registry.action_timeout import (

@@ -52,6 +52,15 @@ def test_declared_material_parameter_requires_authoritative_uuid() -> None:
         )
 
 
+def test_absent_optional_material_takes_no_lock() -> None:
+    """默认加锁会覆盖可选物料入参：未传或为空表示没有物料，不加锁也不拒绝。"""
+
+    assert material_uuids_for_parameters(
+        ["plate", "tips", "reference", "lid"],
+        {"plate": {"uuid": "material-a"}, "tips": [], "reference": None},
+    ) == ("material-a",)
+
+
 def test_execute_job_protocol_preserves_scheduler_material_contract() -> None:
     content = ExecuteJobContent(
         job_uuid="job-1",

@@ -75,6 +75,10 @@ class Driver:
     @action()
     def inspect(self, plate: ResourceSlot) -> None:
         pass
+
+    @action(materials_need_lock=[])
+    def observe(self, plate: ResourceSlot) -> None:
+        pass
 ''',
     )
 
@@ -83,7 +87,9 @@ class Driver:
     ] == ["plate", "reagent"]
     mappings = entry["class"]["action_value_mappings"]
     assert mappings["process"]["materials_need_lock"] == ["plate", "reagent"]
-    assert mappings["inspect"]["materials_need_lock"] == []
+    # 未声明：物料入参默认加锁；显式 [] 才是不锁
+    assert mappings["inspect"]["materials_need_lock"] == ["plate"]
+    assert mappings["observe"]["materials_need_lock"] == []
 
     restored = json.loads(json.dumps(entry, default=str))
     assert restored["class"]["action_value_mappings"]["process"][
@@ -128,6 +134,15 @@ def test_host_material_actions_declare_their_authoritative_locks() -> None:
     assert actions["transfer_resource"]["action_args"][
         "materials_need_lock"
     ] == ["resource", "mount_resource"]
+    # 出库物料默认加锁；挂载目标允许只给名字（执行时才解析），用 materials_free 排除
+    assert actions["apply_deduct_resource"]["action_args"][
+        "materials_need_lock"
+    ] == ["resource"]
+    # 诊断回显不改动物料：materials_free 排除
+    assert actions["test_resource"]["action_args"][
+        "materials_need_lock"
+    ] == []
+    assert "materials_free" not in actions["test_resource"]["action_args"]
 
 
 def test_runtime_device_definition_carries_defaulted_material_lock_metadata() -> None:

@@ -178,6 +178,7 @@ def setup_local_scheduler(
     # 把 attempt/节点运行置为 intervention_required（执行面按 origin 路由）。
     execution_backend.result_bridges.append(scheduler)
     scheduler.start(recover=True)
+    _start_event_retention(service)
     _workflow_service = service
     _scheduler = scheduler
     _setup_registry_authority(services.runtime)
@@ -185,6 +186,33 @@ def setup_local_scheduler(
         "[WorkflowIntegration] local Workflow Authority ready (runtime.db shared)",
     )
     return service
+
+
+_event_retention: Any = None
+
+
+def _start_event_retention(service: Any) -> None:
+    """本机 Workflow Authority 拥有 frontend_event 的保留清理（v1.0 ADR 0006）。"""
+
+    global _event_retention
+    if _event_retention is not None:
+        return
+    from unilabos.server.services.runtime.workflow.event_retention import FrontendEventRetention
+
+    try:
+        retention = FrontendEventRetention(service)
+    except ValueError as exc:
+        logger.error("[WorkflowIntegration] 前端事件保留配置无效，未启动清理: %s", exc)
+        return
+    retention.start()
+    _event_retention = retention
+
+
+def _stop_event_retention() -> None:
+    global _event_retention
+    if _event_retention is not None:
+        _event_retention.stop()
+        _event_retention = None
 
 
 def make_device_state_reader(execution_backend: Any):
@@ -399,6 +427,8 @@ def shutdown_backend_services() -> None:
         _scheduler.stop()
         if _backend is not None and _scheduler in _backend.result_bridges:
             _backend.result_bridges.remove(_scheduler)
+    # 先等清理线程结束当前事务，再关闭共享的 runtime.db 连接。
+    _stop_event_retention()
     if _workflow_service is not None:
         _workflow_service.set_task_submitter(None)
         set_resolver = getattr(

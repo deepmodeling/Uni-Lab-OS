@@ -6,8 +6,11 @@ REST 读取当前状态，不需要回放历史。
 - 缺少或空白 ``Last-Event-ID``：在发送响应头之前固定最新持久序号，先发一个只含
   ``id`` 的水位帧，此后只推新通知；
 - 显式 ``Last-Event-ID: 0``：回放当前保留的全部历史；其他合法游标从其之后续传；
-- 游标大于最新序号（例如数据库被重置）：发送 ``stream.reset``（``reason`` 为
-  ``cursor_ahead``，``id`` 为新水位）并保持连接，客户端必须重读 REST。
+- 游标大于最新序号（例如数据库被重置）发送 ``stream.reset``（``reason`` 为
+  ``cursor_ahead``）；游标早于保留窗口（被保留清理越过）发送 ``cursor_expired``。
+  ``id`` 为新水位，连接保持，客户端必须重读 REST。
+
+保留窗口边界与事件页在同一 SQL 快照内读取，每页都检查，慢连接也不会被清理静默越过。
 """
 
 from __future__ import annotations
@@ -25,7 +28,9 @@ from unilabos.utils.log_notices import LOG_NOTICE_EVENT, log_notices, merge_noti
 STREAM_RESET_EVENT = "stream.reset"
 
 
-async def runtime_event_stream(request: Request, service=None, cursor: int = 0, *, watermark: bool = False):
+async def runtime_event_stream(
+    request: Request, service=None, cursor: int = 0, *, watermark: bool = False, replay: bool = False
+):
     from unilabos.server.api.runtime.workflow import format_sse_event
 
     loop = asyncio.get_running_loop()
@@ -56,18 +61,24 @@ async def runtime_event_stream(request: Request, service=None, cursor: int = 0, 
             if now >= next_workflow:
                 next_workflow = now + 1
                 if service is not None:
-                    latest = service.latest_event_sequence()
+                    oldest, latest, events = service.read_event_window(after_id=cursor, limit=101)
+                    reason = None
                     if cursor > latest:
-                        # 超前游标无法续传：给出新水位，由客户端重读 REST 校准。
+                        reason = "cursor_ahead"
+                    elif cursor < oldest - 1 and not (replay and cursor == 0):
+                        reason = "cursor_expired"
+                    # 只有显式从 0 开始的首轮允许回放保留窗口，之后按普通游标检查。
+                    replay = False
+                    if reason is not None:
+                        # 无法续传：给出新水位，由客户端重读 REST 校准。
                         cursor = latest
-                        yield format_sse_event(
-                            {"id": cursor, "event": STREAM_RESET_EVENT, "data": {"reason": "cursor_ahead"}}
-                        )
-                    events = service.list_events(after_id=cursor, limit=100)["items"]
-                    for event in events:
+                        yield format_sse_event({"id": cursor, "event": STREAM_RESET_EVENT, "data": {"reason": reason}})
+                        next_workflow = now
+                        continue
+                    for event in events[:100]:
                         cursor = event["id"]
                         yield format_sse_event(event)
-                    if len(events) == 100:
+                    if len(events) > 100:
                         next_workflow = now
             try:
                 notice = await asyncio.wait_for(pending.get(), timeout=max(.01, next_workflow - time.monotonic()))
@@ -110,7 +121,9 @@ def create_runtime_events_router(service=None) -> APIRouter:
             # “快照 → 订阅”之间的变化。纯执行面的 Host 没有 Workflow Authority。
             cursor = service.latest_event_sequence() if service is not None else 0
         return StreamingResponse(
-            runtime_event_stream(request, service, cursor, watermark=fresh and service is not None),
+            runtime_event_stream(
+                request, service, cursor, watermark=fresh and service is not None, replay=bool(value) and cursor == 0
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

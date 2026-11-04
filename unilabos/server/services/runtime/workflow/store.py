@@ -2956,6 +2956,90 @@ class WorkflowStore:
             for row in rows
         ]
 
+    def read_event_window(
+        self,
+        *,
+        after_id: int,
+        limit: int,
+    ) -> tuple[int, int, List[Dict[str, Any]]]:
+        """在同一条 SQL 快照内读取最早 / 最新保留序号与事件页。
+
+        清理可能在两次查询之间越过慢连接的游标；边界与事件页同一快照读取，
+        SSE 才能可靠判断 ``cursor_expired`` / ``cursor_ahead``。空表两端都为 0。
+        """
+
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                WITH bounds AS (
+                    SELECT
+                        COALESCE((SELECT MIN(sequence) FROM frontend_event), 0) AS window_oldest,
+                        COALESCE((SELECT MAX(sequence) FROM frontend_event), 0) AS window_latest
+                ), page AS (
+                    SELECT * FROM frontend_event WHERE sequence > ? ORDER BY sequence LIMIT ?
+                )
+                SELECT bounds.window_oldest, bounds.window_latest, page.*
+                FROM bounds LEFT JOIN page ON 1 = 1
+                ORDER BY page.sequence
+                """,
+                (after_id, limit),
+            ).fetchall()
+        events = [
+            {
+                "id": row["sequence"],
+                "uuid": row["uuid"],
+                "event": row["type"],
+                "aggregate_uuid": row["aggregate_uuid"],
+                "data": _load(row["payload"], {}),
+                "create_time": row["create_time"],
+            }
+            for row in rows
+            if row["sequence"] is not None
+        ]
+        return int(rows[0]["window_oldest"]), int(rows[0]["window_latest"]), events
+
+    def prune_frontend_events(
+        self,
+        *,
+        before: str,
+        max_count: int,
+        batch_size: int,
+    ) -> int:
+        """在一个有界事务里删除超龄或超量的连续前缀，返回删除条数。
+
+        始终保留最新一条作为持久水位，空闲库的水位不会回退；遇到仍需保留的
+        通知就停止，不在序号中间挖洞。只处理通知表，不动任务、Job 或审计记录。
+        """
+
+        if max_count < 1 or batch_size < 1:
+            raise ValueError("事件保留数量和清理批量必须为正整数")
+        with self.transaction() as conn:
+            latest = int(
+                conn.execute("SELECT COALESCE(MAX(sequence), 0) FROM frontend_event").fetchone()[0]
+            )
+            floor_row = conn.execute(
+                "SELECT sequence FROM frontend_event ORDER BY sequence DESC LIMIT 1 OFFSET ?",
+                (max_count - 1,),
+            ).fetchone()
+            count_floor = int(floor_row[0]) if floor_row else 0
+            rows = conn.execute(
+                "SELECT sequence, create_time FROM frontend_event ORDER BY sequence LIMIT ?",
+                (batch_size,),
+            ).fetchall()
+            through = 0
+            for row in rows:
+                if row["sequence"] >= latest:
+                    break
+                if row["sequence"] >= count_floor and row["create_time"] >= before:
+                    break
+                through = row["sequence"]
+            if not through:
+                return 0
+            return conn.execute(
+                "DELETE FROM frontend_event WHERE sequence <= ?",
+                (through,),
+            ).rowcount
+
     def latest_event_sequence(self) -> int:
         """当前最新的持久通知序号，空库为 0。
 

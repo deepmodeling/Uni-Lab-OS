@@ -264,6 +264,10 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `vis_2d_enable`          | bool | `False`       | 是否启用 2D 可视化                         |
 | `enable_resource_load`   | bool | `True`        | 是否启用资源加载                           |
 | `log_level`              | str  | `"DEBUG"`     | 日志级别                                   |
+| `frontend_event_retention_seconds` | int | `86400` | 前端失效通知保留时长目标（秒） |
+| `frontend_event_max_count` | int | `10000` | 前端失效通知保留条数目标 |
+| `frontend_event_cleanup_interval_seconds` | int | `60` | 保留清理检查间隔（秒） |
+| `frontend_event_cleanup_batch_size` | int | `1000` | 每个清理事务最多删除条数 |
 
 #### 日志级别选项
 

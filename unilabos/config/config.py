@@ -44,6 +44,11 @@ class BasicConfig:
     startup_json_path = None  # 填写绝对路径
     disable_browser = False  # 只禁止浏览器自动打开，不停止管理端服务
     port = 8002  # 管理端 HTTP/Web API 与主微前端服务
+    # 前端失效通知（frontend_event）的保留目标：定期清理，不是每次插入后的硬上限。
+    frontend_event_retention_seconds = 86_400
+    frontend_event_max_count = 10_000
+    frontend_event_cleanup_interval_seconds = 60
+    frontend_event_cleanup_batch_size = 1_000
     check_mode = False  # CI 检查模式，用于验证 registry 导入和文件一致性
     test_mode = False  # 测试模式，所有动作不实际执行，返回模拟结果
     extra_resource = False  # 是否加载lab_开头的额外资源

@@ -119,3 +119,41 @@ def test_resume_cursor_streams_only_later_events(service) -> None:
         (lambda body: "id: 3\nevent:" in body, None),
     ]))
     assert "id: 2\nevent:" not in text and "stream.reset" not in text
+
+
+def _prune_to_last(service, keep: int) -> None:
+    service.prune_frontend_events(before="0001-01-01T00:00:00.000000Z", max_count=keep, batch_size=1000)
+
+
+def test_cursor_behind_retention_window_resets_as_expired(service) -> None:
+    _append(service, 5)
+    _prune_to_last(service, 2)  # 保留窗口 4..5
+    app = create_workflow_app(service)
+    text = asyncio.run(_read(app, [(b"last-event-id", b"1")], [
+        (lambda body: "event: stream.reset" in body, lambda: _append(service, 1)),
+        (lambda body: "id: 6\nevent: workflow.task.changed" in body, None),
+    ]))
+    reset = next(frame for frame in text.split("\n\n") if "event: stream.reset" in frame)
+    assert reset.startswith("id: 5\n")
+    assert json.loads(reset.split("data: ", 1)[1]) == {"reason": "cursor_expired"}
+    assert "id: 4\nevent:" not in text
+
+
+def test_cursor_at_window_edge_resumes_without_reset(service) -> None:
+    _append(service, 5)
+    _prune_to_last(service, 2)
+    app = create_workflow_app(service)
+    text = asyncio.run(_read(app, [(b"last-event-id", b"3")], [
+        (lambda body: "id: 5\nevent:" in body, None),
+    ]))
+    assert "id: 4\nevent:" in text and "stream.reset" not in text
+
+
+def test_explicit_zero_replays_retained_window_without_reset(service) -> None:
+    _append(service, 5)
+    _prune_to_last(service, 2)
+    app = create_workflow_app(service)
+    text = asyncio.run(_read(app, [(b"last-event-id", b"0")], [
+        (lambda body: "id: 5\nevent:" in body, None),
+    ]))
+    assert "id: 4\nevent:" in text and "stream.reset" not in text

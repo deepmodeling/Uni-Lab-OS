@@ -144,8 +144,7 @@ def test_sse_notice_merges_slow_reader_without_changing_workflow_cursor(monkeypa
             return False
 
     workflow = Mock()
-    workflow.list_events.return_value = {"items": [{"id": 42, "event": "workflow.task.changed", "data": {"uuid": "t"}}]}
-    workflow.latest_event_sequence.return_value = 42
+    workflow.read_event_window.return_value = (1, 42, [{"id": 42, "event": "workflow.task.changed", "data": {"uuid": "t"}}])
 
     async def scenario():
         stream = events.runtime_event_stream(Request(), workflow, cursor=41)
@@ -160,7 +159,7 @@ def test_sse_notice_merges_slow_reader_without_changing_workflow_cursor(monkeypa
         assert "event: runtime.logs.changed\n" in frame and "id:" not in frame
         payload = json.loads(frame.split("data: ")[1])
         assert payload["source_ids"] == ["host", "slave:a"] and payload["sources_changed"]
-        workflow.list_events.assert_called_once_with(after_id=41, limit=100)
+        workflow.read_event_window.assert_called_once_with(after_id=41, limit=101)
         await stream.aclose()
         assert hub.listener is None
 

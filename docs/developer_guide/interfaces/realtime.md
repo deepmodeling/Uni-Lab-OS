@@ -26,6 +26,7 @@
 | 持久 SSE id | 工作流事件 id | inventory ledger sequence |
 | 恢复方式 | Last-Event-ID，从该 id 之后重放；显式 `0` 回放全部保留历史 | Last-Event-ID，从该 sequence 之后重放 |
 | 游标大于最新序号 | `stream.reset`（`reason: cursor_ahead`，`id` 为新水位），连接保持 | 无 |
+| 游标早于保留窗口 | `stream.reset`（`reason: cursor_expired`，`id` 为新水位），连接保持 | 无 |
 | 非法游标 | Workflow code=1000，HTTP 200 JSON | HTTP 422 |
 | 无事件时 | keepalive 注释；工作流检查约 1 秒，心跳约 15 秒 | keepalive 注释；约 1 秒检查账本 |
 
@@ -90,6 +91,10 @@ function subscribeMaterials(baseUrl, render, reportError) {
 不触发业务刷新。收到 `stream.reset` 时游标可能回退（例如数据库被重置），客户端必须
 重读 REST，不能把它当成某个任务的业务变更；该帧不写入 `frontend_event`。
 需要历史时显式发送 `Last-Event-ID: 0`。
+
+通知按 `BasicConfig` 的保留目标定期清理（默认最近 24 小时、最多 10,000 条，每 60 秒检查，
+每个事务最多删 1,000 条）。只删连续的旧前缀，始终保留最新一条作为水位；这些是清理目标，
+不是每次插入后的硬上限。慢连接的游标被清理越过时收到 `cursor_expired`。
 
 持久事件包括 `workflow.task.changed`、`workflow.node_run.changed`、
 `workflow.node_job.changed`、`workflow.manual_confirmation.changed` 等。

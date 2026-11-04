@@ -90,6 +90,8 @@ RUNTIME_DATABASE = DatabaseSpec(
         *(spec for spec in REGISTRY_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
         *LAB_TABLES,
     ),
+    # 工作流定义、任务与注册表记录不能靠重建恢复：没有迁移路径时拒绝启动。
+    on_unmigratable="refuse",
 )
 
 

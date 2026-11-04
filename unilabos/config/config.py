@@ -33,6 +33,9 @@ class BasicConfig:
     # 四个数据库（runtime / materials / telemetry / history）所在目录；命令行
     # --server_database_root 优先。留空时使用工作目录下的 database/（每个实例各自一份）。
     server_database_root = ""
+    # runtime / materials 库结构不一致且没有迁移时默认拒绝启动；开发期确认旧数据无用后
+    # 可设为 True，旧库改名为 .bak-<时间戳> 后重建空库。
+    database_rebuild_on_mismatch = False
     # 由微后端组合根一次解析；四个数据库 writer 不得自行推导路径。
     server_database_paths = None
     config_path = ""

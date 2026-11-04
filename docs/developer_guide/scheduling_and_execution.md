@@ -400,4 +400,4 @@ Backend 必须先更新调度事实，然后下发 `release_failed` 或 replacem
 
 - 调度、库存、历史和设备状态能力必须复用对应领域 Service。
 - 数据库表及 DDL 只在 `unilabos/server/database/tables/` 声明。
-- 当前 schema 使用 checksum 驱动的重建策略；Scheduler 目录不得创建私有表。
+- schema 变化必须提升对应库的 `schema_version` 并补迁移（见 `unilabos/server/database/schema.py`）；Scheduler 目录不得创建私有表。

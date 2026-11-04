@@ -331,7 +331,21 @@ def _runs_local_authority(args_dict: Dict[str, Any]) -> bool:
 
 
 def main():
-    """运行 Uni-Lab-OS CLI，并在需要时启动设备运行时。"""
+    """运行 Uni-Lab-OS CLI，并在需要时启动设备运行时。
+
+    数据库无法迁移 / 迁移失败属于数据保护类错误：只给出可操作的说明并以退出码 1 结束，
+    不打印调用栈，也不会继续用空库启动。
+    """
+    from unilabos.server.database.schema import DatabaseMigrationFailed, DatabaseMigrationRequired
+
+    try:
+        _run_main()
+    except (DatabaseMigrationRequired, DatabaseMigrationFailed) as exc:
+        print_status(str(exc), "error")
+        raise SystemExit(1) from None
+
+
+def _run_main():
     parser = build_parser()
     args = parser.parse_args()
     args_dict = vars(args)

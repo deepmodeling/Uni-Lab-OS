@@ -33,7 +33,7 @@ from unilabos.protocol.runtime.loop import (
     substitute_loop_placeholders,
 )
 from unilabos.protocol.utils.workflow_hierarchy import HierarchyError, lift_edge
-from unilabos.registry.action_policy import SUCCESS_TYPE_CANCELLATION
+from unilabos.registry.action_policy import SUCCESS_TYPE_CANCELLATION, SUCCESS_TYPE_EXECUTION_UNKNOWN
 from unilabos.protocol.materials import (
     InventoryReservationCreate,
     InventoryReservationTransition,
@@ -1586,6 +1586,18 @@ class BackendScheduler:
         if not owned:
             # 非本调度器派发的 job（如 Backend-controlled 下发的 execution_job）
             return
+        if suc_type == SUCCESS_TYPE_EXECUTION_UNKNOWN:
+            self._reconcile_lost_attempt(job_id, return_info or {})
+            return
+        # 真实结果晚于"结果未知"到达（例如重启后的 Host 补发旧事件）：以真实结果收敛并撤掉待裁决。
+        with self._guard:
+            stale = [
+                (decision_id, pending)
+                for decision_id, pending in self._reconciliation_decisions.items()
+                if pending["job_uuid"] == job_id
+            ]
+            for decision_id, _pending in stale:
+                self._reconciliation_decisions.pop(decision_id, None)
         if success:
             job_status = "skipped" if suc_type == "skip" else "succeeded"
         elif suc_type == SUCCESS_TYPE_CANCELLATION:
@@ -1612,6 +1624,8 @@ class BackendScheduler:
             ),
             resolution=resolution if isinstance(resolution, dict) else None,
         )
+        for task_uuid in {pending["task_uuid"] for _decision_id, pending in stale}:
+            self._settle_task_reconciliation(task_uuid)
 
     def _settle_attempt(
         self,
@@ -1705,6 +1719,29 @@ class BackendScheduler:
         return True
 
     # ── 重启后的执行态裁决 ──────────────────────────────────────
+
+    def _reconcile_lost_attempt(self, job_id: str, return_info: Dict[str, Any]) -> None:
+        """执行端在动作进行中重启：attempt 转 execution_unknown 并开裁决。
+
+        与调度权威重启后的恢复同一语义：不重放、不直接判失败，由人选择重试 / 跳过 /
+        替换为成功 / 标记失败。该 attempt 已占有的资源保持到裁决收敛——设备实际状态
+        未知时不放行其他任务。
+        """
+
+        reason = str(
+            return_info.get("uncertainty_reason")
+            or "execution host restarted while the action was running"
+        )
+        with self._guard:
+            run_uuid = self._job_runs.get(job_id)
+            context = self._run_context.get(run_uuid or "")
+            spec = self._run_specs.get(run_uuid or "")
+        if run_uuid is None or context is None or spec is None or spec.get("current_job_uuid") != job_id:
+            return
+        if not self.workflow.mark_workflow_node_job_execution_unknown(job_id, reason):
+            return
+        task, node = context
+        self._open_reconciliation_decision(task, node, spec, "execution_unknown")
 
     def _open_reconciliation_decision(
         self,

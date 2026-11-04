@@ -13,6 +13,10 @@ import X``，不感知域内文件拆分；库级规格 ``RUNTIME_DATABASE`` 在
 """
 
 from unilabos.server.database.schema import SCHEMA_IDENTITY_TABLE, DatabaseSpec
+from unilabos.server.database.tables.runtime.migrations import (
+    RUNTIME_MIGRATIONS,
+    RUNTIME_SCHEMA_VERSION,
+)
 from unilabos.server.database.tables.runtime.lab import (
     LAB_TABLES,
     LAB_TABLE_MODELS,
@@ -90,6 +94,8 @@ RUNTIME_DATABASE = DatabaseSpec(
         *(spec for spec in REGISTRY_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
         *LAB_TABLES,
     ),
+    schema_version=RUNTIME_SCHEMA_VERSION,
+    migrations=RUNTIME_MIGRATIONS,
     # 工作流定义、任务与注册表记录：结构变化必须带迁移。开发期没有迁移路径时备份后重建；
     # 正式发布前改为 "refuse"（拒绝启动、保留旧库）。
     on_unmigratable="rebuild",

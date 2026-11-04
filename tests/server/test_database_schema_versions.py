@@ -9,7 +9,7 @@ from unilabos.server.database import DATABASE_SPECS
 #: (schema_version, checksum)。DDL 或 contract_version 变化会改变 checksum：
 #: 把对应库的 schema_version +1，在其 migrations 里补上迁移，再更新这里。
 PINNED = {
-    "runtime": (1, "99c1f83134bc5c9984ef6fc0926cd58ad82b08385f549f20b756fd4554043405"),
+    "runtime": (2, "0e613cfaec88b6f30d79fb7962fb455ed6720763ad8792cd8acba71ac27d320c"),
     "materials": (1, "72f88ec822cf97ca3ff09e1b795935442440a8280436e0212723f8a4160c1b83"),
     "telemetry": (1, "a0e00118c131bbae1e4a693563977d7ffff49c17c482ebad0e5ad2b224b548af"),
     "history": (1, "5005469f86db3fe747ab1f30ea32d0c0c8f2f2779202a81bedb8d8254217f4cc"),

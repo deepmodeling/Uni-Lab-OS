@@ -123,6 +123,8 @@ Site 绑定只确认身份与范围，不搬动物料，也不预留该 Site；�
 | 设备页单点 | execution_kind=ad_hoc_device_action，device_id、action_name、param | 新建独立单 job 任务，同样经过调度与历史 |
 
 设备单点可携带 action_type、execution_policy、execution_timeout_seconds、idempotency_key。
+整图任务同样可带 `idempotency_key`（1..200 字符）：同一次提交的按钮重发、网络重试复用同一键，只建一个任务、
+只调度一次；同键但 workflow_uuid / run_mode / target_node_uuid 不同按冲突拒绝。不带键时每次提交都是新任务。
 它不是直接向 Host 调用函数，不能绕开已声明的物料锁、错误策略或库存需求。
 
 ### 步进与切回自动

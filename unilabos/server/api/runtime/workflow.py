@@ -153,7 +153,9 @@ class WorkflowTaskCreateRequest(_BackendModel):
 
     execution_kind=workflow（默认）：workflow_uuid 必填，走整图编排。
     execution_kind=ad_hoc_device_action：device_id + action_name + param 必填，
-    生成单 job 任务（微前端设备页/画布单点动作），幂等键可选。
+    生成单 job 任务（微前端设备页/画布单点动作）。
+
+    idempotency_key 两种任务都可选：同键同语义的重复提交返回既有任务，同键不同语义按冲突拒绝。
     """
 
     execution_kind: str = "workflow"
@@ -467,6 +469,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
                 input_value={},
                 description=body.description,
                 meta_data=body.meta_data,
+                idempotency_key=body.idempotency_key,
             ),
             status=201,
         )

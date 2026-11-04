@@ -555,6 +555,7 @@ class WorkflowService(WorkflowStore):
         input_value: Dict[str, Any],
         description: Optional[str],
         meta_data: Dict[str, Any],
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
@@ -577,6 +578,23 @@ class WorkflowService(WorkflowStore):
         if input_value:
             raise WorkflowError("invalid_input")
         description = self._optional_text(description)
+        # 幂等键可选：同一次提交（按钮重发、网络重试）复用同一键只建一个任务。指纹锁定
+        # 运行语义 (workflow, run_mode, target)；同键不同语义按 conflict 拒绝。
+        fingerprint = ""
+        if idempotency_key is not None:
+            idempotency_key = str(idempotency_key).strip()
+            if not idempotency_key or len(idempotency_key) > 200:
+                raise WorkflowError("invalid_input")
+            fingerprint = _sha256(_canonical_json({
+                "workflow_uuid": workflow_uuid,
+                "run_mode": run_mode,
+                "target_node_uuid": target_node_uuid,
+            }))
+            existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
+            if existing is not None:
+                if existing.get("request_fingerprint", "") != fingerprint:
+                    raise WorkflowConflict("conflict")
+                return existing
         try:
             task = self.create_task_with_jobs(
                 workflow_uuid=workflow_uuid,
@@ -591,12 +609,21 @@ class WorkflowService(WorkflowStore):
                     run_mode=run_mode,
                     target_node_uuid=target_node_uuid,
                 ),
+                idempotency_key=idempotency_key,
+                request_fingerprint=fingerprint,
             )
-            if self._task_submitter is not None:
-                self._task_submitter(task["uuid"])
-            return task
         except StoreConflict:
+            if idempotency_key is not None:
+                # 唯一索引兜底：并发同键提交，读回先到者
+                existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
+                if existing is not None:
+                    if existing.get("request_fingerprint", "") != fingerprint:
+                        raise WorkflowConflict("conflict") from None
+                    return existing
             raise WorkflowError("invalid_input") from None
+        if self._task_submitter is not None:
+            self._task_submitter(task["uuid"])
+        return task
 
     def create_ad_hoc_device_action_task(
         self,

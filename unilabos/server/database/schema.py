@@ -21,7 +21,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Literal, Optional
+from typing import Callable, Iterable, Literal, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,58 @@ def sql_migration(version: int, description: str, *statements: str) -> Migration
     def apply(connection: sqlite3.Connection) -> None:
         for statement in statements:
             connection.execute(statement)
+
+    return Migration(version=version, description=description, apply=apply)
+
+
+def rebuild_table_migration(
+    version: int,
+    description: str,
+    *,
+    table: str,
+    create_sql: str,
+    indexes: Sequence[str] = (),
+) -> Migration:
+    """SQLite 改 CHECK / 列约束的标准重建：建新表 → 拷贝同名列 → 删旧表 → 改名 → 重建索引。
+
+    ``create_sql`` / ``indexes`` 必须是该版本**冻结**的语句（字面量，不要引用会继续演进的
+    表规格），表名为 ``table``。依赖本表的视图与本表的触发器按迁移前的定义原样重建
+    （删表后 ``ALTER TABLE RENAME`` 不允许存在引用缺失表的视图）。迁移期间外键检查已关闭，
+    引用本表的外键改名后照常指向新表；结束前统一 ``foreign_key_check``。旧行不满足新约束
+    时插入失败，整体回滚。
+    """
+
+    pattern = re.compile(rf"CREATE TABLE IF NOT EXISTS {re.escape(table)}\s*\(")
+    if len(pattern.findall(create_sql)) != 1:
+        raise ValueError(f"create_sql 必须恰好包含一条 CREATE TABLE IF NOT EXISTS {table}")
+    staging = f"{table}__migrating"
+    staged_sql = pattern.sub(f'CREATE TABLE "{staging}" (', create_sql, count=1)
+
+    def apply(connection: sqlite3.Connection) -> None:
+        views = connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'view' AND sql IS NOT NULL ORDER BY rowid"
+        ).fetchall()
+        triggers = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ? AND sql IS NOT NULL "
+            "ORDER BY rowid",
+            (table,),
+        ).fetchall()
+        for name, _sql in views:
+            connection.execute(f'DROP VIEW "{name}"')
+        old_columns = [row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')]
+        connection.execute(f'DROP TABLE IF EXISTS "{staging}"')
+        connection.execute(staged_sql)
+        new_columns = [row[1] for row in connection.execute(f'PRAGMA table_info("{staging}")')]
+        shared = ", ".join(f'"{column}"' for column in new_columns if column in old_columns)
+        connection.execute(f'INSERT INTO "{staging}" ({shared}) SELECT {shared} FROM "{table}"')
+        connection.execute(f'DROP TABLE "{table}"')
+        connection.execute(f'ALTER TABLE "{staging}" RENAME TO "{table}"')
+        for statement in indexes:
+            connection.execute(statement)
+        for (sql,) in triggers:
+            connection.execute(sql)
+        for _name, sql in views:
+            connection.execute(sql)
 
     return Migration(version=version, description=description, apply=apply)
 

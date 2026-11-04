@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from unilabos.registry.utils.backend_metadata import normalize_supported_backends
-from unilabos.registry.material_locks import normalize_material_parameter_names
+from unilabos.registry.material_locks import effective_material_lock_parameters
 from unilabos.registry.utils.tools import resolve_registry_display_name
 from unilabos.resources.objects.site import normalize_available_sites
 
@@ -38,7 +38,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 16      # 缓存/entry 构建格式版本号，格式变更时递增（16：跳过 action_context）
+_CACHE_VERSION = 17      # 缓存/entry 构建格式版本号，格式变更时递增（17：物料入参默认加锁）
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -1044,11 +1044,12 @@ def _extract_class_body(
                     normalize_error_policy(action_args["error_policy"]) or {}
                 )
             method_params = _extract_method_params(item, import_map)
-            action_args["materials_need_lock"] = normalize_material_parameter_names(
+            # 物料入参默认加锁：这里落成最终列表，materials_free 已经消化，不再下传。
+            action_args["materials_need_lock"] = effective_material_lock_parameters(
                 action_args.get("materials_need_lock"),
-                action_parameter_names=(
-                    param["name"] for param in method_params
-                ),
+                params=method_params,
+                free=action_args.pop("materials_free", None),
+                placeholder_keys=action_args.get("placeholder_keys"),
                 action_name=method_name,
             )
             # 超时字段与装饰器同一套校验：硬超时必须是正数秒；软超时可以是秒或只引用

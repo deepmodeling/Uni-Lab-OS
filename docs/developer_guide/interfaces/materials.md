@@ -241,8 +241,8 @@ delta 用 MaterialDelta 描述允许变化的片段；不能把任意 JSON patch
 任务批量预留先做整体准入，库存不足不能派发“部分成功”的实验。
 reservation 的 consume/release/quarantine 由执行生命周期或明确业务操作驱动，观察前端不要自行消耗。
 
-`@action(materials_need_lock=["参数名"])` 是另一层：声明这次动作要独占的输入物料，
-交给调度器按绑定后的身份占用。库存预留不自动等于设备动作锁，也不代表实现了多层子工作流锁升级。
+物料锁是另一层：动作的物料入参默认独占（`materials_free` 排除，`materials_need_lock` 显式覆盖，
+规则见 [设计约定](design.md)），交给调度器按绑定后的身份占用。库存预留不自动等于设备动作锁，也不代表实现了多层子工作流锁升级。
 
 ## 源码依据
 

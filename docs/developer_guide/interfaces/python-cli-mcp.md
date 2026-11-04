@@ -192,7 +192,7 @@ python -m unilabos.app.main --backend hostlink --is-slave --machine-name lab-sla
 | --backend hostlink / ros2 | 两个正式 backend；不是 basic/communication_protocol 分支 |
 | --devices PATH（可重复） | 扫描设备/资源包目录 |
 | --no-safe-restart | 单进程调试模式，默认进程分离 |
-| --server-database-root / 四个 --*_db | 指定数据库根与单库文件；默认取 `BasicConfig.server_database_root`（`~/.unilabos`）；注意权威/Host 所有权 |
+| --server-database-root / 四个 --*_db | 指定数据库根与单库文件；默认取 `BasicConfig.server_database_root`，留空为 `<工作目录>/database`；注意权威/Host 所有权 |
 | --check-mode | 注册表检查；不是完整设备业务测试 |
 | --complete-registry | **重写生成注册表**，不是只读检查 |
 | --test-mode | 模拟模式；不能证明真实硬件动作已运行 |

@@ -31,8 +31,8 @@ class BasicConfig:
     sk = ""
     working_dir = ""
     # 四个数据库（runtime / materials / telemetry / history）所在目录；命令行
-    # --server_database_root 优先。与工作目录无关：同机多个实例默认共用，需要隔离时显式指定。
-    server_database_root = "~/.unilabos"
+    # --server_database_root 优先。留空时使用工作目录下的 database/（每个实例各自一份）。
+    server_database_root = ""
     # 由微后端组合根一次解析；四个数据库 writer 不得自行推导路径。
     server_database_paths = None
     config_path = ""
